@@ -1,0 +1,36 @@
+---
+slug: /cloud/guides/data-sources
+title: '데이터 소스'
+hide_title: true
+description: 'ClickHouse Cloud 가이드 섹션의 목차 페이지'
+doc_type: 'landing-page'
+keywords: ['cloud 가이드', '문서', 'how-to', 'cloud 기능', '튜토리얼']
+---
+
+<div id="cloud-integrations">
+  ## Cloud 통합
+</div>
+
+이 섹션에는 추가 구성이 필요한 외부 데이터 소스와 ClickHouse Cloud를 통합하기 위한 가이드와 참고 문서가 포함되어 있습니다.
+
+| 페이지                                                                                  | 설명                                            |
+| ------------------------------------------------------------------------------------ | --------------------------------------------- |
+| [Cloud IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)               | 일부 테이블 함수와 연결에 필요한 네트워킹 정보                    |
+| [S3 데이터에 안전하게 액세스하기](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely) | 역할 기반 액세스를 사용해 AWS S3의 외부 데이터 소스에 안전하게 액세스합니다 |
+| [GCS 데이터에 안전하게 액세스하기](/ko/products/cloud/guides/data-sources/secure-gcs)                | HMAC 키를 사용해 GCS의 외부 데이터 소스에 안전하게 액세스합니다       |
+
+<div id="additional-connections-for-external-data-sources">
+  ## 외부 데이터 소스 추가 연결
+</div>
+
+<div id="clickpipes-for-data-ingestion">
+  ### 데이터 수집용 ClickPipes
+</div>
+
+ClickPipes를 사용하면 다양한 소스의 스트리밍 데이터를 쉽게 통합할 수 있습니다. 자세한 내용은 Integrations 문서의 [ClickPipes](/ko/integrations/clickpipes/home)를 참조하십시오.
+
+<div id="table-functions-as-external-data-sources">
+  ### 외부 데이터 소스로 사용하는 테이블 함수
+</div>
+
+ClickHouse는 외부 데이터 소스에 접근할 수 있도록 다양한 테이블 함수를 지원합니다. 자세한 내용은 SQL 참고 섹션의 [테이블 함수](/ko/reference/functions/table-functions/index)를 참조하십시오.

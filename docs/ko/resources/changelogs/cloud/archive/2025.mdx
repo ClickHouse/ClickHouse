@@ -1,0 +1,444 @@
+---
+slug: /whats-new/cloud/2025
+sidebarTitle: '2025'
+title: 'Cloud 변경 로그 - 2025'
+description: '2025년 ClickHouse Cloud 변경 로그'
+doc_type: 'changelog'
+keywords: ['변경 로그', '릴리스 노트', '업데이트', '새 기능', 'Cloud 변경 사항', '2025']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="december-19-2025">
+  ## 2025년 12월 19일
+</div>
+
+* 이제 AWS ap-south-1에서 PCI 규정 준수 서비스를 시작할 수 있습니다.
+* **통합 사용자 아이덴티티 비공개 프리뷰**
+  콘솔에서 데이터베이스 사용자를 관리하려는 고객은 SQL 콘솔에 새로운 인증 메서드를 활성화할 수 있습니다.
+  이를 통해 콘솔에서 데이터베이스 사용자 관리 기능을 제공하기 위한 작업이 계속 진행되는 동안 새로운 인증 메서드를 미리 사용해 볼 수 있습니다.
+* **이제 S3 ClickPipes에서 unordered mode를 사용할 수 있습니다**:
+  이제 고객은 이벤트 기반 분석을 위해 Amazon S3에서 ClickHouse Cloud로 데이터를 임의의 순서로 수집할 수 있습니다.
+  파일 활용 시 더 이상 파일이 사전식 순서로 정렬되어 있을 필요가 없습니다. 자세한 내용은 공지 [블로그](https://clickhouse.com/blog/clickpipes-s3-unordered-mode)에서 확인할 수 있습니다.
+* Fivetran 커넥터가 최근 베타로 전환되었습니다. Fivetran을 사용 중이며 ClickHouse를 대상으로 설정하려는 경우, 이 [문서](https://fivetran.com/docs/destinations/clickhouse/setup-guide)를 확인하십시오.
+
+<div id="december-12-2025">
+  ## 2025년 12월 12일
+</div>
+
+* **SAML SSO 셀프서비스 설정**
+
+  이제 Enterprise 고객은 지원 티켓 없이도 Console에서 SAML 설정을 완료할 수 있습니다.
+  또한 SAML 고객은 IdP(Identity Provider)를 통해 추가되는 신규 사용자에게 할당할 기본 역할을 설정하고, 사용자 지정 세션 timeout 설정도 구성할 수 있습니다.
+  자세한 내용은 [문서](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)를 참조하십시오.
+* **Azure의 최대 레플리카 크기 및 스케일링 제한**
+
+  이제 고객은 `eastus2`를 제외한 모든 Azure 리전에서 최대 레플리카 크기를 356 GiB로 설정할 수 있으며, `eastus2`에서 사용할 수 있는 최대 레플리카 크기는 120 GiB입니다.
+
+<div id="november-21-2025">
+  ## 2025년 11월 21일
+</div>
+
+* 이제 **AWS 이스라엘(텔아비브) — il-central-1**에서 ClickHouse Cloud를 사용할 수 있습니다
+* marketplace 종량제 구독 또는 비공개 제안으로 ClickHouse 조직에 과금되도록 설정하는 marketplace 온보딩 경험을 개선했습니다.
+
+<div id="november-14-2025">
+  ## 2025년 11월 14일
+</div>
+
+* **ClickHouse Cloud**를 이제 **추가된 2개의 퍼블릭 리전**에서 사용할 수 있게 되었음을 알려드립니다:
+
+  * **GCP Japan (asia-northeast1)**
+  * **AWS Seoul (Asia Pacific, ap-northeast-2)** — 이제 **ClickPipes**에서도 지원됩니다
+
+  이 리전은 이전에는 **프라이빗 리전**으로만 제공되었으며, 이제 **모든 사용자가 이용할 수 있습니다**.
+* 이제 Terraform과 API에서 서비스에 태그를 추가하고, 태그를 기준으로 서비스를 필터링할 수 있습니다.
+
+<div id="november-7-2025">
+  ## 2025년 11월 7일
+</div>
+
+* ClickHouse Cloud 콘솔에서 이제 1 vCPU, 4 GiB 단위로 레플리카 크기를 구성할 수 있습니다.
+  이 옵션은 새 서비스를 설정할 때와 설정 페이지에서 최소 및 최대 레플리카 크기를 설정할 때 모두 사용할 수 있습니다.
+* 사용자 지정 하드웨어 프로필(Enterprise tier에서 사용 가능)이 이제 유휴 상태 전환을 지원합니다.
+* ClickHouse Cloud는 이제 AWS Marketplace를 통해 더 간편한 구매 환경을 제공하며, [종량제](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu?sr=0-2\&ref_=beagle\&applicationId=AWSMPContessa)와 [약정형 지출 계약](https://aws.amazon.com/marketplace/pp/prodview-4qyeihstyym2s?sr=0-3\&ref_=beagle\&applicationId=AWSMPContessa)을 각각 별도로 선택할 수 있습니다.
+* 이제 ClickHouse Cloud의 ClickStack 사용자도 알림 기능을 사용할 수 있습니다.
+  이제 별도 설정, 추가 인프라 또는 서비스, 추가 구성 없이 HyperDX UI에서 로그, 메트릭, 트레이스 전반에 걸쳐 알림을 직접 생성하고 관리할 수 있습니다. 알림은 Slack, PagerDuty 등과 통합됩니다.
+  자세한 내용은 [알림 문서](/ko/clickstack/features/alerts)를 참조하십시오.
+
+<div id="october-17-2025">
+  ## 2025년 10월 17일
+</div>
+
+* **서비스 모니터링 - 리소스 사용량 대시보드**
+  CPU 사용률 및 메모리 사용률 메트릭 표시는 평균값 대신 특정 시간 범위의 최대 사용률 메트릭을 표시하도록 변경됩니다. 이를 통해 리소스가 과소 프로비저닝된 인스턴스를 더 쉽게 식별할 수 있습니다.
+  또한 CPU 사용률 메트릭은 ClickHouse Cloud의 오토스케일러가 사용하는 메트릭과 더 유사한 Kubernetes 수준의 CPU 사용률 메트릭을 표시합니다.
+* **외부 버킷**
+  이제 ClickHouse Cloud에서는 백업을 사용자 소유의 클라우드 서비스 제공업체 계정으로 직접 내보낼 수 있습니다.
+  AWS S3, Google Cloud Storage 또는 Azure Blob Storage의 외부 스토리지 버킷을 연결하고 백업을 직접 관리하세요.
+
+<div id="august-29-2025">
+  ## 2025년 8월 29일
+</div>
+
+* [ClickHouse Cloud Azure Private Link](/ko/products/cloud/guides/security/connectivity/private-networking/azure-privatelink)에서 리소스 식별 방식이 Resource GUID 필터에서 Resource ID 필터로 변경되었습니다. 이전 버전과의 호환성을 위해 기존 Resource GUID는 계속 사용할 수 있지만, Resource ID 필터로 전환할 것을 권장합니다. 마이그레이션 관련 자세한 내용은 Azure Private Link용 [문서](/ko/products/cloud/guides/security/connectivity/private-networking/azure-privatelink#obtaining-private-endpoint-resourceid)를 참조하십시오.
+
+<div id="august-22-2025">
+  ## 2025년 8월 22일
+</div>
+
+* **AWS Glue용 ClickHouse Connector**
+  이제 [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s)에서 제공되는 공식 [AWS Glue용 ClickHouse Connector](/ko/integrations/connectors/data-ingestion/AWS/glue)를 사용할 수 있습니다. 이 커넥터는 AWS Glue의 Apache
+  Spark 기반 서버리스 엔진을 활용해 ClickHouse와 기타 데이터 소스 간 데이터 통합을 위한 추출, 변환, 적재를 수행합니다. 테이블을 생성하고 ClickHouse와 Spark 간에 데이터를 읽고 쓰는 방법은 안내 [블로그 게시물](http://clickhouse.com/blog/clickhouse-connector-aws-glue)을 따라 시작하십시오.
+* **서비스의 최소 레플리카 수 변경**
+  스케일 업된 서비스는 이제 [다시 스케일 다운](/ko/products/cloud/features/autoscaling/overview)하여 단일 레플리카를 사용할 수 있습니다(이전 최소값은 2개의 레플리카였습니다). 참고: 단일 레플리카 서비스는 가용성이 낮아지므로 프로덕션 환경에서는 권장되지 않습니다.
+* ClickHouse Cloud는 기본적으로 관리자 역할에 대해 서비스 스케일링 및 서비스 버전 업그레이드와 관련된 알림을 보내기 시작합니다. 알림 기본 설정은 알림 설정에서 조정할 수 있습니다.
+
+<div id="august-13-2025">
+  ## 2025년 8월 13일
+</div>
+
+* **ClickPipes for MongoDB CDC, 이제 비공개 프리뷰로 제공됩니다**
+  이제 몇 번의 클릭만으로 ClickPipes를 사용해 MongoDB 데이터를 ClickHouse Cloud로 복제할 수 있으며,
+  외부 ETL 도구 없이 실시간 분석이 가능해집니다. 이 커넥터는 지속적인
+  복제는 물론 일회성 마이그레이션도 지원하며, MongoDB Atlas와 자체 호스팅 MongoDB
+  배포 환경과 호환됩니다. MongoDB CDC 커넥터에 대한 개요는 [블로그 게시물](https://clickhouse.com/blog/mongodb-cdc-clickhouse-preview)에서 확인하고, [여기에서 얼리 액세스를 신청하세요](https://clickhouse.com/cloud/clickpipes/mongodb-cdc-connector)!
+
+<div id="august-08-2025">
+  ## 2025년 8월 8일
+</div>
+
+* **알림**: 서비스의 ClickHouse 버전 업그레이드가 시작되면 이제 UI 알림을 받게 됩니다. 추가 Email 및 Slack 알림은 알림 센터에서 설정할 수 있습니다.
+* **ClickPipes**: ClickHouse Terraform 프로바이더에 Azure Blob Storage (ABS) ClickPipes 지원이 추가되었습니다. ABS ClickPipe를 프로그래밍 방식으로 생성하는 방법은 프로바이더 문서의 예시를 참조하십시오.
+  * [오동작] Null 엔진을 사용하는 대상 테이블에 쓰는 객체 스토리지 ClickPipes가 이제 UI에서 &quot;총 레코드&quot; 및 &quot;수집된 데이터&quot; 메트릭을 표시합니다.
+  * [오동작] UI의 메트릭 &quot;시간 범위&quot; 셀렉터가 선택한 시간 범위와 관계없이 항상 기본값인 &quot;24시간&quot;으로 표시되던 문제가 있었습니다. 이제 이 문제가 수정되어, UI가 선택한 시간 범위에 맞춰 차트를 올바르게 업데이트합니다.
+* **교차 리전 Private Link (AWS)**는 이제 일반 제공됩니다. 지원되는 리전 목록은 [문서](/ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink)를 참조하십시오.
+
+<div id="july-31-2025">
+  ## 2025년 7월 31일
+</div>
+
+**이제 ClickPipes에서 수직 스케일링을 사용할 수 있습니다**
+
+[이제 스트리밍 ClickPipes에서 수직 스케일링을 사용할 수 있습니다](https://clickhouse.com/blog/clickpipes-flexible-scaling-monitoring).
+이 기능을 사용하면 레플리카 수(수평 스케일링)뿐 아니라 각
+레플리카의 크기까지 제어할 수 있습니다. 이제 각 ClickPipe의 세부 정보 페이지에는
+레플리카별 CPU 및 메모리 사용률도 표시되어,
+워크로드를 더 잘 이해하고 크기 조정 작업을 보다 확신 있게 계획하는 데 도움이 됩니다.
+
+<div id="july-24-2025">
+  ## 2025년 7월 24일
+</div>
+
+**MySQL CDC용 ClickPipes, 이제 퍼블릭 베타로 제공됩니다**
+
+이제 ClickPipes의 MySQL CDC 커넥터를 퍼블릭 베타로 널리 사용할 수 있습니다. 몇 번만 클릭하면
+외부 의존성 없이 MySQL(또는 MariaDB) 데이터를 실시간으로 ClickHouse Cloud에 직접 복제할 수
+있습니다. 커넥터 개요는 [블로그 게시물](https://clickhouse.com/blog/mysql-cdc-connector-clickpipes-beta)에서 확인하고,
+[빠른 시작 가이드](/ko/integrations/clickpipes/mysql/index)를 따라 설정을 시작하십시오.
+
+<div id="june-11-2025">
+  ## 2025년 7월 11일
+</div>
+
+* 이제 새 서비스는 데이터베이스 및 테이블 메타데이터를 중앙 **SharedCatalog**에 저장합니다.
+  이는 조정 및 객체 수명 주기를 위한 새로운 모델이며, 다음을 가능하게 합니다:
+
+  * 높은 동시성에서도 **Cloud 규모의 DDL**
+  * **안정적인 삭제 및 새로운 DDL 작업**
+  * 이제 무상태 노드가 디스크 의존성 없이 시작되므로 **빠른 기동 및 재활성화**
+  * Iceberg 및 Delta Lake를 포함한 **네이티브 및 오픈 포맷 전반의 무상태 컴퓨트**
+
+  SharedCatalog에 대한 자세한 내용은 [블로그](https://clickhouse.com/blog/clickhouse-cloud-stateless-compute)에서 확인하십시오.
+
+* 이제 GCP `europe-west4`에서 HIPAA 준수 서비스를 시작할 수 있습니다.
+
+<div id="june-27-2025">
+  ## 2025년 6월 27일
+</div>
+
+* 이제 데이터베이스 권한 관리를 위한 Terraform 프로바이더를 공식 지원하며,
+  자가 관리형 배포 환경과도 호환됩니다. 자세한 내용은
+  [블로그](https://clickhouse.com/blog/new-terraform-provider-manage-clickhouse-database-users-roles-and-privileges-with-code)
+  및 [문서](https://registry.terraform.io/providers/ClickHouse/clickhousedbops/latest/docs)를
+  참조하십시오.
+* 이제 Enterprise tier 서비스는 추가 테스트 시간을 확보할 수 있도록
+  정기 릴리스 후 2주간 업그레이드를 연기하는
+  [느린 릴리스 채널](/ko/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades)을
+  선택할 수 있습니다.
+
+<div id="june-13-2025">
+  ## 2025년 6월 13일
+</div>
+
+* ClickHouse Cloud 대시보드가 이제 일반 제공됩니다. 대시보드를 사용하면 쿼리 결과를 시각화하고, 필터와 쿼리 매개변수를 통해 데이터를 탐색하며, 공유를 관리할 수 있습니다.
+* API Key IP 필터: ClickHouse Cloud 사용 시 추가적인 보호 기능을 제공합니다. API Key를 생성할 때 해당 API Key를 사용할 수 있는 위치를 제한하는 IP 허용 목록을 설정할 수 있습니다. 자세한 내용은 [문서](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)를 참조하십시오.
+
+<div id="may-30-2025">
+  ## 2025년 05월 30일
+</div>
+
+* ClickHouse Cloud에서 **ClickPipes for Postgres CDC**가 일반 제공됨을 발표하게 되어 기쁩니다.
+  이제 몇 번의 클릭만으로 Postgres 데이터베이스를 복제하고 초고속
+  실시간 분석을 구현할 수 있습니다. 이 커넥터는
+  더 빠른 데이터 동기화, 수초 수준의 지연 시간, 자동 스키마 변경,
+  완전히 안전한 연결 등을 제공합니다. 자세한 내용은
+  [블로그](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-ga)를
+  참조하십시오. 시작하려면 [여기](/ko/integrations/clickpipes/postgres/index)의 안내를 참조하십시오.
+
+* SQL 콘솔 대시보드에 새로운 개선 사항이 추가되었습니다:
+  * 공유: 대시보드를 팀원과 공유할 수 있습니다. 전역 및 사용자별로 조정할 수 있는 4가지 접근 수준을 지원합니다:
+    * *쓰기 권한*: 시각화 추가/편집, 갱신 설정, 필터를 통한 대시보드 상호작용.
+    * *소유자*: 대시보드 공유, 대시보드 삭제, 그리고 &quot;쓰기 권한&quot; 사용자의 기타 모든 권한.
+    * *읽기 전용 권한*: 필터를 통해 대시보드를 보고 상호작용
+    * *접근 불가*: 대시보드를 볼 수 없음
+  * 이미 생성된 기존 대시보드의 경우, 조직 관리자는 기존 대시보드를 자신에게 소유자로 할당할 수 있습니다.
+  * 이제 쿼리 보기에서 SQL 콘솔의 테이블 또는 차트를 대시보드에 추가할 수 있습니다.
+
+<Image img="/images/cloud/reference/may-30-dashboards.webp" size="md" alt="대시보드 개선 사항" border />
+
+* AWS와 GCP용 [Distributed Cache](https://clickhouse.com/cloud/distributed-cache-waitlist)의
+  프리뷰 참가자를 모집하고 있습니다. 자세한 내용은 [블로그](https://clickhouse.com/blog/building-a-distributed-cache-for-s3)에서 확인하십시오.
+
+<div id="may-16-2025">
+  ## 2025년 05월 16일
+</div>
+
+* ClickHouse Cloud에서 서비스가 사용하는 리소스를 한눈에 볼 수 있는 리소스 사용량 대시보드를 도입했습니다. 다음 메트릭은 시스템 테이블(system tables)에서 스크레이프되어 이 대시보드에 표시됩니다:
+  * 메모리 및 CPU: `CGroupMemoryTotal`(할당된 메모리), `CGroupMaxCPU`(할당된 CPU),
+    `MemoryResident`(사용 중인 메모리), `ProfileEvent_OSCPUVirtualTimeMicroseconds`(사용된 CPU)의 그래프
+  * 데이터 전송: ClickHouse Cloud의 데이터 인그레스 및 이그레스를 보여주는 그래프입니다. 자세한 내용은 [여기](/ko/products/cloud/reference/billing/network-data-transfer)에서 확인하십시오.
+* ClickHouse Cloud 서비스의 모니터링을 간소화하도록 설계된 새로운 ClickHouse Cloud Prometheus/Grafana 믹스인 출시를 알려드립니다.
+  이 믹스인은 Prometheus 호환 API 엔드포인트를 사용하여
+  기존 Prometheus 및 Grafana 구성에 ClickHouse 메트릭을 원활하게 통합합니다. 또한
+  서비스의 상태와 성능을 실시간으로 파악할 수 있도록 미리 구성된 대시보드를
+  포함합니다. 자세한 내용은 출시 [블로그](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in)를 참조하십시오.
+
+<div id="april-18-2025">
+  ## 2025년 4월 18일
+</div>
+
+* 새로운 **Member** 조직 수준 역할과 2개의 새로운 서비스 수준
+  역할인 **Service Admin** 및 **Service Read Only**를 도입했습니다.
+  **Member**는 기본적으로 SAML SSO 사용자에게 할당되는 조직 수준 역할로,
+  로그인 및 프로필 업데이트 기능만 제공합니다. 하나 이상의 서비스에 대한 **Service Admin**
+  및 **Service Read Only** 역할은 **Member**, **Developer**, 또는 **Billing Admin** 역할을 가진 사용자에게
+  할당할 수 있습니다. 자세한 내용은 [&quot;ClickHouse Cloud의 액세스 제어&quot;](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users)를
+  참조하십시오.
+* 이제 ClickHouse Cloud는 다음 리전에서 **Enterprise** 고객을 위한 **HIPAA** 및 **PCI** 서비스를
+  제공합니다: AWS eu-central-1, AWS eu-west-2, AWS us-east-2.
+* **ClickPipes용 사용자 대상 알림**을 도입했습니다. 이 기능은
+  이메일, ClickHouse Cloud UI, Slack을 통해 ClickPipes 장애에 대한 자동 알림을 보냅니다.
+  이메일 및 UI 알림은 기본적으로 활성화되어 있으며 파이프별로
+  구성할 수 있습니다. **Postgres CDC ClickPipes**의 경우 알림에는
+  replication slot 임계값(**설정** 탭에서 구성 가능), 특정 오류
+  유형, 그리고 장애를 해결하기 위한 셀프서비스 단계도 포함됩니다.
+* 이제 **MySQL CDC 비공개 프리뷰**에 참여할 수 있습니다. 이를 통해 고객은 몇 번의 클릭만으로 MySQL
+  데이터베이스를 ClickHouse Cloud로 복제할 수 있으며, 빠른 분석이 가능해지고
+  외부 ETL 도구가 더 이상 필요하지 않게 됩니다. 이 커넥터는 지속적
+  복제와 일회성 마이그레이션을 모두 지원하며, MySQL이 클라우드(RDS,
+  Aurora, Cloud SQL, Azure 등)에 있든 온프레미스에 있든 관계없이 사용할 수 있습니다. 비공개
+  프리뷰는 [이 링크에서](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector) 신청할 수 있습니다.
+* **ClickPipes용 AWS PrivateLink**를 도입했습니다. AWS PrivateLink를 사용하면
+  VPC, AWS 서비스, 온프레미스
+  시스템, ClickHouse Cloud 간에 안전한 연결을 설정할 수 있습니다. 이를 통해
+  AWS의 Postgres, MySQL,
+  MSK와 같은 소스에서 데이터를 이동하는 동안 트래픽을 공용 인터넷에 노출하지 않아도 됩니다.
+  또한 VPC 서비스 endpoint를 통한 cross-region 액세스도 지원합니다.
+  이제 ClickPipes를 통해 PrivateLink 연결 설정을 [완전히 셀프서비스 방식으로](/ko/integrations/clickpipes/aws-privatelink)
+  수행할 수 있습니다.
+
+<div id="april-4-2025">
+  ## 2025년 4월 4일
+</div>
+
+* ClickHouse Cloud용 Slack 알림: 이제 ClickHouse Cloud는 Console 내 알림과 이메일 알림에 더해 청구, 스케일링, ClickPipes 이벤트에 대한 Slack 알림도 지원합니다. 이러한 알림은 ClickHouse Cloud Slack 애플리케이션을 통해 전송됩니다. 조직 관리자는 알림 센터에서 알림을 받을 Slack 채널을 지정하여 이 알림을 구성할 수 있습니다.
+* Production 및 개발 서비스를 사용하는 사용자는 이제 청구서에서 ClickPipes 및 데이터 전송 사용 요금을 확인할 수 있습니다.
+
+<div id="march-21-2025">
+  ## 2025년 3월 21일
+</div>
+
+* AWS에서 리전 간 Private Link 연결이 이제 베타로 제공됩니다. 설정 방법과 지원 리전 목록에 대한 자세한 내용은
+  ClickHouse Cloud Private Link [문서](/ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink)를 참조하십시오.
+* 이제 AWS 서비스에서 사용할 수 있는 최대 레플리카 크기는 236 GiB RAM입니다.
+  이를 통해 리소스를 효율적으로 활용하는 동시에 백그라운드 프로세스에
+  필요한 리소스를 할당할 수 있습니다.
+
+<div id="march-7-2025">
+  ## 2025년 3월 7일
+</div>
+
+* 새로운 `UsageCost` API endpoint: 이제 API 사양에서 사용량 정보를 조회하기 위한 새 엔드포인트를
+  지원합니다. 이는 조직 엔드포인트이며, 사용 비용은
+  최대 31일까지 조회할 수 있습니다. 조회 가능한 메트릭에는
+  Storage, 컴퓨트, 데이터 전송 및 ClickPipes가 포함됩니다. 자세한 내용은
+  [문서](/ko/api-reference/billing/get-organization-usage-costs)를 참조하십시오.
+* Terraform 프로바이더 [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) 릴리스에서는 MySQL 엔드포인트를 활성화할 수 있습니다.
+
+<div id="february-21-2025">
+  ## 2025년 2월 21일
+</div>
+
+<div id="clickhouse-byoc-for-aws-ga">
+  ### AWS용 ClickHouse Bring Your Own Cloud (BYOC)가 이제 일반 제공됩니다
+</div>
+
+이 배포 모델에서는 데이터 플레인 구성 요소(컴퓨트, 스토리지, 백업, 로그, 메트릭)가
+고객 VPC에서 실행되고, 컨트롤 플레인(웹 액세스, API, 청구)은
+ClickHouse VPC 내에 유지됩니다. 이 구성은 모든 데이터가
+안전한 고객 환경 내에 머물도록 보장하므로, 엄격한 데이터 상주 요구 사항을 충족해야 하는
+대규모 워크로드에 적합합니다.
+
+* 자세한 내용은 BYOC [문서](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)를
+  참조하거나 [발표 블로그 게시물](https://clickhouse.com/blog/announcing-general-availability-of-clickhouse-bring-your-own-cloud-on-aws)을 읽어보십시오.
+* 액세스 요청은 [여기로 문의하십시오](https://clickhouse.com/cloud/bring-your-own-cloud).
+
+<div id="postgres-cdc-connector-for-clickpipes">
+  ### ClickPipes용 Postgres CDC 커넥터
+</div>
+
+ClickPipes용 Postgres CDC 커넥터를 사용하면 Postgres 데이터베이스를 ClickHouse Cloud로 손쉽게 복제할 수 있습니다.
+
+* 시작하려면 ClickPipes Postgres CDC 커넥터 [문서](/ko/integrations/clickpipes/postgres/index)를 참조하십시오.
+* 고객 활용 사례와 기능에 대한 자세한 내용은 [랜딩 페이지](https://clickhouse.com/cloud/clickpipes/postgres-cdc-connector) 및 [출시 블로그](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-public-beta)를 참조하십시오.
+
+<div id="pci-compliance-for-clickhouse-cloud-on-aws">
+  ### AWS의 ClickHouse Cloud용 PCI 컴플라이언스
+</div>
+
+이제 ClickHouse Cloud는 **us-east-1** 및 **us-west-2** 리전의 **Enterprise tier**
+고객을 대상으로 **PCI 준수 서비스**를 지원합니다. PCI 준수 환경에서 서비스를
+생성하려는 사용자는 도움이 필요하면 [support](https://clickhouse.com/support/program)에 문의할 수
+있습니다.
+
+<div id="tde-and-cmek-on-gcp">
+  ### Google Cloud Platform의 투명한 데이터 암호화(Transparent Data Encryption) 및 고객 관리형 암호화 키(Customer Managed Encryption Keys)
+</div>
+
+이제 **Google Cloud Platform (GCP)**의 ClickHouse Cloud에서 **투명한 데이터 암호화(TDE)** 및 **고객 관리형
+암호화 키(CMEK)**를 사용할 수 있습니다.
+
+* 자세한 내용은 이러한 기능에 대한 [문서](/ko/products/cloud/guides/security/cmek#transparent-data-encryption-tde)를 참조하세요.
+
+<div id="aws-middle-east-uae-availability">
+  ### AWS Middle East (UAE) 가용성
+</div>
+
+ClickHouse Cloud에 새 리전 지원이 추가되어, 이제
+**AWS Middle East (UAE) me-central-1** 리전에서도 사용할 수 있습니다.
+
+<div id="clickhouse-cloud-guardrails">
+  ### ClickHouse Cloud 가드레일
+</div>
+
+ClickHouse Cloud의 모범 사례를 장려하고 안정적인 사용을 지원하기 위해,
+현재 사용 중인 테이블, 데이터베이스, 파티션 및 파트 수에 대한 가드레일을
+도입합니다.
+
+* 자세한 내용은 문서의 [사용량 제한](/ko/products/cloud/guides/best-practices/usagelimits)
+  섹션을 참조하십시오.
+* 서비스가 이미 이 제한을 초과한 상태라면 10%까지 추가 증가를 허용합니다.
+  문의 사항이 있으면 [support](https://clickhouse.com/support/program)로 문의하십시오.
+
+<div id="january-27-2025">
+  ## 2025년 1월 27일
+</div>
+
+<div id="changes-to-clickhouse-cloud-tiers">
+  ### ClickHouse Cloud 티어 변경 사항
+</div>
+
+당사는 끊임없이 변화하는 고객 요구 사항에 맞춰 제품을 발전시키는 데 전념하고 있습니다. 지난 2년 동안 일반 제공(GA)된 이후 ClickHouse Cloud는 크게 발전했으며, 고객이 클라우드 서비스를 어떻게 활용하는지에 대한 매우 중요한 인사이트를 얻었습니다.
+
+워크로드에 맞춰 ClickHouse Cloud 서비스의 규모와 비용 효율성을 최적화할 수 있도록 새로운 기능을 도입하고 있습니다. 여기에는 **컴퓨트-컴퓨트 분리**, 고성능 머신 유형, 그리고 **단일 레플리카 서비스**가 포함됩니다. 또한 자동 스케일링과 관리형 업그레이드도 더욱 매끄럽고 신속하게 이루어지도록 개선하고 있습니다.
+
+가장 까다로운 고객과 워크로드의 요구를 충족하기 위해 **새로운 Enterprise tier**도 추가하고 있습니다. 여기에는 산업별 보안 및 컴플라이언스 기능, 기본 하드웨어와 업그레이드에 대한 더욱 세밀한 제어, 고급 재해 복구 기능이 중점적으로 포함됩니다.
+
+이러한 변경을 지원하기 위해 현재의 **개발** 및 **Production** tiers도, 변화하는 고객층의 실제 사용 방식에 더욱 잘 맞도록 재구성하고 있습니다. 새로운 아이디어와 프로젝트를 시험하는 사용자를 위한 **Basic** tier와, 대규모 프로덕션 워크로드와 데이터를 다루는 사용자에게 적합한 **Scale** tier를 도입하고 있습니다.
+
+이러한 변경 사항과 기타 기능 변경 사항은 이 [블로그](https://clickhouse.com/blog/evolution-of-clickhouse-cloud-new-features-superior-performance-tailored-offerings)에서 확인할 수 있습니다. 기존 고객은 [새로운 플랜](https://clickhouse.com/pricing)을 선택하기 위해 필요한 조치를 취해야 합니다. 고객 대상 안내는 조직 관리자에게 이메일로 발송되었습니다.
+
+<div id="warehouses-compute-compute-separation-ga">
+  ### Warehouses: 컴퓨트-컴퓨트 분리 (일반 제공)
+</div>
+
+컴퓨트-컴퓨트 분리(「Warehouses」라고도 함)는 이제 일반 제공됩니다. 자세한 내용은 [블로그](https://clickhouse.com/blog/introducing-warehouses-compute-compute-separation-in-clickhouse-cloud)와 [문서](/ko/products/cloud/features/infrastructure/warehouses)를 참조하십시오.
+
+<div id="single-replica-services">
+  ### 단일 레플리카 서비스
+</div>
+
+독립형 제공 형태와 warehouse 내 구성 모두에서 &quot;단일 레플리카 서비스&quot;라는 개념을 도입합니다. 독립형 제공 형태에서 단일 레플리카 서비스는 크기에 제한이 있으며, 소규모 테스트 워크로드에 사용하도록 설계되었습니다. warehouse 내에서는 단일 레플리카 서비스를 더 큰 규모로 배포할 수 있으며, 재시작 가능한 ETL 작업처럼 대규모 고가용성이 필요하지 않은 워크로드에 활용할 수 있습니다.
+
+<div id="vertical-auto-scaling-improvements">
+  ### 수직 자동 스케일링 개선 사항
+</div>
+
+컴퓨트 레플리카를 위한 새로운 수직 스케일링 메커니즘인 &quot;Make Before Break&quot;(MBB)을 도입합니다. 이 방식은 기존 레플리카를 제거하기 전에 새로운 크기의 레플리카를 하나 이상 추가하여, 스케일링 작업 중 용량 손실이 발생하지 않도록 합니다. 기존 레플리카를 제거한 뒤 새 레플리카를 추가할 때 생기는 공백을 없앰으로써, MBB는 더 매끄럽고 중단을 최소화하는 스케일링 프로세스를 제공합니다. 특히 높은 리소스 사용률로 인해 추가 용량이 필요한 스케일 업 시나리오에서 더욱 유용합니다. 기존 레플리카를 너무 일찍 제거하면 리소스 제약이 오히려 더 심해질 수 있기 때문입니다.
+
+<div id="horizontal-scaling-ga">
+  ### 수평 스케일링(일반 제공)
+</div>
+
+수평 스케일링이 이제 일반 제공됩니다. API와 Cloud Console을 통해 서비스 규모를 확장할 수 있도록 추가 레플리카를 더할 수 있습니다. 자세한 내용은 [문서](/ko/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)를 참조하십시오.
+
+<div id="configurable-backups">
+  ### 사용자 지정 가능한 백업
+</div>
+
+이제 고객이 자체 클라우드 계정으로 백업을 내보낼 수 있습니다. 자세한 내용은 [문서](/ko/products/cloud/guides/backups/configurable-backups)를 참조하십시오.
+
+<div id="managed-upgrade-improvements">
+  ### 관리형 업그레이드 개선 사항
+</div>
+
+안전한 관리형 업그레이드는 데이터베이스에 새 기능이 추가되어 계속 발전하더라도 최신 상태를 유지할 수 있게 해 주므로 사용자에게 큰 가치를 제공합니다. 이번 적용에서는 업그레이드에 &quot;중단 전 준비&quot;(make before break, 또는 MBB) 방식을 도입하여 실행 중인 워크로드에 미치는 영향을 한층 더 줄였습니다.
+
+<div id="hipaa-support">
+  ### HIPAA 지원
+</div>
+
+이제 AWS `us-east-1`, `us-west-2` 및 GCP `us-central1`, `us-east1`을 포함한 규정을 준수하는 리전에서 HIPAA를 지원합니다. 이용을 시작하려는 고객은 Business Associate Agreement(BAA)에 서명하고 해당 리전의 규정 준수 버전에 배포해야 합니다. HIPAA에 대한 자세한 내용은 [문서](/ko/products/cloud/reference/security/compliance-overview)를 참조하십시오.
+
+<div id="scheduled-upgrades">
+  ### 예약 업그레이드
+</div>
+
+서비스 업그레이드를 예약할 수 있습니다. 이 기능은 Enterprise tier 서비스에서만 지원됩니다. 예약 업그레이드에 대한 자세한 내용은 [문서](/ko/products/cloud/features/admin-features/upgrades)를 참조하십시오.
+
+<div id="language-client-support-for-complex-types">
+  ### 복합 타입에 대한 언어별 클라이언트 지원
+</div>
+
+[Golang](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.30.1), [Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.11), [NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.1) 클라이언트에서 Dynamic, Variant, JSON 타입 지원이 추가되었습니다.
+
+<div id="dbt-support-for-refreshable-materialized-views">
+  ### DBT의 갱신 가능 구체화 뷰 지원
+</div>
+
+DBT는 이제 `1.8.7` 릴리스부터 [갱신 가능 구체화 뷰를 지원합니다](https://github.com/ClickHouse/dbt-clickhouse/releases/tag/v1.8.7).
+
+<div id="jwt-token-support">
+  ### JWT 토큰 지원
+</div>
+
+JDBC 드라이버 v2, clickhouse-java, [Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.12) 및[ NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.0) 클라이언트에 JWT 기반 인증 지원이 추가되었습니다.
+
+JDBC / Java는[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/tag/v0.8.0)이 출시되면 지원될 예정이며, 예상 출시 시점은 아직 정해지지 않았습니다.
+
+<div id="prometheus-integration-improvements">
+  ### Prometheus 통합 개선 사항
+</div>
+
+Prometheus 통합에 여러 개선 사항이 추가되었습니다.
+
+* **조직 수준 엔드포인트**. ClickHouse Cloud용 Prometheus 통합이 개선되었습니다. 서비스 수준 메트릭에 더해, 이제 API에서 **조직 수준 메트릭**을 위한 엔드포인트도 제공합니다. 이 새로운 엔드포인트는 조직 내 모든 서비스의 메트릭을 자동으로 수집하므로, 메트릭을 Prometheus collector로 내보내는 과정을 간소화할 수 있습니다. 또한 이러한 메트릭은 Grafana 및 Datadog와 같은 시각화 도구와 통합하여 조직 성능을 더욱 종합적으로 파악하는 데 활용할 수 있습니다.
+
+  이 기능은 현재 모든 사용자에게 제공됩니다. 자세한 내용은 [여기](/ko/products/cloud/features/monitoring/prometheus)에서 확인할 수 있습니다.
+
+* **필터링된 메트릭**. ClickHouse Cloud용 Prometheus 통합에서 필터링된 메트릭 목록을 반환하는 기능이 추가되었습니다. 이 기능을 사용하면 서비스 상태 모니터링에 중요한 메트릭에 집중할 수 있어 응답 페이로드 크기를 줄이는 데 도움이 됩니다.
+
+  이 기능은 API의 선택적 쿼리 매개변수를 통해 사용할 수 있으므로, 데이터 수집을 최적화하고 Grafana 및 Datadog와 같은 도구와의 통합을 더 간편하게 구성할 수 있습니다.
+
+  필터링된 메트릭 기능은 현재 모든 사용자에게 제공됩니다. 자세한 내용은 [여기](/ko/products/cloud/features/monitoring/prometheus)에서 확인할 수 있습니다.

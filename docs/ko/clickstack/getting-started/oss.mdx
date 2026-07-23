@@ -1,0 +1,147 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: '오픈 소스 ClickStack 시작하기'
+sidebarTitle: '오픈 소스'
+description: '오픈 소스 ClickStack 시작하기'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source', '시작하기', 'Docker 배포', 'HyperDX UI', '로컬 배포']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+**ClickStack Open Source**는 ClickHouse와 ClickStack UI를 직접 실행하고 관리하는 방식으로 배포됩니다. 이를 위해 UI, OpenTelemetry collector, ClickHouse를 하나의 컨테이너에 포함한 사전 빌드된 Docker 이미지를 제공합니다. 이 이미지를 사용하면 로컬 개발, 테스트, 자가 관리형 배포를 손쉽게 시작할 수 있습니다.
+
+<Tip>
+  ClickStack의 관리형 버전도 사용할 수 있습니다 — [Managed ClickStack](/ko/clickstack/getting-started/managed)을 참조하십시오.
+</Tip>
+
+이 이미지는 공식 ClickHouse Debian 패키지를 기반으로 하며, 다양한 사용 사례에 맞는 여러 배포판으로 제공됩니다.
+
+가장 간단한 옵션은 스택의 모든 핵심 구성 요소를 함께 포함한 **단일 이미지 배포판**입니다:
+
+* **HyperDX UI**
+* **OpenTelemetry (OTel) collector**
+* **ClickHouse**
+
+이 올인원 이미지를 사용하면 단일 명령으로 전체 스택을 실행할 수 있으므로, 테스트, 실험, 빠른 로컬 배포에 적합합니다.
+
+<Steps>
+  <Step>
+    ## docker로 스택 배포
+
+    다음 명령은 OpenTelemetry collector(포트 4317 및 4318), HyperDX UI(포트 8080), ClickHouse(8123)를 실행합니다.
+
+    ```shell
+    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    ```
+
+    <Info>
+      **이미지 이름 업데이트**
+
+      이제 ClickStack 이미지는 `clickhouse/clickstack-*`로 게시됩니다(이전: `docker.hyperdx.io/hyperdx/*`).
+    </Info>
+
+    <Tip>
+      **데이터 및 설정 유지**
+
+      컨테이너를 다시 시작한 후에도 데이터와 설정을 유지하려면, 위의 docker 명령을 수정하여 `/data/db`, `/var/lib/clickhouse`, `/var/log/clickhouse-server` 경로를 마운트할 수 있습니다.
+
+      예시:
+
+      ```shell
+      # 경로를 마운트하도록 명령 수정
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+    </Tip>
+  </Step>
+
+  <Step>
+    ## ClickStack UI로 이동
+
+    ClickStack UI(HyperDX)에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하십시오.
+
+    복잡성 요구 사항을 충족하는 사용자 이름과 비밀번호를 입력해 사용자를 생성하십시오.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    HyperDX는 로컬 클러스터에 자동으로 연결하고 로그, trace, 메트릭, 세션용 데이터 소스를 생성하므로 즉시 제품을 탐색할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## 제품 탐색
+
+    스택 배포가 완료되면, 다음 데이터셋 중 하나를 사용해 보십시오.
+
+    로컬 클러스터를 계속 사용하려면:
+
+    * [Example dataset](/ko/clickstack/example-datasets/sample-data) - 공개 데모에서 예시 데이터셋을 로드합니다. 간단한 문제를 진단해 보십시오.
+    * [Local files and metrics](/ko/clickstack/example-datasets/local-data) - 로컬 파일을 로드하고 로컬 OTel collector를 사용해 OSX 또는 Linux에서 시스템을 모니터링합니다.
+
+    <br />
+
+    또는 더 큰 데이터셋을 탐색할 수 있는 데모 클러스터에 연결할 수 있습니다:
+
+    * [Remote demo dataset](/ko/clickstack/example-datasets/remote-demo-data) - 데모 ClickHouse 서비스에서 데모 데이터셋을 탐색합니다.
+  </Step>
+</Steps>
+
+<div id="alternative-deployment-models">
+  ## 대체 배포 방식
+</div>
+
+<div id="local-mode">
+  ### 로컬 모드
+</div>
+
+로컬 모드는 인증 없이 HyperDX를 배포하는 방식입니다.
+
+**인증은 지원되지 않습니다**.
+
+이 모드는 인증이나 설정 영속성이 필요 없는 빠른 테스트, 개발, 데모, 디버깅 용도로 사용하도록 설계되었습니다.
+
+이 배포 모델에 대한 자세한 내용은 [&quot;로컬 모드 전용&quot;](/ko/clickstack/deployment/local-mode-only)을 참조하십시오.
+
+<div id="hosted-version">
+  ### 호스팅 버전
+</div>
+
+[play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com)에서 로컬 모드로 제공되는 ClickStack 호스팅 버전을 사용할 수 있습니다.
+
+<div id="self-hosted-version">
+  ### 자체 호스팅 버전
+</div>
+
+<Steps>
+  <Step>
+    ### Docker로 실행
+
+    자체 호스팅 로컬 모드 이미지는 OpenTelemetry collector, ClickStack UI, 그리고 사전 구성된 ClickHouse 서버를 함께 제공합니다. 따라서 외부 설정을 최소화한 상태로 애플리케이션의 텔레메트리 데이터를 쉽게 수집하고 시각화할 수 있습니다. 자체 호스팅 버전을 시작하려면 적절한 포트를 포워딩하여 다음과 같이 Docker 컨테이너를 실행하십시오.
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+
+    &quot;All in one&quot; 이미지와 달리 **로컬 모드에는 인증이 포함되지 않으므로** 사용자를 생성하라는 메시지가 표시되지 않습니다.
+  </Step>
+
+  <Step>
+    ### 연결 자격 증명 입력
+
+    자체 **외부 ClickHouse 클러스터**에 연결하려면 연결 자격 증명을 수동으로 입력할 수 있습니다.
+
+    또는 제품을 빠르게 둘러보려면 **Connect to Demo Server**를 클릭하여 미리 로드된 데이터셋에 접속하고 별도 설정 없이 ClickStack을 사용해 볼 수도 있습니다.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="자격 증명" size="md" />
+
+    데모 서버에 연결하는 경우 [데모 데이터셋 안내](/ko/clickstack/example-datasets/remote-demo-data)에서 데이터셋을 살펴볼 수 있습니다.
+  </Step>
+</Steps>

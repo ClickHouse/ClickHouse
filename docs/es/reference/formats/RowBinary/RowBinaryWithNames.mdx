@@ -1,0 +1,41 @@
+---
+description: 'Documentación sobre el formato RowBinaryWithNames'
+input_format: true
+keywords: ['RowBinaryWithNames']
+output_format: true
+slug: /interfaces/formats/RowBinaryWithNames
+title: 'RowBinaryWithNames'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/es/common-row-binary-format-settings.mdx';
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+Similar al formato [`RowBinary`](/es/reference/formats/RowBinary/RowBinary), pero con un encabezado adicional:
+
+* Número de columnas (N) codificado en [`LEB128`](https://en.wikipedia.org/wiki/LEB128).
+* N `String`s que especifican los nombres de las columnas.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="format-settings">
+  ## Ajustes de formato
+</div>
+
+<RowBinaryFormatSettings />
+
+<Note>
+  * Si la configuración [`input_format_with_names_use_header`](/es/reference/settings/formats#input_format_with_names_use_header) está establecida en `1`,
+    las columnas de los datos de entrada se asignarán a las columnas de la tabla por nombre, y las columnas con nombres desconocidos se omitirán.
+  * Si la configuración [`input_format_skip_unknown_fields`](/es/reference/settings/formats#input_format_skip_unknown_fields) está establecida en `1`.
+    De lo contrario, se omitirá la primera fila.
+</Note>

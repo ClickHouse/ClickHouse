@@ -1,0 +1,129 @@
+---
+date: 2023-05-08
+title: "ClickHouse Cloud サービスに接続するための Python クライアントの動作例"
+description: "clickhouse-connect ドライバーを使ったステップバイステップの例で、Python から ClickHouse Cloud サービスに接続する方法を学びます。"
+tags: ['言語クライアント']
+keywords: ['Python', 'ClickHouse Cloud']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+これは、ClickHouse Cloud サービスで Python を使い始めるためのステップバイステップの例です。
+
+<Note>
+  Python のバージョンやライブラリの依存関係は常に変化している点に注意してください。実際に試す際は、ドライバーと Python 環境の両方で、サポートされている最新バージョンを使用していることも確認してください。
+
+  この記事の執筆時点では、[clickhouse-connect](https://github.com/ClickHouse/clickhouse-connect) ドライバーのバージョン `0.5.23` と Python `3.11.2` を使用しています。
+</Note>
+
+<div id="steps">
+  ## 手順
+</div>
+
+1. Python のバージョンを確認します。
+
+```
+$  python -V
+Python 3.11.2
+```
+
+2. `ch-python` という名前のフォルダにプロジェクトを作成します:
+
+```
+$ mkdir ch-python
+$ cd ch-python
+```
+
+3. `requirements.txt` という名前の依存関係ファイルを、次の内容で作成します。
+
+```
+clickhouse-connect==0.5.23
+```
+
+4. `main.py` という名前の Python ソースファイルを作成します:
+
+```py
+import clickhouse_connect
+import sys
+import json
+
+CLICKHOUSE_CLOUD_HOSTNAME = 'HOSTNAME.clickhouse.cloud'
+CLICKHOUSE_CLOUD_USER = 'default'
+CLICKHOUSE_CLOUD_PASSWORD = 'YOUR_SECRET_PASSWORD'
+
+client = clickhouse_connect.get_client(
+    host=CLICKHOUSE_CLOUD_HOSTNAME, port=8443, username=CLICKHOUSE_CLOUD_USER, password=CLICKHOUSE_CLOUD_PASSWORD)
+
+print("connected to " + CLICKHOUSE_CLOUD_HOSTNAME + "\n")
+client.command(
+    'CREATE TABLE IF NOT EXISTS new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+
+print("table new_table created or exists already!\n")
+
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+
+print("written 2 rows to table new_table\n")
+
+QUERY = "SELECT max(key), avg(metric) FROM new_table"
+
+result = client.query(QUERY)
+
+sys.stdout.write("query: ["+QUERY + "] returns:\n\n")
+print(result.result_rows)
+```
+
+5. 仮想環境を作成します：
+
+```
+chpython$ python -m venv venv
+```
+
+6. 仮想環境を有効化します:
+
+```
+chpython$ source venv/bin/activate
+```
+
+読み込みが完了したら、ターミナルのプロンプトの先頭に (venv) が表示されます。依存関係をインストールします:
+
+```
+(venv) ➜  chpython$ pip install -r requirements.txt
+Collecting certifi
+  Using cached certifi-2023.5.7-py3-none-any.whl (156 kB)
+Collecting urllib3>=1.26
+  Using cached urllib3-2.0.2-py3-none-any.whl (123 kB)
+Collecting pytz
+  Using cached pytz-2023.3-py2.py3-none-any.whl (502 kB)
+Collecting zstandard
+  Using cached zstandard-0.21.0-cp311-cp311-macosx_11_0_arm64.whl (364 kB)
+Collecting lz4
+  Using cached lz4-4.3.2-cp311-cp311-macosx_11_0_arm64.whl (212 kB)
+Installing collected packages: pytz, zstandard, urllib3, lz4, certifi, clickhouse-connect
+Successfully installed certifi-2023.5.7 clickhouse-connect-0.5.23 lz4-4.3.2 pytz-2023.3 urllib3-2.0.2 zstandard-0.21.0
+```
+
+7. コードを実行します！
+
+```
+(venv) chpython$ venv/bin/python main.py
+
+connected to HOSTNAME.clickhouse.cloud
+
+table new_table created or exists already!
+
+written 2 rows to table new_table
+
+query: [SELECT max(key), avg(metric) FROM new_table] returns:
+
+[(2000, -50.9035)]
+```
+
+<Tip>
+  古い Python バージョン (例: `3.9.6`) を使用していると、`urllib3` ライブラリに関連する `ImportError` が発生する場合があります。
+  その場合は、Python 環境を新しいバージョンにアップグレードするか、requirements.txt ファイルで `urllib3` のバージョンを `1.26.15` に固定してください。
+</Tip>

@@ -109,9 +109,6 @@ struct QueryState
     /// Data was read.
     bool read_all_data = true;
 
-    /// A state got uuids to exclude from a query
-    std::optional<std::vector<UUID>> part_uuids_to_ignore;
-
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
     /// temporary place for incoming data block for input()
@@ -227,9 +224,6 @@ private:
     std::unique_ptr<Session> session;
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
-    /// A state got uuids to exclude from a query
-    std::optional<std::vector<UUID>> part_uuids_to_ignore;
-
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
     std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
@@ -291,9 +285,10 @@ private:
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
+    InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
     void processQuery(std::shared_ptr<QueryState> & state);
-    void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
 
@@ -302,9 +297,10 @@ private:
 
     bool processUnexpectedData();
     [[noreturn]] void processUnexpectedQuery();
-    [[noreturn]] void processUnexpectedIgnoredPartUUIDs();
     [[noreturn]] void processUnexpectedHello();
     [[noreturn]] void processUnexpectedTablesStatusRequest();
+    /// Reject the obsolete IgnoredPartUUIDs packet (allow_experimental_query_deduplication was removed).
+    [[noreturn]] void processObsoleteIgnoredPartUUIDs();
 
     /// Process INSERT query
     void startInsertQuery(QueryState & state);
@@ -328,7 +324,6 @@ private:
     static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendEndOfStream(QueryState & state);
-    void sendPartUUIDs(QueryState & state);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
     void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);

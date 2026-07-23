@@ -1,0 +1,134 @@
+---
+slug: /cloud/manage/postman
+sidebarTitle: 'الوصول البرمجي إلى واجهة برمجة تطبيقات باستخدام Postman'
+title: 'الوصول البرمجي إلى واجهة برمجة تطبيقات باستخدام Postman'
+description: 'سيساعدك هذا الدليل على اختبار واجهة برمجة تطبيقات ClickHouse Cloud باستخدام Postman'
+doc_type: 'guide'
+keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برمجة تطبيقات REST', 'إدارة السحابة', 'التكامل']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+سيساعدك هذا الدليل في اختبار واجهة برمجة تطبيقات ClickHouse Cloud باستخدام [Postman](https://www.postman.com/product/what-is-postman/).
+يتوفر تطبيق Postman للاستخدام عبر متصفح الويب، أو يمكن تنزيله على جهاز سطح المكتب.
+
+<div id="create-an-account">
+  ### أنشئ حسابًا
+</div>
+
+* تتوفر حسابات مجانية على [https://www.postman.com](https://www.postman.com).
+
+<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="موقع Postman" border />
+
+<div id="create-a-workspace">
+  ### أنشئ مساحة عمل
+</div>
+
+* سمِّ مساحة العمل وحدِّد مستوى الظهور.
+
+<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="إنشاء مساحة عمل" border />
+
+<div id="create-a-collection">
+  ### إنشاء مجموعة
+</div>
+
+* أسفل &quot;Explore&quot; في القائمة أعلى اليسار، انقر على &quot;Import&quot;:
+
+<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > Import" border />
+
+* ستظهر نافذة منبثقة:
+
+<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="إدخال عنوان URL لواجهة برمجة التطبيقات" border />
+
+* أدخل عنوان واجهة برمجة التطبيقات: &quot;https://api.clickhouse.cloud/v1&quot; ثم اضغط على &#39;Enter&#39;:
+
+* حدِّد &quot;Postman Collection&quot; بالنقر على زر &quot;Import&quot;:
+
+<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="Collection > Import" border />
+
+<div id="interface-with-the-clickhouse-cloud-api-spec">
+  ### التعامل مع مواصفة واجهة برمجة تطبيقات ClickHouse Cloud
+</div>
+
+* ستظهر الآن &quot;مواصفة واجهة برمجة تطبيقات ClickHouse Cloud&quot; ضمن &quot;Collections&quot; (شريط التنقل الأيسر).
+
+<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="استيراد واجهة برمجة تطبيقاتك" border />
+
+* انقر على &quot;مواصفة واجهة برمجة تطبيقات ClickHouse Cloud&quot;. ومن الجزء الأوسط، اختر علامة التبويب &#39;Authorization&#39;:
+
+<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="اكتمل الاستيراد" border />
+
+<div id="set-authorization">
+  ### إعداد التفويض
+</div>
+
+* استخدم القائمة المنسدلة لتحديد &quot;Basic Auth&quot;:
+
+<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="المصادقة الأساسية" border />
+
+* أدخل اسم المستخدم وكلمة المرور اللذين تلقيتهما عند إعداد مفاتيح واجهة برمجة تطبيقات الخاصة بـ ClickHouse Cloud:
+
+<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="بيانات الاعتماد" border />
+
+<div id="enable-variables">
+  ### تفعيل المتغيرات
+</div>
+
+* تتيح [المتغيرات](https://learning.postman.com/docs/sending-requests/variables/) تخزين القيم وإعادة استخدامها في Postman، مما يسهّل اختبار واجهات برمجة التطبيقات.
+
+<div id="set-the-organization-id-and-service-id">
+  #### عيّن معرّف المؤسسة ومعرّف الخدمة
+</div>
+
+* ضمن &quot;Collection&quot;، انقر على علامة التبويب &quot;Variable&quot; في الجزء الأوسط (سيكون عنوان URL الأساسي قد تم تعيينه عبر استيراد واجهة برمجة التطبيقات السابق):
+* أسفل `baseURL`، انقر على الحقل الفارغ &quot;Add new value&quot;، ثم أدخِل معرّف المؤسسة ومعرّف الخدمة:
+
+<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="معرّف المؤسسة ومعرّف الخدمة" border />
+
+<div id="test-the-clickhouse-cloud-api-functionalities">
+  ## اختبر وظائف واجهة برمجة تطبيقات ClickHouse Cloud
+</div>
+
+<div id="test-get-list-of-available-organizations">
+  ### اختبر &quot;GET list of available organizations&quot;
+</div>
+
+* ضمن &quot;OpenAPI spec for ClickHouse Cloud&quot;، وسّع المجلد &gt; V1 &gt; organizations
+* انقر على &quot;GET list of available organizations&quot; ثم اضغط الزر الأزرق &quot;Send&quot; على اليمين:
+
+<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="اختبار استرجاع organizations" border />
+
+* ينبغي أن تعرض النتائج المُعادة تفاصيل مؤسستك الخاصة بك مع &quot;status&quot;: 200. (إذا تلقيت &quot;status&quot; 400 من دون أي معلومات عن مؤسسة، فهذا يعني أن الإعداد غير صحيح).
+
+<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="الحالة" border />
+
+<div id="test-get-organizational-details">
+  ### اختبار &quot;GET organizational details&quot;
+</div>
+
+* ضمن المجلد `organizationid`، انتقل إلى &quot;GET organizational details&quot;:
+* في قائمة الإطار الأوسط ضمن Params، تكون قيمة `organizationid` مطلوبة.
+
+<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="اختبار استرجاع تفاصيل المؤسسة" border />
+
+* عدّل هذه القيمة إلى `orgid` بين أقواس معقوفة `{{orgid}}` (بعد ضبط هذه القيمة مسبقًا، ستظهر قائمة تتضمن القيمة):
+
+<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="إرسال الاختبار" border />
+
+* بعد الضغط على زر &quot;Save&quot;، اضغط على الزر الأزرق &quot;Send&quot; في أعلى يمين الشاشة.
+
+<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="القيمة المُعادة" border />
+
+* يجب أن تعرض النتائج المُعادة تفاصيل مؤسستك مع &quot;status&quot;: 200. (إذا تلقيت &quot;status&quot; 400 من دون أي معلومات عن المؤسسة، فهذا يعني أن الإعداد غير صحيح).
+
+<div id="test-get-service-details">
+  ### اختبر &quot;GET service details&quot;
+</div>
+
+* انقر على &quot;GET service details&quot;
+* عدّل القيم الخاصة بـ `organizationid` و`serviceid` باستخدام `{{orgid}}` و`{{serviceid}}` على التوالي.
+* اضغط على &quot;Save&quot; ثم على الزر الأزرق &quot;Send&quot; الموجود على اليمين.
+
+<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="قائمة الخدمات" border />
+
+* يجب أن تعرض النتائج المُعادة قائمة بخدماتك وتفاصيلها مع &quot;status&quot;: 200. (إذا تلقيت &quot;status&quot; 400 من دون معلومات عن الخدمات، فهذا يعني أن إعدادك غير صحيح).

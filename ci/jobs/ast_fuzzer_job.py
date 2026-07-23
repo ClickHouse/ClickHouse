@@ -2,7 +2,6 @@
 import logging
 import os
 import random
-import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -32,6 +31,71 @@ JOB_ARTIFACTS = (
     WORKSPACE_PATH / "dmesg.log",
     WORKSPACE_PATH / "fatal.log",
 )
+
+
+def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
+    """Last `max_lines` lines of `path` (bounded read), or "" if absent/empty."""
+    try:
+        size = path.stat().st_size
+        if size == 0:
+            return ""
+        with open(path, "rb") as fh:
+            if size > max_bytes:
+                fh.seek(-max_bytes, os.SEEK_END)
+            data = fh.read()
+    except OSError:
+        return ""
+    return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
+
+
+def _read_fuzzer_status(status_path: Path) -> tuple[bool, int, int]:
+    """Parse (server_died, server_exit_code, fuzzer_exit_code) from status.tsv.
+
+    Raises FileNotFoundError when the file is missing or empty (the runner
+    aborted before writing it) and ValueError when its contents are malformed.
+    """
+    if not status_path.exists():
+        raise FileNotFoundError(f"{status_path} was not produced by the fuzzer runner")
+    first_line = status_path.read_text(encoding="utf-8").split("\n", 1)[0]
+    if not first_line.strip():
+        raise FileNotFoundError(f"{status_path} is empty")
+    fields = first_line.split("\t")
+    if len(fields) != 3:
+        raise ValueError(
+            f"expected 3 tab-separated fields, got {len(fields)}: {first_line!r}"
+        )
+    server_died, server_exit_code, fuzzer_exit_code = fields
+    return bool(int(server_died)), int(server_exit_code), int(fuzzer_exit_code)
+
+
+def _format_status_error(exc: Exception, log_paths) -> str:
+    """Actionable job-error text for a missing/malformed status.tsv, with log tails."""
+    tails = []
+    for path in log_paths:
+        tail = _log_tail(path)
+        if tail:
+            tails.append(f"--- {path.name} (last lines) ---\n{tail}")
+    tails_str = ("\n\n" + "\n\n".join(tails)) if tails else ""
+
+    if isinstance(exc, FileNotFoundError):
+        return (
+            "Fuzzer runner aborted before writing status.tsv. run-fuzzer.sh runs "
+            "under 'set -e' and writes status.tsv only at the very end, so any "
+            "earlier failure lands here: a server startup failure (e.g. the "
+            "clickhouse-server pid file is never created), a fuzzer-harness "
+            "error, or an infrastructure problem (job timeout, out of memory, "
+            "docker/orchestration). Inspect the log tails below to determine the "
+            "cause; a normal fuzzer finding instead writes a complete status.tsv "
+            "(the three numeric fields server_died, server_exit_code, "
+            "fuzzer_exit_code), which run_fuzz_job then reports as FAIL with a "
+            "stack trace parsed from the logs." + tails_str
+        )
+
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    return (
+        f"Fuzzer runner wrote an unparseable status.tsv ({exc}). This is a "
+        f"fuzzer-harness bug. Traceback:\n{tb}" + tails_str
+    )
 
 
 def get_run_command(
@@ -237,18 +301,16 @@ def run_fuzz_job(check_name: str):
     server_exit_code = 0
     fuzzer_exit_code = 0
     try:
-        with open(WORKSPACE_PATH / "status.tsv", "r", encoding="utf-8") as status_f:
-            server_died, server_exit_code, fuzzer_exit_code = (
-                status_f.readline().rstrip("\n").split("\t")
-            )
-            server_died = bool(int(server_died))
-            server_exit_code = int(server_exit_code)
-            fuzzer_exit_code = int(fuzzer_exit_code)
-    except Exception:
-        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        # Runner may have aborted before writing status.tsv (e.g. early server
-        # abort); attach available artifacts (incl. sanitizer.log.*) so the report
-        # is not lost.
+        server_died, server_exit_code, fuzzer_exit_code = _read_fuzzer_status(
+            WORKSPACE_PATH / "status.tsv"
+        )
+    except Exception as e:
+        # Missing/empty status.tsv -> runner aborted before reporting (server
+        # start failure, harness error, or infra); malformed status.tsv ->
+        # harness bug. _format_status_error inlines the log tails so the abort
+        # cause is visible instead of an opaque FileNotFoundError traceback.
+        # Attach available artifacts (incl. sanitizer.log.*) so nothing is lost.
+        error_info = _format_status_error(e, paths)
         early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
         for file in paths:
             if file.exists() and file.stat().st_size > 0:

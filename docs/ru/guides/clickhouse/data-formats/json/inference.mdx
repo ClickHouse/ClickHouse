@@ -1,0 +1,438 @@
+---
+title: 'Определение схемы JSON'
+slug: /integrations/data-formats/json/inference
+description: 'Как использовать определение схемы JSON'
+keywords: ['json', 'схема', 'определение', 'определение схемы']
+doc_type: 'guide'
+---
+
+ClickHouse может автоматически определять структуру данных JSON. Это позволяет выполнять запросы к данным JSON напрямую — например, на диске с помощью `clickhouse-local` или в S3 бакетах — и/или автоматически создавать схемы перед загрузкой данных в ClickHouse.
+
+<div id="when-to-use-type-inference">
+  ## Когда использовать определение типов
+</div>
+
+* **Согласованная структура** — Данные, по которым вы собираетесь определять типы, содержат все интересующие вас ключи. Определение типов основано на сэмплировании данных вплоть до [максимального количества строк](/ru/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) или [байтов](/ru/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). Данные за пределами выборки, содержащие дополнительные столбцы, будут проигнорированы, и их нельзя будет запрашивать.
+* **Согласованные типы** — Типы данных для конкретных ключей должны быть совместимыми, то есть должна быть возможность автоматически привести один тип к другому.
+
+Если у вас более динамический JSON, в который добавляются новые ключи и для одного и того же пути возможны несколько типов, см. [&quot;Working with semi-structured and dynamic data&quot;](/ru/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
+
+<div id="detecting-types">
+  ## Определение типов
+</div>
+
+Ниже предполагается, что JSON имеет однородную структуру и для каждого пути используется только один тип.
+
+В предыдущих примерах мы использовали упрощённую версию [набора данных Python PyPI](https://clickpy.clickhouse.com/) в формате `NDJSON`. В этом разделе мы рассмотрим более сложный набор данных со вложенными структурами — [набор данных arXiv](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download), содержащий 2,5 млн научных статей. Каждая строка этого набора данных, представленного в формате `NDJSON`, соответствует одной опубликованной научной статье. Пример строки показан ниже:
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+Для этих данных требуется гораздо более сложная схема, чем в предыдущих примерах. Ниже мы опишем процесс определения этой схемы, познакомив вас со сложными типами, такими как `Tuple` и `Array`.
+
+Этот набор данных хранится в общедоступном S3 бакете по адресу `s3://datasets-documentation/arxiv/arxiv.json.gz`.
+
+Как видно, приведённый выше набор данных содержит вложенные объекты JSON. Хотя схемы следует проектировать заранее и хранить их версии, автоматическое определение схемы позволяет выводить типы на основе данных. Это позволяет автоматически генерировать DDL схемы, избавляя от необходимости составлять его вручную и ускоряя процесс разработки.
+
+<Info>
+  **Автоматическое определение формата**
+
+  Помимо определения схемы, определение схемы JSON также автоматически определяет формат данных по расширению файла и его содержимому. В результате указанный выше файл автоматически распознаётся как NDJSON.
+</Info>
+
+Использование [s3 function](/ru/reference/functions/table-functions/s3) с командой `DESCRIBE` показывает, какие типы будут определены.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────┬─type────────────────────────────────────────────────────────────────────┐
+│ id             │ Nullable(String)                                                        │
+│ submitter      │ Nullable(String)                                                        │
+│ authors        │ Nullable(String)                                                        │
+│ title          │ Nullable(String)                                                        │
+│ comments       │ Nullable(String)                                                        │
+│ journal-ref    │ Nullable(String)                                                        │
+│ doi            │ Nullable(String)                                                        │
+│ report-no      │ Nullable(String)                                                        │
+│ categories     │ Nullable(String)                                                        │
+│ license        │ Nullable(String)                                                        │
+│ abstract       │ Nullable(String)                                                        │
+│ versions       │ Array(Tuple(created Nullable(String),version Nullable(String)))         │
+│ update_date    │ Nullable(Date)                                                          │
+│ authors_parsed │ Array(Array(Nullable(String)))                                          │
+└────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
+<Info>
+  **Избегайте NULL-значений**
+
+  Как видите, многие столбцы определены как Nullable. Мы [не рекомендуем использовать тип Nullable](/ru/reference/data-types/nullable#storage-features), если в этом нет крайней необходимости. С помощью [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ru/reference/settings/formats#schema_inference_make_columns_nullable) можно управлять тем, в каких случаях применяется Nullable.
+</Info>
+
+Как видите, большинство столбцов были автоматически определены как `String`, а столбец `update_date` корректно распознан как `Date`. Столбец `versions` был создан как `Array(Tuple(created String, version String))` для хранения списка объектов, а `authors_parsed` определён как `Array(Array(String))` для вложенных массивов.
+
+<Info>
+  **Управление определением типов**
+
+  Автоматическим определением дат и значений даты и времени можно управлять с помощью настроек [`input_format_try_infer_dates`](/ru/reference/settings/formats#input_format_try_infer_dates) и [`input_format_try_infer_datetimes`](/ru/reference/settings/formats#input_format_try_infer_datetimes) соответственно (обе включены по умолчанию). Определение объектов как именованных Tuple управляется настройкой [`input_format_json_try_infer_named_tuples_from_objects`](/ru/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects). Другие настройки, управляющие определением схемы для JSON, например автоматическое определение чисел, можно найти [здесь](/ru/concepts/features/interfaces/schema-inference#text-formats).
+</Info>
+
+<div id="querying-json">
+  ## Запросы к JSON
+</div>
+
+Ниже предполагается, что JSON имеет согласованную структуру и только один тип для каждого пути.
+
+Мы можем использовать определение схемы, чтобы выполнять запросы к данным JSON без предварительной загрузки. Ниже мы определим ведущих авторов для каждого года, используя то, что даты и массивы определяются автоматически.
+
+```sql
+SELECT
+ toYear(update_date) AS year,
+ authors,
+    count() AS c
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+GROUP BY
+    year,
+ authors
+ORDER BY
+    year ASC,
+ c DESC
+LIMIT 1 BY year
+```
+
+```response
+┌─year─┬─authors────────────────────────────────────┬───c─┐
+│ 2007 │ The BABAR Collaboration, B. Aubert, et al  │  98 │
+│ 2008 │ The OPAL collaboration, G. Abbiendi, et al │  59 │
+│ 2009 │ Ashoke Sen                                 │  77 │
+│ 2010 │ The BABAR Collaboration, B. Aubert, et al  │ 117 │
+│ 2011 │ Amelia Carolina Sparavigna                 │  21 │
+│ 2012 │ ZEUS Collaboration                         │ 140 │
+│ 2013 │ CMS Collaboration                          │ 125 │
+│ 2014 │ CMS Collaboration                          │  87 │
+│ 2015 │ ATLAS Collaboration                        │ 118 │
+│ 2016 │ ATLAS Collaboration                        │ 126 │
+│ 2017 │ CMS Collaboration                          │ 122 │
+│ 2018 │ CMS Collaboration                          │ 138 │
+│ 2019 │ CMS Collaboration                          │ 113 │
+│ 2020 │ CMS Collaboration                          │  94 │
+│ 2021 │ CMS Collaboration                          │  69 │
+│ 2022 │ CMS Collaboration                          │  62 │
+│ 2023 │ ATLAS Collaboration                        │ 128 │
+│ 2024 │ ATLAS Collaboration                        │ 120 │
+└──────┴────────────────────────────────────────────┴─────┘
+
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
+```
+
+Определение схемы позволяет выполнять запросы к JSON‑файлам без указания схемы, ускоряя решение задач оперативного анализа данных.
+
+<div id="creating-tables">
+  ## Создание таблиц
+</div>
+
+Мы можем использовать автоматическое определение схемы, чтобы создать схему таблицы. Следующая команда `CREATE AS EMPTY` приводит к автоматическому определению DDL таблицы и ее созданию. При этом никакие данные не загружаются:
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS schema_inference_make_columns_nullable = 0
+```
+
+Чтобы проверить схему таблицы, используйте команду `SHOW CREATE TABLE`:
+
+```sql
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+Выше приведена правильная схема для этих данных. Определение схемы основано на сэмплировании данных и их построчном чтении. Значения столбцов извлекаются в соответствии с форматом, а для определения типа каждого значения используются рекурсивные парсеры и эвристики. Максимальное количество строк и байт, считываемых из данных при определении схемы, задаётся настройками [`input_format_max_rows_to_read_for_schema_inference`](/ru/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (по умолчанию 25000) и [`input_format_max_bytes_to_read_for_schema_inference`](/ru/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (по умолчанию 32 MB). Если определение выполнено некорректно, вы можете указать подсказки, как описано [здесь](/ru/reference/settings/formats#schema_inference_make_columns_nullable).
+
+<div id="creating-tables-from-snippets">
+  ### Создание таблиц из фрагментов
+</div>
+
+В примере выше для создания схемы таблицы используется файл в S3. При желании вы можете создать схему из однострочного фрагмента. Это можно сделать с помощью функции [format](/ru/reference/functions/table-functions/format), как показано ниже:
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM format(JSONEachRow, '{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"Withdisks and networks providing gigabytes per second ","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}') SETTINGS schema_inference_make_columns_nullable = 0
+
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+<div id="loading-json-data">
+  ## Загрузка данных из JSON
+</div>
+
+Ниже предполагается, что JSON имеет однородную структуру и для каждого пути используется только один тип.
+
+Предыдущие команды создали таблицу, в которую можно загружать данные. Теперь вы можете вставить данные в таблицу с помощью следующего `INSERT INTO SELECT`:
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+```
+
+```response
+0 rows in set. Elapsed: 38.498 sec. Processed 2.52 million rows, 1.39 GB (65.35 thousand rows/s., 36.03 MB/s.)
+Peak memory usage: 870.67 MiB.
+```
+
+Примеры загрузки данных из других источников, например из файла, см. [здесь](/ru/reference/statements/insert-into).
+
+После загрузки можно выполнять запросы к данным, при необходимости используя формат `PrettyJSONEachRow`, чтобы отобразить строки в их исходной структуре:
+
+```sql
+SELECT *
+FROM arxiv
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "0704.0004",
+  "submitter": "David Callan",
+  "authors": "David Callan",
+  "title": "A determinant of Stirling cycle numbers counts unlabeled acyclic",
+  "comments": "11 pages",
+  "journal-ref": "",
+  "doi": "",
+  "report-no": "",
+  "categories": "math.CO",
+  "license": "",
+  "abstract": "  We show that a determinant of Stirling cycle numbers counts unlabeled acyclic\nsingle-source automata.",
+  "versions": [
+    {
+      "created": "Sat, 31 Mar 2007 03:16:14 GMT",
+      "version": "v1"
+    }
+  ],
+  "update_date": "2007-05-23",
+  "authors_parsed": [
+    [
+      "Callan",
+      "David"
+    ]
+  ]
+}
+```
+
+```response
+1 row in set. Elapsed: 0.009 sec.
+```
+
+<div id="handling-errors">
+  ## Обработка ошибок
+</div>
+
+Иногда данные могут быть некорректными. Например, у некоторых столбцов может быть неверный тип или объект JSON может быть неправильно отформатирован. В таких случаях можно использовать настройки [`input_format_allow_errors_num`](/ru/reference/settings/formats#input_format_allow_errors_num) и [`input_format_allow_errors_ratio`](/ru/reference/settings/formats#input_format_allow_errors_ratio), чтобы разрешить игнорирование определённого числа строк, если данные вызывают ошибки при вставке. Кроме того, для более точного определения схемы можно задать [подсказки](/ru/reference/settings/formats#schema_inference_hints).
+
+<div id="working-with-semi-structured-data">
+  ## Работа с полуструктурированными и динамическими данными
+</div>
+
+В предыдущем примере использовался JSON со статичными, заранее известными именами ключей и типами. Но так бывает не всегда: ключи могут добавляться, а их типы — меняться. Это часто встречается, например, в данных обсервабилити.
+
+В ClickHouse для этого предусмотрен специальный тип [`JSON`](/ru/reference/data-types/newjson).
+
+Если вы знаете, что ваш JSON очень динамичен, содержит много уникальных ключей и несколько типов для одних и тех же ключей, мы рекомендуем не использовать определение схемы с `JSONEachRow`, чтобы выводить отдельный столбец для каждого ключа, — даже если данные представлены в формате newline-delimited JSON.
+
+Рассмотрим следующий пример из расширенной версии приведенного выше [набора данных Python PyPI](https://clickpy.clickhouse.com/). Здесь мы добавили произвольный столбец `tags` со случайными парами «ключ — значение».
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+```
+
+Выборка этих данных находится в открытом доступе в формате newline-delimited JSON. Если попытаться выполнить определение схемы этого файла, окажется, что это работает медленно, а ответ получается чрезмерно многословным:
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+
+-- результат опущен для краткости
+```
+
+```response
+9 rows in set. Elapsed: 127.066 sec.
+```
+
+Основная проблема здесь в том, что для вывода схемы используется формат `JSONEachRow`. Он пытается определить **тип столбца для каждого ключа в JSON** — то есть фактически применить к данным статическую схему без использования типа [`JSON`](/ru/reference/data-types/newjson).
+
+При тысячах уникальных столбцов такой подход работает медленно. В качестве альтернативы можно использовать формат `JSONAsObject`.
+
+`JSONAsObject` обрабатывает весь входной поток как один объект JSON и сохраняет его в одном столбце типа [`JSON`](/ru/reference/data-types/newjson), поэтому он лучше подходит для сильно изменяющихся или вложенных JSON-полезных нагрузок.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+Этот формат также крайне важен в случаях, когда у столбцов есть несколько типов, которые нельзя привести к единому виду. Например, рассмотрим файл `sample.json` со следующим JSON, где каждый объект записан с новой строки:
+
+```json
+{"a":1}
+{"a":"22"}
+```
+
+В этом случае ClickHouse может разрешить конфликт типов и определить столбец `a` как `Nullable(String)`.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(String) │
+└──────┴──────────────────┘
+
+1 строка в наборе. Прошло: 0.081 сек.
+```
+
+<Info>
+  **Приведение типов**
+
+  Этим приведением типов можно управлять с помощью ряда настроек. Пример выше зависит от настройки [`input_format_json_read_numbers_as_strings`](/ru/reference/settings/formats#input_format_json_read_numbers_as_strings).
+</Info>
+
+Однако некоторые типы несовместимы. Рассмотрим следующий пример:
+
+```json
+{"a":1}
+{"a":{"b":2}}
+```
+
+В этом случае никакое преобразование типов невозможно. Поэтому команда `DESCRIBE` завершается ошибкой:
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+```
+
+```response
+Elapsed: 0.755 sec.
+```
+
+```sql
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSON format file. Error:
+Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a' in row 1 differs from type defined by previous rows: Int64. You can specify the type for this column using setting schema_inference_hints.
+```
+
+В этом случае `JSONAsObject` рассматривает каждую строку как одно значение типа [`JSON`](/ru/reference/data-types/newjson) (который позволяет одному и тому же столбцу иметь несколько типов). Это важно:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+SETTINGS enable_json_type = 1, describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+<div id="further-reading">
+  ## Дополнительные материалы
+</div>
+
+Чтобы узнать больше об автоматическом определении типов данных, см. [эту](/ru/concepts/features/interfaces/schema-inference) страницу документации.

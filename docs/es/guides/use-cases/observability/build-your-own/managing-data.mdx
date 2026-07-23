@@ -1,0 +1,502 @@
+---
+title: 'Gestión de datos'
+description: 'Gestión de datos para la observabilidad'
+slug: /observability/managing-data
+keywords: ['observabilidad', 'logs', 'trazas', 'métricas', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Las implementaciones de ClickHouse para la observabilidad implican invariablemente grandes volúmenes de datos, que deben gestionarse. ClickHouse ofrece varias funciones para facilitar la gestión de los datos.
+
+<Tip>
+  **ClickStack incluye un esquema predeterminado optimizado**
+
+  **ClickStack proporciona esquemas listos para usar para logs, trazas y métricas** que incorporan las funciones más recientes de ClickHouse (índices de texto para búsqueda de texto completo y por claves de Map, columnas materializadas y arrays ALIAS para filtrado de lectura directa, búsquedas de filas por número de bloque) y se han sometido a benchmark para ofrecer un sólido rendimiento desde el primer momento en cargas de trabajo de logging y trazas. Úselos como punto de referencia para su propio diseño.
+
+  * DDL canónico: [Tables and schemas used by ClickStack](/es/clickstack/ingesting-data/schemas).
+  * Recetas de optimización: [ClickStack performance tuning](/es/clickstack/managing/performance-tuning). Muchas de las recomendaciones de esa página (columnas materializadas, skip indexes, elección de la clave primaria, proyecciones, vistas materializadas) se aplican directamente a una configuración propia.
+</Tip>
+
+<div id="partitions">
+  ## Particiones
+</div>
+
+El particionamiento de datos en ClickHouse permite separar lógicamente los datos en disco según una columna o una expresión SQL. Al separar los datos de esta forma, cada partición puede gestionarse de manera independiente; por ejemplo, eliminarse. Esto permite mover particiones y, por tanto, subconjuntos de datos, entre niveles de almacenamiento de forma eficiente según el tiempo o [hacer caducar datos/eliminarlos eficientemente de un clúster](/es/reference/statements/alter/partition).
+
+El particionamiento se especifica en una tabla cuando se define inicialmente mediante la cláusula `PARTITION BY`. Esta cláusula puede contener una expresión SQL sobre una o varias columnas, cuyo resultado determinará a qué partición se envía una fila.
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="Particiones" size="md" />
+
+Las partes de datos se asocian lógicamente (mediante un prefijo común en el nombre de la carpeta) con cada partición en disco y pueden consultarse de forma aislada. En el ejemplo siguiente, el esquema predeterminado `otel_logs` particiona por día mediante la expresión `toDate(Timestamp)`. A medida que se insertan filas en ClickHouse, esta expresión se evaluará para cada fila y se dirigirá a la partición correspondiente si existe (si la fila es la primera de un día, se creará la partición).
+
+```sql
+CREATE TABLE default.otel_logs
+(
+...
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+Se pueden realizar [varias operaciones](/es/reference/statements/alter/partition) sobre las particiones, incluidas [copias de seguridad](/es/reference/statements/alter/partition#freeze-partition), [manipulaciones de columnas](/es/reference/statements/alter/partition#clear-column-in-partition), mutaciones para [modificar](/es/reference/statements/alter/partition#update-in-partition)/[eliminar](/es/reference/statements/alter/partition#delete-in-partition) datos por fila) y [limpieza de índices (p. ej., índices secundarios)](/es/reference/statements/alter/partition#clear-index-in-partition).
+
+Como ejemplo, supongamos que nuestra tabla `otel_logs` está particionada por día. Si se llena con el conjunto de datos estructurados de logs, contendrá datos de varios días:
+
+```sql
+SELECT Timestamp::Date AS day,
+         count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-26 │ 1986456 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
+Peak memory usage: 4.41 MiB.
+```
+
+Las particiones actuales pueden consultarse con una sencilla consulta a una tabla del sistema:
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'otel_logs'
+```
+
+```response
+┌─partition──┐
+│ 2019-01-22 │
+│ 2019-01-23 │
+│ 2019-01-24 │
+│ 2019-01-25 │
+│ 2019-01-26 │
+└────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+Podemos tener otra tabla, `otel_logs_archive`, que usamos para almacenar los datos más antiguos. Los datos pueden moverse a esta tabla de forma eficiente por partición (esto es solo un cambio de metadatos).
+
+```sql
+CREATE TABLE otel_logs_archive AS otel_logs
+--mover datos a la tabla de archivo
+ALTER TABLE otel_logs
+        (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
+--confirmar que los datos se han movido
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.051 sec. Processed 8.38 million rows, 67.03 MB (163.52 million rows/s., 1.31 GB/s.)
+Peak memory usage: 4.40 MiB.
+```
+
+```sql
+SELECT Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs_archive
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-26 │ 1986456 │
+└────────────┴─────────┘
+
+1 row in set. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
+Peak memory usage: 4.99 MiB.
+```
+
+Esto contrasta con otras técnicas, que requerirían usar `INSERT INTO SELECT` y reescribir los datos en la nueva tabla de destino.
+
+<Info>
+  **Mover particiones**
+
+  [Mover particiones entre tablas](/es/reference/statements/alter/partition#move-partition-to-table) requiere que se cumplan varias condiciones; entre ellas, que las tablas tengan la misma estructura, clave de partición, clave primaria e índices/proyecciones. Puedes encontrar notas detalladas sobre cómo especificar particiones en `ALTER` DDL [aquí](/es/reference/statements/alter/partition#how-to-set-partition-expression).
+</Info>
+
+Además, los datos pueden eliminarse eficientemente por partición. Esto es mucho más eficiente en términos de recursos que las técnicas alternativas (mutaciones o eliminaciones ligeras), por lo que debe ser la opción preferente.
+
+```sql
+ALTER TABLE otel_logs
+        (DROP PARTITION tuple('2019-01-25'))
+
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 4667954 │
+│ 2019-01-23 │ 4653388 │
+│ 2019-01-24 │ 3792510 │
+└────────────┴─────────┘
+```
+
+<Note>
+  TTL aprovecha esta funcionalidad cuando se usa la configuración [`ttl_only_drop_parts=1`](/es/reference/settings/merge-tree-settings#ttl_only_drop_parts). Consulta [Gestión de datos con TTL](#data-management-with-ttl-time-to-live) para más detalles.
+</Note>
+
+<div id="applications">
+  ### Aplicaciones
+</div>
+
+Lo anterior ilustra cómo los datos pueden moverse y manipularse de forma eficiente por particiones. En la práctica, lo más habitual es aprovechar las operaciones sobre particiones en casos de uso de observabilidad en dos escenarios:
+
+* **Arquitecturas por niveles** - mover datos entre niveles de almacenamiento (consulte [Niveles de almacenamiento](#storage-tiers)), lo que permite construir arquitecturas hot-cold.
+* **Eliminación eficiente** - cuando los datos han alcanzado un TTL especificado (consulte [Gestión de datos con TTL](#data-management-with-ttl-time-to-live))
+
+A continuación, examinamos ambos en detalle.
+
+<div id="query-performance">
+  ### Rendimiento de las consultas
+</div>
+
+Aunque las particiones pueden ayudar al rendimiento de las consultas, esto depende en gran medida de los patrones de acceso. Si las consultas se dirigen solo a unas pocas particiones (idealmente una), el rendimiento puede mejorar. Por lo general, esto solo es útil si la clave de particionamiento no forma parte de la clave primaria y se filtra por ella. Sin embargo, las consultas que necesitan abarcar muchas particiones pueden tener peor rendimiento que si no se usara particionamiento (ya que podría haber más partes). La ventaja de dirigirse a una sola partición será aún menor, o incluso nula, si la clave de particionamiento ya aparece al principio de la clave primaria. El particionamiento también puede usarse para [optimizar las consultas `GROUP BY`](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) si los valores de cada partición son únicos. Sin embargo, en general, debe asegurarse de que la clave primaria esté optimizada y considerar el particionamiento como una técnica de optimización de consultas solo en casos excepcionales en los que los patrones de acceso se centren en un subconjunto específico y predecible de los datos; por ejemplo, particionar por día cuando la mayoría de las consultas se realizan sobre el último día. Consulte [aquí](https://medium.com/datadenys/using-partitions-in-clickhouse-3ea0decb89c4) para ver un ejemplo de este comportamiento.
+
+<div id="data-management-with-ttl-time-to-live">
+  ## Gestión de datos con TTL (Time-to-live)
+</div>
+
+Time-to-Live (TTL) es una funcionalidad clave en las soluciones de observabilidad basadas en ClickHouse para la retención y gestión eficientes de datos, especialmente dado que se generan continuamente grandes volúmenes de información. Implementar TTL en ClickHouse permite la expiración y eliminación automáticas de los datos más antiguos, lo que garantiza un uso óptimo del almacenamiento y mantiene el rendimiento sin intervención manual. Esta capacidad es esencial para mantener una base de datos ágil, reducir los costes de almacenamiento y garantizar que las consultas sigan siendo rápidas y eficientes al centrarse en los datos más relevantes y recientes. Además, facilita el cumplimiento de las políticas de retención de datos mediante la gestión sistemática del ciclo de vida de los datos, lo que mejora la sostenibilidad y la escalabilidad generales de la solución de observabilidad.
+
+TTL puede especificarse a nivel de tabla o de columna en ClickHouse.
+
+<div id="table-level-ttl">
+  ### TTL a nivel de tabla
+</div>
+
+El esquema predeterminado tanto de los logs como de las trazas incluye un TTL para que los datos caduquen tras un período determinado. Esto se especifica en el exportador de ClickHouse mediante una clave `ttl`, por ejemplo.
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+Esta sintaxis admite actualmente la [sintaxis de Duration de Golang](https://pkg.go.dev/time#ParseDuration). **Recomendamos que los usuarios utilicen `h` y se aseguren de que esto coincida con el período de particionado. Por ejemplo, si se particiona por día, asegúrese de que sea un múltiplo de días, p. ej., 24h, 48h, 72h.** Esto garantizará automáticamente que se añada una cláusula TTL a la tabla, por ejemplo, si `ttl: 96h`.
+
+```sql
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+TTL toDateTime(Timestamp) + toIntervalDay(4)
+SETTINGS ttl_only_drop_parts = 1
+```
+
+De forma predeterminada, los datos con un TTL vencido se eliminan cuando ClickHouse [fusiona partes de datos](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). Cuando ClickHouse detecta que los datos han caducado, realiza una fusión fuera de programación.
+
+<Info>
+  **TTLs programados**
+
+  Los TTL no se aplican inmediatamente, sino según una programación, como se indicó antes. La configuración de tabla de MergeTree `merge_with_ttl_timeout` establece el retraso mínimo, en segundos, antes de repetir una fusión con TTL de eliminación. El valor predeterminado es de 14400 segundos (4 horas). Pero ese es solo el retraso mínimo; puede pasar más tiempo hasta que se active una fusión TTL. Si el valor es demasiado bajo, se realizarán muchas fusiones fuera de programación que pueden consumir muchos recursos. El vencimiento de un TTL se puede forzar con el comando `ALTER TABLE my_table MATERIALIZE TTL`.
+</Info>
+
+**Importante: Recomendamos usar la configuración [`ttl_only_drop_parts=1`](/es/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (aplicada por el esquema predeterminado). Cuando esta configuración está habilitada, ClickHouse elimina una parte completa cuando todas sus filas han caducado. Eliminar partes completas en lugar de limpiar parcialmente las filas con TTL vencido (algo que se logra mediante mutaciones con un alto consumo de recursos cuando `ttl_only_drop_parts=0`) permite usar valores más cortos de `merge_with_ttl_timeout` y reducir el impacto en el rendimiento del sistema. Si los datos están particionados por la misma unidad con la que se aplica el vencimiento del TTL, por ejemplo, día, las partes contendrán de forma natural solo datos del intervalo definido. Esto garantizará que `ttl_only_drop_parts=1` pueda aplicarse de forma eficiente.
+
+<div id="column-level-ttl">
+  ### TTL a nivel de columna
+</div>
+
+El ejemplo anterior hace que los datos expiren a nivel de tabla. También puede hacer que expiren a nivel de columna. A medida que los datos envejecen, esto puede usarse para eliminar columnas cuyo valor en las investigaciones no justifica el coste de recursos de conservarlas. Por ejemplo, recomendamos conservar la columna `Body` por si se añade algún metadato dinámico nuevo que no se haya extraído en el momento de la inserción, p. ej., una nueva etiqueta de Kubernetes. Después de un tiempo, p. ej., 1 mes, puede resultar evidente que estos metadatos adicionales no son útiles, lo que limita el valor de conservar la columna `Body`.
+
+A continuación, mostramos cómo se puede eliminar la columna `Body` al cabo de 30 días.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+        ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  Para especificar un TTL a nivel de columna, los usuarios deben definir su propio esquema. Esto no se puede especificar en el OTel collector.
+</Note>
+
+<div id="recompressing-data">
+  ## Recompresión de datos
+</div>
+
+Aunque normalmente recomendamos `ZSTD(1)` para los conjuntos de datos de observabilidad, puede probar distintos algoritmos de compresión o niveles de compresión más altos, como `ZSTD(3)`. Además de poder especificarlo al crear el esquema, la compresión puede configurarse para que cambie después de un período determinado. Esto puede resultar adecuado si un codec o algoritmo de compresión mejora la compresión, pero empeora el rendimiento de las consultas. Esta contrapartida puede ser aceptable para datos más antiguos, que se consultan con menos frecuencia, pero no para datos recientes, que se usan con más frecuencia en las investigaciones.
+
+A continuación se muestra un ejemplo, en el que comprimimos los datos con `ZSTD(3)` después de 4 días en lugar de eliminarlos.
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+TTL Timestamp + INTERVAL 4 DAY RECOMPRESS CODEC(ZSTD(3))
+```
+
+<Info>
+  **Evaluar el rendimiento**
+
+  Recomendamos a los usuarios evaluar siempre el impacto en el rendimiento de la inserción y las consultas de los distintos niveles y algoritmos de compresión. Por ejemplo, los códecs delta pueden ser útiles para comprimir marcas de tiempo. Sin embargo, si forman parte de la clave primaria, el rendimiento del filtrado puede verse afectado.
+</Info>
+
+Encontrará más detalles y ejemplos sobre cómo configurar TTL [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes). Puede encontrar [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) ejemplos de cómo añadir y modificar TTL en tablas y columnas. Para ver cómo TTL permite jerarquías de almacenamiento, como las arquitecturas hot-warm, consulte [Niveles de almacenamiento](#storage-tiers).
+
+<div id="storage-tiers">
+  ## Niveles de almacenamiento
+</div>
+
+En ClickHouse, puede crear niveles de almacenamiento en distintos discos; por ejemplo, datos calientes o recientes en SSD y datos más antiguos respaldados por S3. Esta arquitectura permite usar almacenamiento menos costoso para los datos antiguos, que pueden tolerar SLA de consulta más laxos debido a su uso poco frecuente en las investigaciones.
+
+<Info>
+  **No es relevante para ClickHouse Cloud**
+
+  ClickHouse Cloud usa una sola copia de los datos respaldada por S3, con cachés de nodo sobre SSD. Por lo tanto, los niveles de almacenamiento no son necesarios en ClickHouse Cloud.
+</Info>
+
+La creación de niveles de almacenamiento requiere que los usuarios creen discos, que luego se usan para definir políticas de almacenamiento, con volúmenes que pueden especificarse durante la creación de la tabla. Los datos pueden moverse automáticamente entre discos según los niveles de ocupación, los tamaños de las partes y las prioridades de los volúmenes. Puede encontrar más detalles [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes).
+
+Aunque los datos pueden moverse manualmente entre discos mediante el comando `ALTER TABLE MOVE PARTITION`, el movimiento de datos entre volúmenes también puede controlarse mediante TTL. Puede encontrar un ejemplo completo [aquí](/es/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture).
+
+<div id="managing-schema-changes">
+  ## Gestión de cambios de esquema
+</div>
+
+Los esquemas de logs y trazas cambiarán inevitablemente a lo largo de la vida útil de un sistema, por ejemplo, a medida que los usuarios supervisan nuevos sistemas con metadatos o etiquetas de pod de Kubernetes diferentes. Al generar datos con el esquema de OTel y capturar los datos originales de los eventos en un formato estructurado, los esquemas de ClickHouse serán robustos frente a estos cambios. Sin embargo, a medida que haya nuevos metadatos disponibles y cambien los patrones de acceso de las consultas, le convendrá actualizar los esquemas para reflejar estos cambios.
+
+Para evitar tiempo de inactividad durante los cambios de esquema, los usuarios disponen de varias opciones, que presentamos a continuación.
+
+<div id="use-default-values">
+  ### Usar valores predeterminados
+</div>
+
+Se pueden añadir columnas al esquema mediante [`valores `DEFAULT&#96;&#96;](/es/reference/statements/create/table#default). El valor predeterminado especificado se usará si no se indica durante el INSERT.
+
+Los cambios en el esquema pueden realizarse antes de modificar la lógica de transformación de cualquier vista materializada o la configuración del OTel collector, lo que permite que se envíen estas nuevas columnas.
+
+Una vez modificado el esquema, puede reconfigurar los OTel collectors. Suponiendo que los usuarios sigan el proceso recomendado descrito en [&quot;Extracción de estructura con SQL&quot;](/es/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql), en el que los OTel collectors envían sus datos a un motor de tabla Null con una vista materializada encargada de extraer el esquema de destino y enviar los resultados a una tabla de destino para su almacenamiento, la vista puede modificarse mediante la [`sintaxis ALTER TABLE ... MODIFY QUERY`](/es/reference/statements/alter/view). Supongamos que tenemos la siguiente tabla de destino con su vista materializada correspondiente (similar a la utilizada en &quot;Extracción de estructura con SQL&quot;) para extraer el esquema de destino de los logs estructurados de OTel:
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+Supongamos que queremos extraer una nueva columna `Size` de `LogAttributes`. Podemos añadirla a nuestro esquema con un `ALTER TABLE`, especificando el valor por defecto:
+
+```sql
+ALTER TABLE otel_logs_v2
+        (ADD COLUMN `Size` UInt64 DEFAULT JSONExtractUInt(Body, 'size'))
+```
+
+En el ejemplo anterior, especificamos como valor predeterminado la clave `size` en `LogAttributes` (será 0 si no existe). Esto significa que las consultas que acceden a esta columna en filas donde no se ha insertado el valor deben acceder al Map y, por lo tanto, serán más lentas. También podríamos especificarlo fácilmente como una constante, p. ej., 0, lo que reduce el coste de las consultas posteriores sobre las filas que no tienen ese valor. Al consultar esta tabla, se observa que el valor se rellena como se espera a partir del Map:
+
+```sql
+SELECT Size
+FROM otel_logs_v2
+LIMIT 5
+```
+
+```response
+┌──Size─┐
+│ 30577 │
+│  5667 │
+│  5379 │
+│  1696 │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.012 sec.
+```
+
+Para garantizar que este valor se inserte en todos los datos que se incorporen en el futuro, podemos modificar nuestra vista materializada mediante la sintaxis de `ALTER TABLE`, como se muestra a continuación:
+
+```sql
+ALTER TABLE otel_logs_mv
+        MODIFY QUERY
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300,                 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+Las filas posteriores tendrán la columna `Size` rellenada en el momento de la inserción.
+
+<div id="create-new-tables">
+  ### Crear tablas nuevas
+</div>
+
+Como alternativa al proceso anterior, puedes simplemente crear una nueva tabla de destino con el nuevo esquema. Luego, cualquier vista materializada puede modificarse para que use la nueva tabla mediante el `ALTER TABLE MODIFY QUERY` mencionado anteriormente. Con este enfoque, puedes versionar tus tablas, por ejemplo, `otel_logs_v3`.
+
+Este enfoque deja a los usuarios con varias tablas para consultar. Para consultar datos en varias tablas, puedes usar la [función `merge`](/es/reference/functions/table-functions/merge), que acepta patrones comodín para el nombre de la tabla. A continuación, mostramos esto consultando una v2 y una v3 de la tabla `otel_logs`:
+
+```sql
+SELECT Status, count() AS c
+FROM merge('otel_logs_v[2|3]')
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.137 sec. Processed 41.46 million rows, 82.92 MB (302.43 million rows/s., 604.85 MB/s.)
+```
+
+Si se desea evitar el uso de la función `merge` y exponer a los usuarios finales una tabla que combine varias tablas, se puede utilizar el [motor de tabla Merge](/es/reference/engines/table-engines/special/merge). Lo mostramos a continuación:
+
+```sql
+CREATE TABLE otel_logs_merged
+ENGINE = Merge('default', 'otel_logs_v[2|3]')
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.073 sec. Processed 41.46 million rows, 82.92 MB (565.43 million rows/s., 1.13 GB/s.)
+```
+
+Esto se puede actualizar cada vez que se añade una nueva tabla mediante la sintaxis `EXCHANGE` para tablas. Por ejemplo, para añadir una tabla v4, podemos crear una nueva tabla e intercambiarla de forma atómica con la versión anterior.
+
+```sql
+CREATE TABLE otel_logs_merged_temp
+ENGINE = Merge('default', 'otel_logs_v[2|3|4]')
+
+EXCHANGE TABLE otel_logs_merged_temp AND otel_logs_merged
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 39259996 │
+│   304  │  1378564 │
+│   302  │   820118 │
+│   404  │   429220 │
+│   301  │   276960 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.068 sec. Processed 42.46 million rows, 84.92 MB (620.45 million rows/s., 1.24 GB/s.)
+```

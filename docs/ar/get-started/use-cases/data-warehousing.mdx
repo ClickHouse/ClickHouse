@@ -1,0 +1,91 @@
+---
+slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
+title: 'مستودعات البيانات'
+description: 'ابنِ بنى حديثة لمستودعات البيانات من خلال الجمع بين مرونة بحيرات البيانات وأداء ClickHouse Cloud'
+keywords: ['مستودع بيانات', 'بحيرة بيانات', 'lakehouse', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', 'تنسيقات الجداول المفتوحة', 'معمارية هجينة', 'حالات الاستخدام']
+sidebarTitle: 'مستودعات البيانات'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+لم يعد مستودع البيانات الحديث يربط بإحكام بين التخزين والحوسبة. وبدلاً من ذلك، تمنحك طبقات منفصلة لكنها مترابطة للتخزين والحوكمة ومعالجة الاستعلامات المرونة لاختيار الأدوات المناسبة لسير العمل لديك.
+
+ومن خلال إضافة تنسيقات الجداول المفتوحة ومحرك استعلام عالي الأداء مثل ClickHouse إلى تخزين الكائنات السحابي، تحصل على إمكانات بمستوى قواعد البيانات — معاملات ACID، وفرض المخطط، واستعلامات تحليلية سريعة — من دون التضحية بالطابع المفتوح لبحيرة بياناتك. ويجمع هذا المزيج بين الأداء وتخزين قابل للتشغيل البيني وفعّال من حيث التكلفة، بما يدعم تحليلاتك التقليدية وأعباء عمل الذكاء الاصطناعي/تعلّم الآلة الحديثة.
+
+<div id="benefits">
+  ## ما الذي توفّره هذه البنية
+</div>
+
+من خلال الجمع بين تخزين الكائنات المفتوح وتنسيقات الجداول مع ClickHouse باعتباره محرك الاستعلام لديك، ستحصل على:
+
+| الفائدة                   | الوصف                                                                                                                                                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **تحديثات متسقة للجداول** | تعني عمليات الالتزام الذرّية بحالة الجدول أن عمليات الكتابة المتزامنة لا تؤدي إلى بيانات تالفة أو غير مكتملة. وهذا يعالج واحدة من أكبر مشكلات بحيرات البيانات الخام.                                                                                          |
+| **إدارة المخطط**          | يمنع التحقق الإلزامي وتتبع تطور المخطط مشكلة &quot;مستنقع البيانات&quot;، حيث تصبح البيانات غير قابلة للاستخدام بسبب عدم اتساق المخطط.                                                                                                                        |
+| **أداء الاستعلامات**      | تتيح تحسينات الفهرسة والإحصاءات وتنظيم البيانات، مثل تخطي البيانات والتجميع، تشغيل استعلامات SQL بسرعات تقارب سرعات مستودعات البيانات المخصصة. وبالاقتران مع محرك ClickHouse العمودي، يظل ذلك صحيحًا حتى عند تخزين البيانات في تخزين الكائنات.                |
+| **الحوكمة**               | توفّر الكتالوجات وتنسيقات الجداول تحكمًا دقيقًا في الوصول وإمكانات تدقيق على مستوى الصفوف والأعمدة، مما يعالج محدودية أدوات الأمان في بحيرات البيانات البسيطة.                                                                                                |
+| **فصل التخزين والحوسبة**  | يتوسع التخزين والحوسبة بشكل مستقل فوق تخزين الكائنات القياسي، وهو أقل تكلفة بكثير من التخزين الاحتكاري في مستودعات البيانات. وبينما يُعد هذا الفصل معيارًا في مستودعات Cloud الحديثة، تتيح لك التنسيقات المفتوحة اختيار *محرك الحوسبة* الذي يتوسع مع بياناتك. |
+
+<div id="architecture">
+  ## كيف يدعم ClickHouse مستودع البيانات لديك
+</div>
+
+تتدفق البيانات من منصات البث ومستودعات البيانات الحالية عبر تخزين الكائنات إلى ClickHouse، حيث تُحوَّل وتُحسَّن ثم تُقدَّم إلى أدوات BI/AI لديك.
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="بنية ClickHouse لمستودعات البيانات" />
+  </div>
+
+  <ExclusiveGroup name="dw-arch">
+    <AccordionGroup>
+      <Accordion title="إدخال البيانات" defaultOpen>
+        بالنسبة إلى تحميلات البيانات المجمّعة، تستخدم عادةً مخزن كائنات مثل S3 أو GCS كوسيط. يتيح لك أداء ClickHouse في قراءة [Parquet](/ar/guides/clickhouse/data-formats/parquet) تحميل البيانات بمئات الملايين من الصفوف في الثانية باستخدام [S3 table engine](/ar/reference/engines/table-engines/integrations/s3). أما بالنسبة إلى البث في الوقت الفعلي، فإن [ClickPipes](/ar/integrations/clickpipes/home) يتصل مباشرةً بمنصات مثل Kafka وConfluent.
+
+        يمكنك أيضًا الترحيل من مستودعات البيانات الحالية مثل Snowflake وBigQuery وDatabricks عن طريق التصدير إلى تخزين الكائنات ثم التحميل إلى ClickHouse عبر [table engines](/ar/reference/engines/table-engines).
+      </Accordion>
+
+      <Accordion title="الاستعلام">
+        يمكنك الاستعلام عن البيانات مباشرةً من مخازن الكائنات مثل S3 وGCS، أو من بحيرات البيانات باستخدام تنسيقات الجداول المفتوحة مثل [Iceberg](/ar/reference/engines/table-engines/integrations/iceberg) و[Delta Lake](/ar/reference/engines/table-engines/integrations/deltalake) و[Hudi](/ar/reference/engines/table-engines/integrations/hudi) — سواء مباشرةً أو عبر كتالوجات البيانات مثل [AWS Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog) و[Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) و[Iceberg REST](/ar/guides/use-cases/data-warehousing/rest-catalog).
+
+        يوفّر ClickHouse Cloud [query cache](/ar/concepts/features/performance/caches/query-cache) و[sparse indexes](/ar/concepts/features/performance/skip-indexes/skipping-indexes) و[projections](/ar/concepts/features/projections/projections) بشكل افتراضي، بالإضافة إلى أكثر من 70 تنسيقًا للملفات ودوال SQL للتواريخ والمصفوفات وJSON والبيانات الجغرافية والتجميعات التقريبية على نطاق واسع.
+      </Accordion>
+
+      <Accordion title="تحويلات البيانات">
+        تعمل [العروض المادية](/ar/concepts/features/materialized-views) في ClickHouse على أتمتة التحويلات — إذ تُفعَّل عند إدراج بيانات جديدة في الجداول المصدر، بحيث يمكنك استخراج البيانات وتجميعها وتعديلها عند وصولها من دون إنشاء مسارات معالجة مخصصة.
+
+        ولعمليات النمذجة الأكثر تعقيدًا، تتيح لك [dbt integration](/ar/integrations/connectors/data-ingestion/etl-tools/dbt) في ClickHouse تعريف التحويلات على هيئة نماذج SQL خاضعة للتحكم في الإصدارات.
+      </Accordion>
+
+      <Accordion title="عمليات التكامل">
+        يوفّر ClickHouse موصلات أصلية لأدوات BI مثل [Tableau](/ar/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) و[Looker](/ar/integrations/connectors/data-visualization/looker-and-clickhouse). ويمكن للأدوات التي لا تملك موصلًا أصليًا الاتصال عبر [MySQL wire protocol](/ar/concepts/features/interfaces/mysql). ويربط [MCP server](/ar/guides/use-cases/ai-ml/MCP) ClickHouse بنماذج LLM لإجراء تحليلات حوارية، كما تتيح لك عناصر تحكم [RBAC](/ar/concepts/features/security/access-rights) المرنة إتاحة جداول للقراءة فقط بأمان.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>
+
+<div id="hybrid-architecture-the-best-of-both-worlds">
+  ## البنية الهجينة: أفضل ما في العالمين
+</div>
+
+إلى جانب الاستعلام من بحيرة البيانات لديك، يمكنك إدخال البيانات الحساسة للأداء إلى تخزين [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) الأصلي في ClickHouse لحالات الاستخدام التي تتطلب زمن استجابة منخفضًا للغاية — مثل لوحات المعلومات في الوقت الفعلي، والتحليلات التشغيلية، أو التطبيقات التفاعلية.
+
+يمنحك هذا استراتيجية بيانات متدرجة. فالبيانات الساخنة التي يكثر الوصول إليها تبقى في التخزين المُحسَّن في ClickHouse للحصول على استجابات للاستعلام في أقل من ثانية، بينما يظل السجل الكامل للبيانات في البحيرة وقابلًا للاستعلام. ويمكنك أيضًا استخدام العروض المادية في ClickHouse لتحويل بيانات البحيرة وتجميعها باستمرار في جداول مُحسَّنة، ما يربط بين الطبقتين تلقائيًا.
+
+أنت من يحدد مكان وجود البيانات بناءً على متطلبات الأداء، لا على القيود التقنية.
+
+<Tip>
+  **ClickHouse Academy**
+
+  خُذ دورة [مستودعات البيانات باستخدام ClickHouse](https://clickhouse.com/learn/data-warehousing) المجانية لمعرفة المزيد.
+</Tip>

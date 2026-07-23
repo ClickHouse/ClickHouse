@@ -1,0 +1,23 @@
+---
+description: 'ALL 句のドキュメント'
+sidebarTitle: 'ALL'
+slug: /sql-reference/statements/select/all
+title: 'ALL 句'
+doc_type: 'reference'
+---
+
+テーブル内に一致する行が複数ある場合、`ALL` はそれらをすべて返します。`SELECT ALL` は、`DISTINCT` を付けない `SELECT` と同じです。`ALL` と `DISTINCT` の両方を指定すると、例外がスローされます。
+
+`ALL` は集約関数内でも指定できますが、クエリの結果には実質的な影響はありません。
+
+たとえば:
+
+```sql
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+次と等価です:
+
+```sql
+SELECT sum(number) FROM numbers(10);
+```

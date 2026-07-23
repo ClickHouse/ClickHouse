@@ -14,7 +14,6 @@ set(DBMS_FUNCTIONS
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
-    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
@@ -51,6 +50,8 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
     FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
+    productQuantization.cpp # createInternalFunctionPQDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
+    vectorQuantization.cpp # createInternalFunctionQuantizeDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
     FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
@@ -115,8 +116,8 @@ if (TARGET ch_contrib::bech32)
     list (APPEND PRIVATE_LIBS ch_contrib::bech32)
 endif()
 
-if (TARGET ch_contrib::base64)
-    list (APPEND PRIVATE_LIBS ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    list (APPEND PRIVATE_LIBS ch_contrib::simdutf)
 endif()
 
 if (ENABLE_NLP)
@@ -133,6 +134,10 @@ endif()
 
 if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
+endif()
+
+if (TARGET ch_contrib::wagyu)
+    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
 endif()
 
 if (TARGET ch_contrib::vectorscan)
@@ -163,9 +168,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
-
-add_subdirectory(Kusto)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
 
 add_subdirectory(TimeSeries)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)

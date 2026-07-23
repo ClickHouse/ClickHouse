@@ -1,0 +1,69 @@
+---
+description: 'ClickHouse の loop テーブル関数は、クエリ結果を無限に繰り返し返します。'
+slug: /sql-reference/table-functions/loop
+title: 'loop'
+doc_type: 'reference'
+---
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| 引数                          | 説明                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `database`                  | データベース名。                                                                                           |
+| `table`                     | テーブル名。                                                                                             |
+| `other_table_function(...)` | 別のテーブル関数。例：`SELECT * FROM loop(numbers(10));` ここでの `other_table_function(...)` は `numbers(10)` です。 |
+
+<div id="returned_values">
+  ## 戻り値
+</div>
+
+クエリ結果を返し続ける無限ループ。
+
+<div id="examples">
+  ## 例
+</div>
+
+ClickHouseからデータを取得する例:
+
+```sql
+SELECT * FROM loop(test_database, test_table);
+SELECT * FROM loop(test_database.test_table);
+SELECT * FROM loop(test_table);
+```
+
+または、ほかのテーブル関数を使用します:
+
+```sql
+SELECT * FROM loop(numbers(3)) LIMIT 7;
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘
+```
+
+```sql
+SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
+...
+```

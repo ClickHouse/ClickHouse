@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/table-functions/numbers
+sidebarTitle: 'numbers'
+title: 'numbers'
+description: 'Возвращает таблицу с единственным столбцом `number`, содержащим последовательность целых чисел.'
+doc_type: 'reference'
+---
+
+* `numbers()` – Возвращает бесконечную таблицу с единственным столбцом `number` (UInt64), содержащим целые числа в возрастающем порядке, начиная с 0. Используйте `LIMIT` (и при необходимости `OFFSET`), чтобы ограничить количество строк.
+
+* `numbers(N)` – Возвращает таблицу с единственным столбцом `number` (UInt64), содержащим целые числа от 0 до `N - 1`.
+
+* `numbers(N, M)` – Возвращает таблицу с единственным столбцом `number` (UInt64), содержащим `M` целых чисел от `N` до `N + M - 1`.
+
+* `numbers(N, M, S)` – Возвращает таблицу с единственным столбцом `number` (UInt64), содержащим значения в диапазоне `[N, N + M)` с шагом `S` (примерно `M / S` строк с округлением вверх). `S` должно быть `>= 1`.
+
+Это похоже на системную таблицу [`system.numbers`](/ru/reference/system-tables/numbers). Ее можно использовать для тестирования и генерации последовательных значений.
+
+Следующие запросы эквивалентны:
+
+```sql
+SELECT * FROM numbers(10);
+SELECT * FROM numbers(0, 10);
+SELECT * FROM numbers() LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers WHERE number BETWEEN 0 AND 9;
+SELECT * FROM system.numbers WHERE number IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+```
+
+Следующие запросы также эквивалентны:
+
+```sql
+SELECT * FROM numbers(10, 10);
+SELECT * FROM numbers() LIMIT 10 OFFSET 10;
+SELECT * FROM system.numbers LIMIT 10 OFFSET 10;
+```
+
+Следующие запросы также эквивалентны:
+
+```sql
+SELECT number * 2 FROM numbers(10);
+SELECT (number - 10) * 2 FROM numbers(10, 10);
+SELECT * FROM numbers(0, 20, 2);
+```
+
+<div id="examples">
+  ### Примеры
+</div>
+
+Первые 10 чисел.
+
+```sql
+SELECT * FROM numbers(10);
+```
+
+```response
+ ┌─number─┐
+ │      0 │
+ │      1 │
+ │      2 │
+ │      3 │
+ │      4 │
+ │      5 │
+ │      6 │
+ │      7 │
+ │      8 │
+ │      9 │
+ └────────┘
+```
+
+Сгенерируйте последовательность дат с 2010-01-01 по 2010-12-31.
+
+```sql
+SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
+```
+
+Найдите первое значение `UInt64` `>= 10^15`, для которого `sipHash64(number)` имеет 20 завершающих нулевых битов.
+
+```sql
+SELECT number
+FROM numbers()
+WHERE number >= 1e15
+  AND bitAnd(sipHash64(number), 0xFFFFF) = 0
+LIMIT 1;
+```
+
+```response
+ ┌───────────number─┐
+ │ 1000000000056095 │ -- 1,00 квадриллиона
+ └──────────────────┘
+```
+
+<div id="notes">
+  ### Примечания
+</div>
+
+* Из соображений производительности, если вы знаете, сколько строк вам нужно, отдавайте предпочтение ограниченным формам (`numbers(N)`, `numbers(N, M[, S])`) вместо неограниченных `numbers()` / `system.numbers`.
+* Для параллельной генерации используйте `numbers_mt(...)` или таблицу [`system.numbers_mt`](/ru/reference/system-tables/numbers_mt). Обратите внимание, что результаты могут возвращаться в произвольном порядке.

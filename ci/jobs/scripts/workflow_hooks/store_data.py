@@ -11,9 +11,13 @@ if __name__ == "__main__":
     info = Info()
 
     # store changed files
+    # Fail-close for PR and merge-queue runs: the merge-queue flaky check
+    # selects tests from this list, so an empty fallback would silently skip
+    # it. Do not fail for master/release CI workflows.
     changed_files = (
-        GH.get_changed_files(strict=info.pr_number) or []
-    )  # do not fail for master/release CI workflow
+        GH.get_changed_files(strict=bool(info.pr_number) or info.is_merge_queue_event)
+        or []
+    )
     info.store_kv_data("changed_files", changed_files)
 
     # hack to get build digest
@@ -77,7 +81,11 @@ if __name__ == "__main__":
             master_parent_commits = [
                 s.strip()
                 for s in Shell.get_output(
-                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
+                    # 100 commits gives enough range to find 5-6 recent master coverage
+                # .info files even when coverage runs are sparse (only some master
+                # commits publish coverage). 30 was too few — the 6th baseline could
+                # be 80+ commits back with a meaningfully different test set.
+                f"git rev-list --first-parent --max-count=100 {master_parent}", verbose=True
                 ).splitlines()
                 if s.strip()
             ]
@@ -109,7 +117,7 @@ if __name__ == "__main__":
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later
-        release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
+        release_branch_base_sha = CHVersion.get_release_version().githash
         print(f"Release branch base sha: {release_branch_base_sha}")
         assert release_branch_base_sha
         release_branch_base_sha_with_predecessors = [

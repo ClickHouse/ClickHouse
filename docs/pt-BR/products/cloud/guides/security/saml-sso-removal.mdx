@@ -1,0 +1,76 @@
+---
+sidebarTitle: 'Remoção do SAML SSO'
+slug: /cloud/security/saml-removal
+title: 'Remoção do SAML SSO'
+description: 'Como remover o SAML SSO no ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP']
+---
+
+Os clientes podem precisar remover uma integração SAML de uma organização por motivos como a troca de provedor de identidade. Os usuários SAML são identidades separadas de outros tipos de usuário. Siga as instruções abaixo para mudar para outro método de autenticação.
+
+<Warning>
+  Esta ação não pode ser desfeita. Remover uma integração SAML invalidará os usuários SAML, de modo que eles não poderão ser recuperados. Siga cuidadosamente as instruções abaixo para garantir que você mantenha o acesso à organização.
+</Warning>
+
+<div id="before-you-begin">
+  ## Antes de começar
+</div>
+
+As organizações devem ter um usuário administrador com um método de autenticação alternativo para convidar novamente usuários para a organização depois que o SAML for removido. É necessário um usuário do ClickHouse Cloud com privilégios de Admin para executar estas etapas.
+
+<Steps>
+  <Step>
+    ### Ative os convites
+
+    Faça login no [ClickHouse Cloud](https://console.clickhouse.cloud) e abra um ticket de suporte com o assunto `Enable invitations for SAML organization`. Isso serve para solicitar a possibilidade de adicionar usuários usando um método diferente de SAML.
+  </Step>
+
+  <Step>
+    ### Anote os usuários que precisarão ser convidados novamente
+
+    Clique no nome da organização no canto inferior esquerdo e selecione `Users and Roles`. Revise a coluna `Provider` de cada usuário; todos os usuários que exibirem `Signed in with SSO` precisarão ser convidados novamente para a organização depois que o SAML for removido.
+
+    Certifique-se de que os usuários saibam que precisam aceitar os novos convites antes de acessar a conta depois que o SAML for removido.
+  </Step>
+</Steps>
+
+<div id="add-non-saml-users">
+  ## Adicione usuários que não usam SAML à organização
+</div>
+
+<Steps>
+  <Step>
+    ### Convide usuários
+
+    Clique no nome da organização no canto inferior esquerdo e, em seguida, selecione `Users and Roles`. Siga as instruções para [convidar usuários](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users).
+  </Step>
+
+  <Step>
+    ### Os usuários aceitam o convite
+
+    Os usuários devem encerrar totalmente a sessão em qualquer conexão SAML antes de aceitar o convite. Ao aceitar o convite com login social do Google ou da Microsoft, devem clicar nos botões `Continue with Google` ou `Continue with Microsoft`. Os usuários que usam e-mail e senha devem acessar https://console.clickhouse.cloud/?with=email para fazer login e aceitar o convite.
+
+    <Note>
+      A melhor forma de garantir que os usuários não sejam redirecionados automaticamente com base nas configurações de SAML é copiar o link de aceitação do convite e colá-lo em outro navegador ou em uma sessão privada/anônima para aceitar o convite.
+    </Note>
+  </Step>
+
+  <Step>
+    ### Salve consultas e dashboards
+
+    Depois de fazer login com as novas identidades, os usuários devem sair e entrar novamente com as contas SAML para compartilhar com a nova identidade quaisquer consultas ou dashboards salvos. Eles devem salvar uma cópia com a nova identidade para concluir o processo.
+  </Step>
+</Steps>
+
+<div id="remove-saml">
+  ## Remover SAML
+</div>
+
+Revise cuidadosamente para garantir que os seguintes itens tenham sido concluídos:
+
+* Há pelo menos um usuário com login não SAML e a função Admin atribuída na organização
+* Todos os usuários necessários foram convidados novamente usando outro método de autenticação
+* Todas as consultas e dashboards salvos foram migrados para usuários não SAML
+
+Se esses itens estiverem concluídos, vá até a aba Configurações da organização e alterne a configuração `Enable SAML single sign-on`. Isso exibirá um aviso. Clique em `Disable`. Vá até a aba Usuários e funções para remover os usuários SAML.

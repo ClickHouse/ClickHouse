@@ -1,0 +1,197 @@
+---
+sidebarTitle: 'Referencia'
+description: 'Describe los formatos, las fuentes de datos, la semántica de entrega, la autenticación y las funcionalidades experimentales que admite Kafka ClickPipes.'
+slug: /integrations/clickpipes/kafka/reference
+title: 'Referencia'
+doc_type: 'reference'
+keywords: ['referencia de Kafka', 'ClickPipes', 'fuentes de datos', 'avro', 'columnas virtuales']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="supported-data-sources">
+  ## Fuentes de datos compatibles
+</div>
+
+| Nombre           | Logo                                                                                                    | Tipo      | Estado  | Descripción                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------- | --------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="logo de Apache Kafka" width="32" />                | Streaming | Estable | Configure ClickPipes y comience a ingestar datos en streaming desde Apache Kafka a ClickHouse Cloud.     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="logo de Confluent Cloud" width="32" />         | Streaming | Estable | Aproveche la potencia combinada de Confluent y ClickHouse Cloud mediante nuestra integración directa.    |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="logo de Redpanda" width="32" />            | Streaming | Estable | Configure ClickPipes y comience a ingestar datos en streaming desde Redpanda a ClickHouse Cloud.         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="logo de AWS MSK" width="32" />                       | Streaming | Estable | Configure ClickPipes y comience a ingestar datos en streaming desde AWS MSK a ClickHouse Cloud.          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="logo de Azure Event Hubs" width="32" /> | Streaming | Estable | Configure ClickPipes y comience a ingestar datos en streaming desde Azure Event Hubs a ClickHouse Cloud. |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="logo de WarpStream" width="32" />             | Streaming | Estable | Configure ClickPipes y comience a ingestar datos en streaming desde WarpStream a ClickHouse Cloud.       |
+
+<div id="supported-data-formats">
+  ## Formatos de datos admitidos
+</div>
+
+Los formatos admitidos son:
+
+* [JSON](/es/guides/clickhouse/data-formats/json/intro)
+* [AvroConfluent](/es/reference/formats/Avro/AvroConfluent)
+* [Protobuf](/es/reference/formats/Protobuf/Protobuf)
+
+<div id="supported-data-types">
+  ## Tipos de datos compatibles
+</div>
+
+<div id="standard-types-support">
+  ### Tipos estándar
+</div>
+
+Actualmente, ClickPipes admite los siguientes tipos de datos estándar de ClickHouse:
+
+* Tipos numéricos básicos: [U]Int8/16/32/64, Float32/64 y BFloat16
+* Tipos enteros grandes: [U]Int128/256
+* Tipos Decimal
+* Boolean
+* String
+* FixedString
+* Date, Date32
+* DateTime, DateTime64 (solo zonas horarias UTC)
+* Enum8/Enum16
+* UUID
+* IPv4
+* IPv6
+* Time, Time64
+* JSON
+* todos los tipos LowCardinality de ClickHouse
+* Map con claves y valores que usan cualquiera de los tipos anteriores (incluidos los Nullable)
+* Tuple y Array con elementos que usan cualquiera de los tipos anteriores (incluidos los Nullable, solo un nivel de profundidad)
+* tipos SimpleAggregateFunction (para destinos AggregatingMergeTree o SummingMergeTree)
+
+<div id="variant-type-support">
+  ### Compatibilidad con el tipo Variant
+</div>
+
+ClickPipes admite el tipo Variant en las siguientes circunstancias:
+
+* Unions de Avro. Si su esquema de Avro contiene una unión con varios tipos no nulos, ClickPipes inferirá el
+  tipo Variant adecuado. En otros casos, los tipos Variant no se admiten para datos Avro.
+* Campos JSON. Puede especificar manualmente un tipo Variant (como `Variant(String, Int64, DateTime)`) para cualquier campo JSON
+  en el flujo de datos de origen. No se admiten subtipos complejos (arrays/maps/tuples). Además, debido a la forma en que ClickPipes determina
+  el subtipo Variant correcto que debe usar, en la definición de Variant solo puede usarse un tipo entero o de fecha y hora; por ejemplo, `Variant(Int64, UInt32)` no se admite.
+
+<div id="json-type-support">
+  ### Compatibilidad con el tipo JSON
+</div>
+
+ClickPipes admiten el tipo JSON en los siguientes casos:
+
+* Los campos Avro Record y Protobuf Message siempre se pueden asignar a una columna JSON.
+* Los campos Avro String y Bytes se pueden asignar a una columna JSON si el campo Avro contiene realmente cadenas JSON que representan objetos.
+* Los campos Protobuf de tipo String y Bytes se pueden asignar a una columna JSON si el campo Protobuf contiene realmente cadenas JSON que representan objetos.
+* Los campos JSON que siempre son un objeto JSON se pueden asignar a una columna JSON de destino.
+
+Ten en cuenta que tendrás que cambiar manualmente la columna de destino al tipo JSON deseado, incluidas las rutas fijas o omitidas.
+
+<div id="avro">
+  ### Avro
+</div>
+
+<div id="supported-avro-data-types">
+  #### Tipos de datos Avro compatibles
+</div>
+
+ClickPipes admite todos los tipos primitivos y complejos de Avro, así como todos los tipos lógicos de Avro, excepto `local-timestamp-millis` y `local_timestamp-micros`. Los tipos `record` de Avro se convierten en Tuple, los tipos `array` en Array y `map` en Map (solo claves de cadena). En general, están disponibles las conversiones indicadas [aquí](/es/concepts/features/interfaces/schema-inference#avro). Recomendamos usar una correspondencia exacta de tipos para los tipos numéricos de Avro, ya que ClickPipes no comprueba el overflow ni la pérdida de precisión durante la conversión de tipos.
+Como alternativa, todos los tipos de Avro se pueden insertar en una columna `String` y, en ese caso, se representarán como una cadena JSON válida.
+
+<div id="nullable-types-and-avro-unions">
+  #### Tipos Nullable y uniones de Avro
+</div>
+
+Los tipos Nullable en Avro se definen mediante un esquema union de `(T, null)` o `(null, T)`, donde T es el tipo base de Avro. Durante la inferencia de esquemas, estas uniones se asignan a una columna &quot;Nullable&quot; de ClickHouse. Ten en cuenta que ClickHouse no admite los tipos
+`Nullable(Array)`, `Nullable(Map)` ni `Nullable(Tuple)`. Las uniones con null de Avro para estos tipos se asignan a versiones no anulables (los tipos Record de Avro se asignan a un Tuple con nombre de ClickHouse). Los valores &quot;null&quot; de Avro para estos tipos se insertarán como:
+
+* Un Array vacío para un array de Avro nulo
+* Un Map vacío para un Map de Avro nulo
+* Un Tuple con nombre con todos los valores predeterminados o cero para un Record de Avro nulo
+
+<div id="protobuf">
+  ### Protobuf
+</div>
+
+<div id="supported-protobuf-data-types">
+  #### Tipos de datos de Protobuf compatibles
+</div>
+
+ClickPipes admite todos los tipos de Protobuf 2 y 3, excepto el tipo `group` de proto 2, que lleva tiempo obsoleto. Las conversiones básicas de tipos usan
+las siguientes correspondencias:
+
+<Note>
+  También se admiten las variantes `Array`, `Map` y `Nullable` de todos los tipos básicos.
+</Note>
+
+| Tipo de Protobuf              | Tipo de ClickHouse |
+| ----------------------------- | ------------------ |
+| `bool`                        | `UInt8`            |
+| `float`                       | `Float32`          |
+| `double`                      | `Float64`          |
+| `int32`, `sint32`, `sfixed32` | `Int32`            |
+| `int64`, `sint64`, `sfixed64` | `Int64`            |
+| `uint32`, `fixed32`           | `UInt32`           |
+| `uint64`, `fixed64`           | `UInt64`           |
+| `string`, `bytes`             | `String`           |
+| `enum`                        | `Enum`             |
+| `repeated T`                  | `Array(T)`         |
+| `message`                     | `Tuple`            |
+
+<Tip>
+  Para los tipos numéricos, se recomienda una correspondencia exacta para evitar desbordamientos o pérdida de precisión.
+</Tip>
+
+También se admiten los siguientes [tipos conocidos](https://protobuf.dev/reference/protobuf/google.protobuf/):
+
+| Tipo conocido                                                                                | Tipo de ClickHouse       |
+| -------------------------------------------------------------------------------------------- | ------------------------ |
+| `google.protobuf.Timestamp`                                                                  | `DateTime`, `DateTime64` |
+| `google.protobuf.Duration`                                                                   | `Time`, `Time64`         |
+| `google.protobuf.StringValue`, `google.protobuf.BytesValue`                                  | `Nullable(String)`       |
+| `google.protobuf.Int32Value`, `google.protobuf.SInt32Value`, `google.protobuf.SFixed32Value` | `Nullable(Int32)`        |
+| `google.protobuf.Int64Value`, `google.protobuf.SInt64Value`, `google.protobuf.SFixed64Value` | `Nullable(Int64)`        |
+| `google.protobuf.UInt32Value`, `google.protobuf.Fixed32Value`                                | `Nullable(UInt32)`       |
+| `google.protobuf.UInt64Value`, `google.protobuf.Fixed64Value`                                | `Nullable(UInt64)`       |
+| `google.protobuf.FloatValue`                                                                 | `Nullable(Float32)`      |
+| `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
+| `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
+
+<div id="protobuf-one-ofs">
+  #### Protobuf `oneof`
+</div>
+
+Durante la inferencia de esquemas, los campos `oneof` de Protobuf se asignan de forma predeterminada a un `Tuple` con nombre, donde como máximo un campo contendrá un
+valor distinto del predeterminado. Estos campos también pueden asignarse automáticamente a una columna `Variant`, donde el valor activo adopta el tipo del
+campo constituyente que esté establecido. Como alternativa, cada campo constituyente puede asignarse manualmente a su propia columna de ClickHouse; dado que los campos `oneof`
+son mutuamente excluyentes, solo se rellenará una columna por registro.
+
+<div id="protobuf-message-lists">
+  #### Listas de mensajes
+</div>
+
+Si el esquema Protobuf de nivel superior definido para el ClickPipe contiene un único campo repetido que a su vez es un Message de protobuf, la inferencia de esquemas y la asignación de columnas se basarán en el campo Message «contenido». El mensaje de Kafka se procesará como una lista de esos mensajes, y un único mensaje de Kafka se desglosará en múltiples filas de ClickHouse.
+
+<div id="kafka-virtual-columns">
+  ## Columnas virtuales de Kafka
+</div>
+
+Las siguientes columnas virtuales son compatibles con las fuentes de datos de streaming compatibles con Kafka. Al crear un nuevo destino, se pueden añadir columnas virtuales a la tabla de destino mediante el botón `Add Column`.
+
+| Nombre           | Descripción                                             | Tipo de dato recomendado |
+| ---------------- | ------------------------------------------------------- | ------------------------ |
+| `_key`           | Clave del mensaje de Kafka                              | `String`                 |
+| `_timestamp`     | Marca temporal de Kafka (precisión de milisegundos)     | `DateTime64(3)`          |
+| `_partition`     | Partición de Kafka                                      | `Int32`                  |
+| `_offset`        | Offset de Kafka                                         | `Int64`                  |
+| `_topic`         | Topic de Kafka                                          | `String`                 |
+| `_header_keys`   | Array paralelo de claves en las cabeceras del registro  | `Array(String)`          |
+| `_header_values` | Array paralelo de valores en las cabeceras del registro | `Array(String)`          |
+| `_raw_message`   | Mensaje completo de Kafka                               | `String`                 |
+
+Ten en cuenta que la columna `_raw_message` solo se recomienda para datos JSON.
+En los casos de uso en los que solo se necesita la cadena JSON (por ejemplo, al usar las funciones [`JsonExtract*`](/es/reference/functions/regular-functions/json-functions#jsonextract-functions) de ClickHouse para
+poblar una vista materializada de destino), eliminar todas las columnas &quot;no virtuales&quot; puede mejorar el rendimiento de ClickPipes.

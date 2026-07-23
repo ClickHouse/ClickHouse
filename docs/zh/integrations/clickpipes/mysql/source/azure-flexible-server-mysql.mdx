@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'Azure Database for MySQL 灵活服务器'
+description: '将 Azure Database for MySQL 灵活服务器设置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/mysql/source/azure-flexible-server-mysql
+title: 'Azure Database for MySQL 灵活服务器数据源设置指南'
+keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本分步指南介绍如何配置 Azure Database for MySQL 灵活服务器，以便使用 [MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index) 将数据复制到 ClickHouse Cloud。该服务仅支持**一次性摄取**。有关 MySQL CDC (变更数据捕获) 的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。
+
+<Warning>
+  该服务**不支持通过 CDC 进行持续摄取**。Azure Database for MySQL 灵活服务器不允许将 [`binlog_row_metadata`](https://dev.mysql.com/doc/refman/en/replication-options-binary-log.html#sysvar_binlog_row_metadata) 系统变量配置为 `FULL`，而这是 ClickPipes 中支持完整 MySQL CDC 功能所必需的。
+
+  请在 [Azure feedback forum](https://feedback.azure.com/d365community/forum/47b1e71d-ee24-ec11-b6e6-000d3a4f0da0) 提交功能请求，为[此问题](https://learn.microsoft.com/en-us/answers/questions/766047/setting-binlog-row-metadata-to-full-in-azure-db-fo)投票，或[联系 Azure 支持](https://azure.microsoft.com/en-us/support/create-ticket/)以请求提供此能力。
+</Warning>
+
+<div id="configure-database-user">
+  ## 配置数据库用户
+</div>
+
+以管理员身份连接到你的 Azure Database for MySQL 灵活服务器 实例，并执行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
+   ```
+
+2. 授予 schema 权限。以下示例展示了 `mysql` 数据库的权限。对于你要复制的每个数据库和主机，都重复执行这些命令：
+
+   ```sql
+   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. 使权限更改生效：
+
+   ```sql
+   FLUSH PRIVILEGES;
+   ```
+
+<div id="configure-network-access">
+  ## 配置网络访问
+</div>
+
+<Note>
+  ClickPipes 目前不支持 Azure Private Link 连接。如果你不允许对 Azure Database for MySQL 灵活服务器 实例进行公共访问，可以[使用 SSH 隧道](/zh/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access)进行安全连接。Azure Private Link 将在未来提供支持。
+</Note>
+
+接下来，你必须允许 ClickPipes 连接到你的 Azure Database for MySQL 灵活服务器 实例。
+
+<Tabs>
+  <Tab title="允许 ClickPipes IP 地址">
+    1. 在 Azure 门户中，转到 **所有资源**。选择你的 Azure Database for MySQL 灵活服务器 实例，打开 **概述** 页面。
+
+    2. 在 **设置** 下，选择 **网络**。确保已启用 **公共访问**。
+
+    3. 在 **防火墙规则** 部分中，添加你的服务所在区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="为公共访问和 IP 允许列表配置网络" size="lg" border />
+
+    4. 点击 **保存**，保存网络安全配置更改。
+  </Tab>
+
+  <Tab title="使用 SSH 隧道">
+    如果你不允许对 Azure Database for MySQL 灵活服务器 实例进行公共访问，则必须先设置一个 SSH 堡垒机主机，以通过安全隧道建立连接。要在 Azure 上设置 SSH 堡垒机主机：
+
+    1. 按照[官方文档](https://learn.microsoft.com/en-us/azure/virtual-machines/linux/quick-create-portal?tabs=ubuntu)创建并启动一台 Azure 虚拟机 (VM) 。
+       * 确保该 VM 与你的 Azure Database for MySQL 灵活服务器 实例位于同一个虚拟网络 (VNet) 中，或位于已建立对等互连且可连通的 VNet 中。
+       * 确保该 VM 具有一个[静态公共 IP 地址](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address)。将 ClickPipes 连接到你的 SSH 堡垒机主机时，需要用到这个 IP 地址。
+
+    2. 更新 SSH 堡垒机主机的网络安全组 (NSG) 规则，以允许来自你的服务所在区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)的流量。
+
+    3. 更新 Azure Database for MySQL 灵活服务器 实例的防火墙规则，以允许来自 SSH 堡垒机主机[私有 IP 地址](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses)的流量。
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+你现在可以[创建 ClickPipe](/zh/integrations/clickpipes/mysql/index)，开始将 Azure Database for MySQL 灵活服务器 实例中的数据摄取到 ClickHouse Cloud。请务必记下设置实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

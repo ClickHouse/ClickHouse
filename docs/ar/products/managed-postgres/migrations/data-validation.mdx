@@ -1,0 +1,30 @@
+---
+slug: /cloud/managed-postgres/migrations/data-validation
+sidebarTitle: 'التحقق من صحة البيانات'
+title: 'التحقق من صحة البيانات بعد الترحيل'
+description: 'تعرّف على كيفية التحقق من صحة بياناتك بعد ترحيلها إلى ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'النسخ المتماثل المنطقي', 'الترحيل', 'نقل البيانات', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.data-validation-beta" />
+
+<div id="data-validation-counts">
+  ## مقارنة عدد الصفوف في جميع الجداول
+</div>
+
+من الطرق البسيطة للتحقق من صحة بياناتك بعد الترحيل مقارنة عدد الصفوف في جميع الجداول بين قاعدتَي البيانات المصدر والهدف. ويمكنك إجراء ذلك بتشغيل الاستعلام التالي على كلتا قاعدتَي البيانات:
+
+```sql
+SELECT table_name, 
+       (xpath('/row/cnt/text()', xml_count))[1]::text::bigint AS row_count
+FROM (
+  SELECT table_name, 
+         query_to_xml('SELECT count(*) AS cnt FROM ' || quote_ident(table_name), false, true, '') AS xml_count
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+) t
+ORDER BY table_name;
+```

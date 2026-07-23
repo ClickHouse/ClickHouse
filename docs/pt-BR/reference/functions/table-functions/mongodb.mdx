@@ -1,0 +1,136 @@
+---
+description: 'Permite executar consultas `SELECT` em dados armazenados em um servidor
+  MongoDB remoto.'
+sidebarTitle: 'mongodb'
+slug: /sql-reference/table-functions/mongodb
+title: 'mongodb'
+doc_type: 'reference'
+---
+
+Permite executar consultas `SELECT` em dados armazenados em um servidor MongoDB remoto.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]]);
+mongodb(uri, collection, structure[, oid_columns]);
+mongodb(named_collection_name[, <arg>=<value>...]);
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento     | Descrição                                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `host:port`   | Endereço do servidor MongoDB.                                                                                  |
+| `database`    | Nome do banco de dados remoto.                                                                                 |
+| `collection`  | Nome da coleção remota.                                                                                        |
+| `user`        | Usuário do MongoDB.                                                                                            |
+| `password`    | Senha do usuário.                                                                                              |
+| `structure`   | O esquema da tabela do ClickHouse retornada por esta função.                                                   |
+| `options`     | Opções da string de conexão do MongoDB (parâmetro opcional).                                                   |
+| `oid_columns` | Lista de colunas separadas por vírgulas que devem ser tratadas como `oid` na cláusula WHERE. `_id` por padrão. |
+
+<Tip>
+  Se você estiver usando o serviço em nuvem MongoDB Atlas, adicione estas opções:
+
+  ```ini
+  'connectTimeoutMS=10000&ssl=true&authSource=admin'
+  ```
+</Tip>
+
+Você também pode se conectar por URI:
+
+```sql
+mongodb(uri, collection, structure[, oid_columns])
+```
+
+| Argumento     | Descrição                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `uri`         | String de conexão.                                                                                            |
+| `collection`  | Nome da coleção remota.                                                                                       |
+| `structure`   | O esquema da tabela do ClickHouse retornada por esta função.                                                  |
+| `oid_columns` | Lista de colunas separadas por vírgula que devem ser tratadas como `oid` na cláusula WHERE. `_id` por padrão. |
+| :::           |                                                                                                               |
+
+Você pode passar os argumentos usando uma coleção nomeada:
+
+```sql
+mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
+-- ou
+mongodb(_named_collection_[, uri][, structure][, oid_columns])
+```
+
+<div id="returned_value">
+  ## Valor retornado
+</div>
+
+Um objeto do tipo tabela com as mesmas colunas da tabela original do MongoDB.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Suponha que exista uma coleção chamada `my_collection` definida em um banco de dados MongoDB chamado `test` e que insiramos alguns documentos:
+
+```sql
+db.createUser({user:"test_user",pwd:"password",roles:[{role:"readWrite",db:"test"}]})
+
+db.createCollection("my_collection")
+
+db.my_collection.insertOne(
+    { log_type: "event", host: "120.5.33.9", command: "check-cpu-usage -w 75 -c 90" }
+)
+
+db.my_collection.insertOne(
+    { log_type: "event", host: "120.5.33.4", command: "system-check"}
+)
+```
+
+Vamos consultar a coleção usando a função de tabela `mongodb`:
+
+```sql
+SELECT * FROM mongodb(
+    '127.0.0.1:27017',
+    'test',
+    'my_collection',
+    'test_user',
+    'password',
+    'log_type String, host String, command String',
+    'connectTimeoutMS=10000'
+)
+```
+
+ou:
+
+```sql
+SELECT * FROM mongodb(
+    'mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+    'my_collection',
+    'log_type String, host String, command String'
+)
+```
+
+ou:
+
+```sql
+CREATE NAMED COLLECTION mongo_creds AS
+       uri='mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+       collection='default_collection';
+
+SELECT * FROM mongodb(
+        mongo_creds,
+        collection = 'my_collection',
+        structure = 'log_type String, host String, command String'
+)
+```
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [O mecanismo de tabela `MongoDB`](/pt-BR/reference/engines/table-engines/integrations/mongodb)
+* [Usando o MongoDB como fonte de dicionário](/pt-BR/reference/statements/create/dictionary/sources/mongodb)

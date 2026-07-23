@@ -7,6 +7,8 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <string_view>
 #include <type_traits>
@@ -148,7 +150,7 @@ class BaseSettings : public TTraits::Data
         using is_transparent = void;
         size_t operator()(std::string_view txt) const { return std::hash<std::string_view>{}(txt); }
     };
-    using CustomSettingMap = std::unordered_map<String, SettingFieldCustom, StringHash, std::equal_to<>>;
+    using CustomSettingMap = UnorderedMapWithMemoryTracking<String, SettingFieldCustom, StringHash, std::equal_to<>>;
 
 public:
     BaseSettings() = default;
@@ -225,6 +227,9 @@ public:
 
     /// Get the type name of a setting (e.g., "UInt64", "String")
     std::string_view getTypeName(std::string_view name) const;
+
+    /// Get the default value of a setting as a string
+    String getDefaultValueString(std::string_view name) const;
 
     /// Get the description of a setting
     std::string_view getDescription(std::string_view name) const;
@@ -491,6 +496,18 @@ std::string_view BaseSettings<TTraits>::getTypeName(std::string_view name) const
         return accessor.getTypeName(index);
     if (tryGetCustomSetting(name))
         return "Custom";
+    BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename TTraits>
+String BaseSettings<TTraits>::getDefaultValueString(std::string_view name) const
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getDefaultValueString(index);
+    if (tryGetCustomSetting(name))
+        return {};
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
@@ -1052,7 +1069,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
   * - Setting aliases
   */
 
-using AliasMap = std::unordered_map<std::string_view, std::string_view>;
+using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
 
 // ---------------------------------------------------------------------------
 // Helper macros for constexpr typed-array layout generation.
@@ -1226,6 +1243,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             /** Find setting index by name. Returns -1 if not found. */ \
             size_t find(std::string_view name) const; \
             \
+            /** Find setting index by its byte offset within Data (as stored in SettingIndex). Returns -1 if not found. */ \
+            size_t findByOffset(size_t data_offset) const; \
+            \
             /* Metadata accessors (by index) */ \
             const String & getName(size_t index) const { return field_infos[index].name; } \
             std::string_view getPath(size_t index) const { return field_infos[index].path; } \
@@ -1331,8 +1351,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 size_t data_offset;                             /* Byte offset within Data struct */ \
             }; \
             \
-            std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
-            std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
+            VectorWithMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
+            UnorderedMapWithMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
+            UnorderedMapWithMemoryTracking<size_t, size_t> offset_to_index_map; /* Fast data offset -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \
             /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
             /* string representation (see getDefaultValueString). Initialized once via the tag */ \
@@ -1349,12 +1370,12 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                    LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
         \
         /** Reverse map: setting name -> list of aliases */ \
-        using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
+        using SettingsToAliasesMap = UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
             static SettingsToAliasesMap setting_to_aliases_mapping = [] \
             { \
-                std::unordered_map<std::string_view, std::vector<std::string_view>> map; \
+                UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>> map; \
                 for (const auto & [alias, destination] : aliases_to_settings) \
                     map[destination].push_back(alias); \
                 return map; \
@@ -1483,11 +1504,12 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
             _Pragma("clang diagnostic pop") \
-            /* Build name -> index map for fast lookups */ \
+            /* Build name -> index and data offset -> index maps for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \
+                res.offset_to_index_map.emplace(info.data_offset, i); \
             } \
             return res; \
         }(); \
@@ -1500,6 +1522,14 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     { \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
+            return it->second; \
+        return static_cast<size_t>(-1); \
+    } \
+    \
+    size_t SETTINGS_TRAITS_NAME::Accessor::findByOffset(size_t data_offset) const \
+    { \
+        auto it = offset_to_index_map.find(data_offset); \
+        if (it != offset_to_index_map.end()) \
             return it->second; \
         return static_cast<size_t>(-1); \
     } \

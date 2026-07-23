@@ -1,0 +1,59 @@
+---
+description: 'これは Delta Lake テーブル関数の拡張です。'
+sidebarTitle: 'deltaLakeCluster'
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
+doc_type: 'reference'
+---
+
+これは [Delta Lake](/ja/reference/functions/table-functions/deltalake) テーブル関数の拡張です。
+
+指定したクラスター内の多数のノードから、Amazon S3 上の [Delta Lake](https://github.com/delta-io/delta) テーブルのファイルを並列処理できます。イニシエーターではクラスター内のすべてのノードへの接続を確立し、各ファイルを動的に振り分けます。ワーカーノードでは、次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+`deltaLakeS3Cluster` は `deltaLakeCluster` のエイリアスで、どちらも S3 用です。
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `cluster_name` — リモートおよびローカルのサーバーへのアドレスのセットと接続パラメータの構築に使用されるクラスター名。
+* その他すべての引数の説明は、同等の [Delta Lake](/ja/reference/functions/table-functions/deltalake) テーブル関数における引数の説明と同一です。
+* オプションの `extra_credentials` パラメータを使用すると、ClickHouse Cloud でロールベースのアクセスに必要な `role_arn` を渡すことができます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定した構造を持つ、S3 上の指定した Delta Lake テーブル内のクラスターからデータを読み取るためのテーブル。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルのパス。型: `LowCardinality(String)`.
+* `_file` — ファイル名。型: `LowCardinality(String)`.
+* `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`. ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [Delta Lake エンジン](/ja/reference/engines/table-engines/integrations/deltalake)
+* [Delta Lake テーブル関数](/ja/reference/functions/table-functions/deltalake)

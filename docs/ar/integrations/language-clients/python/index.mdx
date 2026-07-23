@@ -1,0 +1,141 @@
+---
+keywords: ['clickhouse', 'بايثون', 'عميل', 'ربط', 'تكامل']
+slug: /integrations/python
+description: 'مجموعة مشاريع ClickHouse Connect لربط بايثون بـ ClickHouse'
+title: 'تكامل بايثون مع ClickHouse Connect'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+يُعد ClickHouse Connect برنامج تشغيل أساسيًا لقواعد البيانات، ويوفّر التوافق مع مجموعة واسعة من تطبيقات بايثون.
+
+* الواجهة الرئيسية هي الكائن `Client` في الحزمة `clickhouse_connect.driver`. وتتضمن هذه الحزمة الأساسية أيضًا فئات مساعدة متنوعة ودوال خدمية تُستخدم للتواصل مع خادم ClickHouse، بالإضافة إلى تطبيقات &quot;context&quot; لإدارة استعلامات insert و select المتقدمة.
+* توفّر الحزمة `clickhouse_connect.datatypes` تنفيذًا أساسيًا وفئات فرعية لجميع أنواع بيانات ClickHouse غير التجريبية. وتتمثل وظيفتها الأساسية في تسلسل بيانات ClickHouse وإلغاء تسلسلها إلى التنسيق الثنائي العمودي &quot;Native&quot; الخاص بـ ClickHouse، والمستخدَم لتحقيق أعلى كفاءة ممكنة في نقل البيانات بين ClickHouse وتطبيقات العميل.
+* تعمل فئات Cython/C في الحزمة `clickhouse_connect.cdriver` على تحسين بعض أكثر عمليات التسلسل وإلغاء التسلسل شيوعًا، ما يوفّر أداءً أفضل بكثير مقارنةً ببايثون الخالص.
+* تتوفر لهجة [SQLAlchemy](https://www.sqlalchemy.org/) في الحزمة `clickhouse_connect.cc_sqlalchemy`، وهي مبنية على حزمتَي `datatypes` و `dbi`. ويدعم هذا التنفيذ إمكانات SQLAlchemy Core، بما في ذلك استعلامات `SELECT` مع `JOIN` (`INNER`, `LEFT OUTER`, `FULL OUTER`, `CROSS`)، وعبارات `WHERE`، و`ORDER BY`، و`LIMIT`/`OFFSET`، وعمليات `DISTINCT`، وعبارات `DELETE` خفيفة الوزن مع شروط `WHERE`، وانعكاس الجداول، وعمليات DDL الأساسية (`CREATE TABLE`, `CREATE`/`DROP DATABASE`). ورغم أنه لا يدعم ميزات ORM المتقدمة أو ميزات DDL المتقدمة، فإنه يوفّر إمكانات استعلام قوية مناسبة لمعظم أعباء العمل التحليلية على قاعدة بيانات ClickHouse الموجّهة إلى OLAP.
+* يُعد برنامج التشغيل الأساسي وتنفيذ [ClickHouse Connect SQLAlchemy](/ar/integrations/language-clients/python/sqlalchemy) الطريقة المفضلة لربط ClickHouse بـ Apache Superset. استخدم اتصال قاعدة البيانات `ClickHouse Connect` أو سلسلة اتصال لهجة SQLAlchemy `clickhousedb`.
+
+هذه الوثائق محدَّثة حتى إصدار clickhouse-connect 0.9.2.
+
+<Note>
+  يستخدم برنامج تشغيل ClickHouse Connect الرسمي لبايثون بروتوكول HTTP للتواصل مع خادم ClickHouse. يوفّر ذلك دعمًا لموازن تحميل HTTP، ويعمل بكفاءة في بيئات المؤسسات التي تستخدم جدران الحماية والوكلاء، لكنه يقدّم ضغطًا وأداءً أقل قليلًا مقارنةً بالبروتوكول الأصلي المعتمد على TCP، كما لا يدعم بعض الميزات المتقدمة مثل إلغاء الاستعلامات. وفي بعض حالات الاستخدام، قد ترغب في استخدام أحد [برامج تشغيل بايثون المجتمعية](/ar/integrations/language-clients/third-party/client-libraries) التي تستخدم البروتوكول الأصلي المعتمد على TCP.
+</Note>
+
+<div id="requirements-and-compatibility">
+  ## المتطلبات والتوافق
+</div>
+
+|       بايثون |    |         المنصة¹ |    |      ClickHouse |    | SQLAlchemy² |    | Apache Superset |    | Pandas |    | Polars |    |
+| -----------: | :- | --------------: | :- | --------------: | :- | ----------: | :- | --------------: | :- | -----: | :- | -----: | :- |
+| 2.x, &lt;3.9 | ❌  |     Linux (x86) | ✅  |       &lt;25.x³ | 🟡 |  &lt;1.4.40 | ❌  |         &lt;1.4 | ❌  |   ≥1.5 | ✅  |    1.x | ✅  |
+|        3.9.x | ✅  | Linux (Aarch64) | ✅  |           25.x³ | 🟡 |     ≥1.4.40 | ✅  |           1.4.x | ✅  |    2.x | ✅  |        |    |
+|       3.10.x | ✅  |     macOS (x86) | ✅  |    25.3.x (LTS) | ✅  |        ≥2.x | ✅  |           1.5.x | ✅  |        |    |        |    |
+|       3.11.x | ✅  |     macOS (ARM) | ✅  | 25.6.x (مستقرة) | ✅  |             |    |           2.0.x | ✅  |        |    |        |    |
+|       3.12.x | ✅  |         Windows | ✅  | 25.7.x (مستقرة) | ✅  |             |    |           2.1.x | ✅  |        |    |        |    |
+|       3.13.x | ✅  |                 |    |    25.8.x (LTS) | ✅  |             |    |           3.0.x | ✅  |        |    |        |    |
+|              |    |                 |    | 25.9.x (مستقرة) | ✅  |             |    |                 |    |        |    |        |    |
+
+¹تم اختبار ClickHouse Connect صراحةً على المنصات المدرجة. بالإضافة إلى ذلك، تُبنى حِزم wheel الثنائية غير المختبرة (مع تحسينات C) لجميع المعماريات التي يدعمها مشروع [`cibuildwheel`](https://cibuildwheel.readthedocs.io/en/stable/) الممتاز. وأخيرًا، بما أن ClickHouse Connect يمكنه أيضًا العمل كبرنامج بايثون خالص، فمن المفترض أن يعمل التثبيت من المصدر على أي تثبيت حديث لـ بايثون.
+
+²يقتصر دعم SQLAlchemy على وظائف Core (الاستعلامات وDDL الأساسية). ميزات ORM غير مدعومة. راجع وثائق [SQLAlchemy Integration Support](/ar/integrations/language-clients/python/sqlalchemy) لمزيد من التفاصيل.
+
+³يعمل ClickHouse Connect عمومًا بشكل جيد مع الإصدارات الواقعة خارج النطاق المدعوم رسميًا.
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+ثبّت ClickHouse Connect من [PyPI](https://pypi.org/project/clickhouse-connect/) باستخدام pip:
+
+`pip install clickhouse-connect`
+
+يمكن أيضًا تثبيت ClickHouse Connect من المصدر:
+
+* نفّذ `git clone` لـ [مستودع GitHub](https://github.com/ClickHouse/clickhouse-connect).
+* (اختياري) شغّل `pip install cython` لبناء تحسينات C/Cython وتمكينها
+* انتقل باستخدام `cd` إلى الدليل الجذر للمشروع ثم شغّل `pip install .`
+
+<div id="support-policy">
+  ## سياسة الدعم
+</div>
+
+يرجى التحديث إلى أحدث إصدار من ClickHouse Connect قبل الإبلاغ عن أي مشكلات. يجب تقديم المشكلات في [مشروع GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). ومن المتوقع أن تكون الإصدارات المستقبلية من ClickHouse Connect متوافقة مع إصدارات ClickHouse المدعومة رسميًا وقت الإصدار. ويمكن العثور على الإصدارات المدعومة حاليًا من خادم ClickHouse [هنا](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md). إذا لم تكن متأكدًا من إصدار خادم ClickHouse الذي ينبغي استخدامه، فاقرأ هذه المناقشة [هنا](/ar/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases). وتختبر مصفوفة اختبارات CI لدينا أحدث إصدارين من إصدارات LTS وأحدث ثلاثة إصدارات مستقرة. ومع ذلك، وبسبب بروتوكول HTTP والحد الأدنى من التغييرات غير المتوافقة بين إصدارات ClickHouse، فإن ClickHouse Connect يعمل عمومًا بشكل جيد مع إصدارات الخادم الواقعة خارج النطاق المدعوم رسميًا، مع أن التوافق مع بعض أنواع البيانات المتقدمة قد يختلف.
+
+<div id="basic-usage">
+  ## الاستخدام الأساسي
+</div>
+
+<div id="gather-your-connection-details">
+  ### اجمع بيانات الاتصال الخاصة بك
+</div>
+
+<ConnectionDetails />
+
+<div id="establish-a-connection">
+  ### إنشاء اتصال
+</div>
+
+فيما يلي مثالان للاتصال بـ ClickHouse:
+
+* الاتصال بخادم ClickHouse على localhost.
+* الاتصال بخدمة ClickHouse Cloud.
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
+  #### استخدم مثيل عميل ClickHouse Connect للاتصال بخادم ClickHouse على localhost:
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='localhost', username='default', password='password')
+```
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
+  #### استخدم مثيل عميل ClickHouse Connect للاتصال بخدمة ClickHouse Cloud:
+</div>
+
+<Tip>
+  استخدم تفاصيل الاتصال التي جُمعت سابقًا. تتطلب خدمات ClickHouse Cloud استخدام TLS، لذا استخدم المنفذ 8443.
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='HOSTNAME.clickhouse.cloud', port=8443, username='default', password='your password')
+```
+
+<div id="interact-with-your-database">
+  ### التفاعل مع قاعدة البيانات
+</div>
+
+لتنفيذ أمر ClickHouse SQL، استخدم method ‏`command` في client:
+
+```python
+client.command('CREATE TABLE new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+```
+
+لإدراج البيانات على دفعات، استخدم الطريقة `insert` في العميل مع مصفوفة ثنائية الأبعاد من الصفوف والقيم:
+
+```python
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+```
+
+لاسترداد البيانات باستخدام ClickHouse SQL، استخدم الطريقة `query` الخاصة بالعميل:
+
+```python
+result = client.query('SELECT max(key), avg(metric) FROM new_table')
+print(result.result_rows)
+# Output: [(2000, -50.9035)]
+```

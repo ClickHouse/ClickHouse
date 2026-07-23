@@ -1,0 +1,42 @@
+---
+title: كيف أحلّ خطأ TOO MANY PARTS أثناء تنفيذ INSERT...SELECT؟
+description: "عالج خطأ TOO_MANY_PARTS في ClickHouse أثناء `INSERT...SELECT` عبر ضبط إعدادات متقدمة لتكوين blocks أكبر وزيادة حدود partition."
+date: 2023-07-21
+tags: ['الإعدادات', 'الأخطاء والاستثناءات']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+عند تنفيذ عبارة `INSERT...SELECT`، يظهر لي خطأ وجود عدد كبير جدًا من الأجزاء (TOO&#95;MANY&#95;PARTS).
+
+كيف يمكنني حل هذه المشكلة؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+فيما يلي بعض الإعدادات التي يمكن ضبطها لتجنب هذا الخطأ. هذا النوع من الضبط متقدم جدًا في ClickHouse، ويجب تعيين هذه القيم فقط بعد فهم مواصفات ClickHouse Cloud service أو الـ cluster المحلي حيث ستُستخدم، لذا لا تعتبر هذه القيم حلًا &quot;يناسب الجميع&quot;.
+
+[max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#settings-max_insert_block_size) = `100_000_000` (default `1_048_576`)
+
+إن زيادة القيمة من ~1M إلى 100M تسمح بتكوين blocks أكبر.
+
+ملاحظة: ينطبق هذا الإعداد فقط عندما يُشكِّل server هذه الـ blocks، أي عند تنفيذ INSERT عبر واجهة HTTP، وليس عند استخدام clickhouse-client
+
+[min&#95;insert&#95;block&#95;size&#95;rows](/ar/reference/settings/session-settings#min-insert-block-size-rows) = `100_000_000` (default `1_048_576`)
+
+إن زيادة القيمة من ~1M إلى 100M تسمح بتكوين blocks أكبر.
+
+[min&#95;insert&#95;block&#95;size&#95;bytes](/ar/reference/settings/session-settings#min-insert-block-size-bytes) = `500_000_000` (default `268_435_456`)
+
+إن زيادة القيمة من 268.44 MB إلى 500 MB تسمح بتكوين blocks أكبر.
+
+[parts&#95;to&#95;delay&#95;insert](/ar/reference/settings/merge-tree-settings#parts-to-delay-insert) = `500` (default `150`)
+
+تؤدي زيادة هذه القيمة إلى منع إبطاء عمليات INSERT بشكل مصطنع عند بلوغ عدد الأجزاء النشطة في partition واحدة.
+
+[parts&#95;to&#95;throw&#95;insert](/ar/reference/settings/merge-tree-settings#parts-to-throw-insert) = `1500` (default `3000`)
+
+ستؤثر زيادة هذه القيمة عمومًا في query performance للـ table، لكن ذلك يكون مقبولًا عادةً في حالات migration للبيانات.

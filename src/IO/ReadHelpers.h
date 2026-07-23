@@ -6,7 +6,6 @@
 #include <limits>
 #include <bit>
 #include <span>
-
 #include <type_traits>
 
 #include <Common/FramePointers.h>
@@ -31,6 +30,7 @@
 
 #include <Formats/FormatSettings.h>
 
+#include <IO/IsTriviallySerializable.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -101,23 +101,31 @@ inline void readChar(char & x, ReadBuffer & buf)
 }
 
 
+/// Read bytes from buffer
+inline void readNBytes(char * output, size_t size, ReadBuffer & buf)
+{
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    /// Use a difference-based check to avoid pointer overflow UB when `size` is large
+    /// (e.g. when reading a whole vector at once via readVectorBinary).
+    if (buf.position() && size <= static_cast<size_t>(buf.buffer().end() - buf.position())) [[likely]]
+    {
+        __builtin_memcpy(output, buf.position(), size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.readStrict(output, size);
+    }
+}
+
+
 /// Read POD-type in native format
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
     static constexpr size_t size = sizeof(T); /// NOLINT
-
-    /// If the whole value fits in buffer do not call readStrict and copy with
-    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
-    {
-        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.readStrict(reinterpret_cast<char *>(&x), size);
-    }
+    readNBytes(reinterpret_cast<char *>(&x), size, buf);
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -181,6 +189,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 template <StdVector V>
 void readVectorBinary(V & v, ReadBuffer & buf)
 {
+    using T = typename V::value_type;
+
     size_t size = 0;
     readVarUInt(size, buf);
 
@@ -189,8 +199,13 @@ void readVectorBinary(V & v, ReadBuffer & buf)
                         "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
-    for (size_t i = 0; i < size; ++i)
-        readBinary(v[i], buf);
+
+    /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
+    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
+        readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
+    else
+        for (size_t i = 0; i < size; ++i)
+            readBinary(v[i], buf);
 }
 
 
@@ -358,13 +373,10 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
 
 
 /// Look at readFloatText.h
-template <typename T> void readFloatText(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
-
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
+template <typename T> void readFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
 
 
 /// simple: all until '\n' or '\t'
@@ -1220,11 +1232,12 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             }
         }
     }
-    /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
-    else if (whole >= 10413792000LL)
+    /// 253402300800 is the time_t value for 10000-01-01 UTC (a bit over the last year supported by DateTime64).
+    /// A whole-seconds value at or above it cannot be a date (DateTime64 goes up to 9999), so it is interpreted
+    /// as a Unix timestamp with subsecond precision already scaled to an integer.
+    else if (whole >= 253402300800LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
-        /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
         components.fractional =  components.whole % common::exp10_i32(scale);
         components.whole = components.whole / common::exp10_i32(scale);
     }
@@ -1546,8 +1559,7 @@ inline void readTime64Text(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 }
 
 /// Generic methods to read value in native binary format.
-template <typename T>
-requires is_arithmetic_v<T>
+template <is_trivially_serializable T>
 inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(bool & x, ReadBuffer & buf)
@@ -1560,13 +1572,6 @@ inline void readBinary(bool & x, ReadBuffer & buf)
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
-inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(UUID & x, ReadBuffer & buf)
 {
@@ -1632,7 +1637,7 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
 
 inline bool tryReadText(is_floating_point auto & x, ReadBuffer & buf)
 {
-    return tryReadFloatText(x, buf);
+    return tryReadFloatTextPrecise(x, buf);
 }
 
 inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
@@ -1641,7 +1646,7 @@ inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, 
 
 template <typename T>
 requires is_floating_point<T>
-inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(T & x, ReadBuffer & buf) { readFloatTextPrecise(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 

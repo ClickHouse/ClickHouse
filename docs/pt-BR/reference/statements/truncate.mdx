@@ -1,0 +1,84 @@
+---
+description: 'Documentação das instruções TRUNCATE'
+sidebarTitle: 'TRUNCATE'
+slug: /sql-reference/statements/truncate
+title: 'Instruções TRUNCATE'
+doc_type: 'referência'
+---
+
+A instrução `TRUNCATE` no ClickHouse é usada para remover rapidamente todos os dados de uma tabela ou banco de dados, preservando sua estrutura.
+
+<div id="truncate-table">
+  ## TRUNCATE TABLE
+</div>
+
+```sql
+TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+<br />
+
+| Parâmetro            | Descrição                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IF EXISTS`          | Evita um erro se a tabela não existir. Se for omitido, a consulta retornará um erro.                                                              |
+| `db.name`            | Nome opcional do banco de dados.                                                                                                                  |
+| `ON CLUSTER cluster` | Executa o comando em um cluster especificado.                                                                                                     |
+| `SYNC`               | Torna o truncamento síncrono entre as réplicas ao usar tabelas replicadas. Se for omitido, o truncamento ocorrerá de forma assíncrona por padrão. |
+
+Você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) para definir a espera pela execução de ações nas réplicas.
+
+Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem consultas `TRUNCATE` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+
+<Note>
+  Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, será lançada uma exceção `UNFINISHED`.
+</Note>
+
+A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de tabela:
+
+* [`View`](/pt-BR/reference/engines/table-engines/special/view)
+* [`File`](/pt-BR/reference/engines/table-engines/special/file)
+* [`URL`](/pt-BR/reference/engines/table-engines/special/url)
+* [`Buffer`](/pt-BR/reference/engines/table-engines/special/buffer)
+* [`Null`](/pt-BR/reference/engines/table-engines/special/null)
+
+<div id="truncate-all-tables">
+  ## TRUNCATE DE TODAS AS TABELAS
+</div>
+
+```sql
+TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
+```
+
+<br />
+
+| Parâmetro                               | Descrição                                              |
+| --------------------------------------- | ------------------------------------------------------ |
+| `ALL`                                   | Remove os dados de todas as tabelas do banco de dados. |
+| `IF EXISTS`                             | Evita um error se o banco de dados não existir.        |
+| `db`                                    | O nome do banco de dados.                              |
+| `LIKE \| ILIKE \| NOT LIKE '<pattern>'` | Filtra as tabelas por padrão.                          |
+| `ON CLUSTER cluster`                    | Executa o comando em todo o cluster.                   |
+
+Remove todos os dados de todas as tabelas de um banco de dados.
+
+<div id="truncate-database">
+  ## TRUNCATE DATABASE
+</div>
+
+```sql
+TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
+```
+
+<br />
+
+| Parâmetro            | Descrição                                     |
+| -------------------- | --------------------------------------------- |
+| `IF EXISTS`          | Evita erro se o banco de dados não existir.   |
+| `db`                 | O nome do banco de dados.                     |
+| `ON CLUSTER cluster` | Executa o comando em um cluster especificado. |
+
+Remove todas as tabelas de um banco de dados, mas mantém o próprio banco de dados. Quando a cláusula `IF EXISTS` é omitida, a consulta retorna erro se o banco de dados não existir.
+
+<Note>
+  `TRUNCATE DATABASE` não tem suporte para bancos de dados `Replicated`. Em vez disso, faça `DROP` e `CREATE` do banco de dados.
+</Note>

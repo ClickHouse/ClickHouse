@@ -1,0 +1,207 @@
+---
+sidebarTitle: 'Mitzu'
+slug: /integrations/mitzu
+keywords: ['clickhouse', 'Mitzu', 'conectar', 'integrar', 'ui']
+description: 'Mitzu é um aplicativo de análise de produto sem código e warehouse-native.'
+title: 'Como conectar o Mitzu ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Mitzu é um aplicativo de análise de produto sem código e warehouse-native. Semelhante a ferramentas como Amplitude, Mixpanel e PostHog, o Mitzu permite que os usuários analisem dados de uso do produto sem exigir conhecimento de SQL ou Python.
+
+No entanto, ao contrário dessas plataformas, o Mitzu não duplica os dados de uso do produto da empresa. Em vez disso, gera consultas SQL nativas diretamente no data warehouse ou data lake já existente da empresa.
+
+<div id="goal">
+  ## Objetivo
+</div>
+
+Neste guia, vamos abordar o seguinte:
+
+* Análise de produto warehouse-native
+* Como integrar o Mitzu ao ClickHouse
+
+<Tip>
+  **Conjuntos de dados de exemplo**
+
+  Se você não tiver um conjunto de dados para usar com o Mitzu, pode trabalhar com o NYC Taxi Data.
+  Esse conjunto de dados está disponível no ClickHouse Cloud ou [pode ser carregado seguindo estas instruções](/pt-BR/get-started/sample-datasets/nyc-taxi).
+</Tip>
+
+Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode encontrar informações mais detalhadas na [documentação do Mitzu](https://docs.mitzu.io/).
+
+<div id="1-gather-your-connection-details">
+  ## 1. Reúna os detalhes da conexão
+</div>
+
+<ConnectionDetails />
+
+<div id="2-sign-in-or-sign-up-to-mitzu">
+  ## 2. Faça login ou cadastre-se no Mitzu
+</div>
+
+Para começar, acesse [https://app.mitzu.io](https://app.mitzu.io) para se cadastrar.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="Página de login do Mitzu com campos de e-mail e senha" border />
+
+<div id="3-configure-your-workspace">
+  ## 3. Configure o seu workspace
+</div>
+
+Após criar uma organização, siga o guia de onboarding `Set up your workspace` na barra lateral esquerda. Em seguida, clique no link `Connect Mitzu with your data warehouse`.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="Página de configuração do workspace do Mitzu mostrando as etapas de onboarding" border />
+
+<div id="4-connect-mitzu-to-clickhouse">
+  ## 4. Conecte o Mitzu ao ClickHouse
+</div>
+
+Primeiro, selecione ClickHouse como o tipo de conexão e defina os detalhes da conexão. Em seguida, clique no botão `Test connection & Save` para salvar as configurações.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Página de configuração de conexão do Mitzu com o ClickHouse, com formulário de configuração" border />
+
+<div id="5-configure-event-tables">
+  ## 5. Configurar tabelas de eventos
+</div>
+
+Depois que a conexão for salva, selecione a aba `Event tables` e clique no botão `Add table`. No modal, selecione seu banco de dados e as tabelas que deseja adicionar ao Mitzu.
+
+Use as caixas de seleção para escolher pelo menos uma tabela e clique no botão `Configure table`. Isso abrirá uma janela modal na qual você poderá definir as colunas-chave de cada tabela.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="Interface de seleção de tabelas do Mitzu mostrando tabelas do banco de dados" border />
+
+<br />
+
+> Para executar análises de produto na sua configuração do ClickHouse, você precisa &gt; especificar algumas colunas-chave da sua tabela.
+>
+> São elas:
+>
+> * **ID do usuário** - a coluna do identificador único dos usuários.
+> * **Hora do evento** - a coluna de timestamp dos seus eventos.
+> * Optional[**Nome do evento**] - Esta coluna segmenta os eventos se a tabela contiver vários tipos de evento.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="Configuração do catálogo de eventos do Mitzu mostrando opções de mapeamento de colunas" border />
+
+<br />
+
+Quando todas as tabelas estiverem configuradas, clique no botão `Save & update event catalog`, e o Mitzu localizará todos os eventos e suas propriedades a partir da tabela definida acima. Esta etapa pode levar alguns minutos, dependendo do tamanho do seu dataset.
+
+<div id="4-run-segmentation-queries">
+  ## 4. Executar consultas de segmentação
+</div>
+
+A segmentação de usuários no Mitzu é tão fácil quanto no Amplitude, Mixpanel ou PostHog.
+
+A página Explore tem, à esquerda, uma área de seleção de eventos, enquanto a seção superior permite configurar o intervalo de tempo.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="Interface de consulta de segmentação do Mitzu com seleção de eventos e configuração de tempo" border />
+
+<br />
+
+<Tip>
+  **Filtros e detalhamento**
+
+  A filtragem funciona da forma esperada: escolha uma propriedade (coluna do ClickHouse) e selecione, no menu suspenso, os valores pelos quais deseja filtrar.
+  Você pode escolher qualquer propriedade de evento ou de usuário para os detalhamentos (veja abaixo como integrar propriedades de usuário).
+</Tip>
+
+<div id="5-run-funnel-queries">
+  ## 5. Execute consultas de funil
+</div>
+
+Selecione até 9 etapas para um funil. Escolha a janela de tempo em que seus usuários podem concluir o funil.
+Obtenha insights imediatos sobre a taxa de conversão sem escrever uma única linha de SQL.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="Visualização da análise de funil no Mitzu mostrando taxas de conversão entre etapas" border />
+
+<br />
+
+<Tip>
+  **Visualize tendências**
+
+  Escolha `Funnel trends` para visualizar as tendências do funil ao longo do tempo.
+</Tip>
+
+<div id="6-run-retention-queries">
+  ## 6. Execute consultas de retenção
+</div>
+
+Selecione até 2 etapas para calcular a taxa de retenção. Escolha a janela de retenção para a janela recorrente para
+Obtenha insights imediatos sobre a taxa de conversão sem escrever uma única linha de SQL.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="Análise de retenção do Mitzu mostrando taxas de retenção de coorte" border />
+
+<br />
+
+<Tip>
+  **Retenção de coorte**
+
+  Selecione `Weekly cohort retention` para visualizar como suas taxas de retenção mudam ao longo do tempo.
+</Tip>
+
+<div id="7-run-journey-queries">
+  ## 7. Execute consultas de jornada
+</div>
+
+Selecione até 9 etapas para um funil. Escolha a janela de tempo em que seus usuários podem concluir a jornada. O gráfico de jornada do Mitzu fornece um mapa visual de todos os caminhos que os usuários percorrem entre os eventos selecionados.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="Visualização de jornada do Mitzu mostrando o fluxo do caminho do usuário entre eventos" border />
+
+<br />
+
+<Tip>
+  **Detalhe as etapas**
+
+  Você pode selecionar uma propriedade para o segmento `Break down` para distinguir usuários dentro da mesma etapa.
+</Tip>
+
+<br />
+
+<div id="8-run-revenue-queries">
+  ## 8. Execute consultas de receita
+</div>
+
+Se as configurações de receita estiverem configuradas, o Mitzu poderá calcular o MRR total e o número de assinaturas com base nos seus eventos de pagamento.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="Painel de análise de receita do Mitzu mostrando métricas de MRR" border />
+
+<div id="9-sql-native">
+  ## 9. SQL nativo
+</div>
+
+O Mitzu usa SQL nativo, o que significa que ele gera código SQL nativo com base na configuração escolhida na página Explore.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="Visualização da geração de código SQL no Mitzu, mostrando uma consulta nativa do ClickHouse" border />
+
+<br />
+
+<Tip>
+  **Continue o trabalho em uma ferramenta de BI**
+
+  Se você encontrar alguma limitação na interface do Mitzu, copie o código SQL e continue o trabalho em uma ferramenta de BI.
+</Tip>
+
+<div id="mitzu-support">
+  ## Suporte da Mitzu
+</div>
+
+Se você estiver com dúvidas, fique à vontade para entrar em contato conosco pelo [support@mitzu.io](email://support@mitzu.io)
+
+Ou acesse nossa comunidade no Slack [aqui](https://join.slack.com/t/mitzu-io/shared_invite/zt-1h1ykr93a-_VtVu0XshfspFjOg6sczKg)
+
+<div id="learn-more">
+  ## Saiba mais
+</div>
+
+Encontre mais informações sobre a Mitzu em [mitzu.io](https://mitzu.io)
+
+Visite nossa documentação em [docs.mitzu.io](https://docs.mitzu.io)

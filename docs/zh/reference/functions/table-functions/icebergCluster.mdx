@@ -1,0 +1,60 @@
+---
+description: '对 [iceberg](/reference/functions/table-functions/iceberg) 表函数的扩展，
+  支持在指定 集群 的多个节点上并行处理 Apache Iceberg 中的文件。'
+sidebarTitle: 'icebergCluster'
+slug: /sql-reference/table-functions/icebergCluster
+title: 'icebergCluster'
+doc_type: 'reference'
+---
+
+这是对 [iceberg](/zh/reference/functions/table-functions/iceberg) 表函数的扩展。
+
+它支持在指定 集群 的多个节点上并行处理 Apache [Iceberg](https://iceberg.apache.org/) 中的文件。在 initiator 节点上，它会与 集群 中的所有节点建立 connection，并动态分发各个文件。在 worker 节点上，它会向 initiator 请求下一个要处理的 task 并执行处理。该过程会持续重复，直到所有 tasks 都处理完成。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `cluster_name` — 用于构建远程和本地服务器地址集合及连接参数的集群名称。
+* 其他所有参数的说明与对应的 [iceberg](/zh/reference/functions/table-functions/iceberg) 表函数中的参数说明一致。
+* 可选的 `extra_credentials` 参数可用于传递 `role_arn`，以便在 ClickHouse Cloud 中使用基于角色的访问。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+**返回值**
+
+一个具有指定结构的表，用于从集群中的指定 Iceberg 表读取数据。
+
+**示例**
+
+```sql
+SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (字节) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 etag。类型：`LowCardinality(String)`。如果 etag 未知，则值为 `NULL`。
+
+**另请参阅**
+
+* [Iceberg 引擎](/zh/reference/engines/table-engines/integrations/iceberg)
+* [Iceberg 表函数](/zh/reference/functions/table-functions/iceberg)

@@ -1,0 +1,1076 @@
+---
+sidebarTitle: 'Guides'
+slug: /integrations/dbt/guides
+description: 'Guides d’utilisation de dbt avec ClickHouse'
+keywords: ['clickhouse', 'dbt', 'guides']
+title: 'Guides'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Cette section propose des guides pour configurer dbt et l’adaptateur ClickHouse, ainsi qu’un exemple d’utilisation de dbt avec ClickHouse à partir d’un jeu de données IMDB accessible au public. L’exemple couvre les étapes suivantes :
+
+1. Création d’un projet dbt et configuration de l’adaptateur ClickHouse.
+2. Définition d’un modèle.
+3. Mise à jour d’un modèle.
+4. Création d’un modèle incrémentiel.
+5. Création d’un modèle snapshot.
+6. Utilisation de vues matérialisées.
+
+Ces guides sont conçus pour être utilisés conjointement avec le reste de la [documentation](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index), les [fonctionnalités et configurations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) et la [référence des matérialisations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
+
+<div id="setup">
+  ## Configuration
+</div>
+
+Suivez les instructions de la section [Configuration de dbt et de l’adaptateur ClickHouse](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index) pour préparer votre environnement.
+
+**Important : ce qui suit a été testé avec Python 3.9.**
+
+<div id="prepare-clickhouse">
+  ### Préparer ClickHouse
+</div>
+
+dbt excelle dans la modélisation de données fortement relationnelles. À titre d’exemple, nous fournissons un petit jeu de données IMDB avec le schéma relationnel suivant. Ce jeu de données provient du [dépôt de jeux de données relationnelles](https://relational.fit.cvut.cz/dataset/IMDb). Il reste très simple par rapport aux schémas couramment utilisés avec dbt, mais constitue un exemple facile à manipuler :
+
+<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_01.webp" size="lg" alt="schéma des tables IMDB" />
+
+Nous utilisons un sous-ensemble de ces tables, comme indiqué.
+
+Créez les tables suivantes :
+
+```sql
+CREATE DATABASE imdb;
+
+CREATE TABLE imdb.actors
+(
+    id         UInt32,
+    first_name String,
+    last_name  String,
+    gender     FixedString(1)
+) ENGINE = MergeTree ORDER BY (id, first_name, last_name, gender);
+
+CREATE TABLE imdb.directors
+(
+    id         UInt32,
+    first_name String,
+    last_name  String
+) ENGINE = MergeTree ORDER BY (id, first_name, last_name);
+
+CREATE TABLE imdb.genres
+(
+    movie_id UInt32,
+    genre    String
+) ENGINE = MergeTree ORDER BY (movie_id, genre);
+
+CREATE TABLE imdb.movie_directors
+(
+    director_id UInt32,
+    movie_id    UInt64
+) ENGINE = MergeTree ORDER BY (director_id, movie_id);
+
+CREATE TABLE imdb.movies
+(
+    id   UInt32,
+    name String,
+    year UInt32,
+    rank Float32 DEFAULT 0
+) ENGINE = MergeTree ORDER BY (id, name, year);
+
+CREATE TABLE imdb.roles
+(
+    actor_id   UInt32,
+    movie_id   UInt32,
+    role       String,
+    created_at DateTime DEFAULT now()
+) ENGINE = MergeTree ORDER BY (actor_id, movie_id);
+```
+
+<Note>
+  La colonne `created_at` de la table `roles` a pour valeur par défaut `now()`. Nous l’utilisons plus tard pour identifier les mises à jour incrémentales de nos modèles ; voir [Modèles incrémentaux](#creating-an-incremental-materialization).
+</Note>
+
+Nous utilisons la fonction `s3` pour lire les données source depuis des endpoints publics afin d’insérer les données. Exécutez les commandes suivantes pour remplir les tables :
+
+```sql
+INSERT INTO imdb.actors
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_actors.tsv.gz',
+'TSVWithNames');
+
+INSERT INTO imdb.directors
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_directors.tsv.gz',
+'TSVWithNames');
+
+INSERT INTO imdb.genres
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_genres.tsv.gz',
+'TSVWithNames');
+
+INSERT INTO imdb.movie_directors
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_directors.tsv.gz',
+        'TSVWithNames');
+
+INSERT INTO imdb.movies
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies.tsv.gz',
+'TSVWithNames');
+
+INSERT INTO imdb.roles(actor_id, movie_id, role)
+SELECT actor_id, movie_id, role
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_roles.tsv.gz',
+'TSVWithNames');
+```
+
+L’exécution de ces opérations peut varier selon votre bande passante, mais chacune ne devrait prendre que quelques secondes. Exécutez la requête suivante pour générer un récapitulatif de chaque acteur, classé par nombre d’apparitions dans des films, et pour confirmer que les données ont bien été chargées :
+
+```sql
+SELECT id,
+       any(actor_name)          AS name,
+       uniqExact(movie_id)    AS num_movies,
+       avg(rank)                AS avg_rank,
+       uniqExact(genre)         AS unique_genres,
+       uniqExact(director_name) AS uniq_directors,
+       max(created_at)          AS updated_at
+FROM (
+         SELECT imdb.actors.id  AS id,
+                concat(imdb.actors.first_name, ' ', imdb.actors.last_name)  AS actor_name,
+                imdb.movies.id AS movie_id,
+                imdb.movies.rank AS rank,
+                genre,
+                concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+                created_at
+         FROM imdb.actors
+                  JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+                  LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+                  LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+                  LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+                  LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+         )
+GROUP BY id
+ORDER BY num_movies DESC
+LIMIT 5;
+```
+
+La réponse devrait ressembler à ceci :
+
+```response
++------+------------+----------+------------------+-------------+--------------+-------------------+
+|id    |name        |num_movies|avg_rank          |unique_genres|uniq_directors|updated_at         |
++------+------------+----------+------------------+-------------+--------------+-------------------+
+|45332 |Mel Blanc   |832       |6.175853582979779 |18           |84            |2022-04-26 14:01:45|
+|621468|Bess Flowers|659       |5.57727638854796  |19           |293           |2022-04-26 14:01:46|
+|372839|Lee Phelps  |527       |5.032976449684617 |18           |261           |2022-04-26 14:01:46|
+|283127|Tom London  |525       |2.8721716524875673|17           |203           |2022-04-26 14:01:46|
+|356804|Bud Osborne |515       |2.0389507108727773|15           |149           |2022-04-26 14:01:46|
++------+------------+----------+------------------+-------------+--------------+-------------------+
+```
+
+Dans les guides suivants, nous convertirons cette requête en un modèle, en la matérialisant dans ClickHouse sous la forme d’une vue et d’une table dbt.
+
+<div id="connecting-to-clickhouse">
+  ## Connexion à ClickHouse
+</div>
+
+1. Créez un projet dbt. Dans ce cas, nous le nommons d’après notre source `imdb`. Lorsque vous y êtes invité, sélectionnez `clickhouse` comme base de données source.
+
+   ```bash
+   clickhouse-user@clickhouse:~$ dbt init imdb
+
+   16:52:40  Running with dbt=1.1.0
+   Which database would you like to use?
+   [1] clickhouse
+
+   (Don't see the one you want? https://docs.getdbt.com/docs/available-adapters)
+
+   Enter a number: 1
+   16:53:21  No sample profile found for clickhouse.
+   16:53:21
+   Your new dbt project "imdb" was created!
+
+   For more information on how to configure the profiles.yml file,
+   please consult the dbt documentation here:
+
+   https://docs.getdbt.com/docs/configure-your-profile
+   ```
+
+2. Placez-vous dans le dossier de votre projet avec `cd` :
+
+   ```bash
+   cd imdb
+   ```
+
+3. À ce stade, vous aurez besoin de l’éditeur de texte de votre choix. Dans les exemples ci-dessous, nous utilisons le très répandu VS Code. En ouvrant le répertoire IMDB, vous devriez voir un ensemble de fichiers yml et sql :
+
+   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_02.webp" size="lg" alt="Nouveau projet dbt" />
+
+4. Mettez à jour votre fichier `dbt_project.yml` pour spécifier notre premier modèle, `actor_summary`, et définir le profil sur `clickhouse_imdb`.
+
+   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_03.webp" size="lg" alt="profil dbt" />
+
+   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_04.webp" size="lg" alt="profil dbt" />
+
+5. Nous devons ensuite fournir à dbt les informations de connexion de notre instance ClickHouse. Ajoutez le contenu suivant à votre fichier `~/.dbt/profiles.yml`.
+
+   ```yml
+   clickhouse_imdb:
+     target: dev
+     outputs:
+       dev:
+         type: clickhouse
+         schema: imdb_dbt
+         host: localhost
+         port: 8123
+         user: default
+         password: ''
+         secure: False
+   ```
+
+   Notez qu’il faut modifier l’utilisateur et le mot de passe. D’autres paramètres disponibles sont documentés [ici](https://github.com/silentsokolov/dbt-clickhouse#example-profile).
+
+6. Depuis le répertoire IMDB, exécutez la commande `dbt debug` pour vérifier que dbt peut se connecter à ClickHouse.
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ dbt debug
+   17:33:53  Running with dbt=1.1.0
+   dbt version: 1.1.0
+   python version: 3.10.1
+   python path: /home/dale/.pyenv/versions/3.10.1/bin/python3.10
+   os info: Linux-5.13.0-10039-tuxedo-x86_64-with-glibc2.31
+   Using profiles.yml file at /home/dale/.dbt/profiles.yml
+   Using dbt_project.yml file at /opt/dbt/imdb/dbt_project.yml
+
+   Configuration:
+   profiles.yml file [OK found and valid]
+   dbt_project.yml file [OK found and valid]
+
+   Required dependencies:
+   - git [OK found]
+
+   Connection:
+   host: localhost
+   port: 8123
+   user: default
+   schema: imdb_dbt
+   secure: False
+   verify: False
+   Connection test: [OK connection ok]
+
+   All checks passed!
+   ```
+
+   Vérifiez que la réponse inclut `Connection test: [OK connection ok]`, ce qui indique que la connexion a réussi.
+
+<div id="creating-a-simple-view-materialization">
+  ## Création d’une matérialisation de vue simple
+</div>
+
+Lors de l’utilisation de la matérialisation de vue, un modèle est reconstruit sous forme de vue à chaque exécution, à l’aide d’une instruction `CREATE VIEW AS` dans ClickHouse. Cela ne nécessite aucun stockage de données supplémentaire, mais les requêtes seront plus lentes qu’avec des matérialisations en table.
+
+1. Dans le dossier `imdb`, supprimez le répertoire `models/example` :
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ rm -rf models/example
+   ```
+
+2. Créez un nouveau fichier dans `actors`, au sein du dossier `models`. C’est ici que nous créons les fichiers, chacun représentant un modèle d’acteur :
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ mkdir models/actors
+   ```
+
+3. Créez les fichiers `schema.yml` et `actor_summary.sql` dans le dossier `models/actors`.
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ touch models/actors/actor_summary.sql
+   clickhouse-user@clickhouse:~/imdb$ touch models/actors/schema.yml
+   ```
+
+   Le fichier `schema.yml` définit nos tables. Elles pourront ensuite être utilisées dans les macros.  Modifiez
+   `models/actors/schema.yml` pour qu’il contienne le contenu suivant :
+
+   ```yml
+   version: 2
+
+   sources:
+   - name: imdb
+     tables:
+     - name: directors
+     - name: actors
+     - name: roles
+     - name: movies
+     - name: genres
+     - name: movie_directors
+   ```
+
+   Le fichier `actors_summary.sql` définit notre modèle proprement dit. Notez que, dans la fonction `config`, nous demandons également que le modèle soit matérialisé en vue dans ClickHouse. Nos tables sont référencées depuis le fichier `schema.yml` via la fonction `source` ; par exemple, `source('imdb', 'movies')` fait référence à la table `movies` dans la base de données `imdb`. Modifiez `models/actors/actors_summary.sql` pour y mettre le contenu suivant :
+
+   ```sql
+   {{ config(materialized='view') }}
+
+   with actor_summary as (
+   SELECT id,
+       any(actor_name) as name,
+       uniqExact(movie_id)    as num_movies,
+       avg(rank)                as avg_rank,
+       uniqExact(genre)         as genres,
+       uniqExact(director_name) as directors,
+       max(created_at) as updated_at
+   FROM (
+           SELECT {{ source('imdb', 'actors') }}.id as id,
+                   concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
+                   {{ source('imdb', 'movies') }}.id as movie_id,
+                   {{ source('imdb', 'movies') }}.rank as rank,
+                   genre,
+                   concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
+                   created_at
+           FROM {{ source('imdb', 'actors') }}
+                       JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
+                       LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
+                       LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
+                       LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
+                       LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
+           )
+   GROUP BY id
+   )
+
+   select *
+   from actor_summary
+   ```
+
+   Remarquez que nous incluons la colonne `updated_at` dans notre actor&#95;summary final. Nous l’utilisons ensuite pour les matérialisations incrémentielles.
+
+4. Dans le répertoire `imdb`, exécutez la commande `dbt run`.
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ dbt run
+   15:05:35  Running with dbt=1.1.0
+   15:05:35  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
+   15:05:35
+   15:05:36  Concurrency: 1 threads (target='dev')
+   15:05:36
+   15:05:36  1 of 1 START view model imdb_dbt.actor_summary.................................. [RUN]
+   15:05:37  1 of 1 OK created view model imdb_dbt.actor_summary............................. [OK in 1.00s]
+   15:05:37
+   15:05:37  Finished running 1 view model in 1.97s.
+   15:05:37
+   15:05:37  Completed successfully
+   15:05:37
+   15:05:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+5. dbt représentera le modèle sous forme de vue dans ClickHouse, comme demandé. Nous pouvons maintenant interroger cette vue directement. Cette vue aura été créée dans la base de données `imdb_dbt` — cela est déterminé par le paramètre schema dans le fichier `~/.dbt/profiles.yml`, sous le profil `clickhouse_imdb`.
+
+   ```sql
+   SHOW DATABASES;
+   ```
+
+   ```response
+   +------------------+
+   |name              |
+   +------------------+
+   |INFORMATION_SCHEMA|
+   |default           |
+   |imdb              |
+   |imdb_dbt          |  <---created by dbt!
+   |information_schema|
+   |system            |
+   +------------------+
+   ```
+
+   En interrogeant cette vue, nous pouvons reproduire les résultats de notre requête précédente avec une syntaxe plus simple :
+
+   ```sql
+   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
+   ```
+
+   ```response
+   +------+------------+----------+------------------+------+---------+-------------------+
+   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
+   +------+------------+----------+------------------+------+---------+-------------------+
+   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
+   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
+   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
+   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
+   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
+   +------+------------+----------+------------------+------+---------+-------------------+
+   ```
+
+<div id="creating-a-table-materialization">
+  ## Création d&#39;une matérialisation en table
+</div>
+
+Dans l&#39;exemple précédent, notre modèle a été matérialisé sous forme de vue. Bien que cela puisse offrir des performances suffisantes pour certaines requêtes, les requêtes SELECT plus complexes ou exécutées fréquemment gagnent parfois à être matérialisées sous forme de table. Cette matérialisation est utile pour les modèles qui seront interrogés par des outils de BI, afin d&#39;offrir aux utilisateurs une expérience plus rapide. En pratique, les résultats de la requête sont alors stockés dans une nouvelle table, avec la surcharge de stockage associée : un `INSERT TO SELECT` est effectivement exécuté. Notez que cette table sera reconstruite à chaque exécution, c.-à-d. qu&#39;elle n&#39;est pas incrémentielle. De grands ensembles de résultats peuvent donc entraîner des temps d&#39;exécution élevés — voir [Limitations de dbt](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations).
+
+1. Modifiez le fichier `actors_summary.sql` afin que le paramètre `materialized` soit défini sur `table`. Notez comment `ORDER BY` est défini, ainsi que l’utilisation du moteur de table `MergeTree` :
+
+   ```sql
+   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='table') }}
+   ```
+
+2. Depuis le répertoire `imdb`, exécutez la commande `dbt run`. Cette exécution peut prendre un peu plus de temps — environ 10 s sur la plupart des machines.
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ dbt run
+   15:13:27  Running with dbt=1.1.0
+   15:13:27  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
+   15:13:27
+   15:13:28  Concurrency: 1 threads (target='dev')
+   15:13:28
+   15:13:28  1 of 1 START table model imdb_dbt.actor_summary................................. [RUN]
+   15:13:37  1 of 1 OK created table model imdb_dbt.actor_summary............................ [OK in 9.22s]
+   15:13:37
+   15:13:37  Finished running 1 table model in 10.20s.
+   15:13:37
+   15:13:37  Completed successfully
+   15:13:37
+   15:13:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+3. Confirmez la création de la table `imdb_dbt.actor_summary` :
+
+   ```sql
+   SHOW CREATE TABLE imdb_dbt.actor_summary;
+   ```
+
+   Vous devriez voir la table avec les types de données appropriés :
+
+   ```response
+   +----------------------------------------
+   |statement
+   +----------------------------------------
+   |CREATE TABLE imdb_dbt.actor_summary
+   |(
+   |`id` UInt32,
+   |`first_name` String,
+   |`last_name` String,
+   |`num_movies` UInt64,
+   |`updated_at` DateTime
+   |)
+   |ENGINE = MergeTree
+   |ORDER BY (id, first_name, last_name)
+   +----------------------------------------
+   ```
+
+4. Confirmez que les résultats de cette table sont cohérents avec les réponses précédentes. Notez l’amélioration sensible du temps de réponse maintenant que le modèle est une table :
+
+   ```sql
+   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
+   ```
+
+   ```response
+   +------+------------+----------+------------------+------+---------+-------------------+
+   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
+   +------+------------+----------+------------------+------+---------+-------------------+
+   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
+   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
+   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
+   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
+   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
+   +------+------------+----------+------------------+------+---------+-------------------+
+   ```
+
+   N’hésitez pas à exécuter d’autres requêtes sur ce modèle. Par exemple, quels acteurs ont les films les mieux classés avec plus de 5 apparitions ?
+
+   ```sql
+   SELECT * FROM imdb_dbt.actor_summary WHERE num_movies > 5 ORDER BY avg_rank  DESC LIMIT 10;
+   ```
+
+<div id="creating-an-incremental-materialization">
+  ## Création d’une matérialisation incrémentielle
+</div>
+
+L’exemple précédent a créé une table pour matérialiser le modèle. Cette table sera reconstruite à chaque exécution de dbt. Cela peut s’avérer irréalisable et extrêmement coûteux pour des jeux de résultats volumineux ou des transformations complexes. Pour remédier à ce problème et réduire le temps de build, dbt propose des matérialisations incrémentielles. Cela permet à dbt d’insérer ou de mettre à jour dans une table les enregistrements modifiés depuis la dernière exécution, ce qui convient bien aux données de type événementiel. En arrière-plan, une table temporaire est créée avec tous les enregistrements mis à jour, puis tous les enregistrements inchangés ainsi que les enregistrements mis à jour sont insérés dans une nouvelle table cible. Cela entraîne, pour les jeux de résultats volumineux, des [limitations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations) similaires à celles du modèle de table.
+
+Pour surmonter ces limitations sur de grands ensembles, l’adaptateur prend en charge le mode &#39;inserts&#95;only&#39;, dans lequel toutes les mises à jour sont insérées dans la table cible sans créer de table temporaire (voir ci-dessous pour plus de détails).
+
+Pour illustrer cet exemple, nous allons ajouter l’acteur « Clicky McClickHouse », qui apparaîtra dans l’incroyable total de 910 films, ce qui lui garantira d’avoir joué dans encore plus de films que [Mel Blanc](https://en.wikipedia.org/wiki/Mel_Blanc).
+
+1. D’abord, nous modifions notre modèle pour qu’il soit de type incrémental. Cet ajout nécessite :
+
+   1. **unique&#95;key** - Pour garantir que l’adaptateur puisse identifier les lignes de manière unique, nous devons fournir une unique&#95;key - dans ce cas, le champ `id` de notre requête suffit. Cela garantit l’absence de doublons de lignes dans notre table matérialisée. Pour plus de détails sur les contraintes d’unicité, voir [ici](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#defining-a-uniqueness-constraint-optional).
+   2. **Filtre incrémental** - Nous devons également indiquer à dbt comment identifier les lignes qui ont changé lors d’une exécution incrémentale. Pour cela, il faut fournir une expression delta. En général, cela implique un timestamp pour les données d’événements, d’où notre champ timestamp updated&#95;at. Cette colonne, dont la valeur par défaut est `now()` lorsque des lignes sont insérées, permet d’identifier les nouveaux rôles. De plus, nous devons prendre en compte l’autre cas possible, où de nouveaux acteurs sont ajoutés. En utilisant la variable `{{this}}` pour désigner la table matérialisée existante, on obtient l’expression `where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})`. Nous l’intégrons dans la condition `{% if is_incremental() %}`, ce qui garantit qu’elle n’est utilisée que lors des exécutions incrémentales, et non lors de la création initiale de la table. Pour plus de détails sur le filtrage des lignes pour les modèles incrémentaux, voir [cette section de la documentation dbt](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#filtering-rows-on-an-incremental-run).
+
+   Mettez à jour le fichier `actor_summary.sql` comme suit :
+
+   ```sql
+   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
+   with actor_summary as (
+       SELECT id,
+           any(actor_name) as name,
+           uniqExact(movie_id)    as num_movies,
+           avg(rank)                as avg_rank,
+           uniqExact(genre)         as genres,
+           uniqExact(director_name) as directors,
+           max(created_at) as updated_at
+       FROM (
+           SELECT {{ source('imdb', 'actors') }}.id as id,
+               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
+               {{ source('imdb', 'movies') }}.id as movie_id,
+               {{ source('imdb', 'movies') }}.rank as rank,
+               genre,
+               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
+               created_at
+       FROM {{ source('imdb', 'actors') }}
+           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
+           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
+           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
+           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
+           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
+       )
+       GROUP BY id
+   )
+   select *
+   from actor_summary
+
+   {% if is_incremental() %}
+
+   -- this filter will only be applied on an incremental run
+   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
+
+   {% endif %}
+   ```
+
+   Notez que notre modèle ne réagira qu’aux mises à jour et aux ajouts apportés aux tables `roles` et `actors`. Pour prendre en compte toutes les tables, il est recommandé aux utilisateurs de scinder ce modèle en plusieurs sous-modèles, chacun avec ses propres critères incrémentiels. Ces modèles pourront ensuite être référencés et reliés entre eux. Pour plus de détails sur les références croisées entre modèles, consultez [ici](https://docs.getdbt.com/reference/dbt-jinja-functions/ref).
+
+2. Exécutez un `dbt run` et vérifiez les résultats de la table obtenue :
+
+   ```response
+   clickhouse-user@clickhouse:~/imdb$  dbt run
+   15:33:34  Running with dbt=1.1.0
+   15:33:34  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
+   15:33:34
+   15:33:35  Concurrency: 1 threads (target='dev')
+   15:33:35
+   15:33:35  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
+   15:33:41  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.33s]
+   15:33:41
+   15:33:41  Finished running 1 incremental model in 7.30s.
+   15:33:41
+   15:33:41  Completed successfully
+   15:33:41
+   15:33:41  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+   ```sql
+   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
+   ```
+
+   ```response
+   +------+------------+----------+------------------+------+---------+-------------------+
+   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
+   +------+------------+----------+------------------+------+---------+-------------------+
+   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
+   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
+   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
+   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
+   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
+   +------+------------+----------+------------------+------+---------+-------------------+
+   ```
+
+3. Nous allons maintenant ajouter des données à notre modèle pour illustrer une mise à jour incrémentielle. Ajoutez l’acteur &quot;Clicky McClickHouse&quot; à la table `actors` :
+
+   ```sql
+   INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
+   ```
+
+4. Faisons jouer « Clicky » dans 910 films choisis au hasard :
+
+   ```sql
+   INSERT INTO imdb.roles
+   SELECT now() as created_at, 845466 as actor_id, id as movie_id, 'Himself' as role
+   FROM imdb.movies
+   LIMIT 910 OFFSET 10000;
+   ```
+
+5. Confirmez qu’il s’agit bien désormais de l’acteur comptant le plus d’apparitions en interrogeant la table source sous-jacente et en contournant tous les modèles dbt :
+
+   ```sql
+   SELECT id,
+       any(actor_name)          as name,
+       uniqExact(movie_id)    as num_movies,
+       avg(rank)                as avg_rank,
+       uniqExact(genre)         as unique_genres,
+       uniqExact(director_name) as uniq_directors,
+       max(created_at)          as updated_at
+   FROM (
+           SELECT imdb.actors.id                                                   as id,
+                   concat(imdb.actors.first_name, ' ', imdb.actors.last_name)       as actor_name,
+                   imdb.movies.id as movie_id,
+                   imdb.movies.rank                                                 as rank,
+                   genre,
+                   concat(imdb.directors.first_name, ' ', imdb.directors.last_name) as director_name,
+                   created_at
+           FROM imdb.actors
+                   JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+                   LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+                   LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+                   LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+                   LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+           )
+   GROUP BY id
+   ORDER BY num_movies DESC
+   LIMIT 2;
+   ```
+
+   ```response
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
+   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   ```
+
+6. Lancez un `dbt run` et vérifiez que notre modèle a bien été mis à jour et qu’il correspond aux résultats ci-dessus :
+
+   ```response
+   clickhouse-user@clickhouse:~/imdb$  dbt run
+   16:12:16  Running with dbt=1.1.0
+   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
+   16:12:16
+   16:12:17  Concurrency: 1 threads (target='dev')
+   16:12:17
+   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
+   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.82s]
+   16:12:24
+   16:12:24  Finished running 1 incremental model in 7.79s.
+   16:12:24
+   16:12:24  Completed successfully
+   16:12:24
+   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+   ```sql
+   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 2;
+   ```
+
+   ```response
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
+   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   ```
+
+<div id="internals">
+  ### Fonctionnement interne
+</div>
+
+Nous pouvons identifier les instructions exécutées pour effectuer la mise à jour incrémentielle ci-dessus en interrogeant le query log de ClickHouse.
+
+```sql
+SELECT event_time, query  FROM system.query_log WHERE type='QueryStart' AND query LIKE '%dbt%'
+AND event_time > subtractMinutes(now(), 15) ORDER BY event_time LIMIT 100;
+```
+
+Adaptez la requête ci-dessus à la période d’exécution. Nous laissons l’examen du résultat à l’utilisateur, mais mettons en évidence la stratégie générale utilisée par l’adaptateur pour effectuer des mises à jour incrémentielles :
+
+1. L’adaptateur crée une table temporaire `actor_sumary__dbt_tmp`. Les lignes modifiées y sont envoyées.
+2. Une nouvelle table, `actor_summary_new,` est créée. Les lignes de l’ancienne table sont ensuite envoyées de l’ancienne vers la nouvelle, en vérifiant que leurs identifiants n’existent pas dans la table temporaire. Cela permet de gérer efficacement les mises à jour et les doublons.
+3. Les résultats de la table temporaire sont envoyés vers la nouvelle table `actor_summary` :
+4. Enfin, la nouvelle table est échangée de manière atomique avec l’ancienne version via une instruction `EXCHANGE TABLES`. L’ancienne table et la table temporaire sont ensuite supprimées.
+
+Le schéma ci-dessous l’illustre :
+
+<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_05.webp" size="lg" alt="mises à jour incrémentielles dbt" />
+
+Cette stratégie peut poser des difficultés sur de très grands modèles. Pour plus de détails, voir [Limitations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations).
+
+<div id="append-strategy-inserts-only-mode">
+  ### Stratégie append (mode insertions uniquement)
+</div>
+
+Pour surmonter les limites des grands jeux de données dans les modèles incrémentiels, l’adaptateur utilise le paramètre de configuration dbt `incremental_strategy`. Il peut être défini sur la valeur `append`. Dans ce cas, les lignes mises à jour sont insérées directement dans la table cible (autrement dit `imdb_dbt.actor_summary`) et aucune table temporaire n’est créée.
+Remarque : le mode append uniquement nécessite que vos données soient immuables ou que les doublons soient acceptables. Si vous voulez un modèle de table incrémentielle qui prend en charge les lignes modifiées, n’utilisez pas ce mode !
+
+Pour illustrer ce mode, nous allons ajouter un nouvel acteur et réexécuter `dbt run` avec `incremental_strategy='append'`.
+
+1. Configurez le mode append uniquement dans actor&#95;summary.sql :
+
+   ```sql
+   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='append') }}
+   ```
+
+2. Ajoutons un autre acteur célèbre : Danny DeBito
+
+   ```sql
+   INSERT INTO imdb.actors VALUES (845467, 'Danny', 'DeBito', 'M');
+   ```
+
+3. Faisons jouer Danny dans 920 films pris au hasard.
+
+   ```sql
+   INSERT INTO imdb.roles
+   SELECT now() as created_at, 845467 as actor_id, id as movie_id, 'Himself' as role
+   FROM imdb.movies
+   LIMIT 920 OFFSET 10000;
+   ```
+
+4. Exécutez `dbt run` et confirmez que Danny a bien été ajouté à la table actor&#95;summary
+
+   ```response
+   clickhouse-user@clickhouse:~/imdb$ dbt run
+   16:12:16  Running with dbt=1.1.0
+   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 186 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
+   16:12:16
+   16:12:17  Concurrency: 1 threads (target='dev')
+   16:12:17
+   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
+   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 0.17s]
+   16:12:24
+   16:12:24  Finished running 1 incremental model in 0.19s.
+   16:12:24
+   16:12:24  Completed successfully
+   16:12:24
+   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+   ```sql
+   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 3;
+   ```
+
+   ```response
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   |845467|Danny DeBito       |920       |1.4768987303293204|21    |670      |2022-04-26 16:22:06|
+   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
+   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
+   +------+-------------------+----------+------------------+------+---------+-------------------+
+   ```
+
+Notez à quel point cette exécution incrémentielle a été plus rapide que l’insertion de « Clicky ».
+
+En vérifiant à nouveau la table query&#95;log, on voit les différences entre les 2 exécutions incrémentielles :
+
+```sql
+INSERT INTO imdb_dbt.actor_summary ("id", "name", "num_movies", "avg_rank", "genres", "directors", "updated_at")
+WITH actor_summary AS (
+   SELECT id,
+      any(actor_name) AS name,
+      uniqExact(movie_id)    AS num_movies,
+      avg(rank)                AS avg_rank,
+      uniqExact(genre)         AS genres,
+      uniqExact(director_name) AS directors,
+      max(created_at) AS updated_at
+   FROM (
+      SELECT imdb.actors.id AS id,
+         concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+         imdb.movies.id AS movie_id,
+         imdb.movies.rank AS rank,
+         genre,
+         concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+         created_at
+      FROM imdb.actors
+         JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+         LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+         LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+         LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+         LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+   )
+   GROUP BY id
+)
+
+SELECT *
+FROM actor_summary
+-- this filter will only be applied on an incremental run
+WHERE id > (SELECT max(id) FROM imdb_dbt.actor_summary) OR updated_at > (SELECT max(updated_at) FROM imdb_dbt.actor_summary)
+```
+
+Pour cette exécution, seules les nouvelles lignes sont ajoutées directement à la table `imdb_dbt.actor_summary`, sans création de table.
+
+<div id="deleteinsert-mode-experimental">
+  ### Mode suppression et insertion (expérimental)
+</div>
+
+Historiquement, ClickHouse n&#39;offrait qu&#39;une prise en charge limitée des mises à jour et des suppressions, sous la forme de [mutations](/fr/reference/statements/alter/index). Celles-ci peuvent être extrêmement gourmandes en IO et doivent généralement être évitées.
+
+ClickHouse 22.8 a introduit les [suppressions légères](/fr/reference/statements/delete), et ClickHouse 25.7 les [mises à jour légères](/fr/reference/statements/update). Avec l&#39;introduction de ces fonctionnalités, les modifications effectuées par une seule requête de mise à jour, même lorsqu&#39;elles sont matérialisées de façon asynchrone, prennent effet instantanément du point de vue de l&#39;utilisateur.
+
+Ce mode peut être configuré pour un modèle via le paramètre `incremental_strategy`, c.-à-d.
+
+```sql
+{{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='delete+insert') }}
+```
+
+Cette stratégie s’exécute directement sur la table du modèle cible. Ainsi, si un problème survient pendant l’opération, les données du modèle incrémental risquent fort de se retrouver dans un état incohérent : il n’y a pas de mise à jour atomique.
+
+En résumé, cette approche :
+
+1. L’adaptateur crée une table temporaire `actor_sumary__dbt_tmp`. Les lignes modifiées y sont envoyées.
+2. Un `DELETE` est exécuté sur la table `actor_summary` actuelle. Les lignes sont supprimées par id à partir de `actor_sumary__dbt_tmp`
+3. Les lignes de `actor_sumary__dbt_tmp` sont insérées dans `actor_summary` à l’aide de `INSERT INTO actor_summary SELECT * FROM actor_sumary__dbt_tmp`.
+
+Ce processus est illustré ci-dessous :
+
+<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_06.webp" size="lg" alt="suppression légère incrémentale" />
+
+<div id="insert_overwrite-mode-experimental">
+  ### Mode insert_overwrite (expérimental)
+</div>
+
+Effectue les étapes suivantes :
+
+1. Crée une table de staging (temporaire) ayant la même structure que la relation du modèle incrémental : `CREATE TABLE {staging} AS {target}`.
+2. Insère uniquement les nouveaux enregistrements (produits par SELECT) dans la table de staging.
+3. Remplace uniquement les nouvelles partitions (présentes dans la table de staging) dans la table cible.
+
+<br />
+
+Cette approche présente les avantages suivants :
+
+* Elle est plus rapide que la stratégie par défaut, car elle ne copie pas l’intégralité de la table.
+* Elle est plus sûre que les autres stratégies, car elle ne modifie pas la table d’origine tant que l’opération INSERT n’a pas abouti : en cas d’échec intermédiaire, la table d’origine n’est pas modifiée.
+* Elle applique la bonne pratique d’ingénierie des données dite de « l’immuabilité des partitions », ce qui simplifie le traitement incrémental et parallèle des données, les retours arrière, etc.
+
+<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_07.webp" size="lg" alt="insert overwrite incrémental" />
+
+<div id="creating-a-snapshot">
+  ## Créer un snapshot
+</div>
+
+Les snapshots dbt permettent de conserver une trace des modifications apportées au fil du temps à un modèle mutable. Cela permet ensuite d’exécuter des requêtes à un instant donné sur des modèles, afin que les analystes puissent &quot;remonter dans le temps&quot; jusqu’à l’état précédent d’un modèle. Cela est réalisé à l’aide de [dimensions à évolution lente de type 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row), où des colonnes de date de début et de fin enregistrent le moment où une ligne était valide. Cette fonctionnalité est prise en charge par l’adaptateur ClickHouse et est illustrée ci-dessous.
+
+Cet exemple suppose que vous avez terminé [Créer un modèle de table incrémental](#creating-an-incremental-materialization). Assurez-vous que votre actor&#95;summary.sql ne définit pas inserts&#95;only=True. Votre models/actor&#95;summary.sql doit ressembler à ceci :
+
+```sql
+   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
+
+   with actor_summary as (
+       SELECT id,
+           any(actor_name) as name,
+           uniqExact(movie_id)    as num_movies,
+           avg(rank)                as avg_rank,
+           uniqExact(genre)         as genres,
+           uniqExact(director_name) as directors,
+           max(created_at) as updated_at
+       FROM (
+           SELECT {{ source('imdb', 'actors') }}.id as id,
+               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
+               {{ source('imdb', 'movies') }}.id as movie_id,
+               {{ source('imdb', 'movies') }}.rank as rank,
+               genre,
+               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
+               created_at
+       FROM {{ source('imdb', 'actors') }}
+           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
+           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
+           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
+           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
+           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
+       )
+       GROUP BY id
+   )
+   select *
+   from actor_summary
+
+   {% if is_incremental() %}
+
+   -- this filter will only be applied on an incremental run
+   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
+
+   {% endif %}
+```
+
+1. Créez un fichier `actor_summary` dans le répertoire snapshots.
+
+   ```bash
+    touch snapshots/actor_summary.sql
+   ```
+
+2. Mettez à jour le contenu du fichier actor&#95;summary.sql avec le contenu suivant :
+   ```sql
+   {% snapshot actor_summary_snapshot %}
+
+   {{
+   config(
+   target_schema='snapshots',
+   unique_key='id',
+   strategy='timestamp',
+   updated_at='updated_at',
+   )
+   }}
+
+   select * from {{ref('actor_summary')}}
+
+   {% endsnapshot %}
+   ```
+
+Quelques remarques concernant ce contenu :
+
+* La requête select définit les résultats dont vous souhaitez capturer un snapshot au fil du temps. La fonction ref est utilisée pour faire référence à notre modèle actor&#95;summary créé précédemment.
+* Nous avons besoin d’une colonne timestamp pour indiquer les modifications des enregistrements. Notre colonne updated&#95;at (voir [Création d’un modèle de table Incremental](#creating-an-incremental-materialization)) peut être utilisée ici. Le paramètre strategy indique que nous utilisons un timestamp pour signaler les mises à jour, tandis que le paramètre updated&#95;at précise la colonne à utiliser. Si ce champ n’est pas présent dans votre modèle, vous pouvez également utiliser la [stratégie check](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy). Cette approche est nettement moins efficace et oblige l’utilisateur à spécifier une liste de colonnes à comparer. dbt compare les valeurs actuelles et historiques de ces colonnes, en enregistrant toute modification (ou en ne faisant rien si elles sont identiques).
+
+3. Exécutez la commande `dbt snapshot`.
+
+   ```response
+   clickhouse-user@clickhouse:~/imdb$ dbt snapshot
+   13:26:23  Running with dbt=1.1.0
+   13:26:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
+   13:26:23
+   13:26:25  Concurrency: 1 threads (target='dev')
+   13:26:25
+   13:26:25  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
+   13:26:25  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 0.79s]
+   13:26:25
+   13:26:25  Finished running 1 snapshot in 2.11s.
+   13:26:25
+   13:26:25  Completed successfully
+   13:26:25
+   13:26:25  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+Notez que la table actor&#95;summary&#95;snapshot a été créée dans la base de données snapshots (déterminée par le paramètre target&#95;schema).
+
+4. Si vous examinez un échantillon de ces données, vous verrez que dbt a inclus les colonnes dbt&#95;valid&#95;from et dbt&#95;valid&#95;to. Cette dernière contient des valeurs null. Les exécutions suivantes le mettront à jour.
+
+   ```sql
+   SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
+   ```
+
+   ```response
+   +------+----------+------------+----------+-------------------+------------+
+   |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to|
+   +------+----------+------------+----------+-------------------+------------+
+   |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL        |
+   |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|NULL        |
+   |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL        |
+   |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL        |
+   |283127|Tom       |London      |549       |2022-05-25 19:31:47|NULL        |
+   +------+----------+------------+----------+-------------------+------------+
+   ```
+
+5. Faites apparaître notre acteur préféré, Clicky McClickHouse, dans 10 films supplémentaires.
+
+   ```sql
+   INSERT INTO imdb.roles
+   SELECT now() as created_at, 845466 as actor_id, rand(number) % 412320 as movie_id, 'Himself' as role
+   FROM system.numbers
+   LIMIT 10;
+   ```
+
+6. Relancez la commande `dbt run` depuis le répertoire `imdb`. Cela mettra à jour le modèle incrémental. Une fois l’opération terminée, exécutez `dbt snapshot` pour capturer les modifications.
+
+   ```response
+   clickhouse-user@clickhouse:~/imdb$ dbt run
+   13:46:14  Running with dbt=1.1.0
+   13:46:14  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
+   13:46:14
+   13:46:15  Concurrency: 1 threads (target='dev')
+   13:46:15
+   13:46:15  1 of 1 START incremental model imdb_dbt.actor_summary....................... [RUN]
+   13:46:18  1 of 1 OK created incremental model imdb_dbt.actor_summary.................. [OK in 2.76s]
+   13:46:18
+   13:46:18  Finished running 1 incremental model in 3.73s.
+   13:46:18
+   13:46:18  Completed successfully
+   13:46:18
+   13:46:18  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+
+   clickhouse-user@clickhouse:~/imdb$ dbt snapshot
+   13:46:26  Running with dbt=1.1.0
+   13:46:26  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
+   13:46:26
+   13:46:27  Concurrency: 1 threads (target='dev')
+   13:46:27
+   13:46:27  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
+   13:46:31  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 4.05s]
+   13:46:31
+   13:46:31  Finished running 1 snapshot in 5.02s.
+   13:46:31
+   13:46:31  Completed successfully
+   13:46:31
+   13:46:31  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+7. Si nous interrogeons maintenant notre instantané, nous constatons que nous avons 2 lignes pour Clicky McClickHouse. Notre entrée précédente a désormais une valeur dbt&#95;valid&#95;to. Notre nouvelle valeur est enregistrée avec la même valeur dans la colonne dbt&#95;valid&#95;from, et une valeur dbt&#95;valid&#95;to égale à null. Si nous avions de nouvelles lignes, elles seraient également ajoutées à l’instantané.
+
+   ```sql
+   SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
+   ```
+
+   ```response
+   +------+----------+------------+----------+-------------------+-------------------+
+   |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to       |
+   +------+----------+------------+----------+-------------------+-------------------+
+   |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL               |
+   |845466|Clicky    |McClickHouse|920       |2022-05-25 19:34:37|NULL               |
+   |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|2022-05-25 19:34:37|
+   |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL               |
+   |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL               |
+   +------+----------+------------+----------+-------------------+-------------------+
+   ```
+
+Pour en savoir plus sur les snapshots dbt, consultez [cette page](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots).
+
+<div id="using-seeds">
+  ## Utiliser les seeds
+</div>
+
+dbt permet de charger des données à partir de fichiers CSV. Cette fonctionnalité n&#39;est pas adaptée au chargement d&#39;exports volumineux d&#39;une base de données et convient davantage à de petits fichiers, généralement utilisés pour des tables de codes et des [dictionnaires](/fr/concepts/features/dictionaries/index), par exemple pour faire correspondre des codes pays à des noms de pays. Pour un exemple simple, nous générons puis importons une liste de codes de genre à l&#39;aide de la fonctionnalité de seed.
+
+1. Nous générons une liste de codes de genre à partir de notre jeu de données existant. Depuis le répertoire dbt, utilisez `clickhouse-client` pour créer un fichier `seeds/genre_codes.csv` :
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ clickhouse-client --password <password> --query
+   "SELECT genre, ucase(substring(genre, 1, 3)) as code FROM imdb.genres GROUP BY genre
+   LIMIT 100 FORMAT CSVWithNames" > seeds/genre_codes.csv
+   ```
+
+2. Exécutez la commande `dbt seed`. Cela créera une nouvelle table `genre_codes` dans notre base de données `imdb_dbt` (comme défini par notre configuration de schéma) avec les lignes de notre fichier CSV.
+
+   ```bash
+   clickhouse-user@clickhouse:~/imdb$ dbt seed
+   17:03:23  Running with dbt=1.1.0
+   17:03:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 1 seed file, 6 sources, 0 exposures, 0 metrics
+   17:03:23
+   17:03:24  Concurrency: 1 threads (target='dev')
+   17:03:24
+   17:03:24  1 of 1 START seed file imdb_dbt.genre_codes..................................... [RUN]
+   17:03:24  1 of 1 OK loaded seed file imdb_dbt.genre_codes................................. [INSERT 21 in 0.65s]
+   17:03:24
+   17:03:24  Finished running 1 seed in 1.62s.
+   17:03:24
+   17:03:24  Completed successfully
+   17:03:24
+   17:03:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+   ```
+
+3. Vérifiez qu&#39;elles ont bien été chargées :
+
+   ```sql
+   SELECT * FROM imdb_dbt.genre_codes LIMIT 10;
+   ```
+
+   ```response
+   +-------+----+
+   |genre  |code|
+   +-------+----+
+   |Drama  |DRA |
+   |Romance|ROM |
+   |Short  |SHO |
+   |Mystery|MYS |
+   |Adult  |ADU |
+   |Family |FAM |
+
+   |Action |ACT |
+   |Sci-Fi |SCI |
+   |Horror |HOR |
+   |War    |WAR |
+   +-------+----+=
+   ```
+
+<div id="further-information">
+  ## Informations complémentaires
+</div>
+
+Les guides précédents ne font qu’effleurer les fonctionnalités de dbt. Il est recommandé aux utilisateurs de consulter l’excellente [documentation de dbt](https://docs.getdbt.com/docs/introduction).

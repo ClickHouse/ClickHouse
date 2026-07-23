@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'Paneles'
+slug: /cloud/manage/dashboards
+title: 'Paneles'
+description: 'La función de paneles de SQL Console le permite recopilar y compartir visualizaciones a partir de consultas guardadas.'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'paneles', 'visualización de datos', 'paneles de SQL Console', 'analítica en la nube']
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+La función de paneles de SQL Console te permite reunir y compartir visualizaciones a partir de consultas guardadas. Para empezar, guarda consultas y crea visualizaciones, añade las visualizaciones de las consultas a un panel y haz que el panel sea interactivo con parámetros de consulta.
+
+<div id="core-concepts">
+  ## Conceptos clave
+</div>
+
+<div id="query-sharing">
+  ### Compartir consultas
+</div>
+
+Para compartir tu panel con tus colegas, asegúrate de compartir también la consulta guardada en la que se basa. Para ver una visualización, debes tener, como mínimo, acceso de solo lectura a la consulta guardada en la que se basa.
+
+<div id="interactivity">
+  ### Interactividad
+</div>
+
+Usa [parámetros de consulta](/es/reference/syntax#defining-and-using-query-parameters) para que tu panel sea interactivo. Por ejemplo, puedes añadir un parámetro de consulta a una cláusula `WHERE` para que actúe como filtro.
+
+Puedes mostrar u ocultar el campo del parámetro de consulta desde el panel lateral de filtros **Global** seleccionando un tipo “filter” en la configuración de la visualización. También puedes mostrar u ocultar el campo del parámetro de consulta vinculándolo a otro objeto (como una tabla) del panel. Consulta la sección “[configurar un filtro](/es/products/cloud/features/sql-console-features/dashboards#configure-a-filter)” de la guía de inicio rápido que aparece a continuación.
+
+<div id="quick-start">
+  ## Inicio rápido
+</div>
+
+Vamos a crear un panel para supervisar nuestro servicio de ClickHouse usando la tabla del sistema [query&#95;log](/es/reference/system-tables/query_log).
+
+<div id="quick-start">
+  ## Inicio rápido
+</div>
+
+<div id="create-a-saved-query">
+  ### Crear una consulta guardada
+</div>
+
+Si ya tienes consultas guardadas para visualizar, puedes omitir este paso.
+
+Abre una nueva pestaña de consulta. Vamos a escribir una consulta para contar el volumen de consultas por día en un servicio usando las tablas del sistema de ClickHouse:
+
+<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="Crear una consulta guardada" border />
+
+Podemos ver los resultados de la consulta en formato de tabla o empezar a crear visualizaciones desde la vista de gráfico. En el siguiente paso, guardaremos la consulta como `queries over time`:
+
+<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="Guardar consulta" border />
+
+Puedes encontrar más documentación sobre las consultas guardadas en la [sección Saving a Query](/es/products/cloud/features/sql-console-features/sql-console#saving-a-query).
+
+Podemos crear y guardar otra consulta, `query count by query kind`, para contar el número de consultas por tipo de consulta. Aquí tienes una visualización de gráfico de barras de los datos en la SQL Console.
+
+<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="Una visualización de gráfico de barras de los resultados de una consulta" border />
+
+Ahora que ya hay dos consultas, vamos a crear un panel para visualizarlas y agruparlas.
+
+<div id="create-a-dashboard">
+  ### Crear un panel
+</div>
+
+Ve al panel Dashboards y haz clic en “New Dashboard”. Cuando le asignes un nombre, habrás creado tu primer panel.
+
+<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="Crear un nuevo panel" border />
+
+<div id="add-a-visualization">
+  ### Añadir una visualización
+</div>
+
+Hay dos consultas guardadas, `queries over time` y `query count by query kind`. Visualicemos la primera como un gráfico de líneas. Asigna un título y un subtítulo a la visualización, y selecciona la consulta que quieres visualizar. A continuación, selecciona el tipo de gráfico “Line” y asigna un eje X y un eje Y.
+
+<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="Añadir una visualización" border />
+
+Aquí también puedes hacer cambios de estilo adicionales, como el formato de los números, la disposición de la leyenda y las etiquetas de los ejes.
+
+A continuación, visualicemos la segunda consulta como una tabla y colócala debajo del gráfico de líneas.
+
+<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="Visualizar los resultados de la consulta como una tabla" border />
+
+¡Has creado tu primer panel visualizando dos consultas guardadas!
+
+<div id="configure-a-filter">
+  ### Configurar un filtro
+</div>
+
+Hagamos que este panel sea interactivo añadiendo un filtro sobre el tipo de consulta, para que puedas mostrar solo las tendencias relacionadas con las consultas Insert. Realizaremos esta tarea usando [parámetros de consulta](/es/reference/syntax#defining-and-using-query-parameters).
+
+Haz clic en los tres puntos junto al gráfico de líneas y, después, en el botón del lápiz que aparece junto a la consulta para abrir el editor de consultas en línea. Aquí podemos editar directamente desde el panel la consulta guardada subyacente.
+
+<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="Editar la consulta subyacente" border />
+
+Ahora, al pulsar el botón amarillo de ejecutar consulta, verás la misma consulta de antes filtrada para mostrar solo las consultas Insert. Haz clic en el botón Guardar para actualizar la consulta. Cuando vuelvas a la configuración del gráfico, podrás filtrar el gráfico de líneas.
+
+Ahora, usando Filtros globales en la barra superior, puedes activar o desactivar el filtro cambiando el valor de entrada.
+
+<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="Ajustar los filtros globales" border />
+
+Supongamos que quieres vincular el filtro del gráfico de líneas a la tabla. Puedes hacerlo volviendo a la configuración de la visualización, cambiando el origen del valor del parámetro de consulta query&#95;kind a una tabla y seleccionando la columna query&#95;kind como el campo que se va a vincular.
+
+<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="Cambiar el parámetro de consulta" border />
+
+Ahora puedes controlar el filtro del gráfico de líneas directamente desde la tabla de consultas por tipo para hacer que tu panel sea interactivo.
+
+<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="Controlar el filtro en el gráfico de líneas" border />

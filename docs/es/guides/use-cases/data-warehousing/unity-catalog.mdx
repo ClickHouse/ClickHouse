@@ -1,0 +1,199 @@
+---
+slug: /use-cases/data-lake/unity-catalog
+sidebarTitle: 'Unity Catalog'
+title: 'Unity Catalog'
+description: 'En esta guía, le mostraremos cómo consultar
+ sus datos en buckets de S3 con ClickHouse y Unity Catalog.'
+keywords: ['Unity', 'Lago de datos']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse admite la integración con varios catálogos (Unity, Glue, Polaris, etc.). Esta guía le mostrará cómo consultar, con ClickHouse y [Unity Catalog](https://www.databricks.com/product/unity-catalog), los datos gestionados por Databricks.
+
+Databricks admite varios formatos de datos para su lakehouse. Con ClickHouse, puede consultar tablas de Unity Catalog tanto en formato Delta como Iceberg.
+
+<Note>
+  Como esta funcionalidad es experimental, deberá habilitarla con:
+  `SET allow_experimental_database_unity_catalog = 1;`
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ## Configuración de Unity en Databricks
+</div>
+
+Para permitir que ClickHouse interactúe con Unity Catalog, debe asegurarse de que Unity Catalog esté configurado para permitir la interacción con un lector externo. Esto puede lograrse siguiendo la guía [ &quot;Habilitar el acceso externo a los datos en Unity Catalog&quot;](https://docs.databricks.com/aws/en/external-access/admin).
+
+Una vez configurado el catálogo, debe generar credenciales para ClickHouse. Pueden utilizarse dos métodos distintos, según el modo de interacción con Unity:
+
+* Para clientes Iceberg, use autenticación como [service principal](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m).
+
+* Para clientes Delta, use un token de acceso personal ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)).
+
+<div id="required-pat-token-permissions">
+  ### Permisos requeridos del token PAT
+</div>
+
+Al usar un PAT para acceso de lectura, el token debe tener permisos que permitan a ClickHouse listar y leer metadatos de Unity Catalog. Asegúrese de que el PAT tenga al menos el [privilegio](https://docs.databricks.com/aws/en/external-access/admin#grant-a-principal-unity-catalog-privileges) `EXTERNAL USE SCHEMA`, junto con el permiso `SELECT` en la tabla, `USE CATALOG` en su catálogo padre y `USE SCHEMA` en su esquema padre.
+
+<div id="creating-a-connection-between-unity-catalog-and-clickhouse">
+  ## Crear una conexión entre Unity Catalog y ClickHouse
+</div>
+
+Con Unity Catalog configurado y la autenticación preparada, establezca una conexión entre ClickHouse y Unity Catalog.
+
+<div id="read-delta">
+  ### Leer Delta
+</div>
+
+```sql
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity'
+```
+
+<div id="read-iceberg">
+  ### Leer tablas Iceberg
+</div>
+
+Para acceder a las tablas Iceberg gestionadas:
+
+```sql
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace', 
+oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql'
+```
+
+<div id="querying-unity-catalog-tables-using-clickhouse">
+  ## Consultar tablas de Unity Catalog con ClickHouse
+</div>
+
+Ahora que la conexión está lista, puedes empezar a realizar consultas mediante Unity Catalog. Por ejemplo:
+
+```sql
+USE unity;
+
+SHOW TABLES;
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ clickbench.delta_hits                              │
+│ demo.fake_user                                     │
+│ information_schema.catalog_privileges              │
+│ information_schema.catalog_tags                    │
+│ information_schema.catalogs                        │
+│ information_schema.check_constraints               │
+│ information_schema.column_masks                    │
+│ information_schema.column_tags                     │
+│ information_schema.columns                         │
+│ information_schema.constraint_column_usage         │
+│ information_schema.constraint_table_usage          │
+│ information_schema.information_schema_catalog_name │
+│ information_schema.key_column_usage                │
+│ information_schema.parameters                      │
+│ information_schema.referential_constraints         │
+│ information_schema.routine_columns                 │
+│ information_schema.routine_privileges              │
+│ information_schema.routines                        │
+│ information_schema.row_filters                     │
+│ information_schema.schema_privileges               │
+│ information_schema.schema_tags                     │
+│ information_schema.schemata                        │
+│ information_schema.table_constraints               │
+│ information_schema.table_privileges                │
+│ information_schema.table_tags                      │
+│ information_schema.tables                          │
+│ information_schema.views                           │
+│ information_schema.volume_privileges               │
+│ information_schema.volume_tags                     │
+│ information_schema.volumes                         │
+│ uniform.delta_hits                                 │
+└────────────────────────────────────────────────────┘
+```
+
+```sql
+SHOW TABLES
+```
+
+```response
+┌─name───────────────┐
+│ uniform.delta_hits │
+└────────────────────┘
+```
+
+Para consultar una tabla:
+
+```sql
+SELECT count(*) FROM `uniform.delta_hits`
+```
+
+<Info>
+  **Se requieren comillas invertidas**
+
+  Se requieren comillas invertidas porque ClickHouse no admite más de un espacio de nombres.
+</Info>
+
+Para inspeccionar el DDL de la tabla:
+
+```sql
+SHOW CREATE TABLE `uniform.delta_hits`
+
+CREATE TABLE unity_uniform.`uniform.delta_hits`
+(
+    `WatchID` Int64,
+    `JavaEnable` Int32,
+    `Title` String,
+    `GoodEvent` Int32,
+    `EventTime` DateTime64(6, 'UTC'),
+    `EventDate` Date,
+    `CounterID` Int32,
+    `ClientIP` Int32,
+    ...
+    `FromTag` String,
+    `HasGCLID` Int32,
+    `RefererHash` Int64,
+    `URLHash` Int64,
+    `CLID` Int32
+)
+ENGINE = Iceberg('s3://<path>);
+
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Carga de datos desde tu lago de datos a ClickHouse
+</div>
+
+Si necesitas cargar datos de Databricks en ClickHouse, empieza por crear una tabla local en ClickHouse:
+
+```sql
+CREATE TABLE hits
+(
+    `WatchID` Int64,
+    `JavaEnable` Int32,
+    `Title` String,
+    `GoodEvent` Int32,
+    `EventTime` DateTime64(6, 'UTC'),
+    `EventDate` Date,
+    `CounterID` Int32,
+    `ClientIP` Int32,
+    ...
+    `FromTag` String,
+    `HasGCLID` Int32,
+    `RefererHash` Int64,
+    `URLHash` Int64,
+    `CLID` Int32
+)
+PRIMARY KEY (CounterID, EventDate, UserID, EventTime, WatchID);
+```
+
+Luego, cargue los datos de su tabla de Unity Catalog mediante un `INSERT INTO SELECT`:
+
+```sql
+INSERT INTO hits SELECT * FROM unity_uniform.`uniform.delta_hits`;
+```

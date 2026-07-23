@@ -14,11 +14,13 @@ LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
 LEFT_SERVER_KEEPER_RAFT_PORT=9234
 LEFT_SERVER_INTERSERVER_PORT=9009
+LEFT_SERVER_HTTP_PORT=8123
 # patched version
 RIGHT_SERVER_PORT=19001
 RIGHT_SERVER_KEEPER_PORT=19181
 RIGHT_SERVER_KEEPER_RAFT_PORT=19234
 RIGHT_SERVER_INTERSERVER_PORT=19009
+RIGHT_SERVER_HTTP_PORT=18123
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -26,6 +28,22 @@ RIGHT_SERVER_INTERSERVER_PORT=19009
 #                 that returns different number of CPUs for some of the following
 #                 _SC_NPROCESSORS_ONLN/_SC_NPROCESSORS_CONF/sched_getaffinity
 export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
+
+# jemalloc allocation sampling rate (lg2 of the average byte interval between
+# samples) for the per-query profiler used in the dedicated profile runs.
+# Lower than the 512 KiB (19) default: we profile single queries in isolation,
+# so we need a denser profile to get useful JemallocSample flamegraphs.
+# Must match CHServer.JEMALLOC_PROFILER_SAMPLING_RATE in performance_tests.py.
+JEMALLOC_PROFILER_SAMPLING_RATE=16
+
+# Settings for the report-building clickhouse-local (post-processing of the perf
+# results, not the measured servers). Keep in sync with
+# REPORT_LOCAL_{QUERY,SERVER}_SETTINGS in performance_tests.py.
+# Keep report aggregations in RAM: report/tmp cannot hold a spill of the
+# heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
+CHPC_REPORT_LOCAL_QUERY_SETTINGS="--max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
+# Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
+CHPC_REPORT_LOCAL_SERVER_SETTINGS="--memory_worker_use_cgroup=0"
 
 function wait_for_server # port, pid
 {
@@ -134,10 +152,172 @@ function configure
     fi
 }
 
+# addressToLine resolves a frame to "file:line" only where DWARF covers
+# ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
+# table remains (addressToSymbol works) but there is no line info, so the patched
+# (right) binary symbolizes differently from the reference (left, master) build
+# and flamegraph tooling cannot match the frames. A ".debug_info" section is not
+# a reliable signal (Rust crates emit one even under -g0), so probe how many
+# system.stack_trace frames resolve to a line on each binary and strip the
+# reference only when the patched binary resolves far fewer. Merge-to-master
+# resolves comparably on both and is left untouched.
+function match_reference_debug_info
+{
+    local left right left_lines right_lines
+    left=$(readlink -f left/clickhouse-server)
+    right=$(readlink -f right/clickhouse-server)
+    # Running clickhouse also decompresses the self-extracting binary in place.
+    local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
+    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
+        strip --strip-debug "$left"
+    fi
+}
+
+# On x86_64 the measured servers are pinned to one hyperthread per physical
+# core (m7i.4xlarge: 8 physical cores x 2 HT), so that whether two query
+# threads share a hyperthread sibling does not depend on the scheduler; the
+# matching max_threads=8 users.d override is written at job setup. Prints a
+# "taskset -c <list>" prefix on x86_64 and nothing on other architectures
+# (arm has real cores only and is unchanged). Must stay in sync with
+# get_physical_core_cpu_list in ci/jobs/performance_tests.py, which pins the
+# initial server starts the same way.
+function pinned_cpu_list
+{
+    # One ALLOWED hyperthread per physical core, as a comma-separated list;
+    # empty when pinning is disabled. Pinning requires Linux x86_64 (taskset,
+    # sysfs topology, sched_getaffinity are Linux-only - a local Intel Mac
+    # must not get a taskset prefix it cannot execute). Sysfs exposes the
+    # host topology, so on a cpuset-limited run the sibling list is
+    # intersected with the process affinity mask - a disallowed CPU in
+    # taskset would fail to start the servers. Must stay in sync with
+    # get_physical_core_cpu_list in ci/jobs/performance_tests.py.
+    if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]
+    then
+        return 0
+    fi
+    local cpus
+    cpus=$(python3 - 2>/dev/null <<'PYEOF' ||:
+import os
+import re
+from pathlib import Path
+
+try:
+    allowed = os.sched_getaffinity(0)
+except OSError:
+    raise SystemExit(1)
+cores = {}
+for path in Path("/sys/devices/system/cpu").glob(
+    "cpu[0-9]*/topology/thread_siblings_list"
+):
+    # Formats seen in the wild: "0,8", "0-1", "0" (no SMT). Per-file
+    # tolerance, matching get_physical_core_cpu_list in
+    # ci/jobs/performance_tests.py.
+    try:
+        siblings = [int(s) for s in re.split(r"[,-]", path.read_text().strip()) if s]
+    except (OSError, ValueError):
+        continue
+    usable = [c for c in siblings if c in allowed]
+    if usable:
+        cores[min(siblings)] = min(usable)
+cpus = sorted(set(cores.values()))
+if cpus:
+    print(",".join(map(str, cpus)))
+PYEOF
+)
+    if [ -z "$cpus" ]
+    then
+        # Without topology, halving would be a guess that drops real cores on
+        # non-SMT hosts and on masks that already expose one sibling per core
+        # (e.g. Cpus_allowed_list: 1,3). Keep every allowed CPU instead: the
+        # degraded mode allows hyperthread sharing (the pre-pinning behavior)
+        # but never skews measurements by idling half the cores. Must stay in
+        # sync with get_physical_core_cpu_list in ci/jobs/performance_tests.py.
+        echo "pinned_cpu_list: sysfs topology probe failed; using all allowed cpus (sibling pairs unknown, hyperthread sharing possible)" >&2
+        cpus=$(sed -n 's/^Cpus_allowed_list:[[:space:]]*//p' /proc/self/status 2>/dev/null \
+            | tr ',' '\n' \
+            | awk -F- '{ if (NF == 2) { for (i = $1; i <= $2; i++) print i } else if ($1 != "") print $1 }' \
+            | paste -sd, -)
+        if [ -z "$cpus" ]
+        then
+            cpus=$(seq -s, 0 $(( $(nproc) - 1 )))
+        fi
+    fi
+    echo "$cpus"
+}
+
+function cpu_pinning_prefix
+{
+    local cpus
+    cpus=$(pinned_cpu_list)
+    if [ -n "$cpus" ]
+    then
+        echo "taskset -c $cpus"
+    fi
+}
+
+function write_max_threads_override
+{
+    # Pinning and max_threads must travel together: with taskset limiting both
+    # servers to one hyperthread per physical core, the static default
+    # max_threads=12 would oversubscribe the pinned set and reintroduce the
+    # scheduler noise the pinning removes. max_threads is derived from the
+    # pinned CPU list (one query thread per pinned CPU, e.g. 8 on
+    # m7i.4xlarge) so the invariant holds on any x86_64 shape. The CI flow
+    # writes the same override from performance_tests.py
+    # (MAX_THREADS_OVERRIDE_XML, keep in sync); the standalone entrypoints
+    # (stage=run_tests, the manual README flow) prepare
+    # their configs here. The zzz- prefix sorts the file after the static
+    # users.d files, overriding them.
+    local cpus max_threads dir
+    cpus=$(pinned_cpu_list)
+    if [ -z "$cpus" ]
+    then
+        # Pinning is disabled (non-x86_64). Reused workspaces may carry an
+        # override from an earlier x86_64 run; remove it so the static
+        # max_threads actually applies.
+        rm -f left/config/users.d/zzz-cpu-pinning-max-threads.xml \
+            right/config/users.d/zzz-cpu-pinning-max-threads.xml ||:
+        return 0
+    fi
+    max_threads=$(( $(echo "$cpus" | tr -cd , | wc -c) + 1 ))
+    for dir in left right
+    do
+        if ! [ -d "$dir/config/users.d" ]
+        then
+            echo "write_max_threads_override: $dir/config/users.d does not exist, pinned servers would keep the static max_threads" >&2
+        else
+            cat > "$dir/config/users.d/zzz-cpu-pinning-max-threads.xml" <<EOF
+<clickhouse>
+    <profiles>
+        <default>
+            <max_threads>$max_threads</max_threads>
+        </default>
+    </profiles>
+</clickhouse>
+EOF
+        fi
+    done
+}
+
 function restart
 {
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
+
+    # All measured (pinned) servers are started by this function: the stage
+    # cascade invokes it before run_tests, and the confirm_changes rerun
+    # calls it directly. Writing the override here guarantees taskset and
+    # max_threads travel together even when configure was skipped and stale
+    # users.d content is on disk.
+    write_max_threads_override
+
+    match_reference_debug_info
+
+    # Intentionally unquoted below: expands to nothing on non-x86_64.
+    local pinning_prefix
+    pinning_prefix=$(cpu_pinning_prefix)
 
     set -m # Spawn servers in their own process groups
 
@@ -150,13 +330,18 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
+        # The perf-comparison config removes <http_port>; re-enable it on the
+        # command line (a documented config override) with a distinct port per
+        # server, so that shell-script tests can talk to the server over HTTP.
+        --http_port $LEFT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path left/coordination
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -170,13 +355,15 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
+        --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path right/coordination
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -286,10 +473,11 @@ function run_tests
     #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
     #fi
 
-    CHPC_RUNS=${CHPC_RUNS:-7}
+    # CHPC_RUNS has no default any more: it is forwarded to perf.py --runs
+    # ("at least N runs per query") only when the caller set it; otherwise the
+    # adaptive run policy decides the counts.
     CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
 
-    export CHPC_RUNS
     export CHPC_MAX_QUERIES
 
     # Determine which concurrent benchmarks to run. For now, the only test
@@ -345,7 +533,14 @@ function run_tests
             argv=(
                 --host localhost localhost
                 --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
-                --runs "$CHPC_RUNS"
+                # Binary paths and HTTP ports are used by shell-script tests
+                # (<query type="shell">), e.g. clickhouse-local startup and HTTP
+                # reads. They are parallel to --host/--port (left, then right).
+                --binary left/clickhouse right/clickhouse
+                --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT"
+                # Only when the caller explicitly set CHPC_RUNS ("at least N
+                # runs"); otherwise the adaptive run policy decides.
+                ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
 
@@ -398,13 +593,20 @@ function get_profiles
 
     wait
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    # Dump the query_log columns the report reads (query_id, ProfileEvents,
+    # query_duration_ms, memory_usage, read_bytes, written_bytes) plus those
+    # useful for manual debugging (query text, Settings, timings, row/byte
+    # counts, errors). The other ~70 columns are dropped to keep the artifact
+    # smaller.
+    local query_log_columns="type, event_time, query_id, query_duration_ms, memory_usage, read_rows, read_bytes, written_rows, written_bytes, result_rows, result_bytes, query, exception_code, exception, ProfileEvents, Settings"
+
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select $query_log_columns from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select $query_log_columns from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
@@ -424,6 +626,12 @@ function analyze_queries
 rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
 rm -rf analyze ||:
 mkdir analyze analyze/tmp ||:
+
+# Demotions belong to a specific analysis: re-analyzing invalidates any
+# earlier confirmation results, otherwise a later `stage=report` run would
+# silently demote current rows with a stale unconfirmed-queries.tsv left in
+# the workspace. confirm_changes recreates the file after this stage.
+rm -f analyze-confirm/unconfirmed-queries.tsv ||:
 
 # Split the raw test output into files suitable for analysis.
 # To debug calculations only for a particular test, substitute a suitable
@@ -486,7 +694,12 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
-    select test, query_index, version, query_id,
+    -- Take version/query_id from query_runs, the preserved side of the RIGHT JOIN.
+    -- For SQL queries the query_log always matches, so this is the same value;
+    -- but shell-script queries (<query type="shell">) have no query_log row, and
+    -- the unqualified columns would otherwise default to query_logs' 0/'' and
+    -- collapse both servers' runs onto version 0.
+    select test, query_index, query_runs.version version, query_runs.query_id query_id,
         (finalizeAggregation(
             arrayReduce('sumMapMergeState',
                 [
@@ -549,7 +762,7 @@ create table query_run_metrics_for_stats engine File(
 create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
     as select metric_names from query_run_metric_arrays limit 1
     ;
-" 2> >(tee -a analyze/errors.log 1>&2)
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a analyze/errors.log 1>&2)
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with
@@ -568,6 +781,8 @@ do
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
             --query \"$(cat "$script_dir/eqmed.sql")\" \
+            $CHPC_REPORT_LOCAL_QUERY_SETTINGS \
+            -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
             >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
@@ -594,7 +809,13 @@ unset IFS
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
-parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+#
+# With external aggregation disabled, a single heavy job stays in RAM, so bound
+# concurrency by host RAM to avoid MEMORY_LIMIT_EXCEEDED; --memsuspend suspends
+# some jobs anyway if they collectively approach the limit.
+report_jobs=$(( $(awk '/MemTotal/ {print int($2/1024/1024)}' /proc/meminfo) / 15 ))
+[ "$report_jobs" -lt 1 ] && report_jobs=1
+parallel -v -j "$report_jobs" --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -621,7 +842,313 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     left array join metric_name, left, right, diff, stat_threshold
     order by test, query_index, metric_name
     ;
-" 2> >(tee -a analyze/errors.log 1>&2)
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a analyze/errors.log 1>&2)
+}
+
+# Confirm the queries flagged as changed by rerunning them on freshly restarted
+# servers. The changed_fail verdict from a single test pass is sensitive to
+# one-off environmental noise (page cache state, CPU frequency, noisy
+# neighbours), so before failing the check we rerun only the flagged queries
+# after a full server restart and demote the changes that do not reproduce.
+# Demoted queries stay visible in a separate 'Unconfirmed Changes' report table.
+#
+# This step is strictly advisory and FAIL-OPEN: on any error we log, leave
+# analyze-confirm/unconfirmed-queries.tsv absent or empty (which report() reads
+# as "demote nothing"), and return success, so a confirmation failure can never
+# change today's verdicts or fail the job. For the same reason nothing here
+# writes to analyze/errors.log or report/errors.log (a non-empty
+# report/errors.log fails the check) -- confirmation errors go to the job log
+# and analyze-confirm/errors.log only. The caller must invoke it as
+# `confirm_changes ||:` (this also disables errexit inside, so partial failures
+# fall through the explicit guards below instead of killing the script).
+function confirm_changes
+{
+rm -rf analyze-confirm ||:
+mkdir analyze-confirm analyze-confirm/tmp ||:
+
+# report() joins the per-query thresholds from historical-thresholds.tsv,
+# which may be absent in manual runs. Use a private empty copy then, instead
+# of creating the file at the path report() reads (fail-open: do not alter
+# the inputs of the main flow).
+if [ -e historical-thresholds.tsv ]
+then
+    cp historical-thresholds.tsv analyze-confirm/historical-thresholds.tsv
+else
+    touch analyze-confirm/historical-thresholds.tsv
+fi
+
+# 1. Collect the (test, query_index) pairs flagged as changed_fail, with the
+# same rule and thresholds as the 'queries' table in report(): client_time
+# metric, per-query threshold = ceil(greatest(0.15, historical, per-test), 2),
+# non-strict comparison with stat_threshold.
+if ! clickhouse-local --query "
+create view query_metric_stats as
+    select * from file('analyze/query-metric-stats-denorm.tsv',
+        TSVWithNamesAndTypes,
+        'test text, query_index int, metric_name text, left float, right float,
+            diff float, stat_threshold float')
+    ;
+
+create view query_display_names as select * from
+    file('analyze/query-display-names.tsv', TSV,
+        'test text, query_index int, query_display_name text')
+    ;
+
+create table flagged_queries engine File(TSV, 'analyze-confirm/flagged-queries.tsv')
+    as select
+        query_metric_stats.test test, query_metric_stats.query_index query_index,
+        diff, stat_threshold,
+        -- Carried along so the confirmation rerun is held to the same
+        -- per-query bar as the flagging rule (not just the 0.15 floor):
+        -- historically noisy queries have learned thresholds above the floor.
+        ceil(greatest(0.15, historical_thresholds.max_diff,
+            test_thresholds.report_threshold), 2) changed_threshold
+    from query_metric_stats
+    left join query_display_names
+        on query_metric_stats.test = query_display_names.test
+            and query_metric_stats.query_index = query_display_names.query_index
+    left join file('analyze-confirm/historical-thresholds.tsv', TSV,
+        'test text, query_index int, max_diff float, max_stat_threshold float,
+            query_display_name text') historical_thresholds
+        on query_metric_stats.test = historical_thresholds.test
+            and query_metric_stats.query_index = historical_thresholds.query_index
+            and query_display_names.query_display_name = historical_thresholds.query_display_name
+    left join file('analyze/report-thresholds.tsv', TSV,
+        'test text, report_threshold float') test_thresholds
+        on query_metric_stats.test = test_thresholds.test
+    where metric_name = 'client_time'
+        and abs(diff) > ceil(greatest(0.15, historical_thresholds.max_diff,
+            test_thresholds.report_threshold), 2)
+        and abs(diff) >= stat_threshold
+    order by test, query_index
+    ;
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
+then
+    echo "confirm_changes: failed to compute the flagged query list, skipping confirmation"
+    return 0
+fi
+
+local flagged_count
+flagged_count=$(wc -l < analyze-confirm/flagged-queries.tsv)
+if [ "$flagged_count" -eq 0 ]
+then
+    echo "confirm_changes: no queries flagged as changed, nothing to confirm"
+    return 0
+fi
+# Cap the total confirmation cost: a PR that flags very many queries (e.g. a
+# global slowdown or a runaway environment) would double the test time, and
+# such wholesale changes do not need per-query confirmation anyway.
+if [ "$flagged_count" -gt 100 ]
+then
+    echo "confirm_changes: WARNING: $flagged_count flagged queries exceed the cap of 100, skipping confirmation"
+    return 0
+fi
+
+# 2. Restart both servers so that the reruns measure a fresh process state
+# (empty caches, unfragmented heap), reusing the main restart machinery.
+if ! restart
+then
+    echo "confirm_changes: server restart failed, skipping confirmation"
+    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    echo all killed
+    return 0
+fi
+
+# The caller runs us with errexit disabled (fail-open), which also masks
+# failures inside restart: its return value only reflects the last check.
+# Verify both servers explicitly before spending the rerun budget.
+if ! clickhouse-client --port "$LEFT_SERVER_PORT" --receive_timeout=5 \
+        --query "select 1 format Null" \
+    || ! clickhouse-client --port "$RIGHT_SERVER_PORT" --receive_timeout=5 \
+        --query "select 1 format Null"
+then
+    echo "confirm_changes: servers not healthy after restart, skipping confirmation"
+    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    echo all killed
+    return 0
+fi
+
+# 3. Rerun each affected test limited to its flagged query indexes, writing
+# raw results into analyze-confirm/ so the main *-raw.tsv files stay intact.
+# Mirror run_tests' test file resolution; fall back to the in-repo tests for
+# the CI flow where performance_tests.py runs the tests itself.
+local test_prefix
+if [ -v CHPC_TEST_PATH ]
+then
+    test_prefix="$CHPC_TEST_PATH"
+elif [ -d right/performance ]
+then
+    test_prefix=right/performance
+else
+    test_prefix="$script_dir/../../../../tests/performance"
+fi
+
+local perf_py="$script_dir/perf.py"
+if ! [ -e "$perf_py" ]
+then
+    perf_py="$script_dir/../../../../tests/performance/scripts/perf.py"
+fi
+
+# Also cap the confirmation wall-clock time. Tests not rerun keep their
+# original verdict (fail-open in the strict direction: no demotion).
+local confirm_deadline=$(( SECONDS + 1200 ))
+local confirm_test confirm_test_file confirm_indexes
+for confirm_test in $(cut -f1 analyze-confirm/flagged-queries.tsv | sort | uniq)
+do
+    if [ "$SECONDS" -ge "$confirm_deadline" ]
+    then
+        echo "confirm_changes: WARNING: time budget exhausted, queries of the remaining tests keep their original verdict"
+        break
+    fi
+
+    confirm_test_file="$test_prefix/$confirm_test.xml"
+    if ! [ -e "$confirm_test_file" ]
+    then
+        echo "confirm_changes: cannot find $confirm_test_file, its queries keep their original verdict"
+        continue
+    fi
+
+    confirm_indexes=$(awk -F'\t' -v t="$confirm_test" '$1 == t { print $2 }' \
+        analyze-confirm/flagged-queries.tsv | sort -n | uniq | tr '\n' ' ')
+
+    # The test file goes first: argparse would swallow it into the greedy
+    # nargs='*' --queries-to-run otherwise. No profiling on reruns.
+    # The output goes through a temp file renamed only on success: a partial
+    # raw file from a failed rerun could otherwise demote the queries that
+    # did rerun, contradicting "the whole test keeps its original verdict".
+    # shellcheck disable=SC2086
+    if "$perf_py" "$confirm_test_file" \
+        --host localhost localhost \
+        --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
+        --binary left/clickhouse right/clickhouse \
+        --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
+        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
+        --queries-to-run $confirm_indexes \
+        > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
+        2> "analyze-confirm/$confirm_test-err.log"
+    then
+        mv "analyze-confirm/$confirm_test-raw.tsv.tmp" "analyze-confirm/$confirm_test-raw.tsv"
+    else
+        echo "confirm_changes: rerun of $confirm_test failed, its queries keep their original verdict"
+        rm -f "analyze-confirm/$confirm_test-raw.tsv.tmp" ||:
+    fi
+done
+
+# Stop the servers again: the subsequent report stages run memory-heavy
+# clickhouse-local queries and expect the servers to be down.
+while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+echo all killed
+
+# 4. Recompute the eqmed.sql statistics on the rerun data, exactly like
+# analyze_queries does. The confirmation verdict is made on client_time (the
+# same metric as changed_fail), which comes from the perf.py-reported run
+# times, so the query logs are not needed and the metrics array has a single
+# element.
+touch analyze-confirm/query-runs.tsv
+local raw_file rerun_test_name
+for raw_file in analyze-confirm/*-raw.tsv
+do
+    [ -e "$raw_file" ] || continue
+    rerun_test_name=$(basename "$raw_file" "-raw.tsv")
+    sed -n "s/^query\t/$rerun_test_name\t/p" < "$raw_file" >> analyze-confirm/query-runs.tsv
+done
+
+if ! clickhouse-local --query "
+create view query_runs as select * from file('analyze-confirm/query-runs.tsv', TSV,
+    'test text, query_index int, query_id text, version UInt8, time float');
+
+-- Same even-run-count filter as analyze_queries: a server death mid-test
+-- leaves an odd number of runs, which would break the median split.
+create view broken_queries as
+    select test, query_index
+    from query_runs
+    group by test, query_index
+    having count(*) % 2 != 0
+    ;
+
+create table query_run_metrics_for_stats engine File(
+        TSV, 'analyze-confirm/query-run-metrics-for-stats.tsv')
+    as select test, query_index, 0 run, version, [toFloat64(time)] metrics
+    from query_runs
+    where (test, query_index) not in broken_queries
+    order by test, query_index, run, version
+    ;
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
+then
+    echo "confirm_changes: failed to prepare the rerun measurements, skipping confirmation"
+    return 0
+fi
+
+# The same per-query eqmed.sql invocation path as in analyze_queries. A failed
+# invocation only loses that query's rerun stats, so it keeps its original
+# verdict.
+touch analyze-confirm/commands.txt analyze-confirm/query-metric-stats.tsv
+( set +x # do not bloat the log
+IFS=$'\n'
+for prefix in $(cut -f1,2 "analyze-confirm/query-run-metrics-for-stats.tsv" | sort | uniq)
+do
+    file="analyze-confirm/tmp/${prefix//	/_}.tsv"
+    rg "^$prefix	" "analyze-confirm/query-run-metrics-for-stats.tsv" > "$file" &
+    printf "%s\0\n" \
+        "clickhouse-local \
+            --file \"$file\" \
+            --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
+            --query \"$(cat "$script_dir/eqmed.sql")\" \
+            $CHPC_REPORT_LOCAL_QUERY_SETTINGS \
+            -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
+            >> \"analyze-confirm/query-metric-stats.tsv\"" \
+            2>> analyze-confirm/errors.log \
+        >> analyze-confirm/commands.txt
+done
+wait
+unset IFS
+)
+
+# The rerun arrays are single-metric and tiny, no need for the memory-bounded
+# job count of the main analysis.
+parallel -v -j "$(nproc --all)" --joblog analyze-confirm/parallel-log.txt --null \
+    < analyze-confirm/commands.txt 2>> analyze-confirm/errors.log \
+    || echo "confirm_changes: some rerun stats failed to compute, those queries keep their original verdict"
+
+# 5. Demote the flagged queries whose rerun does not reproduce the change.
+# Confirmed = same-direction diff clearing the exact production rule again:
+# the per-query changed threshold carried from the flagging step (strict >)
+# and the rerun's own noise threshold (non-strict >=). The inner join means
+# only queries with rerun stats can be demoted: if the rerun failed or
+# produced no stats, the original verdict stands (fail-open).
+if ! clickhouse-local --query "
+create view flagged_queries as select * from file('analyze-confirm/flagged-queries.tsv',
+    TSV, 'test text, query_index int, diff float, stat_threshold float,
+        changed_threshold float');
+
+create view rerun_stats as
+    select test, query_index,
+        diff[1] diff_rerun, stat_threshold[1] stat_threshold_rerun
+    from file('analyze-confirm/query-metric-stats.tsv', TSV,
+        'left Array(float), right Array(float), diff Array(float),
+            stat_threshold Array(float), test text, query_index int')
+    ;
+
+create table unconfirmed_queries engine File(TSV, 'analyze-confirm/unconfirmed-queries.tsv')
+    as select flagged_queries.test test, flagged_queries.query_index query_index,
+        diff_rerun, stat_threshold_rerun
+    from flagged_queries
+    join rerun_stats
+        on flagged_queries.test = rerun_stats.test
+            and flagged_queries.query_index = rerun_stats.query_index
+    where not (sign(diff_rerun) = sign(diff)
+        and abs(diff_rerun) > changed_threshold
+        and abs(diff_rerun) >= stat_threshold_rerun)
+    order by test, query_index
+    ;
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
+then
+    echo "confirm_changes: failed to compute the confirmation verdicts, skipping confirmation"
+    rm -f analyze-confirm/unconfirmed-queries.tsv ||:
+    return 0
+fi
+
+echo "confirm_changes: $(wc -l < analyze-confirm/unconfirmed-queries.tsv) of $flagged_count flagged queries did not reproduce after restart"
 }
 
 # Analyze results
@@ -634,6 +1161,12 @@ rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.ts
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
+
+# The confirmation step (confirm_changes) is optional and fail-open: when it
+# was skipped or failed, the demotion list is absent or empty, which must read
+# as "demote nothing".
+mkdir -p analyze-confirm ||:
+touch analyze-confirm/unconfirmed-queries.tsv ||:
 
 clickhouse-local --query "
 create view query_display_names as select * from
@@ -662,6 +1195,15 @@ create view query_metric_stats as
         TSVWithNamesAndTypes,
         'test text, query_index int, metric_name text, left float, right float,
             diff float, stat_threshold float')
+    ;
+
+-- Queries flagged as changed whose difference did not reproduce when rerun
+-- after a server restart (see confirm_changes). Empty unless the confirmation
+-- step completed. They are demoted from changed_fail below, but stay visible
+-- in the 'Unconfirmed Changes' table so that nothing silently disappears.
+create view unconfirmed_queries as
+    select * from file('analyze-confirm/unconfirmed-queries.tsv', TSV,
+        'test text, query_index int, diff_rerun float, stat_threshold_rerun float')
     ;
 
 create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
@@ -706,10 +1248,19 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         -- uncaught regressions, because for the default 7 runs we do for PRs,
         -- the randomization distribution has only 16 values, so the max quantile
         -- is actually 0.9375.
-        abs(diff) > changed_threshold        and abs(diff) >= stat_threshold as changed_fail,
+        -- A change is demoted from changed_fail (but not from changed_show, so
+        -- it stays visible) when the confirmation rerun after a server restart
+        -- did not reproduce it.
+        abs(diff) > changed_threshold        and abs(diff) >= stat_threshold
+            and ((query_metric_stats.test, query_metric_stats.query_index) not in
+                (select test, query_index from unconfirmed_queries)) as changed_fail,
         abs(diff) > changed_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
-        not changed_fail and stat_threshold > unstable_threshold as unstable_fail,
+        -- Demoted queries are excluded here too: a demotion must not resurface
+        -- as an 'unstable' failure through the flipped changed_fail.
+        not changed_fail and stat_threshold > unstable_threshold
+            and ((query_metric_stats.test, query_metric_stats.query_index) not in
+                (select test, query_index from unconfirmed_queries)) as unstable_fail,
         not changed_show and stat_threshold > unstable_threshold - 0.05 as unstable_show,
 
         left, right, diff, stat_threshold,
@@ -746,6 +1297,21 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
         changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
+-- Flagged changes that did not reproduce on the confirmation rerun. They no
+-- longer fail the check (changed_fail was demoted above), but are reported
+-- with both the original and the rerun statistics so demotions are auditable.
+create table unconfirmed_changes_report engine File(TSV, 'report/unconfirmed-changes.tsv')
+    as select
+        round(left, 3), round(right, 3),
+        round(diff, 3), round(stat_threshold, 3),
+        round(diff_rerun, 3), round(stat_threshold_rerun, 3),
+        queries.test test, queries.query_index query_index, query_display_name
+    from queries
+    join unconfirmed_queries
+        on queries.test = unconfirmed_queries.test
+            and queries.query_index = unconfirmed_queries.query_index
+    order by abs(diff) desc;
+
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv')
     as select
         round(left, 3), round(right, 3), round(diff, 3),
@@ -756,11 +1322,24 @@ create table unstable_queries_report engine File(TSV, 'report/unstable-queries.t
 create view test_speedup as
     select
         test,
-        exp2(avg(log2(left / right))) times_speedup,
+        -- Demoted queries (confirmation rerun did not reproduce the change)
+        -- stay visible in the per-query tables via *_show, but must not
+        -- contribute to the per-test aggregates: these feed
+        -- test-perf-changes.tsv and the perf_test_perf_changes_v1 upload,
+        -- which carry the pipeline's confirmed results. That applies to the
+        -- speedup average too - a demoted +20% row must not tilt
+        -- times_speedup - while count(*) stays a plain coverage count.
+        -- ifNotFinite guards the all-rows-demoted case (empty avgIf = nan);
+        -- 1.0x is the neutral value.
+        exp2(ifNotFinite(avgIf(log2(left / right),
+            (queries.test, queries.query_index) not in
+                (select test, query_index from unconfirmed_queries)), 0)) times_speedup,
         count(*) queries,
         unstable + changed bad,
-        sum(changed_show) changed,
-        sum(unstable_show) unstable
+        sum(changed_show and ((queries.test, queries.query_index) not in
+            (select test, query_index from unconfirmed_queries))) changed,
+        sum(unstable_show and ((queries.test, queries.query_index) not in
+            (select test, query_index from unconfirmed_queries))) unstable
     from queries
     group by test
     order by times_speedup desc
@@ -828,17 +1407,46 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if we can't determine the number of runs.
-        if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
+        -- The adaptive policy gives every query its own run count, so the
+        -- per-test wall-clock budget must follow the actual totals: use the
+        -- average of the per-query counts (total-preserving), not a median
+        -- that a few high-count microqueries could inflate. Kept integer
+        -- (ceil) so the test-times.tsv schema and its CIDB upload stay
+        -- unchanged. Default to 7 runs if we can't determine the number.
+        if((ceil(sum(t.runs) / count(*), 0) as r) != 0, r, 7) runs,
+        -- The worst per-single-run wall time across the queries of the test:
+        -- each query is judged against its own run count, so a mixed test
+        -- cannot hide a genuinely slow query behind a high average count.
+        -- client-time excludes prewarm (perf.py measures from after it), so
+        -- the divisor is the measured runs only: runs per server times the
+        -- number of servers that actually ran the query (backward-
+        -- incompatible 'partial' queries run on the new server only).
+        max(t.client / (t.runs * t.versions)) max_single_run_time
     from (
         select
             -- The query id is the same for both servers, so no need to divide here.
-            uniqExact(query_id) runs,
-            test, query_index
+            uniqExact(query_runs.query_id) runs,
+            uniqExact(query_runs.version) versions,
+            any(client_times.client) client,
+            query_runs.test test, query_runs.query_index query_index
         from query_runs
-        group by test, query_index
+        left join (
+            select * from file('analyze/client-times.tsv', TSV,
+                'test text, query_index int, client float, server float')
+            ) client_times
+            on client_times.test = query_runs.test
+                and client_times.query_index = query_runs.query_index
+        group by query_runs.test, query_runs.query_index
         ) t
     group by test
+    ;
+
+-- The worst per-single-run wall time per test, in a separate file so that the
+-- test-times.tsv schema (and its CIDB upload) stays unchanged. Consumed by
+-- report.py's single-query slow gate.
+create table max_single_run_report engine File(TSV, 'report/max-single-run-times.tsv')
+    as select test, round(max_single_run_time, 3)
+    from test_runs
     ;
 
 create view test_times_view as
@@ -950,8 +1558,15 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
         on query_display_names.test = report_thresholds.test
             and query_display_names.query_index = report_thresholds.query_index
             and query_display_names.query_display_name = report_thresholds.query_display_name
+    -- Queries demoted by the confirmation rerun are retracted entirely (all
+    -- their metrics): this file feeds the CIDB upload, so the database keeps
+    -- only comparisons that reproduced after a server restart. The demoted
+    -- ones remain in the report's 'Unconfirmed Changes' table (and the raw
+    -- per-run measurements are uploaded unconditionally elsewhere).
+    where (query_metric_stats.test, query_metric_stats.query_index) not in
+        (select test, query_index from unconfirmed_queries)
     order by test, query_index;
-" 2> >(tee -a report/errors.log 1>&2)
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2)
 
 # Prepare source data for metrics and flamegraphs for queries that were profiled
 # by perf.py.
@@ -1012,14 +1627,30 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
 create view trace_log as select *
     from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
 
-create view addresses_src as select addr,
-        -- Some functions change name between builds, e.g. '__clone' or 'clone' or
-        -- even '__GI__clone@@GLIBC_2.32'. This breaks differential flame graphs, so
-        -- filter them out here.
-        [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
-            -- this line is a subscript operator of the above array
-            [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
+create view addresses_src as
+    -- Keep only the demangled symbol, dropping the 'file:line#'/'clickhouse#'
+    -- prefix. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so addressToLine has
+    -- no DWARF and the prefix degrades to the binary basename ('clickhouse#...'),
+    -- while master keeps 'file:line#'. A symbol-only name is identical on both,
+    -- so per-side and differential flamegraphs stay comparable. A name has at most
+    -- one '#' (demangled C++ symbols contain none). The clone.S filter runs first
+    -- because it matches on the file part: the symbol itself ('__clone'/'clone')
+    -- varies between builds, while dozens of unrelated symbols contain 'clone'.
+    --
+    -- Also drop the '.llvm.<hash>' suffix LLVM appends to internalized local
+    -- symbols under LTO: the hash differs between builds, so it would split the
+    -- same function into two frames.
+    select addr, replaceRegexpOne(splitByChar('#', name)[-1], '[.]llvm[.][0-9]+', '') name
+    from (
+        select addr,
+            -- Some functions change name between builds, e.g. '__clone' or 'clone'
+            -- or even '__GI__clone@@GLIBC_2.32'. This breaks differential flame
+            -- graphs, so filter them out here.
+            [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
+                -- this line is a subscript operator of the above array
+                [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
+        from file('$version-addresses.tsv', TSVWithNamesAndTypes)
+    );
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1049,15 +1680,30 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
             ),
             ';'
         ) readable_trace,
-        count() c
+        -- Allocation samples are weighted by bytes; CPU/Real samples by count.
+        multiIf(trace_type in ('MemorySample', 'JemallocSample'), toUInt64(sum(size)), count()) c
     from trace_log
     join unstable_query_runs using query_id
+    -- Drop deallocation samples: their stack is the free site, not the
+    -- allocation site, so they cannot be folded with the matching allocation.
+    where size >= 0
     group by test, query_index, trace_type, trace
     order by test, query_index, trace_type, trace
     ;
-" 2> >(tee -a report/errors.log 1>&2) &
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2) &
 done
 wait
+
+# Allocation profiles (MemorySample/JemallocSample) fold byte totals rather
+# than sample counts, so flamegraph.pl must label and color them as memory.
+function flamegraph_opts # trace_type
+{
+    case "$1" in
+        MemorySample | JemallocSample)
+            echo "--countname=bytes --color=mem"
+            ;;
+    esac
+}
 
 # Create per-query flamegraphs
 touch report/query-files.txt
@@ -1067,7 +1713,13 @@ do
     for query in $(cut -d'	' -f1-4 "report/stacks.$version.tsv" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
-        echo "$query_file" >> report/query-files.txt
+        trace_type=$(echo "$query" | cut -d'	' -f3)
+        printf '%s\t%s\n' "$query_file" "$trace_type" >> report/query-files.txt
+
+        # Allocation traces (MemorySample/JemallocSample) are sparse, so a query
+        # may have samples on only one side. difffolded.pl below still needs both
+        # inputs, so make the missing side an empty folded file.
+        touch "report/tmp/$query_file.stacks.left.tsv" "report/tmp/$query_file.stacks.right.tsv"
 
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
@@ -1076,19 +1728,21 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | flamegraph.pl --hash > "$query_file.$version.svg" &
+            | flamegraph.pl --hash $(flamegraph_opts "$trace_type") > "$query_file.$version.svg" &
     done
 done
 wait
 unset IFS
 
-# Create differential flamegraphs.
-while IFS= read -r query_file
+# Create differential flamegraphs. Frames are symbol-only (addresses_src strips
+# the file:line/clickhouse prefix), so the two sides line up despite the PR side
+# lacking DWARF.
+while IFS=$'\t' read -r query_file trace_type
 do
     difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | flamegraph.pl > "$query_file.diff.svg" &
+        | flamegraph.pl $(flamegraph_opts "$trace_type") > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
@@ -1120,6 +1774,18 @@ do
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
+done
+
+# Shell-script queries (<query type="shell">) report a failure on a server by
+# emitting a `run-error` line to stdout (the per-test *-err.log is not always
+# available at report time). Fold those into run-errors.tsv as well, in the
+# 'test<tab>error' shape the Run Errors table and CIDB expect, so a shell test
+# that failed on one server is reported instead of silently disappearing.
+for test_file in *-raw.tsv
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^run-error\t\([0-9]*\)\t\([0-9]*\)\t/$test_name\tquery \1 server \2: /p" \
+        < "$test_file" >> run-errors.tsv ||:
 done
 }
 
@@ -1157,7 +1823,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv')
     )
     order by diff desc
     ;
-" 2> >(tee -a metrics/errors.log 1>&2)
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a metrics/errors.log 1>&2)
 
 IFS=$'\n'
 for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
@@ -1237,7 +1903,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             array join map('old', left, 'new', right) as test_desc_
     )
 ;
-    "
+    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
@@ -1333,6 +1999,13 @@ case "$stage" in
 "analyze_queries")
     time analyze_queries ||:
     ;&
+"confirm_changes")
+    # Rerun the changed queries on freshly restarted servers and demote the
+    # changes that do not reproduce. Advisory and fail-open: `||:` both keeps
+    # a confirmation failure from failing the job and disables errexit inside,
+    # so the function's explicit guards decide what to skip.
+    time confirm_changes ||:
+    ;&
 "report")
     time report ||:
     ;&
@@ -1348,6 +2021,13 @@ case "$stage" in
     time upload_results ||:
     ;&
 esac
+
+# A non-empty report/errors.log fails the check. Print it so the cause is in
+# the job log instead of only the results archive.
+if [ -s report/errors.log ]; then
+    echo "### report/errors.log ###"
+    cat report/errors.log
+fi
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs

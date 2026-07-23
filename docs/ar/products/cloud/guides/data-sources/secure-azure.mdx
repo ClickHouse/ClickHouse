@@ -1,0 +1,130 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: 'الوصول الآمن إلى بيانات Azure'
+title: 'ربط ClickHouse Cloud بـ Azure Blob Storage'
+description: 'توضح هذه المقالة كيف يمكن لعملاء ClickHouse Cloud الوصول إلى بيانات Azure الخاصة بهم بأمان'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+يوضح هذا الدليل كيفية ربط ClickHouse Cloud بـ Azure Blob Storage بشكل آمن لاستخدامه في إدخال البيانات، والجداول الخارجية، وسيناريوهات التكامل الأخرى.
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يمكن لـ ClickHouse Cloud الاتصال بـ Azure Blob Storage باستخدام عدة طرق للمصادقة.
+سيساعدك هذا الدليل في اختيار الأسلوب المناسب وتهيئة اتصالك بأمان.
+
+حالات الاستخدام المدعومة:
+
+* قراءة البيانات من Azure Blob Storage باستخدام [table function ‏azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
+* إنشاء جداول خارجية باستخدام [table engine ‏AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)
+* إدخال البيانات عبر ClickPipes
+* [تخزين النسخ الاحتياطية في Azure Blob Storage](/ar/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **قيد مهم على الشبكة**
+
+  عندما تكون خدمة ClickHouse Cloud وحاوية Azure Blob Storage منشورتين في منطقة Azure نفسها، فلن تنجح إضافة عناوين IP إلى قائمة السماح.
+
+  يحدث ذلك لأن Azure يوجّه حركة المرور داخل المنطقة نفسها عبر شبكته الداخلية (VNet + Service Endpoints)، متجاوزًا الإنترنت العام وبوابات NAT.
+  ونتيجةً لذلك، لن تُطبَّق قواعد جدار الحماية في حساب Azure Storage المستندة إلى عناوين IP العامة.
+
+  تنجح إضافة عناوين IP إلى قائمة السماح في الحالات التالية:
+
+  * إذا كانت خدمة ClickHouse Cloud في منطقة Azure مختلفة عن حساب التخزين
+  * إذا كانت خدمة ClickHouse Cloud تعمل على AWS/GCP وتتصل بتخزين Azure
+
+  تفشل إضافة عناوين IP إلى قائمة السماح في الحالات التالية:
+
+  * إذا كانت خدمة ClickHouse Cloud والتخزين في منطقة Azure نفسها. استخدم [Shared Access Signatures (SAS)](/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication) عبر سلسلة الاتصال بدلًا من إضافة عناوين IP إلى قائمة السماح، أو انشر ABS وClickHouse في منطقتين مختلفتين.
+</Warning>
+
+<div id="network-config">
+  ## تهيئة الشبكة (للاتصال عبر المناطق فقط)
+</div>
+
+<Warning>
+  **للاتصال عبر المناطق فقط**
+
+  ينطبق هذا القسم فقط عندما تكون خدمة ClickHouse Cloud وحاوية Azure Blob Storage في منطقتين مختلفتين ضمن Azure، أو عندما تكون ClickHouse Cloud مستضافة على AWS/GCP.
+  أما في عمليات النشر ضمن المنطقة نفسها، فاستخدم SAS token بدلًا من ذلك.
+</Warning>
+
+<Steps>
+  <Step>
+    ### العثور على عناوين egress IP الخاصة بـ ClickHouse Cloud
+
+    لتهيئة قواعد firewall المستندة إلى IP، تحتاج إلى إدراج عناوين egress IP الخاصة بمنطقة ClickHouse Cloud لديك في قائمة السماح.
+
+    شغّل الأمر التالي لاسترجاع قائمة بعناوين ingress IP وegress IP لكل منطقة.
+    استبدل `eastus` أدناه بمنطقتك لتصفية المناطق الأخرى:
+
+    ```bash
+    # For Azure regions
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    سترى ناتجًا مشابهًا لما يلي:
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      راجع [مناطق Azure](/ar/products/cloud/reference/supported-regions#azure-regions) للحصول على قائمة بمناطق Cloud المدعومة،
+      وعمود &quot;Programmatic name&quot; في [قائمة مناطق Azure](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1)
+      لمعرفة الاسم الذي يجب استخدامه.
+    </Tip>
+
+    راجع [&quot;عناوين IP الخاصة بـ Cloud&quot;](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) لمزيد من التفاصيل.
+  </Step>
+
+  <Step>
+    ### تهيئة firewall الخاص بـ Azure Storage
+
+    انتقل إلى Storage Account الخاص بك في Azure Portal
+
+    1. انتقل إلى **Networking** → **Firewalls and virtual networks**
+    2. حدّد **Enabled from selected virtual networks and IP addresses**
+    3. أضف كل عنوان egress IP خاص بـ ClickHouse Cloud حصلت عليه في الخطوة السابقة إلى حقل Address range
+
+    <Warning>
+      لا تضف عناوين IP الخاصة بـ ClickHouse Cloud (عناوين 10.x.x.x)
+    </Warning>
+
+    4. انقر على Save
+
+    راجع [وثائق تهيئة Azure Storage firewalls](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal) لمزيد من التفاصيل.
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## تكوين ClickPipes
+</div>
+
+عند استخدام [ClickPipes](/ar/integrations/clickpipes/home) مع Azure Blob Storage، يجب عليك تكوين المصادقة في واجهة ClickPipes.
+راجع [&quot;إنشاء أول ClickPipe على Azure&quot;](/ar/integrations/clickpipes/object-storage/azure-blob-storage/get-started) لمزيد من التفاصيل.
+
+<Note>
+  يستخدم ClickPipes عناوين IP ثابتة منفصلة للاتصالات الصادرة.
+  ويجب إضافة عناوين IP هذه إلى قائمة السماح إذا كنت تستخدم قواعد جدار حماية تستند إلى IP.
+
+  راجع [&quot;قائمة عناوين IP الثابتة&quot;](/ar/integrations/clickpipes/home#list-of-static-ips)
+</Note>
+
+<Tip>
+  ينطبق أيضًا على ClickPipes القيد المتعلق بإضافة عناوين IP إلى قائمة السماح داخل نفس المنطقة، والمذكور في بداية هذا المستند.
+  إذا كانت خدمة ClickPipes وAzure Blob Storage في نفس المنطقة، فاستخدم مصادقة SAS token بدلًا من إضافة عناوين IP إلى قائمة السماح.
+</Tip>

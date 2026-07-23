@@ -5,7 +5,7 @@ RESULT_PATH = "/result.txt"
 
 class SentryHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
-        post_data = self.__read_and_decode_post_data()
+        self.__read_and_decode_post_data()
         with open(RESULT_PATH, "w") as f:
             f.write("OK")
         self.send_response(200)

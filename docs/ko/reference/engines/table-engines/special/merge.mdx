@@ -1,0 +1,122 @@
+---
+description: '`Merge` 엔진(`MergeTree`와 혼동하지 마십시오)은 자체적으로 데이터를 저장하지는 않지만,
+  여러 다른 테이블에서 동시에 읽을 수 있게 해줍니다.'
+sidebarTitle: 'Merge'
+slug: /engines/table-engines/special/merge
+title: 'Merge 테이블 엔진'
+doc_type: 'reference'
+---
+
+`Merge` 엔진(`MergeTree`와 혼동하지 마십시오)은 자체적으로 데이터를 저장하지는 않지만, 여러 다른 테이블에서 동시에 읽을 수 있게 해줍니다.
+
+읽기는 자동으로 병렬 처리됩니다. 테이블에 쓰기는 지원되지 않습니다. 읽을 때는 실제로 읽는 테이블에 인덱스가 있으면 해당 인덱스가 사용됩니다.
+
+<div id="creating-a-table">
+  ## 테이블 생성하기
+</div>
+
+```sql
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+```
+
+<div id="engine-parameters">
+  ## 엔진 매개변수
+</div>
+
+<div id="db_name">
+  ### `db_name`
+</div>
+
+`db_name` — 가능한 값:
+
+* 데이터베이스 이름,
+  * 데이터베이스 이름 문자열을 반환하는 상수 표현식, 예를 들어 `currentDatabase()`,
+  * `REGEXP(expression)`, 여기서 `expression`은 DB 이름과 일치하는 정규식입니다.
+
+<div id="tables_regexp">
+  ### `tables_regexp`
+</div>
+
+`tables_regexp` — 지정된 DB 또는 여러 DB의 테이블 이름과 일치하는 정규식입니다.
+
+정규식 — [re2](https://github.com/google/re2) (PCRE의 부분 집합 지원), 대소문자를 구분합니다.
+정규식에서 기호를 이스케이프하는 방법에 대한 참고 사항은 &quot;match&quot; 섹션을 참조하십시오.
+
+<div id="usage">
+  ## 사용법
+</div>
+
+읽을 테이블을 선택할 때 `Merge` 테이블 자체는 regex와 일치하더라도 선택되지 않습니다. 이는 루프를 방지하기 위해서입니다.
+서로의 데이터를 끝없이 읽으려 하는 두 개의 `Merge` 테이블을 만들 수도 있지만, 좋은 방법은 아닙니다.
+
+`Merge` 엔진을 사용하는 일반적인 방식은 많은 수의 `TinyLog` 테이블을 하나의 테이블처럼 다루는 것입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+**예시 1**
+
+`ABC_corporate_site`와 `ABC_store`라는 두 개의 데이터베이스를 가정해 보겠습니다. `all_visitors` 테이블에는 두 데이터베이스의 `visitors` 테이블에 있는 ID가 포함됩니다.
+
+```sql
+CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
+```
+
+**예시 2**
+
+기존 테이블 `WatchLog_old`가 있고, 데이터를 새 테이블 `WatchLog_new`로 옮기지 않고 파티셔닝을 변경하기로 했으며, 두 테이블의 데이터를 모두 확인해야 한다고 가정해 보겠습니다.
+
+```sql
+CREATE TABLE WatchLog_old(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT * FROM WatchLog;
+```
+
+```text
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_table` — 데이터를 읽어온 테이블의 이름입니다. 유형: [String](/ko/reference/data-types/string).
+
+  `_table`로 필터링하면(예: `WHERE _table='xyz'`) 필터 조건을 만족하는 테이블만 읽어옵니다.
+
+* `_database` — 데이터를 읽어온 데이터베이스의 이름이 들어 있습니다. 유형: [String](/ko/reference/data-types/string).
+
+**관련 항목**
+
+* [가상 컬럼](/ko/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [merge](/ko/reference/functions/table-functions/merge) 테이블 함수

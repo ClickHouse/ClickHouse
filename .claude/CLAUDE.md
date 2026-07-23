@@ -10,6 +10,8 @@ When adding headers to documentation files under `docs/`, every header must incl
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
 
+Whenever changes are added, modified, or deleted that relate to the `Native` format - its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, the `NativeReader`/`NativeWriter`, or the user-facing doc `docs/en/interfaces/formats/Native.md` - also update the official specification `docs/en/interfaces/specs/NativeFormat.md` (slug `/interfaces/specs/NativeFormat`) accordingly in the same change. The spec is the single source of truth for the format; if unsure whether the spec needs updating, flag it.
+
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
 Links to ClickHouse CI should be analyzed using the tool at `.claude/tools/fetch_ci_report.js`, which directly fetches the underlying JSON data without requiring a browser. It accepts GitHub PR URLs (fetches all CI reports) or direct S3/CI HTML URLs.
@@ -162,7 +164,7 @@ When running tests, always redirect output to a log file in the build directory 
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message. If the link has `PR=...`, also add a link to the corresponding PR.
 
-When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry, then the Documentation entry checkbox. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
+When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
 
 Link related pull requests and issues explicitly, using full GitHub URLs, one relationship per line:
 - When a pull request fixes an issue, put `Closes: <full link to the issue>` on its own line in the pull request description. GitHub renders this as `Closes: #<number>` and closes the issue automatically when the pull request is merged into the default branch (auto-close only fires when targeting the default branch).

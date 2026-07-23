@@ -1,0 +1,466 @@
+---
+slug: /integrations/s3/performance
+sidebarTitle: 'تحسين الأداء'
+title: 'تحسين أداء القراءة والإدراج في S3'
+description: 'تحسين أداء القراءة والإدراج في S3'
+doc_type: 'guide'
+keywords: ['S3', 'الأداء', 'التحسين', 'التخزين الكائني', 'تحميل البيانات']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يركّز هذا القسم على تحسين الأداء عند قراءة البيانات من S3 وإدراجها باستخدام [دوال الجداول الخاصة بـ S3](/ar/reference/functions/table-functions/s3).
+
+<Info>
+  **يمكن تطبيق الدرس الموضّح في هذا الدليل على تطبيقات تخزين الكائنات الأخرى التي تملك دوال جداول مخصّصة لها، مثل [GCS](/ar/reference/functions/table-functions/gcs) و[Azure Blob storage](/ar/reference/functions/table-functions/azureBlobStorage).**
+
+</Info>
+
+قبل ضبط الخيوط وأحجام الكتل لتحسين أداء الإدراج، نوصي بأن يفهم المستخدمون آلية إدراج البيانات في S3. إذا كنت على دراية بهذه الآلية، أو كنت تريد فقط بعض النصائح السريعة، فانتقل إلى [المثال](/ar/integrations/connectors/data-ingestion/AWS/performance#example-dataset) أدناه.
+
+<div id="insert-mechanics-single-node">
+  ## آليات insert (عقدة واحدة)
+</div>
+
+يؤثر عاملان رئيسيان، إلى جانب حجم العتاد، في أداء آليات insert البيانات في ClickHouse واستهلاكها للموارد (لعقدة واحدة): **حجم كتلة الإدراج** و**توازي الإدراج**.
+
+<div id="insert-block-size">
+  ### حجم كتلة الإدراج
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/insert_mechanics.webp" size="lg" border alt="آلية حجم كتلة الإدراج في ClickHouse" />
+
+عند تنفيذ `INSERT INTO SELECT`، يتلقى ClickHouse جزءًا من البيانات، ثم ① يُنشئ (على الأقل) كتلة إدراج واحدة داخل الذاكرة (لكل [مفتاح تقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key)) من البيانات المستلمة. بعد ذلك، تُرتَّب بيانات الكتلة وتُطبَّق عليها تحسينات خاصة بمحرك الجدول. ثم تُضغط البيانات وتُكتب ② إلى مساحة تخزين قاعدة البيانات على شكل جزء بيانات جديد.
+
+يؤثر حجم كتلة الإدراج في كلٍّ من [استخدام I/O لملفات القرص](https://en.wikipedia.org/wiki/Category:Disk_file_systems) واستخدام الذاكرة في ClickHouse server. تستهلك كتل الإدراج الأكبر ذاكرةً أكثر، لكنها تُنتج أجزاءً أولية أكبر وأقل عددًا. وكلما قلّ عدد الأجزاء التي يحتاج ClickHouse إلى إنشائها عند تحميل كمية كبيرة من البيانات، انخفض I/O لملفات القرص وقلت عمليات [الدمج في الخلفية المطلوبة تلقائيًا](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
+
+عند استخدام استعلام `INSERT INTO SELECT` بالاقتران مع محرك جدول تكامل أو table function، يسحب ClickHouse server البيانات:
+
+<Image img="/images/integrations/data-ingestion/s3/pull.webp" size="lg" border alt="سحب البيانات من المصادر الخارجية في ClickHouse" />
+
+وحتى يكتمل تحميل البيانات، ينفّذ server حلقةً:
+
+```bash
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
+
+② Write the block into a new part on storage.
+
+Go to ① 
+```
+
+في ①، يعتمد الحجم على حجم كتلة insert، والذي يمكن التحكم فيه من خلال إعدادين:
+
+* [`min_insert_block_size_rows`](/ar/reference/settings/session-settings#min_insert_block_size_rows) (القيمة الافتراضية: `1048545` صفًا)
+* [`min_insert_block_size_bytes`](/ar/reference/settings/session-settings#min_insert_block_size_bytes) (القيمة الافتراضية: `256 MiB`)
+
+عند تجميع العدد المحدد من الصفوف في كتلة insert، أو عند الوصول إلى حجم البيانات المُعدّ (أيهما يحدث أولًا)، يؤدي ذلك إلى كتابة الكتلة في جزء جديدة. ثم تستمر حلقة insert من الخطوة ①.
+
+لاحظ أن قيمة `min_insert_block_size_bytes` تشير إلى حجم الكتلة غير المضغوطة في الذاكرة (وليس حجم الـ جزء المضغوط على القرص). ولاحظ أيضًا أن الكتل والـ أجزاء المُنشأة نادرًا ما تحتوي بدقة على العدد المُعدّ من الصفوف أو البايتات، لأن ClickHouse يتعامل مع البيانات ويقوم [بمعالجتها](https://clickhouse.com/company/events/query-performance-introspection) على أساس صفوف ضمن [كتل](/ar/reference/settings/session-settings#max_block_size). لذلك، تحدد هذه الإعدادات حدودًا دنيا.
+
+<div id="be-aware-of-merges">
+  #### انتبه إلى عمليات الدمج
+</div>
+
+كلما صغر حجم كتلة الإدراج المُعدّ، زاد عدد الأجزاء الأولية التي تُنشأ عند تحميل كمية كبيرة من البيانات، وزاد عدد عمليات دمج الأجزاء في الخلفية التي تُنفَّذ بالتوازي مع إدخال البيانات. وقد يؤدي ذلك إلى تنافس على الموارد (CPU والذاكرة)، ويتطلب وقتًا إضافيًا بعد انتهاء إدخال البيانات (للوصول إلى عدد [مناسب](/ar/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) من الأجزاء).
+
+<Warning>
+  سيتأثر أداء استعلامات ClickHouse سلبًا إذا تجاوز عدد الأجزاء [الحدود الموصى بها](/ar/reference/settings/merge-tree-settings#parts_to_throw_insert).
+</Warning>
+
+سيواصل ClickHouse [دمج الأجزاء](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) في أجزاء أكبر إلى أن [تصل](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) إلى حجم مضغوط يبلغ نحو 150 GiB. يوضح هذا المخطط كيف يدمج خادم ClickHouse الأجزاء:
+
+<Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="عمليات الدمج في الخلفية في ClickHouse" />
+
+يستخدم خادم ClickHouse واحد عدة [خيوط دمج في الخلفية](/ar/reference/settings/server-settings/settings#background_pool_size) لتنفيذ [عمليات دمج الأجزاء](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) المتزامنة. وينفّذ كل خيط حلقة:
+
+```bash
+① Decide which parts to merge next, and load these parts as blocks into memory.
+
+② Merge the loaded blocks in memory into a larger block.
+
+③ Write the merged block into a new part on disk.
+
+Go to ①
+```
+
+لاحظ أن [زيادة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) عدد نوى CPU وحجم RAM تؤدي إلى زيادة إنتاجية الدمج في الخلفية.
+
+تُوسَم الأجزاء التي دُمجت في أجزاء أكبر على أنها [غير نشطة](/ar/reference/system-tables/parts)، ثم تُحذف نهائيًا بعد عدد [قابل للضبط](/ar/reference/settings/merge-tree-settings#old_parts_lifetime) من الدقائق. ومع مرور الوقت، يؤدي ذلك إلى تكوين شجرة من الأجزاء المدمجة (ومن هنا جاءت تسمية جدول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/index)).
+
+<div id="insert-parallelism">
+  ### توازي الإدراج
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/resource_usage.webp" size="lg" border alt="استخدام الموارد لتوازي الإدراج" />
+
+يمكن لخادم ClickHouse معالجة البيانات وإدراجها بالتوازي. ويؤثر مستوى توازي الإدراج في معدل استيعاب البيانات واستخدام الذاكرة في خادم ClickHouse. ويتطلب تحميل البيانات ومعالجتها بالتوازي قدرًا أكبر من الذاكرة الرئيسية، لكنه يزيد معدل استيعاب البيانات لأن معالجتها تتم بسرعة أكبر.
+
+تتيح دوال الجداول مثل s3 تحديد مجموعات من أسماء الملفات المطلوب تحميلها باستخدام أنماط glob. وعندما يطابق نمط glob عدة ملفات موجودة، يمكن لـ ClickHouse موازاة عمليات القراءة عبر هذه الملفات وداخل كل ملف، وإدراج البيانات بالتوازي في جدول باستخدام خيوط إدراج تعمل بالتوازي (لكل خادم):
+
+<Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="خيوط الإدراج المتوازية في ClickHouse" />
+
+إلى أن تتم معالجة جميع البيانات من كل الملفات، ينفّذ كل خيط إدراج حلقة:
+
+```bash
+① Get the next portion of unprocessed file data (portion size is based on the configured block size) and create an in-memory data block from it.
+
+② Write the block into a new part on storage.
+
+Go to ①. 
+```
+
+يمكن تهيئة عدد خيوط الإدراج المتوازية هذه باستخدام الإعداد [`max_insert_threads`](/ar/reference/settings/session-settings#max_insert_threads). تكون القيمة الافتراضية `1` في ClickHouse مفتوح المصدر و4 في [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+عند وجود عدد كبير من الملفات، تعمل المعالجة المتوازية عبر عدة خيوط إدراج بكفاءة. ويمكنها الاستفادة بالكامل من كلٍّ من أنوية CPU المتاحة وعرض النطاق الترددي للشبكة (في تنزيلات الملفات المتوازية). وفي السيناريوهات التي يُحمَّل فيها عدد قليل فقط من الملفات الكبيرة إلى جدول، ينشئ ClickHouse تلقائيًا مستوىً عاليًا من التوازي في معالجة البيانات، ويُحسّن استخدام عرض النطاق الترددي للشبكة من خلال إنشاء خيوط قراءة إضافية لكل خيط إدراج لقراءة (تنزيل) المزيد من النطاقات المختلفة داخل الملفات الكبيرة بالتوازي.
+
+بالنسبة إلى دالة s3 والجدول، يُحدَّد التنزيل المتوازي لملف واحد بواسطة القيم [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) و[max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size). لن تُنزَّل الملفات بالتوازي إلا إذا كان حجمها أكبر من `2 * max_download_buffer_size`. افتراضيًا، تُضبط القيمة الافتراضية لـ `max_download_buffer_size` على 10MiB. وفي بعض الحالات، يمكنك بأمان زيادة حجم هذا المخزن المؤقت إلى 50 MB (`max_download_buffer_size=52428800`) بهدف ضمان تنزيل كل ملف بواسطة خيط واحد. ويمكن أن يقلل ذلك الوقت الذي يقضيه كل خيط في إجراء استدعاءات S3، وبالتالي يُخفِّض أيضًا وقت انتظار S3. علاوة على ذلك، بالنسبة إلى الملفات الصغيرة جدًا بحيث لا تناسب القراءة المتوازية، يزيد ClickHouse معدل النقل تلقائيًا من خلال الجلب المسبق للبيانات عبر القراءة المسبقة غير المتزامنة لهذه الملفات.
+
+<div id="measuring-performance">
+  ## قياس الأداء
+</div>
+
+يتطلب تحسين أداء الاستعلامات التي تستخدم دوال جداول S3 إجراء ضبطٍ سواء عند تشغيل الاستعلامات مباشرةً على البيانات في مكانها، أي في حالات الاستعلام المخصص حيث تُستخدم فقط موارد المعالجة في ClickHouse وتظل البيانات في S3 بتنسيقها الأصلي، أو عند إدراج البيانات من S3 في جدول ClickHouse يستخدم محرك MergeTree. وما لم يُذكر خلاف ذلك، تنطبق التوصيات التالية على كلا السيناريوهين.
+
+<div id="impact-of-hardware-size">
+  ## تأثير حجم الموارد العتادية
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/hardware_size.webp" size="lg" border alt="تأثير حجم الموارد العتادية على أداء ClickHouse" />
+
+يؤثر عدد أنوية CPU المتاحة وسعة RAM في ما يلي:
+
+* [الحجم الأولي المدعوم للأجزاء](#insert-block-size)
+* مستوى [توازي الإدراج](#insert-parallelism) الممكن
+* إنتاجية عمليات [دمج الأجزاء في الخلفية](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges)
+
+وبالتالي، في إنتاجية إدخال البيانات الإجمالية.
+
+<div id="region-locality">
+  ## الموقع الإقليمي
+</div>
+
+تأكد من أن حاويات التخزين لديك موجودة في المنطقة نفسها التي توجد فيها مثيلات ClickHouse. يمكن لهذا التحسين البسيط أن يحسّن أداء معدل النقل بشكل كبير، لا سيما إذا كنت تنشر مثيلات ClickHouse على البنية التحتية لـ AWS.
+
+<div id="formats">
+  ## التنسيقات
+</div>
+
+يمكن لـ ClickHouse قراءة الملفات المخزنة في حاويات التخزين S3 بالتنسيقات [المدعومة](/ar/reference/formats/index#formats-overview) باستخدام الدالة `s3` والمحرك `S3`. وعند قراءة الملفات الخام، تتميز بعض هذه التنسيقات بمزايا واضحة:
+
+* تتطلب الاستعلامات على التنسيقات التي تتضمن أسماء أعمدة مُرمَّزة، مثل Native وParquet وCSVWithNames وTabSeparatedWithNames، تفاصيل أقل، لأن المستخدم لن يكون بحاجة إلى تحديد اسم العمود في الدالة `s3`. إذ تتيح أسماء الأعمدة استنتاج هذه المعلومات تلقائيًا.
+* تختلف التنسيقات من حيث الأداء فيما يتعلق بمعدلات النقل في القراءة والكتابة. ويُعد Native وParquet الخيارين الأمثل لأداء القراءة، لأنهما عموديان بطبيعتهما وأكثر إحكامًا. ويستفيد تنسيق Native أيضًا من توافقه مع الطريقة التي يخزن بها ClickHouse البيانات في الذاكرة، مما يقلل العبء الإضافي للمعالجة أثناء تدفق البيانات إلى ClickHouse.
+* كثيرًا ما يؤثر حجم الكتلة في زمن استجابة القراءة من الملفات الكبيرة. ويظهر ذلك بوضوح إذا كنت تكتفي بأخذ عينة من البيانات، مثلًا عند إرجاع أعلى N من الصفوف. وفي حالة التنسيقات مثل CSV وTSV، يجب تحليل الملفات أولًا لإرجاع مجموعة من الصفوف. أما التنسيقات مثل Native وParquet فتتيح أخذ العينات بسرعة أكبر نتيجة لذلك.
+* لكل تنسيق ضغط مزاياه وعيوبه، وغالبًا ما يكون الأمر موازنةً بين مستوى الضغط والسرعة مع تفضيل أداء الضغط أو فك الضغط. وإذا كنت تضغط ملفات خام مثل CSV أو TSV، فإن lz4 يوفر أسرع أداء لفك الضغط، مقابل التضحية بمستوى الضغط. أما Gzip فعادةً ما يحقق ضغطًا أفضل على حساب سرعات قراءة أبطأ قليلًا. ويذهب Xz إلى أبعد من ذلك، إذ يقدم عادةً أفضل ضغط مع أبطأ أداء في الضغط وفك الضغط. وعند التصدير، يوفر كل من Gz وlz4 سرعات ضغط متقاربة. وازن ذلك مع سرعات الاتصال لديك. فأي مكاسب من ضغط أو فك ضغط أسرع قد تتلاشى بسهولة بسبب بطء الاتصال بحاويات التخزين S3 لديك.
+* لا تبرر التنسيقات مثل Native أو Parquet عادةً الكلفة الإضافية للضغط. فمن المرجح أن يكون التوفير في حجم البيانات محدودًا، لأن هذه التنسيقات مدمجة بطبيعتها. ونادرًا ما يعوض الوقت المستغرق في الضغط وفك الضغط أزمنة نقل الشبكة، لا سيما أن S3 متاح عالميًا وبعرض نطاق شبكي أعلى.
+
+<div id="example-dataset">
+  ## مجموعة بيانات تجريبية
+</div>
+
+لتوضيح مزيد من التحسينات المحتملة، سنستخدم [منشورات مجموعة بيانات Stack Overflow](/ar/guides/clickhouse/data-modelling/schema-design#stack-overflow-dataset) - مع تحسين أداء كلٍ من الاستعلامات وعمليات الإدراج لهذه البيانات.
+
+تتكون مجموعة البيانات هذه من 189 ملف Parquet، بواقع ملف واحد لكل شهر بين يوليو 2008 ومارس 2024.
+
+لاحظ أننا نستخدم Parquet لأسباب تتعلق بالأداء، وفقًا لـ[توصياتنا أعلاه](#formats)، مع تنفيذ جميع الاستعلامات على عنقود ClickHouse موجود في نفس المنطقة مثل الـ bucket. يحتوي هذا العنقود على 3 عقد، تضم كل واحدة منها 32GiB من RAM و8 vCPU.
+
+من دون أي ضبط، نعرض أداء إدراج مجموعة البيانات هذه في محرك جدول MergeTree، وكذلك تنفيذ استعلام لتحديد المستخدمين الذين يطرحون أكبر عدد من الأسئلة. ويتطلب كل من هاتين العمليتين عمدًا إجراء فحص كامل للبيانات.
+
+```sql
+-- Top usernames
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+```
+
+```response
+┌─OwnerDisplayName─┬─num_posts─┐
+│ user330315       │     10344 │
+│ user4039065      │      5316 │
+│ user149341       │      4102 │
+│ user529758       │      3700 │
+│ user3559349      │      3068 │
+└──────────────────┴───────────┘
+
+5 rows in set. Elapsed: 3.013 sec. Processed 59.82 million rows, 24.03 GB (19.86 million rows/s., 7.98 GB/s.)
+Peak memory usage: 603.64 MiB.
+```
+
+```sql
+-- Load into posts table
+INSERT INTO posts SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 191.692 sec. Processed 59.82 million rows, 24.03 GB (312.06 thousand rows/s., 125.37 MB/s.)
+```
+
+في مثالنا، لا نُرجع سوى بضعة صفوف. إذا كنت تقيس أداء استعلامات `SELECT`، حيث تُعاد كميات كبيرة من البيانات إلى العميل، فاستخدم إمّا [تنسيق `Null`](/ar/reference/formats/Null) للاستعلامات أو وجّه النتائج إلى [محرك `Null`](/ar/reference/engines/table-engines/special/null). من شأن ذلك تجنّب إرهاق العميل بالبيانات وتشبّع الشبكة.
+
+<Info>
+  عند القراءة باستخدام الاستعلامات، قد يبدو الاستعلام الأوّلي أبطأ في كثير من الأحيان من تكرار الاستعلام نفسه. ويمكن أن يُعزى ذلك إلى كلٍّ من التخزين المؤقت في S3 و[ذاكرة التخزين المؤقت لاستنتاج المخطط في ClickHouse](/ar/reference/system-tables/schema_inference_cache). إذ تخزّن هذه الذاكرة المخطط المستنتَج للملفات، ما يتيح تخطّي خطوة الاستنتاج في عمليات الوصول اللاحقة، وبالتالي تقليل وقت الاستعلام.
+</Info>
+
+<div id="using-threads-for-reads">
+  ## استخدام الخيوط لعمليات القراءة
+</div>
+
+يتوسع أداء القراءة على S3 خطيًا مع عدد الأنوية، ما لم تكن مقيَّدًا بعرض نطاق الشبكة أو بعمليات الإدخال/الإخراج المحلية. كما أن زيادة عدد الخيوط تترتب عليها أعباء إضافية على الذاكرة يجب الانتباه إليها. ويمكن تعديل ما يلي لتحسين معدل نقل القراءة:
+
+* عادةً ما تكون القيمة الافتراضية لـ `max_threads` كافية، أي عدد الأنوية. وإذا كان مقدار الذاكرة المستخدمة للاستعلام كبيرًا وتحتاج إلى تقليله، أو كان `LIMIT` على النتائج منخفضًا، فيمكن ضبط هذه القيمة إلى مستوى أقل. وقد يرغب المستخدمون الذين لديهم ذاكرة وفيرة في تجربة زيادة هذه القيمة للحصول على معدل نقل أعلى للقراءة من S3. وعادةً لا يكون ذلك مفيدًا إلا على الأجهزة ذات عدد الأنوية المنخفض، أي أقل من `10`. وغالبًا ما تتضاءل فائدة المزيد من التنفيذ المتوازي عندما تصبح موارد أخرى هي عنق الزجاجة، مثل الشبكة أو التنافس على CPU.
+* كانت إصدارات ClickHouse الأقدم من 22.3.1 لا تُجري القراءة على التوازي عبر ملفات متعددة إلا عند استخدام الدالة `s3` أو محرك الجدول `S3`. وكان ذلك يتطلب من المستخدم التأكد من تقسيم الملفات إلى أجزاء على S3 وقراءتها باستخدام نمط glob لتحقيق أفضل أداء للقراءة. أما الإصدارات الأحدث فأصبحت تُنفّذ التنزيلات على التوازي داخل الملف الواحد.
+* في الحالات التي يكون فيها عدد الخيوط منخفضًا، قد تستفيد من ضبط `remote_filesystem_read_method` على &quot;read&quot; لفرض القراءة المتزامنة للملفات من S3.
+* بالنسبة إلى الدالة `s3` والجدول، يتحدد التنزيل المتوازي للملف الواحد بحسب قيم [`max_download_threads`](/ar/reference/settings/session-settings#max_download_threads) و[`max_download_buffer_size`](/ar/reference/settings/session-settings#max_download_buffer_size). وبينما يتحكم [`max_download_threads`](/ar/reference/settings/session-settings#max_download_threads) في عدد الخيوط المستخدمة، فلن تُنزَّل الملفات على التوازي إلا إذا كان حجمها أكبر من 2 * `max_download_buffer_size`. افتراضيًا، تُضبط قيمة `max_download_buffer_size` على 10MiB. وفي بعض الحالات، يمكنك زيادة حجم هذه الذاكرة المؤقتة بأمان إلى 50 MB (`max_download_buffer_size=52428800`) بهدف ضمان تنزيل الملفات الأصغر بواسطة خيط واحد فقط. ويمكن أن يقلل ذلك من الوقت الذي يقضيه كل خيط في إجراء استدعاءات إلى S3، وبالتالي يخفض أيضًا وقت انتظار S3. راجع [هذه التدوينة](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) للاطلاع على مثال على ذلك.
+
+قبل إجراء أي تغييرات لتحسين الأداء، تأكد من القياس بالشكل المناسب. ونظرًا إلى أن استدعاءات واجهة برمجة التطبيقات الخاصة بـ S3 حساسة لزمن الوصول وقد تؤثر في توقيتات العميل، فاستخدم سجل الاستعلامات لقياس الأداء، أي `system.query_log`.
+
+بالنظر إلى استعلامنا السابق، فإن مضاعفة `max_threads` إلى `16` (القيمة الافتراضية لـ `max_thread` هي عدد الأنوية على العقدة) تحسن أداء استعلام القراءة بمقدار الضعف مقابل زيادة استهلاك الذاكرة. أما زيادة `max_threads` إلى ما بعد ذلك فتؤدي إلى عوائد متناقصة، كما هو موضح.
+
+```sql
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+SETTINGS max_threads = 16
+```
+
+```response
+┌─OwnerDisplayName─┬─num_posts─┐
+│ user330315       │     10344 │
+│ user4039065      │      5316 │
+│ user149341       │      4102 │
+│ user529758       │      3700 │
+│ user3559349      │      3068 │
+└──────────────────┴───────────┘
+
+5 rows in set. Elapsed: 1.505 sec. Processed 59.82 million rows, 24.03 GB (39.76 million rows/s., 15.97 GB/s.)
+Peak memory usage: 178.58 MiB.
+```
+
+```sql
+SETTINGS max_threads = 32
+```
+
+```response
+5 rows in set. Elapsed: 0.779 sec. Processed 59.82 million rows, 24.03 GB (76.81 million rows/s., 30.86 GB/s.)
+Peak memory usage: 369.20 MiB.
+```
+
+```sql
+SETTINGS max_threads = 64
+```
+
+```response
+5 rows in set. Elapsed: 0.674 sec. Processed 59.82 million rows, 24.03 GB (88.81 million rows/s., 35.68 GB/s.)
+Peak memory usage: 639.99 MiB.
+```
+
+<div id="tuning-threads-and-block-size-for-inserts">
+  ## ضبط الخيوط وحجم الكتلة لعمليات الإدراج
+</div>
+
+لتحقيق أقصى أداء لعملية الاستيعاب، يجب اختيار (1) `insert block size` و(2) مستوى مناسب من `insert parallelism` استنادًا إلى (3) عدد أنوية `CPU` وكمية `RAM` المتاحة. باختصار:
+
+* كلما زاد [حجم كتلة الإدراج الذي نُعدّه](#insert-block-size)، قلّ عدد الأجزاء التي يحتاج ClickHouse إلى إنشائها، وقلّت عمليات [I/O لملفات القرص](https://en.wikipedia.org/wiki/Category:Disk_file_systems) و[عمليات الدمج في الخلفية](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges) المطلوبة.
+* كلما زاد [عدد خيوط الإدراج المتوازية](#insert-parallelism)، زادت سرعة معالجة البيانات.
+
+هناك مفاضلة متعارضة بين عاملي الأداء هذين (إلى جانب مفاضلة أخرى تتعلق بدمج الأجزاء في الخلفية). فالذاكرة الرئيسية المتاحة في خوادم ClickHouse محدودة. إذ تستهلك الكتل الأكبر قدرًا أكبر من الذاكرة الرئيسية، مما يحدّ من عدد خيوط الإدراج المتوازية التي يمكن الاستفادة منها. وفي المقابل، فإن زيادة عدد خيوط الإدراج المتوازية تتطلب ذاكرة رئيسية أكبر، لأن عدد خيوط الإدراج يحدد عدد كتل الإدراج التي تُنشأ في الذاكرة بالتزامن. وهذا يقيّد الحجم الممكن لكتل الإدراج. بالإضافة إلى ذلك، قد يحدث تنازع على الموارد بين خيوط الإدراج وخيوط دمج الأجزاء في الخلفية. فإعداد عدد كبير من خيوط الإدراج (1) ينشئ أجزاءً أكثر تحتاج إلى الدمج و(2) يقتطع أنوية `CPU` ومساحة الذاكرة من خيوط الدمج في الخلفية.
+
+للاطلاع على وصف تفصيلي لكيفية تأثير سلوك هذه المعلمات في الأداء والموارد، نوصي [بقراءة هذه التدوينة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2). وكما هو موضح في هذه التدوينة، قد يتطلب الضبط موازنة دقيقة بين هذين المعلمَين. ونظرًا لأن هذا الاختبار الشامل يكون غير عملي في كثير من الأحيان، فنوصي باختصار بما يلي:
+
+```bash
+• max_insert_threads: choose ~ half of the available CPU cores for insert threads (to leave enough dedicated cores for background merges)
+
+• peak_memory_usage_in_bytes: choose an intended peak memory usage; either all available RAM (if it is an isolated ingest) or half or less (to leave room for other concurrent tasks)
+
+Then:
+min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_threads)
+```
+
+باستخدام هذه الصيغة، يمكنك ضبط `min_insert_block_size_rows` على 0 (لتعطيل العتبة المستندة إلى الصفوف)، مع ضبط `max_insert_threads` على القيمة المختارة و`min_insert_block_size_bytes` على النتيجة المحسوبة من الصيغة أعلاه.
+
+وباستخدام هذه الصيغة مع مثال Stack Overflow السابق:
+
+* `max_insert_threads=4` (8 أنوية لكل عقدة)
+* `peak_memory_usage_in_bytes` - ‏32 GiB (100% من موارد العقدة) أو `34359738368` بايت.
+* `min_insert_block_size_bytes` = `34359738368/(3*4) = 2863311530`
+
+```sql
+INSERT INTO posts SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 128.566 sec. Processed 59.82 million rows, 24.03 GB (465.28 thousand rows/s., 186.92 MB/s.)
+```
+
+كما يتضح، أدّى ضبط هذه الإعدادات إلى تحسين أداء الإدراج بأكثر من `33%`. ونترك للقارئ اختبار ما إذا كان بإمكانه تحسين أداء العقدة الواحدة بدرجة أكبر.
+
+<div id="scaling-with-resources-and-nodes">
+  ## التوسّع عبر الموارد والعُقد
+</div>
+
+ينطبق التوسّع عبر الموارد والعُقد على كلٍّ من استعلامات القراءة واستعلامات الإدراج.
+
+<div id="vertical-scaling">
+  ### التوسّع الرأسي
+</div>
+
+استخدمت جميع عمليات الضبط والاستعلامات السابقة عقدة واحدة فقط في عنقود ClickHouse Cloud لدينا. وفي كثير من الأحيان، يتوفر لديك أيضًا أكثر من عقدة ClickHouse واحدة. نوصي المستخدمين بالبدء بالتحجيم الرأسي، إذ يتحسن معدل نقل البيانات في S3 خطيًا مع عدد الأنوية. وإذا أعدنا تنفيذ استعلامات الإدراج والقراءة السابقة على عقدة ClickHouse Cloud أكبر بموارد مضاعفة (64GiB و16 vCPU) ومع الإعدادات المناسبة، فسيُنفَّذ كلاهما بسرعة تقارب الضعف.
+
+```sql
+INSERT INTO posts SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 67.294 sec. Processed 59.82 million rows, 24.03 GB (888.93 thousand rows/s., 357.12 MB/s.)
+```
+
+```sql
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+SETTINGS max_threads = 92
+```
+
+```response
+5 rows in set. Elapsed: 0.421 sec. Processed 59.82 million rows, 24.03 GB (142.08 million rows/s., 57.08 GB/s.)
+```
+
+<Note>
+  قد تُشكّل العقد الفردية أيضًا عنق زجاجة بسبب الشبكة وطلبات GET من S3، مما يمنع تحقّق توسّع خطي في الأداء عند التوسّع الرأسي.
+</Note>
+
+<div id="horizontal-scaling">
+  ### التوسّع الأفقي
+</div>
+
+غالبًا ما يصبح التوسّع الأفقي ضروريًا بسبب توافر الأجهزة وكفاءة التكلفة. في ClickHouse Cloud، تضم عناقيد الإنتاج 3 عُقد على الأقل. لذلك قد ترغب أيضًا في الاستفادة من جميع العُقد لتنفيذ عملية إدراج.
+
+يتطلب استخدام عنقود لعمليات القراءة من S3 استخدام الدالة `s3Cluster` كما هو موضح في [استخدام العناقيد](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters). يتيح ذلك توزيع عمليات القراءة عبر العُقد.
+
+يقوم الخادم الذي يتلقى استعلام الإدراج أولًا بتفسير نمط `glob`، ثم يوزّع معالجة كل ملف مطابق ديناميكيًا بينه وبين الخوادم الأخرى.
+
+<Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="الدالة s3Cluster في ClickHouse" />
+
+نكرر استعلام القراءة السابق مع توزيع عبء العمل عبر 3 عُقد، مع تعديل الاستعلام لاستخدام `s3Cluster`. ويتم ذلك تلقائيًا في ClickHouse Cloud، من خلال الإشارة إلى العنقود `default`.
+
+كما هو مذكور في [استخدام العناقيد](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters)، يُوزَّع هذا العمل على مستوى الملفات. وللاستفادة من هذه الميزة، ستحتاج إلى عدد كافٍ من الملفات، أي عدد لا يقل عن &gt; عدد العُقد.
+
+```sql
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+SETTINGS max_threads = 16
+```
+
+```response
+┌─OwnerDisplayName─┬─num_posts─┐
+│ user330315       │     10344 │
+│ user4039065      │      5316 │
+│ user149341       │      4102 │
+│ user529758       │      3700 │
+│ user3559349      │      3068 │
+└──────────────────┴───────────┘
+
+5 rows in set. Elapsed: 0.622 sec. Processed 59.82 million rows, 24.03 GB (96.13 million rows/s., 38.62 GB/s.)
+Peak memory usage: 176.74 MiB.
+```
+
+وبالمثل، يمكن أيضًا توزيع استعلام الإدراج لدينا باستخدام الإعدادات المُحسَّنة التي حدّدناها سابقًا لعقدة واحدة:
+
+```sql
+INSERT INTO posts SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 171.202 sec. Processed 59.82 million rows, 24.03 GB (349.41 thousand rows/s., 140.37 MB/s.)
+```
+
+سيلاحظ القرّاء أن قراءة الملفات قد حسّنت أداء الاستعلامات، ولكنها لم تُحسّن أداء الإدراج. افتراضيًا، رغم أن عمليات القراءة تُوزَّع باستخدام `s3Cluster`، فإن عمليات الإدراج تتم على العقدة المُبادِرة. وهذا يعني أنه في حين تُنفَّذ عمليات القراءة على كل عقدة، تُوجَّه الصفوف الناتجة إلى العقدة المُبادِرة لتوزيعها. وفي سيناريوهات الإنتاجية العالية، قد يصبح هذا عنق زجاجة. ولمعالجة ذلك، اضبط المعلمة `parallel_distributed_insert_select` للدالة `s3cluster`.
+
+يضمن ضبطها على `parallel_distributed_insert_select=2` تنفيذ `SELECT` و`INSERT` على كل جزء من/إلى الجدول الأساسي لمحرك Distributed على كل عقدة.
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 54.571 sec. Processed 59.82 million rows, 24.03 GB (1.10 million rows/s., 440.38 MB/s.)
+Peak memory usage: 11.75 GiB.
+```
+
+كما هو متوقع، يؤدي هذا إلى تراجع أداء الإدراج إلى الثلث.
+
+<div id="further-tuning">
+  ## مزيد من الضبط
+</div>
+
+<div id="disable-de-duplication">
+  ### تعطيل إزالة التكرار
+</div>
+
+قد تفشل عمليات الإدراج أحيانًا بسبب أخطاء مثل تجاوز المهلة. وعند فشل عملية الإدراج، قد تكون البيانات قد أُدرجت بنجاح بالفعل أو لا. ولإتاحة إعادة محاولة عمليات الإدراج بأمان من جهة العميل، يحاول ClickHouse افتراضيًا، في عمليات النشر الموزعة مثل ClickHouse Cloud، التحقق مما إذا كانت البيانات قد أُدرجت بنجاح مسبقًا. وإذا وُسِمت البيانات المُدرجة على أنها مكررة، فلن يُدرجها ClickHouse في جدول الوجهة. ومع ذلك، سيظل المستخدم يتلقى حالة نجاح للعملية كما لو أن البيانات أُدرجت بشكل طبيعي.
+
+ومع أن هذا السلوك، الذي يضيف عبئًا إضافيًا على الإدراج، يكون منطقيًا عند تحميل البيانات من عميل أو على شكل دفعات، فقد لا تكون له حاجة عند تنفيذ `INSERT INTO SELECT` من تخزين الكائنات. ومن خلال تعطيل هذه الوظيفة وقت الإدراج، يمكننا تحسين الأداء كما هو موضح أدناه:
+
+```sql
+INSERT INTO posts
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
+```
+
+```response
+0 rows in set. Elapsed: 52.992 sec. Processed 59.82 million rows, 24.03 GB (1.13 million rows/s., 453.50 MB/s.)
+Peak memory usage: 26.57 GiB.
+```
+
+<div id="optimize-on-insert">
+  ### التحسين عند الإدراج
+</div>
+
+في ClickHouse، يتحكم الإعداد `optimize_on_insert` في ما إذا كانت data parts تُدمج أثناء عملية الإدراج. عند تفعيله (حيث تكون القيمة الافتراضية `optimize_on_insert = 1`)، تُدمج الأجزاء الصغيرة في أجزاء أكبر أثناء إدراجها، مما يحسّن query performance عبر تقليل عدد الأجزاء التي يلزم قراءتها. ومع ذلك، يضيف هذا الدمج عبئًا إضافيًا إلى عملية الإدراج، وقد يؤدي إلى إبطاء عمليات الإدراج عالية الإنتاجية.
+
+يؤدي تعطيل هذا الإعداد (`optimize_on_insert = 0`) إلى تخطي الدمج أثناء عمليات الإدراج، مما يتيح كتابة البيانات بسرعة أكبر، خاصةً عند التعامل مع عمليات إدراج صغيرة ومتكررة. وتُؤجَّل عملية الدمج إلى الخلفية، مما يتيح أداءً أفضل لعمليات الإدراج، لكنه يزيد مؤقتًا من عدد الأجزاء الصغيرة، وهو ما قد يبطئ الاستعلامات إلى أن يكتمل الدمج في الخلفية. ويُعد هذا الإعداد مثاليًا عندما تكون أولوية الأداء لعمليات الإدراج، ويمكن لعملية الدمج في الخلفية أن تتولى التحسين بكفاءة لاحقًا. كما هو موضح أدناه، يمكن أن يؤدي تعطيل هذا الإعداد إلى تحسين إنتاجية الإدراج:
+
+```sql
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
+```
+
+```response
+0 rows in set. Elapsed: 49.688 sec. Processed 59.82 million rows, 24.03 GB (1.20 million rows/s., 483.66 MB/s.)
+```
+
+<div id="misc-notes">
+  ## ملاحظات متفرقة
+</div>
+
+* في حالات انخفاض الذاكرة، فكّر في خفض `max_insert_delayed_streams_for_parallel_write` إذا كنت تُدرِج البيانات في S3.

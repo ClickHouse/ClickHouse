@@ -92,14 +92,20 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-void ParallelReadingExtension::sendInitialRequest(
+std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
     CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
-    all_callback(InitialAllRangesAnnouncement{
+    return all_callback(InitialAllRangesAnnouncement{
         mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
+    CoordinationMode mode, size_t min_marks_per_request) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, {}, stream_id});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadInOrderRequest(
     CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
@@ -151,7 +157,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    const ColumnsDescription * columns_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -163,7 +170,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           index_read_tasks_,
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
-          reader_settings_.force_short_circuit_execution))
+          reader_settings_.force_short_circuit_execution,
+          columns_))
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
@@ -191,7 +199,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
-    bool force_short_circuit_execution)
+    bool force_short_circuit_execution,
+    const ColumnsDescription * columns)
 {
     PrewhereExprInfo prewhere_actions;
 
@@ -224,7 +233,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -248,7 +257,9 @@ ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows, read_steps_performance_counters);
+        current_task.initializeReadersChain(
+            prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
+            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
 
     auto res = task_algorithm.readFromTask(current_task);
 

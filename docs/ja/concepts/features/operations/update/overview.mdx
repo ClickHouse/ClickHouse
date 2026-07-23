@@ -1,0 +1,374 @@
+---
+slug: /updating-data/overview
+title: 'ClickHouse の更新'
+description: '利用可能な更新方法と、ワークロードに適した方法を選ぶためのガイド。'
+keywords: ['update', 'データ更新', 'ミューテーション', '論理更新']
+doc_type: 'guide'
+sidebarTitle: '更新の扱い'
+---
+
+更新の処理方法は、基盤となる設計思想や想定ユースケースが異なるため、分析データベースとトランザクションデータベースとで大きく異なります。
+ClickHouse は、読み取り中心の分析処理と高スループットな追記専用操作向けに最適化された [カラム指向データベース](/ja/get-started/about/intro#row-oriented-vs-column-oriented-storage) です。
+実際には、削除や更新を追記操作に変換し、それを非同期または読み取り時に処理できるように、テーブルを再構成することがよくあります。これにより、高スループットなデータインジェストにおける ClickHouse の強みを活かせます。
+ClickHouse は、強力な更新および削除操作にも対応しています。
+
+このガイドでは、ClickHouse で利用できる更新方法の概要を示し、ワークロードに適した更新戦略を選ぶ際の参考情報を提供します。
+
+<div id="choosing-an-update-strategy">
+  ## 更新戦略の選択
+</div>
+
+ClickHouse でデータを更新するには、基本的に 2 つのアプローチがあります。
+
+1. insert によって更新を処理する **専用のテーブルエンジン** を使用する
+2. [`UPDATE ... SET`](/ja/reference/statements/update) や [`ALTER TABLE ... UPDATE`](/ja/reference/statements/alter/update) のような **宣言的な更新** ステートメントを使用する
+
+上記 2 つのカテゴリには、それぞれデータを更新する方法がいくつかあります。
+それぞれに利点と性能特性があるため、データモデルと更新したいデータ量に応じて、適切な方法を選択してください。
+
+<div id="when-to-choose-specialised-table-engines">
+  ### 専用のテーブルエンジンを使う場合
+</div>
+
+専用のテーブルエンジンは、大量の更新がある場合、行レベルの変更が頻繁に発生する場合、または更新イベントや削除イベントの継続的なストリームを処理する必要がある場合に、より適しています。
+
+一般的によく使われるエンジンは次のとおりです。
+
+| エンジン                                                                                         | 構文                                   | 使用する場合                                                                                 |
+| -------------------------------------------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)   | `ENGINE = ReplacingMergeTree`        | 大量のデータを更新する場合に使用します。このテーブルエンジンは、マージ時のデータの重複排除に最適化されています。                               |
+| [CoalescingMergeTree](/ja/reference/engines/table-engines/mergetree-family/coalescingmergetree) | `ENGINE = CoalescingMergeTree`       | データが断片的に到着し、行全体の置き換えではなく、カラム単位での統合が必要な場合に使用します。                                        |
+| [CollapsingMergeTree](/ja/reference/engines/table-engines/mergetree-family/collapsingmergetree) | `ENGINE = CollapsingMergeTree(Sign)` | 個々の行を頻繁に更新する場合や、時間とともに変化するオブジェクトの最新状態を維持する必要があるシナリオで使用します。たとえば、ユーザーアクティビティや記事の統計の追跡です。 |
+
+MergeTree ファミリーのテーブルエンジンはバックグラウンドでデータパーツをマージするため、*結果整合性* を提供します。そのため、完全にマージされるまでの間にテーブルをクエリする際は、適切に重複排除するために [`FINAL`](/ja/reference/statements/select/from#final-modifier) キーワードを使用する必要があります。
+ほかにも[エンジンの種類](/ja/reference/engines/table-engines/mergetree-family/index)はありますが、これらが最も一般的に使われます。
+
+<div id="when-to-use-declaritive-updates">
+  ### 宣言的更新を使用するタイミング
+</div>
+
+宣言的な `UPDATE` ステートメントは、重複排除ロジックを管理する複雑さがなく、単純な更新処理ではより扱いやすい場合があります。ただし一般に、専用エンジンを使う方法と比べると、比較的少ない行を低頻度で更新する用途に向いています。
+
+| Method                                           | Syntax                         | When to use                                                                                                                                                                                                                                                             |
+| ------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [論理更新](/ja/reference/statements/update)             | `UPDATE [table] SET ... WHERE` | ほとんどのケースではこちらを使用してください。特に、アプリケーションやワークフローの一部として、頻繁に小規模な `UPDATE` (テーブルの最大約 10% まで) を実行する場合に適しています。たとえば、ユーザーが自分のイベント履歴の削除を希望しており、そのイベントが多数のユーザーを含むマルチテナントテーブル全体に分散しているケースです。この方法では、カラム全体を書き換えることなく、すぐに反映するためのパッチパートが作成されます。`SELECT` クエリにオーバーヘッドは加わりますが、レイテンシは予測しやすくなります。 |
+| [更新ミューテーション](/ja/reference/statements/alter/update) | `ALTER TABLE [table] UPDATE`   | より大規模なデータ管理を行う場合に使用してください。特に、更新対象がテーブルのパーティション化と合っている場合に適しています。たとえば、月ごとにパーティション化されたテーブルで、ある月に含まれるすべての行のカラムを更新する必要があるケースです。                                                                                                                                              |
+
+<div id="insert-based-updates">
+  ## 専用のテーブルエンジンを使った更新
+</div>
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+`ReplacingMergeTree` は、バックグラウンドマージ時に同じソートキーを持つ行を重複排除し、最新バージョンのみを保持します。
+
+```sql
+CREATE TABLE posts
+(
+    Id UInt32,
+    Title String,
+    ViewCount UInt32,
+    Version UInt32
+)
+ENGINE = ReplacingMergeTree(Version)
+ORDER BY Id
+```
+
+このエンジンは、安定したキーで更新を識別する、個々の行に対する高頻度の更新に最適です。
+ベンチマークでは、単一行の更新において ミューテーション より最大 4,700 倍高速であることが示されています。
+
+行を更新するには、同じソートキーの値と、より大きいバージョン番号を持つ新しいバージョンを insert するだけです。古いバージョンは background merges の過程で削除されます。重複排除は最終的に行われるもの (つまり merges のときにのみ発生します) であるため、正しく重複排除された結果を得るには、`FINAL` 修飾子または同等のクエリロジックを使用する必要があります。`FINAL` 修飾子を使うと、データに応じてクエリのオーバーヘッドが 21～550% 増加します。
+
+`ReplacingMergeTree` ではソートキーの値は更新できません。また、論理削除用の `Deleted` カラムもサポートしています。
+
+詳細: [ReplacingMergeTree ガイド](/ja/concepts/features/operations/update/replacing-merge-tree) | [ReplacingMergeTree リファレンス](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)
+
+<div id="coalescingmergetree">
+  ### CoalescingMergeTree
+</div>
+
+CoalescingMergeTree は、マージ時に各カラムの最新の非 NULL 値を保持することで、スパースなレコードを統合します。これにより、行全体を置き換えるのではなく、カラム単位で upsert できます。
+
+```sql
+CREATE TABLE electric_vehicle_state
+(
+    vin String, -- 車両識別番号
+    last_update DateTime64 Materialized now64(), -- 任意（argMaxと併用）
+    battery_level Nullable(UInt8), -- %単位
+    lat Nullable(Float64), -- 緯度（°）
+    lon Nullable(Float64), -- 経度（°）
+    firmware_version Nullable(String),
+    cabin_temperature Nullable(Float32), -- °C単位
+    speed_kmh Nullable(Float32) -- センサーから取得
+)
+ENGINE = CoalescingMergeTree
+ORDER BY vin;
+```
+
+このエンジンは、複数のデータソースから断片的にデータが到着する場合や、異なるカラムがそれぞれ別のタイミングで埋められる場合を想定して設計されています。一般的なユースケースとしては、断片化されたサブシステムからの IoT テレメトリー、ユーザープロファイルのエンリッチメント、次元データの到着が遅れる ETL パイプラインなどがあります。
+
+同じソートキーを持つ行がマージされると、CoalescingMergeTree は行全体を置き換えるのではなく、各カラムについて NULL でない最新の値を保持します。これを意図どおりに機能させるには、キー以外のカラムを `Nullable` にする必要があります。ReplacingMergeTree と同様に、正しく統合された結果を得るには `FINAL` を使用してください。
+
+このエンジンは ClickHouse 25.6 から利用できます。
+
+詳細: [CoalescingMergeTree](/ja/reference/engines/table-engines/mergetree-family/coalescingmergetree)
+
+<div id="collapsingmergetree">
+  ### CollapsingMergeTree
+</div>
+
+更新はコストが高い一方で、挿入を利用して更新を実現できるという考え方に基づき、`CollapsingMergeTree` は `Sign` カラムを使って、マージ時に ClickHouse が行をどのように処理するかを指定します。`Sign` カラムに `-1` が挿入されると、その行は対応する `+1` の行と対になったときに折りたたまれ (削除され) ます。更新対象の行は、テーブル作成時に `ORDER BY` 句で使用するソートキーに基づいて識別されます。
+
+```sql
+CREATE TABLE user_activity
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+
+-- 初期状態
+INSERT INTO user_activity VALUES (4324182021466249494, 5, 146, 1)
+
+-- 古い行をキャンセルして新しい状態を挿入
+INSERT INTO user_activity VALUES (4324182021466249494, 5, 146, -1)
+INSERT INTO user_activity VALUES (4324182021466249494, 6, 185, 1)
+
+-- 適切な集計を用いたクエリ
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration
+FROM user_activity
+GROUP BY UserID
+HAVING sum(Sign) > 0
+```
+
+```response
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+```
+
+`ReplacingMergeTree`とは異なり、`CollapsingMergeTree`ではソートキーの値を変更できます。金融取引やゲーム状態の追跡など、取り消しを前提とした可逆的な操作に適しています。
+
+<Note>
+  上記の更新方法では、打ち消し用の行を挿入するために、アプリケーション側でクライアントの状態を保持しておく必要があります。これは ClickHouse の観点では最も効率的ですが、大規模環境では扱いが複雑になることがあります。また、正しい結果を得るには、クエリでも符号の乗算を伴う集約が必要です。
+</Note>
+
+詳細: [CollapsingMergeTree](/ja/reference/engines/table-engines/mergetree-family/collapsingmergetree)
+
+<div id="sql-style-updates">
+  ## 宣言的更新
+</div>
+
+これらの方法は、[MergeTree family](/ja/reference/engines/table-engines/mergetree-family/index) エンジンを使用するテーブルで利用できます。
+
+| 方法                           | 構文                         | 最適な用途                                           | トレードオフ                                   |
+| ---------------------------- | -------------------------- | ----------------------------------------------- | ---------------------------------------- |
+| [ミューテーション](#mutations)       | `ALTER TABLE ... UPDATE`   | 頻度の低い一括更新。更新内容がテーブルのパーティション化と整合している場合に特に適しています。 | I/O 負荷が高い; カラムを書き換える                     |
+| [論理更新](#lightweight-updates) | `UPDATE ... SET ... WHERE` | 小規模な更新 (行の約 0.1〜10%) ; パフォーマンスが求められる高頻度の更新      | `SELECT` のオーバーヘッドが増える; パッチパートも上限にカウントされる |
+
+<div id="mutations">
+  ### ミューテーション
+</div>
+
+ミューテーション (`ALTER TABLE ... UPDATE`) は、`WHERE` 式に一致する行を含むすべてのパーツを再書き込みします。
+
+```sql
+ALTER TABLE posts UPDATE AnswerCount = AnswerCount + 1 WHERE AnswerCount = 0
+```
+
+ミューテーションは I/O 負荷が高く、`WHERE` 式に一致するすべてのパーツを書き換えます。
+このプロセスにはアトミック性がありません。
+パーツは準備でき次第、変更後のパーツに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでにミューテーションされたパーツのデータと、まだミューテーションされていないパーツのデータの両方が見えることになります。
+進行状況は [`system.mutations`](/ja/reference/system-tables/mutations) テーブルで確認できます。
+
+<Warning>
+  ミューテーションは I/O 集約的で、クラスターの `SELECT` パフォーマンスに影響する可能性があるため、使用は最小限にとどめてください。ミューテーションが処理されるより速くキューにたまると、クエリのパフォーマンスは低下します。キューは `system.mutations` で監視してください。
+</Warning>
+
+詳細: [ALTER TABLE UPDATE](/ja/reference/statements/alter/update)
+
+<div id="on-the-fly-mutations">
+  #### オンザフライミューテーション
+</div>
+
+`ALTER TABLE ... UPDATE` によるミューテーションでは、変更後の値がクエリ結果に反映されるまで、バックグラウンドプロセスによってミューテーションが適用されるのを待つ必要がある場合があります。
+ClickHouse では、&quot;オンザフライミューテーション&quot; によってこの動作を変更できます。
+オンザフライミューテーションを有効にすると、更新された行は即座に更新済みとしてマークされ、後続の `SELECT` クエリでは変更後の値が自動的に返されます。
+
+オンザフライミューテーションは、クエリレベルの設定 `apply_mutations_on_fly` を有効にすることで、`MergeTree` ファミリーのテーブルで使用できます。
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<Accordion title="例">
+  テーブルを作成し、いくつかのミューテーションを実行してみましょう。
+
+  ```sql
+  CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+  ENGINE = MergeTree ORDER BY id;
+
+  -- 挙動を確認するため、ミューテーションのバックグラウンドでのマテリアライゼーションを無効にする
+  -- オンザフライミューテーションが有効でない場合のデフォルトの挙動を示す
+  SYSTEM STOP MERGES test_on_fly_mutations;
+  SET mutations_sync = 0;
+
+  -- 新しいテーブルにいくつかの行を挿入する
+  INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+  -- 行の値を更新する
+  ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+  ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+  ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+  ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+  ```
+
+  `SELECT` クエリで更新結果を確認してみましょう。
+
+  ```sql
+  -- オンザフライミューテーションを明示的に無効にする
+  SET apply_mutations_on_fly = 0;
+
+  SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+  ```
+
+  新しいテーブルに対してクエリを実行した時点では、行の値はまだ更新されていないことに注意してください。
+
+  ```response
+  ┌─id─┬─v─┐
+  │  1 │ a │
+  │  2 │ b │
+  │  3 │ c │
+  └────┴───┘
+  ```
+
+  次に、オンザフライミューテーションを有効にするとどうなるかを見てみましょう。
+
+  ```sql
+  -- オンザフライミューテーションを有効にする
+  SET apply_mutations_on_fly = 1;
+
+  SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+  ```
+
+  これで `SELECT` クエリは、ミューテーションが適用されるのを待つことなく、直ちに正しい結果を返します。
+
+  ```response
+  ┌─id─┬─v─┐
+  │  3 │ c │
+  └────┴───┘
+  ```
+</Accordion>
+
+<div id="performance-impact">
+  ##### パフォーマンスへの影響
+</div>
+
+オンザフライミューテーションが有効になっている場合、ミューテーションはすぐにはマテリアライズされず、`SELECT` クエリの実行時にのみ適用されます。ただし、ミューテーションのマテリアライズ自体は引き続きバックグラウンドで非同期に行われており、これは負荷の高い処理である点に注意してください。
+
+一定の期間にわたって、投入されるミューテーション数がバックグラウンドで処理されるミューテーション数を継続的に上回ると、適用が必要な未マテリアライズのミューテーションのキューは増え続けます。その結果、最終的に `SELECT` クエリのパフォーマンスが低下します。
+
+未マテリアライズのミューテーションが際限なく増え続けるのを防ぐため、設定 `apply_mutations_on_fly` は、`number_of_mutations_to_throw` や `number_of_mutations_to_delay` などの他の `MergeTree` レベルの設定とあわせて有効にすることを推奨します。
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ##### サブクエリおよび非決定論的関数のサポート
+</div>
+
+オンザフライミューテーションでのサブクエリおよび非決定論的関数のサポートには制限があります。サポートされるのは、結果サイズが適切な範囲内にあるスカラーサブクエリのみです (設定 `mutations_max_literal_size_to_replace` で制御されます) 。また、非決定論的関数については、定数となるもののみがサポートされます (例: 関数 `now()`) 。
+
+これらの動作は、次の設定で制御されます。
+
+| 設定                                                | 説明                                                                            | デフォルト            |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------- |
+| `mutations_execute_nondeterministic_on_initiator` | true の場合、非決定論的関数はイニシエーターレプリカで実行され、`UPDATE` および `DELETE` クエリ内でリテラルに置き換えられます。   | `false`          |
+| `mutations_execute_subqueries_on_initiator`       | true の場合、スカラーサブクエリはイニシエーターレプリカで実行され、`UPDATE` および `DELETE` クエリ内でリテラルに置き換えられます。 | `false`          |
+| `mutations_max_literal_size_to_replace`           | `UPDATE` および `DELETE` クエリ内で置き換える、シリアライズ済みリテラルの最大サイズ (バイト単位) 。                 | `16384` (16 KiB) |
+
+<div id="lightweight-updates">
+  ### 論理更新
+</div>
+
+論理更新では、従来のミューテーションのようにカラム全体を書き換えるのではなく、更新されたカラムと行だけを含む特殊なデータパートである&quot;パッチパート&quot;を使用します。
+
+```sql
+UPDATE posts SET AnswerCount = AnswerCount + 1 WHERE Id = 404346
+```
+
+このアプローチでは標準の `UPDATE` 構文を使用し、マージを待たずにパッチパートを即座に作成します。更新された値は、パッチの適用によって `SELECT` クエリですぐに参照できますが、物理的に反映されるのは後続のマージ時のみです。そのため、論理更新は、予測可能なレイテンシで少数の行 (テーブルの約 10% まで) を更新するのに最適です。ベンチマークでは、ミューテーションと比べて最大 23 倍高速になることが示されています。
+
+その一方で、`SELECT` クエリではパッチの適用に伴うオーバーヘッドが発生し、パッチパートはパーツ数の上限にもカウントされます。約 10% のしきい値を超えると、読み取り時のパッチ適用オーバーヘッドが比例して増加するため、より大規模な更新では同期ミューテーションのほうが効率的です。
+
+詳細: [Lightweight UPDATE](/ja/reference/statements/update)
+
+### オンザフライミューテーション
+
+オンザフライミューテーションは、行を更新した際に、その後の`SELECT`クエリでバックグラウンド処理の完了を待たずに変更後の値が自動的に返される仕組みです。これにより、通常のミューテーションにおけるアトミック性の制約を実質的に解消できます。
+
+```sql
+SET apply_mutations_on_fly = 1;
+
+SELECT ViewCount FROM posts WHERE Id = 404346
+```
+
+```response
+┌─ViewCount─┐
+│     26762 │
+└───────────┘
+```
+
+```sql
+-- カウントをインクリメントする
+ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
+
+-- 更新された値は即座に反映される
+SELECT ViewCount FROM posts WHERE Id = 404346
+```
+
+```response
+┌─ViewCount─┐
+│     26763 │
+└───────────┘
+```
+
+ミューテーションと、それに続く `SELECT` クエリの両方で、`apply_mutations_on_fly = 1` 設定を有効にする必要があります。ミューテーションの条件は ClickHouse Keeper に保存され、Keeper はそれらをすべてメモリ内に保持し、クエリ実行時にオンザフライで適用します。
+
+データの更新には引き続きミューテーションが使用される点に注意してください。違うのは、すぐには実体化されないということだけです。ミューテーションは非同期プロセスとしてバックグラウンドで引き続き適用され、通常のミューテーションと同じ大きなオーバーヘッドが発生します。また、この操作で使用できる式にも制限があります ([詳細](#support-for-subqueries-and-non-deterministic-functions)を参照) 。
+
+<Warning>
+  オンザフライミューテーションは、ごく少数の操作にのみ使用してください。多くても数十件程度までに抑えるべきです。Keeper は条件をメモリ内に保存するため、過剰に使用するとクラスターの安定性に影響します。Keeper に高い負荷がかかると、無関係なテーブルにも影響するセッションタイムアウトが発生する可能性があります。
+</Warning>
+
+詳しくは: [On-the-fly mutations](#on-the-fly-mutations)
+
+<div id="comparison-summary">
+  ## 比較のまとめ
+</div>
+
+次の表は、[ベンチマーク](https://clickhouse.com/blog/updates-in-clickhouse-3-benchmarks)に基づいて、クエリ性能に生じるオーバーヘッドをまとめたものです。ミューテーションは、完了してデータが物理的に書き換えられた後はクエリがフルスピードで実行されるため、基準として扱っています。
+
+| 方法                                                                                                     | クエリの低下率                | メモリオーバーヘッド             | 備考                                     |
+| ------------------------------------------------------------------------------------------------------ | ---------------------- | ---------------------- | -------------------------------------- |
+| [Mutations](/ja/reference/statements/alter/update)                                                        | 基準                     | 基準                     | 完了後はフルスピード。データは物理的に書き換えられる             |
+| [オンザフライミューテーション](#on-the-fly-mutations)                                                          | 可変                     | 可変                     | 即座に反映される。更新が多数蓄積すると性能が低下する             |
+| [論理更新](/ja/reference/statements/update#lightweight-update-requirements)                    | 7～18% (平均約12%)         | +20～210%               | クエリ効率が最も高い。テーブルの10%以下を更新する場合に最適        |
+| [ReplacingMergeTree](/ja/concepts/features/operations/update/replacing-merge-tree) + `FINAL`              | 21～550% (平均約280%)      | 基準の20～200倍             | すべての行バージョンを読み取る必要がある。クエリのオーバーヘッドが最も大きい |
+| [CoalescingMergeTree](/ja/reference/engines/table-engines/mergetree-family/coalescingmergetree) + `FINAL` | ReplacingMergeTreeと同程度 | ReplacingMergeTreeと同程度 | カラム単位の coalescing により同程度のオーバーヘッドが追加される |
+| [CollapsingMergeTree](/ja/reference/engines/table-engines/mergetree-family/collapsingmergetree)           | 集約に依存                  | 集約に依存                  | オーバーヘッドはクエリの複雑さに依存する                   |
+
+<div id="more-resources">
+  ## 関連資料
+</div>
+
+ClickHouse における更新機能がどのように進化してきたのかや、ベンチマーク分析を詳しく知りたい場合は、以下を参照してください。
+
+* [ClickHouse の更新 第1部: 用途特化型エンジン](https://clickhouse.com/blog/updates-in-clickhouse-1-purpose-built-engines)
+* [ClickHouse の更新 第2部: SQL スタイルの更新](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates)
+* [ClickHouse の更新 第3部: ベンチマーク](https://clickhouse.com/blog/updates-in-clickhouse-3-benchmarks)

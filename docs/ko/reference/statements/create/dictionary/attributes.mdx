@@ -1,0 +1,182 @@
+---
+description: '딕셔너리 키 및 속성 구성'
+sidebarTitle: '속성'
+slug: /sql-reference/statements/create/dictionary/attributes
+title: '딕셔너리 속성'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
+
+<CloudDetails />
+
+`structure` 절은 쿼리에서 사용할 수 있는 딕셔너리 키와 필드를 설명합니다.
+
+XML 설명:
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>Id</name>
+        </id>
+
+        <attribute>
+            <!-- 속성 매개변수 -->
+        </attribute>
+
+        ...
+
+    </structure>
+</dictionary>
+```
+
+속성은 다음 요소로 설명됩니다:
+
+* `<id>` — 키 컬럼
+* `<attribute>` — 데이터 컬럼: 속성은 여러 개 있을 수 있습니다.
+
+DDL 쿼리:
+
+```sql
+CREATE DICTIONARY dict_name (
+    Id UInt64,
+    -- 속성
+)
+PRIMARY KEY Id
+...
+```
+
+속성은 쿼리 본문에 다음과 같이 설명됩니다:
+
+* `PRIMARY KEY` — 키 컬럼
+* `AttrName AttrType` — 데이터 컬럼. 속성은 여러 개일 수 있습니다.
+
+<div id="key">
+  ## 키
+</div>
+
+ClickHouse는 다음과 같은 키 타입을 지원합니다:
+
+* 숫자 키. `UInt64`입니다. `<id>` 태그 또는 `PRIMARY KEY` 키워드로 정의합니다.
+* 복합 키. 서로 다른 타입의 값 집합입니다. `<key>` 태그 또는 `PRIMARY KEY` 키워드로 정의합니다.
+
+XML 구조에는 `<id>` 또는 `<key>` 중 하나만 포함할 수 있습니다. DDL 쿼리에는 `PRIMARY KEY`를 하나만 포함해야 합니다.
+
+<Note>
+  키를 속성으로 설명해서는 안 됩니다.
+</Note>
+
+<div id="numeric-key">
+  ### 숫자 키
+</div>
+
+유형: `UInt64`.
+
+구성 예시:
+
+```xml
+<id>
+    <name>Id</name>
+</id>
+```
+
+구성 필드:
+
+* `name` – 키가 포함된 컬럼의 이름입니다.
+
+DDL 쿼리의 경우:
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+* `PRIMARY KEY` – 키를 포함하는 컬럼의 이름입니다.
+
+<div id="composite-key">
+  ### 복합 키
+</div>
+
+키는 어떤 타입의 필드로 구성된 `tuple`일 수 있습니다. 이 경우 [레이아웃](/ko/reference/statements/create/dictionary/layouts/overview)은 `complex_key_hashed` 또는 `complex_key_cache`여야 합니다.
+
+<Tip>
+  복합 키는 단일 요소로만 구성될 수도 있습니다. 예를 들어 문자열을 키로 사용할 수 있습니다.
+</Tip>
+
+키 구조는 `<key>` 요소에서 설정합니다. 키 필드는 딕셔너리 [속성](#attributes)과 동일한 형식으로 지정합니다. 예시:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>field1</name>
+            <type>String</type>
+        </attribute>
+        <attribute>
+            <name>field2</name>
+            <type>UInt32</type>
+        </attribute>
+        ...
+    </key>
+...
+```
+
+or
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 UInt32
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
+`dictGet*` 함수에 대한 쿼리에서는 키로 튜플을 전달합니다. 예시: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+
+<div id="attributes">
+  ## 속성
+</div>
+
+구성 예시:
+
+```xml
+<structure>
+    ...
+    <attribute>
+        <name>Name</name>
+        <type>ClickHouseDataType</type>
+        <null_value></null_value>
+        <expression>rand64()</expression>
+        <hierarchical>true</hierarchical>
+        <injective>true</injective>
+        <is_object_id>true</is_object_id>
+    </attribute>
+</structure>
+```
+
+OR
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
+구성 항목:
+
+| 태그                                                 | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 필수  |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| `name`                                             | 컬럼 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 예   |
+| `type`                                             | ClickHouse 데이터 타입: [UInt8](/ko/reference/data-types/int-uint), [UInt16](/ko/reference/data-types/int-uint), [UInt32](/ko/reference/data-types/int-uint), [UInt64](/ko/reference/data-types/int-uint), [Int8](/ko/reference/data-types/int-uint), [Int16](/ko/reference/data-types/int-uint), [Int32](/ko/reference/data-types/int-uint), [Int64](/ko/reference/data-types/int-uint), [Float32](/ko/reference/data-types/float), [Float64](/ko/reference/data-types/float), [UUID](/ko/reference/data-types/uuid), [Decimal32](/ko/reference/data-types/decimal), [Decimal64](/ko/reference/data-types/decimal), [Decimal128](/ko/reference/data-types/decimal), [Decimal256](/ko/reference/data-types/decimal),[Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64), [String](/ko/reference/data-types/string), [배열](/ko/reference/data-types/array).<br />ClickHouse는 딕셔너리의 값을 지정된 데이터 타입으로 변환하려고 시도합니다. 예를 들어 MySQL 원본 테이블에서 필드가 `TEXT`, `VARCHAR`, 또는 `BLOB`일 수 있지만, ClickHouse에서는 `String`으로 적재할 수 있습니다.<br />현재 [널 허용](/ko/reference/data-types/nullable)은 [Flat](/ko/reference/statements/create/dictionary/layouts/flat), [Hashed](/ko/reference/statements/create/dictionary/layouts/hashed), [ComplexKeyHashed](/ko/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed), [Direct](/ko/reference/statements/create/dictionary/layouts/direct), [ComplexKeyDirect](/ko/reference/statements/create/dictionary/layouts/direct#complex_key_direct), [RangeHashed](/ko/reference/statements/create/dictionary/layouts/range-hashed), Polygon, [Cache](/ko/reference/statements/create/dictionary/layouts/cache), [ComplexKeyCache](/ko/reference/statements/create/dictionary/layouts/cache), [SSDCache](/ko/reference/statements/create/dictionary/layouts/ssd-cache), [SSDComplexKeyCache](/ko/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache) 딕셔너리에서 지원됩니다. [IPTrie](/ko/reference/statements/create/dictionary/layouts/ip-trie) 딕셔너리에서는 `Nullable` 타입을 지원하지 않습니다. | 예   |
+| `null_value`                                       | 존재하지 않는 요소의 기본값입니다.<br />예시에서는 빈 문자열입니다. [NULL](/ko/reference/syntax#null) 값은 `Nullable` 타입에서만 사용할 수 있습니다(타입 설명이 있는 이전 줄 참조).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 예   |
+| `expression`                                       | ClickHouse가 값에 대해 실행하는 [표현식](/ko/reference/syntax#expressions)입니다.<br />이 표현식은 원격 SQL 데이터베이스의 컬럼 이름일 수 있습니다. 따라서 이를 사용해 원격 컬럼의 별칭을 만들 수 있습니다.<br /><br />기본값: 표현식 없음.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 아니요 |
+| <a name="hierarchical-dict-attr" /> `hierarchical` | `true`이면 이 속성에는 현재 키의 상위 키 값이 포함됩니다. [계층형 딕셔너리](/ko/reference/statements/create/dictionary/layouts/hierarchical)를 참조하십시오.<br /><br />기본값: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 아니요 |
+| `injective`                                        | `id -> attribute` 매핑이 [단사](https://en.wikipedia.org/wiki/Injective_function)인지 여부를 나타내는 플래그입니다.<br />`true`이면 ClickHouse는 단사 속성이 있는 딕셔너리에 대한 요청을 `GROUP BY` 절 뒤로 자동 배치할 수 있습니다. 일반적으로 이렇게 하면 이러한 요청 수를 크게 줄일 수 있습니다.<br /><br />기본값: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 아니요 |
+| `is_object_id`                                     | 쿼리가 `ObjectID`를 사용해 MongoDB 문서에 대해 실행되는지 여부를 나타내는 플래그입니다.<br /><br />기본값: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |     |

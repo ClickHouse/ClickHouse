@@ -1,0 +1,266 @@
+---
+description: 'Guía sobre autenticación basada en JWT y usuarios efímeros en ClickHouse Cloud'
+sidebarTitle: 'JWT'
+slug: /operations/external-authenticators/jwt
+title: 'Autenticación con JWT'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+ClickHouse puede autenticar usuarios mediante JSON Web Tokens (JWT). A diferencia de otros autenticadores externos, como [LDAP](/es/concepts/features/security/external-authenticators/ldap) o [Kerberos](/es/concepts/features/security/external-authenticators/kerberos), la autenticación con JWT no verifica la identidad de usuarios preexistentes. En su lugar, crea dinámicamente **usuarios efímeros** a partir de los claims incluidos en cada token. Estos usuarios existen solo en memoria, reciben permisos de acceso derivados de los claims del token y se eliminan automáticamente cuando el token expira.
+
+Esto hace que la autenticación con JWT sea fundamentalmente distinta de los métodos basados en contraseñas o certificados: no existe ninguna sentencia `CREATE USER ... IDENTIFIED WITH jwt`, e intentar hacerlo genera una excepción. Los usuarios JWT se gestionan por completo a través del ciclo de vida del token.
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+El flujo de autenticación funciona de la siguiente manera:
+
+1. Un cliente presenta un JWT firmado a través de uno de los mecanismos de transporte compatibles (el encabezado HTTP `Authorization: Bearer`, el protocolo nativo TCP o el campo `jwt` de gRPC).
+2. ClickHouse valida la firma del token.
+3. Se verifican las claims obligatorias (`exp`, `iat`, `iss`, `sub`, `aud`).
+4. Se crea en memoria un usuario efímero con derechos de acceso derivados de las claims del token `clickhouse:grants` y `clickhouse:roles`, acotados por un límite de permisos.
+5. Cuando el token caduca, una tarea de recolección de basura en segundo plano elimina al usuario.
+
+<div id="token-claims">
+  ## Claims del token
+</div>
+
+<div id="required-claims">
+  ### Claims obligatorios
+</div>
+
+Todo JWT presentado a ClickHouse debe contener los siguientes claims:
+
+| Claim | Descripción                                                                                          |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| `alg` | Algoritmo de firma (claim del encabezado). Valores admitidos: `HS256`, `RS256`, `ES256`.             |
+| `exp` | Hora de expiración. Establece el `valid_until` del usuario efímero.                                  |
+| `iat` | Hora de emisión. Se usa para evitar la reutilización de tokens más antiguos para la misma identidad. |
+| `iss` | Emisor. Se compara con el emisor esperado del proveedor.                                             |
+| `sub` | Sujeto. Pasa a formar parte del nombre de usuario generado.                                          |
+| `aud` | Audiencia. Se compara con la audiencia esperada del proveedor.                                        |
+
+El claim `kid` (ID de clave) del encabezado también es obligatorio cuando se usa la resolución de claves basada en JWKS.
+
+<Info>
+  **El modo JWKS solo admite claves RSA**
+
+  Mientras que los proveedores con clave estática aceptan `HS256`, `RS256` o `ES256`, los proveedores basados en JWKS solo aceptan JWK cuyo `kty` sea `RSA` (es decir, tokens firmados con `RS256`). Los tokens firmados con claves HMAC (`HS256`) o EC (`ES256`) no pueden verificarse con un endpoint de JWKS y se rechazarán.
+</Info>
+
+<div id="other-recognized-claims">
+  ### Otros claims reconocidos
+</div>
+
+| Claim | Descripción                                                                                                            |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- |
+| `nbf` | Hora de “no antes de”. Este claim no es obligatorio, pero, si está presente, los tokens se rechazan antes de esa hora. |
+| `jti` | Reservado. Se acepta en los tokens, pero actualmente no se valida ni se usa.                                           |
+
+<div id="optional-claims">
+  ### Claims opcionales
+</div>
+
+| Claim                                                                                                                                                                         | Nombre predeterminado | Descripción                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Permisos                                                                                                                                                                      | `clickhouse:grants`   | Un array JSON de fragmentos SQL de `GRANT`, por ejemplo `["SELECT ON db.*", "INSERT ON db.table1"]`. Cada elemento se interpreta como el cuerpo de una sentencia `GRANT`. |
+| Roles                                                                                                                                                                         | `clickhouse:roles`    | Un array JSON de nombres de roles para asignar, por ejemplo `["analyst", "reader"]`.                                                                                      |
+| Los nombres predeterminados de los claims pueden reasignarse a nombres de claims personalizados si su proveedor de identidad utiliza convenciones de nomenclatura diferentes. |                       |                                                                                                                                                                           |
+
+<div id="example-token-header-and-payload">
+  ### Ejemplo de encabezado y carga útil de un token
+</div>
+
+```json
+{
+  "alg": "RS256",
+  "kid": "my-key-id"
+}
+```
+
+```json
+{
+  "iss": "https://idp.example.com",
+  "sub": "jane.doe",
+  "aud": "my-clickhouse-cluster",
+  "exp": 1719504000,
+  "iat": 1719500400,
+  "clickhouse:grants": ["SELECT ON analytics.*", "INSERT ON analytics.events"],
+  "clickhouse:roles": ["analyst"]
+}
+```
+
+<div id="ephemeral-user-behavior">
+  ## Comportamiento de los usuarios efímeros
+</div>
+
+Los usuarios JWT se diferencian de los usuarios habituales de ClickHouse en varios aspectos importantes.
+
+<div id="identity-and-naming">
+  ### Identidad y nombres
+</div>
+
+Cada usuario de JWT recibe un UUID determinista calculado a partir de las claims `iss`, `sub` y `aud`. Este UUID es **estable** entre inicios de sesión. Un usuario que inicia sesión varias veces con distintos tokens (pero con el mismo emisor, sujeto y audiencia) siempre obtiene el mismo UUID.
+
+Sin embargo, el nombre de usuario es **volátil**. Se construye así:
+
+```text
+JWT::<issuer>::<audience>::<subject>::<claims_hash>
+```
+
+La parte `<claims_hash>` cambia cada vez que cambian las claims `clickhouse:roles` o `clickhouse:grants`. Esto significa que los tokens con distintos conjuntos de roles o permisos generan nombres de usuario diferentes incluso para la misma identidad.
+
+<div id="access-rights">
+  ### Permisos de acceso
+</div>
+
+Los permisos de acceso efectivos se calculan así:
+
+```text
+effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
+```
+
+donde `permission_limit` es el conjunto de derechos de acceso de un rol o usuario de referencia configurado como límite superior. Los derechos solicitados por el token que superen ese límite se descartan silenciosamente.
+
+<div id="token-freshness">
+  ### Vigencia del token
+</div>
+
+ClickHouse registra la claim `iat` (issued-at) del token autenticado más reciente para cada identidad estable. Si se presenta un token con un `iat` igual o anterior al valor almacenado, el server reutiliza el usuario efímero existente sin volver a evaluar las claims. Esto evita que tokens más antiguos reduzcan los permisos de un usuario.
+
+<div id="lifetime-and-garbage-collection">
+  ### Tiempo de vida y recolección de basura
+</div>
+
+Los usuarios efímeros se crean cuando un token se autentica por primera vez y una tarea de recolección de basura en segundo plano los elimina una vez transcurrido `valid_until` (derivado de `exp`). El intervalo de GC se controla mediante el parámetro `gc_interval` (valor predeterminado: 5 minutos).
+
+Entre una ejecución de GC y la siguiente, es posible que los usuarios expirados sigan apareciendo en `system.users`, pero ya no podrán autenticarse.
+
+<div id="persistent-access-assignments">
+  ### Asignaciones persistentes de acceso
+</div>
+
+Como el UUID es estable, puede asignar perfiles de configuración, cuotas, políticas de fila y políticas de enmascaramiento de columnas a un usuario JWT mediante sentencias SQL. Estas asignaciones se conservan en el almacenamiento de control de acceso (en disco o en ZooKeeper) y persisten tras el vencimiento del token y la nueva autenticación.
+
+Haga referencia al usuario mediante su nombre de usuario actual:
+
+```sql
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+```
+
+<Note>
+  El nombre de usuario y el UUID de una identidad determinada pueden encontrarse en las columnas `name` e `id` de `system.users` mientras el usuario esté activo.
+</Note>
+
+Ten en cuenta que `ALTER USER` no funciona directamente con los usuarios JWT, ya que son de solo lectura. Para asignar perfiles de configuración, quotas o políticas, usa las sentencias `ALTER SETTINGS PROFILE`, `ALTER QUOTA` o `ALTER ROW POLICY`, como se muestra arriba.
+
+<div id="differences-from-regular-users">
+  ## Diferencias con los usuarios normales
+</div>
+
+| Característica                        | Usuarios JWT                                                           | Usuarios normales                                 |
+| ------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
+| Creación                              | Automática a partir de los claims del token                            | Sentencia `CREATE USER`                           |
+| Almacenamiento                        | Solo en memoria (efímero)                                              | Disco, ZooKeeper o archivo de configuración       |
+| `CREATE USER ... IDENTIFIED WITH jwt` | No admitido (genera una excepción)                                     | Se admiten todos los demás tipos de autenticación |
+| `ALTER USER` / `DROP USER`            | No admitido                                                            | Admitido                                          |
+| Copia de seguridad y restauración     | No incluidas                                                           | Incluidas                                         |
+| Nombre de usuario                     | Generado automáticamente, volátil                                      | Elegido por el administrador, fijo                |
+| UUID                                  | Determinista a partir de `iss`+`sub`+`aud`                             | Aleatorio en el momento de la creación            |
+| Tiempo de vida                        | Limitado por `exp` del token                                           | Hasta que se elimine explícitamente               |
+| Derechos de acceso                    | Derivados de los claims del token, limitados por el límite de permisos | Concedidos explícitamente mediante `GRANT`        |
+| Restricciones de host                 | Configuración de red por proveedor                                     | Cláusula `HOST` por usuario                       |
+| Perfiles de configuración             | Asignables por UUID (persistentes)                                     | Configurables directamente                        |
+| Cuotas y políticas de fila            | Asignables por UUID (persistentes)                                     | Configurables directamente                        |
+| Roles predeterminados                 | No configurables                                                       | Configurables                                     |
+
+<div id="sql-security-definer-views">
+  ## Vistas con SQL SECURITY DEFINER
+</div>
+
+Cuando un usuario JWT efímero crea una vista con `SQL SECURITY DEFINER`, el servidor crea automáticamente una copia persistente de sombra del usuario para que actúe como definidor de la vista. Este usuario de sombra:
+
+* Tiene el nombre `<original_jwt_username>:definer`
+* Tiene `NO_AUTHENTICATION` (no se puede usar para iniciar sesión)
+* Conserva los mismos derechos de acceso que el usuario JWT original en el momento en que se creó la vista
+
+Esto garantiza que la vista siga funcionando después de que expire el token del usuario efímero y de que el usuario original sea eliminado automáticamente.
+
+<div id="client-usage">
+  ## Uso del cliente
+</div>
+
+<div id="passing-token-directly">
+  ### Pasar un token directamente
+</div>
+
+Use la opción `--jwt` con `clickhouse-client` para autenticarse con un token obtenido previamente:
+
+```bash
+clickhouse-client --host your-instance.clickhouse.cloud --secure --jwt '<your_jwt_token>'
+```
+
+<Note>
+  La opción `--jwt` es mutuamente excluyente con `--user`. Cuando se especifica `--jwt`, el nombre de usuario se obtiene a partir del token.
+</Note>
+
+<div id="http-interface">
+  ### Interfaz HTTP
+</div>
+
+Envía el token como token Bearer en la cabecera `Authorization`:
+
+```bash
+curl -H 'Authorization: Bearer <your_jwt_token>' \
+    'https://your-instance.clickhouse.cloud:8443/?query=SELECT+currentUser()'
+```
+
+<Warning>
+  Envíe siempre los JWT a través de HTTPS. Un token Bearer enviado por HTTP sin cifrar queda expuesto a cualquiera que esté en la ruta de red y equivale a comprometer la credencial.
+</Warning>
+
+<div id="oauth2-device-code-login">
+  ### Inicio de sesión con código de dispositivo de OAuth2
+</div>
+
+`clickhouse-client` admite un flujo interactivo de código de dispositivo de OAuth2 mediante la opción `--login`. En los endpoints de ClickHouse Cloud, el cliente realiza automáticamente el intercambio de tokens para obtener un JWT específico de ClickHouse. Los tokens se renuevan de forma transparente durante la sesión. Cuando se obtiene un token nuevo, el cliente se reconecta automáticamente.
+
+```bash
+clickhouse-client --host your-instance.clickhouse.cloud --login
+```
+
+<div id="clickhouse-cloud-built-in">
+  ## Autenticador JWT integrado de ClickHouse Cloud
+</div>
+
+Cada servicio de ClickHouse Cloud incluye un autenticador JWT predefinido que usan SQL Console y el flujo `--login` de `clickhouse-client`. Este autenticador está configurado con:
+
+| Parámetro        | Valor                                                               |
+| ---------------- | ------------------------------------------------------------------- |
+| `iss` (emisor)   | `ClickHouse`                                                        |
+| `aud` (audiencia) | El UUID del servicio (visible en la URL de la consola de Cloud)     |
+| `sub` (subject)  | La dirección de correo electrónico de tu cuenta de ClickHouse Cloud |
+
+El autenticador integrado tiene como límite de permisos el rol `default_role` y el usuario `default`. Esto significa que los permisos efectivos de cualquier usuario JWT quedan limitados a la intersección de los grants de esas dos entidades, por lo que un token nunca puede elevar privilegios más allá de lo que `default_role` y `default` tienen permitido hacer.
+
+No necesitas configurar nada para usar este autenticador. Se aprovisiona automáticamente cuando se crea el servicio.
+
+<div id="interserver-communication">
+  ## Comunicación entre servidores
+</div>
+
+Cuando una consulta se reenvía a otro segmento o réplica, el token JWT se incluye en el protocolo interservidor. El nodo remoto vuelve a autenticar el token de forma independiente, creando su propio usuario efímero.
+
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
+
+* **No se han concedido permisos de acceso:** Es posible que el rol o usuario al que se hace referencia no tenga los grants necesarios. Asegúrese de que los roles mencionados en `clickhouse:roles` existan e incluyan los grants adecuados.
+* **Token rechazado:** Verifique que `iss`, `aud` y el algoritmo de firma de su token coincidan con lo que espera el proveedor de JWT. Si se usa JWKS, asegúrese de que el `kid` del token coincida con una clave del conjunto de claves del proveedor.
+* **El usuario desaparece entre consultas:** Los usuarios efímeros se eliminan cuando vence el token. Use un cliente que admita la renovación del token (por ejemplo, el modo `--login`) para sesiones de larga duración.
+* **`CREATE USER ... IDENTIFIED WITH jwt` falla:** Esto es normal. Los usuarios JWT no pueden crearse mediante DDL. Su gestión depende por completo del ciclo de vida del token.

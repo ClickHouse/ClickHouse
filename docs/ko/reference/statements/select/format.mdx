@@ -1,0 +1,23 @@
+---
+description: 'FORMAT 절에 대한 문서'
+sidebarTitle: 'FORMAT'
+slug: /sql-reference/statements/select/format
+title: 'FORMAT 절'
+doc_type: '참고'
+---
+
+ClickHouse는 [직렬화 포맷](/ko/reference/formats/index)을 폭넓게 지원하며, 이러한 포맷은 무엇보다 쿼리 결과에 사용할 수 있습니다. `SELECT` 출력 포맷을 선택하는 방법은 여러 가지가 있으며, 그중 하나는 쿼리 끝에 `FORMAT format`을 지정해 결과 데이터를 특정 포맷으로 받는 것입니다.
+
+특정 포맷은 편의성을 높이거나, 다른 시스템과 통합하거나, 성능을 향상시키기 위해 사용할 수 있습니다.
+
+<div id="default-format">
+  ## 기본 포맷
+</div>
+
+`FORMAT` 절을 생략하면 기본 포맷이 사용됩니다. 이 기본 포맷은 설정과 ClickHouse 서버에 액세스하는 데 사용하는 인터페이스에 따라 달라집니다. [HTTP 인터페이스](/ko/concepts/features/interfaces/http)와 배치 모드의 [command-line client](/ko/concepts/features/interfaces/client)에서는 기본 포맷이 `TabSeparated`입니다. 대화형 모드의 command-line client에서는 기본 포맷이 `PrettyCompact`입니다(사람이 읽기 쉬운 간결한 테이블을 출력합니다).
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+command-line client를 사용할 때 데이터는 항상 내부의 효율적인 포맷(`Native`)으로 네트워크를 통해 전송됩니다. 클라이언트는 쿼리의 `FORMAT` 절을 자체적으로 해석하고 데이터를 직접 포맷하므로, 네트워크와 server의 추가 부하를 줄일 수 있습니다.

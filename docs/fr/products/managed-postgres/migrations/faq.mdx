@@ -1,0 +1,54 @@
+---
+slug: /cloud/managed-postgres/migrations/faq
+sidebarTitle: 'FAQ'
+title: 'FAQ sur les migrations vers Managed Postgres'
+description: 'Questions fréquemment posées sur la migration des données vers ClickHouse Managed Postgres.'
+keywords: ['postgres', 'migration', 'FAQ', 'managed postgres', 'réplication logique', 'enum', 'contrainte d''unicité']
+doc_type: 'référence'
+---
+
+import PrivatePreviewBadge from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
+
+De nombreuses questions sur le fonctionnement de la réplication de Postgres — notamment concernant les colonnes `TOAST`, les slots de réplication, les publications, les changements de schéma et les correspondances de types de données — sont abordées dans la [FAQ ClickPipes for Postgres](/fr/integrations/clickpipes/postgres/faq). Les informations qui y figurent s’appliquent également aux migrations vers Managed Postgres.
+
+<div id="invalid-enum-value">
+  ### Je rencontre une erreur &quot;invalid input value for enum&quot; pendant la réplication
+</div>
+
+Cette erreur se produit lorsque le Postgres source contient une valeur enum qui n&#39;existe pas dans le Managed Postgres cible. La réplication logique ne propage pas automatiquement les commandes `ALTER TYPE ... ADD VALUE` ; par conséquent, les nouvelles valeurs enum ajoutées à la source après la configuration initiale du schéma entraîneront l&#39;échec des insertions sur la cible.
+
+Pour corriger ce problème, ajoutez la valeur manquante au type enum sur le Postgres cible :
+
+```sql
+ALTER TYPE your_enum_type ADD VALUE 'new_value';
+```
+
+Remplacez `your_enum_type` par le nom de votre type enum et `'new_value'` par la valeur manquante indiquée dans le message d’erreur.
+
+<div id="unique-constraint-violation">
+  ### Je rencontre une erreur de violation de contrainte d’unicité pendant la réplication
+</div>
+
+Des violations de contrainte d’unicité peuvent se produire lors de la réplication logique lorsque l’ordre de réplication provoque un conflit avec une contrainte d’unicité existante sur la cible. Cela peut se produire dans des workloads CDC impliquant la relecture d’opérations qui violent temporairement l’unicité avant qu’une mise à jour ultérieure ne corrige le problème.
+
+Pour débloquer la réplication, supprimez la contrainte d’unicité sur le Postgres cible :
+
+```sql
+ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+```
+
+Vous pouvez trouver le nom de la contrainte en exécutant :
+
+```sql
+SELECT conname, conrelid::regclass
+FROM pg_constraint
+WHERE contype = 'u';
+```
+
+Rétablissez la contrainte lors du basculement, une fois la réplication terminée et la source inactive :
+
+```sql
+ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+```

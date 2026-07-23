@@ -1,0 +1,30 @@
+---
+sidebarTitle: '백업 일정 설정'
+slug: /cloud/manage/backups/configurable-backups
+description: '백업 설정 방법을 안내하는 가이드'
+title: '백업 일정 설정'
+keywords: ['백업', 'Cloud 백업', '복원']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="구성 가능한 백업" linking_verb_are="True" />
+
+서비스의 백업 일정을 구성하려면 콘솔의 **설정** 탭으로 이동한 다음 **백업 구성 변경**을 클릭하십시오.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="백업 설정 구성" border />
+
+그러면 오른쪽에 탭이 열리며, 여기에서 보존 기간, 빈도, 시작 시간 값을 선택할 수 있습니다. 선택한 설정을 적용하려면 저장해야 합니다.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="백업 보존 기간 및 빈도 선택" border />
+
+<Note>
+  시작 시간과 빈도는 함께 사용할 수 없습니다. 시작 시간이 우선 적용됩니다.
+</Note>
+
+<Note>
+  백업 일정을 변경하면 일부 백업이 서비스의 기본 백업에 포함되지 않을 수 있으므로 스토리지의 월별 요금이 더 높아질 수 있습니다. [&quot;백업 비용 이해하기&quot;](/ko/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost)를 참조하십시오.
+</Note>

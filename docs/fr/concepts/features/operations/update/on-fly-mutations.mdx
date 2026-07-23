@@ -1,0 +1,103 @@
+---
+slug: /guides/developer/on-the-fly-mutations
+sidebarTitle: 'Mutation à la volée'
+title: 'Mutations à la volée'
+keywords: ['Mutation à la volée']
+description: 'Décrit les mutations à la volée'
+doc_type: 'guide'
+---
+
+<div id="on-the-fly-mutations">
+  ## Mutations à la volée
+</div>
+
+Lorsque les mutations à la volée sont activées, les lignes mises à jour sont immédiatement marquées comme telles, et les requêtes `SELECT` suivantes renvoient automatiquement les valeurs modifiées. Lorsque les mutations à la volée ne sont pas activées, vous devrez peut-être attendre que vos mutations soient appliquées par un processus en arrière-plan pour voir les valeurs modifiées.
+
+Les mutations à la volée peuvent être activées pour les tables de la famille `MergeTree` en activant le paramètre de requête `apply_mutations_on_fly`.
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<div id="example">
+  ## Exemple
+</div>
+
+Créons une table et exécutons quelques mutations :
+
+```sql
+CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+ENGINE = MergeTree ORDER BY id;
+
+-- Disable background materialization of mutations to showcase
+-- default behavior when on-the-fly mutations are not enabled
+SYSTEM STOP MERGES test_on_fly_mutations;
+SET mutations_sync = 0;
+
+-- Insert some rows in our new table
+INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+-- Update the values of the rows
+ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+```
+
+Vérifions le résultat des mises à jour à l’aide d’une requête `SELECT` :
+
+```sql
+-- Explicitly disable on-the-fly-mutations
+SET apply_mutations_on_fly = 0;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+Notez que les valeurs des lignes n’ont pas encore été mises à jour au moment où nous interrogeons la nouvelle table :
+
+```response
+┌─id─┬─v─┐
+│  1 │ a │
+│  2 │ b │
+│  3 │ c │
+└────┴───┘
+```
+
+Voyons maintenant ce qui se passe lorsque nous activons les mutations à la volée :
+
+```sql
+-- Enable on-the-fly mutations
+SET apply_mutations_on_fly = 1;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+La requête `SELECT` renvoie désormais immédiatement le résultat correct, sans avoir à attendre que les mutations soient appliquées :
+
+```response
+┌─id─┬─v─┐
+│  3 │ c │
+└────┴───┘
+```
+
+<div id="performance-impact">
+  ## Impact sur les performances
+</div>
+
+Lorsque les mutations à la volée sont activées, les mutations ne sont pas matérialisées immédiatement, mais appliquées uniquement lors des requêtes `SELECT`. Notez toutefois qu’elles continuent d’être matérialisées de manière Asynchronous en arrière-plan, ce qui constitue un processus coûteux.
+
+Si le nombre de mutations soumises dépasse durablement, sur un certain intervalle de temps, le nombre de mutations traitées en arrière-plan, la queue des mutations non matérialisées à appliquer continuera de croître. Cela finira par dégrader les performances des requêtes `SELECT`.
+
+Nous recommandons d’activer le paramètre `apply_mutations_on_fly` avec d’autres paramètres au niveau de `MergeTree`, tels que `number_of_mutations_to_throw` et `number_of_mutations_to_delay`, afin de limiter la croissance infinie des mutations non matérialisées.
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ## Prise en charge des sous-requêtes et des fonctions non déterministes
+</div>
+
+Les mutations à la volée offrent une prise en charge limitée des sous-requêtes et des fonctions non déterministes. Seules les sous-requêtes scalaires dont le résultat est de taille raisonnable (contrôlée par le paramètre `mutations_max_literal_size_to_replace`) sont prises en charge. Seules les fonctions non déterministes constantes sont prises en charge (par exemple, la fonction `now()`).
+
+Ces comportements sont contrôlés par les paramètres suivants :
+
+* `mutations_execute_nondeterministic_on_initiator` - si true, les fonctions non déterministes sont exécutées sur la réplique initiatrice et remplacées par des littéraux dans les requêtes `UPDATE` et `DELETE`. Valeur par défaut : `false`.
+* `mutations_execute_subqueries_on_initiator` - si true, les sous-requêtes scalaires sont exécutées sur la réplique initiatrice et remplacées par des littéraux dans les requêtes `UPDATE` et `DELETE`. Valeur par défaut : `false`.
+* `mutations_max_literal_size_to_replace` - taille maximale, en octets, des littéraux sérialisés à remplacer dans les requêtes `UPDATE` et `DELETE`. Valeur par défaut : `16384` (16 KiB).

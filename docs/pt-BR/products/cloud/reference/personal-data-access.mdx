@@ -1,0 +1,73 @@
+---
+sidebarTitle: 'Acesso a dados pessoais'
+slug: /cloud/manage/personal-data-access
+title: 'Acesso a dados pessoais'
+description: 'Como usuário registrado, o ClickHouse permite que você visualize e gerencie os dados pessoais da sua conta, incluindo suas informações de contato.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'dados pessoais', 'DSAR', 'solicitação de acesso do titular dos dados', 'política de privacidade', 'GDPR']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="intro">
+  ## Introdução
+</div>
+
+Como usuário registrado, o ClickHouse permite que você visualize e gerencie os dados da sua conta, incluindo informações de contato. Dependendo da sua função, isso também pode incluir acesso às informações de contato de outros usuários da sua organização, detalhes de API keys e outras informações relevantes. Você pode gerenciar esses dados diretamente pelo console do ClickHouse, por conta própria.
+
+**O que é uma Solicitação de Acesso do Titular dos Dados (DSAR)**
+
+Dependendo de onde você estiver, a legislação aplicável também pode lhe conceder direitos adicionais em relação aos dados pessoais que o ClickHouse mantém sobre você (Direitos do Titular dos Dados), conforme descrito na Política de Privacidade do ClickHouse. O processo para exercer os Direitos do Titular dos Dados é conhecido como Solicitação de Acesso do Titular dos Dados (DSAR).
+
+**Escopo dos Dados Pessoais**
+
+Consulte a Política de Privacidade do ClickHouse para ver detalhes sobre os dados pessoais que o ClickHouse coleta e como eles podem ser usados.
+
+<div id="self-service">
+  ## Autosserviço
+</div>
+
+Por padrão, o ClickHouse permite que os usuários visualizem seus dados pessoais diretamente no Console do ClickHouse.
+
+Abaixo está um resumo dos dados que o ClickHouse coleta durante o cadastro da conta e o uso do serviço, juntamente com informações sobre onde dados pessoais específicos podem ser visualizados no Console do ClickHouse.
+
+| Local/URL                                                    | Descrição                                                       | Dados pessoais                  |
+| ------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------- |
+| https://auth.clickhouse.cloud/u/signup/                      | Cadastro da conta                                               | e-mail, senha                   |
+| https://console.clickhouse.cloud/profile                     | Detalhes gerais do perfil do usuário                            | nome, e-mail                    |
+| https://console.clickhouse.cloud/organizations/OrgID/members | Lista de usuários em uma organização                            | nome, e-mail                    |
+| https://console.clickhouse.cloud/organizations/OrgID/keys    | Lista de API keys e de quem as criou                            | e-mail                          |
+| https://console.clickhouse.cloud/organizations/OrgID/audit   | Log de atividades, com a lista de ações de usuários individuais | e-mail                          |
+| https://console.clickhouse.cloud/organizations/OrgID/billing | Informações de faturamento e faturas                            | endereço de faturamento, e-mail |
+| https://console.clickhouse.cloud/support                     | Interações com o suporte do ClickHouse                          | nome, e-mail                    |
+
+Observação: as URLs com `OrgID` precisam ser atualizadas para refletir o `OrgID` da sua conta específica.
+
+<div id="current-customers">
+  ### Clientes atuais
+</div>
+
+Se você tem uma conta conosco e a opção de autosserviço não resolveu seu problema relacionado a dados pessoais, pode enviar uma Solicitação de Acesso do Titular dos Dados nos termos da Política de Privacidade. Para isso, faça login na sua conta da ClickHouse e abra um [caso de suporte](https://console.clickhouse.cloud/support). Isso nos ajuda a verificar sua identidade e agilizar o processo de atendimento da sua solicitação.
+
+Certifique-se de incluir os seguintes detalhes no seu caso de suporte:
+
+| Campo     | Texto a incluir na sua solicitação                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------- |
+| Assunto   | Solicitação de Acesso do Titular dos Dados (DSAR)                                                             |
+| Descrição | Descrição detalhada das informações que você gostaria que a ClickHouse procurasse, coletasse e/ou fornecesse. |
+
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="Formulário de caso de suporte na ClickHouse Cloud" border />
+
+<div id="individuals-without-an-account">
+  ### Pessoas sem conta
+</div>
+
+Se você não tem uma conta conosco e a opção de autosserviço acima não resolveu sua questão relacionada a dados pessoais, mas deseja fazer uma solicitação de acesso do titular dos dados nos termos da Política de Privacidade, pode enviar esse tipo de solicitação por e-mail para [privacy@clickhouse.com](mailto:privacy@clickhouse.com).
+
+<div id="identity-verification">
+  ## Verificação de identidade
+</div>
+
+Caso você envie uma solicitação de acesso do titular dos dados por e-mail, poderemos solicitar informações específicas para confirmar sua identidade e processar sua solicitação. A legislação aplicável pode exigir ou permitir que recusemos sua solicitação. Se a recusarmos, informaremos o motivo, observadas as restrições legais.
+
+Para mais informações, consulte a [Política de Privacidade da ClickHouse](https://clickhouse.com/legal/privacy-policy)

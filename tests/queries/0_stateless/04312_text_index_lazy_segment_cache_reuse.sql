@@ -15,7 +15,6 @@
 -- would not pin the cache key and variant wiring that `prepareSegment` adds.
 
 SET enable_full_text_index = 1;
-SET allow_experimental_text_index_lazy_apply = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_postings_cache = 1;

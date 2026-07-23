@@ -1,0 +1,57 @@
+---
+description: 'امتداد لدالة الجدول hudi. يتيح معالجة الملفات من جداول Apache Hudi في Amazon S3
+  بالتوازي عبر العديد من العقد في عنقود محدد.'
+sidebarTitle: 'hudiCluster'
+slug: /sql-reference/table-functions/hudiCluster
+title: 'دالة الجدول hudiCluster'
+doc_type: 'reference'
+---
+
+هذا امتداد لدالة الجدول [hudi](/ar/reference/functions/table-functions/hudi).
+
+يتيح معالجة الملفات من جداول Apache [Hudi](https://hudi.apache.org/) في Amazon S3 بالتوازي عبر العديد من العقد في عنقود محدد. على العقدة المُبادِرة، يُنشئ اتصالًا بجميع العقد في العنقود ويوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يطلب من العقدة المُبادِرة المهمة التالية لمعالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
+
+<div id="syntax">
+  ## الصياغة
+</div>
+
+```sql
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+| Argument                                     | Description                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`                               | اسم عنقود يُستخدم لبناء مجموعة من العناوين ومعاملات الاتصال بالخوادم البعيدة والمحلية.                                                                                                                                                                                                                                                |
+| `url`                                        | Bucket URL يتضمن المسار إلى Hudi table موجود في S3.                                                                                                                                                                                                                                                                                            |
+| `aws_access_key_id`, `aws_secret_access_key` | بيانات اعتماد طويلة الأمد لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها لمصادقة طلباتك. هذه المعاملات اختيارية. إذا لم يتم تحديد بيانات الاعتماد، فستُستخدم من إعدادات ClickHouse. لمزيد من المعلومات، راجع [Using S3 for Data Storage](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
+| `format`                                     | [format](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                               |
+| `structure`                                  | بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                           |
+| `compression`                                | هذه المعلمة اختيارية. القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. بشكل افتراضي، سيُكتشف الضغط تلقائيًا من امتداد الملف.                                                                                                                                                                                             |
+| `extra_credentials`                          | هذه المعلمة اختيارية. تُستخدم لتمرير `role_arn` من أجل role-based access في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.                                                                                                                                      |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+جدول ذو البنية المحددة لقراءة البيانات من العنقود في جدول Hudi المحدد على S3.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+* `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، تكون القيمة `NULL`.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك Hudi](/ar/reference/engines/table-engines/integrations/hudi)
+* [دالة الجدول Hudi](/ar/reference/functions/table-functions/hudi)

@@ -425,7 +425,7 @@ std::span<uint8_t> WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
     auto * data = WasmEdge_MemoryInstanceGetPointer(memory_ctx, ptr, size);
     if (data == nullptr)
     {
-        uint32_t total_memory = WasmEdge_MemoryInstanceGetPageSize(memory_ctx) * WASMEDGE_PAGE_SIZE;
+        uint64_t total_memory = WasmEdge_MemoryInstanceGetPageSize(memory_ctx) * WASMEDGE_PAGE_SIZE;
         throw Exception(
             ErrorCodes::WASM_ERROR, "Cannot get memory at offset {} and size {} from wasm module with size {}", ptr, size, total_memory);
     }

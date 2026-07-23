@@ -1,0 +1,125 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-committed-contract
+title: 'عقد الالتزام في Azure Marketplace'
+description: 'اشترك في ClickHouse Cloud عبر Azure Marketplace (عقد التزام)'
+keywords: ['Microsoft', 'Azure', 'Azure Marketplace', 'الفوترة', 'الالتزام', 'عقد التزام']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+ابدأ باستخدام ClickHouse Cloud على [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) من خلال عقد التزام. ويتيح عقد الالتزام هذا، المعروف أيضًا باسم عرض خاص، للعملاء الالتزام بإنفاق مبلغ معيّن على ClickHouse Cloud خلال فترة زمنية محددة.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* عرض خاص من ClickHouse يستند إلى شروط تعاقدية محددة.
+
+<div id="steps-to-sign-up">
+  ## خطوات التسجيل
+</div>
+
+1. يُفترض أنك تلقيت رسالة بريد إلكتروني تحتوي على رابط لمراجعة العرض الخاص وقبوله.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp" size="md" alt="رسالة بريد إلكتروني للعرض الخاص في Azure Marketplace" border />
+
+<br />
+
+2. انقر على رابط **مراجعة العرض الخاص** في رسالة البريد الإلكتروني. من المفترض أن ينقلك ذلك إلى صفحة Azure Marketplace الخاصة بك التي تعرض تفاصيل العرض الخاص.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp" size="md" alt="تفاصيل العرض الخاص في Azure Marketplace" border />
+
+<br />
+
+3. بمجرد قبول العرض، سيتم نقلك إلى شاشة **إدارة العرض الخاص**. قد يستغرق Azure بعض الوقت لتجهيز العرض للشراء.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-3.webp" size="md" alt="صفحة إدارة العرض الخاص في Azure Marketplace" border />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp" size="md" alt="جارٍ تحميل صفحة إدارة العرض الخاص في Azure Marketplace" border />
+
+<br />
+
+4. بعد بضع دقائق، حدّث الصفحة. من المفترض أن يصبح العرض جاهزًا لـ **Purchase**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp" size="md" alt="صفحة إدارة العرض الخاص في Azure Marketplace مع تفعيل الشراء" border />
+
+<br />
+
+5. انقر على **Purchase** — ستظهر لوحة flyout. أكمل ما يلي:
+
+<br />
+
+* الاشتراك ومجموعة الموارد
+* أدخل اسمًا لاشتراك SaaS
+* اختر خطة الفوترة التي لديك عرض خاص لها. فقط المدة التي أُنشئ العرض الخاص لها (على سبيل المثال، سنة واحدة) سيظهر لها مبلغ. أما خيارات مدة الفوترة الأخرى فستظهر بمبالغ قدرها 0 دولار.
+* اختر ما إذا كنت تريد فوترة متكررة أم لا. إذا لم يتم تحديد الفوترة المتكررة، فسينتهي العقد في نهاية فترة الفوترة وستُوضع الموارد في حالة إيقاف الخدمة.
+* انقر على **Review + subscribe**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-6.webp" size="md" alt="نموذج الاشتراك في Azure Marketplace" border />
+
+<br />
+
+6. في الشاشة التالية، راجع جميع التفاصيل ثم اضغط على **Subscribe**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-7.webp" size="md" alt="تأكيد الاشتراك في Azure Marketplace" border />
+
+<br />
+
+7. في الشاشة التالية، سترى **Your SaaS subscription in progress**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp" size="md" alt="صفحة إرسال الاشتراك في Azure Marketplace" border />
+
+<br />
+
+8. عندما يصبح كل شيء جاهزًا، يمكنك النقر على **Configure account now**. لاحظ أن هذه خطوة بالغة الأهمية تربط اشتراك Azure بمؤسسة في ClickHouse Cloud خاصة بحسابك. من دون هذه الخطوة، لن يكتمل اشتراك Marketplace الخاص بك.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-9.webp" size="md" alt="زر Configure account now في Azure Marketplace" border />
+
+<br />
+
+9. ستتم إعادة توجيهك إلى صفحة التسجيل أو تسجيل الدخول في ClickHouse Cloud. يمكنك إما التسجيل باستخدام حساب جديد أو تسجيل الدخول باستخدام حساب موجود. بعد تسجيل الدخول، سيتم إنشاء مؤسسة جديدة جاهزة للاستخدام وللفوترة عبر Azure Marketplace.
+
+10. ستحتاج إلى الإجابة عن بعض الأسئلة — مثل تفاصيل العنوان والشركة — قبل أن تتمكن من المتابعة.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+
+<br />
+
+11. بمجرد الضغط على **Complete sign up**، سيتم نقلك إلى مؤسستك داخل ClickHouse Cloud حيث يمكنك عرض شاشة الفوترة للتأكد من أن الفوترة تتم عبر Azure Marketplace، كما يمكنك إنشاء الخدمات.
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="sm" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+
+<br />
+
+إذا واجهت أي مشكلات، فلا تتردد في التواصل مع [فريق الدعم لدينا](https://clickhouse.com/support/program).

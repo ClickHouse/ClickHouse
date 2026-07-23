@@ -1,0 +1,844 @@
+---
+slug: /use-cases/observability/clickstack/materialized_views
+title: 'ClickStack - vues matérialisées'
+sidebarTitle: 'Vues matérialisées'
+description: 'Optimisation des performances de ClickStack à l’aide de vues matérialisées'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'vues matérialisées', 'performances', 'optimisation', 'visualisations', 'agrégations']
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge />
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+ClickStack peut tirer parti des [vues matérialisées incrémentielles (IMV)](/fr/concepts/features/materialized-views/incremental-materialized-view) pour accélérer les visualisations qui reposent sur des requêtes à agrégation intensive, comme le calcul de la durée moyenne des requêtes par minute au fil du temps. Cette fonctionnalité peut considérablement améliorer les performances des requêtes et s’avère généralement surtout utile pour les déploiements de plus grande envergure, à partir d’environ 10 To par jour, tout en permettant une mise à l’échelle jusqu’à plusieurs pétaoctets par jour. Les vues matérialisées incrémentielles sont en Beta et doivent être utilisées avec précaution.
+
+<Note>
+  Les alertes peuvent également tirer parti des vues matérialisées, et en bénéficier automatiquement.
+  Cela peut réduire la surcharge de calcul liée à l’exécution d’un grand nombre d’alertes, d’autant plus qu’elles s’exécutent généralement très fréquemment.
+  Réduire le temps d’exécution peut être bénéfique à la fois pour la réactivité et pour la consommation de ressources.
+</Note>
+
+<div id="what-are-incremental-materialized-views">
+  ## Que sont les vues matérialisées incrémentielles
+</div>
+
+Les vues matérialisées incrémentielles permettent de déplacer le coût du calcul du moment de la requête vers celui de l&#39;insertion, ce qui accélère nettement les requêtes `SELECT`.
+
+Contrairement aux bases de données transactionnelles comme Postgres, une vue matérialisée ClickHouse n&#39;est pas un instantané stocké. Elle agit plutôt comme un déclencheur qui exécute une requête sur des blocs de données lorsqu&#39;ils sont insérés dans une table source. Le résultat de cette requête est écrit dans une table cible distincte. À mesure que des données supplémentaires sont insérées, de nouveaux résultats partiels sont ajoutés puis fusionnés dans la table cible. Le résultat fusionné équivaut à exécuter l&#39;agrégation sur l&#39;ensemble du jeu de données d&#39;origine.
+
+La principale raison d&#39;utiliser des vues matérialisées est que les données écrites dans la table cible représentent le résultat d&#39;une agrégation, d&#39;un filtrage ou d&#39;une transformation. Dans ClickStack, elles sont utilisées exclusivement pour les agrégations. Ces résultats sont généralement bien plus petits que les données brutes d&#39;entrée et représentent souvent des états d&#39;agrégation partiels. Combiné à la simplicité d&#39;interroger la table cible pré-agrégée, cela permet de réduire considérablement la latence des requêtes par rapport à l&#39;exécution du même calcul sur des données brutes au moment de la requête.
+
+Les vues matérialisées dans ClickHouse sont mises à jour en continu à mesure que les données arrivent dans la table source et se comportent davantage comme des index toujours à jour. Cela diffère de nombreuses autres bases de données, où les vues matérialisées sont des instantanés statiques qui doivent être actualisés périodiquement, comme les [Refreshable Materialized Views](/fr/concepts/features/materialized-views/refreshable-materialized-view) de ClickHouse.
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Schéma d’une vue matérialisée" />
+
+Les vues matérialisées incrémentielles ne calculent que les modifications de la vue à mesure que de nouvelles données arrivent, en déplaçant le calcul au moment de l&#39;insertion. Comme ClickHouse est hautement optimisé pour l&#39;ingestion, le coût incrémental de maintenance de la vue pour chaque bloc inséré reste faible par rapport aux gains obtenus lors de l&#39;exécution des requêtes. Le coût du calcul de l&#39;agrégation est amorti sur les insertions au lieu d&#39;être payé de nouveau à chaque lecture. Interroger les résultats pré-agrégés coûte donc bien moins cher que de les recalculer, ce qui réduit les coûts d&#39;exploitation et offre des performances quasi en temps réel pour les visualisations en aval, même à l&#39;échelle du pétaoctet.
+
+Ce modèle diffère fondamentalement des systèmes qui recalculent des vues entières à chaque mise à jour ou s&#39;appuient sur des actualisations planifiées. Pour une explication plus détaillée du fonctionnement des vues matérialisées et de leur création, reportez-vous au guide lié ci-dessus.
+
+Chaque vue matérialisée introduit une surcharge supplémentaire au moment de l&#39;insertion et doit donc être utilisée avec discernement.
+
+<Tip>
+  Créez des vues uniquement pour les tableaux de bord et visualisations les plus courants.
+  Limitez l&#39;utilisation à moins de 20 vues tant que la fonctionnalité est en bêta.
+  Ce seuil devrait augmenter dans les futures versions.
+</Tip>
+
+<Note>
+  Une seule vue matérialisée peut calculer plusieurs métriques pour différents regroupements, par exemple la durée minimale, maximale et le p95 par nom de service sur des intervalles d&#39;une minute. Cela permet à une seule vue d&#39;alimenter de nombreuses visualisations plutôt qu&#39;une seule. Il est donc important de regrouper les métriques dans des vues partagées afin de maximiser la valeur de chaque vue et de garantir sa réutilisation dans les tableaux de bord et les workflows.
+</Note>
+
+Avant d&#39;aller plus loin, nous vous recommandons de vous familiariser davantage avec les vues matérialisées dans ClickHouse.
+Consultez notre guide sur les [vues matérialisées incrémentielles](/fr/concepts/features/materialized-views/incremental-materialized-view) pour plus de détails.
+
+<div id="selecting-visualizatons-for-acceleration">
+  ## Sélection des visualisations à accélérer
+</div>
+
+Avant de créer des vues matérialisées, il est important de déterminer quelles visualisations vous souhaitez accélérer et quels flux de travail sont les plus critiques pour vos utilisateurs.
+
+Dans ClickStack, les vues matérialisées sont conçues pour **accélérer les visualisations reposant fortement sur des agrégations**, c’est-à-dire les requêtes qui calculent une ou plusieurs métriques dans le temps. Il peut s’agir, par exemple, de la **durée moyenne des requêtes par minute**, du **nombre de requêtes par service** ou du **taux d’erreur dans le temps**. Une vue matérialisée doit toujours contenir une agrégation et un regroupement temporel, puisqu’elle est destinée à alimenter des visualisations de séries temporelles.
+
+En règle générale, il est recommandé de procéder comme suit :
+
+<div id="identify-high-impact-visualizations">
+  ### Identifier les visualisations à fort impact
+</div>
+
+Les meilleures candidates à l’accélération relèvent généralement de l’une des catégories suivantes :
+
+* Les visualisations de tableau de bord qui s’actualisent fréquemment et restent affichées en permanence, comme les tableaux de bord de monitoring de haut niveau affichés sur des écrans muraux.
+* Les workflows de diagnostic utilisés dans les runbooks, où certains graphiques sont consultés à plusieurs reprises pendant la gestion d’un incident et doivent renvoyer rapidement des résultats.
+* Les usages clés de HyperDX, notamment :
+  * Les vues d’histogramme sur la page Search.
+  * Les visualisations utilisées dans les tableaux de bord prédéfinis, comme les vues APM, Services ou Kubernetes.
+
+Ces visualisations sont souvent exécutées de façon répétée, par plusieurs utilisateurs et sur différents intervalles de temps, ce qui en fait des candidates idéales pour déplacer le calcul du temps de requête vers le moment de l’insertion.
+
+<div id="balance-benefit-against-insert-time-cost">
+  ### Équilibrer les bénéfices et le coût à l’insertion
+</div>
+
+Les vues matérialisées ajoutent du travail au moment de l’insertion ; elles doivent donc être créées de façon sélective et réfléchie. Toutes les visualisations ne bénéficient pas de la pré-agrégation, et accélérer des graphiques rarement utilisés ne justifie généralement pas cette surcharge. Vous devez maintenir le nombre total de vues matérialisées à moins de 20.
+
+<Note>
+  Avant de passer en production, validez toujours la surcharge en ressources introduite par les vues matérialisées, en particulier l’utilisation du CPU, les E/S disque et l’[activité de fusion](/fr/resources/support-center/tips-and-tricks/too-many-parts). Chaque vue matérialisée augmente le travail à l’insertion et génère des parts supplémentaires ; il est donc important de s’assurer que les fusions suivent le rythme et que le nombre de parts reste stable. Cela peut être surveillé via les [tables système](/fr/reference/system-tables/tables) et le [tableau de bord d’observabilité avancé intégré](/fr/guides/oss/deployment-and-scaling/monitoring/monitoring#built-in-advanced-observability-dashboard) dans ClickHouse open-source, ou à l’aide des métriques intégrées et des [tableaux de bord de monitoring dans ClickHouse Cloud](/fr/products/cloud/features/monitoring/advanced-dashboard). Consultez [Too many parts](/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) pour obtenir des conseils sur le diagnostic et la réduction d’un nombre excessif de parts.
+</Note>
+
+Une fois que vous avez identifié les visualisations les plus importantes, l’étape suivante consiste à les consolider.
+
+<div id="consolidate-visualizations-into-shared-views">
+  ### Regrouper les visualisations dans des vues partagées
+</div>
+
+Toutes les vues matérialisées dans ClickStack doivent regrouper les données par un intervalle de temps à l’aide de fonctions telles que [`toStartOfMinute`](/fr/reference/functions/regular-functions/date-time-functions#toStartOfMinute). Cependant, de nombreuses visualisations partagent aussi des clés de regroupement supplémentaires, comme le nom du service, le nom du span ou le code d’état. Lorsque plusieurs visualisations utilisent les mêmes dimensions de regroupement, elles peuvent souvent s’appuyer sur une seule vue matérialisée.
+
+Par exemple (pour les traces) :
+
+* Durée moyenne par nom de service au fil du temps - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* Nombre de requêtes par nom de service au fil du temps - `SELECT count() count, toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* Durée moyenne par code d’état au fil du temps - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+* Nombre de requêtes par code d’état au fil du temps - `SELECT count() count, toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+
+Au lieu de créer des vues matérialisées distinctes pour chaque requête et chaque graphique, vous pouvez les regrouper dans une seule vue qui agrège par nom de service et par code d’état. Cette vue unique peut calculer plusieurs métriques, comme le nombre, la durée moyenne, la durée maximale, ainsi que des percentiles, qui pourront ensuite être réutilisés dans plusieurs visualisations. Un exemple de requête combinant les éléments ci-dessus est présenté ci-dessous :
+
+```sql
+SELECT avg(Duration), max(Duration), count(), quantiles(0.95,0.99)(Duration), toStartOfMinute(Timestamp) as time, ServiceName, StatusCode
+FROM otel_traces
+GROUP BY time, ServiceName, StatusCode
+```
+
+Consolider les vues de cette manière réduit la surcharge à l’insertion, limite le nombre total de vues matérialisées, réduit les problèmes liés au nombre de parts et simplifie la maintenance au fil du temps.
+
+À ce stade, **concentrez-vous sur les requêtes** qui seront exécutées par les visualisations que vous souhaitez accélérer. Dans la section suivante, vous verrez un exemple montrant comment plusieurs requêtes d’agrégation peuvent être combinées en une seule vue matérialisée.
+
+<div id="creating-a-materialized-view">
+  ## Création d’une vue matérialisée
+</div>
+
+Une fois que vous avez identifié une visualisation, ou un ensemble de visualisations, que vous souhaitez accélérer, l’étape suivante consiste à repérer les requêtes sous-jacentes. En pratique, cela signifie examiner la configuration de la visualisation et passer en revue le SQL généré, en prêtant une attention particulière aux métriques d’agrégation utilisées et aux fonctions appliquées.
+
+<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="SQL généré" />
+
+<Note>
+  Lorsqu’aucun panneau de débogage n’est disponible dans HyperDX pour un composant, les utilisateurs peuvent inspecter la console du navigateur, où toutes les requêtes sont consignées.
+</Note>
+
+Après avoir regroupé les requêtes nécessaires, vous devez vous familiariser avec les [**fonctions d’état d’agrégation**](/fr/reference/data-types/aggregatefunction) dans ClickHouse. Les vues matérialisées s’appuient sur ces fonctions pour déplacer le calcul du moment de la requête vers celui de l’insertion. Au lieu de stocker les valeurs agrégées finales, une vue matérialisée calcule et stocke des **états d’agrégation intermédiaires**, qui sont ensuite fusionnés et finalisés au moment de la requête. Ils seront généralement bien plus petits que la table d’origine. Ces états disposent de types de données dédiés et doivent être explicitement représentés dans le schéma de la table cible.
+
+À titre de référence, la documentation ClickHouse fournit une vue d’ensemble détaillée ainsi que des exemples de fonctions d’état d’agrégation, ainsi que du moteur de table utilisé pour les stocker - `AggregatingMergeTree` :
+
+* [Fonctions d’agrégation et états](/fr/reference/functions/aggregate-functions/index)
+* [Moteur AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree)
+
+Vous trouverez ci-dessous un exemple d’utilisation d’`AggregatingMergeTree` et des fonctions d’agrégation :
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="États d’agrégation dans ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+Il est **fortement recommandé** de vous familiariser avec ces concepts avant de poursuivre.
+
+<div id="example-materialized-view">
+  ### Exemple de vue matérialisée
+</div>
+
+Considérez la requête d’origine suivante, qui calcule la durée moyenne, la durée maximale, le nombre d’événements et des percentiles par minute, regroupés par nom du service et code d’état :
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+Pour accélérer cette requête, créez une table cible `otel_traces_1m` qui stocke les états d’agrégation correspondants :
+
+```sql
+CREATE TABLE otel_traces_1m
+(
+    `Timestamp` DateTime,
+    `ServiceName` LowCardinality(String),
+    `StatusCode` LowCardinality(String),
+    `count` SimpleAggregateFunction(sum, UInt64),
+    `avg__Duration` AggregateFunction(avg, UInt64),
+    `max__Duration` SimpleAggregateFunction(max, Int64),
+    `quantiles__Duration` AggregateFunction(quantiles(0.95, 0.99), Int64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Timestamp, ServiceName, StatusCode);
+```
+
+La définition de la vue matérialisée - `otel_traces_1m_mv` - calcule ensuite ces états et les enregistre à mesure que de nouvelles données sont insérées :
+
+```sql
+CREATE MATERIALIZED VIEW otel_traces_1m_mv TO otel_traces_1m
+AS
+SELECT
+    toStartOfMinute(Timestamp) AS Timestamp,
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avgState(Duration) AS avg__Duration,
+    maxSimpleState(Duration) AS max__Duration,
+    quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+FROM otel_v2.otel_traces
+GROUP BY
+    Timestamp,
+    ServiceName,
+    StatusCode;
+```
+
+Cette vue matérialisée se compose de deux parties :
+
+1. La table cible, qui définit le schéma et les types d’état d’agrégation utilisés pour stocker les résultats intermédiaires. Le moteur [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree) est nécessaire pour garantir que ces états sont correctement fusionnés en arrière-plan.
+2. La requête de la vue matérialisée s’exécute automatiquement lors de l’insert. Par rapport à la requête d’origine, elle utilise des fonctions d’état telles que `avgState` et `quantilesState` au lieu des fonctions d’agrégation finales.
+
+On obtient ainsi une table compacte qui stocke des états d’agrégation à la minute pour chaque nom de service et code d’état. Sa taille augmente de manière prévisible avec le temps et la cardinalité et, après les fusions en arrière-plan, elle produit le même résultat que l’exécution de l’agrégation d’origine sur les données brutes. Interroger cette table est nettement moins coûteux que d’agréger directement à partir de la table source des traces, ce qui permet d’obtenir des visualisations rapides et cohérentes à grande échelle.
+
+<div id="materialized-view-usage-in-clickstack">
+  ## Utilisation des vues matérialisées dans ClickStack
+</div>
+
+Une fois les vues matérialisées créées dans ClickHouse, elles doivent être enregistrées dans ClickStack pour pouvoir être utilisées automatiquement par les visualisations, les tableaux de bord et les alertes.
+
+<div id="registering-a-view">
+  ### Enregistrement d’une vue matérialisée pour utilisation
+</div>
+
+Les vues matérialisées doivent être enregistrées pour la **source** dans HyperDX qui correspond à la **table source d’origine** à partir de laquelle la vue a été dérivée.
+
+<Steps>
+  <Step>
+    #### Modifier la source
+
+    Accédez à la **source** concernée dans HyperDX et ouvrez la boîte de dialogue **Edit configuration**. Faites défiler jusqu’à la section des vues matérialisées.
+
+    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Modifier les sources" />
+  </Step>
+
+  <Step>
+    #### Ajouter la vue matérialisée
+
+    Sélectionnez **Add materialized view**, puis choisissez la base de données et la table cible sur lesquelles repose la vue matérialisée.
+
+    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Modifier les sources" />
+  </Step>
+
+  <Step>
+    #### Sélectionner les métriques
+
+    Dans la plupart des cas, les colonnes d’horodatage, de dimension et de métrique seront déduites automatiquement. Sinon, spécifiez-les manuellement.
+
+    Pour les métriques, vous devez faire correspondre :
+
+    * le nom de la colonne d’origine, par exemple `Duration`, avec
+    * la colonne d’agrégation correspondante dans la vue matérialisée, par exemple `avg__Duration`
+
+    Pour les dimensions, spécifiez toutes les colonnes, à l’exception de l’horodatage, selon lesquelles la vue effectue le regroupement.
+
+    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Sélectionner les métriques" />
+  </Step>
+
+  <Step>
+    #### Sélectionner la granularité temporelle
+
+    Sélectionnez la **granularité temporelle** de la vue matérialisée, par exemple une minute.
+
+    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Sélectionner la granularité temporelle" />
+  </Step>
+
+  <Step>
+    #### Sélectionner la date minimale
+
+    Spécifiez la date minimale pour laquelle la vue matérialisée contient des données. Cela correspond à l’horodatage le plus ancien disponible dans la vue et, en général, au moment où la vue a été créée, en supposant que l’ingestion a été continue.
+
+    <Note>
+      Les vues matérialisées ne sont **pas automatiquement rétroremplies** lors de leur création ; elles ne contiendront donc que les lignes générées à partir des données insérées après leur création.
+      Un guide complet sur le rétroremplissage des vues matérialisées est disponible dans [&quot;Rétroremplir des données.&quot;](/fr/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
+    </Note>
+
+    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Sélectionner l’heure minimale" />
+
+    Si l’heure de début exacte n’est pas connue, vous pouvez la déterminer en interrogeant l’horodatage minimal de la table cible, par exemple :
+
+    ```sql
+    SELECT min(Timestamp) FROM otel_traces_1m
+    ```
+  </Step>
+
+  <Step>
+    #### Enregistrer la source
+
+    Enregistrez la configuration de la source.
+
+    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Enregistrer la source" />
+  </Step>
+</Steps>
+
+Une fois une vue matérialisée enregistrée, ClickStack l’utilise automatiquement chaque fois qu’une requête est éligible, sans nécessiter de modifications des tableaux de bord, des visualisations ou des alertes. ClickStack évalue chaque requête au moment de l’exécution et détermine si une vue matérialisée peut être appliquée.
+
+<div id="verifying-acceleration-in-dashboards-and-visualizations">
+  ### Vérifier l&#39;accélération dans les tableaux de bord et les visualisations
+</div>
+
+Il est important de garder à l&#39;esprit que les vues matérialisées incrémentielles ne contiennent que les données insérées **après la création de la vue**. Elles ne sont pas automatiquement remplies avec les données historiques, ce qui les rend légères et peu coûteuses à maintenir. Pour cette raison, les utilisateurs doivent spécifier explicitement l&#39;intervalle de temps valide d&#39;une vue lors de son enregistrement.
+
+<Note>
+  ClickStack n&#39;utilisera une vue matérialisée que si son horodatage minimum est inférieur ou égal au début de l&#39;intervalle de temps de la requête, ce qui garantit que la vue contient toutes les données requises. Bien que les requêtes soient divisées en interne en sous-requêtes basées sur le temps, les vues matérialisées sont appliquées soit à l&#39;ensemble de la requête, soit pas du tout. De futures améliorations pourraient permettre d&#39;utiliser les vues de manière sélective pour les sous-requêtes admissibles.
+</Note>
+
+ClickStack fournit des indicateurs visuels clairs pour confirmer si une vue matérialisée est utilisée.
+
+1. **Vérifiez l&#39;état de l&#39;optimisation** Lorsque vous consultez un tableau de bord ou une visualisation, recherchez l&#39;icône en forme d&#39;éclair ou l&#39;icône `Accelerated` :
+
+* **Éclair vert** indique que la requête est accélérée par une vue matérialisée.
+* **Éclair orange** indique que la requête est exécutée sur la table source.
+
+<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualisation accélérée" />
+
+2. **Inspectez les détails de l&#39;optimisation** Cliquez sur l&#39;icône en forme d&#39;éclair pour ouvrir un panneau de détails affichant :
+
+* **Vue matérialisée active** : la vue sélectionnée pour la requête, y compris son nombre estimé de lignes.
+* **Vues matérialisées ignorées** : les vues compatibles qui n&#39;ont pas été sélectionnées, ainsi que leurs tailles d&#39;analyse estimées.
+* **Vues matérialisées incompatibles** : les vues qui n&#39;ont pas pu être utilisées, ainsi que la raison précise.
+
+3. **Comprenez les raisons courantes d&#39;incompatibilité** Une vue matérialisée peut ne pas être utilisée si :
+
+* L&#39;**intervalle de temps de la requête** commence avant l&#39;horodatage minimum de la vue.
+* La **granularité de la visualisation** n&#39;est pas un multiple de la granularité de la vue.
+* La **fonction d&#39;agrégation** demandée par la requête n&#39;est pas présente dans la vue.
+* La requête utilise des **expressions de comptage personnalisées**, telles que `count(if(...))`, qui ne peuvent pas être dérivées des états d&#39;agrégation de la vue.
+
+Ces indicateurs permettent de vérifier facilement si une visualisation est accélérée, de comprendre pourquoi une vue particulière a été sélectionnée et de diagnostiquer pourquoi une vue n&#39;était pas admissible.
+
+<div id="how-views-are-selected">
+  ### Comment les vues matérialisées sont sélectionnées pour les visualisations
+</div>
+
+Lorsqu&#39;une visualisation est exécutée, ClickStack peut disposer de plusieurs candidats, notamment la table de base et plusieurs vues matérialisées. Pour garantir des performances optimales, ClickStack évalue et sélectionne automatiquement l&#39;option la plus efficace à l&#39;aide du mécanisme [`EXPLAIN ESTIMATE`](/fr/reference/statements/explain#explain-estimate) de ClickHouse.
+
+Le processus de sélection suit une séquence bien définie :
+
+1. **Valider la compatibilité**
+   ClickStack détermine d&#39;abord si une vue matérialisée peut être utilisée pour la requête en vérifiant :
+   * **Couverture temporelle** : l&#39;intervalle de temps de la requête doit être entièrement compris dans la plage de données disponible de la vue matérialisée.
+   * **Granularité** : le bucket temporel de la visualisation doit être égal ou plus grossier que la granularité de la vue.
+   * **Agrégations** : les métriques demandées doivent être présentes dans la vue et calculables à partir de ses états d&#39;agrégation.
+
+2. **Transformer la requête**
+   Pour les vues compatibles, ClickStack réécrit la requête afin de cibler la table de la vue matérialisée :
+   * Les fonctions d&#39;agrégation sont mappées aux colonnes matérialisées correspondantes.
+   * Les combinateurs `-Merge` sont appliqués aux états d&#39;agrégation.
+   * Le regroupement temporel est ajusté pour s&#39;aligner sur la granularité de la vue.
+
+3. **Sélectionner le meilleur candidat**
+   Si plusieurs vues matérialisées compatibles sont disponibles, ClickStack exécute une requête [`EXPLAIN ESTIMATE`](/fr/reference/statements/explain#explain-estimate) pour chaque candidat et compare le nombre estimé de lignes et de granules analysés. La vue dont le coût d&#39;analyse estimé est le plus faible est sélectionnée.
+
+4. **Repli automatique**
+   Si aucune vue matérialisée n&#39;est compatible, ClickStack revient automatiquement à la table source.
+
+Cette approche minimise systématiquement la quantité de données analysées et offre des performances prévisibles et à faible latence, sans nécessiter de modifications des définitions de visualisation.
+
+Les vues matérialisées restent utilisables même lorsque les visualisations incluent des filtres, des contraintes de recherche ou un regroupement temporel, à condition que toutes les dimensions requises soient présentes dans la vue. Cela permet aux vues d&#39;accélérer les tableaux de bord, les histogrammes et les graphiques filtrés sans nécessiter de modifications des définitions de visualisation.
+
+<div id="example-of-choosing-materialized-view">
+  #### Exemple de sélection de vues matérialisées
+</div>
+
+Prenons deux vues matérialisées créées sur la même source de traces :
+
+* `otel_traces_1m`, regroupée par minute, `ServiceName` et `StatusCode`
+* `otel_traces_1m_v2`, regroupée par minute, `ServiceName`, `StatusCode` et `SpanName`
+
+La seconde vue contient des clés de regroupement supplémentaires et produit donc davantage de lignes, tout en parcourant plus de données.
+
+Si une visualisation demande la **durée moyenne par service au fil du temps**, les deux vues sont techniquement valides. ClickStack exécute une requête [`EXPLAIN ESTIMATE`](/fr/reference/statements/explain#explain-estimate) pour chaque vue candidate et compare le nombre estimé de granules, c.-à-d. :
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table──────────┬─parts─┬──rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m │     1 │ 49385 │     6 │
+└──────────┴────────────────┴───────┴───────┴───────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m_v2
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table─────────────┬─parts─┬───rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m_v2 │     1 │ 212519 │    26 │
+└──────────┴───────────────────┴───────┴────────┴───────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+Comme `otel_traces_1m` est plus petite et analyse moins de granules, elle est sélectionnée automatiquement.
+
+Les deux vues matérialisées restent plus performantes qu’une interrogation directe de la table de base, mais choisir la plus petite vue adaptée offre les meilleures performances.
+
+<div id="alerts">
+  ### Alertes
+</div>
+
+Les requêtes d’alerte utilisent automatiquement les vues matérialisées lorsqu’elles sont compatibles. La même logique d’optimisation s’applique, pour une évaluation des alertes plus rapide.
+
+<div id="backfilling-a-materialized-view">
+  ## Rétroremplissage d’une vue matérialisée
+</div>
+
+Comme indiqué précédemment, les vues matérialisées incrémentales ne contiennent que les données insérées **après la création de la vue** et ne sont pas automatiquement rétroremplies. Cette conception permet de garder des vues légères et peu coûteuses à maintenir, mais cela signifie aussi qu’elles ne peuvent pas être utilisées pour des requêtes nécessitant des données antérieures à l’horodatage minimal de la vue.
+
+Dans la plupart des cas, cela reste acceptable. Les workloads ClickStack courants portent sur des données récentes, par exemple les dernières 24 heures, ce qui signifie qu’une vue nouvellement créée devient pleinement exploitable dans la journée qui suit sa création. En revanche, pour les requêtes couvrant des intervalles de temps plus longs, la vue peut rester inutilisable tant qu’un délai suffisant ne s’est pas écoulé.
+
+Dans ce type de situation, les utilisateurs peuvent envisager de **rétroremplir** la vue matérialisée avec des données historiques.
+
+Le rétroremplissage peut être **coûteux en ressources de calcul**. En fonctionnement normal, les vues matérialisées sont alimentées de manière incrémentale à mesure que les données arrivent, ce qui répartit uniformément le coût de calcul dans le temps.
+
+Le rétroremplissage concentre ce travail sur une période beaucoup plus courte, **augmentant fortement l’utilisation du CPU et de la mémoire par unité de temps.**
+
+Selon la taille du jeu de données et la fenêtre de rétention, cela peut nécessiter de redimensionner temporairement le cluster, verticalement ou, dans ClickHouse Cloud, horizontalement, afin d’achever le rétroremplissage dans un délai raisonnable.
+
+Si des ressources supplémentaires ne sont pas provisionnées, le rétroremplissage peut avoir un impact négatif sur les workloads de production, notamment sur la latence des requêtes et le débit d’ingestion. Pour **de très grands jeux de données ou de longues plages historiques, le rétroremplissage peut s’avérer impraticable**, voire totalement irréalisable.
+
+En résumé, le rétroremplissage ne justifie souvent ni son coût ni le risque opérationnel qu’il implique. Il ne doit être envisagé que dans des cas exceptionnels où l’accélération des données historiques est essentielle. Si vous décidez de poursuivre, il est recommandé de suivre l’approche contrôlée décrite ci-dessous afin de trouver un équilibre entre performances, coût et impact sur la production.
+
+<div id="backfilling-approaches">
+  ### Approches de rétroremplissage
+</div>
+
+<Info>
+  **Évitez POPULATE**
+
+  L’utilisation de la commande [POPULATE](/fr/reference/statements/create/view#materialized-view) n’est pas recommandée pour le rétroremplissage des vues matérialisées, sauf pour de petits jeux de données lorsque l’ingestion est en pause. Cette opération peut manquer des lignes insérées dans la table source, car la vue matérialisée n’est créée qu’une fois la phase de population terminée. En outre, POPULATE s’exécute sur l’ensemble des données et reste sensible aux interruptions ainsi qu’aux limites de mémoire sur de grands jeux de données.
+</Info>
+
+Supposons que vous souhaitiez effectuer le rétroremplissage d’une vue matérialisée correspondant à l’agrégation suivante, qui calcule des métriques par minute regroupées par nom de service et code d’état :
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+Comme indiqué précédemment, les vues matérialisées incrémentielles ne sont pas automatiquement rétroremplies. Les méthodes suivantes sont recommandées pour effectuer le rétroremplissage de l’historique en toute sécurité tout en préservant le comportement incrémentiel pour les nouvelles données.
+
+<div id="direct-backfill">
+  #### Rétroremplissage direct à l’aide de `INSERT INTO SELECT`
+</div>
+
+Cette approche convient le mieux aux **jeux de données de petite taille** ou aux **requêtes d’agrégation relativement légères**, lorsque le rétroremplissage complet peut être effectué dans un délai raisonnable sans épuiser les ressources du cluster. Elle est généralement adaptée lorsque la requête de rétroremplissage s’exécute en quelques minutes, ou tout au plus en quelques heures, et que des hausses temporaires de l’utilisation du CPU et des E/S sont acceptables. Pour des jeux de données plus volumineux ou des agrégations plus coûteuses, privilégiez plutôt les approches de rétroremplissage incrémental ou par blocs ci-dessous.
+
+<Steps>
+  <Step>
+    ##### Déterminer la couverture actuelle de la vue
+
+    Avant de tenter un rétroremplissage, commencez par déterminer quelles données la vue matérialisée contient déjà. Pour cela, interrogez le timestamp minimal présent dans la table cible :
+
+    ```sql
+    SELECT min(Timestamp)
+    FROM otel_traces_1m;
+    ```
+
+    Ce timestamp représente le point le plus ancien à partir duquel la vue peut répondre aux requêtes. Toute requête ClickStack demandant des données antérieures à ce timestamp basculera sur la table de base.
+  </Step>
+
+  <Step>
+    ##### Décider si un rétroremplissage est nécessaire
+
+    Dans la plupart des déploiements ClickStack, les requêtes portent sur des données récentes, par exemple celles des dernières 24 heures. Dans ce cas, les vues nouvellement créées deviennent pleinement exploitables peu après leur création, et le rétroremplissage n’est pas nécessaire.
+
+    Si le timestamp renvoyé à l’étape précédente est suffisamment ancien pour vos cas d’usage, aucun rétroremplissage n’est nécessaire. Le rétroremplissage ne doit être envisagé que dans les cas suivants :
+
+    * Les requêtes couvrent fréquemment de longues périodes historiques.
+    * La vue est essentielle pour les performances sur ces périodes.
+    * La taille du jeu de données et le coût de l’agrégation rendent le rétroremplissage faisable.
+  </Step>
+
+  <Step>
+    ##### Rétroremplir les données historiques manquantes
+
+    Si un rétroremplissage est nécessaire, alimentez la table cible de la vue matérialisée pour les timestamps antérieurs au minimum actuel en utilisant la requête de la vue, modifiée pour ne lire que les données plus anciennes que le timestamp relevé ci-dessus. Comme la table cible utilise AggregatingMergeTree, la requête de rétroremplissage **doit insérer des états d’agrégation, et non des valeurs finales**.
+
+    <Warning>
+      Cette requête peut traiter de grands volumes de données et être gourmande en ressources. Vérifiez toujours la capacité disponible en CPU, mémoire et E/S avant d’exécuter un rétroremplissage. Une technique utile consiste à exécuter d’abord la requête avec `FORMAT Null` afin d’estimer son temps d’exécution et sa consommation de ressources.
+
+      Si la requête elle-même doit s’exécuter pendant de nombreuses heures, cette approche **n’est pas recommandée**.
+    </Warning>
+
+    Notez que la requête suivante ajoute une clause `WHERE` pour limiter l’agrégation aux données plus anciennes que le timestamp le plus ancien présent dans la vue :
+
+    ```sql
+    INSERT INTO otel_traces_1m
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    )
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+  </Step>
+</Steps>
+
+<div id="incremental-backfill-null-table">
+  #### Rétroremplissage incrémental à l’aide d’une table Null
+</div>
+
+Pour les jeux de données volumineux ou les requêtes d’agrégation très consommatrices en ressources, un rétroremplissage direct avec un seul `INSERT INTO SELECT` peut être peu pratique, voire risqué. Dans ce cas, il est recommandé d’adopter une approche de **rétroremplissage incrémental**. Cette méthode reproduit plus fidèlement le fonctionnement habituel des vues matérialisées incrémentales, en traitant les données par blocs de taille raisonnable plutôt qu’en agrégeant tout l’historique en une seule fois.
+
+Cette approche est appropriée lorsque :
+
+* La requête de rétroremplissage s’exécuterait autrement pendant de nombreuses heures.
+* Le pic d’utilisation mémoire d’une agrégation complète est trop élevé.
+* Vous souhaitez maîtriser finement la consommation de CPU et de mémoire pendant le rétroremplissage.
+* Vous avez besoin d’un processus plus résilient, qui puisse redémarrer en toute sécurité en cas d’interruption.
+
+L’idée clé consiste à utiliser une [**table Null**](/fr/reference/engines/table-engines/special/null) comme tampon d’ingestion. Bien que la table Null ne stocke pas les données, toutes les vues matérialisées qui y sont rattachées s’exécuteront tout de même, ce qui permet de calculer les états d’agrégation de façon incrémentale au fil du passage des données.
+
+<Steps>
+  <Step>
+    ##### Créer une table Null pour le rétroremplissage
+
+    Créez une table Null légère qui ne contient que les colonnes requises par l’agrégation de la vue matérialisée. Cela minimise les E/S et l’utilisation mémoire.
+
+    ```sql
+    CREATE TABLE otel_traces_backfill
+    (
+        Timestamp DateTime64(9),
+        ServiceName LowCardinality(String),
+        StatusCode LowCardinality(String),
+        Duration UInt64
+    )
+    ENGINE = Null;
+    ```
+  </Step>
+
+  <Step>
+    ##### Attacher une vue matérialisée à la table Null
+
+    Créez ensuite une vue matérialisée sur la table Null qui cible la même table d’agrégation que votre vue matérialisée principale.
+
+    ```sql
+    CREATE MATERIALIZED VIEW otel_traces_1m_mv_backfill
+    TO otel_traces_1m
+    AS
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces_backfill
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+
+    Cette vue matérialisée s’exécutera de façon incrémentale à mesure que des lignes seront insérées dans la table Null, en produisant des états d’agrégation par petits blocs.
+  </Step>
+
+  <Step>
+    ##### Charger les données de façon incrémentale
+
+    Enfin, insérez les données historiques dans la table Null. La vue matérialisée traitera les données bloc par bloc, en envoyant les états d’agrégation vers la table cible sans stocker les lignes brutes.
+
+    ```sql
+    INSERT INTO otel_traces_backfill
+    SELECT
+        Timestamp,
+        ServiceName,
+        StatusCode,
+        Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    );
+    ```
+
+    Comme les données sont traitées de façon incrémentale, l’utilisation mémoire reste maîtrisée et prévisible, tout en se rapprochant du comportement normal de l’ingestion.
+
+    <Note>
+      Pour plus de sûreté, vous pouvez faire pointer la vue matérialisée de rétroremplissage vers une table cible temporaire (par exemple, `otel_traces_1m_v2`). Une fois le rétroremplissage terminé avec succès, [les partitions peuvent être déplacées](/fr/reference/statements/alter/partition#move-partition-to-table) vers la table cible principale, par ex. `ALTER TABLE otel_traces_1m_v2 MOVE PARTITION '2026-01-02' TO otel_traces_1m`. Cela facilite la récupération si le rétroremplissage est interrompu ou échoue en raison de limites de ressources.
+    </Note>
+
+    Pour plus de détails sur l’optimisation de ce processus, notamment pour améliorer les performances d’insertion et réduire ainsi que maîtriser les ressources, consultez [&quot;Rétroremplissage.&quot;](/fr/guides/clickhouse/data-modelling/backfilling#tuning-performance--resources)
+  </Step>
+</Steps>
+
+<div id="recommendations">
+  ## Recommandations
+</div>
+
+Les recommandations suivantes résument les bonnes pratiques à suivre pour concevoir et exploiter des vues matérialisées dans ClickStack. En les appliquant, vous garantirez des vues matérialisées efficaces, prévisibles et économiquement avantageuses.
+
+<div id="granularity-selection-and-alignment">
+  ### Sélection et alignement de la granularité
+</div>
+
+Les vues matérialisées ne sont utilisées que lorsque la granularité de la visualisation ou de l’alerte est un **multiple exact** de celle de la vue. La manière dont cette granularité est déterminée dépend du type de graphique :
+
+* **Graphiques temporels** (graphiques linéaires ou en barres avec le temps sur l’axe des x) :
+  La granularité explicite du graphique doit être un multiple de la granularité de la vue matérialisée.
+  Par exemple, un graphique sur 10 minutes peut utiliser des vues matérialisées avec une granularité de 10, 5, 2 ou 1 minute, mais pas des vues de 20 minutes ou de 3 minutes.
+
+* **Graphiques non temporels** (graphiques de type nombre, table ou récapitulatif) :
+  La granularité effective est calculée comme `(time range / 80)`, puis arrondie à la granularité supérieure la plus proche prise en charge par HyperDX. Cette granularité calculée doit elle aussi être un multiple de la granularité de la vue matérialisée.
+
+En raison de ces règles :
+
+* **Ne créez pas de vues matérialisées avec une granularité de 10 minutes**.
+  ClickStack prend en charge une granularité de 15 minutes pour les graphiques et les alertes, mais pas de 10 minutes. Une vue matérialisée de 10 minutes serait donc incompatible avec les visualisations et alertes courantes en 15 minutes.
+* Préférez des granularités de **1 minute** ou **1 heure**, qui s’adaptent bien à la plupart des configurations de graphiques et d’alertes.
+
+Une granularité plus élevée (par exemple, 1 heure) produit des vues plus petites et réduit la surcharge de stockage, tandis qu’une granularité plus faible (par exemple, 1 minute) offre davantage de souplesse pour une analyse plus fine. Choisissez la granularité la plus faible qui couvre vos workflows critiques.
+
+<div id="limit-and-consolidate-materialized-views">
+  ### Limiter et consolider les vues matérialisées
+</div>
+
+Chaque vue matérialisée ajoute une surcharge à l&#39;insertion et accentue la pression sur les parts et les fusions.
+Les recommandations suivantes sont à suivre :
+
+* **Pas plus de 20 vues matérialisées** par source.
+* **Environ 10 vues matérialisées** constituent généralement un optimum.
+* Consolidez plusieurs visualisations dans une seule vue lorsqu&#39;elles partagent des dimensions communes.
+
+Dans la mesure du possible, calculez plusieurs métriques et alimentez plusieurs graphiques à partir de la même vue matérialisée.
+
+<div id="choose-dimensions-carefully">
+  ### Choisissez soigneusement les dimensions
+</div>
+
+N’incluez que les dimensions couramment utilisées pour le regroupement ou le filtrage :
+
+* Chaque colonne de regroupement supplémentaire augmente la taille de la vue.
+* Trouvez le bon équilibre entre la flexibilité des requêtes et le coût du stockage et de l’insertion.
+* Les filtres sur des colonnes absentes de la vue feront que ClickStack basculera vers la table source.
+
+<Info>
+  **Conseil**
+
+  Une base de référence courante, et presque toujours utile, consiste à utiliser une vue matérialisée regroupée par **nom du service et métrique de comptage**, ce qui permet d’obtenir rapidement des histogrammes et des vues d’ensemble par service dans la recherche et les tableaux de bord.
+</Info>
+
+<div id="naming-conventions-for-aggregation-columns">
+  ### Conventions de nommage des colonnes d’agrégation
+</div>
+
+Les colonnes d’agrégation des vues matérialisées doivent respecter une convention de nommage stricte pour permettre l’inférence automatique :
+
+* Format : `<aggFn>__<sourceColumn>`
+* Exemples :
+  * `avg__Duration`
+  * `max__Duration`
+  * `count__` pour le nombre de lignes
+
+ClickStack s’appuie sur cette convention pour faire correspondre correctement les requêtes aux colonnes des vues matérialisées.
+
+<div id="quantiles-and-sketch-selection">
+  ### Quantiles et sélection du sketch
+</div>
+
+Différentes fonctions de quantile présentent des caractéristiques différentes en matière de performances et de stockage :
+
+* `quantiles` produit des sketches plus volumineux sur disque, mais leur calcul au moment de l&#39;insertion est moins coûteux.
+* `quantileTDigest` est plus coûteuse à calculer au moment de l&#39;insertion, mais produit des sketches plus petits, ce qui se traduit souvent par des requêtes sur les vues plus rapides.
+
+Vous pouvez spécifier une taille de sketch (par exemple, `quantile(0.5)`) au moment de l&#39;insertion pour les deux fonctions. Le sketch obtenu peut ensuite être interrogé pour d&#39;autres valeurs de quantile, par exemple `quantile(0.95)`. Nous vous recommandons d&#39;expérimenter afin de trouver le meilleur équilibre pour votre workload.
+
+<div id="validate-effectiveness-continously">
+  ### Valider l’efficacité en continu
+</div>
+
+Vérifiez toujours que les vues matérialisées apportent un bénéfice réel :
+
+* Confirmez leur utilisation à l’aide des indicateurs d’accélération dans l’UI.
+* Comparez les performances des requêtes avant et après l’activation de la vue.
+* Surveillez l’utilisation des ressources et le comportement de fusion.
+
+Les vues matérialisées doivent être considérées comme des optimisations de performance qui nécessitent des révisions et des ajustements périodiques à mesure que les modèles de requêtes évoluent.
+
+<div id="advanced-configurations">
+  ### Configurations avancées
+</div>
+
+Pour les charges de travail plus complexes, plusieurs vues matérialisées peuvent être utilisées pour répondre à différents modes d’accès. Exemples :
+
+* **Données récentes en haute résolution avec des vues historiques moins détaillées**
+* **Vues au niveau du service pour une vue d’ensemble, et vues au niveau des endpoints pour un diagnostic approfondi**
+
+Ces approches peuvent améliorer considérablement les performances lorsqu’elles sont appliquées de manière sélective, mais elles ne doivent être introduites qu’après validation de configurations plus simples.
+
+Le respect de ces recommandations contribuera à garantir que les vues matérialisées restent efficaces, faciles à maintenir et alignées sur le modèle d’exécution de ClickStack.
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+<div id="common-incompatibility-reasons">
+  ### Raisons courantes d&#39;incompatibilité
+</div>
+
+Une vue matérialisée **n&#39;est pas** utilisée si l&#39;une des conditions suivantes s&#39;applique :
+
+* **Intervalle de temps de la requête**
+  Le début de l&#39;intervalle de temps de la requête est antérieur au timestamp minimal de la vue matérialisée. Comme les vues ne sont pas automatiquement alimentées avec des données historiques, elles ne peuvent répondre qu&#39;aux requêtes portant sur des intervalles de temps qu&#39;elles couvrent intégralement.
+
+* **Incompatibilité de granularité**
+  La granularité effective de la visualisation doit être un multiple exact de celle de la vue matérialisée. Plus précisément :
+
+  * Pour les **graphiques temporels** (graphiques en lignes ou en barres avec le temps sur l&#39;axe des x), la granularité sélectionnée doit être un multiple de celle de la vue. Par exemple, un graphique sur 10 minutes peut utiliser des vues matérialisées de 10, 5, 2 ou 1 minute, mais pas des vues de 20 minutes ni de 3 minutes.
+  * Pour les **graphiques non temporels** (graphiques numériques ou tableaux), la granularité effective est calculée comme `(time range / 80)`, arrondie à la granularité la plus proche prise en charge par HyperDX, et doit elle aussi être un multiple de la granularité de la vue.
+
+* **Fonctions d&#39;agrégation non prises en charge**
+  La requête demande une agrégation absente de la vue matérialisée. Seules les agrégations explicitement calculées et stockées dans la vue peuvent être utilisées.
+
+* **Expressions de comptage personnalisées**
+  Les requêtes qui utilisent des expressions comme `count(if(...))` ou d&#39;autres comptages conditionnels ne peuvent pas être dérivées à partir d&#39;états d&#39;agrégation standard et ne peuvent donc pas utiliser de vues matérialisées.
+
+<div id="design-and-operational-constraints">
+  ### Contraintes de conception et d’exploitation
+</div>
+
+* **Pas de rétroremplissage automatique**
+  Les vues matérialisées incrémentielles ne contiennent que les données insérées après leur création. L’accélération des données historiques nécessite un rétroremplissage explicite, qui peut être coûteux ou peu pratique pour de grands jeux de données.
+
+* **compromis de granularité**
+  Les vues avec une granularité très fine augmentent l’espace de stockage et le surcoût à l’insertion, tandis que les vues à granularité plus grossière réduisent la flexibilité. La granularité doit être choisie avec soin pour correspondre aux schémas de requête attendus.
+
+* **explosion des dimensions**
+  L’ajout de nombreuses dimensions de regroupement augmente considérablement la taille de la vue et peut en réduire l’efficacité. Les vues ne doivent inclure que les colonnes de regroupement et de filtrage couramment utilisées.
+
+* **évolutivité limitée du nombre de vues**
+  Chaque vue matérialisée ajoute un surcoût à l’insertion et accroît la pression sur les fusions. Créer trop de vues peut nuire à l’ingestion et aux fusions en arrière-plan.
+
+Connaître ces limites permet de s’assurer que les vues matérialisées sont utilisées là où elles apportent un réel bénéfice, et d’éviter des configurations qui basculent silencieusement vers des requêtes plus lentes sur la table source.
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="materialied-view-not-being-used">
+  ### La vue matérialisée n’est pas utilisée
+</div>
+
+**Vérification 1 : plage de dates**
+
+* Ouvrez la fenêtre d’optimisation pour voir si le message « Plage de dates non prise en charge. » s’affiche.
+* Assurez-vous que la plage de dates de la requête est postérieure à la date minimale de la vue matérialisée.
+* Supprimez la date minimale si la vue matérialisée contient l’ensemble des données historiques.
+
+**Vérification 2 : granularité**
+
+* Vérifiez que la granularité du graphique est un multiple de celle de la MV.
+* Essayez de régler le graphique sur « Auto » ou sélectionnez manuellement une granularité compatible.
+
+**Vérification 3 : agrégations**
+
+* Vérifiez si le graphique utilise des agrégations présentes dans la MV.
+* Consultez « Colonnes agrégées disponibles » dans la fenêtre d’optimisation.
+
+**Vérification 4 : dimensions**
+
+* Assurez-vous que les colonnes de regroupement figurent parmi les colonnes de dimensions de la MV.
+* Consultez « Colonnes de regroupement/filtre disponibles » dans la fenêtre d’optimisation.
+
+<div id="slow-mv-queries">
+  ### Requêtes lentes sur les vues matérialisées
+</div>
+
+**Problème 1 : granularité de la vue matérialisée trop fine**
+
+* La MV contient trop de lignes en raison d&#39;une granularité trop fine (par ex., 1 seconde).
+* Solution : créez une MV avec une granularité plus grossière (par ex., 1 minute ou 1 heure).
+
+**Problème 2 : trop de dimensions**
+
+* La MV présente une cardinalité élevée en raison d&#39;un trop grand nombre de colonnes de dimension.
+* Solution : limitez les colonnes de dimension à celles qui sont le plus souvent utilisées.
+
+**Problème 3 : plusieurs MV avec un grand nombre de lignes**
+
+* Le système exécute `EXPLAIN` sur chaque MV.
+* Solution : supprimez les MV rarement utilisées ou systématiquement ignorées.
+
+<div id="config-errors">
+  ### Erreurs de configuration
+</div>
+
+**Erreur : &quot;Au moins une colonne agrégée est requise&quot;**
+
+* Ajoutez au moins une colonne agrégée à la configuration de la MV.
+
+**Erreur : &quot;Une colonne source est requise pour les agrégations autres que count&quot;**
+
+* Précisez quelle colonne agréger (`count` est la seule agrégation pouvant omettre la colonne source).
+
+**Erreur : &quot;Format de granularité non valide&quot;**
+
+* Utilisez l’une des granularités prédéfinies dans la liste déroulante.
+* Le format doit être un intervalle SQL valide (par ex. : `1 hour`, et non `1 h`).

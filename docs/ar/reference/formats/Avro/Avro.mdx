@@ -1,0 +1,109 @@
+---
+alias: []
+description: 'توثيق تنسيق Avro'
+input_format: true
+keywords: ['Avro']
+output_format: true
+slug: /interfaces/formats/Avro
+title: 'Avro'
+doc_type: 'reference'
+---
+
+import DataTypeMapping from '/snippets/ar/data-types-matching.mdx';
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✔       | ✔       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+[Apache Avro](https://avro.apache.org/) هو تنسيق تسلسل موجّه نحو الصفوف يستخدم الترميز الثنائي لمعالجة البيانات بكفاءة. يدعم تنسيق `Avro` قراءة [ملفات بيانات Avro](https://avro.apache.org/docs/current/specification/#object-container-files) وكتابتها. يفترض هذا التنسيق رسائل ذاتية الوصف تتضمن مخططًا مضمّنًا. إذا كنت تستخدم Avro مع سجل مخططات، فارجع إلى تنسيق [`AvroConfluent`](/ar/reference/formats/Avro/AvroConfluent).
+
+<div id="data-type-mapping">
+  ## مطابقة أنواع البيانات
+</div>
+
+<DataTypeMapping />
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+| الإعداد                                    | الوصف                                                                                                                                                | الافتراضي |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `input_format_avro_allow_missing_fields`   | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند عدم العثور على حقل في المخطط.                                                           | `0`       |
+| `input_format_avro_null_as_default`        | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند إدراج قيمة `null` في عمود لا يقبل القيم الفارغة.                                        | `0`       |
+| `output_format_avro_codec`                 | خوارزمية الضغط لملفات إخراج Avro. القيم الممكنة: `null`, `deflate`, `snappy`, `zstd`.                                                                |           |
+| `output_format_avro_sync_interval`         | فاصل المزامنة في ملفات Avro (بالبايت).                                                                                                               | `16384`   |
+| `output_format_avro_string_column_pattern` | تعبير نمطي لتحديد أعمدة `String` عند مواءمة نوع السلسلة في Avro. بشكل افتراضي، تُكتب أعمدة `String` في ClickHouse على أنها من النوع `bytes` في Avro. |           |
+| `output_format_avro_rows_in_file`          | الحد الأقصى لعدد الصفوف في كل ملف إخراج Avro. عند بلوغ هذا الحد، يُنشأ ملف جديد (إذا كان نظام التخزين يدعم تقسيم الملفات).                           | `1`       |
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="reading-avro-data">
+  ### قراءة بيانات Avro
+</div>
+
+لقراءة البيانات من ملف Avro واستيرادها إلى جدول في ClickHouse:
+
+```bash
+$ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
+```
+
+يجب أن يكون المخطط الجذري لملف Avro المُدخَل من النوع `record`.
+
+لتحديد المطابقة بين أعمدة الجدول وحقول مخطط Avro، يقارن ClickHouse أسماءها.
+وهذه المقارنة حسّاسة لحالة الأحرف، ويتم تخطي الحقول غير المستخدمة.
+
+قد تختلف أنواع بيانات أعمدة جدول ClickHouse عن الحقول المناظرة لها في بيانات Avro المُدرَجة. عند إدراج البيانات، يفسّر ClickHouse أنواع البيانات وفقًا للجدول أعلاه ثم [يحوّل](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) البيانات إلى نوع العمود المناظر.
+
+أثناء استيراد البيانات، إذا لم يُعثر على حقل في المخطط وكان الإعداد [`input_format_avro_allow_missing_fields`](/ar/reference/settings/formats#input_format_avro_allow_missing_fields) مُمكّنًا، فستُستخدم القيمة الافتراضية بدلًا من إصدار خطأ.
+
+<div id="writing-avro-data">
+  ### كتابة البيانات بتنسيق Avro
+</div>
+
+لكتابة بيانات من جدول ClickHouse إلى ملف Avro:
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
+```
+
+يجب أن تستوفي أسماء الأعمدة ما يلي:
+
+* أن تبدأ بـ `[A-Za-z_]`
+* ألا يتبعها سوى `[A-Za-z0-9_]`
+
+يمكن ضبط ضغط الإخراج وفاصل المزامنة لملفات Avro باستخدام الإعدادين [`output_format_avro_codec`](/ar/reference/settings/formats#output_format_avro_codec) و[`output_format_avro_sync_interval`](/ar/reference/settings/formats#output_format_avro_sync_interval) على التوالي.
+
+<div id="inferring-the-avro-schema">
+  ### استنتاج مخطط Avro
+</div>
+
+باستخدام الدالة [`DESCRIBE`](/ar/reference/statements/describe-table) في ClickHouse، يمكنك بسرعة عرض البنية المستنتجة لملف Avro كما في المثال التالي.
+يتضمن هذا المثال عنوان URL لملف Avro متاحًا للعامة ضمن حاوية S3 العامة الخاصة بـ ClickHouse:
+
+```sql
+DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro', 'Avro');
+
+┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ WatchID                    │ Int64           │              │                    │         │                  │                │
+│ JavaEnable                 │ Int32           │              │                    │         │                  │                │
+│ Title                      │ String          │              │                    │         │                  │                │
+│ GoodEvent                  │ Int32           │              │                    │         │                  │                │
+│ EventTime                  │ Int32           │              │                    │         │                  │                │
+│ EventDate                  │ Date32          │              │                    │         │                  │                │
+│ CounterID                  │ Int32           │              │                    │         │                  │                │
+│ ClientIP                   │ Int32           │              │                    │         │                  │                │
+│ ClientIP6                  │ FixedString(16) │              │                    │         │                  │                │
+│ RegionID                   │ Int32           │              │                    │         │                  │                │
+...
+│ IslandID                   │ FixedString(16) │              │                    │         │                  │                │
+│ RequestNum                 │ Int32           │              │                    │         │                  │                │
+│ RequestTry                 │ Int32           │              │                    │         │                  │                │
+└────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```

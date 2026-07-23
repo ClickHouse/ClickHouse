@@ -110,7 +110,12 @@ export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
 
-KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER"
+# The default keeper-client timeouts are 10s each. Under heavy sanitizer builds
+# (msan/asan) the keeper handshake or a response can legitimately take longer,
+# which makes keeper-client tests flake with a client-side
+# "Nothing is received in session timeout of 10000 ms" (KEEPER_EXCEPTION).
+# Raise the timeouts so the client waits out a slow-but-alive server.
+KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER --connection-timeout 60 --session-timeout 60 --operation-timeout 60"
 
 if [ -n "$CLICKHOUSE_KEEPER_IDENTITY" ] && [ "$CLICKHOUSE_KEEPER_IDENTITY" != "" ]
 then

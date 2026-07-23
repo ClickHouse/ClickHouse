@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: '설정'
+title: '설정'
+description: 'Managed Postgres의 인스턴스 설정을 관리하고 PostgreSQL 및 PgBouncer 매개변수를 구성합니다'
+keywords: ['Postgres 구성', 'PostgreSQL 설정', 'PgBouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+사이드바의 **설정** 탭에서 Managed Postgres 인스턴스의 구성 매개변수를 변경하고 인스턴스 설정을 관리할 수 있습니다.
+
+<div id="service-actions">
+  ## 서비스 작업 및 스케일링
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="서비스 작업 및 스케일링" size="md" border />
+
+**서비스 작업** 도구 모음에는 Managed Postgres 인스턴스를 관리하기 위한 제어 항목이 있습니다:
+
+* **비밀번호 재설정**: 슈퍼유저 비밀번호를 업데이트합니다 (`Running` 상태일 때만 가능)
+* **재시작**: 데이터베이스 인스턴스를 재시작합니다 (`Running` 상태일 때만 가능)
+* **삭제**: 인스턴스를 삭제합니다
+
+**스케일링** 섹션에서는 프라이머리 및 대기 인스턴스의 인스턴스 유형을 변경하여 컴퓨팅 리소스와 스토리지 용량을 늘리거나 줄일 수 있습니다.
+자세한 내용은 [스케일링 페이지](/ko/products/managed-postgres/scaling)를 참조하십시오.
+
+<div id="changing-configuration">
+  ## 구성 매개변수 변경
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Postgres 매개변수 구성" size="md" border />
+
+매개변수를 수정하려면 **Edit parameters** 버튼을 선택하세요. 수정할 매개변수를 선택한 다음, 필요에 따라 값을 변경하세요. 변경 내용이 만족스러우면 **Save Changes** 버튼을 누르세요.
+
+구성 매개변수에 적용한 모든 변경 사항은 일반적으로 1분 이내에 인스턴스에 저장됩니다. 일부 매개변수는 적용되려면 데이터베이스를 다시 시작해야 합니다. 이러한 변경 사항은 다음 재시작 후 적용되며, **서비스 작업** 도구 모음에서 수동으로 실행할 수 있습니다.
+
+구성 매개변수에 대해서는 공식 [문서](https://www.postgresql.org/docs/current/runtime-config.html)를 참조하세요. 설정할 수 있는 매개변수 목록은 곧 확대될 예정입니다. 그때까지는 현재 지원되지 않는 매개변수를 요청하려면 [지원팀](https://clickhouse.com/support/program)에 문의하세요.

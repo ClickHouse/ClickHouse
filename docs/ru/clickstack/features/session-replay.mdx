@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/session-replay
+title: 'Воспроизведение сеанса'
+sidebarTitle: 'Воспроизведение сеанса'
+description: 'Записывайте и воспроизводите сеансы пользователей в ClickStack, чтобы отлаживать проблемы во фронтенде, понимать поведение пользователей и коррелировать активность в браузере с журналами и трассировками бэкенда.'
+doc_type: 'guide'
+keywords: ['clickstack', 'воспроизведение сеанса', 'browser sdk', 'фронтенд-обсервабилити', 'сеансы пользователей', 'отладка']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Воспроизведение сеанса в ClickStack фиксирует и воссоздаёт взаимодействия пользователей в вашем веб-приложении, позволяя визуально воспроизвести в точности то, что пользователь видел и делал во время сеанса. Вместо видеозаписи SDK сохраняет изменения DOM, перемещения мыши, клики, прокрутку, ввод с клавиатуры, журналы консоли, сетевые запросы (XHR, Fetch, WebSocket) и исключения JavaScript, а затем воссоздаёт это в браузере.
+
+Поскольку воспроизведения сеансов хранятся в ClickHouse вместе с вашими журналами, трассировками и метриками, вы можете перейти от просмотра действий пользователя к анализу серверных трассировок и запросов к базе данных, которые за этим стояли, — и всё это в несколько кликов. Поэтому воспроизведение сеанса полезно для отладки проблем в продакшене, понимания поведения пользователей, выявления проблемных мест в UX и визуального подтверждения проблем, о которых сообщает служба поддержки.
+
+<div id="instrumentation">
+  ## Инструментирование приложения
+</div>
+
+ClickStack полностью совместим с OpenTelemetry, поэтому вы можете отправлять браузерную телеметрию (трассировки, исключения) с помощью стандартного JavaScript SDK OpenTelemetry или любого из [языковых SDK ClickStack](/ru/clickstack/ingesting-data/sdks). Однако для **воспроизведения сеанса требуется Browser SDK ClickStack** (`@hyperdx/browser`), который расширяет OpenTelemetry SDK возможностями записи сеанса, захвата консоли и сетевых запросов. Если вам нужны только трассировки без воспроизведения сеанса, с ClickStack будет работать любой совместимый с OTel браузерный SDK.
+
+В примерах ниже используется Browser SDK ClickStack. Чтобы добавить воспроизведение сеанса в приложение, достаточно трёх шагов: установить пакет, инициализировать SDK — и все действия пользователя будут автоматически записываться без каких-либо дополнительных изменений в коде.
+
+<Tip>
+  Инициализируйте SDK в месте, которое гарантированно загружается при запуске приложения. Например, в приложении Next.js это может быть корневой `layout.js`. Так запись сеанса начнётся сразу и охватит всё взаимодействие пользователя с приложением.
+</Tip>
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // опустите для Управляемого ClickStack
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // опустите для Управляемого ClickStack
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Тег script">
+    Для приложений, не использующих сборщик, подключите SDK напрямую с помощью тега script. При этом станет доступна глобальная переменная `HyperDX`, которую можно использовать так же, как пакет NPM.
+
+    ```html
+    <script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // опустите для Управляемого ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Параметр `tracePropagationTargets` критически важен для связывания воспроизведения сеансов с трассировками на бэкенде — укажите в нём домен вашего API, чтобы включить полную распределённую трассировку от фронтенда до бэкенда. Полный список параметров SDK, включая настройки конфиденциальности, пользовательские actions, границы ошибок React и source maps, см. в [справочнике по Browser SDK](/ru/clickstack/ingesting-data/sdks/browser).
+</Note>
+
+Browser SDK также поддерживает [маскирование полей ввода и текста](/ru/clickstack/ingesting-data/sdks/browser#options) для приложений с повышенными требованиями к конфиденциальности, а также [добавление информации о пользователе](/ru/clickstack/ingesting-data/sdks/browser#attach-user-information-or-metadata), чтобы вы могли искать и фильтровать сеансы по пользователю в интерфейсе ClickStack.
+
+<div id="viewing-replays">
+  ## Просмотр воспроизведений сеансов
+</div>
+
+Перейдите в раздел **Client Sessions** на левой боковой панели интерфейса ClickStack (HyperDX). В этом представлении перечислены все записанные сеансы браузера с указанием их длительности и количества событий.
+
+<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Экран поиска воспроизведений сеансов" size="lg" />
+
+Нажмите кнопку play у любого сеанса, чтобы воспроизвести его. В режиме воспроизведения справа показано воссозданное взаимодействие пользователя, а слева — временная шкала событий браузера: сетевых запросов, сообщений консоли и ошибок.
+
+<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Воспроизведение сеанса" size="lg" />
+
+Переключайтесь между режимами **Highlighted** и **All Events**, чтобы настроить уровень детализации на временной шкале. Ошибки помечаются красным, а при нажатии на любое событие воспроизведение переходит к соответствующему моменту сеанса.
+
+<div id="session-to-trace">
+  ### От сеанса к трассировке
+</div>
+
+Когда вы выбираете сетевой запрос или ошибку на временной шкале сеанса, можно перейти на вкладку **Trace**, чтобы проследить путь запроса через серверные сервисы и увидеть связанные журналы, спаны и запросы к базе данных, к которым привело это действие пользователя.
+
+Это работает благодаря тому, что конфигурация `tracePropagationTargets` связывает спаны браузера со спанами сервера через заголовок `traceparent`, создавая единую распределённую трассировку от клика пользователя до самой базы данных. Подробный практический разбор, включая инструментирование как frontend, так и backend, см. в статье [Инструментирование приложения NextJS с OpenTelemetry и ClickStack](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack).
+
+<Frame>
+  <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="Переход от воспроизведения сеанса к серверным трассировкам в ClickStack" />
+</Frame>
+
+<div id="trace-to-session">
+  ### От трассировки к сеансу
+</div>
+
+Корреляция работает и в обратную сторону. При просмотре трассировки в разделе **Search** нажмите на него, чтобы открыть подробную информацию, затем выберите вкладку **Session replay**, чтобы увидеть, что именно происходило у пользователя в момент записи этой трассировки. Это особенно полезно при расследовании ошибок или медленных запросов: вы можете начать с проблемы на стороне сервера и сразу увидеть ситуацию глазами пользователя.
+
+<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Представление трассировки в воспроизведении сеанса" size="lg" />
+
+<div id="data-storage">
+  ## Как хранятся данные сеанса
+</div>
+
+Данные воспроизведения сеанса хранятся в отдельной таблице [`hyperdx_sessions`](/ru/clickstack/ingesting-data/schemas#sessions) в ClickHouse, отдельно от журналов и трассировок. Каждое событие сеанса представляет собой строку с полем `Body`, содержащим полезную нагрузку события, и полем `LogAttributes` типа map, в котором хранятся метаданные события. Столбцы `Body` и `LogAttributes` вместе содержат сведения о самих событиях сеанса, которые используются для восстановления воспроизведения.
+
+Полную информацию о схеме таблицы см. в разделе [Таблицы и схемы, используемые ClickStack](/ru/clickstack/ingesting-data/schemas).
+
+<div id="try-it-out">
+  ## Попробуйте
+</div>
+
+Есть два способа посмотреть воспроизведение сеанса в действии:
+
+* **Онлайн-пример** — перейдите на [clickpy.clickhouse.com](https://clickpy.clickhouse.com), поработайте с приложением, а затем откройте воспроизведение своего сеанса на [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) в источнике **ClickPy Sessions**. Подробнее о том, как был инструментирован ClickPy, см. в статье блога [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+* **Локальное демо** — [демо воспроизведения сеанса](/ru/clickstack/example-datasets/session-replay) пошагово показывает, как инструментировать демонстрационное приложение, включая локальный запуск ClickStack и просмотр своих записей.
+
+<div id="learn-more">
+  ## Узнайте больше
+</div>
+
+* [Демо воспроизведения сеанса](/ru/clickstack/example-datasets/session-replay) — интерактивное локальное демоприложение с пошаговыми инструкциями
+* [Справочник по Browser SDK](/ru/clickstack/ingesting-data/sdks/browser) — все параметры SDK, source maps, пользовательские действия и расширенная конфигурация
+* [Поиск](/ru/clickstack/features/search) — синтаксис поиска для фильтрации сеансов и событий
+* [Панели мониторинга](/ru/clickstack/features/dashboards/overview) — создавайте визуализации и панели мониторинга на основе данных сеансов и трассировок
+* [Оповещения](/ru/clickstack/features/alerts) — настройте оповещения об ошибках, задержках и других сигналах
+* [Архитектура ClickStack](/ru/clickstack/architecture) — как ClickHouse, HyperDX и OTel collector работают вместе

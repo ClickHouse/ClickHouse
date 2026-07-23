@@ -19,6 +19,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -26,9 +27,15 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
 
 namespace ErrorCodes
 {
@@ -64,6 +71,8 @@ protected:
     {
         if (part_index >= data_parts.size())
             return {};
+
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeIndexSource::generate");
 
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
@@ -182,7 +191,8 @@ private:
             /*save_marks_in_cache=*/ false,
             local_context->getReadSettings(),
             /*load_marks_threadpool=*/ nullptr,
-            num_columns);
+            num_columns,
+            local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
     }
 
     ColumnPtr fillMarks(

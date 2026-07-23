@@ -98,7 +98,7 @@ class DisksClient(object):
         while True:
             events = self.poller.poll(timeout)
             if not events:
-                raise TimeoutError(f"Disks client returned no output")
+                raise TimeoutError("Disks client returned no output")
 
             separator_seen = False
             for fd_num, event in events:

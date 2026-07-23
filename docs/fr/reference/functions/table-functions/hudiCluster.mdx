@@ -1,0 +1,58 @@
+---
+description: 'Une extension de la fonction de table hudi. Permet de traiter, en
+  parallèle sur plusieurs nœuds d''un cluster spécifié, des fichiers issus de
+  tables Apache Hudi dans Amazon S3.'
+sidebarTitle: 'hudiCluster'
+slug: /sql-reference/table-functions/hudiCluster
+title: 'Fonction de table hudiCluster'
+doc_type: 'reference'
+---
+
+Il s&#39;agit d&#39;une extension de la fonction de table [hudi](/fr/reference/functions/table-functions/hudi).
+
+Elle permet de traiter, en parallèle sur plusieurs nœuds d&#39;un cluster spécifié, des fichiers issus de tables Apache [Hudi](https://hudi.apache.org/) dans Amazon S3. Sur l&#39;initiateur, elle établit une connexion à tous les nœuds du cluster et répartit dynamiquement les fichiers. Sur le nœud worker, elle demande à l&#39;initiateur la tâche suivante à traiter, puis l&#39;exécute. Ce processus se répète jusqu&#39;à ce que toutes les tâches soient terminées.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`                               | Nom d’un cluster utilisé pour construire un ensemble d’adresses et de paramètres de connexion pour des serveurs distants et locaux.                                                                                                                                                                                                                                                                                                                                                           |
+| `url`                                        | URL du bucket contenant le chemin vers une table Hudi existante dans S3.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `aws_access_key_id`, `aws_secret_access_key` | Informations d’identification à long terme de l’utilisateur du compte [AWS](https://aws.amazon.com/). Vous pouvez les utiliser pour authentifier vos requêtes. Ces paramètres sont facultatifs. Si aucune information d’identification n’est spécifiée, celles de la configuration de ClickHouse sont utilisées. Pour plus d’informations, consultez [Utilisation de S3 pour le stockage des données](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
+| `format`                                     | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `structure`                                  | Structure de la table. Format : `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                |
+| `compression`                                | Le paramètre est facultatif. Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier.                                                                                                                                                                                                                                                                                    |
+| `extra_credentials`                          | Le paramètre est facultatif. Il permet de transmettre un `role_arn` pour le contrôle d’accès basé sur les rôles dans ClickHouse Cloud. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour connaître les étapes de configuration.                                                                                                                                                                                                                      |
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Une table ayant la structure spécifiée pour lire les données d’un cluster à partir de la table Hudi spécifiée dans S3.
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
+* `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l’ETag est inconnu, la valeur est `NULL`.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Moteur Hudi](/fr/reference/engines/table-engines/integrations/hudi)
+* [Fonction de table Hudi](/fr/reference/functions/table-functions/hudi)
