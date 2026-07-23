@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the test asserts the exact input order of `groupFormat` output,
+-- but with parallel replicas the read is split across replicas and the merge order of
+-- aggregation states does not follow the input order.
+
 -- Regression: `groupFormat` is order-dependent, so a single sparse argument must be
 -- processed in input order. The default `addBatchSparseSinglePlace` appends the non-default
 -- sparse values first and then the default rows, which would reorder the output. See PR #93201.
