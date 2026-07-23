@@ -84,7 +84,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// version - the newest version every deployed worker already understands - so a rolling upgrade of a
 /// mixed-version deployment does not make not-yet-upgraded workers reject tasks. Settings introduced
 /// by newer versions are omitted for this version by writeChangedBinary; they only tune in-memory
-/// behavior, so the omission degrades gracefully. Exception: when a join step of the fragment has
+/// behavior, so the omission degrades gracefully (an omitted `max_memory_usage` is restored on the
+/// receiver from its query context settings, see JoinStepLogical::deserialize). Exception: when a
+/// join step of the fragment has
 /// `enable_join_in_memory_compression` enabled and its `join_algorithm` may resolve to a hash-family
 /// implementation (the only consumers of the setting), the task plan is serialized at version 4
 /// instead, so the opted-in feature is not silently dropped on this path - a not-yet-upgraded worker

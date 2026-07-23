@@ -84,6 +84,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_memory_usage;
+}
+
 static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
 {
     switch (op)
@@ -1739,6 +1744,18 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
+
+    /// `max_memory_usage` joined the plan serialization only in version 4, and version selection
+    /// (QueryPlanSerializationSettings::getMinRequiredVersion) keeps fragments without in-memory
+    /// join compression at the baseline version, so their streams omit it. It is not only the
+    /// compression trigger: HashJoin::shrinkStoredBlocksToFit consults it for plain block shrinking
+    /// too, and leaving it at 0 here would silently drop that shrink trigger on the remote fragment
+    /// (a possible MEMORY_LIMIT_EXCEEDED where the local path would have shrunk). The query settings
+    /// travel with the distributed query, so restore the value from the receiver's query context.
+    /// A version-4 stream always carries the sender's exact value (updatePlanSettings marks every
+    /// serialized setting changed), so this never overrides an explicitly sent value.
+    if (!ctx.settings.isChanged("max_memory_usage"))
+        join_settings.max_memory_usage = ctx.context->getSettingsRef()[Setting::max_memory_usage];
 
     return std::make_unique<JoinStepLogical>(
         std::move(left_header),

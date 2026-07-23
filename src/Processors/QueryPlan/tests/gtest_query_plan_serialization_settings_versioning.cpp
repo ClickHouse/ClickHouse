@@ -90,10 +90,11 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
 
-    /// The other version-4 setting (`max_memory_usage`) is only the compression trigger: with
-    /// compression disabled it does not alter execution, so it must not raise the version even when
+    /// The other version-4 setting (`max_memory_usage`) must not raise the version even when
     /// assigned (a join step assigns it - changed-flagged - on every serialization, e.g. the
-    /// query-level `max_memory_usage`). A version-3 worker then simply behaves like a pre-version-4 server.
+    /// query-level `max_memory_usage`): a receiver that does not find it in the stream restores it
+    /// from its query context settings (see JoinStepLogical::deserialize), and a version-3 worker
+    /// simply behaves like a pre-version-4 server.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
@@ -131,4 +132,25 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
             = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, algorithm};
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
+}
+
+/// `max_memory_usage` is consumed by `HashJoin::shrinkStoredBlocksToFit` even with compression off,
+/// and a fragment without compression is serialized below version 4, so the stream omits it.
+/// JoinStepLogical::deserialize then restores it from the receiver's query context settings, keyed
+/// on the changed flag: a value read from the stream must be marked changed (so an explicitly sent
+/// value - even one equal to the default - is never overridden), and a value absent from the stream
+/// must not be (so the receiver knows to fall back).
+TEST(QueryPlanSerializationSettings, MaxMemoryUsageChangedFlagAfterRoundTrip)
+{
+    QueryPlanSerializationSettings settings;
+    settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
+
+    /// A version-4 stream carries the value; the receiver sees it as changed.
+    EXPECT_TRUE(roundTrip(settings, 4).isChanged("max_memory_usage"));
+
+    /// A version-3 stream omits it; the receiver sees it as unchanged and falls back.
+    EXPECT_FALSE(roundTrip(settings, 3).isChanged("max_memory_usage"));
+
+    /// A default-constructed instance has nothing changed.
+    EXPECT_FALSE(QueryPlanSerializationSettings{}.isChanged("max_memory_usage"));
 }

@@ -59,6 +59,11 @@ struct QueryPlanSerializationSettings
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
+    /// Whether the setting was explicitly assigned or was present in the deserialized stream
+    /// (readBinary marks only the settings it reads as changed). Lets a step's deserialization
+    /// distinguish a value omitted by an older sender from one sent equal to the default.
+    bool isChanged(std::string_view name) const;
+
     /// The minimum query plan serialization version required to serialize these settings without
     /// changing the receiver's behavior, i.e. the version below which `writeChangedBinary` would
     /// omit a version-gated setting whose value actually matters. Returns the baseline version 1

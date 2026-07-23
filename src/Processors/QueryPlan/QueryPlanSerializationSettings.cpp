@@ -167,6 +167,11 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
     impl->readBinary(in);
 }
 
+bool QueryPlanSerializationSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
+}
+
 /// Whether the enabled `join_algorithm` set may resolve to a hash-family join implementation
 /// (see tryCreateJoin in Planner/PlannerJoins.cpp): those are the only ones that consume
 /// `enable_join_in_memory_compression`. `prefer_partial_merge` counts because it falls back to
@@ -200,12 +205,13 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// setting it serializes, and assignment marks a setting changed even when the value equals the
     /// default (see JoinSettings::updatePlanSettings), so e.g. `max_memory_usage` is flagged on every
     /// serialized join step and a flag-based check would raise every join fragment to version 4.
-    /// Key it on behavior instead: the version-4 settings alter execution only when in-memory join
-    /// compression is enabled (`max_memory_usage` is
-    /// consumed solely as its trigger), so a version-1 stream that omits all of them makes
-    /// the receiver behave exactly like a pre-version-4 server - a graceful degradation - unless
-    /// compression was requested, in which case dropping the settings would silently disable the
-    /// requested feature and the higher version is required.
+    /// Key it on behavior instead: only an actually enabled in-memory join compression requires the
+    /// higher version, because dropping `enable_join_in_memory_compression` from the stream would
+    /// silently disable the requested feature. `max_memory_usage` does not raise the version even
+    /// though HashJoin also consumes it with compression off (as the shrinkStoredBlocksToFit
+    /// trigger): a receiver that does not get it from the stream restores it from its query context
+    /// settings (see JoinStepLogical::deserialize), and a pre-version-4 receiver behaves exactly
+    /// like a pre-version-4 server - a graceful degradation.
     /// Even with compression enabled, the setting can only matter when the step's `join_algorithm`
     /// may pick a hash-family implementation: a step restricted to e.g. `full_sorting_merge` or
     /// `partial_merge` never consumes it, so its fragment stays readable by older receivers.
