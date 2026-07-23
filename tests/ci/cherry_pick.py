@@ -83,9 +83,7 @@ def recover_git_state() -> None:
         return
     lock = Path(git_dir) / "index.lock"
     if lock.exists():
-        logging.warning(
-            "Removing stale %s left by a crashed git process", lock
-        )
+        logging.warning("Removing stale %s left by a crashed git process", lock)
         try:
             lock.unlink()
         except OSError as e:
@@ -205,12 +203,28 @@ close it.
                 # this pr is not for the current branch
                 continue
             if pr.head.ref.startswith(f"cherrypick/{self.name}"):
-                self.cherrypick_pr = pr
                 to_pop.append(i)
+                if not any(label.name == Labels.PR_CHERRYPICK for label in pr.labels):
+                    logging.warning(
+                        "The cherry-pick PR #%s is found but doesn't have %s label. The "
+                        "GitHub search index is stuck",
+                        pr.number,
+                        Labels.PR_CHERRYPICK,
+                    )
+                    continue
+                self.cherrypick_pr = pr
             elif pr.head.ref.startswith(f"backport/{self.name}"):
+                to_pop.append(i)
+                if not any(label.name == Labels.PR_BACKPORT for label in pr.labels):
+                    logging.warning(
+                        "The backport PR #%s is found but doesn't have %s label. The "
+                        "GitHub search index is stuck",
+                        pr.number,
+                        Labels.PR_BACKPORT,
+                    )
+                    continue
                 self.backport_pr = pr
                 self._backported = True
-                to_pop.append(i)
             else:
                 assert False, f"BUG! Invalid PR's branch [{pr.head.ref}]"
 
