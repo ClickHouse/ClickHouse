@@ -342,6 +342,33 @@ test_params_cohere_wiki_20m_qbit_int8_1bit = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
 }
 
+# QBit(Int8) 1-bit variant of the hackernews OpenAI dataset. The truth set identifies
+# query vectors by id, so the reference vector is read back from the QBit column and
+# cast to Array(Int8) (see _render_query_source_sql) - i.e. the stored vector's codes
+# are the query, ranked at 1-bit precision. Only 1000 query vectors are run.
+test_params_hackernews_10m_qbit_int8_1bit = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: None,  # not a CODEC(Quantized(...)) column
+    QBIT_ELEMENT_TYPE: "Int8",
+    QBIT_SEARCH_BITS: 1,  # 1-bit search: read only the top bit-plane of each code
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,  # concurrency test not needed for QBit runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+}
+
 
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
@@ -726,7 +753,16 @@ class RunTest:
         if truth_record["query_id"] is None:
             raise ValueError("Truth record must contain either `query_id` or `query_vector`")
 
-        return f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {int(truth_record['query_id'])})"
+        # On a QBit column the stored value is a QBit, but the transposed distance
+        # function needs an Array reference. Cast the stored codes back to Array(<element>);
+        # the distance function dequantizes the Int8 codes, so the query is the stored
+        # vector's full-precision codes ranked against the 1-bit database (the original
+        # Float32 query is not recoverable from a QBit-only table).
+        vector_expr = self._vector_column
+        if self._qbit_element is not None:
+            vector_expr = f"CAST({self._vector_column} AS Array({self._qbit_element}))"
+
+        return f"(SELECT {vector_expr} FROM {self._table} WHERE {self._id_column} = {int(truth_record['query_id'])})"
 
     def _save_truth_records(self, name):
         if self._truth_set is None:
@@ -1059,10 +1095,15 @@ TESTS_TO_RUN = [
     #     dataset_cohere_wiki_20m,
     #     test_params_cohere_wiki_20m_rabitq,
     # ),
+    # (
+    #     "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m_qbit_int8_1bit,
+    # ),
     (
-        "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
-        dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m_qbit_int8_1bit,
+        "Test using the hackernews dataset with QBit(Int8) 1-bit search",
+        dataset_hackernews_openai,
+        test_params_hackernews_10m_qbit_int8_1bit,
     ),
 ]
 
