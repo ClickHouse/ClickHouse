@@ -556,6 +556,11 @@ void DeduplicationInfo::cacheDataHashes(DataHashCache & cache) const
 
 void DeduplicationInfo::prewarmDataHashes() const
 {
+    /// When disabled the hashes are never consumed (deduplicateSelf/getDeduplicationHashes
+    /// early-return), so warming them would be a wasted O(rows x cols x tokens) pass.
+    if (disabled)
+        return;
+
     if (!original_block || !original_block->rows())
         return;
 
