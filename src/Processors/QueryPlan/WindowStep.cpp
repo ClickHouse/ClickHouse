@@ -285,7 +285,12 @@ static std::vector<WindowFunctionDescription> deserializeWindowFunctions(ReadBuf
 
         AggregateFunctionProperties properties;
         func.aggregate_function = AggregateFunctionFactory::instance().get(
-            function_name, NullsAction::EMPTY, func.argument_types, func.function_parameters, properties);
+            function_name,
+            NullsAction::EMPTY,
+            func.argument_types,
+            func.function_parameters,
+            properties,
+            AggregateFunctionStateVariant::Window);
     }
 
     return window_functions;

@@ -61,3 +61,5 @@
 4	9	13
 4	14	23
 4	19	33
+-- theilsU window variant under make_distributed_plan
+0	1
