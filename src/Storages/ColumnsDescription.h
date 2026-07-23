@@ -333,6 +333,10 @@ ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & co
 /// Insert into `dependencies` the columns from `candidate_names` that `node` reads,
 /// excluding names bound by lambda arguments inside the expression.
 void collectAliasDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, NameSet & dependencies);
+/// Same, but canonicalizes subcolumn references (e.g. `t.x`) to their owning storage
+/// column of `columns` before the membership test, so reading a column through a
+/// subcolumn path still counts as a dependency on that column.
+void collectColumnDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, const ColumnsDescription & columns, NameSet & dependencies);
 void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns, ContextPtr context);
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context);
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context);

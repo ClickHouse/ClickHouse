@@ -1377,6 +1377,29 @@ void collectAliasDependenciesFromAST(
             dependencies.insert(column_name);
 }
 
+void collectColumnDependenciesFromAST(
+    const ASTPtr & node,
+    const NameSet & candidate_names,
+    const ColumnsDescription & columns,
+    NameSet & dependencies)
+{
+    if (!node)
+        return;
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(node);
+    for (const auto & column_name : columns_context.requiredColumns())
+    {
+        String name = column_name;
+        /// A subcolumn path (e.g. `t.x`) is a read of its owning storage column.
+        if (const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            name = column->getNameInStorage();
+
+        if (candidate_names.contains(name))
+            dependencies.insert(name);
+    }
+}
+
 namespace
 {
 

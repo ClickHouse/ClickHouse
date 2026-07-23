@@ -776,6 +776,12 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// just like for a classical ALTER UPDATE (see the READ_COLUMN branch below,
     /// which only rebuilds when the column type changes and so misses patches).
     NameSet patch_updated_columns;
+    /// Columns rewritten by `MATERIALIZE COLUMN` commands. The rewrite changes the stored
+    /// values, so skip indices, projections and statistics that depend on them must be
+    /// rebuilt, just like for a classical ALTER UPDATE. They are kept separate from
+    /// `updated_columns` because they must not go through update-column validation or
+    /// trigger recalculation of dependent MATERIALIZED columns.
+    NameSet rematerialized_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -795,6 +801,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
             && command.column_name != RowExistsColumn::name)
             patch_updated_columns.insert(command.column_name);
+
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+            rematerialized_columns.insert(command.column_name);
 
         auto alter = command.ast();
         if (alter && alter->update_assignments)
@@ -887,6 +896,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
         columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        columns_for_dependencies.insert(rematerialized_columns.begin(), rematerialized_columns.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
 
@@ -1633,7 +1643,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col);
             });
 
         if (changed)
@@ -1671,7 +1681,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col);
             });
 
         if (changed)
@@ -1684,7 +1694,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             continue;
 
         if (updated_columns.contains(column.name) || changed_columns.contains(column.name)
-            || patch_updated_columns.contains(column.name))
+            || patch_updated_columns.contains(column.name) || rematerialized_columns.contains(column.name))
             materialized_statistics.insert(column.name);
     }
 

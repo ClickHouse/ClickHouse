@@ -2403,12 +2403,37 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
 
             ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
             NameSet dependencies;
-            collectAliasDependenciesFromAST(expanded, changed, dependencies);
+            collectColumnDependenciesFromAST(expanded, changed, new_metadata.columns, dependencies);
             if (!dependencies.empty())
             {
                 changed.insert(column.name);
                 progress = true;
             }
+        }
+    }
+
+    /// Every column in the closure is rematerialized by a mutation, but a mutation cannot
+    /// read `EPHEMERAL` columns: their values exist only during `INSERT` and are not stored
+    /// in parts. Reject such ALTERs up front instead of committing the new metadata and
+    /// queueing a mutation that can never succeed.
+    NameSet ephemeral_names;
+    for (const auto & column : new_metadata.columns.getEphemeral())
+        ephemeral_names.insert(column.name);
+    if (!ephemeral_names.empty())
+    {
+        for (const auto & name : changed)
+        {
+            const auto & column = new_metadata.columns.get(name);
+            ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
+            NameSet ephemeral_dependencies;
+            collectColumnDependenciesFromAST(expanded, ephemeral_names, new_metadata.columns, ephemeral_dependencies);
+            if (!ephemeral_dependencies.empty())
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which depends on the EPHEMERAL "
+                    "column {}. Existing parts cannot be rematerialized because EPHEMERAL values exist only during INSERT",
+                    backQuote(name),
+                    backQuote(*ephemeral_dependencies.begin()));
         }
     }
 
@@ -2421,7 +2446,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         const auto & column = new_metadata.columns.get(name);
         ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
         NameSet dependencies;
-        collectAliasDependenciesFromAST(expanded, changed, dependencies);
+        collectColumnDependenciesFromAST(expanded, changed, new_metadata.columns, dependencies);
         dependencies.erase(name);
         deps_in_closure[name] = std::move(dependencies);
     }
