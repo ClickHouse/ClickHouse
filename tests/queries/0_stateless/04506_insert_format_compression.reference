@@ -21,3 +21,4 @@ INSERT INTO test_insert_format_compression SELECT * FROM input(\'id UInt32, text
 1
 0
 0
+19	S

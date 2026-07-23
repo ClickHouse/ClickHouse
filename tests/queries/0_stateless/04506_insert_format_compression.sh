@@ -185,3 +185,12 @@ SELECT 'still alive';
 " 2>&1 | grep -c -x "still alive" || true
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_insert_format_compression"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+# Positive check: COMPRESSION 'none' next to a bare FORMAT is NOT actually compressed, so it does not
+# have the ambiguous-boundary problem above and inline data is allowed with it.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'none'
+19,S
+"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"

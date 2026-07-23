@@ -2575,13 +2575,19 @@ void ClientBase::processParsedSingleQuery(
         /// async_insert/inline-insert-data dispatch decision, so it fails the same way regardless of
         /// settings, and before the query's true data boundary would otherwise be determined (which
         /// is why everything after this INSERT in a multiquery script goes unexecuted; the error
-        /// message calls this out).
+        /// message calls this out). `COMPRESSION 'none'` (or 'auto' with nothing to detect from) is not
+        /// actually compressed, so it does not have this ambiguous-boundary problem and is allowed.
         if (insert && insert->data && insert->compression && !insert->infile)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "COMPRESSION next to FORMAT is only supported for data supplied via stdin, "
-                "not for data embedded inline in the query. Pipe the compressed data via stdin instead. "
-                "Note that in a multiquery script this INSERT must be the last statement, since its true "
-                "data boundary cannot be determined without decompressing it.");
+        {
+            const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
+            String compression_method_string = compression_method_node.value.safeGet<std::string>();
+            if (chooseCompressionMethod("", compression_method_string) != CompressionMethod::None)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "COMPRESSION next to FORMAT is only supported for data supplied via stdin, "
+                    "not for data embedded inline in the query. Pipe the compressed data via stdin instead. "
+                    "Note that in a multiquery script this INSERT must be the last statement, since its true "
+                    "data boundary cannot be determined without decompressing it.");
+        }
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
