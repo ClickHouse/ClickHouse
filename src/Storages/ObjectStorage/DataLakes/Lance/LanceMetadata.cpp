@@ -22,7 +22,6 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
-#include <Storages/ObjectStorage/DataLakes/Lance/LanceSink.h>
 #include <Storages/StorageSnapshot.h>
 #if USE_AWS_S3
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -608,18 +607,6 @@ std::optional<size_t> LanceMetadata::totalRows(ContextPtr) const
 std::optional<size_t> LanceMetadata::totalBytes(ContextPtr) const
 {
     return Lance::Dataset::open(getDatasetOptions()).totalBytes();
-}
-
-SinkToStoragePtr LanceMetadata::write(
-    SharedHeader sample_block,
-    const StorageID &,
-    ObjectStoragePtr,
-    StorageObjectStorageConfigurationPtr,
-    const std::optional<FormatSettings> &,
-    ContextPtr,
-    std::shared_ptr<DataLake::ICatalog>)
-{
-    return std::make_shared<LanceSink>(std::move(sample_block), getDatasetOptions());
 }
 
 Lance::DatasetOptions LanceMetadata::getDatasetOptions() const
