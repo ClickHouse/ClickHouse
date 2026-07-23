@@ -34,7 +34,12 @@ INSERT INTO t SELECT number % 3, number % 5, toString(number) FROM numbers(50);
 
 # Query the persisted table in a separate process. Each of these used to abort with
 # "Inconsistent KeyCondition behavior" in debug builds; all must equal the native-typed count (13).
+# Pin the projection settings so the exact-count path is exercised regardless of their defaults.
 ${CLICKHOUSE_LOCAL} --path="${DB_DIR}" --multiquery --query "
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+-- Assert the wide-typed comparison is routed through the exact-count projection (the abort path); count alone passes even if it is silently declined.
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = 0) WHERE explain ILIKE '%_exact_count_projection%';
 SELECT count() FROM t WHERE team_id = 1 AND k = 0;
 SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = 0;
 SELECT count() FROM t WHERE team_id = toInt256(1) AND k = 0;
@@ -67,7 +72,12 @@ INSERT INTO pk VALUES
 "
 
 # Query in a separate process. Used to abort in debug; must return 3 (matching the native-typed comparison).
+# Pin the projection settings so the exact-count path is exercised regardless of their defaults.
 ${CLICKHOUSE_LOCAL} --path="${DB_DIR2}" --multiquery --query "
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+-- Assert the wide-typed comparison is routed through the exact-count projection (the abort path); count alone passes even if it is silently declined.
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%_exact_count_projection%';
 SELECT count() FROM pk WHERE (x = 3) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toInt256(3)) AND (y = 55) AND (5786 >= z);
