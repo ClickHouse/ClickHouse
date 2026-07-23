@@ -940,18 +940,6 @@ def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark
 
 @pytest.mark.parametrize("format_version", ["2"])
 def test_optimize_manifest_files_all_deleted(started_cluster_iceberg_with_spark, format_version):
-    """
-    OPTIMIZE TABLE ... MANIFEST must not crash when the current snapshot still lists a DATA manifest
-    but every one of its entries is DELETED (copy-on-write "delete every row"), so no live data files
-    remain. That is the #111216 shape: `partitions_map` is collected empty while `num_data_manifests`
-    is >= 1, and the pre-fix code fell through to `generateManifestList` with zero entries, closing an
-    Avro writer that was never written to (null encoder deref -> SIGSEGV).
-
-    This is distinct from an "empty table" in general: a merge-on-read table whose rows are all masked
-    by delete files still has live DATA entries, so `partitions_map` is non-empty and this branch is
-    not taken. The assertions below therefore check the manifest metadata directly (a DATA manifest
-    exists but has zero live entries), not just that `SELECT count()` is 0.
-    """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     storage_type = "local"
