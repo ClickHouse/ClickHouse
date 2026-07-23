@@ -21,7 +21,9 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/StringUtils.h>
 #include <Common/likePatternToRegexp.h>
+#include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -3497,14 +3499,29 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
         args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
     else if (is_remote)
         args.front() = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(fn.name == "remoteSecure"));
-    else if (is_url)
-        args.front() = make_intrusive<ASTLiteral>(makeFuzzedUrl());
     else
     {
-        /// urlCluster(cluster_name, URL, ...): fuzz both the cluster and the URL.
-        args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
-        if (args.size() >= 2)
-            args[1] = make_intrusive<ASTLiteral>(makeFuzzedUrl());
+        /// urlCluster(cluster_name, URL[, format[, structure]]): also fuzz the cluster name.
+        if (is_url_cluster)
+            args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+
+        const size_t url_idx = is_url ? 0 : 1;
+        if (args.size() <= url_idx)
+            return;
+        auto string_arg = [&](size_t idx) -> String
+        {
+            if (idx < args.size())
+                if (const auto * lit = args[idx]->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
+                    return lit->value.safeGet<String>();
+            return "";
+        };
+        /// The seed's format/structure arguments survive this mutation, so the fuzzed endpoint
+        /// must serve that exact format. Keep the seed URL when the format argument exists but
+        /// the server cannot write it (input-only like Regexp, or not a plain string literal).
+        const String format = string_arg(url_idx + 1);
+        if (args.size() > url_idx + 1 && (format.empty() || !FormatFactory::instance().isOutputFormat(format)))
+            return;
+        args[url_idx] = make_intrusive<ASTLiteral>(makeFuzzedUrl(format, string_arg(url_idx + 2)));
     }
 }
 
@@ -3583,16 +3600,34 @@ String QueryFuzzer::makeRemoteHostDescriptor(bool secure)
     return "127.0.0." + braces + (fuzz_rand() % 2 == 0 ? port : "");
 }
 
-/// Build a loopback URL for url()/urlCluster() over the local HTTP interface. It targets the
-/// servable `/?query=` endpoint (a bare `GET /data...` hits NotFoundHandler, a deterministic 404
-/// before any table-function logic), with a brace expansion (1..4 globs — the same syntax url()
-/// accepts) inside the query, so url() fetches one real `SELECT` endpoint per glob. The port must
-/// match the scheme, so https pairs with the secure HTTP port (8443) and http with 8123.
-String QueryFuzzer::makeFuzzedUrl()
+/// First column name of a 'name Type, ...' structure literal; empty when it does not start with a
+/// plain identifier.
+static String firstStructureColumn(const String & structure)
+{
+    size_t i = 0;
+    while (i < structure.size() && isWhitespaceASCII(structure[i]))
+        ++i;
+    const size_t start = i;
+    while (i < structure.size() && isWordCharASCII(structure[i]))
+        ++i;
+    return (i > start && !isNumericASCII(structure[start])) ? structure.substr(start, i - start) : String();
+}
+
+/// Build a loopback URL hitting the servable `/?query=` endpoint (a bare `GET /data...` is a 404),
+/// with a brace expansion so url() fetches one `SELECT` per glob. Serves the seed's surviving
+/// format/structure: first structure column names the result, format goes in a FORMAT clause. Port
+/// matches the scheme (https:8443, http:8123).
+String QueryFuzzer::makeFuzzedUrl(const String & format, const String & structure)
 {
     const bool secure = fuzz_rand() % 2 == 0;
     const String host = secure ? "https://127.0.0.1:8443" : "http://127.0.0.1:8123";
-    return host + "/?query=SELECT+" + makeBraceExpansion();
+    String url = host + "/?query=SELECT+" + makeBraceExpansion();
+    const String first_column = firstStructureColumn(structure);
+    if (!first_column.empty())
+        url += "+AS+%60" + first_column + "%60"; /// %60 = backtick, keeps keyword-like names valid
+    if (!format.empty())
+        url += "+FORMAT+" + format;
+    return url;
 }
 
 /// Swap a table expression's plain-table or subquery child for the table-function AST `wrapped`,

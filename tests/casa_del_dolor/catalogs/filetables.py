@@ -499,7 +499,7 @@ class FileHandler:
                 # On a name collision the extra would shadow a declared column with a new
                 # type, making the comparison mismatch on ClickHouse's declared type
                 if f"cx{i}" in ch_column_names:
-                    continue
+                    raise ValueError(f"cx{i} already exists in ClickHouse column names")
                 file_columns.append(
                     {
                         "name": f"cx{i}",
