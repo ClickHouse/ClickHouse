@@ -76,11 +76,10 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
         if (allow_lazy_replicated_captures && isLazyReplicationUseful(column.column))
         {
             /// Wrap the capture into ColumnReplicated instead of physically copying it.
-            /// All captures share the same indexes column, so that functions inside
-            /// the lambda can use the common-indexes fast path
-            /// (see IExecutableFunction::execute).
             if (!replication_indexes)
                 replication_indexes = convertOffsetsToIndexes(offsets);
+            /// All captures share the same indexes column, so that functions inside
+            /// the lambda can use the common-indexes fast path
             column.column = ColumnReplicated::create(column.column, replication_indexes);
         }
         else

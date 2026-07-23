@@ -129,9 +129,6 @@ namespace
 {
 
 /// Materialize Replicated(Array) by copying whole row ranges.
-/// The generic index path (ColumnArray::indexImpl) builds a UInt64 index per nested
-/// element; when array rows are long, these indexes take more memory than the copied
-/// data itself (8 bytes per index vs e.g. 2 bytes per UInt16 element).
 template <typename T>
 ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
 {
@@ -143,13 +140,14 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     auto & res_offsets = res_offsets_column->getData();
 
     size_t total_elements = 0;
+    /// First extract the offsets fromt he indexes
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
         total_elements += src_offsets[row] - src_offsets[row - 1];
         res_offsets[i] = total_elements;
     }
-
+    /// Now, insert the entire row (multiple columns) on each iteration
     auto res_data = src_data.cloneEmpty();
     res_data->reserve(total_elements);
     for (size_t i = 0; i < num_rows; ++i)
@@ -161,6 +159,8 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
 }
 
+/// The generic index path (ColumnArray::indexImpl) builds a UInt64 index per nested
+/// element which is inefficient, now the index type is based on the range
 ColumnPtr materializeReplicatedArray(const ColumnArray & src, const IColumn & row_indexes)
 {
     if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&row_indexes))
@@ -180,8 +180,6 @@ ColumnPtr materializeReplicatedArray(const ColumnArray & src, const IColumn & ro
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
     /// For long array rows copy whole row ranges instead of the generic per-element
-    /// index path, see materializeReplicatedArrayImpl. For short rows the generic
-    /// path is faster and its per-element indexes are small.
     if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
     {
         size_t src_rows_count = src_array->size();
@@ -189,7 +187,7 @@ ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
         if (src_rows_count != 0 && src_elements >= src_rows_count * 8)
             return materializeReplicatedArray(*src_array, *indexes.getIndexes());
     }
-
+    /// For short rows the generic path is faster and its per-element indexes are small.
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 

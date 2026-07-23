@@ -218,10 +218,8 @@ private:
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;
 
-    /// If true, replicate wraps captured columns into ColumnReplicated instead of
-    /// physically copying them, and appendArgument keeps incoming ColumnReplicated
-    /// captures as is. Avoids a quadratic memory blowup when a lambda captures
-    /// a large column (e.g. arrayMap(x -> f(large_array, x), ...)).
+    /// If true, replicate function wraps captured columns into ColumnReplicated instead of
+    /// physically copying them
     /// Controlled by the setting enable_lazy_columns_replication.
     bool allow_lazy_replicated_captures = false;
 
