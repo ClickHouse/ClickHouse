@@ -55,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"parallel_replicas_plan_based", false, false, "New setting"},
             {"use_paimon_metadata_files_cache", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."},
             {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (pure-substring patterns) or multiMatchAny (other patterns, when Hyperscan/Vectorscan is permitted); when neither fast path applies the original OR chain is kept unchanged."},
@@ -74,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_minmax_for_primary_key_pruning", false, true, "New setting to use the part's partition minmax to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key."},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"optimize_redundant_comparisons", false, true, "New setting to detect conflicting and redundant comparison conditions on the same expression within AND chains."},
             {"mysql_datatypes_support_level", "decimal,datetime64,date2Date32", "decimal,datetime64,date2Date32,geometry", "Map MySQL's concrete spatial types (LINESTRING, POLYGON, MULTILINESTRING, MULTIPOLYGON) and the generic GEOMETRY type to the corresponding ClickHouse geometric types by default. The generic GEOMETRY column maps to the umbrella Geometry type; reading a value whose subtype has no ClickHouse counterpart (MULTIPOINT, GEOMETRYCOLLECTION) throws at read time."},
             {"snappy_mode", "basic", "basic", "New setting to control the wire format used for snappy compression in generic file/URL I/O. The default `basic` preserves backward-compatible Hadoop snappy block format reads; HTTP `Content-Encoding: snappy` always uses the framing format independently of this setting."},
             {"compile_regular_expressions", false, true, "New setting to enable JIT compilation of simple regular expressions in functions like `match` and `extract`."},
@@ -100,6 +102,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"cloud_mode_database_engine", 1, 1, "Obsolete setting, the database engine in Cloud no longer depends on it."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
@@ -1323,6 +1326,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
             {"dead_blobs_to_throw_insert", 0, 1000000, "New setting to reject inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "water_filling", "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

@@ -7,6 +7,7 @@
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -227,17 +228,14 @@ it is recommended to set it below the maximum filename length (usually 255
 bytes) with some gap to avoid filesystem errors.
 )", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
-use full type of storage for data part instead of packed
-)", 0) \
+    Minimal uncompressed size in bytes to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal part level to
-use full type of storage for data part instead of packed
-)", 0) \
+    Minimal part level to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal number of rows to use full type
-of storage for data part instead of packed
-)", 0) \
+    Minimal number of rows to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -736,18 +734,12 @@ Possible values:
 Merge parts if every part in the range is older than the value of
 `min_age_to_force_merge_seconds`.
 
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
-
 Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, R"(
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire
 partition and not on subset.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-`enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 - true, false
@@ -2032,6 +2024,9 @@ Maximum time between runs of merge coordinator thread
 )", 0) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
+)", 0) \
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+What algorithm will be used by merge coordinator thread to distribute merges between replicas
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
