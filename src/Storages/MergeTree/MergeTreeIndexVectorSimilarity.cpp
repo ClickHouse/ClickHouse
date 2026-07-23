@@ -309,10 +309,7 @@ namespace
 
 /// Check a few things to prevent undefined behavior further down in Usearch
 /// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be
-///   non-zero and finite. Usearch scales each element by 127 / sqrt(magnitude_squared) before casting to i8.
-///   A zero magnitude divides by zero, and a magnitude that overflows to infinity (e.g. an element around 1e300)
-///   turns the scaled value into nan. Both make the subsequent cast to i8 undefined behavior.
+/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be non-zero and finite.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -345,13 +342,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
         throw Exception(error_code,
-            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
-
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && !std::isfinite(magnitude_squared))
-        throw Exception(error_code,
-            "Vectors whose squared magnitude overflows to infinity for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 template <typename Column>
