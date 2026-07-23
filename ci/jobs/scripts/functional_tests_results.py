@@ -244,19 +244,25 @@ class FTResultsProcessor:
                 for result in failed_results:
                     result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
-                # Single test failed - sequential run, this test is the culprit.
-                # Demote it to ERROR so a test that merely witnessed the server
-                # death is not reported as an ordinary test failure - except in
-                # bugfix validation, where the new test crashing the server on
-                # master HEAD is the expected reproduction of the bug: keep the
-                # FAIL so `invert_bugfix_validation_status` counts it as a
-                # reproduction instead of tripping its fail-closed ERROR guard
-                # and reporting the run inconclusive (#105789). Accepted
-                # tradeoff: ABORTED_RUN_EXIT_CODES also covers host-caused
-                # kills (e.g. 128+SIGKILL from an OOM of the runner), so in
-                # bugfix validation such a death with a single failed test
-                # reads as a reproduction too - same tradeoff the >1-failed
-                # (UNKNOWN + flipped `Server died` row) path already makes.
+                # Exactly one FAIL was captured before the server died. The
+                # runner may still have been parallel (`--jobs` is always
+                # passed), so this is best-effort attribution of the culprit,
+                # not proof of a single-test sequential run. Demote it to
+                # ERROR so a test that merely witnessed the server death is
+                # not reported as an ordinary test failure - except in bugfix
+                # validation, where the job runs only the PR's own changed
+                # tests: a server death while they run is the expected
+                # reproduction of the bug regardless of which of them got its
+                # FAIL printed first, so keep the FAIL for
+                # `invert_bugfix_validation_status` instead of tripping its
+                # fail-closed ERROR guard and reporting the run inconclusive
+                # (#105789). This matches the >1-failed path (UNKNOWN rows +
+                # flipped `Server died` row), which already validates the
+                # parallel-crash case. Accepted tradeoff:
+                # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
+                # 128+SIGKILL from an OOM of the runner), so in bugfix
+                # validation such a death with a single failed test reads as
+                # a reproduction too.
                 if not is_bugfix_validation:
                     failed_results[0].status = Result.Status.ERROR
             test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
