@@ -9,7 +9,6 @@
 
 #include <arrow/c/abi.h>
 #include <arrow/c/bridge.h>
-#include <arrow/record_batch.h>
 #include <ch_lance.h>
 
 #include <utility>
@@ -43,26 +42,6 @@ String takeError(ch_lance_error & error)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
 
     throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "{}", message);
-}
-
-ch_lance_dataset_options toNativeOptions(const DatasetOptions & options)
-{
-    return
-    {
-        .uri = options.uri.c_str(),
-        .use_s3 = options.use_s3,
-        .s3_region = options.s3_region.c_str(),
-        .s3_endpoint = options.s3_endpoint.c_str(),
-        .s3_access_key_id = options.s3_access_key_id.c_str(),
-        .s3_secret_access_key = options.s3_secret_access_key.c_str(),
-        .s3_session_token = options.s3_session_token.c_str(),
-        .s3_role_arn = options.s3_role_arn.c_str(),
-        .s3_role_session_name = options.s3_role_session_name.c_str(),
-        .s3_use_environment_credentials = options.s3_use_environment_credentials,
-        .s3_no_sign_request = options.s3_no_sign_request,
-        .s3_allow_http = options.s3_allow_http,
-        .s3_virtual_hosted_style_request = options.s3_virtual_hosted_style_request,
-    };
 }
 
 }
@@ -131,7 +110,22 @@ Dataset::~Dataset()
 
 Dataset Dataset::open(const DatasetOptions & options)
 {
-    const auto native_options = toNativeOptions(options);
+    ch_lance_dataset_options native_options
+    {
+        .uri = options.uri.c_str(),
+        .use_s3 = options.use_s3,
+        .s3_region = options.s3_region.c_str(),
+        .s3_endpoint = options.s3_endpoint.c_str(),
+        .s3_access_key_id = options.s3_access_key_id.c_str(),
+        .s3_secret_access_key = options.s3_secret_access_key.c_str(),
+        .s3_session_token = options.s3_session_token.c_str(),
+        .s3_role_arn = options.s3_role_arn.c_str(),
+        .s3_role_session_name = options.s3_role_session_name.c_str(),
+        .s3_use_environment_credentials = options.s3_use_environment_credentials,
+        .s3_no_sign_request = options.s3_no_sign_request,
+        .s3_allow_http = options.s3_allow_http,
+        .s3_virtual_hosted_style_request = options.s3_virtual_hosted_style_request,
+    };
 
     ch_lance_error error{};
     auto * dataset = ch_lance_open_dataset(&native_options, &error);
@@ -226,58 +220,6 @@ Scan Dataset::planScan(const ScanDescription & scan_description) const
     if (!scan)
         throwLanceError(error);
     return Scan(scan);
-}
-
-Writer::Writer(Writer && other) noexcept
-    : writer(std::exchange(other.writer, nullptr))
-{
-}
-
-Writer & Writer::operator=(Writer && other) noexcept
-{
-    if (this != &other)
-    {
-        if (writer)
-            ch_lance_free_writer(writer);
-        writer = std::exchange(other.writer, nullptr);
-    }
-    return *this;
-}
-
-Writer::~Writer()
-{
-    if (writer)
-        ch_lance_free_writer(writer);
-}
-
-Writer Writer::open(const DatasetOptions & options)
-{
-    const auto native_options = toNativeOptions(options);
-    ch_lance_error error{};
-    auto * writer = ch_lance_open_writer(&native_options, &error);
-    if (!writer)
-        throwLanceError(error);
-    return Writer(writer);
-}
-
-void Writer::writeBatch(const arrow::RecordBatch & batch) const
-{
-    ArrowArray array{};
-    ArrowSchema schema{};
-    const auto status = arrow::ExportRecordBatch(batch, &array, &schema);
-    if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export Lance Arrow record batch: {}", status.ToString());
-
-    ch_lance_error error{};
-    if (!ch_lance_write_batch(writer, &array, &schema, &error))
-        throwLanceError(error);
-}
-
-void Writer::finish() const
-{
-    ch_lance_error error{};
-    if (!ch_lance_finish_writer(writer, &error))
-        throwLanceError(error);
 }
 
 }

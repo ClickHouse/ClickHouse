@@ -18,7 +18,6 @@ typedef struct ch_lance_error
 
 typedef struct ch_lance_dataset ch_lance_dataset;
 typedef struct ch_lance_scan ch_lance_scan;
-typedef struct ch_lance_writer ch_lance_writer;
 
 typedef struct ch_lance_dataset_options
 {
@@ -70,16 +69,6 @@ bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * h
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);
 bool ch_lance_next_batch(ch_lance_scan * scan, struct ArrowArray * array, struct ArrowSchema * schema, bool * has_batch, ch_lance_error * error);
 void ch_lance_free_scan(ch_lance_scan * scan);
-
-ch_lance_writer * ch_lance_open_writer(const ch_lance_dataset_options * options, ch_lance_error * error);
-// Takes ownership of both `ArrowArray` and `ArrowSchema` whenever all pointers are non-null.
-bool ch_lance_write_batch(
-    ch_lance_writer * writer,
-    struct ArrowArray * array,
-    struct ArrowSchema * schema,
-    ch_lance_error * error);
-bool ch_lance_finish_writer(ch_lance_writer * writer, ch_lance_error * error);
-void ch_lance_free_writer(ch_lance_writer * writer);
 
 void ch_lance_free_error(ch_lance_error * error);
 

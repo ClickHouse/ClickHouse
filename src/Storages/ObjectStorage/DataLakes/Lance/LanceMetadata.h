@@ -72,16 +72,6 @@ public:
     std::optional<size_t> totalRows(ContextPtr) const override;
     std::optional<size_t> totalBytes(ContextPtr) const override;
 
-    bool supportsWrites() const override { return true; }
-    SinkToStoragePtr write(
-        SharedHeader sample_block,
-        const StorageID & table_id,
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
-
 private:
     Lance::DatasetOptions getDatasetOptions() const;
 
