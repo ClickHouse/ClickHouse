@@ -546,13 +546,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ProfileEvents::increment(ProfileEvents::Merge);
     ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
-    String local_tmp_prefix;
-    if (global_ctx->need_prefix)
-    {
-        // projection parts have different prefix and suffix compared to normal parts.
-        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-        local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
-    }
+    // projection parts have different prefix and suffix compared to normal parts.
+    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+    String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
     const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
@@ -2078,7 +2074,6 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->deduplicate_by_columns,
             global_ctx->cleanup,
             projection_merging_params,
-            global_ctx->need_prefix,
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,

@@ -1602,8 +1602,6 @@ struct MutationContext
 
     HardlinkedFiles hardlinked_files;
 
-    bool need_prefix = true;
-
     scope_guard temporary_directory_lock;
 
     bool checkOperationIsNotCanceled() const
@@ -2970,8 +2968,7 @@ MutateTask::MutateTask(
     const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
-    PartitionActionBlocker & merges_blocker_,
-    bool need_prefix_)
+    PartitionActionBlocker & merges_blocker_)
     : ctx(std::make_shared<MutationContext>())
 {
     ctx->data = &data_;
@@ -2989,7 +2986,6 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
-    ctx->need_prefix = need_prefix_;
 }
 
 
@@ -3394,9 +3390,7 @@ bool MutateTask::prepare()
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        std::string prefix;
-        if (ctx->need_prefix)
-            prefix = "tmp_clone_";
+        std::string prefix = "tmp_clone_";
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -3526,9 +3520,7 @@ bool MutateTask::prepare()
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
     ctx->disk = single_disk_volume->getDisk();
 
-    std::string prefix;
-    if (ctx->need_prefix)
-        prefix = TEMP_DIRECTORY_PREFIX;
+    std::string prefix = TEMP_DIRECTORY_PREFIX;
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
 
