@@ -1114,3 +1114,83 @@ def test_transaction_control_noops_only_exact_wrappers(started_cluster):
                 cur.fetchall()
         finally:
             conn.close()
+
+
+def test_relation_oids_are_stable_within_a_session(started_cluster):
+    # PostgreSQL OIDs are identifiers, not per-query ranks: a client may cache an OID, or resolve it in one
+    # catalog query and follow it in another. Creating or dropping an earlier-sorting table must not renumber
+    # existing relations within a session, and a table created after the connection was opened must still
+    # become visible with a fresh OID.
+    node.query("DROP TABLE IF EXISTS aaa_oid_probe SYNC")
+    node.query("DROP TABLE IF EXISTS zzz_oid_target SYNC")
+    node.query("CREATE TABLE zzz_oid_target (x UInt32) ENGINE = MergeTree ORDER BY x")
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        def relation_oid(name):
+            cur.execute(f"SELECT oid FROM pg_class WHERE relname = '{name}' ORDER BY oid LIMIT 1")
+            rows = cur.fetchall()
+            return rows[0][0] if rows else None
+
+        oid_before = relation_oid("zzz_oid_target")
+        assert oid_before is not None
+
+        # A new table whose (database, name) sorts before the existing one would have shifted every later
+        # row_number rank; a stable mapping must keep the old OID and give the new table a fresh one.
+        node.query("CREATE TABLE aaa_oid_probe (x UInt32) ENGINE = MergeTree ORDER BY x")
+        assert relation_oid("zzz_oid_target") == oid_before
+        new_oid = relation_oid("aaa_oid_probe")
+        assert new_oid is not None
+        assert new_oid != oid_before
+
+        # Dropping the earlier-sorting table must not renumber the survivor either, and the dropped
+        # relation must disappear from the catalog.
+        node.query("DROP TABLE aaa_oid_probe SYNC")
+        assert relation_oid("zzz_oid_target") == oid_before
+        assert relation_oid("aaa_oid_probe") is None
+    finally:
+        conn.close()
+        node.query("DROP TABLE IF EXISTS zzz_oid_target SYNC")
+
+
+def test_real_public_database_wins_over_alias(started_cluster):
+    # The synthetic `public` schema (the current-database alias, OID 2200) must not shadow a real ClickHouse
+    # database named `public`: when one exists, `schema='public'` has to reach its tables, and once it is
+    # dropped the alias comes back so an unqualified lookup resolves in the connected database again.
+    node.query("DROP DATABASE IF EXISTS public SYNC")
+    node.query("DROP TABLE IF EXISTS default.pub_probe SYNC")
+    node.query("CREATE TABLE default.pub_probe (v UInt32) ENGINE = MergeTree ORDER BY v")
+    node.query("INSERT INTO default.pub_probe VALUES (1)")
+    try:
+        node.query("CREATE DATABASE public")
+        node.query("CREATE TABLE public.pub_probe (v UInt32) ENGINE = MergeTree ORDER BY v")
+        node.query("INSERT INTO public.pub_probe VALUES (2)")
+
+        # Schema-qualified `public` resolves to the real database, not to the alias of the connected
+        # database (`default`, whose table holds a different value).
+        assert (
+            node.query(
+                f"SELECT v FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'pub_probe', 'pguser', 'pgpass', 'public')"
+            )
+            == "2\n"
+        )
+        # The connected database stays reachable under its own name.
+        assert (
+            node.query(
+                f"SELECT v FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'pub_probe', 'pguser', 'pgpass', 'default')"
+            )
+            == "1\n"
+        )
+
+        node.query("DROP DATABASE public SYNC")
+
+        # With no real `public` database the alias is back: an unqualified lookup (the reader defaults to
+        # the `public` schema) resolves the table in the connected database.
+        assert node.query(f"SELECT v FROM {pg_source('default', 'pub_probe')}") == "1\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS public SYNC")
+        node.query("DROP TABLE IF EXISTS default.pub_probe SYNC")

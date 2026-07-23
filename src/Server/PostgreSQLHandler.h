@@ -129,7 +129,12 @@ private:
     static bool isTransactionControlQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
 
+    /// Lazily creates the emulated `pg_catalog` views on the first statement of the connection, then, before
+    /// any statement that may read them, assigns stable OIDs to databases and tables that appeared since
+    /// (see `refreshCatalogOids`).
+    void prepareSystemTables(ContextMutablePtr query_context, const String & query);
     void initializeSystemTables(ContextMutablePtr query_context);
+    void refreshCatalogOids(ContextMutablePtr query_context);
     bool should_init_system_tables = true;
 };
 

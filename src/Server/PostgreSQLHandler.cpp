@@ -745,13 +745,9 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         if (copy_query->format == ASTCopyQuery::Formats::CSV)
             query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
 
-        /// Initialize the emulated `pg_catalog` views before the copy, mirroring `processQuery`, so that the
+        /// Prepare the emulated `pg_catalog` views before the copy, mirroring `processQuery`, so that the
         /// `COPY` path sees the same catalog surface as ordinary queries on a fresh connection.
-        if (should_init_system_tables)
-        {
-            initializeSystemTables(query_context);
-            should_init_system_tables = false;
-        }
+        prepareSystemTables(query_context, query);
 
         QueryScope query_scope = QueryScope::create(query_context);
 
@@ -907,15 +903,11 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         if (copy_query->format == ASTCopyQuery::Formats::CSV)
             query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
 
-        /// Lazily create the emulated `pg_catalog` views before running the copied query, exactly as
+        /// Lazily prepare the emulated `pg_catalog` views before running the copied query, exactly as
         /// `processQuery` does for ordinary queries. Otherwise `COPY (SELECT * FROM pg_namespace) TO STDOUT`
         /// on a fresh connection would fail with `UNKNOWN_TABLE` while a plain `SELECT * FROM pg_namespace`
         /// succeeds.
-        if (should_init_system_tables)
-        {
-            initializeSystemTables(query_context);
-            should_init_system_tables = false;
-        }
+        prepareSystemTables(query_context, query);
 
         QueryScope query_scope = QueryScope::create(query_context);
 
@@ -1072,11 +1064,7 @@ void PostgreSQLHandler::processQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        if (should_init_system_tables)
-        {
-            initializeSystemTables(query_context);
-            should_init_system_tables = false;
-        }
+        prepareSystemTables(query_context, query->query);
 
         if (processExecute(query->query, query_context))
             return;
@@ -1303,14 +1291,10 @@ void PostgreSQLHandler::processExecuteQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        if (should_init_system_tables)
-        {
-            initializeSystemTables(query_context);
-            should_init_system_tables = false;
-        }
+        auto sql_query = prepared_statements_manager.getStatmentFromBind();
+        prepareSystemTables(query_context, sql_query);
 
         QueryScope query_scope = QueryScope::create(query_context);
-        auto sql_query = prepared_statements_manager.getStatmentFromBind();
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command =
             PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
@@ -1621,39 +1605,70 @@ SELECT * FROM VALUES(
     /// views - `fetchPostgreSQLTableStructure` resolves a schema-qualified table through
     /// `pg_namespace.oid` -> `pg_class.relnamespace` and then pulls its columns by `pg_attribute.attrelid` -
     /// so a hash collision would merge two databases or two tables and corrupt schema inference for both. A
-    /// truncated hash is not collision-free enough at realistic catalog sizes, so both are assigned a dense,
-    /// unique number in shared views (`pg_namespace_oids` per database, `pg_class_oids` per `(database, table)`
-    /// pair) via `row_number`. Because those views are unfiltered, the number for a given database or table is
-    /// the same in every reference within a query, so the joins always line up. OID ranges are offset
-    /// (namespaces into [1e9, 2e9), relations into [2e9, 3e9)) to avoid colliding with the small built-in
-    /// OIDs. In addition, tables of the connected database are also exposed under the default `public` schema
-    /// (OID 2200), so that clients that do not qualify a table with a schema - which is what
-    /// `fetchPostgreSQLTableStructure` does by default - still resolve it in the current database.
+    /// truncated hash is not collision-free enough at realistic catalog sizes, and a per-query `row_number`
+    /// rank would renumber existing objects whenever an earlier-sorting one is created or dropped, breaking
+    /// clients that cache an OID or resolve it in one catalog query and follow it in another. PostgreSQL
+    /// OIDs are identifiers, not ranks, so they must stay stable at least for the lifetime of the session.
+    ///
+    /// Therefore the OIDs live in per-session state tables (`pg_namespace_oids_data` per database,
+    /// `pg_class_oids_data` per `(database, table)` pair) that are append-only: `refreshCatalogOids` assigns
+    /// a fresh OID above the current maximum to every object not seen before and never renumbers or removes
+    /// existing entries, so an OID observed once keeps referring to the same object for the whole
+    /// connection. The `pg_namespace_oids` / `pg_class_oids` views join that state with the live
+    /// `system.databases` / `system.tables`, so a dropped object disappears from the catalog while its OID
+    /// stays reserved (and a recreated one keeps its old OID, which is harmless - stability is what
+    /// matters). OID ranges are offset (namespaces above 1e9, relations above 2e9) to avoid colliding with
+    /// the small built-in OIDs. In addition, when no real database named `public` exists, tables of the
+    /// connected database are also exposed under the default `public` schema (OID 2200), so that clients
+    /// that do not qualify a table with a schema - which is what `fetchPostgreSQLTableStructure` does by
+    /// default - still resolve it in the current database.
+    execute_query(R"(CREATE TEMPORARY TABLE IF NOT EXISTS pg_class_oids_data
+(
+    database String,
+    name String,
+    oid UInt32
+) ENGINE = Memory)");
+    execute_query(R"(CREATE TEMPORARY TABLE IF NOT EXISTS pg_namespace_oids_data
+(
+    name String,
+    oid UInt32
+) ENGINE = Memory)");
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_oids AS
 SELECT
-    database,
-    name,
-    toUInt32(row_number() OVER (ORDER BY database, name) + 2000000000) AS oid
-FROM system.tables)");
+    tables.database AS database,
+    tables.name AS name,
+    oids.oid AS oid
+FROM system.tables AS tables
+INNER JOIN pg_class_oids_data AS oids ON tables.database = oids.database AND tables.name = oids.name)");
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace_oids AS
 SELECT
-    name,
-    toUInt32(row_number() OVER (ORDER BY name) + 1000000000) AS oid
-FROM system.databases)");
+    databases.name AS name,
+    oids.oid AS oid
+FROM system.databases AS databases
+INNER JOIN pg_namespace_oids_data AS oids ON databases.name = oids.name)");
+    /// The synthetic `public` schema (OID 2200), which aliases the connected database, is emitted only when
+    /// no real ClickHouse database named `public` exists; otherwise the real database wins and is listed
+    /// like any other, so that `postgresql(..., schema='public')` reaches it instead of silently resolving
+    /// to the current-database alias. The connected database always stays reachable under its own name. The
+    /// remaining fixed names are PostgreSQL-reserved (`pg_*`) or system-owned (`information_schema`), so
+    /// they cannot shadow user data.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
 SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
-    (2200,  'public'),
     (132,   'information_schema'),
     (11519, 'pg_toast'),
     (99,    'pg_temp_1'),
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
+SELECT toUInt32(2200) AS oid, 'public' AS nspname
+FROM system.one
+WHERE (SELECT count() FROM system.databases WHERE name = 'public') = 0
+UNION ALL
 SELECT oid, name AS nspname
 FROM pg_namespace_oids
-WHERE name NOT IN ('pg_catalog', 'public', 'information_schema', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'))");
+WHERE name NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
 SELECT oid, relname, relnamespace, relkind FROM VALUES(
@@ -1682,7 +1697,8 @@ SELECT
     2200 AS relnamespace,
     'r' AS relkind
 FROM pg_class_oids
-WHERE database = currentDatabase())");
+WHERE database = currentDatabase()
+    AND (SELECT count() FROM system.databases WHERE name = 'public') = 0)");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
 SELECT * FROM VALUES(
@@ -1875,6 +1891,60 @@ SELECT * FROM VALUES(
     (50001, 40000, 2.0, 'ok'),
     (50002, 40000, 3.0, 'happy')
 ))");
+}
+
+void PostgreSQLHandler::prepareSystemTables(ContextMutablePtr query_context, const String & query)
+{
+    if (should_init_system_tables)
+    {
+        initializeSystemTables(query_context);
+        should_init_system_tables = false;
+    }
+
+    /// Assign stable OIDs to databases and tables that appeared since the last refresh, but only before a
+    /// statement that may actually read the emulated catalog (every catalog object's name starts with
+    /// `pg_`); plain data statements skip the `system.tables` scan. The check may fire spuriously (e.g. a
+    /// user table named `pg_something`), which merely costs a refresh.
+    if (query.find("pg_") != String::npos)
+        refreshCatalogOids(query_context);
+}
+
+void PostgreSQLHandler::refreshCatalogOids(ContextMutablePtr query_context)
+{
+    auto internal_context = Context::createCopy(server.context());
+    internal_context->makeQueryContext();
+    internal_context->setCurrentQueryId(fmt::format("postgres-oids:{:d}", connection_id));
+    internal_context->setSessionContext(query_context->getSessionContext());
+
+    String out_str;
+    auto out_buffer = WriteBufferFromString(out_str);
+
+    auto execute_query = [&](const String & query)
+    {
+        QueryScope query_scope = QueryScope::create(internal_context);
+        ReadBufferFromString read_buf(query);
+        executeQuery(read_buf, out_buffer, internal_context, {}, QueryFlags{ .internal = true });
+    };
+
+    /// Append-only: an object not seen before gets a fresh OID above the current maximum (or above the range
+    /// offset when the state is empty, where `max(oid)` is 0), ordered by name only to make the very first
+    /// assignment deterministic. Existing entries are never renumbered or removed, so the OID a client
+    /// observed keeps referring to the same object for the lifetime of the session (see
+    /// `initializeSystemTables`). Temporary tables (including the emulated catalog itself) live in the
+    /// nameless database, which never joins a namespace, so they are not given OIDs.
+    execute_query(R"(INSERT INTO pg_namespace_oids_data (name, oid)
+SELECT
+    name,
+    toUInt32(greatest((SELECT max(oid) FROM pg_namespace_oids_data), 1000000000) + row_number() OVER (ORDER BY name)) AS oid
+FROM system.databases
+WHERE name NOT IN (SELECT name FROM pg_namespace_oids_data))");
+    execute_query(R"(INSERT INTO pg_class_oids_data (database, name, oid)
+SELECT
+    database,
+    name,
+    toUInt32(greatest((SELECT max(oid) FROM pg_class_oids_data), 2000000000) + row_number() OVER (ORDER BY database, name)) AS oid
+FROM system.tables
+WHERE NOT is_temporary AND (database, name) NOT IN (SELECT database, name FROM pg_class_oids_data))");
 }
 
 }
