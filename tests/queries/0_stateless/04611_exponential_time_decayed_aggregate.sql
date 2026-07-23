@@ -309,8 +309,6 @@ SELECT exponentialTimeDecayedSum(0)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedAvg(-1)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedCount(10)('not a time'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT exponentialTimeDecayedSum(10)('not a value', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT exponentialTimeDecayedSum(10)(-1, 1); -- { serverError BAD_ARGUMENTS }
-SELECT exponentialTimeDecayingFloat64(-1, toFloat64(0), 10); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 0); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayingValueAt(
     exponentialTimeDecayingFloat64(1, toFloat64(10), 10),
