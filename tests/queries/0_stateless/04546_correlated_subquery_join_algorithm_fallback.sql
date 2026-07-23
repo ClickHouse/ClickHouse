@@ -50,9 +50,19 @@ SELECT count() FROM t_04546 AS o WHERE     EXISTS (SELECT 1 FROM t_04546 AS i WH
 SELECT count() FROM t_04546 AS o WHERE NOT EXISTS (SELECT 1 FROM t_04546 AS i WHERE i.a = o.a AND i.a < 50) SETTINGS join_algorithm = 'full_sorting_merge', query_plan_convert_any_join_to_semi_or_anti_join = 0;
 
 -- When full_sorting_merge is combined with hash, hash can execute the converted SEMI/ANTI, so the pass
--- still converts and results are unchanged.
+-- still converts and results are unchanged. Result counts alone cannot tell conversion from a declined
+-- rewrite (both return 50) and the convert setting is randomized in CI, so assert the plan directly with
+-- the rewrite pinned on: EXISTS becomes SEMI, NOT EXISTS becomes ANTI.
 SELECT count() FROM t_04546 AS o WHERE     EXISTS (SELECT 1 FROM t_04546 AS i WHERE i.a = o.a AND i.a < 50) SETTINGS join_algorithm = 'full_sorting_merge,hash';
 SELECT count() FROM t_04546 AS o WHERE NOT EXISTS (SELECT 1 FROM t_04546 AS i WHERE i.a = o.a AND i.a < 50) SETTINGS join_algorithm = 'full_sorting_merge,hash';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM t_04546 AS o WHERE EXISTS (SELECT 1 FROM t_04546 AS i WHERE i.a = o.a AND i.a < 50)
+    SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_convert_any_join_to_semi_or_anti_join = 1
+) WHERE explain ILIKE '%Strictness: semi%';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM t_04546 AS o WHERE NOT EXISTS (SELECT 1 FROM t_04546 AS i WHERE i.a = o.a AND i.a < 50)
+    SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_convert_any_join_to_semi_or_anti_join = 1
+) WHERE explain ILIKE '%Strictness: anti%';
 
 -- Plan assertions: with full_sorting_merge and the runtime-filter pass enabled (default), the internal
 -- decorrelation join must stay a full sorting merge join. Result counts alone cannot catch this: an
