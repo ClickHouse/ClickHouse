@@ -48,11 +48,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
+    extern const char cache_filesystem_failure_non_errno[];
 }
 
 String toString(FileSegmentKind kind)
@@ -488,6 +490,13 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             throw ErrnoException(EIO, "Failpoint: simulated cache disk IO failure");
         });
 
+        fiu_do_on(FailPoints::cache_filesystem_failure_non_errno,
+        {
+            /// A non-ErrnoException failure (e.g. a generic Exception thrown by the
+            /// underlying object-storage read) after the cache file was created.
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint: simulated cache non-errno failure");
+        });
+
         /// Size is equal to offset as offset for write buffer points to data end.
         download->cache_writer->set(from, /* size */size, /* offset */size);
         /// Reset the buffer when finished.
@@ -535,12 +544,28 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         auto lk = lock();
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
+
+        /// The writer created the file before any byte was accounted; drop the empty
+        /// orphan (noexcept overload to not mask `e`), same as the ErrnoException path.
+        if (downloaded_size == 0)
+        {
+            std::error_code ec;
+            fs::remove(file_segment_path, ec);
+        }
+
         throw;
     }
     catch (const fs::filesystem_error & e)
     {
         auto lk = lock();
         setDownloadFailedUnlocked(lk);
+
+        if (downloaded_size == 0)
+        {
+            std::error_code ec;
+            fs::remove(file_segment_path, ec);
+        }
+
         throw ErrnoException(e.code().value(),
             "Filesystem error in cache write ({}), current cache state: {}",
             e.what(), getInfoForLogUnlocked(lk));
