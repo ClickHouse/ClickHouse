@@ -838,7 +838,7 @@ bool HelpCommand::parse(IParser::Pos & /* pos */, boost::intrusive_ptr<ASTKeeper
 
 void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClientBase * client) const
 {
-    for (const auto & pair : KeeperClientBase::commands)
+    for (const auto & pair : KeeperClientBase::getCommands())
         client->cout << pair.second->generateHelpString() << "\n";
 }
 

@@ -363,16 +363,10 @@ try
         setResponseDefaultHeaders(response);
         response.setContentType("application/json");
 
-        std::ostringstream null_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        KeeperClientBase ensure_loaded(null_stream, null_stream);
-
         Poco::JSON::Object response_json;
         Poco::JSON::Array commands_array;
 
-        for (const auto & [name, _] : KeeperClientBase::commands)
-            commands_array.add(name);
-
-        for (const auto & name : four_letter_word_commands)
+        for (const auto & name : KeeperClientBase::getRegisteredCommandNames())
             commands_array.add(name);
 
         response_json.set("commands", commands_array);

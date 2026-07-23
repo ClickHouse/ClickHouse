@@ -5,7 +5,9 @@
 #include <Core/Names.h>
 #include <filesystem>
 #include <future>
+#include <map>
 #include <unordered_map>
+#include <vector>
 
 
 namespace fs = std::filesystem;
@@ -33,6 +35,8 @@ String formatKeeperNodeName(const String & name);
 class KeeperClientBase
 {
 public:
+    using CommandsMap = std::map<String, Command>;
+
     explicit KeeperClientBase(std::ostream & cout_, std::ostream & cerr_);
 
     fs::path getAbsolutePath(const String & relative) const;
@@ -41,12 +45,16 @@ public:
 
     virtual String executeFourLetterCommand(const String & command);
 
+    /// Process-wide command registry, initialized exactly once (thread-safe).
+    static const CommandsMap & getCommands();
+
+    /// Sorted command names plus four-letter words, for completion.
+    static const std::vector<String> & getRegisteredCommandNames();
+
     zkutil::ZooKeeperPtr zookeeper;
     std::filesystem::path cwd = "/";
     std::function<void()> confirmation_callback;
     bool ask_confirmation = true;
-
-    inline static std::map<String, Command> commands;
 
     std::unordered_map<String, std::future<Coordination::WatchResponse>> watches;
 
@@ -58,12 +66,7 @@ public:
     virtual ~KeeperClientBase() = default;
 
 protected:
-
-    void loadCommands(std::vector<Command> && new_commands);
-
     bool waiting_confirmation = false;
-
-    std::vector<String> registered_commands_and_four_letter_words;
 };
 
 }

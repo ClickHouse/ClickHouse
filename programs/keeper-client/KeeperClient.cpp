@@ -124,7 +124,7 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 
     /// No whitespace → still typing the command name.
     if (cmd_end == String::npos || cmd_end == 0)
-        return registered_commands_and_four_letter_words;
+        return getRegisteredCommandNames();
 
     /// Find where the path argument starts (first non-whitespace char after command).
     auto path_start = prefix.find_first_not_of(word_breaks, cmd_end);
@@ -518,7 +518,7 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
 
                 auto * query = res->as<ASTKeeperQuery>();
 
-                auto command = KeeperClient::commands.find(query->command);
+                auto command = getCommands().find(query->command);
                 command->second->execute(query, this);
             }
 

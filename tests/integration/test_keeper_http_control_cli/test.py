@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import uuid
 
 import pytest
 import requests
@@ -82,3 +83,51 @@ def test_http_commands_cli_response(started_cluster):
     ) as client:
         assert client.get("foo") == "bar"
         client.rm("foo")
+
+
+def test_http_commands_list(started_cluster):
+    leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    response = requests.get(
+        "http://{host}:{port}/api/v1/commands?list".format(
+            host=leader.ip_address, port=9182
+        )
+    )
+    assert response.status_code == 200
+    commands = response.json()["commands"]
+    assert isinstance(commands, list)
+    # CLI commands
+    for expected in ("ls", "create", "get", "rmr", "cd", "help"):
+        assert expected in commands
+    # Four-letter words
+    for expected in ("ruok", "mntr", "conf", "srvr"):
+        assert expected in commands
+    # Should be sorted (getRegisteredCommandNames sorts)
+    assert commands == sorted(commands)
+    # No duplicates
+    assert len(commands) == len(set(commands))
+
+    # list without constructing side effects: second call still works
+    response2 = requests.get(
+        "http://{host}:{port}/api/v1/commands?list".format(
+            host=leader.ip_address, port=9182
+        )
+    )
+    assert response2.status_code == 200
+    assert response2.json()["commands"] == commands
+
+
+def test_http_commands_quoted_semicolon_node(started_cluster):
+    leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    prefix = str(uuid.uuid4())
+    # create path with semicolon in name — must be quoted for parser
+    path = f"{prefix}a;b"
+    response = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": f"create '{path}' 'semival'", "cwd": "/"},
+    )
+    assert response.status_code == 200
+    with keeper_utils.KeeperClient.from_cluster(
+        cluster, keeper_ip=leader.ip_address, port=9181
+    ) as client:
+        assert client.get(path) == "semival"
+        client.rm(path)

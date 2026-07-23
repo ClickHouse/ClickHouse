@@ -1447,6 +1447,28 @@
         return "/" + resolved.join("/");
     }
 
+
+    function escapeKeeperNodeName(name) {
+        let needs_escaping = false;
+        let needs_quoting = false;
+        for (let i = 0; i < name.length; i++) {
+            const ch = name[i];
+            const code = name.charCodeAt(i);
+            const is_word_char = (code >= 48 && code <= 57) || (code >= 65 && code <= 90)
+                || (code >= 97 && code <= 122) || ch === '_';
+            if (ch === ' ' || ch === '\\') {
+                needs_escaping = true;
+            } else if (!is_word_char && ch !== '/' && ch !== '.' && ch !== '-') {
+                needs_quoting = true;
+            }
+        }
+        if (!needs_escaping && !needs_quoting)
+            return name;
+        if (!needs_quoting)
+            return name.replaceAll('\\', '\\\\').replaceAll(' ', '\\ ');
+        return "'" + name.replaceAll('\\', '\\\\').replaceAll("'", "\\'") + "'";
+    }
+
     function longestCommonPrefix(strings) {
         if (strings.length === 0) return "";
         let common = strings[0];
@@ -1498,6 +1520,8 @@
     }
 
     async function handleTabCompletionImpl(input) {
+        const requestValue = input.value;
+        const requestCwd = cli_cwd;
         const value = input.value;
 
         if (!value.includes(" ")) {
@@ -1555,10 +1579,14 @@
             const res = await fetch(url.toString());
             if (!res.ok) return;
             const data = await res.json();
+            // Discard if the user typed or changed cwd while the request was in flight.
+            if (input.value !== requestValue || cli_cwd !== requestCwd)
+                return;
             const children = (data.child_node_names || []).sort();
-            const matches = namePrefix === ""
+            const raw_matches = namePrefix === ""
                 ? children
                 : children.filter(name => name.startsWith(namePrefix));
+            const matches = raw_matches.map(escapeKeeperNodeName);
 
             if (matches.length === 0) return;
             if (matches.length === 1) {
@@ -1637,6 +1665,8 @@
         command_container.scrollTop = command_container.scrollHeight;
 
         if (await handleCdCommand(command)) {
+            // Error/output may have been appended after the earlier scroll; keep the prompt in view.
+            command_container.scrollTop = command_container.scrollHeight;
             command_input.focus();
             return;
         }
@@ -1671,6 +1701,7 @@
                 appendToOutput(`Unexpected error: ${err}\n`);
                 command_input.disabled = false;
                 command_input.focus();
+                command_container.scrollTop = command_container.scrollHeight;
             });
     }
 

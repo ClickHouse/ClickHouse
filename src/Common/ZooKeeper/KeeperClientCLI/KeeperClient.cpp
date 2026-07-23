@@ -4,6 +4,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
+#include <algorithm>
 
 
 namespace DB
@@ -12,6 +13,64 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+KeeperClientBase::CommandsMap createCommandsMap()
+{
+    KeeperClientBase::CommandsMap commands;
+    std::vector<Command> list = {
+        std::make_shared<LSCommand>(),
+        std::make_shared<LSRCommand>(),
+        std::make_shared<CDCommand>(),
+        std::make_shared<SetCommand>(),
+        std::make_shared<CreateCommand>(),
+        std::make_shared<TouchCommand>(),
+        std::make_shared<GetCommand>(),
+        std::make_shared<ExistsCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSuperNodes>(),
+        std::make_shared<DeleteStaleBackups>(),
+        std::make_shared<FindBigFamily>(),
+        std::make_shared<RMCommand>(),
+        std::make_shared<RMRCommand>(),
+        std::make_shared<ReconfigCommand>(),
+        std::make_shared<SyncCommand>(),
+        std::make_shared<HelpCommand>(),
+        std::make_shared<FourLetterWordCommand>(),
+        std::make_shared<GetDirectChildrenNumberCommand>(),
+        std::make_shared<GetAllChildrenNumberCommand>(),
+        std::make_shared<CPCommand>(),
+        std::make_shared<CPRCommand>(),
+        std::make_shared<MVCommand>(),
+        std::make_shared<MVRCommand>(),
+        std::make_shared<GetAclCommand>(),
+        std::make_shared<WaitWatchCommand>(),
+    };
+
+    for (auto & command : list)
+        commands.emplace(command->getName(), std::move(command));
+
+    return commands;
+}
+
+std::vector<String> createRegisteredCommandNames(const KeeperClientBase::CommandsMap & commands)
+{
+    std::vector<String> names;
+    names.reserve(commands.size() + four_letter_word_commands.size());
+
+    for (const auto & [name, _] : commands)
+        names.push_back(name);
+
+    for (const auto & command : four_letter_word_commands)
+        names.push_back(command);
+
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
 }
 
 /// Format a ZooKeeper node name for display and round-tripping through the parser.
@@ -70,6 +129,18 @@ String formatKeeperNodeName(const String & name)
     return result;
 }
 
+const KeeperClientBase::CommandsMap & KeeperClientBase::getCommands()
+{
+    static const CommandsMap commands = createCommandsMap();
+    return commands;
+}
+
+const std::vector<String> & KeeperClientBase::getRegisteredCommandNames()
+{
+    static const std::vector<String> names = createRegisteredCommandNames(getCommands());
+    return names;
+}
+
 String KeeperClientBase::executeFourLetterCommand(const String & /* command */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "4lwc is not implemented");
@@ -100,21 +171,6 @@ fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
         result.pop_back();
 
     return result;
-}
-
-void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)
-{
-    for (const auto & command : new_commands)
-    {
-        String name = command->getName();
-        commands.insert({name, command});
-        registered_commands_and_four_letter_words.push_back(std::move(name));
-    }
-
-    for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
-
-    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }
 
 void KeeperClientBase::processQueryText(const String & text)
@@ -157,7 +213,7 @@ void KeeperClientBase::processQueryText(const String & text)
 
             auto * query = res->as<ASTKeeperQuery>();
 
-            auto command = KeeperClientBase::commands.find(query->command);
+            auto command = getCommands().find(query->command);
             command->second->execute(query, this);
         }
     }
@@ -170,34 +226,6 @@ void KeeperClientBase::processQueryText(const String & text)
 KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
     : cout(cout_), cerr(cerr_)
 {
-    loadCommands({
-        std::make_shared<LSCommand>(),
-        std::make_shared<LSRCommand>(),
-        std::make_shared<CDCommand>(),
-        std::make_shared<SetCommand>(),
-        std::make_shared<CreateCommand>(),
-        std::make_shared<TouchCommand>(),
-        std::make_shared<GetCommand>(),
-        std::make_shared<ExistsCommand>(),
-        std::make_shared<GetStatCommand>(),
-        std::make_shared<FindSuperNodes>(),
-        std::make_shared<DeleteStaleBackups>(),
-        std::make_shared<FindBigFamily>(),
-        std::make_shared<RMCommand>(),
-        std::make_shared<RMRCommand>(),
-        std::make_shared<ReconfigCommand>(),
-        std::make_shared<SyncCommand>(),
-        std::make_shared<HelpCommand>(),
-        std::make_shared<FourLetterWordCommand>(),
-        std::make_shared<GetDirectChildrenNumberCommand>(),
-        std::make_shared<GetAllChildrenNumberCommand>(),
-        std::make_shared<CPCommand>(),
-        std::make_shared<CPRCommand>(),
-        std::make_shared<MVCommand>(),
-        std::make_shared<MVRCommand>(),
-        std::make_shared<GetAclCommand>(),
-        std::make_shared<WaitWatchCommand>(),
-    });
 }
 
 }
