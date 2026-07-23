@@ -1,6 +1,5 @@
 #pragma once
 #include <list>
-#include <memory>
 
 namespace DB
 {
@@ -23,6 +22,5 @@ using LockedKeyPtr = std::shared_ptr<LockedKey>;
 
 struct KeyMetadata;
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
-using KeyMetadataWeakPtr = std::weak_ptr<KeyMetadata>;
 
 }

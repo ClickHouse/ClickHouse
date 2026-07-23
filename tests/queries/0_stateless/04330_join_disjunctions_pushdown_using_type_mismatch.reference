@@ -7,5 +7,3 @@ Filter column: or(and(equals(__table1.x, \'FRANCE\'_String), equals(__table2.y, 
 --- result (enabled) ---
 FRANCE	GERMANY
 GERMANY	FRANCE
---- analyzer no crash ---
-1

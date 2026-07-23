@@ -179,7 +179,7 @@ private:
         using RowsMask = VectorWithMemoryTracking<bool>;
         std::optional<VectorWithMemoryTracking<RowsMask>> is_index_null;
 
-        AttributeUnderlyingType type{};
+        AttributeUnderlyingType type;
     };
 
     struct KeyAttribute final

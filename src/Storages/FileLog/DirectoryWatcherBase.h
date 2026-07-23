@@ -100,9 +100,7 @@ private:
     int event_mask;
     uint64_t milliseconds_to_wait;
 
-#if defined(OS_LINUX)
     int inotify_fd;
-#endif
     PipeFDs event_pipe;
 
     void start();

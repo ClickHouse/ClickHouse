@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_RDKAFKA
 
@@ -179,9 +178,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
         for (const auto & consumer : safe_consumers.consumers)
         {
-            /// `StorageKafka2` may have empty slots when consumer creation failed in `startup`.
-            if (!consumer)
-                continue;
             auto consumer_stat = consumer->getStat();
 
             database.insertData(database_str.data(), database_str.size());
@@ -285,9 +281,5 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 }
 
 }
-
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKafkaConsumers) }
 
 #endif
