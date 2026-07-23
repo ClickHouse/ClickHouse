@@ -2232,7 +2232,8 @@ The table below compares supported ORC data types and their corresponding ClickH
 | `Decimal`                             | [Decimal](/sql-reference/data-types/decimal.md)                                                           | `Decimal`                |
 | `Date`                                | [Date32](/sql-reference/data-types/date32.md)                                                             | `Date`                   |
 | `Timestamp`                           | [DateTime64](/sql-reference/data-types/datetime64.md)                                                     | `Timestamp`              |
-| `String`, `Char`, `Varchar`, `Binary` | [String](/sql-reference/data-types/string.md)                                                             | `Binary`                 |
+| `String`, `Varchar`, `Binary`         | [String](/sql-reference/data-types/string.md)                                                             | `String`                 |
+| `Char`                                | [FixedString](/sql-reference/data-types/fixedstring.md)                                                   | `String`                 |
 | `List`                                | [Array](/sql-reference/data-types/array.md)                                                               | `List`                   |
 | `Struct`                              | [Tuple](/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
 | `Map`                                 | [Map](/sql-reference/data-types/map.md)                                                                   | `Map`                    |
