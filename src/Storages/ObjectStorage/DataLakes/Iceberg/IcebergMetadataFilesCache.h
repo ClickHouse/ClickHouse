@@ -66,8 +66,8 @@ struct ManifestFileCacheKey
     /// status ADDED and EXISTING respectively. Required in format v2+, optional in v1
     /// (std::nullopt when absent or null). Their sum over all data manifests is the exact
     /// live row count of a snapshot without delete files, see IcebergMetadata::totalRows().
-    std::optional<Int64> added_rows_count;
-    std::optional<Int64> existing_rows_count;
+    std::optional<UInt64> added_rows_count;
+    std::optional<UInt64> existing_rows_count;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;

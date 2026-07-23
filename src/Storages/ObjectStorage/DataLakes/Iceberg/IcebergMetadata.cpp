@@ -1122,8 +1122,6 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
-
     /// The manifest list is the authoritative description of the snapshot content, and in
     /// format v2+ each of its entries carries the number of rows with status ADDED and
     /// EXISTING in the referenced manifest, so their sum is the exact live row count.
@@ -1131,46 +1129,47 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     /// the summary as `parent total + added`, so it silently diverges from the data when
     /// any commit in the table history dropped or rewrote manifests incorrectly, which
     /// made SELECT count() disagree with a full scan of the very same table.
-    /// Delete manifests make the count non-derivable at the manifest list level (delete
-    /// rows cannot be applied without opening manifests), so then we fall back below.
+    UInt64 manifest_list_rows = 0;
+    bool all_data_manifests_have_counts = true;
+    bool has_delete_manifests = false;
+    for (const auto & entry : actual_data_snapshot->manifest_list_entries)
     {
-        Int64 manifest_list_rows = 0;
-        bool all_data_manifests_have_counts = true;
-        bool has_delete_manifests = false;
-        for (const auto & entry : actual_data_snapshot->manifest_list_entries)
+        if (entry.content_type == Iceberg::ManifestFileContentType::DATA)
         {
-            if (entry.content_type == Iceberg::ManifestFileContentType::DATA)
-            {
-                if (entry.added_rows_count.has_value() && entry.existing_rows_count.has_value())
-                    manifest_list_rows += *entry.added_rows_count + *entry.existing_rows_count;
-                else
-                    all_data_manifests_have_counts = false;
-            }
+            if (entry.added_rows_count.has_value() && entry.existing_rows_count.has_value())
+                manifest_list_rows += *entry.added_rows_count + *entry.existing_rows_count;
             else
-            {
-                has_delete_manifests = true;
-            }
+                all_data_manifests_have_counts = false;
         }
-
-        if (all_data_manifests_have_counts && !has_delete_manifests)
+        else
         {
-            if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(manifest_list_rows))
-                LOG_WARNING(
-                    log,
-                    "Iceberg snapshot summary of table {} claims {} total rows, but its manifest list describes {} rows. "
-                    "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
-                    "history), using the row count from the manifest list",
-                    persistent_components.table_location,
-                    *summary_total_rows,
-                    manifest_list_rows);
-            ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-            return static_cast<size_t>(manifest_list_rows);
+            has_delete_manifests = true;
         }
     }
 
-    /// All these "hints" with total rows or bytes are optional both in
-    /// metadata files and in manifest files, so we try all of them one by one
-    if (summary_total_rows.has_value())
+    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
+
+    if (all_data_manifests_have_counts && !has_delete_manifests)
+    {
+        if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(manifest_list_rows))
+            LOG_WARNING(
+                log,
+                "Iceberg snapshot summary of table {} claims {} total rows, but its manifest list describes {} rows. "
+                "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
+                "history), using the row count from the manifest list",
+                persistent_components.table_location,
+                *summary_total_rows,
+                manifest_list_rows);
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return static_cast<size_t>(manifest_list_rows);
+    }
+
+    /// The summary hint is only trusted when the snapshot has no delete manifests: it is
+    /// maintained incrementally by writers just like `total-records`, so a corrupted commit
+    /// poisons it the same way, and with delete manifests present the manifest scan below
+    /// is the only source that derives both data and position-delete rows from the actual
+    /// manifests instead of writer-provided hints.
+    if (!has_delete_manifests && summary_total_rows.has_value())
     {
         ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
         return summary_total_rows;

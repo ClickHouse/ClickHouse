@@ -219,19 +219,20 @@ ManifestFileCacheKeys getManifestList(
 
             /// Row counts are required in v2+ manifest lists and optional in v1.
             /// They let totalRows() compute an exact count without opening manifest files.
-            std::optional<Int64> added_rows_count;
-            std::optional<Int64> existing_rows_count;
+            /// Negative values violate the spec, treat them as absent.
+            std::optional<UInt64> added_rows_count;
+            std::optional<UInt64> existing_rows_count;
             if (manifest_list_deserializer.hasPath(f_added_rows_count))
             {
                 auto value = manifest_list_deserializer.getValueFromRowByName(i, f_added_rows_count);
-                if (!value.isNull())
-                    added_rows_count = value.safeGet<Int64>();
+                if (!value.isNull() && value.safeGet<Int64>() >= 0)
+                    added_rows_count = static_cast<UInt64>(value.safeGet<Int64>());
             }
             if (manifest_list_deserializer.hasPath(f_existing_rows_count))
             {
                 auto value = manifest_list_deserializer.getValueFromRowByName(i, f_existing_rows_count);
-                if (!value.isNull())
-                    existing_rows_count = value.safeGet<Int64>();
+                if (!value.isNull() && value.safeGet<Int64>() >= 0)
+                    existing_rows_count = static_cast<UInt64>(value.safeGet<Int64>());
             }
 
             manifest_file_cache_keys.emplace_back(
