@@ -153,8 +153,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (see function [splitByRegexp](/sql-reference/functions/splitting-merging-functions.md/#splitByRegexp)).
-  The regular expression is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  Unlike the fixed separator strings of `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`) which the other tokenizers would split apart.
+  The `re` argument is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
