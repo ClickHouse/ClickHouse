@@ -1395,18 +1395,46 @@ UInt64 estimateNeededMemoryForMerge(
                 /// patches are applied to the merged rows, so include the patch parts (the same patched input
                 /// set the stream count above uses): a patch that inflates a projected column can push the real
                 /// temp part over min_bytes_for_wide_part, and counting the patch bytes here lets them
-                /// participate in the Wide-vs-Compact decision.
-                const auto projection_required_columns = projection.getRequiredColumns();
+                /// participate in the Wide-vs-Compact decision. Patch parts update EXISTING rows and never add
+                /// any, so the rebuilt rows are the base parts' rows alone, and a part that does not physically
+                /// store any projection-required column contributes no projected bytes at all: a patch on an
+                /// unrelated column, or an old part predating an ALTER ... ADD COLUMN ... DEFAULT the projection
+                /// reads, must not flip a genuinely Compact rebuild to Wide with bytes the temp part never
+                /// writes. The whole-part size stands in only for a part that DOES store a required column but
+                /// tracks no per-column sizes (a Compact part, whose each_columns_size is left empty) - an
+                /// over-approximation bounded by bytes that part really stores. Rows of parts that lack a
+                /// required column get it synthesized from its default: a fixed-size type writes exactly
+                /// rows * value size, so add that; a variable-size default's volume is unknowable, so its
+                /// streams stay priced at the per-stream remnant below with the growth left to the reactive
+                /// tracker - the same accounting as the base path's default_filled_term.
                 UInt64 projection_uncompressed_bytes = 0;
                 UInt64 projection_rows = 0;
+                for (const auto & part : future_part.parts)
+                    projection_rows += part->rows_count;
                 for (const auto & part : source_and_patch_parts)
                 {
-                    projection_rows += part->rows_count;
                     UInt64 part_projection_bytes = 0;
-                    for (const auto & required_column : projection_required_columns)
+                    bool part_stores_required_column = false;
+                    for (const auto & required_column : required_columns)
+                    {
+                        if (part->tryGetColumn(required_column))
+                            part_stores_required_column = true;
                         part_projection_bytes += part->getColumnSize(required_column).data_uncompressed;
-                    projection_uncompressed_bytes
-                        += part_projection_bytes != 0 ? part_projection_bytes : part->getBytesUncompressedOnDisk();
+                    }
+                    if (part_projection_bytes == 0 && part_stores_required_column)
+                        part_projection_bytes = part->getBytesUncompressedOnDisk();
+                    projection_uncompressed_bytes += part_projection_bytes;
+                }
+                for (const auto & required_column : required_columns)
+                {
+                    const bool missing_from_some_part = std::any_of(
+                        future_part.parts.begin(), future_part.parts.end(),
+                        [&](const auto & part) { return !part->tryGetColumn(required_column); });
+                    if (!missing_from_some_part)
+                        continue;
+                    const auto column = columns_description.tryGetColumn(GetColumnsOptions::AllPhysical, required_column);
+                    if (column && column->type->haveMaximumSizeOfValue())
+                        projection_uncompressed_bytes += projection_rows * column->type->getMaximumSizeOfValueInMemory();
                 }
 
                 const auto temp_projection_format = future_part.parts.front()->storage.choosePartFormat(
