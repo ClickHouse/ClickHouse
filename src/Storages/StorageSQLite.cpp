@@ -282,10 +282,12 @@ Pipe StorageSQLite::read(
         /// `isPushdownSafeColumn`). That covers both sides of the mapping: ClickHouse types the sink stores
         /// as SQLite TEXT while ClickHouse compares them by value (`UInt64`, the wider integers, `Decimal`,
         /// dates and times, ...), for which SQLite's lexicographic TEXT ordering makes `u > 2` treat `'10'`
-        /// as smaller than `'2'`; and remote columns of a pre-existing table whose declared affinity or
-        /// collation disagrees with the ClickHouse type - an `Int64` over a TEXT-affinity column, or a
-        /// `String` over a numeric-affinity or non-BINARY-collation (e.g. NOCASE) column. Such columns are
-        /// excluded from the eligible set so ClickHouse applies their predicates locally instead.
+        /// as smaller than `'2'`; and the remote side, where only a STRICT table pins the storage class of
+        /// every cell to the declared column type - in an ordinary table any cell can carry any storage
+        /// class (an INTEGER-declared column holding the TEXT cell `'abc'`), which SQLite compares by its
+        /// runtime storage class while ClickHouse reads it through a coercing accessor, so the two sides
+        /// disagree. Ineligible columns are excluded from the set so ClickHouse applies their predicates
+        /// locally instead.
         NamesAndTypesList pushdown_columns;
         for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
             if (SQLiteFormatImpl::isPushdownSafeColumn(

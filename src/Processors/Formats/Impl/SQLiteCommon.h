@@ -263,33 +263,28 @@ inline bool isPushdownSafeType(const DataTypePtr & type)
     return which.isString();
 }
 
-enum class SQLiteColumnAffinity
+/// Whether the SQLite table `table_name` in the main schema is declared STRICT
+/// (https://www.sqlite.org/stricttables.html). This matters for the pushdown gate below: in an ordinary
+/// SQLite table the declared column type only sets an *affinity* - a coercion preference applied to newly
+/// inserted values - while every cell keeps its own runtime storage class, so an INTEGER-declared column can
+/// still hold the TEXT cell `'abc'` and a BLOB-declared column any value at all. Only a STRICT table
+/// guarantees that every stored cell actually has the storage class of its declared column type. Errors and
+/// a missing table fail closed to `false`.
+inline bool isStrictTable(sqlite3 * db, const String & table_name)
 {
-    Integer,
-    Text,
-    Blob,
-    Real,
-    Numeric,
-};
+    sqlite3_stmt * raw_statement = nullptr;
+    if (SQLITE_OK
+        != sqlite3_prepare_v2(db, "SELECT strict FROM pragma_table_list WHERE schema = 'main' AND name = ?", -1, &raw_statement, nullptr))
+        return false;
+    SQLiteStatementPtr statement{raw_statement, sqlite3_finalize};
 
-/// The affinity SQLite assigns to a column from its declared type, following the rules of
-/// https://www.sqlite.org/datatype3.html#determination_of_column_affinity, checked in this order:
-/// a declared type containing "INT" gives INTEGER; containing "CHAR", "CLOB" or "TEXT" gives TEXT;
-/// containing "BLOB" or empty gives BLOB; containing "REAL", "FLOA" or "DOUB" gives REAL; anything else
-/// gives NUMERIC. The matching is case-insensitive.
-inline SQLiteColumnAffinity affinityFromDeclaredType(std::string_view declared_type)
-{
-    const String type = Poco::toUpper(String(declared_type));
+    if (SQLITE_OK != sqlite3_bind_text64(statement.get(), 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8))
+        return false;
 
-    if (type.find("INT") != String::npos)
-        return SQLiteColumnAffinity::Integer;
-    if (type.find("CHAR") != String::npos || type.find("CLOB") != String::npos || type.find("TEXT") != String::npos)
-        return SQLiteColumnAffinity::Text;
-    if (type.empty() || type.find("BLOB") != String::npos)
-        return SQLiteColumnAffinity::Blob;
-    if (type.find("REAL") != String::npos || type.find("FLOA") != String::npos || type.find("DOUB") != String::npos)
-        return SQLiteColumnAffinity::Real;
-    return SQLiteColumnAffinity::Numeric;
+    if (SQLITE_ROW != sqlite3_step(statement.get()))
+        return false;
+
+    return sqlite3_column_int(statement.get(), 0) != 0;
 }
 
 /// Whether a `WHERE` predicate on this column of the SQLite table `table_name` may be pushed down without
@@ -298,19 +293,23 @@ inline SQLiteColumnAffinity affinityFromDeclaredType(std::string_view declared_t
 ///
 /// Two independent conditions must hold. First, the ClickHouse type must be one that compares by value on
 /// both sides (`isPushdownSafeType` above). Second, the *remote* column must actually compare the way
-/// ClickHouse does: the storage can point at an arbitrary pre-existing table, so the ClickHouse type alone
-/// proves nothing about the SQLite side. An explicit `Int64` column over a column declared TEXT stores
-/// `10`/`2` as text, and a pushed-down `x > 2` coerces the literal to text and compares lexicographically
-/// (`'10' < '2'`), dropping the row; a `String` column over a numeric-affinity column stores `'10'` as the
-/// number `10`, so `s < '2'` compares `10 < 2` numerically and drops a row ClickHouse would keep; a
-/// `String` column with a non-BINARY collation such as NOCASE or RTRIM orders differently from ClickHouse's
-/// byte-wise comparison (`'a' > 'B'` is true byte-wise but false under NOCASE). So a numeric ClickHouse type
-/// requires a numeric remote affinity (INTEGER, REAL or NUMERIC, which coerce a text operand to a number),
-/// and `String` requires an affinity that never coerces the stored text into a number (TEXT or BLOB)
-/// together with the byte-wise BINARY collation.
+/// ClickHouse does for every cell it can hold. Declared affinity and collation alone cannot prove that:
+/// SQLite is dynamically typed per cell, so an arbitrary pre-existing INTEGER-declared column can still hold
+/// the TEXT cell `'abc'`, which ClickHouse reads through `sqlite3_column_int64` as `0` while the pushed-down
+/// `x = 0` compares against the TEXT storage class on the SQLite side and drops the row. The gate therefore
+/// requires the table to be STRICT (`isStrictTable` above), which pins the storage class of every cell to
+/// the declared column type, and then matches the declared type against the ClickHouse one:
+///   - a numeric ClickHouse type requires a declared INT, INTEGER or REAL column, whose cells are guaranteed
+///     numeric and compare numerically on both sides;
+///   - `String` requires a declared TEXT column (cells guaranteed TEXT, compared byte-wise against a text
+///     literal) with the byte-wise BINARY collation - a non-BINARY collation such as NOCASE or RTRIM orders
+///     differently from ClickHouse (`'a' > 'B'` is true byte-wise but false under NOCASE). A BLOB-declared
+///     column is not eligible even though ClickHouse reads its cells as `String`: SQLite never equates a
+///     BLOB cell with a TEXT literal, so every pushed-down comparison would be a false negative;
+///   - a STRICT ANY column places no constraint on its cells and is not eligible.
 ///
-/// When the remote metadata cannot be fetched - the column vanished remotely, or the "table" is a view,
-/// whose expression columns have no affinity at all - the column fails closed to local filtering.
+/// Everything else fails closed to local filtering: a non-STRICT table, a view (`pragma_table_list` reports
+/// no STRICT views), or remote metadata that cannot be fetched because the column vanished remotely.
 inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const String & column_name, const DataTypePtr & type)
 {
     if (!isPushdownSafeType(type))
@@ -321,6 +320,9 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     if (table_name.find('\0') != String::npos || column_name.find('\0') != String::npos)
         return false;
 
+    if (!isStrictTable(db, table_name))
+        return false;
+
     const char * declared_type = nullptr;
     const char * collation = nullptr;
     int not_null = 0;
@@ -328,18 +330,18 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     int autoincrement = 0;
     if (SQLITE_OK
         != sqlite3_table_column_metadata(
-            db, nullptr, table_name.c_str(), column_name.c_str(), &declared_type, &collation, &not_null, &primary_key, &autoincrement))
+            db, "main", table_name.c_str(), column_name.c_str(), &declared_type, &collation, &not_null, &primary_key, &autoincrement))
         return false;
 
-    const auto affinity = affinityFromDeclaredType(declared_type ? declared_type : "");
+    /// A STRICT table only admits the declared types INT, INTEGER, REAL, TEXT, BLOB and ANY (stored as
+    /// written, in any letter case), so exact token comparison suffices.
+    const String declared = Poco::toUpper(String(declared_type ? declared_type : ""));
 
     WhichDataType which(removeLowCardinalityAndNullable(type));
     if (which.isString())
-        return (affinity == SQLiteColumnAffinity::Text || affinity == SQLiteColumnAffinity::Blob) && collation
-            && Poco::toUpper(String(collation)) == "BINARY";
+        return declared == "TEXT" && collation && Poco::toUpper(String(collation)) == "BINARY";
 
-    return affinity == SQLiteColumnAffinity::Integer || affinity == SQLiteColumnAffinity::Real
-        || affinity == SQLiteColumnAffinity::Numeric;
+    return declared == "INT" || declared == "INTEGER" || declared == "REAL";
 }
 
 }
