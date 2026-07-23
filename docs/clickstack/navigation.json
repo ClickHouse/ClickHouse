@@ -218,7 +218,8 @@
                 "clickstack/migration/elastic/migrating-sdks"
               ],
               "root": "clickstack/migration/elastic/index"
-            }
+            },
+            "clickstack/migration/datadog/index"
           ],
           "root": "clickstack/migration/index"
         }
