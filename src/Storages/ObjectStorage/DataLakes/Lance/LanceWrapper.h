@@ -22,6 +22,7 @@ class RecordBatch;
 
 struct ch_lance_dataset;
 struct ch_lance_scan;
+struct ch_lance_writer;
 
 namespace DB::Lance
 {
@@ -92,6 +93,26 @@ private:
     explicit Dataset(ch_lance_dataset * dataset_) : dataset(dataset_) {}
 
     ch_lance_dataset * dataset = nullptr;
+};
+
+class Writer
+{
+public:
+    Writer(const Writer &) = delete;
+    Writer & operator=(const Writer &) = delete;
+    Writer(Writer && other) noexcept;
+    Writer & operator=(Writer && other) noexcept;
+    ~Writer();
+
+    static Writer open(const DatasetOptions & options);
+
+    void writeBatch(const arrow::RecordBatch & batch) const;
+    void finish() const;
+
+private:
+    explicit Writer(ch_lance_writer * writer_) : writer(writer_) {}
+
+    ch_lance_writer * writer = nullptr;
 };
 
 }
