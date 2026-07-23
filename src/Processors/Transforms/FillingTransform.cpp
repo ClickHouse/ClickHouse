@@ -487,11 +487,27 @@ void FillingTransform::insertFromFillingRow(
             filling_columns[i]->insert(filling_row[i]);
     }
 
-    if (size_t size = interpolate_block.columns())
+    if (interpolate_block.columns())
     {
-        Columns columns = interpolate_block.getColumns();
-        for (size_t i = 0; i < size; ++i)
-            interpolate_columns[i]->insertFrom(*columns[i]->convertToFullColumnIfConst(), 0);
+        /// Route each executed output to its destination column by name: several outputs may collapse to one
+        /// destination (`INTERPOLATE (a AS 1, b AS 2)` with a, b aliasing one column), so the block can carry
+        /// more columns than there are destinations. Write each destination once, then default-fill the rest,
+        /// keeping every interpolate column exactly one row longer per generated row (a rectangular block).
+        std::vector<bool> written(interpolate_columns.size(), false);
+        const auto & output_to_result_index = interpolate_description->output_to_result_index;
+        for (const auto & column : interpolate_block)
+        {
+            const auto it = output_to_result_index.find(column.name);
+            if (it == output_to_result_index.end() || written[it->second])
+                continue;
+
+            interpolate_columns[it->second]->insertFrom(*column.column->convertToFullColumnIfConst(), 0);
+            written[it->second] = true;
+        }
+
+        for (size_t i = 0, size = interpolate_columns.size(); i < size; ++i)
+            if (!written[i])
+                interpolate_columns[i]->insertDefault();
     }
     else
     {

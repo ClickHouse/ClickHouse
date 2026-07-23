@@ -33,3 +33,15 @@ SETTINGS enable_analyzer = 0;
 SELECT n, a AS a, a AS a2 FROM (SELECT toFloat32(number) AS n, number * 10 AS a FROM numbers(2))
 ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE ()
 SETTINGS enable_analyzer = 1;
+
+-- Two distinct INTERPOLATE targets whose aliases resolve to the same physical column (`a`, `b` both
+-- alias `x`). The interpolate block still carries one column per output while the deduplicated
+-- destination list has a single entry, so the executed outputs must be routed to destinations by name
+-- rather than by position. The old analyzer used to read the destination columns out of bounds here.
+SELECT '--- named INTERPOLATE, distinct targets collapsing to one column ---';
+SELECT n, x AS a, x AS b FROM (SELECT toFloat32(number) AS n, number * 10 AS x FROM numbers(2))
+ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS 1, b AS 2)
+SETTINGS enable_analyzer = 0;
+SELECT n, x AS a, x AS b FROM (SELECT toFloat32(number) AS n, number * 10 AS x FROM numbers(2))
+ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS 1, b AS 2)
+SETTINGS enable_analyzer = 1;
