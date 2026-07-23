@@ -46,6 +46,14 @@ public:
 class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
 {
 public:
+    /// Only the scalar String and the container types that can carry a String into a
+    /// predicate pushed down to PostgreSQL are overridden. Predicate pushdown
+    /// (transformQueryForExternalDatabase) emits a scalar or a Tuple (an IN-list); Array and
+    /// Map appear only nested inside such a Tuple, so they must recurse with PostgreSQL escaping too.
+    /// Every other type falls through to `regular` (backslash escaping), which is safe because it
+    /// cannot appear as a pushed-down literal: there is no Object literal syntax, and a PostgreSQL
+    /// source exposes no Object/JSON/Map/AggregateFunction columns (json/jsonb map to String), so no
+    /// Object/CustomType/AggregateFunctionStateData value ever reaches this visitor from a pushdown.
     template <typename T>
     String operator() (const T & x) const { return regular(x); }
 
