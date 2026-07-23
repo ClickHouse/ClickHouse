@@ -821,7 +821,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         return std::pair{std::move(v), std::move(s)};
     }();
 
-    part_storage_for_loading->beginTransaction();
+    if (!to_remote_disk)
+        part_storage_for_loading->beginTransaction();
 
     if (part_storage_for_loading->exists())
     {
@@ -882,7 +883,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         if (e.code() == ErrorCodes::ABORTED)
         {
             part_storage_for_loading->removeSharedRecursive(true);
-            part_storage_for_loading->commitTransaction();
+            if (part_storage_for_loading->hasActiveTransaction())
+                part_storage_for_loading->commitTransaction();
         }
         throw;
     }
@@ -891,7 +893,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     MergeTreeData::MutableDataPartPtr new_data_part;
     try
     {
-        part_storage_for_loading->commitTransaction();
+        if (part_storage_for_loading->hasActiveTransaction())
+            part_storage_for_loading->commitTransaction();
 
         MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
