@@ -415,6 +415,12 @@ struct ToDateTimeTransform64Signed
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
+        if constexpr (is_floating_point<FromType>)
+        {
+            if (!isFinite(from)) [[unlikely]]
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+        }
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from < 0 || from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
@@ -423,6 +429,17 @@ struct ToDateTimeTransform64Signed
 
         if (from < 0)
             return 0;
+
+        if constexpr (is_floating_point<FromType>)
+        {
+            /// A float-to-integer cast of a value outside the range of `time_t` is undefined behavior
+            /// (the hardware result differs between x86-64 and AArch64), so clamp in the floating-point
+            /// domain first. `Float64` represents every `BFloat16` and `Float32` value
+            /// and `MAX_DATETIME_TIMESTAMP` exactly.
+            if (static_cast<Float64>(from) > static_cast<Float64>(MAX_DATETIME_TIMESTAMP))
+                return static_cast<ToType>(MAX_DATETIME_TIMESTAMP);
+        }
+
         return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
@@ -507,11 +524,30 @@ struct ToTimeTransform64Signed
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
+        if constexpr (is_floating_point<FromType>)
+        {
+            if (!isFinite(from)) [[unlikely]]
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+        }
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
+
+        if constexpr (is_floating_point<FromType>)
+        {
+            /// A float-to-integer cast of a value outside the range of `time_t` is undefined behavior
+            /// (the hardware result differs between x86-64 and AArch64), so clamp in the floating-point
+            /// domain first. `Float64` represents every `BFloat16` and `Float32` value
+            /// and `MAX_TIME_TIMESTAMP` exactly.
+            if (static_cast<Float64>(from) > static_cast<Float64>(MAX_TIME_TIMESTAMP))
+                return static_cast<ToType>(MAX_TIME_TIMESTAMP);
+            if (static_cast<Float64>(from) < static_cast<Float64>(-1 * MAX_TIME_TIMESTAMP))
+                return static_cast<ToType>(-1 * MAX_TIME_TIMESTAMP);
+        }
+
         if (from > 0)
             return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
         else
