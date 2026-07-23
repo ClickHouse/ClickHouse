@@ -24,6 +24,28 @@ namespace DB::Proxy
 using Poco::Net::Context;
 using SSLManager = Poco::Net::SSLManager;
 
+namespace
+{
+
+int parseDisabledProtocols(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+{
+    int disabled_protocols = 0;
+    Poco::StringTokenizer tokenizer(
+        config.getString(prefix + SSLManager::CFG_DISABLE_PROTOCOLS, ""),
+        ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
+    for (const auto & token : tokenizer)
+    {
+        if (token == "sslv2") disabled_protocols |= Context::PROTO_SSLV2;
+        else if (token == "sslv3") disabled_protocols |= Context::PROTO_SSLV3;
+        else if (token == "tlsv1") disabled_protocols |= Context::PROTO_TLSV1;
+        else if (token == "tlsv1_1") disabled_protocols |= Context::PROTO_TLSV1_1;
+        else if (token == "tlsv1_2") disabled_protocols |= Context::PROTO_TLSV1_2;
+    }
+    return disabled_protocols;
+}
+
+}
+
 Poco::Net::Context::Ptr makeServerTLSContext(const Poco::Util::AbstractConfiguration & config)
 {
     const std::string prefix = SSLManager::CFG_SERVER_PREFIX;
@@ -52,20 +74,7 @@ Poco::Net::Context::Ptr makeServerTLSContext(const Poco::Util::AbstractConfigura
         usage = Context::TLSV1_SERVER_USE;
 
     Context::Ptr ctx = new Context(usage, params);
-
-    int disabled_protocols = 0;
-    Poco::StringTokenizer tokenizer(
-        config.getString(prefix + SSLManager::CFG_DISABLE_PROTOCOLS, ""),
-        ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
-    for (const auto & token : tokenizer)
-    {
-        if (token == "sslv2") disabled_protocols |= Context::PROTO_SSLV2;
-        else if (token == "sslv3") disabled_protocols |= Context::PROTO_SSLV3;
-        else if (token == "tlsv1") disabled_protocols |= Context::PROTO_TLSV1;
-        else if (token == "tlsv1_1") disabled_protocols |= Context::PROTO_TLSV1_1;
-        else if (token == "tlsv1_2") disabled_protocols |= Context::PROTO_TLSV1_2;
-    }
-    ctx->disableProtocols(disabled_protocols);
+    ctx->disableProtocols(parseDisabledProtocols(config, prefix));
 
     if (config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false))
         ctx->enableExtendedCertificateVerification(true);
@@ -98,7 +107,20 @@ Poco::Net::Context::Ptr makeClientTLSContext(const Poco::Util::AbstractConfigura
     params.loadDefaultCAs = config.getBool(prefix + SSLManager::CFG_ENABLE_DEFAULT_CA, true);
     params.cipherList = config.getString(prefix + SSLManager::CFG_CIPHER_LIST, SSLManager::VAL_CIPHER_LIST);
 
-    Context::Ptr ctx = new Context(Context::CLIENT_USE, params);
+    Context::Usage usage = Context::CLIENT_USE;
+    if (config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_2, false))
+        usage = Context::TLSV1_2_CLIENT_USE;
+    else if (config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_1, false))
+        usage = Context::TLSV1_1_CLIENT_USE;
+    else if (config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1, false))
+        usage = Context::TLSV1_CLIENT_USE;
+
+    Context::Ptr ctx = new Context(usage, params);
+    ctx->disableProtocols(parseDisabledProtocols(config, prefix));
+
+    if (config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false))
+        ctx->enableExtendedCertificateVerification(true);
+
     return ctx;
 }
 
