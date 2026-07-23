@@ -1,0 +1,109 @@
+---
+title: إصلاح خطأ التحقق من المطوّر في macOS
+description: تعرّف على كيفية حل خطأ التحقق من المطوّر في macOS عند تشغيل أوامر ClickHouse، باستخدام إعدادات النظام أو الطرفية.
+date: 2024-01-09
+tags: ['الأخطاء والاستثناءات']
+keywords: ['التحقق من المطوّر', 'macOS']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="fix-the-developer-verification-error-in-macos">
+  ## إصلاح خطأ التحقق من المطوّر في MacOS
+</div>
+
+إذا ثبّتَّ ClickHouse باستخدام `brew`، فقد تواجه خطأً من MacOS.
+بشكل افتراضي، لا يسمح MacOS بتشغيل التطبيقات أو الأدوات التي أنشأها مطوّر لا يمكن التحقق من هويته.
+
+عند محاولة تشغيل أي أمر `clickhouse`، قد يظهر لك هذا الخطأ:
+
+<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="مربع حوار خطأ التحقق من المطوّر في MacOS" border />
+
+لتجاوز خطأ التحقق هذا، تحتاج إلى إزالة التطبيق من منطقة الحجر في MacOS، إما بالعثور على الإعداد المناسب في نافذة إعدادات النظام، أو باستخدام الطرفية، أو بإعادة تثبيت ClickHouse.
+
+<div id="system-settings-process">
+  ## إجراءات إعدادات النظام
+</div>
+
+أسهل طريقة لإزالة الملف التنفيذي `clickhouse` من منطقة الحجر هي:
+
+1. افتح **إعدادات النظام**.
+
+2. انتقل إلى **الخصوصية والأمان**:
+
+   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="العرض الافتراضي لإعدادات الخصوصية والأمان في macOS" border />
+
+3. مرّر إلى أسفل النافذة حتى تجد رسالة تفيد بأن *&quot;clickhouse-macos-aarch64&quot;* تم حظره من الاستخدام لأنه ليس من مطوّر معروف.
+
+4. انقر على **السماح على أي حال**.
+
+   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="إعدادات الخصوصية والأمان في macOS مع ظهور زر السماح على أي حال" border />
+
+5. أدخل كلمة مرور مستخدم macOS الخاصة بك.
+
+يجب أن تتمكن الآن من تشغيل أوامر `clickhouse` في الطرفية.
+
+<div id="terminal-process">
+  ## العملية عبر الطرفية
+</div>
+
+أحيانًا لا يؤدي الضغط على زر `Allow Anyway` إلى حل هذه المشكلة، وفي هذه الحالة يمكنك أيضًا تنفيذ هذه العملية باستخدام سطر الأوامر.
+أو قد تفضّل ببساطة استخدام سطر الأوامر!
+
+أولًا، اعرف أين ثبّت Homebrew الملف التنفيذي `clickhouse`:
+
+```shell
+which clickhouse
+```
+
+من المفترض أن ينتج عن هذا شيء مثل:
+
+```shell
+/opt/homebrew/bin/clickhouse
+```
+
+أزل `clickhouse` من `quarantine bin` عبر تشغيل `xattr -d com.apple.quarantine`، ثم أضِف المسار من الأمر السابق:
+
+```shell
+xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+```
+
+ينبغي أن تتمكن الآن من تشغيل الملف التنفيذي `clickhouse`:
+
+```shell
+clickhouse
+```
+
+من المفترض أن ينتج هذا شيئًا مثل:
+
+```shell
+Use one of the following commands:
+clickhouse local [args]
+clickhouse client [args]
+clickhouse benchmark [args]
+...
+```
+
+<div id="fix-the-issue-by-reinstalling-clickhouse">
+  ## أصلِح المشكلة بإعادة تثبيت ClickHouse
+</div>
+
+يوفّر Brew خيارًا في سطر الأوامر يمنع وضع الملفات التنفيذية المثبّتة في الحجر من الأساس.
+
+أولًا، أزِل تثبيت ClickHouse:
+
+```shell
+brew uninstall clickhouse
+```
+
+أعِد تثبيت ClickHouse الآن باستخدام `--no-quarantine`:
+
+```shell
+brew install --no-quarantine clickhouse
+```

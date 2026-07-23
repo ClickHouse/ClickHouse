@@ -18,7 +18,9 @@ FROM ubuntu:22.04 AS ch-builder
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
 
+# amd64 base images use archive.ubuntu.com, arm64 uses ports.ubuntu.com.
 ARG apt_archive="http://archive.ubuntu.com"
+ARG apt_ports_archive="http://ports.ubuntu.com"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -26,7 +28,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 # We do that in advance at the beginning of Dockerfile before any packages will be
 # installed to prevent picking those uid/gid by some unrelated software.
 # The same uid/gid (101) is used both for alpine and ubuntu.
-RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
+RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \

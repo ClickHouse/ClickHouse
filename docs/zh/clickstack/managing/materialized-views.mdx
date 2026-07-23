@@ -1,0 +1,844 @@
+---
+slug: /use-cases/observability/clickstack/materialized_views
+title: 'ClickStack - materialized views'
+sidebarTitle: 'Materialized views'
+description: '使用 Materialized Views 对 ClickStack 进行性能调优'
+doc_type: 'guide'
+keywords: ['clickstack', '可观测性', 'materialized views', '性能', '优化', '可视化', '聚合']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+<div id="introduction">
+  ## 简介
+</div>
+
+ClickStack 可以利用[增量materialized view (IMV)](/zh/concepts/features/materialized-views/incremental-materialized-view)来加速依赖重度聚合查询的可视化，例如计算随时间变化的每分钟平均请求耗时。该功能可显著提升查询性能，通常在规模较大的部署中收益最明显——大约从每日 10 TB 及以上开始——并支持进一步扩展到每日 PB 级别。增量materialized view 目前处于 Beta 阶段，应谨慎使用。
+
+<Note>
+  告警也能从 materialized views 中受益，并会自动利用它们。
+  这可以降低运行大量告警的计算开销，尤其是这类任务通常执行得非常频繁。
+  缩短执行时间有助于提升响应速度并降低资源消耗。
+</Note>
+
+<div id="what-are-incremental-materialized-views">
+  ## 什么是增量materialized view
+</div>
+
+增量materialized view 允许将计算成本从查询时转移到写入时，从而显著加快 `SELECT` 查询。
+
+与 Postgres 这类事务型数据库不同，ClickHouse 的 materialized view 并不是存储的快照。相反，它更像一个 trigger：当数据块写入源表时，它会对这些数据块执行查询。该查询的输出会写入一个单独的目标表。随着更多数据写入，新的部分结果会被追加并合并到目标表中。合并后的结果等同于对整个原始数据集执行 aggregation。
+
+使用 materialized view 的主要原因在于，写入目标表的数据代表的是 aggregation、过滤或转换的结果。在 ClickStack 中，它们仅用于 aggregations。这些结果通常远小于原始输入数据，而且往往表示部分 aggregation 状态。再加上查询预聚合目标表本身更简单，相比在查询时对原始数据执行相同计算，这能显著降低查询延迟。
+
+ClickHouse 中的 materialized view 会随着数据流入源表而持续更新，行为更像始终保持最新的索引。这与许多其他数据库不同：在那些数据库中，materialized view 是静态快照，必须定期刷新，类似于 ClickHouse 的 [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view)。
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 示意图" />
+
+增量materialized view 只会在新数据到达时计算视图的变更，将计算前移到写入时。由于 ClickHouse 对摄取进行了高度优化，因此，相比查询执行时获得的收益，为每个写入块维护视图所增加的成本很小。aggregation 的计算成本被分摊到多次写入中，而不是在每次读取时反复付出。因此，查询预聚合结果的代价远低于重新计算这些结果，即使在 PB 级规模下，也能为下游可视化带来更低的运营成本和接近实时的性能。
+
+这种模型与那些在每次更新时重新计算整个视图，或依赖定时刷新的系统有本质区别。若要更深入了解 materialized view 的工作原理以及如何创建它们，请参阅上方链接的指南。
+
+每个 materialized view 都会带来额外的写入时开销，因此应谨慎使用。
+
+<Tip>
+  仅为最常用的仪表盘和可视化创建视图。
+  当该功能处于 Beta 阶段时，将使用量限制在少于 20 个视图。
+  预计这一阈值会在未来版本中提高。
+</Tip>
+
+<Note>
+  单个 materialized view 可以针对不同分组计算多个指标，例如按 1 分钟桶统计每个服务名称的最小值、最大值和 p95 耗时。这样，一个视图就可以服务于多个可视化，而不只是一个。因此，将指标整合到共享视图中非常重要，这样才能最大化每个视图的价值，并确保它能在各个仪表盘和工作流中复用。
+</Note>
+
+继续之前，建议先更深入地了解 ClickHouse 中的 materialized view。
+更多细节请参阅我们的[增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view)指南。
+
+<div id="selecting-visualizatons-for-acceleration">
+  ## 选择需要加速的可视化
+</div>
+
+在创建任何 materialized view 之前，务必先明确你希望加速哪些可视化，以及哪些工作流对用户最关键。
+
+在 ClickStack 中，materialized view 旨在**加速以聚合为主的可视化**，也就是那些按时间计算一个或多个指标的查询。例如，**每分钟平均请求耗时**、**每个服务的请求数**或**随时间变化的错误率**。materialized view 必须始终包含聚合以及基于时间的分组，因为它本就是为时序可视化服务的。
+
+通常，建议如下：
+
+<div id="identify-high-impact-visualizations">
+  ### 识别高价值可视化项
+</div>
+
+最值得加速的对象通常属于以下几类之一：
+
+* 刷新频繁且长期持续展示的仪表盘图表，例如显示在墙上大屏上的高层监控仪表盘。
+* runbook 中使用的诊断工作流：在事件响应期间需要反复查看特定图表，并且要求快速返回结果。
+* HyperDX 的核心体验，包括：
+  * 搜索页面中的直方图视图。
+  * 预设仪表盘中使用的可视化项，例如 APM、Services 或 Kubernetes 视图。
+
+这些可视化项通常会在不同用户和时间范围下被反复执行，因此非常适合将计算从查询时转移到写入时。
+
+<div id="balance-benefit-against-insert-time-cost">
+  ### 权衡收益与写入时成本
+</div>
+
+materialized view 会在写入时增加额外负担，因此应有选择地谨慎创建。并非每个可视化都能从预聚合中受益，而为使用频率很低的图表提速，通常并不值得这部分开销。materialized view 的总数应控制在 20 个以内。
+
+<Note>
+  在投入生产环境之前，务必验证 materialized view 带来的资源开销，尤其是 CPU 使用率、磁盘 I/O 和[合并活动](/zh/resources/support-center/tips-and-tricks/too-many-parts)。每个 materialized view 都会增加写入时的工作量，并产生额外的 parts，因此必须确保合并能够跟上，且 part 数量保持稳定。你可以通过开源 ClickHouse 中的[系统表](/zh/reference/system-tables/tables)和[内置可观测性仪表盘](/zh/guides/oss/deployment-and-scaling/monitoring/monitoring#built-in-advanced-observability-dashboard)进行监控，也可以使用内置指标以及 [ClickHouse Cloud 中的监控仪表盘](/zh/products/cloud/features/monitoring/advanced-dashboard)。有关如何诊断和缓解 part 数量过多的问题，请参见 [parts 过多](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)。
+</Note>
+
+一旦你确定了最重要的可视化，下一步就是归并。
+
+<div id="consolidate-visualizations-into-shared-views">
+  ### 将可视化整合到共享视图中
+</div>
+
+ClickStack 中的所有 materialized view 都应使用诸如 [`toStartOfMinute`](/zh/reference/functions/regular-functions/date-time-functions#toStartOfMinute) 之类的函数，按时间间隔对数据进行分组。不过，许多可视化还会共用额外的分组键，例如服务名称、span 名称或状态码。当多个可视化使用相同的分组维度时，通常可以由同一个 materialized view 提供支持。
+
+例如 (对于链路追踪) ：
+
+* 按服务名称统计随时间变化的平均耗时 - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* 按服务名称统计随时间变化的请求数 - `SELECT count() count, toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* 按状态码统计随时间变化的平均耗时 - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+* 按状态码统计随时间变化的请求数 - `SELECT count() count, toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+
+与其为每个查询和图表分别创建独立的 materialized view，不如将它们合并为一个按服务名称和状态码聚合的视图。这个视图可以计算多个指标，例如计数、平均耗时、最大耗时以及百分位数，随后复用于多个可视化。下面展示了一个将上述内容合并后的查询示例：
+
+```sql
+SELECT avg(Duration), max(Duration), count(), quantiles(0.95,0.99)(Duration), toStartOfMinute(Timestamp) as time, ServiceName, StatusCode
+FROM otel_traces
+GROUP BY time, ServiceName, StatusCode
+```
+
+以这种方式整合视图，可以减少插入时的开销，控制 materialized view 的总数量，减少 parts 数量相关问题，并简化后续维护。
+
+在这个阶段，**重点关注**你想要加速的可视化所发起的查询。下一节将通过一个示例说明，如何将多个聚合查询合并为一个 materialized view。
+
+<div id="creating-a-materialized-view">
+  ## 创建 materialized view
+</div>
+
+确定要加速的一个或一组可视化后，下一步就是找出其底层查询。实际操作中，这意味着检查可视化配置并审查生成的 SQL，重点关注所用的聚合指标和应用的函数。
+
+<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="生成的 SQL" />
+
+<Note>
+  如果 HyperDX 中某个组件没有调试面板，用户可以查看浏览器控制台，其中会记录所有查询。
+</Note>
+
+梳理出所需查询后，你应该先熟悉 ClickHouse 中的 [**聚合状态函数**](/zh/reference/data-types/aggregatefunction)。materialized view 依赖这些函数将计算从查询时转移到写入时。materialized view 不会存储最终聚合值，而是计算并存储**中间聚合状态**，然后在查询时再对其进行合并并完成最终聚合。与原始表相比，这些状态通常会小得多。这些状态有对应的专用数据类型，必须在目标表的 schema 中显式定义。
+
+作为参考，ClickHouse 文档中提供了聚合状态函数的详细概述和示例，以及用于存储这些状态的表引擎 `AggregatingMergeTree`：
+
+* [聚合函数与状态](/zh/reference/functions/aggregate-functions/index)
+* [AggregatingMergeTree 引擎](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)
+
+你可以在下面的视频中查看如何使用 AggregatingMergeTree 和聚合函数的示例：
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="ClickHouse 中的聚合状态" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+**强烈建议**你在继续之前先熟悉这些概念。
+
+<div id="example-materialized-view">
+  ### 示例 materialized view
+</div>
+
+请看下面这个原始查询：它按分钟、服务名称和状态码分组，计算平均耗时、最大耗时、事件数以及各百分位数：
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+为加快此查询，请创建一个目标表 `otel_traces_1m`，用于存储相应的聚合状态：
+
+```sql
+CREATE TABLE otel_traces_1m
+(
+    `Timestamp` DateTime,
+    `ServiceName` LowCardinality(String),
+    `StatusCode` LowCardinality(String),
+    `count` SimpleAggregateFunction(sum, UInt64),
+    `avg__Duration` AggregateFunction(avg, UInt64),
+    `max__Duration` SimpleAggregateFunction(max, Int64),
+    `quantiles__Duration` AggregateFunction(quantiles(0.95, 0.99), Int64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Timestamp, ServiceName, StatusCode);
+```
+
+然后，materialized view - `otel_traces_1m_mv` - 的定义会在插入新数据时计算这些状态并将其写入：
+
+```sql
+CREATE MATERIALIZED VIEW otel_traces_1m_mv TO otel_traces_1m
+AS
+SELECT
+    toStartOfMinute(Timestamp) AS Timestamp,
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avgState(Duration) AS avg__Duration,
+    maxSimpleState(Duration) AS max__Duration,
+    quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+FROM otel_v2.otel_traces
+GROUP BY
+    Timestamp,
+    ServiceName,
+    StatusCode;
+```
+
+这个 materialized view 由两部分组成：
+
+1. 目标表：它定义了用于存储中间结果的 schema 和聚合状态类型。需要使用 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 引擎，以确保这些状态能在后台被正确合并。
+2. materialized view 查询会在插入时自动执行。与原始查询相比，它使用 `avgState` 和 `quantilesState` 这类状态函数，而不是最终聚合函数。
+
+最终得到的是一张紧凑的表，按分钟为每个服务名和状态码存储聚合状态。它的大小会随时间和基数以可预测的方式增长；经过后台合并后，它表示的结果与直接对原始数据执行原始聚合查询的结果相同。查询这张表的成本远低于直接从源链路追踪表进行聚合，因此能够在大规模场景下实现快速且稳定一致的可视化性能。
+
+<div id="materialized-view-usage-in-clickstack">
+  ## 在 ClickStack 中使用 materialized view
+</div>
+
+在 ClickHouse 中创建 materialized view 后，必须将其注册到 ClickStack 中，以便可视化、仪表盘和告警自动使用。
+
+<div id="registering-a-view">
+  ### 注册 materialized view 以便使用
+</div>
+
+materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**对应的 **source** 上。
+
+<Steps>
+  <Step>
+    #### 编辑 source
+
+    在 HyperDX 中找到相应的 **source**，然后打开 **编辑配置** 对话框。滚动到 materialized view 部分。
+
+    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="编辑 source" />
+  </Step>
+
+  <Step>
+    #### 添加 materialized view
+
+    选择 **添加 materialized view**，然后选择作为该 materialized view 后端的数据库和目标表。
+
+    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="编辑 source" />
+  </Step>
+
+  <Step>
+    #### 选择指标
+
+    大多数情况下，timestamp、维度和指标列都会自动推断出来。若未自动推断，请手动指定。
+
+    对于指标，你必须映射：
+
+    * 原始列名，例如 `Duration`，到
+    * materialized view 中对应的聚合列，例如 `avg__Duration`
+
+    对于维度，请指定除 timestamp 之外，该视图用于分组的所有列。
+
+    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="选择指标" />
+  </Step>
+
+  <Step>
+    #### 选择时间粒度
+
+    选择 materialized view 的**时间粒度**，例如 1 分钟。
+
+    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="选择时间粒度" />
+  </Step>
+
+  <Step>
+    #### 选择最小日期
+
+    指定 materialized view 包含数据的最早日期。这表示该视图中可用的最早 timestamp；如果摄取始终持续进行，通常就是该视图的创建时间。
+
+    <Note>
+      materialized view 在创建时**不会自动回填**，因此它们只会包含创建后插入的数据所生成的行。
+      有关回填 materialized view 的完整指南，请参阅[“回填数据”](/zh/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
+    </Note>
+
+    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="选择最小时间" />
+
+    如果无法确定确切的开始时间，可以通过查询目标表中的最小 timestamp 来确定，例如：
+
+    ```sql
+    SELECT min(Timestamp) FROM otel_traces_1m
+    ```
+  </Step>
+
+  <Step>
+    #### 保存 source
+
+    保存 source 配置。
+
+    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="保存 Source" />
+  </Step>
+</Steps>
+
+注册 materialized view 后，只要查询符合条件，ClickStack 就会自动使用它，无需修改仪表盘、可视化或告警。ClickStack 会在执行时评估每个查询，并确定是否可以应用 materialized view。
+
+<div id="verifying-acceleration-in-dashboards-and-visualizations">
+  ### 在仪表盘和可视化中验证加速效果
+</div>
+
+请务必记住，增量materialized view 仅包含在**视图创建之后**插入的数据。它们不会自动回填，因此能够保持轻量且维护成本较低。因此，用户在注册视图时必须显式指定其有效时间范围。
+
+<Note>
+  只有当 materialized view 的最小时间戳小于或等于查询时间范围的起始时间时，ClickStack 才会使用该视图，以确保视图包含所需的全部数据。尽管查询在内部会按时间拆分为子查询，但 materialized view 要么应用于整个查询，要么完全不应用。未来的改进可能会支持仅对符合条件的子查询选择性使用视图。
+</Note>
+
+ClickStack 提供了清晰的可视化标识，用于确认是否正在使用 materialized view。
+
+1. **检查优化状态** 查看仪表盘或可视化时，查找闪电或 `Accelerated` 图标：
+
+* **绿色闪电**表示该查询已由 materialized view 加速。
+* **橙色闪电**表示该查询是在源表上执行的。
+
+<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="加速的可视化" />
+
+2. **查看优化详情**  点击闪电图标，打开详情面板，其中会显示：
+
+* **活动 materialized view**：为该查询选中的视图，包括其预估行数。
+* **已跳过的 materialized views**：兼容但未被选中的视图，以及它们的预估扫描大小。
+* **不兼容的 materialized views**：无法使用的视图，以及具体原因。
+
+3. **了解常见的不兼容原因** 在以下情况下，materialized view 可能不会被使用：
+
+* **查询时间范围**起始于该视图最小时间戳之前。
+* **可视化粒度**不是该视图粒度的整数倍。
+* 查询请求的**聚合函数**不存在于该视图中。
+* 查询使用了**自定义 count 表达式**，例如 `count(if(...))`，无法从该视图的聚合状态中推导出来。
+
+这些标识可以帮助你轻松确认某个可视化是否已加速，了解为何选择了特定视图，并诊断某个视图为何不符合使用条件。
+
+<div id="how-views-are-selected">
+  ### 如何为可视化选择 materialized view
+</div>
+
+执行可视化时，ClickStack 可能有多个可选对象，包括基表和多个 materialized view。为确保获得最佳性能，ClickStack 会借助 ClickHouse 的 [`EXPLAIN ESTIMATE`](/zh/reference/statements/explain#explain-estimate) 机制，自动评估并选择效率最高的选项。
+
+选择过程遵循一套明确的流程：
+
+1. **验证兼容性**
+   ClickStack 首先会通过检查以下条件，判断某个 materialized view 是否可用于该查询：
+   * **时间覆盖范围**：查询的时间范围必须完全落在该 materialized view 的可用数据范围内。
+   * **粒度**：可视化的时间桶必须等于或粗于该视图的粒度。
+   * **聚合**：请求的指标必须存在于该视图中，并且能够基于其聚合状态计算出来。
+
+2. **转换查询**
+   对于兼容的视图，ClickStack 会重写查询，使其指向 materialized view 对应的表：
+   * 将聚合函数映射到对应的物化列。
+   * 对聚合状态应用 `-Merge` 组合器。
+   * 调整时间分桶，使其与该视图的粒度保持一致。
+
+3. **选择最佳候选项**
+   如果有多个兼容的 materialized view，ClickStack 会为每个候选项运行一次 [`EXPLAIN ESTIMATE`](/zh/reference/statements/explain#explain-estimate) 查询，并比较预估扫描的行数和粒度。最终会选择预估扫描成本最低的视图。
+
+4. **优雅回退**
+   如果没有兼容的 materialized view，ClickStack 会自动回退为查询源表。
+
+这种方式能够持续将扫描数据量降到最低，并且无需修改可视化定义，即可提供可预测的低延迟性能。
+
+即使可视化包含过滤器、搜索约束或时间分桶，只要视图中包含所有必需的维度，materialized view 仍可用于查询加速。这样一来，无需修改可视化定义，也能利用这些视图加速仪表盘、直方图和带过滤条件的图表。
+
+<div id="example-of-choosing-materialized-view">
+  #### 选择 materialized view 的示例
+</div>
+
+考虑在同一个链路追踪数据源上创建的两个 materialized view：
+
+* `otel_traces_1m`，按分钟、`ServiceName` 和 `StatusCode` 分组
+* `otel_traces_1m_v2`，按分钟、`ServiceName`、`StatusCode` 和 `SpanName` 分组
+
+第二个视图包含额外的分组键，因此会产生更多的行，并扫描更多的数据。
+
+如果某个可视化请求**按服务查看随时间变化的平均耗时**，那么这两个视图在技术上都可用。ClickStack 会对每个候选项发出一个 [`EXPLAIN ESTIMATE`](/zh/reference/statements/explain#explain-estimate) 查询，并比较预估的粒度数量，即：
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table──────────┬─parts─┬──rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m │     1 │ 49385 │     6 │
+└──────────┴────────────────┴───────┴───────┴───────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m_v2
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table─────────────┬─parts─┬───rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m_v2 │     1 │ 212519 │    26 │
+└──────────┴───────────────────┴───────┴────────┴───────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+由于 `otel_traces_1m` 更小、扫描的粒度也更少，因此会被自动选中。
+
+这两个 materialized view 的性能仍然优于直接查询基表，但选择能够满足需求的最小视图，性能最佳。
+
+<div id="alerts">
+  ### 告警
+</div>
+
+兼容时，告警查询会自动使用 materialized view。这里同样适用相同的优化逻辑，从而加快告警评估速度。
+
+<div id="backfilling-a-materialized-view">
+  ## 回填 materialized view
+</div>
+
+如前所述，增量materialized view 仅包含**在视图创建后**插入的数据，不会自动回填。这种设计使视图保持轻量、维护成本较低，但也意味着：如果查询需要早于该视图最小时间戳的数据，就无法使用该视图。
+
+在大多数情况下，这是可以接受的。常见的 ClickStack 工作负载都聚焦于最近的数据，例如过去 24 小时，这意味着新创建的视图会在创建一天后变得完全可用。不过，对于跨越更长时间范围的查询，在经过足够长的时间之前，该视图可能仍然无法使用。
+
+在这些情况下，用户可以考虑使用历史数据对 materialized view 进行**回填**。
+
+回填的**计算开销可能非常高**。在正常运行时，materialized view 会随着数据到达而增量填充，从而将计算成本均匀分摊到一段时间内。
+
+而回填会将这些工作压缩到更短的时间内，**显著增加单位时间内的 CPU 和内存使用量。**
+
+根据数据集大小和保留窗口，可能需要临时对集群进行扩缩容——无论是纵向扩缩容，还是在 ClickHouse Cloud 中进行横向扩缩容——才能在合理时间内完成回填。
+
+如果没有配置额外资源，回填可能会对生产工作负载造成负面影响，包括查询延迟和摄取吞吐量。对于**非常大的数据集或较长的历史时间范围，回填可能并不现实**，甚至完全不可行。
+
+总之，回填通常并不值得付出这样的成本和运维风险。只有在历史数据加速至关重要的特殊情况下，才应考虑这样做。如果你决定继续，建议遵循下文概述的受控方法，以在性能、成本和对生产环境的影响之间取得平衡。
+
+<div id="backfilling-approaches">
+  ### 回填方式
+</div>
+
+<Info>
+  **避免使用 POPULATE**
+
+  除了在已暂停摄取的小型数据集场景外，不建议使用 [POPULATE](/zh/reference/statements/create/view#materialized-view) 命令回填 materialized view。该操作符可能会漏掉插入到其源表中的行，因为 materialized view 是在 POPULATE 完成后才创建的。此外，POPULATE 会对全部数据执行处理，在大型数据集上容易受到中断或内存限制的影响。
+</Info>
+
+假设你想回填与下述聚合对应的 materialized view；该聚合按服务名称和状态码分组，计算每分钟的指标：
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+如前所述，增量materialized view 不会自动回填。建议采用以下流程，在安全回填历史数据的同时，保留对新数据的增量处理行为。
+
+<div id="direct-backfill">
+  #### 使用 `INSERT INTO SELECT` 直接回填
+</div>
+
+这种方法最适合**较小的数据集**或**相对较轻量的聚合查询**：能够在合理时间内完成整个回填，同时不会耗尽集群资源。通常适用于回填查询可在几分钟内完成，最多不超过几小时，且可以接受 CPU 和 I/O 使用量的临时上升。对于更大的数据集或成本更高的聚合，建议改用下面介绍的增量回填或基于块的回填方法。
+
+<Steps>
+  <Step>
+    ##### 确定视图当前的覆盖范围
+
+    在尝试任何回填之前，首先需要确认 materialized view 已经包含了哪些数据。这可以通过查询目标表中的最小时间戳来完成：
+
+    ```sql
+    SELECT min(Timestamp)
+    FROM otel_traces_1m;
+    ```
+
+    该时间戳表示此视图能够满足查询的最早时间点。ClickStack 中任何请求早于该时间戳数据的查询，都会回退到基表。
+  </Step>
+
+  <Step>
+    ##### 判断是否需要回填
+
+    在大多数 ClickStack 部署中，查询通常聚焦于最近的数据，例如过去 24 小时。在这种情况下，新创建的视图在创建后不久就能完全投入使用，因此无需回填。
+
+    如果上一步返回的时间戳对你的使用场景来说已经足够早，就不需要回填。只有在以下情况下才应考虑回填：
+
+    * 查询经常覆盖较长的历史时间范围。
+    * 该视图对这些时间范围内的性能至关重要。
+    * 数据集规模和聚合成本使回填具备可行性。
+  </Step>
+
+  <Step>
+    ##### 回填缺失的历史数据
+
+    如果需要回填，请基于该视图的查询进行修改，使其只读取早于上述时间戳的数据，从而为 materialized view 的目标表补齐当前最小时间戳之前的历史数据。由于目标表使用的是 AggregatingMergeTree，回填查询**必须插入聚合状态，而不是最终值**。
+
+    <Warning>
+      此查询可能会处理大量数据，因此资源开销较高。运行回填前，务必确认可用的 CPU、内存和 I/O 容量。一个实用技巧是先使用 `FORMAT Null` 执行该查询，以估算运行时间和资源占用。
+
+      如果预计该查询本身需要运行很多小时，则**不建议**采用这种方法。
+    </Warning>
+
+    请注意，下面的查询添加了一个 `WHERE` 子句，将聚合限制为早于视图中最早时间戳的数据：
+
+    ```sql
+    INSERT INTO otel_traces_1m
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    )
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+  </Step>
+</Steps>
+
+<div id="incremental-backfill-null-table">
+  #### 使用 Null 表进行增量回填
+</div>
+
+对于更大的数据集，或资源开销更高的聚合查询，使用单条 `INSERT INTO SELECT` 直接回填可能并不现实，甚至存在风险。这种情况下，建议采用**增量回填**。这种方法更接近增量materialized view 的常规工作方式：不是一次聚合整个历史数据集，而是按可控的数据块逐步处理。
+
+这种方法适用于以下情况：
+
+* 回填查询否则需要运行数小时。
+* 完整聚合的峰值内存占用过高。
+* 你希望在回填期间严格控制 CPU 和内存消耗。
+* 你需要一种更稳健的流程，以便在中断后也能安全重启。
+
+核心思路是使用 [**Null 表**](/zh/reference/engines/table-engines/special/null) 作为摄取缓冲区。虽然 Null 表本身不存储数据，但挂接到它的 materialized view 仍然会执行，因此可以在数据流经时增量计算聚合状态。
+
+<Steps>
+  <Step>
+    ##### 为回填创建一个 Null 表
+
+    创建一个轻量级的 Null 表，只包含 materialized view 聚合所需的列。这样可以将 I/O 和内存占用降到最低。
+
+    ```sql
+    CREATE TABLE otel_traces_backfill
+    (
+        Timestamp DateTime64(9),
+        ServiceName LowCardinality(String),
+        StatusCode LowCardinality(String),
+        Duration UInt64
+    )
+    ENGINE = Null;
+    ```
+  </Step>
+
+  <Step>
+    ##### 将 materialized view 挂接到 Null 表
+
+    接下来，在 Null 表上创建一个 materialized view，并让它指向与你的主 materialized view 相同的聚合表。
+
+    ```sql
+    CREATE MATERIALIZED VIEW otel_traces_1m_mv_backfill
+    TO otel_traces_1m
+    AS
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces_backfill
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+
+    当行被插入 Null 表时，这个 materialized view 会以增量方式执行，并以小数据块生成聚合状态。
+  </Step>
+
+  <Step>
+    ##### 以增量方式回填数据
+
+    最后，将历史数据插入 Null 表。materialized view 会按数据块逐步处理这些数据，将聚合状态写入目标表，而不会持久化原始行。
+
+    ```sql
+    INSERT INTO otel_traces_backfill
+    SELECT
+        Timestamp,
+        ServiceName,
+        StatusCode,
+        Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    );
+    ```
+
+    由于数据是增量处理的，因此内存占用会保持在可控且可预测的范围内，整体行为也更接近正常摄取流程。
+
+    <Note>
+      为进一步提升安全性，可以考虑让回填 materialized view 指向一个临时目标表 (例如 `otel_traces_1m_v2`) 。回填成功完成后，可以将[分区移动](/zh/reference/statements/alter/partition#move-partition-to-table)到主目标表，例如 `ALTER TABLE otel_traces_1m_v2 MOVE PARTITION '2026-01-02' TO otel_traces_1m`。这样一来，如果回填因中断或资源限制而失败，就能更方便地恢复。
+    </Note>
+
+    有关此流程调优的更多细节，包括如何提升插入性能，以及如何减少并控制资源消耗，请参阅 [&quot;Backfilling.&quot;](/zh/guides/clickhouse/data-modelling/backfilling#tuning-performance--resources)
+  </Step>
+</Steps>
+
+<div id="recommendations">
+  ## 建议
+</div>
+
+以下建议概述了在 ClickStack 中设计和运维 materialized views 的最佳实践。遵循这些建议有助于确保 materialized views 高效、可预测，并具备良好的成本效益。
+
+<div id="granularity-selection-and-alignment">
+  ### 粒度选择与对齐
+</div>
+
+只有当图表或告警的粒度是视图粒度的**精确整数倍**时，才会使用 materialized view。具体如何确定该粒度，取决于图表类型：
+
+* **时间图表** (x 轴为时间的折线图或柱状图) ：
+  图表显式指定的粒度必须是 materialized view 粒度的整数倍。
+  例如，10 分钟图表可以使用粒度为 10、5、2 或 1 分钟的 materialized view，但不能使用 20 分钟或 3 分钟粒度的视图。
+
+* **非时间图表** (数值、表格或摘要图表) ：
+  有效粒度通过 `(time range / 80)` 计算得出，并向上取整到 HyperDX 支持的最近粒度。该派生粒度也必须是 materialized view 粒度的整数倍。
+
+因此：
+
+* **不要创建 10 分钟粒度的 materialized view**。
+  ClickStack 支持图表和告警使用 15 分钟粒度，但不支持 10 分钟粒度。因此，10 分钟的 materialized view 将无法兼容常见的 15 分钟图表和告警。
+* 优先选择 **1 分钟**或**1 小时**粒度，它们与大多数图表和告警配置都能良好适配。
+
+更高的粒度 (例如 1 小时) 会生成更小的视图，并降低存储开销；更低的粒度 (例如 1 分钟) 则能为细粒度分析提供更大的灵活性。请选择能够支持关键工作流的最小粒度。
+
+<div id="limit-and-consolidate-materialized-views">
+  ### 限制并整合 materialized view
+</div>
+
+每个 materialized view 都会带来额外的插入时开销，并增加分片与合并压力。
+建议遵循以下准则：
+
+* **每个 source 最多不超过 20 个 materialized view**。
+* **通常以 10 个左右的 materialized view** 为最佳。
+* 当多个可视化基于相同维度时，应将其整合到单个视图中。
+
+在可能的情况下，应通过同一个 materialized view 计算多个指标，并支撑多个图表。
+
+<div id="choose-dimensions-carefully">
+  ### 谨慎选择维度
+</div>
+
+只纳入那些经常用于分组或过滤的维度：
+
+* 每增加一个分组列，视图的体积都会增大。
+* 需要在查询灵活性与存储、插入时成本之间做好权衡。
+* 如果对视图中不存在的列使用过滤器，ClickStack 会回退到源表。
+
+<Info>
+  **提示**
+
+  一种常见且几乎总是有用的基础做法是：创建一个按 **服务名** 分组、并包含 count 指标的 materialized view，这样可以在搜索和仪表盘中快速生成直方图并提供服务级概览。
+</Info>
+
+<div id="naming-conventions-for-aggregation-columns">
+  ### 聚合列的命名约定
+</div>
+
+materialized view 的聚合列必须遵循严格的命名约定，才能启用自动推断：
+
+* 模式：`<aggFn>__<sourceColumn>`
+* 示例：
+  * `avg__Duration`
+  * `max__Duration`
+  * `count__` 用于行计数
+
+ClickStack 依赖这一约定，才能将查询正确映射到 materialized view 列。
+
+<div id="quantiles-and-sketch-selection">
+  ### 分位数与草图选择
+</div>
+
+不同的分位数函数在性能和存储方面各有特点：
+
+* `quantiles` 会在磁盘上生成更大的草图，但在写入时计算开销更低。
+* `quantileTDigest` 在写入时计算开销更高，但生成的草图更小，因此视图查询通常也会更快。
+
+你也可以指定草图大小 (例如，对这两个函数都在写入时使用 `quantile(0.5)`) 。之后仍可基于生成的草图查询其他分位数值，例如 `quantile(0.95)`。建议通过实验找到最适合你的工作负载的平衡点。
+
+<div id="validate-effectiveness-continously">
+  ### 持续验证效果
+</div>
+
+始终要验证 materialized view 是否确实带来了实际收益：
+
+* 通过 UI 中的加速指示器确认其使用情况。
+* 比较启用该视图前后的查询性能。
+* 监控资源使用情况和合并行为。
+
+应将 materialized view 视为一种性能优化手段；随着查询模式的演变，需要定期审查和调整。
+
+<div id="advanced-configurations">
+  ### 高级配置
+</div>
+
+对于更复杂的工作负载，可以使用多个 materialized view 来适配不同的访问模式。示例包括：
+
+* **高分辨率的近期数据，配合较粗粒度的历史视图**
+* **用于概览的服务级视图，以及用于深度诊断的端点级视图**
+
+如果有针对性地应用，这些模式可以显著提升性能，但只有在验证过更简单的配置后，才应引入。
+
+遵循这些建议，有助于确保 materialized view 持续保持高效、易于维护，并与 ClickStack 的执行模型一致。
+
+<div id="limitations">
+  ## 局限性
+</div>
+
+<div id="common-incompatibility-reasons">
+  ### 常见不兼容原因
+</div>
+
+如果出现以下任一情况，**将不会**使用 materialized view：
+
+* **查询时间范围**
+  查询时间范围的起始时间早于 materialized view 的最小时间戳。由于视图不会自动回填，因此只能满足其时间范围被完全覆盖的查询。
+
+* **粒度不匹配**
+  可视化的实际粒度必须是 materialized view 粒度的整数倍。具体而言：
+
+  * 对于**时间图表** (x 轴为时间的折线图或柱状图) ，图表选择的粒度必须是视图粒度的倍数。例如，10 分钟图表可以使用粒度为 10、5、2 或 1 分钟的 materialized view，但不能使用 20 分钟或 3 分钟的视图。
+  * 对于**非时间图表** (数值图表或表格图表) ，实际粒度按 `(time range / 80)` 计算，向上取整到最接近的 HyperDX 支持粒度，并且同样必须是视图粒度的倍数。
+
+* **不支持的聚合函数**
+  查询所需的聚合在 materialized view 中不存在。只有在视图中显式计算并存储的聚合才能使用。
+
+* **自定义计数表达式**
+  使用 `count(if(...))` 或其他条件计数表达式的查询，无法从标准聚合状态中推导出来，因此不能使用 materialized view。
+
+<div id="design-and-operational-constraints">
+  ### 设计和运维约束
+</div>
+
+* **不会自动回填**
+  增量materialized view 只包含创建后插入的数据。若要加速历史数据，必须显式执行回填；而对于大型数据集，这样做的成本可能很高，甚至并不现实。
+
+* **粒度权衡**
+  粒度过细的视图会增大存储占用和插入时开销，而粒度过粗的视图则会降低灵活性。必须谨慎选择粒度，以匹配预期的查询模式。
+
+* **维度爆炸**
+  增加大量分组维度会显著扩大视图规模，并可能降低其效果。视图应只包含常用的分组列和过滤列。
+
+* **视图数量的可扩展性有限**
+  每个 materialized view 都会带来额外的插入时开销，并增加合并压力。创建过多视图会对摄取和后台合并造成负面影响。
+
+了解这些限制，有助于确保 materialized view 只用在确实能带来实际收益的场景中，并避免采用那些会在无提示的情况下回退到更慢的源表查询的配置。
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="materialied-view-not-being-used">
+  ### materialized view 未生效
+</div>
+
+**检查 1：日期范围**
+
+* 打开优化弹窗，查看是否显示“Date range not supported.”
+* 确保查询的日期范围晚于 materialized view 的最小日期。
+* 如果 materialized view 包含全部历史数据，请移除最小日期。
+
+**检查 2：粒度**
+
+* 确认图表粒度是 MV 粒度的整数倍。
+* 尝试将图表设置为“Auto”，或手动选择兼容的粒度。
+
+**检查 3：聚合**
+
+* 检查图表使用的聚合是否包含在 MV 中。
+* 在优化弹窗中查看“Available aggregated columns”。
+
+**检查 4：维度**
+
+* 确保 group by 的列包含在 MV 的维度列中。
+* 在优化弹窗中查看“Available group/filter columns”。
+
+<div id="slow-mv-queries">
+  ### materialized view 查询缓慢
+</div>
+
+**问题 1：materialized view 粒度过细**
+
+* 由于粒度太细 (例如 1 秒) ，MV 的行数过多。
+* 解决方案：创建一个粒度更粗的 MV (例如 1 分钟或 1 小时) 。
+
+**问题 2：维度过多**
+
+* 由于维度列过多，MV 的基数过高。
+* 解决方案：将维度列精简为最常用的几个。
+
+**问题 3：存在多个行数较多的 MV**
+
+* 系统会对每个 MV 运行 `EXPLAIN`。
+* 解决方案：删除很少使用或总是被跳过的 MV。
+
+<div id="config-errors">
+  ### 配置错误
+</div>
+
+**错误：&quot;At least one aggregated column is required&quot;**
+
+* 在 MV 配置中至少添加一个聚合列。
+
+**错误：&quot;Source column is required for non-count aggregations&quot;**
+
+* 请指定要聚合的列 (只有 count 可以省略源列) 。
+
+**错误：&quot;Invalid granularity format&quot;**
+
+* 请使用下拉列表中的预设粒度之一。
+* 格式必须是有效的 SQL 时间间隔 (例如 `1 hour`，而不是 `1 h`) 。

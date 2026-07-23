@@ -205,10 +205,9 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Image width and height must be greater than zero (got {}x{})", width, height);
 
-    /// libpng rejects an image whose width or height exceeds its per-dimension user limit
-    /// (`PNG_USER_WIDTH_MAX`/`PNG_USER_HEIGHT_MAX`, 1000000 by default) at `png_set_IHDR`. That check fires
-    /// inside libpng's C frames, so it would surface only as a generic encoding failure. Reject oversized
-    /// dimensions here instead, before allocating the buffer, with a clear message naming the settings.
+    /// Reject absurdly large dimensions up front, before allocating the image buffer, with a clear message
+    /// naming the settings. This bounds the buffer size and keeps the width and height well within the
+    /// 4-byte range that the PNG header stores them in.
     static constexpr size_t MAX_IMAGE_DIMENSION = 1000000;
     if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -368,7 +367,7 @@ void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_colum
     src_columns.clear();
     src_columns.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        src_columns.push_back(columns[i]->convertToFullIfNeeded());
+        src_columns.push_back(columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
 }
 
 void PNGSerializer::Impl::writePixel(size_t x, size_t y, const UInt8 * components)

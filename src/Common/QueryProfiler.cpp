@@ -56,7 +56,7 @@ namespace
         SCOPE_EXIT({ concurrent_invocations.fetch_sub(1, std::memory_order_relaxed); });
         if (concurrent_invocations.fetch_add(1, std::memory_order_relaxed) > 100)
         {
-            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerConcurrencyOverruns);
+            ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerConcurrencyOverruns);
             return;
         }
 
@@ -78,11 +78,11 @@ namespace
                 /// But pass with some frequency to avoid drop of all traces.
                 if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
-                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                    ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
+                    ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
                     return;
                 }
             }
@@ -107,7 +107,7 @@ namespace
         }
         else
         {
-            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
+            ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerErrors);
         }
         asynchronous_stack_unwinding = false;
 #endif
@@ -115,7 +115,7 @@ namespace
         if (stack_trace)
             TraceSender::send(trace_type, *stack_trace, {});
 
-        ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
+        ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerRuns);
         errno = saved_errno;
     }
 

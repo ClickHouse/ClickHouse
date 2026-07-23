@@ -1,0 +1,179 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: 'التجسيد الكسول'
+description: 'مقالة تشرح ماهية التجسيد الكسول في ClickHouse'
+title: 'التجسيد الكسول'
+doc_type: 'guide'
+keywords: ['التحسين', 'التجسيد الكسول']
+---
+
+تشرح هذه المقالة آلية عمل التجسيد الكسول وكيف يندرج ضمن منظومة تحسينات I/O الأوسع في ClickHouse.
+كما تعرض مثالًا عمليًا يوضح كيف يعزز التجسيد الكسول أداء الاستعلام.
+
+<Tip>
+  **متاح ابتداءً من الإصدار 25.4**
+
+  أُضيف التجسيد الكسول في الإصدار 25.4 من ClickHouse، وهو مفعّل افتراضيًا.
+</Tip>
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+على مرّ السنين، قدّم ClickHouse سلسلة من التحسينات المتدرجة لتقليل عمليات الإدخال/الإخراج (I/O) بشكل كبير.
+وتُشكّل هذه التقنيات أساس سرعته وكفاءته:
+
+| التحسين                                                                                                                                                                                                                                                      | الوصف                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [**التخزين العمودي**](/ar/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                                                      | يتيح تخطّي أعمدة كاملة لا يحتاجها الاستعلام، كما يوفّر ضغطًا عاليًا عبر تجميع القيم المتشابهة معًا، مما يقلّل عمليات الإدخال/الإخراج أثناء تحميل البيانات.                                                                                                                                       |
+| [**الفهارس الأساسية المتناثرة**](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**فهارس تخطّي البيانات الثانوية**](/ar/concepts/features/performance/skip-indexes/skipping-indexes) | [**الإسقاطات**](/ar/concepts/features/projections/projections) | تستبعد البيانات غير ذات الصلة من خلال تحديد [الحبيبات](/ar/concepts/core-concepts/glossary#granule) (كتل الصفوف) التي قد تطابق عوامل التصفية على *الأعمدة المفهرسة*. تعمل هذه التقنيات على مستوى الحبيبات، ويمكن استخدام كل منها على حدة أو معًا.                                                   |
+| [**PREWHERE**](/ar/reference/statements/select/prewhere)                                                                                                                                                                                                        | يتحقق أيضًا من التطابق مع عوامل التصفية على الأعمدة *غير المفهرسة* لتخطّي البيانات مبكرًا التي كان سيجري تحميلها ثم تجاهلها لاحقًا. ويمكن أن يعمل بشكل مستقل أو أن يُحسّن الحبيبات التي تحددها الفهارس، مكمّلًا بذلك استبعاد الحبيبات عبر تخطّي الصفوف التي لا تطابق *جميع* عوامل تصفية الأعمدة. |
+| [**ذاكرة التخزين المؤقت لشرط الاستعلام**](/ar/concepts/features/performance/caches/query-condition-cache)                                                                                                                                                       | يسرّع الاستعلامات المتكررة من خلال تذكّر الحبيبات التي طابقت جميع عوامل التصفية في المرة السابقة. ويمكن لـ ClickHouse عندئذٍ تخطّي قراءة الحبيبات التي لم تتطابق وتصفيةَها، حتى إذا تغيّر شكل الاستعلام.                                                                                         |
+
+ومع أن تحسينات الإدخال/الإخراج المذكورة أعلاه يمكن أن تقلّل بدرجة كبيرة حجم البيانات المقروءة، فإنها لا تزال تفترض ضرورة تحميل جميع أعمدة الصفوف التي تستوفي عبارة `WHERE` قبل تنفيذ عمليات مثل الفرز أو التجميع أو `LIMIT`. لكن ماذا لو أن بعض الأعمدة لا تكون مطلوبة إلا لاحقًا، أو أن بعض البيانات، رغم استيفائها لعبارة `WHERE`، لا تكون مطلوبة أصلًا؟
+هنا يأتي دور التجسيد الكسول. فهو تحسين مستقل يُكمل منظومة تحسينات الإدخال/الإخراج:
+
+* تضمن الفهرسة، بالاقتران مع `PREWHERE`، ألّا تُعالَج إلا الصفوف التي تطابق عوامل تصفية الأعمدة في عبارة `WHERE`.
+* ويعتمد التجسيد الكسول على ذلك من خلال تأجيل قراءة الأعمدة إلى أن تصبح مطلوبة فعليًا وفقًا لخطة تنفيذ الاستعلام.
+  فحتى بعد التصفية، لا تُحمَّل فورًا إلا الأعمدة اللازمة للعملية التالية - مثل الفرز.
+  أما بقية الأعمدة فتُؤجَّل، وبسبب `LIMIT`، لا تُقرأ غالبًا إلا جزئيًا، وبالقدر اللازم فقط لإنتاج النتيجة النهائية.
+  وهذا يجعل التجسيد الكسول فعّالًا بشكل خاص مع استعلامات Top N، حيث قد لا تتطلب النتيجة النهائية سوى عدد محدود من الصفوف من بعض الأعمدة، التي تكون غالبًا كبيرة الحجم.
+
+<div id="worked-example">
+  ## مثال تطبيقي
+</div>
+
+نوصي بشدة بمقالة المدوّنة [&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation)
+للاطلاع المتعمق على التجسيد الكسول. المثال أدناه مأخوذ من مقالة المدوّنة المشار إليها أعلاه، وأُعيد نشره هنا لتوضيح كيف يمكن لاستعلام ClickHouse أن ينتقل من 219 ثانية إلى 139 مللي ثانية فقط (تسريع بمقدار 1576×) باستخدام التجسيد الكسول.
+
+وللاستفادة من الفهرسة و`PREWHERE`، يحتاج الاستعلام إلى عوامل تصفية: على أعمدة المفتاح الأساسي للاستفادة من الفهرسة، وعلى أي أعمدة للاستفادة من `PREWHERE`.
+وتُضاف التجسيد الكسول فوق ذلك بسلاسة، لكنها — بخلاف التحسينات الأخرى المذكورة سابقًا — يمكنها أيضًا تسريع الاستعلامات التي لا تحتوي على أي عوامل تصفية للأعمدة على الإطلاق.
+
+تأمل استعلام المثال التالي، الذي يعثر على مراجعات Amazon ذات أكبر عدد من الأصوات المفيدة، بغض النظر عن التاريخ أو المنتج أو التقييم أو حالة التحقق، ويُرجع أفضل 3 نتائج مع العنوان والعنوان الرئيسي والنص الكامل.
+
+ابدأ أولًا بتشغيل الاستعلام (مع ذاكرات التخزين المؤقت الباردة لنظام الملفات) مع تعطيل التجسيد الكسول (باستخدام [`query_plan_optimize_lazy_materialization`](/ar/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+بعد ذلك، يُعاد تنفيذ الاستعلام (مرة أخرى مع ذاكرة تخزين مؤقت باردة لنظام الملفات)، ولكن هذه المرة مع تفعيل التجسيد الكسول:
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  عادةً، لا تحتاج إلى تعيين `query_plan_optimize_lazy_materialization = true` صراحةً للاستفادة من التجسيد الكسول.
+  وهو مفعّل افتراضيًا.
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+قارن الفرق في الأداء عند إيقاف التجسيد الكسول وتشغيله:
+
+| المقياس           | عند تعطيل التجسيد الكسول | عند تفعيل التجسيد الكسول | التحسين         |
+| ----------------- | ------------------------ | ------------------------ | --------------- |
+| الوقت المستغرق    | 219.071 sec              | 0.139 sec                | أسرع بنحو 1576× |
+| البيانات المقروءة | 71.38 GB                 | 1.81 GB                  | أقل بنحو 40×    |
+| ذروة الذاكرة      | 1.11 GiB                 | 3.80 MiB                 | أقل بنحو 300×   |
+
+<div id="confirm-lazy-materialization">
+  ## كيفية التحقق من التجسيد الكسول في خطة تنفيذ الاستعلام
+</div>
+
+يمكنك ملاحظة استخدام التجسيد الكسول في الاستعلام السابق من خلال فحص خطة التنفيذ المنطقية للاستعلام باستخدام عبارة [`EXPLAIN`](/ar/reference/statements/explain):
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+يمكنك قراءة مخطط تنفيذ المشغّلات من الأسفل إلى الأعلى، وملاحظة أن ClickHouse يؤخر قراءة أعمدة String الثلاثة الكبيرة إلى ما بعد الفرز وتطبيق الحد.

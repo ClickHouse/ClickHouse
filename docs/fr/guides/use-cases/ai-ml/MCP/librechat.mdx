@@ -1,0 +1,241 @@
+---
+slug: /use-cases/AI/MCP/librechat
+sidebarTitle: 'Intégrer LibreChat'
+title: 'Utiliser le serveur MCP ClickHouse avec LibreChat'
+description: 'Ce guide explique comment configurer LibreChat avec un serveur MCP ClickHouse à l’aide de Docker.'
+keywords: ['AI', 'Librechat', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Ce guide explique comment configurer LibreChat avec un serveur MCP ClickHouse à l’aide de Docker
+> et le connecter aux jeux de données d’exemple de ClickHouse.
+
+<Steps>
+  <Step>
+    ## Installer Docker
+
+    Vous aurez besoin de Docker pour exécuter LibreChat et le serveur MCP. Pour installer Docker :
+
+    1. Rendez-vous sur [docker.com](https://www.docker.com/products/docker-desktop)
+    2. Téléchargez Docker Desktop pour votre système d’exploitation
+    3. Installez Docker en suivant les instructions pour votre système d’exploitation
+    4. Ouvrez Docker Desktop et assurez-vous qu’il est bien en cours d’exécution
+
+    <br />
+
+    Pour en savoir plus, consultez la [documentation Docker](https://docs.docker.com/get-docker/).
+  </Step>
+
+  <Step>
+    ## Cloner le dépôt LibreChat
+
+    Ouvrez un terminal (invite de commandes, terminal ou PowerShell) et clonez le
+    dépôt LibreChat à l’aide de la commande suivante :
+
+    ```bash
+    git clone https://github.com/danny-avila/LibreChat.git
+    cd LibreChat
+    ```
+  </Step>
+
+  <Step>
+    ## Créez et modifiez le fichier .env
+
+    Copiez le fichier de configuration d’exemple `.env.example` dans `.env` :
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Ouvrez le fichier `.env` dans votre éditeur de texte préféré. Vous verrez des sections pour
+    de nombreux fournisseurs de LLM courants, dont OpenAI, Anthropic, AWS bedrock, etc., par
+    exemple :
+
+    ```text title=".venv" highlight={4}
+    #============#
+    # Anthropic  #
+    #============#
+    ANTHROPIC_API_KEY=user_provided
+    # ANTHROPIC_MODELS=claude-opus-4-20250514,claude-sonnet-4-20250514,claude-3-7-sonnet-20250219,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229,claude-3-sonnet-20240229,claude-3-haiku-20240307
+    # ANTHROPIC_REVERSE_PROXY=
+    ```
+
+    Remplacez `user_provided` par votre clé API pour le fournisseur de LLM que vous souhaitez utiliser.
+
+    <Info>
+      **Utiliser un LLM local**
+
+      Si vous n&#39;avez pas de clé API, vous pouvez utiliser un LLM local comme Ollama. Vous verrez comment
+      procéder plus tard à l&#39;étape [&quot;Installer Ollama&quot;](#add-local-llm-using-ollama). Pour l&#39;instant,
+      ne modifiez pas le fichier .env et passez aux étapes suivantes.
+    </Info>
+  </Step>
+
+  <Step>
+    ## Créez un fichier librechat.yaml
+
+    Exécutez la commande suivante pour créer un fichier `librechat.yaml` :
+
+    ```bash
+    cp librechat.example.yaml librechat.yaml
+    ```
+
+    Cela crée le [fichier de configuration](https://www.librechat.ai/docs/configuration/librechat_yaml) principal de LibreChat.
+  </Step>
+
+  <Step>
+    ## Ajouter le serveur MCP ClickHouse à Docker Compose
+
+    Ensuite, nous allons ajouter le serveur MCP ClickHouse au fichier Docker Compose de LibreChat
+    afin que le LLM puisse interagir avec le
+    [ClickHouse SQL playground](https://sql.clickhouse.com/).
+
+    Créez un fichier nommé `docker-compose.override.yml` et ajoutez-y la configuration suivante :
+
+    ```yml title="docker-compose.override.yml"
+    services:
+      api:
+        volumes:
+          - ./librechat.yaml:/app/librechat.yaml
+      mcp-clickhouse:
+        image: mcp/clickhouse
+        container_name: mcp-clickhouse
+        ports:
+          - 8001:8000
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+        environment:
+          - CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+          - CLICKHOUSE_USER=demo
+          - CLICKHOUSE_PASSWORD=
+          - CLICKHOUSE_MCP_SERVER_TRANSPORT=sse
+          - CLICKHOUSE_MCP_BIND_HOST=0.0.0.0
+    ```
+
+    Si vous souhaitez explorer vos propres données, vous pouvez le faire à l’aide de l’[hôte, du nom d’utilisateur et du mot de passe](/fr/get-started/setup/cloud#connect-with-your-app)
+    de votre service ClickHouse Cloud.
+
+    <Card title="Premiers pas avec ClickHouse Cloud" href="https://cloud.clickhouse.com/" icon="cloud">
+      Si vous n’avez pas encore de compte Cloud, lancez-vous avec ClickHouse Cloud dès aujourd’hui et recevez 300 $ de crédits. À la fin de votre essai gratuit de 30 jours, passez à une tarification à l’usage, ou contactez-nous pour en savoir plus sur nos remises en fonction du volume. Consultez notre page de tarification pour plus de détails.
+    </Card>
+  </Step>
+
+  <Step>
+    ## Configurer le serveur MCP dans librechat.yaml
+
+    Ouvrez `librechat.yaml` et ajoutez la configuration suivante à la fin du fichier :
+
+    ```yml
+    mcpServers:
+      clickhouse-playground:
+        type: sse
+        url: http://host.docker.internal:8001/sse
+    ```
+
+    Cela configure LibreChat pour qu’il se connecte au serveur MCP s’exécutant dans Docker.
+
+    Repérez la ligne suivante :
+
+    ```text title="librechat.yaml"
+    socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
+    ```
+
+    Pour simplifier, nous allons pour l’instant supprimer l’obligation de s’authentifier :
+
+    ```text title="librechat.yaml"
+    socialLogins: []
+    ```
+  </Step>
+
+  <Step>
+    ## Ajouter un LLM local avec Ollama (facultatif)
+
+    ### Installer Ollama
+
+    Rendez-vous sur le [site d’Ollama](https://ollama.com/download) et installez Ollama pour votre système.
+
+    Une fois l’installation terminée, vous pouvez exécuter un modèle comme ceci :
+
+    ```bash
+    ollama run qwen3:32b
+    ```
+
+    Cela téléchargera le modèle sur votre machine locale s’il n’y est pas déjà.
+
+    Pour obtenir une liste des modèles, consultez la [bibliothèque Ollama](https://ollama.com/library)
+
+    ### Configurer Ollama dans librechat.yaml
+
+    Une fois le modèle téléchargé, configurez-le dans `librechat.yaml` :
+
+    ```text title="librechat.yaml"
+    custom:
+      - name: "Ollama"
+        apiKey: "ollama"
+        baseURL: "http://host.docker.internal:11434/v1/"
+        models:
+          default:
+            [
+              "qwen3:32b"
+            ]
+          fetch: false
+        titleConvo: true
+        titleModel: "current_model"
+        summarize: false
+        summaryModel: "current_model"
+        forcePrompt: false
+        modelDisplayLabel: "Ollama"
+    ```
+  </Step>
+
+  <Step>
+    ## Démarrer tous les services
+
+    Depuis la racine du dossier du projet LibreChat, exécutez la commande suivante pour démarrer les services :
+
+    ```bash
+    docker compose up
+    ```
+
+    Attendez que tous les services soient entièrement opérationnels.
+  </Step>
+
+  <Step>
+    ## Ouvrez LibreChat dans votre navigateur
+
+    Une fois tous les services démarrés, ouvrez votre navigateur et accédez à `http://localhost:3080/`
+
+    Créez un compte LibreChat gratuit si vous n’en avez pas encore, puis connectez-vous. Vous devriez
+    désormais voir l’interface de LibreChat connectée au ClickHouse MCP server et, éventuellement,
+    à votre LLM local.
+
+    Dans l’interface de chat, sélectionnez `clickhouse-playground` comme serveur MCP :
+
+    <Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Sélectionnez votre serveur MCP" size="md" />
+
+    Vous pouvez maintenant demander au LLM d’explorer les jeux de données d’exemple de ClickHouse. Essayez :
+
+    ```text title="Prompt"
+    What datasets do you have access to?
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Si l’option de serveur MCP n’apparaît pas dans l’interface utilisateur de LibreChat,
+  vérifiez que les autorisations appropriées sont définies dans votre fichier `librechat.yaml`.
+</Note>
+
+Si `use` est défini sur `false` dans la section `mcpServers` sous `interface`, la liste déroulante de sélection du MCP n’apparaîtra pas dans le chat :
+
+```yml title="librechat.yaml"
+interface:
+  mcpServers:
+    use: true
+    share: false
+    create: false
+    public: false
+```

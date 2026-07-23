@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'JDBC'
+keywords: ['clickhouse', 'jdbc', 'connect', 'integrate']
+slug: /integrations/jdbc/jdbc-with-clickhouse
+description: 'ClickHouse JDBC Bridge를 사용하면 JDBC 드라이버를 사용할 수 있는 모든 외부 데이터 소스의 데이터에 ClickHouse가 액세스할 수 있습니다'
+title: 'JDBC를 사용하여 ClickHouse를 외부 데이터 소스에 연결하기'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Warning>
+  clickhouse-jdbc-bridge에는 실험적 코드가 포함되어 있으며 더 이상 지원되지 않습니다. 신뢰성 및 보안 취약점이 있을 수 있습니다. 사용은 자체 책임하에 하십시오.
+</Warning>
+
+<Note>
+  JDBC를 사용하려면 ClickHouse JDBC Bridge가 필요하므로, 로컬 머신에서 `clickhouse-local`을 사용해 데이터베이스의 데이터를 ClickHouse Cloud로 스트리밍해야 합니다. 자세한 내용은 문서의 **Migrate** 섹션에 있는 [**clickhouse-local 사용**](/ko/get-started/migrate/other-methods/clickhouse-local-etl) 페이지를 참조하십시오.
+</Note>
+
+**개요:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>를 [JDBC 테이블 함수](/ko/reference/functions/table-functions/jdbc) 또는 [JDBC 테이블 엔진](/ko/reference/engines/table-engines/integrations/jdbc)과 함께 사용하면, <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC 드라이버</a>를 사용할 수 있는 모든 외부 데이터 소스의 데이터에 ClickHouse가 액세스할 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="ClickHouse JDBC Bridge 아키텍처 다이어그램" background="white" />
+
+외부 데이터 소스에 네이티브로 제공되는 내장 [integration 엔진](/ko/reference/engines/table-engines/integrations/index), 테이블 함수 또는 외부 딕셔너리가 없더라도, 해당 데이터 소스용 JDBC 드라이버가 있다면 유용하게 사용할 수 있습니다.
+
+ClickHouse JDBC Bridge는 읽기와 쓰기 모두에 사용할 수 있습니다. 또한 여러 외부 데이터 소스에 대해 병렬로 사용할 수 있으므로, 예를 들어 여러 외부 및 내부 데이터 소스에 걸쳐 ClickHouse에서 실시간으로 분산 쿼리를 실행할 수 있습니다.
+
+이 문서에서는 ClickHouse를 외부 데이터 소스와 연결하기 위해 ClickHouse JDBC Bridge를 얼마나 쉽게 설치, 구성, 실행할 수 있는지 보여드립니다. 이 예제에서는 외부 데이터 소스로 MySQL을 사용합니다.
+
+이제 시작하겠습니다!
+
+<Info>
+  **사전 요구 사항**
+
+  다음이 갖춰진 머신에 액세스할 수 있어야 합니다.
+
+  1. Unix 셸 및 인터넷 접속
+  2. <a href="https://www.gnu.org/software/wget/" target="_blank">wget</a> 설치
+  3. 최신 버전의 **Java** 설치(예: <a href="https://openjdk.java.net" target="_blank">OpenJDK</a> 버전 &gt;= 17)
+  4. 최신 버전의 **MySQL** 설치 및 실행(예: <a href="https://www.mysql.com" target="_blank">MySQL</a> 버전 &gt;= 8)
+  5. 최신 버전의 **ClickHouse** [설치](/ko/get-started/setup/install) 및 실행
+</Info>
+
+<div id="install-the-clickhouse-jdbc-bridge-locally">
+  ## ClickHouse JDBC Bridge를 로컬에 설치하기
+</div>
+
+ClickHouse JDBC Bridge를 사용하는 가장 쉬운 방법은 ClickHouse가 실행 중인 동일한 호스트에 이를 설치하고 실행하는 것입니다:<Image img="/images/integrations/data-ingestion/dbms/jdbc-02.webp" size="lg" alt="로컬에 배포된 ClickHouse JDBC Bridge 다이어그램" background="white" />
+
+먼저 ClickHouse가 실행 중인 머신의 Unix 셸에 연결한 후, 나중에 ClickHouse JDBC Bridge를 설치할 로컬 폴더를 생성합니다(폴더 이름과 위치는 원하는 대로 지정해도 됩니다):
+
+```bash
+mkdir ~/clickhouse-jdbc-bridge
+```
+
+이제 해당 폴더에 ClickHouse JDBC Bridge의 <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/" target="_blank">최신 버전</a>을 다운로드합니다:
+
+```bash
+cd ~/clickhouse-jdbc-bridge
+wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0.7/clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+MySQL에 연결하기 위해 이름이 지정된 데이터 소스를 생성합니다:
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ mkdir -p config/datasources
+ touch config/datasources/mysql8.json
+```
+
+이제 다음 구성을 `~/clickhouse-jdbc-bridge/config/datasources/mysql8.json` 파일에 복사해 붙여넣으십시오:
+
+```json
+ {
+   "mysql8": {
+   "driverUrls": [
+     "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar"
+   ],
+   "jdbcUrl": "jdbc:mysql://<host>:<port>",
+   "username": "<username>",
+   "password": "<password>"
+   }
+ }
+```
+
+<Note>
+  위 구성 파일에서
+
+  * 데이터 소스 이름은 자유롭게 지정할 수 있으며, 여기서는 `mysql8`을 사용했습니다
+  * `jdbcUrl` 값에서는 실행 중인 MySQL 인스턴스에 맞게 `<host>`와 `<port>`를 적절한 값으로 바꿔야 합니다. 예: `"jdbc:mysql://localhost:3306"`
+  * `<username>`과 `<password>`는 MySQL 자격 증명에 맞게 바꿔야 합니다. 비밀번호를 사용하지 않는 경우 위 구성 파일에서 `"password": "<password>"` 줄을 삭제하면 됩니다
+  * `driverUrls` 값에는 MySQL JDBC 드라이버의 <a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/" target="_blank">현재 버전</a>을 다운로드할 수 있는 URL만 지정했습니다. 이 작업만 하면 되며, ClickHouse JDBC Bridge가 해당 JDBC 드라이버를 자동으로 다운로드합니다(OS별 디렉터리에 다운로드됨).
+</Note>
+
+<br />
+
+이제 ClickHouse JDBC Bridge를 시작할 준비가 되었습니다:
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ java -jar clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+<Note>
+  ClickHouse JDBC Bridge를 포그라운드 모드로 시작했습니다. Bridge를 중지하려면 위에 있는 Unix 셸 창을 다시 포그라운드로 전환한 다음 `CTRL+C`를 누르세요.
+</Note>
+
+<div id="use-the-jdbc-connection-from-within-clickhouse">
+  ## ClickHouse 내에서 JDBC 연결 사용하기
+</div>
+
+이제 ClickHouse는 [jdbc 테이블 함수](/ko/reference/functions/table-functions/jdbc) 또는 [JDBC 테이블 엔진](/ko/reference/engines/table-engines/integrations/jdbc)을 사용해 MySQL 데이터에 액세스할 수 있습니다.
+
+다음 예시를 실행하는 가장 쉬운 방법은 내용을 [`clickhouse-client`](/ko/concepts/features/interfaces/cli) 또는 [Play UI](/ko/concepts/features/interfaces/http)에 복사해 붙여넣는 것입니다.
+
+* jdbc 테이블 함수:
+
+```sql
+ SELECT * FROM jdbc('mysql8', 'mydatabase', 'mytable');
+```
+
+<Note>
+  `jdbc` 테이블 함수의 첫 번째 매개변수로는 앞에서 구성한 이름이 지정된 데이터 소스의 이름을 사용합니다.
+</Note>
+
+* JDBC 테이블 엔진:
+
+```sql
+ CREATE TABLE mytable (
+      <column> <column_type>,
+      ...
+ )
+ ENGINE = JDBC('mysql8', 'mydatabase', 'mytable');
+
+ SELECT * FROM mytable;
+```
+
+<Note>
+  jdbc engine 절의 첫 번째 매개변수로는 위에서 구성한 이름이 지정된 데이터 소스의 이름을 사용합니다
+
+  ClickHouse JDBC engine 테이블의 스키마와 연결된 MySQL 테이블의 스키마는 일치해야 합니다. 예를 들어 컬럼 이름과 순서는 동일해야 하며, 컬럼 데이터 타입은 서로 호환되어야 합니다
+</Note>
+
+<div id="install-the-clickhouse-jdbc-bridge-externally">
+  ## ClickHouse JDBC Bridge를 외부에 설치하기
+</div>
+
+분산 ClickHouse 클러스터(ClickHouse 호스트가 2개 이상인 클러스터)에서는 ClickHouse JDBC Bridge를 별도의 전용 호스트에 외부 설치하여 실행하는 것이 적절합니다.
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-03.webp" size="lg" alt="ClickHouse JDBC Bridge 외부 배포 다이어그램" background="white" />
+
+이 방식의 장점은 각 ClickHouse 호스트가 JDBC Bridge에 액세스할 수 있다는 점입니다. 그렇지 않으면 Bridge를 통해 외부 데이터 소스에 액세스해야 하는 각 ClickHouse 인스턴스마다 JDBC Bridge를 로컬에 설치해야 합니다.
+
+ClickHouse JDBC Bridge를 외부에 설치하려면 다음 단계를 수행하십시오.
+
+1. 이 가이드의 1절에 설명된 단계에 따라 전용 호스트에 ClickHouse JDBC Bridge를 설치, 구성, 실행합니다.
+
+2. 각 ClickHouse 호스트에서 다음 구성 블록을 <a href="/ko/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">ClickHouse 서버 구성</a>에 추가합니다(선택한 구성 포맷에 따라 XML 또는 YAML 버전을 사용하십시오).
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <jdbc_bridge>
+       <host>JDBC-Bridge-Host</host>
+       <port>9019</port>
+    </jdbc_bridge>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    jdbc_bridge:
+        host: JDBC-Bridge-Host
+        port: 9019
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  * `JDBC-Bridge-Host`를 전용 ClickHouse JDBC Bridge 호스트의 호스트명 또는 IP 주소로 바꾸어야 합니다
+  * 여기서는 기본 ClickHouse JDBC Bridge 포트인 `9019`를 지정했습니다. JDBC Bridge에 다른 포트를 사용하는 경우 위 구성을 그에 맞게 조정해야 합니다
+</Note>
+
+[//]: # "## 4. 추가 정보"
+
+[//]: #
+
+[//]: # "TODO: "
+
+[//]: # "- jdbc 테이블 함수의 경우 스키마를 매개변수로 함께 지정하면 (매번 쿼리 2개를 실행하는 대신) 성능이 더 좋다는 점을 언급"
+
+[//]: #
+
+[//]: # "- ad hoc 쿼리와 테이블 쿼리, 저장된 쿼리, 이름 있는 쿼리를 언급"
+
+[//]: #
+
+[//]: # "- insert into를 언급"

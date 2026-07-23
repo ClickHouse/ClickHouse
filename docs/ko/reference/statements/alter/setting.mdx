@@ -1,0 +1,65 @@
+---
+description: '테이블 설정 변경에 대한 문서'
+sidebarTitle: 'SETTING'
+slug: /sql-reference/statements/alter/setting
+title: '테이블 설정 변경'
+doc_type: 'reference'
+---
+
+테이블 설정을 변경하는 SQL 문이 있습니다. 설정을 수정하거나 기본값으로 재설정할 수 있습니다. 하나의 쿼리로 여러 설정을 한 번에 변경할 수 있습니다.
+지정한 이름의 설정이 없으면 쿼리에서 예외가 발생합니다.
+
+**구문**
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
+```
+
+<Note>
+  이러한 쿼리는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에만 적용됩니다.
+</Note>
+
+<div id="modify-setting">
+  ## MODIFY SETTING
+</div>
+
+테이블 설정을 변경합니다.
+
+**구문**
+
+```sql
+MODIFY SETTING setting_name=value [, ...]
+```
+
+**예시**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id;
+
+ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_in_total=50000;
+```
+
+<div id="reset-setting">
+  ## RESET SETTING
+</div>
+
+테이블 설정을 기본값으로 재설정합니다. 설정이 기본 상태이면 아무 동작도 수행되지 않습니다.
+
+**구문**
+
+```sql
+RESET SETTING setting_name [, ...]
+```
+
+**예시**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id
+    SETTINGS max_part_loading_threads=8;
+
+ALTER TABLE example_table RESET SETTING max_part_loading_threads;
+```
+
+**관련 항목**
+
+* [MergeTree 설정](/ko/reference/settings/merge-tree-settings)

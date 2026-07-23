@@ -1,0 +1,72 @@
+---
+description: '安装 ClickHouse'
+keywords: ['clickhouse', '安装', '入门', '快速入门']
+sidebarTitle: '安装'
+slug: /install
+title: '安装指南'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/zh/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="免费开始">
+  无需为集群进行容量规划和扩缩容，即可立即开始构建。ClickHouse Cloud 会负责容量规划、扩缩容、
+  安全、可靠性和升级。
+</Card>
+
+<br />
+
+如果你希望自行管理，请从下方的开源 ClickHouse 选项中选择一种。
+你可以使用快速安装脚本或 `clickhousectl` 命令行客户端进行本地安装，或者通过软件包或二进制文件安装
+ClickHouse Server，用于生产环境部署。
+
+<h3 className="install-group-heading">本地开发</h3>
+
+<p className="install-group-description">
+  在你自己的机器上运行 ClickHouse，用于构建、测试和实验。
+  快速安装可让你迅速获得单个二进制文件，或者使用 clickhousectl
+  来安装和管理本地版本及服务器。
+</p>
+
+<div className="installContainer">
+  <a href="/zh/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="快速安装" />
+  </a>
+
+  <a href="/zh/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (命令行客户端)" icon="console" />
+  </a>
+
+  <a href="/zh/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/zh/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="源码构建" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">生产服务器</h3>
+
+<p className="install-group-description">
+  通过软件包或二进制文件安装 ClickHouse Server，以便在你自己的基础设施上进行
+  长期运行的部署。
+</p>
+
+<div className="installContainer">
+  <a href="/zh/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/zh/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/zh/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/zh/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="其他 Linux" />
+  </a>
+</div>

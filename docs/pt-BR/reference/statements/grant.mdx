@@ -1,0 +1,867 @@
+---
+description: 'Documentação sobre a instrução GRANT'
+sidebarTitle: 'GRANT'
+slug: /sql-reference/statements/grant
+title: 'Instrução GRANT'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+* Concede [privilégios](#privileges) a contas de usuário ou funções do ClickHouse.
+* Atribui funções a contas de usuário ou a outros funções.
+
+Para revogar privilégios, use a instrução [REVOKE](/pt-BR/reference/statements/revoke). Você também pode listar os privilégios concedidos com a instrução [SHOW GRANTS](/pt-BR/reference/statements/show#show-grants).
+
+<div id="granting-privilege-syntax">
+  ## Sintaxe de concessão de privilégios
+</div>
+
+```sql
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+* `privilege` — Tipo de privilégio.
+* `role` — Função de usuário do ClickHouse.
+* `user` — Conta de usuário do ClickHouse.
+
+A cláusula `WITH GRANT OPTION` concede a `user` ou `role` a permissão para executar a consulta `GRANT`. Os usuários podem conceder privilégios no mesmo escopo que já possuem ou em escopos menores.
+A cláusula `WITH REPLACE OPTION` substitui os privilégios antigos por novos privilégios para o `user` ou `role`; se não for especificada, ela acrescenta privilégios.
+
+<div id="assigning-role-syntax">
+  ## Sintaxe para atribuir Função
+</div>
+
+```sql
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
+```
+
+* `role` — função de usuário do ClickHouse.
+* `user` — conta de usuário do ClickHouse.
+
+A cláusula `WITH ADMIN OPTION` concede o privilégio [ADMIN OPTION](#admin-option) a `user` ou `função`.
+A cláusula `WITH REPLACE OPTION` substitui as funções antigas pela nova função de `user` ou `função`; se não for especificada, acrescenta funções.
+
+<div id="grant-current-grants-syntax">
+  ## Sintaxe de GRANT CURRENT GRANTS
+</div>
+
+```sql
+GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+* `privilege` — Tipo de privilégio.
+* `role` — função de usuário do ClickHouse.
+* `user` — Conta de usuário do ClickHouse.
+
+A instrução `CURRENT GRANTS` permite conceder todos os privilégios especificados ao usuário ou função informado.
+Se nenhum privilégio for especificado, o usuário ou função informado receberá todos os privilégios disponíveis para `CURRENT_USER`.
+
+<div id="usage">
+  ## Uso
+</div>
+
+Para usar `GRANT`, sua conta deve ter o privilégio `GRANT OPTION`. Você pode conceder privilégios apenas dentro do escopo dos privilégios da sua conta.
+
+Por exemplo, o administrador concedeu privilégios à conta `john` por meio da consulta:
+
+```sql
+GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
+```
+
+Isso significa que `john` tem permissão para executar:
+
+* `SELECT x,y FROM db.table`.
+* `SELECT x FROM db.table`.
+* `SELECT y FROM db.table`.
+
+`john` não pode executar `SELECT z FROM db.table`. `SELECT * FROM db.table` também não está disponível. Ao processar essa consulta, o ClickHouse não retorna dado algum, nem mesmo `x` e `y`. A única exceção é se uma tabela contiver apenas as colunas `x` e `y`. Nesse caso, o ClickHouse retorna todos os dados.
+
+Além disso, `john` tem o privilégio `GRANT OPTION`, portanto pode conceder a outros usuários privilégios com o mesmo escopo ou com escopo menor.
+
+O acesso ao banco de dados `system` é sempre permitido (já que esse banco de dados é usado para processar consultas).
+
+<Note>
+  Embora existam muitas tabelas de sistema que novos usuários podem acessar por padrão, eles podem não conseguir acessar todas as tabelas de sistema por padrão sem privilégios concedidos.
+  Além disso, o acesso a determinadas tabelas de sistema, como `system.zookeeper`, é restrito para usuários do Cloud por motivos de segurança.
+</Note>
+
+Você pode conceder vários privilégios a várias contas em uma única consulta. A consulta `GRANT SELECT, INSERT ON *.* TO john, robin` permite que as contas `john` e `robin` executem as consultas `INSERT` e `SELECT` em todas as tabelas de todos os bancos de dados no servidor.
+
+<div id="wildcard-grants">
+  ## Concessões com curingas
+</div>
+
+Ao especificar privilégios, você pode usar um asterisco (`*`) em vez do nome de uma tabela ou de um banco de dados. Por exemplo, a consulta `GRANT SELECT ON db.* TO john` permite que `john` execute a consulta `SELECT` em todas as tabelas do banco de dados `db`.
+Além disso, você pode omitir o nome do banco de dados. Nesse caso, os privilégios são concedidos ao banco de dados atual.
+Por exemplo, `GRANT SELECT ON * TO john` concede o privilégio em todas as tabelas do banco de dados atual, e `GRANT SELECT ON mytable TO john` concede o privilégio na tabela `mytable` no banco de dados atual.
+
+<Note>
+  O recurso descrito abaixo está disponível a partir da versão 24.10 do ClickHouse.
+</Note>
+
+Você também pode colocar asteriscos no final do nome de uma tabela ou de um banco de dados. Esse recurso permite conceder privilégios sobre um prefixo abstrato do caminho da tabela.
+Exemplo: `GRANT SELECT ON db.my_tables* TO john`. Essa consulta permite que `john` execute a consulta `SELECT` em todas as tabelas do banco de dados `db` com o prefixo `my_tables*`.
+
+Mais exemplos:
+
+`GRANT SELECT ON db.my_tables* TO john`
+
+```sql
+SELECT * FROM db.my_tables -- concedido
+SELECT * FROM db.my_tables_0 -- concedido
+SELECT * FROM db.my_tables_1 -- concedido
+
+SELECT * FROM db.other_table -- não_concedido
+SELECT * FROM db2.my_tables -- não_concedido
+```
+
+`GRANT SELECT ON db*.* TO john`
+
+```sql
+SELECT * FROM db.my_tables -- concedido
+SELECT * FROM db.my_tables_0 -- concedido
+SELECT * FROM db.my_tables_1 -- concedido
+SELECT * FROM db.other_table -- concedido
+SELECT * FROM db2.my_tables -- concedido
+```
+
+Todas as tabelas recém-criadas dentro dos caminhos concedidos herdarão automaticamente todos os grants de seus objetos pai.
+Por exemplo, se você executar a consulta `GRANT SELECT ON db.* TO john` e depois criar uma nova tabela `db.new_table`, o usuário `john` poderá executar a consulta `SELECT * FROM db.new_table`.
+
+Você pode especificar o asterisco **apenas** para os prefixos:
+
+```sql
+GRANT SELECT ON db.* TO john -- correto
+GRANT SELECT ON db*.* TO john -- correto
+
+GRANT SELECT ON *.my_table TO john -- incorreto
+GRANT SELECT ON foo*bar TO john -- incorreto
+GRANT SELECT ON *suffix TO john -- incorreto
+GRANT SELECT(foo) ON db.table* TO john -- incorreto
+```
+
+<div id="privileges">
+  ## Privilégios
+</div>
+
+Um privilégio é uma permissão concedida a um usuário para executar tipos específicos de consultas.
+
+Os privilégios têm uma estrutura hierárquica, e o conjunto de consultas permitidas depende do escopo do privilégio.
+
+A hierarquia de privilégios no ClickHouse é mostrada abaixo:
+
+* [`ALL`](#all)
+  * [`CONTROLE DE ACESSO`](#access-management)
+    * `ALLOW SQL SECURITY NONE`
+    * `ALTER QUOTA`
+    * `ALTER ROLE`
+    * `ALTER ROW POLICY`
+    * `ALTER SETTINGS PROFILE`
+    * `ALTER USER`
+    * `CREATE QUOTA`
+    * `CREATE ROLE`
+    * `CREATE ROW POLICY`
+    * `CREATE SETTINGS PROFILE`
+    * `CREATE USER`
+    * `DROP QUOTA`
+    * `DROP ROLE`
+    * `DROP ROW POLICY`
+    * `DROP SETTINGS PROFILE`
+    * `DROP USER`
+    * `ROLE ADMIN`
+    * `SHOW ACCESS`
+      * `SHOW QUOTAS`
+      * `SHOW ROLES`
+      * `SHOW ROW POLICIES`
+      * `SHOW SETTINGS PROFILES`
+      * `SHOW USERS`
+  * [`ALTER`](#alter)
+    * `ALTER DATABASE`
+      * `ALTER DATABASE SETTINGS`
+    * `ALTER TABLE`
+      * `ALTER COLUMN`
+        * `ALTER ADD COLUMN`
+        * `ALTER CLEAR COLUMN`
+        * `ALTER COMMENT COLUMN`
+        * `ALTER DROP COLUMN`
+        * `ALTER MATERIALIZE COLUMN`
+        * `ALTER MODIFY COLUMN`
+        * `ALTER RENAME COLUMN`
+      * `ALTER CONSTRAINT`
+        * `ALTER ADD CONSTRAINT`
+        * `ALTER DROP CONSTRAINT`
+      * `ALTER DELETE`
+      * `ALTER FETCH PARTITION`
+      * `ALTER FREEZE PARTITION`
+      * `ALTER INDEX`
+        * `ALTER ADD INDEX`
+        * `ALTER CLEAR INDEX`
+        * `ALTER DROP INDEX`
+        * `ALTER MATERIALIZE INDEX`
+        * `ALTER ORDER BY`
+        * `ALTER SAMPLE BY`
+      * `ALTER MATERIALIZE TTL`
+      * `ALTER MODIFY COMMENT`
+      * `ALTER MOVE PARTITION`
+      * `ALTER PROJECTION`
+      * `ALTER SETTINGS`
+      * `ALTER STATISTICS`
+        * `ALTER ADD STATISTICS`
+        * `ALTER DROP STATISTICS`
+        * `ALTER MATERIALIZE STATISTICS`
+        * `ALTER MODIFY STATISTICS`
+      * `ALTER TTL`
+      * `ALTER UPDATE`
+      * `ALTER TABLE EXECUTE`
+    * `ALTER VIEW`
+      * `ALTER VIEW MODIFY QUERY`
+      * `ALTER VIEW REFRESH`
+      * `ALTER VIEW MODIFY SQL SECURITY`
+  * [`BACKUP`](#backup)
+  * [`CLUSTER`](#cluster)
+  * [`CREATE`](#create)
+    * `CREATE ARBITRARY TEMPORARY TABLE`
+      * `CREATE TEMPORARY TABLE`
+    * `CREATE DATABASE`
+    * `CREATE DICTIONARY`
+    * `CREATE FUNCTION`
+    * `CREATE RESOURCE`
+    * `CREATE TABLE`
+    * `CREATE VIEW`
+    * `CREATE WORKLOAD`
+  * [`dictGet`](#dictget)
+  * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+  * [`DROP`](#drop)
+    * `DROP DATABASE`
+    * `DROP DICTIONARY`
+    * `DROP FUNCTION`
+    * `DROP RESOURCE`
+    * `DROP TABLE`
+    * `DROP VIEW`
+    * `DROP WORKLOAD`
+  * [`INSERT`](#insert)
+  * [`INTROSPECTION`](#introspection)
+    * `addressToLine`
+    * `addressToLineWithInlines`
+    * `addressToSymbol`
+    * `demangle`
+  * `KILL QUERY`
+  * `KILL TRANSACTION`
+  * `MOVE PARTITION BETWEEN SHARDS`
+  * [`NAMED COLLECTION ADMIN`](#named-collection-admin)
+    * `ALTER NAMED COLLECTION`
+    * `CREATE NAMED COLLECTION`
+    * `DROP NAMED COLLECTION`
+    * `NAMED COLLECTION`
+    * `SHOW NAMED COLLECTIONS`
+    * `SHOW NAMED COLLECTIONS SECRETS`
+  * [`OPTIMIZE`](#optimize)
+  * [`SELECT`](#select)
+  * [`SET DEFINER`](/pt-BR/reference/statements/create/view#sql_security)
+  * [`SHOW`](#show)
+    * `SHOW COLUMNS`
+    * `SHOW DATABASES`
+    * `SHOW DICTIONARIES`
+    * `SHOW TABLES`
+  * `SHOW FILESYSTEM CACHES`
+  * [`SOURCES`](#sources)
+    * `AZURE`
+    * `FILE`
+    * `HDFS`
+    * `HIVE`
+    * `JDBC`
+    * `KAFKA`
+    * `MONGO`
+    * `MYSQL`
+    * `NATS`
+    * `ODBC`
+    * `POSTGRES`
+    * `RABBITMQ`
+    * `REDIS`
+    * `REMOTE`
+    * `S3`
+    * `SQLITE`
+    * `URL`
+  * [`SYSTEM`](#system)
+    * `SYSTEM CLEANUP`
+    * `SYSTEM DROP CACHE`
+      * `SYSTEM DROP COMPILED EXPRESSION CACHE`
+      * `SYSTEM DROP CONNECTIONS CACHE`
+      * `SYSTEM DROP DISTRIBUTED CACHE`
+      * `SYSTEM DROP DNS CACHE`
+      * `SYSTEM DROP FILESYSTEM CACHE`
+      * `SYSTEM DROP FORMAT SCHEMA CACHE`
+      * `SYSTEM DROP MARK CACHE`
+      * `SYSTEM DROP MMAP CACHE`
+      * `SYSTEM DROP PAGE CACHE`
+      * `SYSTEM DROP PRIMARY INDEX CACHE`
+      * `SYSTEM DROP QUERY CACHE`
+      * `SYSTEM DROP S3 CLIENT CACHE`
+      * `SYSTEM DROP SCHEMA CACHE`
+      * `SYSTEM DROP UNCOMPRESSED CACHE`
+    * `SYSTEM DROP PRIMARY INDEX CACHE`
+    * `SYSTEM DROP REPLICA`
+    * `SYSTEM FAILPOINT`
+    * `SYSTEM FETCHES`
+    * `SYSTEM FLUSH`
+      * `SYSTEM FLUSH ASYNC INSERT QUEUE`
+      * `SYSTEM FLUSH LOGS`
+    * `SYSTEM JEMALLOC`
+    * `SYSTEM KILL QUERY`
+    * `SYSTEM KILL TRANSACTION`
+    * `SYSTEM LISTEN`
+    * `SYSTEM LOAD PRIMARY KEY`
+    * `SYSTEM MERGES`
+    * `SYSTEM MOVES`
+    * `SYSTEM PULLING REPLICATION LOG`
+    * `SYSTEM REDUCE BLOCKING PARTS`
+    * `SYSTEM REPLICATION QUEUES`
+    * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESTART DISK`
+    * `SYSTEM RESTART REPLICA`
+    * `SYSTEM RESTORE REPLICA`
+    * `SYSTEM RELOAD`
+      * `SYSTEM RELOAD ASYNCHRONOUS METRICS`
+      * `SYSTEM RELOAD CONFIG`
+        * `SYSTEM RELOAD DICTIONARY`
+        * `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        * `SYSTEM RELOAD FUNCTION`
+        * `SYSTEM RELOAD MODEL`
+        * `SYSTEM RELOAD USERS`
+    * `SYSTEM SENDS`
+      * `SYSTEM DISTRIBUTED SENDS`
+      * `SYSTEM REPLICATED SENDS`
+    * `SYSTEM SHUTDOWN`
+    * `SYSTEM SYNC DATABASE REPLICA`
+    * `SYSTEM SYNC FILE CACHE`
+    * `SYSTEM SYNC FILESYSTEM CACHE`
+    * `SYSTEM SYNC REPLICA`
+    * `SYSTEM SYNC TRANSACTION LOG`
+    * `SYSTEM THREAD FUZZER`
+    * `SYSTEM TTL MERGES`
+    * `SYSTEM UNFREEZE`
+    * `SYSTEM UNLOAD PRIMARY KEY`
+    * `SYSTEM VIEWS`
+    * `SYSTEM VIRTUAL PARTS UPDATE`
+    * `SYSTEM WAIT LOADING PARTS`
+  * [`MECANISMO DE TABELA`](#table-engine)
+  * [`TRUNCATE`](#truncate)
+  * `UNDROP TABLE`
+* [`NONE`](#none)
+
+Exemplos de como essa hierarquia é tratada:
+
+* O privilégio `ALTER` inclui todos os outros privilégios `ALTER*`.
+* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT` e `ALTER DROP CONSTRAINT`.
+
+Os privilégios são aplicados em diferentes níveis. Saber em que nível um privilégio se aplica indica qual sintaxe está disponível para ele.
+
+Níveis (do mais baixo para o mais alto):
+
+* `COLUMN` — O privilégio pode ser concedido para coluna, tabela, banco de dados ou globalmente.
+* `TABLE` — O privilégio pode ser concedido para tabela, banco de dados ou globalmente.
+* `VIEW` — O privilégio pode ser concedido para view, banco de dados ou globalmente.
+* `DICTIONARY` — O privilégio pode ser concedido para dicionário, banco de dados ou globalmente.
+* `DATABASE` — O privilégio pode ser concedido para banco de dados ou globalmente.
+* `GLOBAL` — O privilégio pode ser concedido apenas globalmente.
+* `GROUP` — Agrupa privilégios de diferentes níveis. Quando um privilégio de nível `GROUP` é concedido, somente os privilégios do grupo que correspondem à sintaxe usada são concedidos.
+
+Exemplos de sintaxe permitida:
+
+* `GRANT SELECT(x) ON db.table TO user`
+* `GRANT SELECT ON db.* TO user`
+
+Exemplos de sintaxe não permitida:
+
+* `GRANT CREATE USER(x) ON db.table TO user`
+* `GRANT CREATE USER ON db.* TO user`
+
+O privilégio especial [ALL](#all) concede todos os privilégios a uma conta de usuário ou a uma função.
+
+Por padrão, uma conta de usuário ou uma função não tem privilégios.
+
+Se um usuário ou uma função não tiver privilégios, isso será exibido como o privilégio [NONE](#none).
+
+Algumas consultas, por sua implementação, exigem um conjunto de privilégios. Por exemplo, para executar a consulta [RENAME](/pt-BR/reference/statements/optimize), você precisa dos seguintes privilégios: `SELECT`, `CREATE TABLE`, `INSERT` e `DROP TABLE`.
+
+<div id="select">
+  ### SELECT
+</div>
+
+Permite executar consultas [SELECT](/pt-BR/reference/statements/select/index).
+
+Nível de privilégio: `COLUMN`.
+
+**Descrição**
+
+O usuário com esse privilégio pode executar consultas `SELECT` em uma lista específica de colunas na tabela e no banco de dados especificados. Se o usuário incluir outras colunas além das especificadas, a consulta não retornará dados.
+
+Considere o seguinte privilégio:
+
+```sql
+GRANT SELECT(x,y) ON db.table TO john
+```
+
+Esse privilégio permite que `john` execute qualquer consulta `SELECT` que envolva dados das colunas `x` e/ou `y` em `db.table`, por exemplo, `SELECT x FROM db.table`. `john` não pode executar `SELECT z FROM db.table`. `SELECT * FROM db.table` também não pode ser executada. Ao processar essa consulta, o ClickHouse não retorna dado algum, nem mesmo `x` e `y`. A única exceção é quando a tabela contém apenas as colunas `x` e `y`; nesse caso, o ClickHouse retorna todos os dados.
+
+<div id="insert">
+  ### INSERT
+</div>
+
+Permite executar consultas [INSERT](/pt-BR/reference/statements/insert-into).
+
+Nível de privilégio: `COLUMN`.
+
+**Descrição**
+
+O usuário que recebe esse privilégio pode executar consultas `INSERT` em uma lista especificada de colunas na tabela e no banco de dados especificados. Se o usuário incluir colunas diferentes das especificadas, a consulta não inserirá nenhum dado.
+
+**Exemplo**
+
+```sql
+GRANT INSERT(x,y) ON db.table TO john
+```
+
+O privilégio concedido permite que `john` insira dados nas colunas `x` e/ou `y` de `db.table`.
+
+<div id="alter">
+  ### ALTER
+</div>
+
+Permite executar consultas [ALTER](/pt-BR/reference/statements/alter/index) de acordo com a seguinte hierarquia de privilégios:
+
+* `ALTER`. Nível: `COLUMN`.
+  * `ALTER TABLE`. Nível: `GROUP`
+  * `ALTER UPDATE`. Nível: `COLUMN`. Aliases: `UPDATE`
+  * `ALTER DELETE`. Nível: `COLUMN`. Aliases: `DELETE`
+  * `ALTER COLUMN`. Nível: `GROUP`
+  * `ALTER ADD COLUMN`. Nível: `COLUMN`. Aliases: `ADD COLUMN`
+  * `ALTER DROP COLUMN`. Nível: `COLUMN`. Aliases: `DROP COLUMN`
+  * `ALTER MODIFY COLUMN`. Nível: `COLUMN`. Aliases: `MODIFY COLUMN`
+  * `ALTER COMMENT COLUMN`. Nível: `COLUMN`. Aliases: `COMMENT COLUMN`
+  * `ALTER CLEAR COLUMN`. Nível: `COLUMN`. Aliases: `CLEAR COLUMN`
+  * `ALTER RENAME COLUMN`. Nível: `COLUMN`. Aliases: `RENAME COLUMN`
+  * `ALTER INDEX`. Nível: `GROUP`. Aliases: `INDEX`
+  * `ALTER ORDER BY`. Nível: `TABLE`. Aliases: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+  * `ALTER SAMPLE BY`. Nível: `TABLE`. Aliases: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
+  * `ALTER ADD INDEX`. Nível: `TABLE`. Aliases: `ADD INDEX`
+  * `ALTER DROP INDEX`. Nível: `TABLE`. Aliases: `DROP INDEX`
+  * `ALTER MATERIALIZE INDEX`. Nível: `TABLE`. Aliases: `MATERIALIZE INDEX`
+  * `ALTER CLEAR INDEX`. Nível: `TABLE`. Aliases: `CLEAR INDEX`
+  * `ALTER CONSTRAINT`. Nível: `GROUP`. Aliases: `CONSTRAINT`
+  * `ALTER ADD CONSTRAINT`. Nível: `TABLE`. Aliases: `ADD CONSTRAINT`
+  * `ALTER DROP CONSTRAINT`. Nível: `TABLE`. Aliases: `DROP CONSTRAINT`
+  * `ALTER TTL`. Nível: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
+  * `ALTER MATERIALIZE TTL`. Nível: `TABLE`. Aliases: `MATERIALIZE TTL`
+  * `ALTER SETTINGS`. Nível: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
+  * `ALTER MOVE PARTITION`. Nível: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
+  * `ALTER FETCH PARTITION`. Nível: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
+  * `ALTER FREEZE PARTITION`. Nível: `TABLE`. Aliases: `FREEZE PARTITION`
+  * `ALTER EXECUTE`. Nível: `TABLE`. Aliases: `ALTER TABLE EXECUTE`
+  * `ALTER VIEW`. Nível: `GROUP`
+  * `ALTER VIEW REFRESH`. Nível: `VIEW`. Aliases: `REFRESH VIEW`
+  * `ALTER VIEW MODIFY QUERY`. Nível: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
+  * `ALTER VIEW MODIFY SQL SECURITY`. Nível: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
+
+Exemplos de como essa hierarquia funciona:
+
+* O privilégio `ALTER` inclui todos os outros privilégios `ALTER*`.
+* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT` e `ALTER DROP CONSTRAINT`.
+
+**Observações**
+
+* O privilégio `MODIFY SETTING` permite modificar as configurações do mecanismo de tabela. Ele não afeta configurações nem parâmetros de configuração do servidor.
+* A operação `ATTACH` requer o privilégio [CREATE](#create).
+* A operação `DETACH` requer o privilégio [DROP](#drop).
+* Para interromper uma mutação com a consulta [KILL MUTATION](/pt-BR/reference/statements/kill#kill-mutation), você precisa ter um privilégio para iniciar essa mutação. Por exemplo, se quiser interromper a consulta `ALTER UPDATE`, precisará do privilégio `ALTER UPDATE`, `ALTER TABLE` ou `ALTER`.
+
+<div id="backup">
+  ### BACKUP
+</div>
+
+Permite executar [`BACKUP`] em consultas. Para mais informações sobre backups, consulte [&quot;Backup e restauração&quot;](/pt-BR/concepts/features/backup-restore/overview).
+
+<div id="create">
+  ### CREATE
+</div>
+
+Permite executar instruções DDL [CREATE](/pt-BR/reference/statements/create/index) e [ATTACH](/pt-BR/reference/statements/attach) de acordo com a seguinte hierarquia de privilégios:
+
+* `CREATE`. Nível: `GROUP`
+  * `CREATE DATABASE`. Nível: `DATABASE`
+  * `CREATE TABLE`. Nível: `TABLE`
+    * `CREATE ARBITRARY TEMPORARY TABLE`. Nível: `GLOBAL`
+      * `CREATE TEMPORARY TABLE`. Nível: `GLOBAL`
+  * `CREATE VIEW`. Nível: `VIEW`
+  * `CREATE DICTIONARY`. Nível: `DICTIONARY`
+
+**Observações**
+
+* Para remover a tabela criada, o usuário precisa de [DROP](#drop).
+
+<div id="cluster">
+  ### CLUSTER
+</div>
+
+Permite executar consultas com `ON CLUSTER`.
+
+```sql title="Syntax"
+GRANT CLUSTER ON *.* TO <username>
+```
+
+Por padrão, consultas com `ON CLUSTER` exigem que o usuário tenha o privilégio `CLUSTER`.
+Você receberá o seguinte erro se tentar usar `ON CLUSTER` em uma consulta sem antes conceder o privilégio `CLUSTER`:
+
+```text
+Privilégios insuficientes. Para executar esta consulta, é necessário ter a concessão CLUSTER ON *.*. 
+```
+
+O comportamento padrão pode ser alterado definindo a opção `on_cluster_queries_require_cluster_grant`,
+localizada na seção `access_control_improvements` de `config.xml` (veja abaixo), como `false`.
+
+```yaml title="config.xml"
+<access_control_improvements>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+</access_control_improvements>
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+Permite executar as consultas [DROP](/pt-BR/reference/statements/drop) e [DETACH](/pt-BR/reference/statements/detach) de acordo com a seguinte hierarquia de privilégios:
+
+* `DROP`. Nível: `GROUP`
+  * `DROP DATABASE`. Nível: `DATABASE`
+  * `DROP TABLE`. Nível: `TABLE`
+  * `DROP VIEW`. Nível: `VIEW`
+  * `DROP DICTIONARY`. Nível: `DICTIONARY`
+
+<div id="truncate">
+  ### TRUNCATE
+</div>
+
+Permite executar consultas [TRUNCATE](/pt-BR/reference/statements/truncate).
+
+Nível de privilégio: `TABLE`.
+
+<div id="optimize">
+  ### OPTIMIZE
+</div>
+
+Permite executar instruções [OPTIMIZE TABLE](/pt-BR/reference/statements/optimize).
+
+Nível de privilégio: `TABLE`.
+
+<div id="show">
+  ### SHOW
+</div>
+
+Permite executar consultas `SHOW`, `DESCRIBE`, `USE` e `EXISTS` de acordo com a seguinte hierarquia de privilégios:
+
+* `SHOW`. Nível: `GROUP`
+  * `SHOW DATABASES`. Nível: `DATABASE`. Permite executar as consultas `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>`.
+  * `SHOW TABLES`. Nível: `TABLE`. Permite executar as consultas `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>`.
+  * `SHOW COLUMNS`. Nível: `COLUMN`. Permite executar as consultas `SHOW CREATE TABLE`, `DESCRIBE`.
+  * `SHOW DICTIONARIES`. Nível: `DICTIONARY`. Permite executar as consultas `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>`.
+
+**Observações**
+
+Um usuário tem o privilégio `SHOW` se tiver qualquer outro privilégio referente à tabela, ao dicionário ou ao banco de dados especificado.
+
+<div id="kill-query">
+  ### KILL QUERY
+</div>
+
+Permite executar consultas [KILL](/pt-BR/reference/statements/kill#kill-query) de acordo com a seguinte hierarquia de privilégios:
+
+Nível de privilégio: `GLOBAL`.
+
+**Observações**
+
+O privilégio `KILL QUERY` permite que um usuário encerre as consultas de outros usuários.
+
+<div id="access-management">
+  ### GERENCIAMENTO DE ACESSO
+</div>
+
+Permite que um usuário execute consultas que gerenciem usuários, funções e políticas de linha.
+
+* `ACCESS MANAGEMENT`. Nível: `GROUP`
+  * `CREATE USER`. Nível: `GLOBAL`
+  * `ALTER USER`. Nível: `GLOBAL`
+  * `DROP USER`. Nível: `GLOBAL`
+  * `CREATE ROLE`. Nível: `GLOBAL`
+  * `ALTER ROLE`. Nível: `GLOBAL`
+  * `DROP ROLE`. Nível: `GLOBAL`
+  * `ROLE ADMIN`. Nível: `GLOBAL`
+  * `CREATE ROW POLICY`. Nível: `GLOBAL`. Aliases: `CREATE POLICY`
+  * `ALTER ROW POLICY`. Nível: `GLOBAL`. Aliases: `ALTER POLICY`
+  * `DROP ROW POLICY`. Nível: `GLOBAL`. Aliases: `DROP POLICY`
+  * `CREATE QUOTA`. Nível: `GLOBAL`
+  * `ALTER QUOTA`. Nível: `GLOBAL`
+  * `DROP QUOTA`. Nível: `GLOBAL`
+  * `CREATE SETTINGS PROFILE`. Nível: `GLOBAL`. Aliases: `CREATE PROFILE`
+  * `ALTER SETTINGS PROFILE`. Nível: `GLOBAL`. Aliases: `ALTER PROFILE`
+  * `DROP SETTINGS PROFILE`. Nível: `GLOBAL`. Aliases: `DROP PROFILE`
+  * `SHOW ACCESS`. Nível: `GROUP`
+    * `SHOW_USERS`. Nível: `GLOBAL`. Aliases: `SHOW CREATE USER`
+    * `SHOW_ROLES`. Nível: `GLOBAL`. Aliases: `SHOW CREATE ROLE`
+    * `SHOW_ROW_POLICIES`. Nível: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
+    * `SHOW_QUOTAS`. Nível: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
+    * `SHOW_SETTINGS_PROFILES`. Nível: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+  * `ALLOW SQL SECURITY NONE`. Nível: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
+
+O privilégio `ROLE ADMIN` permite que um usuário conceda e revogue quaisquer funções, incluindo aqueles que não foram atribuídos ao usuário com a opção admin.
+
+<div id="system">
+  ### SYSTEM
+</div>
+
+Permite que um usuário execute instruções [SYSTEM](/pt-BR/reference/statements/system) de acordo com a seguinte hierarquia de privilégios.
+
+* `SYSTEM`. Nível: `GROUP`
+  * `SYSTEM SHUTDOWN`. Nível: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
+  * `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
+    * `SYSTEM DROP DNS CACHE`. Nível: `GLOBAL`. Aliases: `SYSTEM CLEAR DNS CACHE`, `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+    * `SYSTEM DROP MARK CACHE`. Nível: `GLOBAL`. Aliases: `SYSTEM CLEAR MARK CACHE`, `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+    * `SYSTEM DROP UNCOMPRESSED CACHE`. Nível: `GLOBAL`. Aliases: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+  * `SYSTEM RELOAD`. Nível: `GROUP`
+    * `SYSTEM RELOAD CONFIG`. Nível: `GLOBAL`. Aliases: `RELOAD CONFIG`
+    * `SYSTEM RELOAD DICTIONARY`. Nível: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+      * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Nível: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
+  * `SYSTEM MERGES`. Nível: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
+  * `SYSTEM TTL MERGES`. Nível: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
+  * `SYSTEM FETCHES`. Nível: `TABLE`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
+  * `SYSTEM MOVES`. Nível: `TABLE`. Aliases: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
+  * `SYSTEM SENDS`. Nível: `GROUP`. Aliases: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
+    * `SYSTEM DISTRIBUTED SENDS`. Nível: `TABLE`. Aliases: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
+    * `SYSTEM REPLICATED SENDS`. Nível: `TABLE`. Aliases: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
+  * `SYSTEM REPLICATION QUEUES`. Nível: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
+  * `SYSTEM SYNC REPLICA`. Nível: `TABLE`. Aliases: `SYNC REPLICA`
+  * `SYSTEM RESTART REPLICA`. Nível: `TABLE`. Aliases: `RESTART REPLICA`
+  * `SYSTEM FLUSH`. Nível: `GROUP`
+    * `SYSTEM FLUSH DISTRIBUTED`. Nível: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
+    * `SYSTEM FLUSH LOGS`. Nível: `GLOBAL`. Aliases: `FLUSH LOGS`
+
+O privilégio `SYSTEM RELOAD EMBEDDED DICTIONARIES` é concedido implicitamente pelo privilégio `SYSTEM RELOAD DICTIONARY ON *.*`.
+
+<div id="introspection">
+  ### INTROSPECTION
+</div>
+
+Permite o uso de funções de [introspecção](/pt-BR/concepts/features/performance/troubleshoot/sampling-query-profiler).
+
+* `INTROSPECTION`. Nível: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
+  * `addressToLine`. Nível: `GLOBAL`
+  * `addressToLineWithInlines`. Nível: `GLOBAL`
+  * `addressToSymbol`. Nível: `GLOBAL`
+  * `demangle`. Nível: `GLOBAL`
+
+<div id="sources">
+  ### FONTES
+</div>
+
+Permite usar fontes externas de dados. Aplica-se a [motores de tabela](/pt-BR/reference/engines/table-engines/index) e [funções de tabela](/pt-BR/reference/functions/table-functions/index).
+
+* `READ`. Nível: `GLOBAL_WITH_PARAMETER`
+* `WRITE`. Nível: `GLOBAL_WITH_PARAMETER`
+
+Parâmetros possíveis:
+
+* `AZURE`
+* `FILE`
+* `HDFS`
+* `HIVE`
+* `JDBC`
+* `KAFKA`
+* `MONGO`
+* `MYSQL`
+* `NATS`
+* `ODBC`
+* `POSTGRES`
+* `RABBITMQ`
+* `REDIS`
+* `REMOTE`
+* `S3`
+* `SQLITE`
+* `URL`
+
+<Note>
+  A separação das concessões de READ/WRITE para fontes está disponível a partir da versão 25.7 e somente com a configuração do servidor
+  `access_control_improvements.enable_read_write_grants`
+
+  Caso contrário, use a sintaxe `GRANT AZURE ON *.* TO user`, que é equivalente ao novo `GRANT READ, WRITE ON AZURE TO user`
+</Note>
+
+Exemplos:
+
+* Para criar uma tabela com o [motor de tabela MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql), você precisa dos privilégios `CREATE TABLE (ON db.table_name)` e `MYSQL`.
+* Para usar a [função de tabela mysql](/pt-BR/reference/functions/table-functions/mysql), você precisa dos privilégios `CREATE TEMPORARY TABLE` e `MYSQL`.
+
+<div id="source-filter-grants">
+  ### Privilégios de filtro por origem
+</div>
+
+<Note>
+  Este recurso está disponível a partir da versão 25.8 e apenas com a configuração de servidor
+  `access_control_improvements.enable_read_write_grants`
+</Note>
+
+Você pode conceder acesso a URIs de origem específicas usando filtros de expressão regular. Isso permite um controle mais granular sobre quais fontes de dados externas os usuários podem acessar.
+
+**Sintaxe:**
+
+```sql
+GRANT READ ON S3('regexp_pattern') TO user
+```
+
+Esta permissão permitirá que o usuário leia apenas URIs do S3 que correspondam ao padrão de expressão regular especificado.
+
+**Exemplos:**
+
+Conceda acesso a caminhos específicos em buckets do S3:
+
+```sql
+-- Permite que o usuário leia apenas de caminhos s3://foo/
+GRANT READ ON S3('s3://foo/.*') TO john
+
+-- Permite que o usuário leia de padrões de arquivo específicos
+GRANT READ ON S3('s3://mybucket/data/2024/.*\.parquet') TO analyst
+
+-- Múltiplos filtros podem ser concedidos ao mesmo usuário
+GRANT READ ON S3('s3://foo/.*') TO john
+GRANT READ ON S3('s3://bar/.*') TO john
+```
+
+<Warning>
+  O filtro de origem aceita **regexp** como parâmetro, portanto uma concessão
+  `GRANT READ ON URL('http://www.google.com') TO john;`
+
+  permitirá consultas como
+
+  ```sql
+  SELECT * FROM url('https://www.google.com');
+  SELECT * FROM url('https://www-google.com');
+  ```
+
+  porque `.` é tratado como `qualquer caractere único` em expressões regulares.
+  Isso pode resultar em uma vulnerabilidade potencial. A concessão correta deve ser
+
+  ```sql
+  GRANT READ ON URL('https://www\.google\.com') TO john;
+  ```
+</Warning>
+
+**Concedendo novamente com GRANT OPTION:**
+
+Se a concessão original tiver `WITH GRANT OPTION`, ele poderá ser concedido novamente com `GRANT CURRENT GRANTS`:
+
+```sql
+-- Concessão original com GRANT OPTION
+GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
+
+-- John agora pode regranter este acesso a outros
+GRANT CURRENT GRANTS(READ ON S3) TO alice
+```
+
+**Limitações importantes:**
+
+* **Revogações parciais não são permitidas:** Não é possível revogar um subconjunto de um padrão de filtro concedido. É necessário revogar toda a concessão e concedê-la novamente com novos padrões, se necessário.
+* **Concessões com curinga não são permitidas:** Não é possível usar `GRANT READ ON *('regexp')` nem padrões semelhantes compostos apenas por curingas. É necessário especificar uma source.
+
+<div id="dictget">
+  ### dictGet
+</div>
+
+* `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+
+Permite ao usuário executar as funções [dictGet](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) e [dictIsIn](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+
+Nível de privilégio: `DICTIONARY`.
+
+**Exemplos**
+
+* `GRANT dictGet ON mydb.mydictionary TO john`
+* `GRANT dictGet ON mydictionary TO john`
+
+<div id="displaysecretsinshowandselect">
+  ### displaySecretsInShowAndSelect
+</div>
+
+Permite que um usuário visualize segredos em consultas `SHOW` e `SELECT` se tanto a
+[`configuração do servidor` `display_secrets_in_show_and_select`](/pt-BR/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+quanto a
+[`configuração de formato` `format_display_secrets_in_show_and_select`](/pt-BR/reference/settings/formats#format_display_secrets_in_show_and_select)
+estiverem ativadas.
+
+<div id="named-collection-admin">
+  ### NAMED COLLECTION ADMIN
+</div>
+
+Permite uma determinada operação em uma coleção nomeada especificada. Antes da versão 23.7, chamava-se NAMED COLLECTION CONTROL; a partir da 23.7, NAMED COLLECTION ADMIN foi adicionada, e NAMED COLLECTION CONTROL foi mantida como alias.
+
+* `NAMED COLLECTION ADMIN`. Nível: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION CONTROL`
+  * `CREATE NAMED COLLECTION`. Nível: `NAMED_COLLECTION`
+  * `DROP NAMED COLLECTION`. Nível: `NAMED_COLLECTION`
+  * `ALTER NAMED COLLECTION`. Nível: `NAMED_COLLECTION`
+  * `SHOW NAMED COLLECTIONS`. Nível: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS`
+  * `SHOW NAMED COLLECTIONS SECRETS`. Nível: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS SECRETS`
+  * `NAMED COLLECTION`. Nível: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
+
+Diferentemente de todos os outros privilégios (CREATE, DROP, ALTER, SHOW), o privilégio NAMED COLLECTION foi adicionado apenas na 23.7, enquanto todos os demais foram adicionados antes, na 22.12.
+
+**Exemplos**
+
+Supondo que uma coleção nomeada se chame abc, concedemos o privilégio CREATE NAMED COLLECTION ao usuário john.
+
+* `GRANT CREATE NAMED COLLECTION ON abc TO john`
+
+<div id="table-engine">
+  ### TABLE ENGINE
+</div>
+
+Permite usar um motor de tabela específico ao criar uma tabela. Aplica-se a [motores de tabela](/pt-BR/reference/engines/table-engines/index).
+
+**Exemplos**
+
+* `GRANT TABLE ENGINE ON * TO john`
+* `GRANT TABLE ENGINE ON TinyLog TO john`
+
+<Note>
+  Por padrão, por motivos de compatibilidade com versões anteriores, a criação de uma tabela com um motor de tabela específico ignora concessões.
+  No entanto, você pode alterar esse comportamento definindo [`table_engines_require_grant` como true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
+  no config.xml.
+</Note>
+
+Alguns motores de tabela com fontes externas podem exigir permissões `READ`/`WRITE` na fonte correspondente. Veja [fonte](#sources).
+
+Por exemplo, para o motor de tabela AzureBlobStorage, a concessão a seguir pode ser necessário.
+
+* `GRANT READ, WRITE ON AZURE TO john`
+
+<div id="all">
+  ### ALL
+</div>
+
+<CloudNotSupportedBadge />
+
+Concede todos os privilégios sobre a entidade regulada a uma conta de usuário ou a uma função.
+
+<Note>
+  O privilégio `ALL` não tem suporte no ClickHouse Cloud, onde o usuário `default` tem permissões limitadas. Os usuários podem conceder as permissões máximas a um usuário concedendo a `default_role`. Veja [aqui](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) para mais detalhes.
+  Os usuários também podem usar `GRANT CURRENT GRANTS` como usuário `default` para obter um efeito semelhante ao de `ALL`.
+</Note>
+
+<div id="none">
+  ### NONE
+</div>
+
+Não concede privilégio algum.
+
+<div id="admin-option">
+  ### ADMIN OPTION
+</div>
+
+O privilégio `ADMIN OPTION` permite que um usuário conceda sua função a outro usuário.

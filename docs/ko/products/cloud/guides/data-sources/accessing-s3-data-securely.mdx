@@ -1,0 +1,216 @@
+---
+slug: /cloud/data-sources/secure-s3
+sidebarTitle: 'S3 데이터에 안전하게 액세스하기'
+title: 'S3 데이터에 안전하게 액세스하기'
+description: '이 문서에서는 ClickHouse Cloud 고객이 역할 기반 접근을 사용해 Amazon Simple Storage Service(S3)에 인증하고 데이터에 안전하게 액세스하는 방법을 설명합니다.'
+keywords: ['RBAC', 'Amazon S3', '인증']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 가이드는 ClickHouse Cloud 고객이 역할 기반 접근을 활용해 Amazon Simple Storage Service(S3)에 인증하고 데이터에 안전하게 액세스하는 방법을 설명합니다.
+안전한 S3 액세스를 위한 설정에 들어가기 전에, 이 방식이 어떻게 작동하는지 이해하는 것이 중요합니다. 아래에는 고객의 AWS 계정 내 역할을 수임하여 ClickHouse 서비스가 비공개 S3 버킷에 액세스하는 방식의 개요가 나와 있습니다.
+
+<Image img="/images/cloud/security/secures3.webp" size="lg" alt="ClickHouse를 사용한 안전한 S3 액세스 개요" />
+
+<br />
+
+이 방식을 사용하면 고객은 액세스를 추가하거나 제거하기 위해 모든 버킷 정책을 일일이 수정할 필요 없이, 한 곳(수임된 역할의 IAM 정책)에서 S3 버킷에 대한 모든 액세스를 관리할 수 있습니다.
+아래 섹션에서는 이를 설정하는 방법을 알아봅니다.
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## ClickHouse 서비스의 IAM role ARN 확인하기
+</div>
+
+1. ClickHouse Cloud 계정에 로그인하십시오.
+
+2. 통합을 생성할 ClickHouse 서비스를 선택하십시오.
+
+3. **설정** 탭을 선택하십시오.
+
+4. 페이지 하단에 있는 **Network security information** 섹션으로 스크롤하십시오.
+
+5. 아래와 같이 해당 서비스의 **Service role ID (IAM)** 값을 복사하십시오.
+
+<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouse 서비스의 IAM role ARN 확인하기" border />
+
+<div id="setting-up-iam-assume-role">
+  ## IAM assume role 설정하기
+</div>
+
+IAM assume role은 다음 두 가지 방법 중 하나로 설정할 수 있습니다.
+
+* [CloudFormation 스택 사용](#option-1-deploying-with-cloudformation-stack)
+* [IAM role 수동으로 생성](#option-2-manually-create-iam-role)
+
+<div id="option-1-deploying-with-cloudformation-stack">
+  ### CloudFormation 스택으로 배포
+</div>
+
+1. IAM role을 생성하고 관리할 권한이 있는 IAM 사용자로 웹 브라우저에서 AWS 계정에 로그인합니다.
+
+2. 다음 [CloudFormation URL](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3)에 접속하여 CloudFormation 스택을 미리 채운 상태로 엽니다.
+
+3. 앞서 확인한 서비스의 **service role ID (IAM)**를 &quot;ClickHouse Instance Roles&quot; 입력란에 입력하거나 붙여넣습니다.
+   service role ID는 Cloud Console에 표시된 값을 그대로 붙여넣으면 됩니다.
+
+4. &quot;Bucket Names&quot; 입력란에 버킷 이름을 입력합니다. 버킷 URL이 `https://ch-docs-s3-bucket.s3.eu-central-1.amazonaws.com/clickhouseS3/`라면 버킷 이름은 `ch-docs-s3-bucket`입니다.
+
+<Note>
+  전체 버킷 ARN을 입력하지 말고 버킷 이름만 입력하십시오.
+</Note>
+
+5. CloudFormation 스택을 구성합니다. 아래는 각 매개변수에 대한 추가 정보입니다.
+
+| Parameter                 |     Default Value    | Description                                                                 |
+| :------------------------ | :------------------: | :-------------------------------------------------------------------------- |
+| RoleName                  | ClickHouseAccess-001 | ClickHouse Cloud가 S3 버킷에 액세스할 때 사용할 새 역할의 이름입니다.                            |
+| Role Session Name         |           *          | Role Session Name은 버킷을 추가로 보호하기 위한 공유 시크릿으로 사용할 수 있습니다.                     |
+| ClickHouse Instance Roles |                      | 이 보안 S3 통합을 사용할 수 있는 ClickHouse 서비스 IAM roles의 쉼표로 구분된 목록입니다.               |
+| Bucket Access             |         Read         | 제공된 버킷에 대한 액세스 수준을 설정합니다.                                                   |
+| Bucket Names              |                      | 이 역할이 액세스할 수 있는 버킷 이름의 쉼표로 구분된 목록입니다. **참고:** 전체 버킷 ARN이 아니라 버킷 이름을 사용하십시오. |
+
+6. **I acknowledge that AWS CloudFormation might create IAM resources with custom names.** 확인란을 선택합니다.
+
+7. 오른쪽 하단의 **Create stack** 버튼을 클릭합니다.
+
+8. CloudFormation 스택이 오류 없이 완료되었는지 확인합니다.
+
+9. 새로 생성된 스택을 선택한 다음 CloudFormation 스택의 **Outputs** 탭을 선택합니다.
+
+10. 이 통합에 대한 **RoleArn** 값을 복사합니다. 이 값이 S3 버킷에 액세스하는 데 필요합니다.
+
+<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="IAM Role ARN을 보여주는 CloudFormation 스택 출력" border />
+
+<div id="option-2-manually-create-iam-role">
+  ### IAM role 수동 생성
+</div>
+
+1. IAM role을 생성하고 관리할 권한이 있는 IAM 사용자로 웹 브라우저에서 AWS 계정에 로그인합니다.
+
+2. IAM Service Console로 이동합니다.
+
+3. 다음 IAM 및 신뢰 정책(Trust policy)을 사용해 새 IAM role을 생성합니다. `{ClickHouse_IAM_ARN}`은 ClickHouse instance에 속한 IAM Role ARN으로 대체합니다.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "{ClickHouse_IAM_ARN}"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+**IAM 정책**
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "s3:GetBucketLocation",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{BUCKET_NAME}"
+            ],
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "s3:Get*",
+                "s3:List*"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{BUCKET_NAME}/*"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
+```
+
+4. 생성이 완료되면 새 **IAM Role Arn**을 복사하십시오. 이 값은 S3 버킷에 액세스하는 데 필요합니다.
+
+<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
+  ## ClickHouseAccess 역할로 S3 버킷에 액세스하기
+</div>
+
+ClickHouse Cloud에서는 S3 테이블 함수의 일부로 `extra_credentials`를 지정할 수 있습니다.
+아래는 위에서 복사한 새로 생성된 역할을 사용해 쿼리를 실행하는 예시입니다.
+
+```sql
+DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'))
+```
+
+다음은 `role_session_name`을 공유 시크릿으로 사용해 버킷의 데이터를 쿼리하는 예시 쿼리입니다.
+`role_session_name`이 올바르지 않으면 작업이 실패합니다.
+
+```sql
+DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
+```
+
+<Note>
+  데이터 전송 비용을 줄이기 위해 원본 S3를 ClickHouse Cloud 서비스와 동일한 리전에 두는 것을 권장합니다.
+  자세한 내용은 [S3 요금](https://aws.amazon.com/s3/pricing/)을 참조하십시오.
+</Note>
+
+<div id="advanced-action-control">
+  ## 고급 작업 제어
+</div>
+
+더 엄격한 액세스 제어를 위해 [`aws:SourceVpce` 조건](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint)을 사용하여 버킷 정책이 ClickHouse Cloud의 VPC 엔드포인트에서 시작된 요청만 허용하도록 제한할 수 있습니다. 사용 중인 ClickHouse Cloud 리전의 VPC 엔드포인트를 확인하려면 터미널을 열고 다음을 실행하세요:
+
+```bash
+# <your-region>을 실제 ClickHouse Cloud 리전으로 바꾸세요
+curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+```
+
+그런 다음 반환된 엔드포인트를 사용하여 IAM 정책에 거부 규칙을 추가하세요:
+
+```json
+{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "VisualEditor0",
+                "Effect": "Allow",
+                "Action": [
+                    "s3:List*",
+                    "s3:Get*"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::{BUCKET_NAME}",
+                    "arn:aws:s3:::{BUCKET_NAME}/*"
+                ]
+            },
+            {
+                "Sid": "VisualEditor3",
+                "Effect": "Deny",
+                "Action": [
+                    "s3:GetObject"
+                ],
+                "Resource": "*",
+                "Condition": {
+                    "StringNotEquals": {
+                        "aws:SourceVpce": [
+                            "{ClickHouse VPC ID from your S3 region}",
+                            "{ClickHouse VPC ID from your S3 region}",
+                            "{ClickHouse VPC ID from your S3 region}"
+                        ]
+                    }
+                }
+            }
+        ]
+}
+```
+
+ClickHouse Cloud 서비스의 엔드포인트에 액세스하는 방법에 대한 자세한 내용은 [Cloud IP Addresses](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 참조하십시오.

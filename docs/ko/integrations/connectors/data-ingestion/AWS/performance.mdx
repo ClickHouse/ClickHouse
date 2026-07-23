@@ -1,0 +1,466 @@
+---
+slug: /integrations/s3/performance
+sidebarTitle: '성능 최적화'
+title: 'S3 삽입 및 읽기 성능 최적화'
+description: 'S3 읽기 및 삽입 성능 최적화'
+doc_type: 'guide'
+keywords: ['s3', '성능', '최적화', '객체 스토리지', '데이터 로딩']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 섹션에서는 [S3 테이블 함수](/ko/reference/functions/table-functions/s3)를 사용해 S3에서 데이터를 읽고 삽입할 때의 성능을 최적화하는 방법을 중점적으로 설명합니다.
+
+<Info>
+  **이 가이드에서 설명하는 내용은 [GCS](/ko/reference/functions/table-functions/gcs), [Azure Blob storage](/ko/reference/functions/table-functions/azureBlobStorage)처럼 전용 테이블 함수를 제공하는 다른 객체 스토리지 구현에도 적용할 수 있습니다.**
+
+</Info>
+
+스레드와 블록 크기를 조정해 삽입 성능을 개선하기에 앞서, 먼저 S3 삽입이 동작하는 방식을 이해하는 것이 좋습니다. 이미 이 동작 방식에 익숙하거나 빠른 팁만 확인하려면 아래 [예시](/ko/integrations/connectors/data-ingestion/AWS/performance#example-dataset)로 이동하십시오.
+
+<div id="insert-mechanics-single-node">
+  ## 삽입 메커니즘(단일 노드)
+</div>
+
+하드웨어 규모와 더불어 ClickHouse의 데이터 삽입 메커니즘(단일 노드 기준)의 성능과 리소스 사용량에 영향을 주는 주요 요인은 두 가지입니다. **삽입 블록 크기**와 **삽입 병렬성**입니다.
+
+<div id="insert-block-size">
+  ### 삽입 블록 크기
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/insert_mechanics.webp" size="lg" border alt="ClickHouse의 삽입 블록 크기 메커니즘" />
+
+`INSERT INTO SELECT`를 수행할 때 ClickHouse는 일정량의 데이터를 받아, 받은 데이터로부터 ① [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)별로 메모리 내 삽입 블록을 (최소) 하나 생성합니다. 그런 다음 블록의 데이터를 정렬하고, 테이블 엔진별 최적화를 적용합니다. 이후 데이터는 압축되어 ② 새로운 데이터 파트 형태로 데이터베이스 스토리지에 기록됩니다.
+
+삽입 블록 크기는 ClickHouse 서버의 [디스크 파일 I/O 사용량](https://en.wikipedia.org/wiki/Category:Disk_file_systems)과 메모리 사용량 모두에 영향을 줍니다. 삽입 블록이 클수록 더 많은 메모리를 사용하지만, 더 크고 더 적은 수의 초기 파트를 생성합니다. 대량의 데이터를 로드할 때 ClickHouse가 생성해야 하는 파트 수가 적을수록, 디스크 파일 I/O와 자동 [백그라운드 머지 필요량](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges)이 줄어듭니다.
+
+통합 테이블 엔진 또는 테이블 함수와 함께 `INSERT INTO SELECT` 쿼리를 사용하면 ClickHouse 서버가 데이터를 가져옵니다:
+
+<Image img="/images/integrations/data-ingestion/s3/pull.webp" size="lg" border alt="ClickHouse에서 외부 소스의 데이터를 가져오는 방식" />
+
+데이터가 완전히 로드될 때까지 서버는 다음 루프를 실행합니다:
+
+```bash
+① 다음 데이터 부분을 가져와 파싱하고, 이를 기반으로 인메모리 데이터 블록(파티셔닝 키당 하나)을 구성합니다.
+
+② 블록을 스토리지의 새 파트에 씁니다.
+
+①로 돌아갑니다. 
+```
+
+①에서 크기는 삽입 블록 크기에 따라 달라지며, 이는 다음 두 가지 설정으로 제어할 수 있습니다:
+
+* [`min_insert_block_size_rows`](/ko/reference/settings/session-settings#min_insert_block_size_rows) (기본값: `1048545`행)
+* [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings#min_insert_block_size_bytes) (기본값: `256 MiB`)
+
+삽입 블록에 지정된 행 수가 쌓이거나 설정된 데이터 양에 도달하면(둘 중 먼저 발생하는 조건), 해당 블록이 새로운 파트에 기록됩니다. 이후 삽입 루프는 ① 단계로 계속 진행됩니다.
+
+`min_insert_block_size_bytes` 값은 비압축 메모리 내 블록 크기(압축된 디스크상의 파트 크기가 아님)를 의미한다는 점에 유의하십시오. 또한 ClickHouse는 데이터를 행별 [블록](/ko/reference/settings/session-settings#max_block_size) 단위로 스트리밍하고 [처리](https://clickhouse.com/company/events/query-performance-introspection)하므로, 생성된 블록과 파트에 설정된 행 수나 바이트 수가 정확히 맞아떨어지는 경우는 드뭅니다. 따라서 이러한 설정은 최소 임계값을 지정합니다.
+
+<div id="be-aware-of-merges">
+  #### 머지에 유의하세요
+</div>
+
+구성된 삽입 블록 크기가 작을수록 대규모 데이터 로드 시 더 많은 초기 파트가 생성되며, 데이터 수집과 동시에 더 많은 백그라운드 파트 병합이 병렬로 실행됩니다. 이로 인해 리소스 경합(CPU 및 메모리)이 발생할 수 있고, 수집이 완료된 후 [정상적인](/ko/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) 파트 수에 도달하기까지 추가 시간이 필요할 수 있습니다.
+
+<Warning>
+  파트 수가 [권장 한도](/ko/reference/settings/merge-tree-settings#parts_to_throw_insert)를 초과하면 ClickHouse 쿼리 성능이 저하됩니다.
+</Warning>
+
+ClickHouse는 [파트를 머지](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)하여 더 큰 파트로 계속 통합하며, [압축된 크기](/ko/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)가 약 150 GiB에 이를 때까지 이 작업을 반복합니다. 다음 다이어그램은 ClickHouse 서버가 파트를 머지하는 방식을 보여줍니다.
+
+<Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="ClickHouse의 백그라운드 머지" />
+
+단일 ClickHouse 서버는 여러 개의 [백그라운드 머지 스레드](/ko/reference/settings/server-settings/settings#background_pool_size)를 사용해 동시에 [파트 병합](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)을 실행합니다. 각 스레드는 다음과 같은 루프를 실행합니다.
+
+```bash
+① Decide which parts to merge next, and load these parts as blocks into memory.
+
+② Merge the loaded blocks in memory into a larger block.
+
+③ Write the merged block into a new part on disk.
+
+Go to ①
+```
+
+CPU 코어 수와 RAM 크기를 [늘리면](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) 백그라운드 머지 처리량이 증가합니다.
+
+더 큰 파트로 병합된 파트는 [비활성](/ko/reference/system-tables/parts) 상태로 표시되며, [설정 가능한](/ko/reference/settings/merge-tree-settings#old_parts_lifetime) 시간이 몇 분 지난 뒤 최종적으로 삭제됩니다. 시간이 지나면서 병합된 파트로 이루어진 트리가 형성되며(그래서 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/index) 테이블이라는 이름이 붙었습니다).
+
+<div id="insert-parallelism">
+  ### 삽입 병렬성
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/resource_usage.webp" size="lg" border alt="삽입 병렬성에 따른 리소스 사용량" />
+
+ClickHouse 서버는 데이터를 병렬로 처리하고 삽입할 수 있습니다. 삽입 병렬성 수준은 ClickHouse 서버의 수집 처리량과 메모리 사용량에 영향을 줍니다. 데이터를 병렬로 로드하고 처리하면 더 많은 주 메모리가 필요하지만, 데이터가 더 빠르게 처리되므로 수집 처리량은 증가합니다.
+
+`s3`와 같은 테이블 함수는 글롭 패턴을 사용해 로드할 파일 이름 집합을 지정할 수 있습니다. 글롭 패턴이 여러 기존 파일과 일치하면 ClickHouse는 파일 간 및 파일 내부의 읽기를 병렬화하고, 병렬로 실행되는 삽입 스레드(서버별)를 활용해 데이터를 테이블에 병렬로 삽입할 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="ClickHouse의 병렬 삽입 스레드" />
+
+모든 파일의 데이터가 모두 처리될 때까지 각 삽입 스레드는 다음 루프를 실행합니다:
+
+```bash
+① 처리되지 않은 파일 데이터의 다음 부분을 가져오고(부분 크기는 설정된 블록 크기를 기반으로 함), 이를 메모리 내 데이터 블록으로 생성합니다.
+
+② 블록을 스토리지의 새 파트에 씁니다.
+
+①로 돌아갑니다. 
+```
+
+이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings#max_insert_threads) 설정으로 구성할 수 있습니다. 기본값은 오픈소스 ClickHouse에서 `1`, [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 4입니다.
+
+파일 수가 많을 때는 여러 삽입 스레드를 통한 병렬 처리가 효과적입니다. 이 방식은 사용 가능한 CPU 코어와 네트워크 대역폭(병렬 파일 다운로드 시)까지 모두 충분히 활용할 수 있습니다. 반면 소수의 큰 파일만 테이블에 로드하는 시나리오에서는 ClickHouse가 자동으로 높은 수준의 데이터 처리 병렬성을 확보하고, 큰 파일의 서로 다른 범위를 병렬로 읽기(다운로드)할 수 있도록 각 삽입 스레드마다 추가 읽기 스레드를 생성해 네트워크 대역폭 사용도 최적화합니다.
+
+s3 함수와 테이블의 경우, 개별 파일의 병렬 다운로드는 [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) 및 [max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size) 값에 따라 결정됩니다. 파일 크기가 `2 * max_download_buffer_size`보다 큰 경우에만 병렬 다운로드가 수행됩니다. 기본적으로 `max_download_buffer_size`의 기본값은 10MiB입니다. 경우에 따라 각 파일이 단일 스레드로 다운로드되도록 하기 위해 이 버퍼 크기를 50 MB(`max_download_buffer_size=52428800`)로 안전하게 늘릴 수 있습니다. 이렇게 하면 각 스레드가 S3 호출에 소비하는 시간을 줄일 수 있고, 결과적으로 S3 대기 시간도 낮출 수 있습니다. 또한 병렬 읽기에 너무 작은 파일의 경우 처리량을 높이기 위해 ClickHouse는 이러한 파일을 비동기적으로 미리 읽어 데이터를 자동으로 프리페치합니다.
+
+<div id="measuring-performance">
+  ## 성능 측정
+</div>
+
+S3 테이블 함수를 사용하는 쿼리의 성능 최적화는 두 가지 경우 모두에서 필요합니다. 첫째, 데이터를 제자리에서 대상으로 쿼리하는 경우, 즉 ClickHouse 컴퓨트만 사용하고 데이터는 원래 포맷 그대로 S3에 유지한 채 애드혹 쿼리를 실행하는 경우입니다. 둘째, S3의 데이터를 ClickHouse MergeTree 테이블 엔진에 삽입하는 경우입니다. 별도로 명시하지 않는 한, 다음 권장 사항은 두 시나리오 모두에 적용됩니다.
+
+<div id="impact-of-hardware-size">
+  ## 하드웨어 크기의 영향
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/hardware_size.webp" size="lg" border alt="하드웨어 크기가 ClickHouse 성능에 미치는 영향" />
+
+사용 가능한 CPU 코어 수와 RAM 용량은 다음에 영향을 줍니다.
+
+* 지원되는 [파트의 초기 크기](#insert-block-size)
+* 가능한 [삽입 병렬성](#insert-parallelism) 수준
+* [백그라운드 파트 병합](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges)의 처리량
+
+따라서 전체 수집 처리량에도 영향을 줍니다.
+
+<div id="region-locality">
+  ## 리전 일치
+</div>
+
+버킷은 ClickHouse 인스턴스와 동일한 리전에 두십시오. 이 간단한 최적화만으로도 처리량 성능이 크게 향상되며, 특히 ClickHouse 인스턴스를 AWS 인프라에 배포한 경우 더욱 효과적입니다.
+
+<div id="formats">
+  ## 포맷
+</div>
+
+ClickHouse는 `s3` 함수와 `S3` 엔진을 사용해 [지원되는 포맷](/ko/reference/formats/index#formats-overview)으로 S3 버킷에 저장된 파일을 읽을 수 있습니다. 원시 파일을 읽는 경우, 이러한 포맷 중 일부는 뚜렷한 장점이 있습니다.
+
+* Native, Parquet, CSVWithNames, TabSeparatedWithNames처럼 컬럼 이름이 인코딩된 포맷은 `s3` 함수에서 컬럼 이름을 지정할 필요가 없으므로 쿼리를 더 간결하게 작성할 수 있습니다. 컬럼 이름을 통해 이 정보를 유추할 수 있기 때문입니다.
+* 포맷마다 읽기 및 쓰기 처리량 측면의 성능이 다릅니다. Native와 Parquet는 이미 컬럼 지향적이며 더 압축된 구조이므로 읽기 성능에 가장 적합한 포맷입니다. 또한 Native 형식은 ClickHouse가 메모리에 데이터를 저장하는 방식과도 잘 맞기 때문에, 데이터가 ClickHouse로 스트리밍될 때 처리 오버헤드를 줄일 수 있습니다.
+* 블록 크기는 큰 파일 읽기의 지연 시간에 자주 영향을 줍니다. 이는 데이터의 일부만 샘플링하는 경우, 예를 들어 상위 N개의 행만 반환할 때 특히 두드러집니다. CSV 및 TSV 같은 포맷은 행 집합을 반환하려면 파일을 파싱해야 합니다. 반면 Native와 Parquet 같은 포맷은 이로 인해 더 빠른 샘플링이 가능합니다.
+* 각 압축 포맷에는 장단점이 있으며, 일반적으로 속도와 압축 수준 사이에서 절충이 필요하고 압축 또는 압축 해제 성능 중 한쪽에 더 유리하게 작용합니다. CSV나 TSV 같은 원시 파일을 압축하는 경우, lz4는 압축률을 희생하는 대신 가장 빠른 압축 해제 성능을 제공합니다. Gzip은 일반적으로 읽기 속도가 약간 느려지는 대신 더 높은 압축률을 제공합니다. Xz는 한 걸음 더 나아가 보통 가장 높은 압축률을 제공하지만, 압축 및 압축 해제 성능은 가장 느립니다. 내보내기 시에는 Gz와 lz4가 비슷한 압축 속도를 제공합니다. 이를 연결 속도와 함께 고려하십시오. 압축 또는 압축 해제가 더 빨라서 얻는 이점은 S3 버킷에 대한 연결이 느리면 쉽게 상쇄될 수 있습니다.
+* Native나 Parquet 같은 포맷은 일반적으로 압축 오버헤드를 감수할 만큼의 이점을 제공하지 않습니다. 이러한 포맷은 본질적으로 압축된 구조이므로 데이터 크기 절감 효과가 크지 않은 경우가 많습니다. 압축과 압축 해제에 소요되는 시간은 네트워크 전송 시간을 상쇄할 만큼의 이점을 주는 경우가 드뭅니다. 특히 S3는 전 세계에서 사용할 수 있고 네트워크 대역폭도 더 높기 때문입니다.
+
+<div id="example-dataset">
+  ## 예시 데이터셋
+</div>
+
+추가로 가능한 최적화를 설명하기 위해 [Stack Overflow 데이터셋의 게시물](/ko/guides/clickhouse/data-modelling/schema-design#stack-overflow-dataset)을 사용하겠습니다. 이 데이터에 대해 쿼리 성능과 삽입 성능을 모두 최적화해 보겠습니다.
+
+이 데이터셋은 189개의 Parquet 파일로 구성되며, 2008년 7월부터 2024년 3월까지 매월 하나씩 파일이 있습니다.
+
+성능을 위해 위의 [권장 사항](#formats)에 따라 Parquet를 사용하며, 모든 쿼리는 버킷과 동일한 리전에 있는 ClickHouse 클러스터에서 실행한다는 점에 유의하십시오. 이 클러스터는 3개의 노드로 구성되며, 각 노드는 32GiB RAM과 8 vCPU를 갖습니다.
+
+튜닝을 적용하지 않은 상태에서 이 데이터셋을 MergeTree 테이블 엔진에 삽입하는 성능과, 가장 많은 질문을 하는 사용자를 계산하는 쿼리의 성능을 보여드립니다. 이 두 작업은 모두 의도적으로 데이터를 전체 스캔하도록 구성했습니다.
+
+```sql
+-- 상위 사용자 이름
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+```
+
+```response
+┌─OwnerDisplayName─┬─num_posts─┐
+│ user330315       │     10344 │
+│ user4039065      │      5316 │
+│ user149341       │      4102 │
+│ user529758       │      3700 │
+│ user3559349      │      3068 │
+└──────────────────┴───────────┘
+
+5 rows in set. Elapsed: 3.013 sec. Processed 59.82 million rows, 24.03 GB (19.86 million rows/s., 7.98 GB/s.)
+Peak memory usage: 603.64 MiB.
+```
+
+```sql
+-- posts 테이블에 로드
+INSERT INTO posts SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 191.692 sec. Processed 59.82 million rows, 24.03 GB (312.06 thousand rows/s., 125.37 MB/s.)
+```
+
+예시에서는 몇 개의 행만 반환합니다. 클라이언트에 대량의 데이터를 반환하는 `SELECT` 쿼리의 성능을 측정할 때는, 쿼리에 [null 포맷](/ko/reference/formats/Null)을 사용하거나 결과를 [`Null` 엔진](/ko/reference/engines/table-engines/special/null)으로 보내십시오. 이렇게 하면 클라이언트가 데이터로 인해 과부하되는 상황과 네트워크 포화를 방지할 수 있습니다.
+
+<Info>
+  쿼리 결과를 읽을 때는 동일한 쿼리를 반복 실행하는 경우보다 첫 번째 쿼리가 더 느리게 보이는 일이 많습니다. 이는 S3 자체의 Caching뿐 아니라 [ClickHouse Schema Inference Cache](/ko/reference/system-tables/schema_inference_cache)의 영향이기도 합니다. 이 캐시는 파일에 대해 추론된 스키마를 저장하므로, 이후에 접근할 때는 추론 단계를 건너뛸 수 있어 쿼리 시간을 줄일 수 있습니다.
+</Info>
+
+<div id="using-threads-for-reads">
+  ## 읽기 작업에 스레드 사용
+</div>
+
+S3에서의 읽기 성능은 네트워크 대역폭이나 로컬 I/O에 의해 제한되지 않는다면 코어 수에 따라 선형적으로 확장됩니다. 스레드 수를 늘리면 메모리 오버헤드도 커질 수 있으므로 이 점을 유의해야 합니다. 다음 설정을 조정하면 읽기 처리량 성능을 개선할 수 있습니다.
+
+* 일반적으로 `max_threads`의 기본값, 즉 코어 수면 충분합니다. 쿼리에서 사용하는 메모리 양이 많아 이를 줄여야 하거나 결과에 대한 `LIMIT`가 작다면 이 값을 더 낮게 설정할 수 있습니다. 메모리가 충분하다면 S3에서 더 높은 읽기 처리량을 얻기 위해 이 값을 늘려 실험해볼 수 있습니다. 보통 이는 코어 수가 적은 머신, 즉 &lt; 10인 경우에만 유리합니다. 추가 병렬화의 이점은 대개 다른 리소스가 병목이 되면서 점차 줄어듭니다. 예를 들어 네트워크와 CPU 경합이 있습니다.
+* 22.3.1 이전 버전의 ClickHouse는 `s3` 함수 또는 `S3` 테이블 엔진을 사용할 때 여러 파일에 걸친 읽기만 병렬화했습니다. 따라서 최적의 읽기 성능을 얻으려면 사용자가 파일을 S3에서 청크로 분할하고, 글롭 패턴을 사용해 읽도록 구성해야 했습니다. 이후 버전에서는 파일 내부 다운로드도 병렬화합니다.
+* 스레드 수가 적은 환경에서는 `remote_filesystem_read_method`를 &quot;read&quot;로 설정해 S3에서 파일을 동기식으로 읽도록 하면 도움이 될 수 있습니다.
+* s3 함수와 테이블의 경우, 개별 파일의 병렬 다운로드는 [`max_download_threads`](/ko/reference/settings/session-settings#max_download_threads) 및 [`max_download_buffer_size`](/ko/reference/settings/session-settings#max_download_buffer_size) 값에 따라 결정됩니다. [`max_download_threads`](/ko/reference/settings/session-settings#max_download_threads)는 사용하는 스레드 수를 제어하지만, 파일 크기가 2 * `max_download_buffer_size`보다 클 때만 파일이 병렬로 다운로드됩니다. 기본적으로 `max_download_buffer_size`의 기본값은 10MiB입니다. 경우에 따라 더 작은 파일이 단일 스레드로만 다운로드되도록 하기 위해 이 버퍼 크기를 50 MB(`max_download_buffer_size=52428800`)까지 안전하게 늘릴 수 있습니다. 이렇게 하면 각 스레드가 S3 호출에 소비하는 시간을 줄일 수 있고, 결과적으로 S3 대기 시간도 낮출 수 있습니다. 이에 대한 예시는 [이 블로그 게시물](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge)을 참조하십시오.
+
+성능 개선을 위한 변경을 적용하기 전에 반드시 적절히 측정하십시오. S3 API 호출은 지연 시간에 민감하고 클라이언트 타이밍에 영향을 줄 수 있으므로, 성능 메트릭은 쿼리 로그인 `system.query_log`를 사용해 확인하십시오.
+
+앞서의 쿼리 예시에서 `max_threads`를 `16`으로 두 배 늘리면(기본 `max_thread`는 노드의 코어 수임) 메모리 사용량이 증가하는 대신 읽기 쿼리 성능이 2배 향상됩니다. 하지만 그림에서 보듯 `max_threads`를 더 늘려도 효과는 점차 줄어듭니다.
+
+```sql
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+SETTINGS max_threads = 16
+```
+
+```response
+┌─OwnerDisplayName─┬─num_posts─┐
+│ user330315       │     10344 │
+│ user4039065      │      5316 │
+│ user149341       │      4102 │
+│ user529758       │      3700 │
+│ user3559349      │      3068 │
+└──────────────────┴───────────┘
+
+5 rows in set. Elapsed: 1.505 sec. Processed 59.82 million rows, 24.03 GB (39.76 million rows/s., 15.97 GB/s.)
+Peak memory usage: 178.58 MiB.
+```
+
+```sql
+SETTINGS max_threads = 32
+```
+
+```response
+5 rows in set. Elapsed: 0.779 sec. Processed 59.82 million rows, 24.03 GB (76.81 million rows/s., 30.86 GB/s.)
+Peak memory usage: 369.20 MiB.
+```
+
+```sql
+SETTINGS max_threads = 64
+```
+
+```response
+5 rows in set. Elapsed: 0.674 sec. Processed 59.82 million rows, 24.03 GB (88.81 million rows/s., 35.68 GB/s.)
+Peak memory usage: 639.99 MiB.
+```
+
+<div id="tuning-threads-and-block-size-for-inserts">
+  ## 삽입을 위한 스레드 및 블록 크기 튜닝
+</div>
+
+최대 수집 성능을 얻으려면 (1) 삽입 블록 크기와 (2) 적절한 삽입 병렬성 수준을, (3) 사용 가능한 CPU 코어 수와 RAM 용량에 맞춰 선택해야 합니다. 요약하면 다음과 같습니다.
+
+* [삽입 블록 크기](#insert-block-size)를 크게 설정할수록 ClickHouse가 생성해야 하는 파트 수가 줄어들며, 필요한 [디스크 파일 I/O](https://en.wikipedia.org/wiki/Category:Disk_file_systems)와 [백그라운드 머지](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges)도 줄어듭니다.
+* [병렬 삽입 스레드 수](#insert-parallelism)를 많이 설정할수록 데이터가 더 빠르게 처리됩니다.
+
+이 두 성능 요소 사이에는 상충 관계가 있으며, 여기에 백그라운드 파트 병합과의 상충 관계도 추가로 존재합니다. ClickHouse 서버에서 사용할 수 있는 주 메모리(main memory)는 제한적입니다. 블록이 클수록 주 메모리를 더 많이 사용하므로 활용할 수 있는 병렬 삽입 스레드 수가 줄어듭니다. 반대로 병렬 삽입 스레드 수가 많을수록 더 많은 주 메모리가 필요합니다. 삽입 스레드 수에 따라 메모리에서 동시에 생성되는 삽입 블록 수가 결정되기 때문입니다. 따라서 사용할 수 있는 삽입 블록 크기도 제한됩니다. 또한 삽입 스레드와 백그라운드 머지 스레드 사이에 리소스 경합이 발생할 수 있습니다. 삽입 스레드 수를 높게 설정하면 (1) 머지해야 할 파트가 더 많이 생성되고, (2) 백그라운드 머지 스레드가 사용할 CPU 코어와 메모리 공간이 줄어듭니다.
+
+이러한 매개변수의 동작이 성능과 리소스에 어떤 영향을 미치는지 자세히 알아보려면 [이 블로그 게시물](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2)을 읽어보시길 권장합니다. 이 블로그 게시물에서 설명하듯이, 튜닝은 두 매개변수 간의 균형을 세심하게 맞추는 작업이 될 수 있습니다. 하지만 이러한 광범위한 테스트는 현실적으로 어려운 경우가 많으므로, 요약하면 다음을 권장합니다.
+
+```bash
+• max_insert_threads: 삽입 스레드에 사용 가능한 CPU 코어의 약 절반을 선택하십시오 (백그라운드 머지를 위한 전용 코어를 충분히 확보하기 위해)
+
+• peak_memory_usage_in_bytes: 목표 최대 메모리 사용량을 선택하십시오. 사용 가능한 전체 RAM (독립적인 수집 작업인 경우) 또는 절반 이하 (다른 동시 작업을 위한 여유를 남겨두기 위해)
+
+그런 다음:
+min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_threads)
+```
+
+이 공식을 사용하면 `min_insert_block_size_rows`를 0으로 설정해(행 기반 임계값을 비활성화) `max_insert_threads`는 선택한 값으로, `min_insert_block_size_bytes`는 위 공식으로 계산한 값으로 설정할 수 있습니다.
+
+이전에 살펴본 Stack Overflow 예시에 이 공식을 적용하면 다음과 같습니다.
+
+* `max_insert_threads=4` (노드당 8개 코어)
+* `peak_memory_usage_in_bytes` - 32 GiB (노드 리소스의 100%) 또는 `34359738368`바이트.
+* `min_insert_block_size_bytes` = `34359738368/(3*4) = 2863311530`
+
+```sql
+INSERT INTO posts SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 128.566 sec. Processed 59.82 million rows, 24.03 GB (465.28 thousand rows/s., 186.92 MB/s.)
+```
+
+위에서 보았듯이 이러한 설정을 조정하면 삽입 성능이 `33%` 이상 개선되었습니다. 단일 노드 성능을 더 향상시킬 수 있는지는 직접 확인해 보시기 바랍니다.
+
+<div id="scaling-with-resources-and-nodes">
+  ## 리소스와 노드를 통한 스케일링
+</div>
+
+리소스와 노드를 통한 스케일링은 읽기 쿼리와 삽입 쿼리 모두에 적용됩니다.
+
+<div id="vertical-scaling">
+  ### 수직 스케일링
+</div>
+
+앞서 살펴본 모든 튜닝과 쿼리는 ClickHouse Cloud 클러스터의 단일 노드에서만 수행했습니다. 실제로는 여러 ClickHouse 노드를 사용할 수 있는 경우도 많습니다. 초기에는 수직 스케일링을 권장합니다. 코어 수가 늘어나면 S3 처리량도 선형적으로 향상되기 때문입니다. 앞서 사용한 삽입 및 읽기 쿼리를 더 큰 ClickHouse Cloud 노드에서 적절한 설정과 함께 리소스를 2배(64GiB, 16 vCPU)로 늘려 다시 실행하면, 두 작업 모두 대략 2배 빠르게 수행됩니다.
+
+```sql
+INSERT INTO posts SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 67.294 sec. Processed 59.82 million rows, 24.03 GB (888.93 thousand rows/s., 357.12 MB/s.)
+```
+
+```sql
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+SETTINGS max_threads = 92
+```
+
+```response
+5 rows in set. Elapsed: 0.421 sec. Processed 59.82 million rows, 24.03 GB (142.08 million rows/s., 57.08 GB/s.)
+```
+
+<Note>
+  개별 노드도 네트워크와 S3 GET 요청으로 인해 병목이 생길 수 있어, 수직 스케일링을 하더라도 성능이 선형적으로 향상되지 않을 수 있습니다.
+</Note>
+
+<div id="horizontal-scaling">
+  ### 수평 스케일링
+</div>
+
+결국 하드웨어 가용성과 비용 효율성 때문에 수평 스케일링이 필요한 경우가 많습니다. ClickHouse Cloud에서 프로덕션 클러스터는 최소 3개의 노드로 구성됩니다. 따라서 삽입 시 모든 노드를 활용하는 것도 고려할 수 있습니다.
+
+클러스터를 사용해 S3 읽기를 수행하려면 [클러스터 활용](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters)에 설명된 대로 `s3Cluster` 함수를 사용해야 합니다. 이렇게 하면 읽기가 여러 노드에 분산됩니다.
+
+처음에 삽입 쿼리를 수신한 서버는 먼저 glob 패턴을 확인한 다음, 일치하는 각 파일의 처리를 자신과 다른 서버에 동적으로 분배합니다.
+
+<Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="ClickHouse의 s3Cluster 함수" />
+
+앞서 사용한 읽기 쿼리를 다시 사용하되, 작업 부하를 3개의 노드에 분산하도록 `s3Cluster`를 사용하도록 쿼리를 조정합니다. ClickHouse Cloud에서는 `default` 클러스터를 참조하면 이 작업이 자동으로 수행됩니다.
+
+[클러스터 활용](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters)에서 언급했듯이 이 작업은 파일 수준에서 분산됩니다. 이 기능의 이점을 얻으려면 충분한 수의 파일, 즉 최소한 노드 수보다 많은 파일이 필요합니다.
+
+```sql
+SELECT
+    OwnerDisplayName,
+    count() AS num_posts
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+WHERE OwnerDisplayName NOT IN ('', 'anon')
+GROUP BY OwnerDisplayName
+ORDER BY num_posts DESC
+LIMIT 5
+SETTINGS max_threads = 16
+```
+
+```response
+┌─OwnerDisplayName─┬─num_posts─┐
+│ user330315       │     10344 │
+│ user4039065      │      5316 │
+│ user149341       │      4102 │
+│ user529758       │      3700 │
+│ user3559349      │      3068 │
+└──────────────────┴───────────┘
+
+5 rows in set. Elapsed: 0.622 sec. Processed 59.82 million rows, 24.03 GB (96.13 million rows/s., 38.62 GB/s.)
+Peak memory usage: 176.74 MiB.
+```
+
+마찬가지로, 앞서 단일 노드에 대해 확인한 개선된 설정을 사용해 삽입 쿼리도 분산할 수 있습니다:
+
+```sql
+INSERT INTO posts SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 171.202 sec. Processed 59.82 million rows, 24.03 GB (349.41 thousand rows/s., 140.37 MB/s.)
+```
+
+파일 읽기 개선은 삽입 성능이 아니라 쿼리 성능 향상에 기여한다는 점을 확인할 수 있습니다. 기본적으로 읽기는 `s3Cluster`를 사용해 분산되지만, 삽입은 initiator 노드에서 수행됩니다. 즉, 읽기는 각 노드에서 수행되지만, 결과 행은 분산을 위해 initiator로 전달됩니다. 고처리량 시나리오에서는 이것이 병목이 될 수 있습니다. 이를 해결하려면 `s3cluster` 함수에 대해 매개변수 `parallel_distributed_insert_select`를 설정하십시오.
+
+이를 `parallel_distributed_insert_select=2`로 설정하면 각 노드에서 `Distributed` 엔진의 기반 테이블에 대해 각 세그먼트별로 `SELECT`와 `INSERT`가 실행됩니다.
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+```
+
+```response
+0 rows in set. Elapsed: 54.571 sec. Processed 59.82 million rows, 24.03 GB (1.10 million rows/s., 440.38 MB/s.)
+Peak memory usage: 11.75 GiB.
+```
+
+예상대로 삽입 성능이 3배 저하됩니다.
+
+<div id="further-tuning">
+  ## 추가 조정
+</div>
+
+<div id="disable-de-duplication">
+  ### 중복 제거 비활성화
+</div>
+
+삽입 작업은 시간 초과와 같은 오류로 인해 때때로 실패할 수 있습니다. 삽입이 실패하면 데이터가 실제로 성공적으로 삽입되었을 수도 있고, 그렇지 않을 수도 있습니다. 기본적으로 ClickHouse Cloud와 같은 분산 배포 환경에서는 클라이언트가 삽입을 안전하게 재시도할 수 있도록 ClickHouse가 해당 데이터가 이미 성공적으로 삽입되었는지 확인하려고 합니다. 삽입된 데이터가 중복으로 표시되면 ClickHouse는 이를 대상 테이블에 삽입하지 않습니다. 하지만 사용자에게는 데이터가 정상적으로 삽입된 것과 동일하게 여전히 작업 성공 상태가 반환됩니다.
+
+이 동작은 삽입 오버헤드를 수반하지만, 클라이언트에서 데이터를 적재할 때나 배치 단위로 처리할 때는 타당할 수 있으나 객체 스토리지에서 `INSERT INTO SELECT`를 수행할 때는 불필요할 수 있습니다. 삽입 시 이 기능을 비활성화하면 아래와 같이 성능을 향상시킬 수 있습니다:
+
+```sql
+INSERT INTO posts
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
+```
+
+```response
+0 rows in set. Elapsed: 52.992 sec. Processed 59.82 million rows, 24.03 GB (1.13 million rows/s., 453.50 MB/s.)
+Peak memory usage: 26.57 GiB.
+```
+
+<div id="optimize-on-insert">
+  ### 삽입 시 최적화
+</div>
+
+ClickHouse에서 `optimize_on_insert` 설정은 삽입 과정에서 데이터 파트를 머지할지 여부를 제어합니다. 이 설정이 활성화되어 있으면(기본값: `optimize_on_insert = 1`) 작은 파트가 삽입되는 동안 더 큰 파트로 머지되어, 읽어야 할 파트 수가 줄어들고 그에 따라 쿼리 성능이 향상됩니다. 하지만 이 머지 작업은 삽입 과정에 오버헤드를 추가하므로, 처리량이 높은 삽입 작업에서는 속도가 저하될 수 있습니다.
+
+이 설정을 비활성화하면(`optimize_on_insert = 0`) 삽입 중 머지를 수행하지 않으므로, 특히 작은 삽입이 자주 발생하는 경우 데이터를 더 빠르게 기록할 수 있습니다. 머지 과정은 백그라운드로 미뤄지므로 삽입 성능은 개선되지만, 일시적으로 작은 파트 수가 증가해 백그라운드 머지가 완료될 때까지 쿼리 성능이 저하될 수 있습니다. 이 설정은 삽입 성능이 우선이고, 이후 백그라운드 머지 프로세스가 최적화를 효율적으로 처리할 수 있는 경우에 적합합니다. 아래와 같이, 이 설정을 비활성화하면 삽입 처리량이 향상될 수 있습니다:
+
+```sql
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
+```
+
+```response
+0 rows in set. Elapsed: 49.688 sec. Processed 59.82 million rows, 24.03 GB (1.20 million rows/s., 483.66 MB/s.)
+```
+
+<div id="misc-notes">
+  ## 기타 참고 사항
+</div>
+
+* 메모리가 부족한 환경에서는 S3에 삽입할 때 `max_insert_delayed_streams_for_parallel_write` 값을 낮추는 것을 고려하세요.

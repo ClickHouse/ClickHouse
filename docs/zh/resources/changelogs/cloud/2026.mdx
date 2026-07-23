@@ -1,0 +1,239 @@
+---
+slug: /whats-new/changelog/cloud
+sidebarTitle: '2026'
+title: 'Cloud 更新日志 - 2026'
+description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本中的新增内容'
+doc_type: '更新日志'
+keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+除这份 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility) 页面。
+
+<Update label="2026年6月3日">
+  Open House 2026 周迎来了一波新发布，重点围绕两大主题：在数据所在之处运行 ClickHouse，以及将智能体驱动的 AI 辅助工作流引入平台。
+
+  ### ClickPipes 现已在 GCP 上通过 Private Service Connect 原生运行
+
+  ClickPipes 基础设施现已与您的 ClickHouse Cloud 服务部署在同一 GCP 区域，适用于 5 月 26 日之后创建的所有新 GCP 服务，并支持 Private Service Connect (PSC)。这一变化消除了跨云出口费用，降低了延迟，确保数据留存在本地，同时让您能够通过 GCP 原生私有网络连接到 GCP 数据源，无需再借助 SSH 隧道等变通方案。现有服务可联系我们的团队协助迁移。
+
+  更多详情，请参阅 [ClickPipes 静态 IP 列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+
+  ### ClickPipes for GCP Pub/Sub (私有预览)
+
+  ClickPipes 现已支持将 GCP Pub/Sub topics 中的数据直接流式传输至 ClickHouse Cloud，为原生 GCP 团队提供了一条直接分析 Cloud Logging、Cloud Monitoring、GKE 等服务数据的路径。可通过 ClickPipes UI、OpenAPI 和 Terraform 使用；私有预览期间需提前[注册](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)。
+
+  有关设置和配置的详细信息，请参阅 [ClickPipes for GCP Pub/Sub 文档](/zh/integrations/clickpipes/pubsub/overview)。
+
+  ### ClickHouse 智能体：由 Claude 驱动的智能体分析 (public beta)
+
+  ClickHouse 智能体现已在 [ai.clickhouse.cloud](http://ai.clickhouse.cloud) 进入 Public Beta 阶段——这是一个由 Claude 驱动的原生智能体平台，支持对您的 ClickHouse Cloud 数据进行对话式、schema 感知分析。通过无代码 AgentBuilder 构建自定义智能体，接入 MCP servers (Slack、Linear、Notion 等) ，编排子智能体工作流，并在对话中直接生成查询、管道和应用。平台集成了 AWS Bedrock AgentCore，并以托管的 LibreChat 为底层基础。
+
+  详情请参阅 [ClickHouse 智能体文档](/zh/products/cloud/features/ai-ml/agents/index)。
+
+  ### ClickHouse Postgres (Public Beta)
+
+  本地 NVMe 存储上的全托管 Postgres 现已进入 Public Beta 阶段，其 TPS 比 AWS RDS 高出 5 倍以上，并在一个托管技术栈中实现了 OLTP 与 OLAP 的融合。原生 CDC 管道可将数据直接流式传输至 ClickHouse，无需任何中间基础设施；开源的 `pg_clickhouse` 扩展则允许您在标准 Postgres 会话中查询 ClickHouse 表。
+
+  详情请参阅 [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements)。
+
+  ### ClickStack Cloud：无服务器可观测性 (私有预览)
+
+  ClickStack Cloud 是由 ClickHouse Cloud 驱动的全托管无服务器可观测性平台。将您的 OpenTelemetry Collector 指向托管的 OTLP 端点，即可立即在 ClickStack UI 中探索日志、指标和链路追踪——摄取、缓冲、扩缩容、存储、查询服务、身份验证和 RBAC 均由平台全权处理。目前在 AWS us-east-1 区域提供有限私有预览。
+
+  更多详情请参阅 [ClickStack Cloud 私有预览](https://clickhouse.com/blog/clickstack-cloud-private-preview) 和 [ClickStack Cloud 候补名单](https://clickhouse.com/cloud/clickstack-cloud-waitlist)。
+
+  ### 托管 ClickStack 的 AI 笔记本 (Beta)
+
+  AI 笔记本为托管 ClickStack 带来了持久、透明的工作区，专为 AI 辅助的事件调查而设计。您可以记录结构化的提示词序列、查询、图表与推理过程，通过分支探索多种假设，并将调查以团队协作制品的形式共享——所有生成的查询与结果均可查看和编辑。可通过 ClickStack UI 左侧导航栏访问。
+
+  更多详情，请参阅：
+
+  * [ClickStack AI Notebooks 文档](/zh/clickstack/notebooks)
+  * [AI Notebooks Beta 版 (博客) ](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#ai-notebooks-in-beta)
+
+  ### 水平自动扩缩容 (私有预览)
+
+  水平自动扩缩容可自动调整 ClickHouse Cloud 集群中的副本数量，在需求激增时快速横向扩展，在负载下降时逐步横向收缩——让工作负载波动较大、高并发场景下的团队无需再手动调整集群规模。私有预览阶段基于并发查询数进行扩缩容；CPU 和内存信号计划在 Public Beta 阶段推出。适用于使用 ClickHouse 26.2+ 的 Enterprise 和 Scale 层级客户。
+
+  注意：在首次 GA 发布时，水平自动扩缩容与垂直自动扩缩容互斥。水平自动扩缩容仅在垂直自动扩缩容禁用时 (即服务设置为固定规格时) 才会生效。同样，垂直自动扩缩容也仅在副本数量固定时才能启用。此行为将在未来的发行版中得到改善，变得更加灵活。
+
+  ### ClickStack MCP Server (开源版)
+
+  全新的开源 ClickStack MCP Server 为外部 AI 智能体提供基于 ClickStack 和 ClickHouse 构建的结构化可观测性调查工具。它针对日志、指标和链路追踪提供语义基本类型，支持日志模式分析、trace 异常调查、关联分析和跨信号调试，并可持久化仪表盘、搜索和告警，同时保留原生 SQL 访问能力以支持深度探索。可接入 Claude Code、Cursor、Codex 等 AI 智能体或自定义框架。
+
+  更多详情请参阅 [ClickStack MCP server 文档](/zh/clickstack/mcp) 和[可观测性 MCP Server + AI Notebooks 博客文章](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server)。
+
+  {/* vale off */}
+
+  ### 可执行用户自定义函数
+
+  {/* vale on */}
+
+  现在，您可以用 Python 编写函数，将其打包压缩后上传至集群，并像调用任何内置函数一样在 SQL 中调用它。ClickHouse 维护一个长期运行的沙箱进程池，以查询速度将行通过管道传输其中，因此您可以在任何支持 SQL 的场景中调用该函数：即席查询、join 操作，乃至在每次插入时触发的 materialized view。您的模型代码与数据紧密共存，部署只需在 Cloud 控制台中完成一次上传即可。
+
+  为了展示其功能，我们构建了一个 [Demo](https://github.com/ClickHouse/stock-anomaly-udf)。基于 StockHouse 中的实时股票交易数据，我们训练了一个小型 PyTorch 自编码器，在数据摄取时对股票交易 tick 进行异常评分。整个方案只需一个 UDF 和一条 DDL 语句，其余全部为普通 SQL。我们还抢先预览了网络访问 UDFs (私网 Beta) 功能——该功能允许 UDFs 发起出站 HTTPS 调用。我们借助这一特性拉取新闻和 SEC 文件，并让 Claude 对特定交易出现异常的原因进行分类。
+
+  如需了解更多详情，请参阅[公告博客](https://clickhouse.com/blog/executable-udfs-clickhouse-cloud-beta)或[文档](/zh/products/cloud/features/sql-console-features/user-defined-functions)
+</Update>
+
+<Update label="2026 年 5 月 25 日">
+  ### 组织支出告警正式 GA
+
+  组织[支出告警](/zh/products/cloud/reference/billing/spend-alerts)现已正式可用。当你为组织配置的每个计费周期支出达到 50%、75% 和 100% 时，系统会发送通知。可选择 Email、Cloud Console (UI) 和/或 Slack 作为通知渠道。告警基于组织总用量，按小时触发，并会在每个计费周期自动重置。需要 Org Admin 或 Billing Admin 角色。
+
+  ### 新增 ClickPipes AWS 区域
+
+  `mx-central-1` (Mexico Central) AWS 区域现已在 [ClickPipes](/zh/integrations/clickpipes/home) 中上线，详见[Cloud 区域发布](/zh/resources/changelogs/cloud/2026#new-region-support)。对于 2026 年 5 月 19 日及之后在该区域创建的 ClickHouse Cloud 服务，ClickPipes 将部署在同一区域。对于早于该日期创建的服务，ClickPipes 将默认使用 `us-east-2` 区域；如果属于这种情况，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)，以便将你的服务切换到新区。
+
+  ### compute-compute separation 的主服务 idling 现已正式可用
+
+  compute-compute separation 的主服务 idling 现已正式可用。
+  现在所有主服务都支持进入 idle 状态。
+</Update>
+
+<Update label="2026 年 5 月 18 日">
+  ### Python client v1.0.0
+
+  [clickhouse-connect](/zh/integrations/language-clients/python/index) 的重大版本发布，这是 ClickHouse 的 Python client。主要亮点包括：
+
+  * 一流的 SQLAlchemy 方言，更深入地支持 ClickHouse 特有 SQL
+  * 基于 aiohttp 构建的原生异步 client，具备完整的功能对等性，包括流式支持
+  * 在 日期时间、DateTime64、定宽数值插入、Maps、Decimal 和 BigDecimals 等方面实现了显著的性能提升
+  * 通过新的 `tz_mode` 和 `tz_source` parameter 重新设计了时区处理机制
+  * 原生支持写入 Variant column
+  * 对可选依赖项 (numpy、pandas、pyarrow、polars) 采用延迟导入，使纯导入速度提升 4 倍
+  * Experimental 的 Python 3.14 free-threading 支持
+
+  **不兼容变更：** 不再支持 Python &lt; 3.9 和 Pandas 1.x。有关其他与时区相关的不兼容变更，请查阅[发布说明](https://github.com/ClickHouse/clickhouse-connect/releases)。
+
+  ### ClickStack 中基于 SQL 的图表和告警
+
+  [ClickStack](/zh/clickstack/overview) 现在支持使用任意 ClickHouse SQL 查询来构建图表和告警。用户可以直接在仪表盘和告警构建器中编写原始 SQL，完整支持 window functions、CTE、多阶段查询以及 ClickHouse 原生分析函数。SQL 告警支持将整个告警判定逻辑直接编码在查询本身中，从而实现异常检测、滞后平均值和统计尖峰检测。适用于所有 ClickStack 部署形态 (Cloud、私网、BYOC、OSS) 。更多详情请参见 [SQL-based visualizations](/zh/clickstack/features/dashboards/sql-visualizations) 和 [SQL alert result interpretation](/zh/clickstack/features/alerts#sql-result-interpretation)。
+
+  ### 新区域支持
+
+  新增 ClickHouse Cloud 区域支持：
+
+  * AWS Mexico (mx-central-1) — 私有区域，PCI
+  * Azure Australia East — 私有区域
+
+  完整列表请参见[支持区域](/zh/products/cloud/reference/supported-regions)以及[私有区域注意事项](/zh/products/cloud/reference/supported-regions#private-regions)。
+
+  ### Kafka ClickPipes 的 Protobuf 支持
+
+  [Kafka ClickPipes](/zh/integrations/clickpipes/kafka/index) 现在除 Avro 和 JSON 外，还支持 [**Protobuf**](/zh/integrations/clickpipes/kafka/reference#protobuf) 格式。功能包括通过 Schema Registry 集成自动解析 schema、支持递归引用、well-known types 以及原生 `oneof` 类型。Protobuf 支持适用于所有 Kafka ClickPipes interface (UI、OpenAPI 和 Terraform) 。
+</Update>
+
+<Update label="2026年5月8日">
+  ### Postgres 查询洞察 (私有预览)
+
+  [ClickHouse Cloud Managed Postgres](/zh/products/managed-postgres/overview) (私有预览) 现已新增 **Query insights** 选项卡。它会按影响程度对每种查询模式进行排序，并通过以下三个界面展示每种查询变慢的原因：
+
+  * **Overview** — 一屏总览数据库健康状况
+  * **Patterns** — 可按运行时长、CPU、错误和 P95 排序的表格
+  * **Per-pattern flyout** — 延迟百分位数、CPU 与 I/O、缓存与磁盘、临时溢写、并行 worker 不足以及 WAL 量
+
+  该功能由开源 Postgres 扩展 [pg&#95;stat&#95;ch](https://github.com/ClickHouse/pg_stat_ch) 提供支持。
+
+  ### 数据目录集成扩展
+
+  我们通过数据源 UI 扩展了对[数据目录集成](/zh/products/cloud/features/data-catalogs)的支持，新增了更多认证方式、表格式和数据目录类型：
+
+  * [AWS Glue Catalog](/zh/guides/use-cases/data-warehousing/glue-catalog) 的 IAM 支持
+  * [BigLake Metastore](/zh/guides/use-cases/data-warehousing/biglake-catalog) 的数据目录集成支持
+  * [Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) 上的 Delta Tables 支持
+</Update>
+
+<Update label="2026年5月2日">
+  ### 新增 GCP London 区域 (europe-west2)
+
+  ClickHouse Cloud 现已支持一个新的公网区域：GCP London (europe-west2) 。更多详情请参阅完整的[支持区域](/zh/products/cloud/reference/supported-regions)列表。
+</Update>
+
+<Update label="2026年4月25日">
+  ### 索引分片 (私有预览)
+
+  索引分片现已进入私有预览。此功能会将索引分析阶段分散到多个副本上，从而降低每个副本的内存使用量，并通过分布式并行处理提升查询性能。这对于拥有大量次级索引的表尤其有益，例如向量搜索和全文搜索。更多详情请阅读[博客文章](https://clickhouse.com/blog/index-sharding-clickhouse-cloud-petabyte-scale-indexing)。
+
+  ### ClickPipes 的 Terraform 和 OpenAPI (正式可用)
+
+  ClickHouse [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 中的 ClickPipes 资源现已随稳定版本正式可用，并且 [OpenAPI endpoints](/zh/api-reference/organization/get-list-of-available-organizations) 不再标记为 beta。其中包括对 CDC connectors (Postgres、MySQL、MongoDB) 的完整覆盖。更多详情请参阅 [Terraform 文档](/zh/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI 文档](/zh/integrations/clickpipes/programmatic-access/openapi) 和[博客文章](https://clickhouse.com/blog/terraform-ga)。
+</Update>
+
+<Update label="2026年4月17日">
+  ### 可在 billing UI 中查看退款
+
+  客户现在可以直接在 Cloud console billing UI 中查看所有退款。退款会在处理完成后显示；信用卡退款是否会更晚显示在账单中，则取决于银行处理时间。
+
+  ### 组织支出告警 (私有预览)
+
+  组织支出告警现已进入私有预览。当每个计费周期内配置的组织支出达到 50%、75% 和 100% 时，您将收到通知。可选择 Email、Cloud console 和/或 Slack 作为通知渠道。告警基于组织总使用量，按小时触发，并会在每个计费周期自动重置。需要 Org Admin 或 Billing Admin 角色。
+
+  ### ClickPipes 在 AWS 上实现区域覆盖一致
+
+  ClickPipes 现已在 ClickHouse Cloud 支持的所有 AWS 区域 (公网和私网) 中可用，从 6 个区域扩展到 18 个。这包括 Singapore (ap-southeast-1) 、Seoul (ap-northeast-2) 和 Tokyo (ap-northeast-1) 等重要区域。新区域适用于 2026 年 4 月 14 日之后创建的服务。更多详情请参阅[文档](/zh/integrations/clickpipes/home#list-of-static-ips)。
+</Update>
+
+<Update label="2026 年 4 月 10 日">
+  ### 集中式市场计费
+
+  客户现在可以通过单个 Marketplace 订阅 (AWS、Azure 和 GCP) ，在多个组织之间统一计费。主要更新包括：
+
+  * **Marketplace 订阅共享：** 可将某个组织的计费方式从信用卡计费切换为另一个组织现有的 Marketplace 订阅，无需再额外设置新的 Marketplace 订阅。仅整合 PAYG 用量 (不包括预付费额度) 。
+  * **更新 Marketplace 订阅：** 可将某个组织的 Marketplace 订阅切换为另一个组织正在使用的订阅。
+  * **备用付款方式：** 使用市场计费的组织现在可以添加信用卡作为备用付款方式，以便在主 Marketplace 订阅被取消或到期时作为后备。
+
+  更多详情请参阅[计费文档](/zh/products/cloud/reference/billing/managing-payment-methods)。
+
+  ### clickhousectl CLI (Public Beta)
+
+  [clickhousectl](https://github.com/ClickHouse/clickhousectl) 是官方的 ClickHouse 命令行客户端，用于管理本地安装、运行本地服务器以及操作 ClickHouse Cloud。立即安装：
+
+  ```bash
+  curl https://clickhouse.com/cli | sh
+  ```
+</Update>
+
+<Update label="2026 年 4 月 3 日">
+  * **采用双窗口 recommender 的更智能自动扩缩容：** ClickHouse Cloud 现在在纵向自动扩缩容中采用双回看窗口机制，以 3 小时的“小窗口”和 30 小时的“大窗口”组合，替代此前单一的 30 小时窗口。这样可将缩容延迟从最长 30 小时缩短至最短 3 小时，在不牺牲扩容响应速度的前提下，降低波动性工作负载的基础设施成本。更多详情请阅读[博客文章](https://clickhouse.com/blog/smarter-auto-scaling)。
+  * **Cloud Console 中的 Monitoring：** 新增的概览和基础设施仪表盘可让您更清楚地了解 ClickHouse 服务器的行为。使用 ClickHouse Cloud 时，Admin 用户现在还会在出现常见问题时收到电子邮件通知。更多详情请阅读[博客文章](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities)。
+  * **Compute-compute separation (仓库) ：** 主服务 (也称为 parent 服务) 的自动闲置支持现已开始逐步开放公开预览。如果您的组织尚未启用此功能，请[联系支持团队](https://clickhouse.com/support/program)以获取访问权限。该功能进入正式可用后，默认行为将是：现有主服务可选择开启自动闲置，而新建主服务将默认启用该功能。
+  * **数据目录集成：** ClickHouse Cloud 现已支持在数据源 UI 中将 Iceberg REST Catalog 和 Microsoft OneLake 作为数据湖目录 集成。连接后，目录 会显示为一个数据库，使您能够直接读取 Iceberg 表，而无需复制数据。
+  * **Google Cloud 上的自备 Cloud (BYOC) 现已正式可用：** ClickHouse BYOC 现已在 Google Cloud 上 GA，允许您在自己的 GCP 项目中部署 ClickHouse 服务，并满足严格的数据驻留要求。更多详情请阅读[文档](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)和[博客文章](https://clickhouse.com/blog/byoc-gcp-ga)。您也可以[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)申请访问权限。
+  * **预付费额度和付款方式变更通知：** ClickHouse Cloud 现在会在签订承诺合同后为您的组织添加预付费额度时，或在付款方式更新时 (信用卡或 Marketplace 订阅) 发送通知。通知默认通过 UI 和电子邮件发送，也可配置为同时发送到 Slack。
+</Update>
+
+<Update label="2026 年 3 月 20 日">
+  * **Usage Breakdown 的自定义日期范围：** 您现在可以在 Usage Breakdown 页面使用自定义日期范围，查看所有计费维度下的使用成本。
+    选择开始和结束日期 (含当日) 即可按特定时间段筛选成本，并将结果下载为 CSV。
+    日期范围最长为 31 天。
+</Update>
+
+<Update label="2026 年 2 月 20 日">
+  * **ClickPipes：** 处于非活动状态的 Reverse Private Endpoint 现在会在定义的宽限期后自动移除。这可确保未使用或配置错误的端点不会在后端被无限期保留。更多详情请参阅自动清理[文档](/zh/integrations/clickpipes/aws-privatelink#automatic-cleanup)。
+</Update>
+
+<Update label="2026 年 2 月 13 日">
+  * [BigQuery Connector](/zh/integrations/clickpipes/bigquery/overview) 现已进入私有预览。阅读这篇[博文](https://clickhouse.com/blog/bigquery-clickpipe-private-preview)了解更多详情，并加入[等候名单](https://clickhouse.com/cloud/clickpipes/bigquery-connector)以获取访问权限。
+  * 我们很高兴地宣布，现已支持在 Google Cloud 上进行 PCI 部署。支持的区域：
+    * GCP europe-west4 (荷兰)
+    * GCP us-central1 (爱荷华)
+    * GCP us-east1 (南卡罗来纳)
+  * 现在可以在组织级别配置崩溃报告收集偏好设置。此前此设置仅在服务级别可用。在组织级别禁用后，所有现有和未来的服务都会自动退出。
+
+  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="崩溃报告收集" />
+</Update>
+
+<Update label="2026 年 1 月 23 日">
+  * ClickPipes 现已在 AWS `eu-west-1` 区域可用。对于 1 月 20 日起在该区域创建的新 ClickHouse Cloud 服务，ClickPipes 将使用对应区域。对于较早创建的服务，ClickPipes 默认使用 `eu-central-1`。更多详情请参阅[文档](/zh/integrations/clickpipes/home#list-of-static-ips)。
+</Update>
+
+<Update label="2026 年 1 月 16 日">
+  * **通过 API 按服务维度过滤使用成本：**我们的 API 现已支持按特定服务标签过滤组织的使用成本，让您能够更轻松地按更细粒度分析支出。
+  * **数据目录集成：**您现在可以将外部数据目录连接为数据源。ClickHouse Cloud 支持 AWS Glue 和 Unity Catalog (后续还将支持更多) 。连接后，该目录会显示为一个数据库，让您无需复制数据即可直接读取 Iceberg 表。如需使用，请联系支持团队申请访问权限。
+  * **ClickPipes：**
+    * MongoDB 连接器已升级为 Public Beta，现已向所有服务层级的新老 ClickHouse Cloud 客户开放。请阅读这篇[博文](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta)了解新功能概览，并前往[文档](/zh/integrations/clickpipes/mongodb/index)开始使用。
+    * [S3 ClickPipe](/zh/integrations/clickpipes/object-storage/amazon-s3/overview) 现已兼容 OVH Object Storage，即 OVHcloud 中与 S3 API 兼容的对象存储服务。
+</Update>

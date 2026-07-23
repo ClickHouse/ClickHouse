@@ -1,0 +1,58 @@
+---
+sidebarTitle: 'ClickPipes 和语言客户端'
+slug: /manage/integrations
+title: 'ClickPipes 和语言客户端'
+description: '用于 ClickHouse Cloud 的 ClickPipes 和语言客户端集成'
+doc_type: 'landing-page'
+keywords: ['集成', 'Cloud 功能', 'clickpipes', '语言客户端', '连接器']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse Cloud 可让您连接您常用的工具和服务。
+
+<div id="clickpipes">
+  ## ClickHouse Cloud 的托管集成管道
+</div>
+
+ClickPipes 是一个托管集成平台，让从多种来源摄取数据变得只需点几下按钮一样简单。
+ClickPipes 专为要求最严苛的工作负载而设计，其强大且可扩展的架构可确保始终如一的性能与可靠性。
+ClickPipes 既可用于长期流式摄取需求，也可用于一次性数据加载作业。
+
+| Name                                                        | Logo                                                                                                 | Type | Status  | Description                                                    |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---- | ------- | -------------------------------------------------------------- |
+| [Apache Kafka](/zh/integrations/clickpipes/kafka/index)        | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" width="32" />                  | 流式   | 稳定版本    | 配置 ClickPipes，开始将 Apache Kafka 中的流式数据摄取到 ClickHouse Cloud。     |
+| Confluent Cloud                                             | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 徽标" width="32" />           | 流式   | 稳定版本    | 通过我们的直接集成，充分发挥 Confluent 与 ClickHouse Cloud 结合的强大能力。           |
+| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" width="32" />              | 流式   | 稳定版本    | 配置 ClickPipes，开始将 Redpanda 中的流式数据摄取到 ClickHouse Cloud。         |
+| AWS MSK                                                     | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" width="32" />                         | 流式   | 稳定版本    | 配置 ClickPipes，开始将 AWS MSK 中的流式数据摄取到 ClickHouse Cloud。          |
+| Azure Event Hubs                                            | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" />   | 流式   | 稳定版本    | 配置 ClickPipes，开始将 Azure Event Hubs 中的流式数据摄取到 ClickHouse Cloud。 |
+| WarpStream                                                  | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />               | 流式   | 稳定版本    | 配置 ClickPipes，开始将 WarpStream 中的流式数据摄取到 ClickHouse Cloud。       |
+| Amazon S3                                                   | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 徽标" width="32" />            | 对象存储 | 稳定版本    | 配置 ClickPipes，从对象存储中摄取海量数据。                                    |
+| Google Cloud Storage                                        | <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 徽标" width="32" />            | 对象存储 | 稳定版本    | 配置 ClickPipes，从对象存储中摄取海量数据。                                    |
+| DigitalOcean Spaces                                         | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 徽标" width="32" />          | 对象存储 | 稳定版本    | 配置 ClickPipes，从对象存储中摄取海量数据。                                    |
+| Azure Blob Storage                                          | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage 徽标" width="32" /> | 对象存储 | 私有 Beta | 配置 ClickPipes，从对象存储中摄取海量数据。                                    |
+| [Amazon Kinesis](/zh/integrations/clickpipes/kinesis/overview) | <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis 徽标" width="32" />  | 流式   | 稳定版本    | 配置 ClickPipes，开始将 Amazon Kinesis 中的流式数据摄取到 ClickHouse Cloud。   |
+| [Postgres](/zh/integrations/clickpipes/postgres/index)         | <img src="/images/integrations/logos/postgresql.svg" alt="Postgres 徽标" width="32" />                 | DBMS | 稳定版本    | 配置 ClickPipes，开始将 Postgres 中的数据摄取到 ClickHouse Cloud。           |
+| [MySQL](/zh/integrations/clickpipes/mysql/index)               | <img src="/images/integrations/logos/mysql.svg" alt="MySQL 徽标" width="32" />                         | DBMS | 私有 Beta | 配置 ClickPipes，开始将 MySQL 中的数据摄取到 ClickHouse Cloud。              |
+| [MongoDB](/zh/integrations/clickpipes/mongodb/index)           | <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB 徽标" width="32" />                     | DBMS | 私有预览    | 配置 ClickPipes，开始将 MongoDB 中的数据摄取到 ClickHouse Cloud。            |
+
+<div id="language-client-integrations">
+  ## 语言客户端集成
+</div>
+
+ClickHouse 提供多种语言客户端集成，下面列出了各项集成对应的文档链接。
+
+| 页面                                                                    | 描述                                                    |
+| --------------------------------------------------------------------- | ----------------------------------------------------- |
+| [C++](/zh/concepts/features/interfaces/cpp)                           | C++ 客户端库和 userver 异步框架                                |
+| [C#](/zh/integrations/language-clients/csharp/overview)                  | 了解如何将 C# 项目连接到 ClickHouse。                            |
+| [Go](/zh/integrations/language-clients/go/index)                         | 了解如何将 Go 项目连接到 ClickHouse。                            |
+| [JavaScript](/zh/integrations/language-clients/js)                       | 了解如何使用官方 JavaScript 客户端将 JavaScript 项目连接到 ClickHouse。 |
+| [Java](/zh/integrations/language-clients/java/index)                     | 进一步了解 Java 与 ClickHouse 的多种集成方式。                      |
+| [Python](/zh/integrations/language-clients/python/index)                 | 了解如何将 Python 项目连接到 ClickHouse。                        |
+| [Rust](/zh/integrations/language-clients/rust)                           | 了解如何将 Rust 项目连接到 ClickHouse。                          |
+| [第三方客户端](/zh/integrations/language-clients/third-party/client-libraries) | 进一步了解第三方开发者提供的客户端库。                                   |
+
+除 ClickPipes 和语言客户端外，ClickHouse 还支持许多其他集成，
+包括核心集成、合作伙伴集成和社区集成。
+完整列表请参阅文档中的 [“集成”](/zh/integrations/home) 部分。

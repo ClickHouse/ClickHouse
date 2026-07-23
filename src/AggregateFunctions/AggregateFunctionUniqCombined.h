@@ -25,7 +25,10 @@
 #include <AggregateFunctions/UniqCombinedBiasData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <functional>
 
@@ -46,7 +49,7 @@ template <typename T, UInt8 K, typename HashValueType>
 struct AggregateFunctionUniqCombinedData
 {
     using Key = std::conditional_t<
-        std::is_same_v<T, String> || std::is_same_v<T, IPv6>,
+        std::is_same_v<T, std::string_view> || std::is_same_v<T, IPv6>,
         UInt64,
         HashValueType>;
 
@@ -94,39 +97,52 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
+        if constexpr (std::is_same_v<T, std::string_view>)
         {
             auto value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
+            this->data(place).set.insert(hashOne(value));
         }
         else
         {
             const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
-
-            HashValueType hash;
-
-            if constexpr (std::is_same_v<T, UInt128>)
-            {
-                /// This specialization exists due to historical circumstances.
-                /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
-                hash = static_cast<HashValueType>(sipHash64(value));
-            }
-            else if constexpr (is_floating_point<T>)
-            {
-                hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(value)));
-            }
-            else if constexpr (sizeof(T) > sizeof(UInt64))
-            {
-                hash = static_cast<HashValueType>(DefaultHash64<T>(value));
-            }
-            else
-            {
-                /// This specialization exists also for compatibility with the initial implementation.
-                hash = static_cast<HashValueType>(intHash64(value));
-            }
-
-            this->data(place).set.insert(hash);
+            this->data(place).set.insert(hashOne(value));
         }
+    }
+
+    void addBatchSinglePlace( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos = -1) const override
+    {
+        const UInt8 * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        addBatchImpl(row_begin, row_end, place, columns, flags, nullptr);
+    }
+
+    void addBatchSinglePlaceNotNull( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos = -1) const override
+    {
+        const UInt8 * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        addBatchImpl(row_begin, row_end, place, columns, flags, null_map);
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t /*length*/, Arena * arena) const override
+    {
+        this->add(place, columns, 0, arena);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -147,6 +163,155 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+    }
+
+private:
+    using Data = AggregateFunctionUniqCombinedData<T, K, HashValueType>;
+    using Key = typename Data::Key;
+
+    static constexpr size_t hash_chunk_size = 512;
+
+    /// Returns Key, not HashValueType: for String and IPv6 the set stores
+    /// the full 64-bit hash even in the 32-bit uniqCombined (see Data::Key).
+    static ALWAYS_INLINE Key hashOne(T value)
+    {
+        if constexpr (std::is_same_v<T, std::string_view>)
+        {
+            return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+        }
+        else if constexpr (std::is_same_v<T, IPv6>)
+        {
+            /// This specialization exists for compatibility with the initial implementation.
+            return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&value), sizeof(IPv6));
+        }
+        else if constexpr (std::is_same_v<T, UInt128>)
+        {
+            /// This specialization exists due to historical circumstances.
+            /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
+            return static_cast<Key>(sipHash64(value));
+        }
+        else if constexpr (is_floating_point<T>)
+        {
+            return static_cast<Key>(intHash64(bit_cast<UInt64>(value)));
+        }
+        else if constexpr (sizeof(T) > sizeof(UInt64))
+        {
+            return static_cast<Key>(DefaultHash64<T>(value));
+        }
+        else
+        {
+            /// This specialization exists also for compatibility with the initial implementation.
+            return static_cast<Key>(intHash64(value));
+        }
+    }
+
+    /// Compares values the same way hashOne distinguishes them. Floats are compared
+    /// as bit patterns: e.g. -0.0 == +0.0, but their hashes differ.
+    template <typename U>
+    static ALWAYS_INLINE bool bitEquals(const U & lhs, const U & rhs)
+    {
+        if constexpr (is_floating_point<U>)
+            return bit_cast<UInt64>(lhs) == bit_cast<UInt64>(rhs);
+        else
+            return lhs == rhs;
+    }
+
+    void addBatchImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * flags,
+        const UInt8 * null_map) const
+    {
+        auto & set = this->data(place).set;
+
+        if constexpr (std::is_same_v<T, std::string_view>)
+        {
+            if (const auto * column_string = typeid_cast<const ColumnString *>(columns[0]))
+            {
+                insertChunked(row_begin, row_end, set, flags, null_map, [&column_string](size_t row) { return column_string->getDataAt(row); });
+            }
+            else
+            {
+                const auto & column_fixed = assert_cast<const ColumnFixedString &>(*columns[0]);
+                insertChunked(row_begin, row_end, set, flags, null_map, [&column_fixed](size_t row) { return column_fixed.getDataAt(row); });
+            }
+        }
+        else
+        {
+            const auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+            insertChunked(row_begin, row_end, set, flags, null_map, [&data](size_t row) { return data[row]; });
+        }
+    }
+
+    /// Hashes rows a chunk ahead into a stack buffer, so that hash computation pipelines
+    /// independently of the set inserts, and inserts whole chunks via insertMany.
+    template <typename Getter>
+    static void insertChunked(size_t row_begin, size_t row_end, typename Data::Set & set, const UInt8 * flags, const UInt8 * null_map, Getter getter)
+    {
+        if (row_begin == row_end)
+            return;
+
+        std::array<Key, hash_chunk_size> hashes{};
+        size_t row = row_begin;
+
+        bool use_last_value_cache = true;
+        T last_value{};
+        size_t cache_hits = 0;
+        size_t num_processed = 0;
+
+        while (row < row_end)
+        {
+            const size_t chunk_size = std::min(hash_chunk_size, row_end - row);
+            size_t num_hashes = 0;
+
+            if (!flags && !null_map)
+            {
+                if (use_last_value_cache)
+                {
+                    last_value = getter(row);
+                    hashes[num_hashes++] = hashOne(last_value);
+
+                    for (size_t i = 1; i < chunk_size; ++i)
+                    {
+                        auto value = getter(row + i);
+                        if (bitEquals(value, last_value))
+                            continue;
+
+                        last_value = value;
+                        hashes[num_hashes++] = hashOne(value);
+                    }
+
+                    /// Disable the cache for the rest of the batch when consecutive duplicates are rare.
+                    cache_hits += chunk_size - num_hashes;
+                    num_processed += chunk_size;
+
+                    if (cache_hits * 2 <= num_processed)
+                        use_last_value_cache = false;
+                }
+                else
+                {
+                    num_hashes = chunk_size;
+
+                    for (size_t i = 0; i < chunk_size; ++i)
+                        hashes[i] = hashOne(getter(row + i));
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < chunk_size; ++i)
+                {
+                    if ((flags && !flags[row + i]) || (null_map && null_map[row + i]))
+                        continue;
+
+                    hashes[num_hashes++] = hashOne(getter(row + i));
+                }
+            }
+
+            set.insertMany(hashes.data(), num_hashes);
+            row += chunk_size;
+        }
     }
 };
 
@@ -245,7 +410,7 @@ AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_typ
             return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDateTime::FieldType>>(
                 argument_types, params);
         if (which.isStringOrFixedString())
-            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<String>>(argument_types, params);
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<std::string_view>>(argument_types, params);
         if (which.isUUID())
             return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(
                 argument_types, params);

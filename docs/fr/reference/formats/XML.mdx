@@ -1,0 +1,103 @@
+---
+alias: []
+description: 'Documentation sur le format XML'
+input_format: false
+keywords: ['XML']
+output_format: true
+slug: /interfaces/formats/XML
+title: 'XML'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✗      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Le format `XML` convient uniquement à la sortie, et non à l’analyse.
+
+Si le nom de la colonne n’a pas un format acceptable, seul &#39;field&#39; est utilisé comme nom d’élément. En règle générale, la structure XML suit celle du JSON.
+Comme pour le JSON, les séquences UTF-8 invalides sont remplacées par le caractère de remplacement `�`, afin que le texte de sortie soit constitué de séquences UTF-8 valides.
+
+Dans les valeurs de chaîne, les caractères `<` et `&` sont échappés en `<` et `&`.
+
+Les tableaux sont affichés sous la forme `<array><elem>Hello</elem><elem>World</elem>...</array>`, et les tuples sous la forme `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Exemple :
+
+```xml
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+        <meta>
+                <columns>
+                        <column>
+                                <name>SearchPhrase</name>
+                                <type>String</type>
+                        </column>
+                        <column>
+                                <name>count()</name>
+                                <type>UInt64</type>
+                        </column>
+                </columns>
+        </meta>
+        <data>
+                <row>
+                        <SearchPhrase></SearchPhrase>
+                        <field>8267016</field>
+                </row>
+                <row>
+                        <SearchPhrase>bathroom interior design</SearchPhrase>
+                        <field>2166</field>
+                </row>
+                <row>
+                        <SearchPhrase>clickhouse</SearchPhrase>
+                        <field>1655</field>
+                </row>
+                <row>
+                        <SearchPhrase>2014 spring fashion</SearchPhrase>
+                        <field>1549</field>
+                </row>
+                <row>
+                        <SearchPhrase>freeform photos</SearchPhrase>
+                        <field>1480</field>
+                </row>
+                <row>
+                        <SearchPhrase>angelina jolie</SearchPhrase>
+                        <field>1245</field>
+                </row>
+                <row>
+                        <SearchPhrase>omsk</SearchPhrase>
+                        <field>1112</field>
+                </row>
+                <row>
+                        <SearchPhrase>photos of dog breeds</SearchPhrase>
+                        <field>1091</field>
+                </row>
+                <row>
+                        <SearchPhrase>curtain designs</SearchPhrase>
+                        <field>1064</field>
+                </row>
+                <row>
+                        <SearchPhrase>baku</SearchPhrase>
+                        <field>1000</field>
+                </row>
+        </data>
+        <rows>10</rows>
+        <rows_before_limit_at_least>141137</rows_before_limit_at_least>
+</result>
+```
+
+<div id="format-settings">
+  ## Paramètres du format
+</div>
+
+<div id="xml">
+  ## XML
+</div>

@@ -1,0 +1,271 @@
+---
+title: 'chDB pour Go'
+sidebarTitle: 'Go'
+slug: /chdb/install/go
+description: 'Comment installer et utiliser chDB avec Go'
+keywords: ['chdb', 'go', 'golang', 'embarqué', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+chDB-go fournit des bindings Go pour chDB, vous permettant d’exécuter des requêtes ClickHouse directement dans vos applications Go avec zéro dépendance externe.
+
+<div id="installation">
+  ## Installation
+</div>
+
+<div id="install-libchdb">
+  ### Étape 1 : Installer libchdb
+</div>
+
+Commencez par installer la bibliothèque chDB :
+
+```bash
+curl -sL https://lib.chdb.io | bash
+```
+
+<div id="install-chdb-go">
+  ### Étape 2 : Installer chdb-go
+</div>
+
+Installez le paquet Go :
+
+```bash
+go install github.com/chdb-io/chdb-go@latest
+```
+
+Ou ajoutez-le à votre fichier `go.mod` :
+
+```bash
+go get github.com/chdb-io/chdb-go
+```
+
+<div id="usage">
+  ## Utilisation
+</div>
+
+<div id="cli">
+  ### Interface en ligne de commande
+</div>
+
+chDB-go comprend une CLI pour exécuter rapidement des requêtes :
+
+```bash
+# Simple query
+./chdb-go "SELECT 123"
+
+# Interactive mode
+./chdb-go
+
+# Interactive mode with persistent storage
+./chdb-go --path /tmp/chdb
+```
+
+<div id="quick-start">
+  ### Bibliothèque Go - prise en main rapide
+</div>
+
+<div id="stateless-queries">
+  #### Requêtes sans état
+</div>
+
+Pour des requêtes simples et ponctuelles :
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Execute a simple query
+    result, err := chdb.Query("SELECT version()", "CSV")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(result)
+}
+```
+
+<div id="stateful-queries">
+  #### Requêtes avec état en session
+</div>
+
+Pour les requêtes complexes avec état persistant :
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session with persistent storage
+    session, err := chdb.NewSession("/tmp/chdb-data")
+    if err != nil {
+        panic(err)
+    }
+    defer session.Cleanup()
+
+    // Create database and table
+    _, err = session.Query(`
+        CREATE DATABASE IF NOT EXISTS testdb;
+        CREATE TABLE IF NOT EXISTS testdb.test_table (
+            id UInt32,
+            name String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert data
+    _, err = session.Query(`
+        INSERT INTO testdb.test_table VALUES 
+        (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Query data
+    result, err := session.Query("SELECT * FROM testdb.test_table ORDER BY id", "Pretty")
+    if err != nil {
+        panic(err)
+    }
+    
+    fmt.Println(result)
+}
+```
+
+<div id="sql-driver">
+  #### Interface du pilote SQL
+</div>
+
+chDB-go implémente l’interface `database/sql` de Go :
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    _ "github.com/chdb-io/chdb-go/chdb/driver"
+)
+
+func main() {
+    // Open database connection
+    db, err := sql.Open("chdb", "")
+    if err != nil {
+        panic(err)
+    }
+    defer db.Close()
+
+    // Query with standard database/sql interface
+    rows, err := db.Query("SELECT COUNT(*) FROM url('https://datasets.clickhouse.com/hits/hits.parquet')")
+    if err != nil {
+        panic(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var count int
+        err := rows.Scan(&count)
+        if err != nil {
+            panic(err)
+        }
+        fmt.Printf("Count: %d\n", count)
+    }
+}
+```
+
+<div id="query-streaming">
+  #### Requête en streaming pour les grands volumes de données
+</div>
+
+Pour traiter de grands volumes de données qui ne tiennent pas en mémoire, utilisez des requêtes en streaming :
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session for streaming queries
+    session, err := chdb.NewSession("/tmp/chdb-stream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer session.Cleanup()
+
+    // Execute a streaming query for large dataset
+    streamResult, err := session.QueryStreaming(
+        "SELECT number, number * 2 as double FROM system.numbers LIMIT 1000000", 
+        "CSV",
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer streamResult.Free()
+
+    rowCount := 0
+    
+    // Process data in chunks
+    for {
+        chunk := streamResult.GetNext()
+        if chunk == nil {
+            // No more data
+            break
+        }
+        
+        // Check for streaming errors
+        if err := streamResult.Error(); err != nil {
+            log.Printf("Streaming error: %v", err)
+            break
+        }
+        
+        rowsRead := chunk.RowsRead()
+        // You can process the chunk data here
+        // For example, write to file, send over network, etc.
+        fmt.Printf("Processed chunk with %d rows\n", rowsRead)
+        rowCount += int(rowsRead)
+        if rowCount%100000 == 0 {
+            fmt.Printf("Processed %d rows so far...\n", rowCount)
+        }
+    }
+    
+    fmt.Printf("Total rows processed: %d\n", rowCount)
+}
+```
+
+**Avantages de la requête en streaming :**
+
+* **Utilisation efficace de la mémoire** - Traitez de grands ensembles de données sans tout charger en mémoire
+* **Traitement en temps réel** - Commencez à traiter les données dès l’arrivée du premier fragment
+* **Prise en charge de l’annulation** - Vous pouvez annuler les requêtes longues avec `Cancel()`
+* **Gestion des erreurs** - Vérifiez les erreurs pendant le streaming avec `Error()`
+
+<div id="api-documentation">
+  ## Documentation de l’API
+</div>
+
+chDB-go fournit des API de haut niveau et de bas niveau :
+
+* **[Documentation de l’API de haut niveau](https://github.com/chdb-io/chdb-go/blob/main/chdb.md)** - Recommandée pour la plupart des cas d’utilisation
+* **[Documentation de l’API de bas niveau](https://github.com/chdb-io/chdb-go/blob/main/lowApi.md)** - Pour les cas d’utilisation avancés nécessitant un contrôle précis
+
+<div id="requirements">
+  ## Configuration requise
+</div>
+
+* Go 1.21 ou version ultérieure
+* Compatible avec Linux et macOS

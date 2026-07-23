@@ -1,0 +1,43 @@
+---
+alias: []
+description: 'PrettyNoEscapes フォーマットのドキュメント'
+input_format: false
+keywords: ['PrettyNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettyNoEscapes
+title: 'PrettyNoEscapes'
+doc_type: 'reference'
+---
+
+import PrettyFormatSettings from '/snippets/ja/common-pretty-format-settings.mdx';
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✗  | ✔  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+[ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) を使用しない点が、[Pretty](/ja/reference/formats/Pretty/Pretty) との違いです。
+これは、このフォーマットをブラウザで表示したり、コマンドラインユーティリティの &#39;watch&#39; を使用したりするために必要です。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+例：
+
+```bash
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+```
+
+<Note>
+  このフォーマットは、[HTTPインターフェイス](/ja/concepts/features/interfaces/http)を使用してブラウザで表示できます。
+</Note>
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+<PrettyFormatSettings />

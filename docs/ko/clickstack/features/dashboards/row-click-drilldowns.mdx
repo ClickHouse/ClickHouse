@@ -1,0 +1,160 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/row-click-drilldowns
+title: '테이블 행 클릭 드릴다운'
+sidebarTitle: '행 클릭 드릴다운'
+description: '테이블 타일을 조사 워크플로로 바꿉니다. 행을 클릭하면 클릭한 행을 기준으로 범위가 지정된 대시보드나 해당 로그 및 트레이스로 드릴다운할 수 있습니다'
+doc_type: 'guide'
+keywords: ['ClickStack', '대시보드', '드릴다운', '테이블', '행 클릭', '조사', '관측성']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+테이블 타일은 흔히 **카탈로그** 역할을 합니다. 즉, 서비스, host, endpoint 또는 오류 그룹마다 1개의 행이 있고, 각 항목을 평가하는 몇 개의 컬럼이 포함됩니다. 행 클릭 동작을 사용하면 이 카탈로그를 조사 워크플로로 전환할 수 있습니다. 카탈로그를 훑어보다가 중요한 행을 찾은 다음 클릭하면, ClickStack이 클릭한 행의 값을 필터로 그대로 전달합니다. 그러면 대상이 해당 항목 하나로 이미 범위가 좁혀진 상태로 열리므로, 쿼리를 수동으로 다시 작성할 필요가 없습니다.
+
+클릭하면 다음 두 위치 중 하나로 이동할 수 있습니다:
+
+* **다른 대시보드**: 서비스별 상세 대시보드처럼 해당 항목 하나에 집중해서 볼 수 있는 화면이거나,
+* 행의 기반이 되는 로그 또는 트레이스를 보기 위한 [검색](/ko/clickstack/features/search)의 **원본 이벤트**입니다.
+
+아래의 두 사용 사례는 모두 동일한 카탈로그(서비스 인벤토리)에서 시작해 각 대상으로 드릴다운합니다. 행 클릭 동작은 테이블 타일에만 적용됩니다. 이는 선 차트나 막대 차트의 한 점을 클릭할 때 컨텍스트 메뉴를 여는 차트 [검색으로 드릴다운](/ko/clickstack/features/dashboards/overview#drilldown-to-search)과는 별개입니다.
+
+<div id="inspect-in-dashboard">
+  ## 자체 대시보드에서 서비스 검사
+</div>
+
+서비스별로 한 행이 있는 개요 테이블은 &quot;어떤 서비스가 비정상인가?&quot;라는 질문에 답합니다. 행을 클릭하면 클릭한 서비스 범위로 한정된 서비스별 대시보드가 열리고, 여기서 &quot;내부에서 무슨 일이 일어나고 있는가?&quot;라는 질문에 답할 수 있습니다. 아래 패턴은 서비스 인벤토리 테이블과 `Service Detail` 대시보드를 짝지어 구성합니다.
+
+<Steps>
+  <Step>
+    ### 상세 대시보드 만들기
+
+    `Service Detail`이라는 이름의 대시보드를 만들고 트레이스 소스에 `ServiceName` 표현식으로 [custom filter](/ko/clickstack/features/dashboards/overview#custom-filters)를 추가합니다. 대시보드 수준 필터는 모든 타일의 범위를 단일 서비스로 다시 한정하므로, 타일 자체의 쿼리에 특정 서비스를 하드코딩할 필요가 없습니다. 원하는 서비스별 보기를 추가합니다. 예를 들면 RED 핵심 지표(requests, errors, P95 duration), 지연 시간 백분위수 chart(P50, P95, P99), 시간에 따른 request rate, `SpanName`으로 그룹화한 endpoint별 분석이 있습니다.
+
+    다음 단계에서 대상으로 선택할 수 있도록 먼저 이 대시보드를 저장합니다.
+  </Step>
+
+  <Step>
+    ### 서비스 인벤토리 만들기
+
+    개요 대시보드에서 트레이스 소스에 `ServiceName`으로 그룹화된 **Table** 타일을 추가합니다. 각 서비스를 평가하는 RED 컬럼을 추가하고, 각각은 alias가 지정된 series여야 합니다.
+
+    * `Requests`: 스팬 수(rate)입니다.
+    * `Errors`: 오류 status가 있는 스팬 수입니다.
+    * `P95 Duration`: `Duration`의 95백분위수입니다. 컬럼의 숫자 포맷을 duration으로 설정하여 원시 나노초가 아니라 `288ms`처럼 표시되도록 합니다.
+
+    `Requests`를 기준으로 내림차순 정렬하여 가장 바쁜 서비스가 상단에 오도록 합니다. 이 테이블이 카탈로그 역할을 합니다. 즉, 서비스별로 한 행씩 있으며 RED 기준으로 평가됩니다.
+
+    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="각 서비스의 RED 컬럼(Requests, Errors, P95 Duration)이 표시되고 request volume 기준으로 정렬된 서비스 인벤토리 테이블, 그 위에 시간별 requests 추세 표시" size="lg" />
+
+    <Tip>
+      **group-by 컬럼을 앞에 배치하십시오**
+
+      기본적으로 테이블은 group-by 컬럼(여기서는 `ServiceName`)을 series 뒤인 오른쪽에 렌더링합니다. 카탈로그는 각 행의 아이덴티티가 먼저 올 때 더 읽기 쉽습니다. 타일의 **Display Settings**를 열고 **Display Group By Columns on Left**를 켜서 group-by 컬럼을 앞으로 이동하십시오.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 행 클릭 연결 설정
+
+    인벤토리 테이블에서 **Row Click Action**을 열고 **Dashboard**를 선택한 다음 대시보드 목록에서 `Service Detail`을 고릅니다. 대시보드를 직접 선택하면 ID로 고정됩니다. 나중에 대시보드 이름이 바뀌어도 link는 계속 작동하며, 대시보드 내보내기와 가져오기 후에도 유지됩니다. (**Template** 옵션은 행마다 다른 대시보드를 선택할 때만 사용하십시오. [Set up a row-click action](#set-up)을 참조하십시오.)
+
+    `Service Detail`이 `ServiceName` custom filter를 선언하므로, 드로어에는 해당 표현식에 대한 빈 필터가 미리 채워집니다. 여기에 template을 입력합니다.
+
+    * **Expression**: `ServiceName` (이미 입력됨)
+    * **Template**: `{{ServiceName}}`
+
+    **Apply**를 클릭하고 저장합니다. 이제 클릭한 행의 서비스가 대시보드의 `ServiceName` 필터로 전달됩니다.
+  </Step>
+
+  <Step>
+    ### 행 클릭
+
+    행 위에 마우스를 올리면 테이블 오른쪽 가장자리에 link 동작 표시가 나타나고, 작업을 설명하는 힌트(`Open dashboard "Service Detail"`)가 함께 표시됩니다. 행을 클릭하면 `Service` 필터가 클릭한 값으로 설정된 상태로 `Service Detail` 대시보드가 열리므로, 모든 타일(RED 핵심 지표, 지연 시간 백분위수, endpoint별 분석)의 범위가 한 번의 클릭으로 해당 서비스 하나로 다시 한정됩니다.
+
+    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="행 클릭 후의 Service Detail 대시보드. Service 필터가 클릭한 서비스로 설정되어 있고 RED 핵심 지표, 지연 시간 백분위수, endpoint별 분석이 모두 해당 서비스 범위로 한정됨" size="lg" />
+  </Step>
+</Steps>
+
+<div id="jump-to-traces">
+  ## 서비스에서 해당 트레이스로 이동
+</div>
+
+때로는 다른 집계 뷰보다 원시 이벤트 자체를 확인해야 할 때가 있습니다. **검색** 작업은 클릭 시 대시보드 대신 [검색](/ko/clickstack/features/search) 페이지를 열고, 해당 행에 해당하는 로그 또는 트레이스를 이미 필터링된 상태로 표시합니다.
+
+동일한 서비스 인벤토리 테이블에서, 행 클릭 시 상세 대시보드가 아니라 트레이스 자체가 열리도록 설정해 보겠습니다.
+
+<Steps>
+  <Step>
+    ### 행 클릭 시 검색이 열리도록 설정
+
+    인벤토리 테이블에서 **Row Click Action**을 열고 **검색**을 선택합니다. 트레이스 source를 선택하십시오(로그 및 트레이스 source만 표시됩니다). 필터를 하나 추가합니다.
+
+    * **Expression**: `ServiceName`
+    * **Template**: `{{ServiceName}}`
+
+    **Apply**를 클릭한 다음 저장합니다.
+  </Step>
+
+  <Step>
+    ### 행 클릭
+
+    이제 서비스 행을 클릭하면 해당 트레이스 source의 검색 페이지가 열리고, `ServiceName = <service>`로 필터링되므로 동일한 시간 범위에서 해당 서비스의 스팬만 바로 확인할 수 있습니다.
+
+    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="행 클릭 후 트레이스 source의 검색 페이지가 열리고, 클릭한 서비스로 필터링된 상태" size="lg" />
+  </Step>
+</Steps>
+
+이 방식은 어떤 항목 catalog에도 동일하게 적용할 수 있습니다. 테이블을 `ServiceName` 대신 작업(`SpanName`) 또는 endpoint 속성으로 그룹화한 뒤, 해당 컬럼을 기준으로 필터 템플릿을 설정하면 각 행을 클릭할 때마다 해당 작업 또는 endpoint의 이벤트가 열립니다. 맵 속성에 대한 group-by는 [Validation and limitations](#validation)의 alias 참고 사항을 확인하십시오.
+
+<div id="set-up">
+  ## 행 클릭 동작 설정
+</div>
+
+행 클릭 동작은 별도 페이지가 아니라 테이블 타일 자체에서 구성합니다. 타일을 추가하거나 편집한 다음 시각화 유형을 **Table**로 설정하십시오. 그러면 편집기 도구 모음에서 **Display Settings** 옆에 **Row Click Action** 버튼이 표시됩니다. 이 버튼은 테이블 타일에만 표시되며, 레이블에는 현재 작업이 반영됩니다: `Row Click Action: Default`, `Row Click Action: 검색`, 또는 `Row Click Action: Dashboard`. 이 버튼을 클릭하면 드로어가 열립니다.
+
+<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Dashboard 모드의 Row Click Action 드로어. 대상으로 Service Detail 대시보드가 선택되어 있고, 클릭한 행에서 템플릿화된 ServiceName 필터가 설정된 모습" size="lg" />
+
+이 드로어에서는 3가지 작업을 제공합니다:
+
+* **Default**: 기본 제공 동작입니다. 행을 클릭하면 해당 행의 group-by 컬럼 값과 선택한 시간 범위로 필터링된 검색 페이지가 열립니다. 사용자 지정 작업을 설정하지 않았을 때 적용되는 동작입니다.
+* **검색**: 클릭을 선택한 source의 검색 페이지로 보냅니다.
+* **Dashboard**: 클릭을 팀이 소유한 다른 대시보드로 보냅니다.
+
+**검색**와 **Dashboard**에서는 클릭이 이동할 위치를 선택하고, 함께 전달할 필터를 템플릿으로 지정합니다:
+
+* **Destination**: 특정 source 또는 대시보드를 선택하거나, **Template**를 선택한 뒤 [Handlebars](https://handlebarsjs.com/) 템플릿을 입력해 사용 가능한 source 또는 대시보드 이름에 맞추십시오. 특정 대상을 선택하면 해당 대상이 ID로 고정됩니다. 단일 고정 대상에는 이 방법을 권장합니다. 이름이 바뀌어도 유지되고, 대시보드를 내보내거나 가져온 뒤에도 유지되며, 대시보드의 경우 대상에 선언된 필터도 미리 채워집니다. 행마다 대상이 달라져야 한다면 **Template**를 사용하고, 행 컬럼을 참조해 대상을 선택하십시오(예: `Errors-{{ServiceName}}`).
+* **Filters**: **Add filter**를 클릭한 다음 **Expression**(대상의 컬럼 또는 표현식, 예: `ServiceName`)과 해당 값에 대한 **Template**(예: `{{ServiceName}}`)를 입력하십시오. 템플릿은 `{{columnName}}` 형식으로 클릭한 행의 컬럼을 참조합니다(사용 가능한 컬럼은 아래 참고). 각 필터는 대상에서 `expression IN (value)` 조건으로 렌더링되며, 같은 표현식을 공유하는 필터는 머지됩니다. 대상이 대시보드인 경우, 해당 대시보드에 이미 선언된 각 필터마다 비어 있는 필터 1개가 드로어에 미리 채워지므로 템플릿만 입력하면 됩니다.
+* **WHERE** (선택 사항): 위의 개별 필터 조건에 더해 대상의 전역 필터로 렌더링되는 Handlebars 템플릿입니다. 대상이 이를 구문 분석할 수 있도록 쿼리 언어를 SQL 또는 Lucene으로 설정하십시오. 예를 들어 SQL 템플릿 `ServiceName = '{{ServiceName}}'`은 대상을 클릭한 행의 서비스로 범위를 제한합니다.
+
+<Info>
+  **템플릿은 테이블의 컬럼을 참조합니다**
+
+  `{{...}}` 템플릿은 테이블 타일 자체의 컬럼, 즉 group-by 컬럼과 각 series를 이름 또는 alias 기준으로, 테이블에 표시된 그대로 해석합니다. 테이블이 선택하지 않은 기본 source의 컬럼은 참조할 수 없습니다. 클릭을 통해 값을 전달하려면 그 값이 테이블의 컬럼이어야 하므로, `{{ServiceName}}`은 `ServiceName`이 테이블의 group-by 컬럼이기 때문에 동작하며, alias가 지정된 컬럼은 해당 alias로 참조합니다. 테이블에 없는 이름을 참조하면 클릭이 실패하고 `Row has no column '<name>'`가 표시됩니다.
+</Info>
+
+**Apply**를 클릭해 템플릿을 검증하십시오(ClickStack은 구문이 잘못된 템플릿을 보고합니다). 그런 다음 작업을 유지하려면 대시보드를 저장하십시오.
+
+<div id="how-it-resolves">
+  ## 대상과 필터가 결정되는 방식
+</div>
+
+뷰어가 행을 클릭하면 ClickStack은 해당 행을 기준으로 작업 대상을 결정합니다.
+
+* **대상.** 특정 source 또는 대시보드를 선택하면 ID로 고정됩니다. **Template** 대상은 클릭한 행을 기준으로 렌더링된 후, 팀의 source 또는 대시보드와 이름으로 매칭됩니다. 정상적으로 결정되려면 이름이 고유해야 합니다. 두 개의 source 또는 두 개의 대시보드가 동일한 렌더링 이름을 공유하면 링크를 그중 하나로 결정할 수 없습니다. 렌더링된 이름이 비어 있거나 일치하는 이름이 없는 경우에도 결정에 실패합니다.
+* **필터.** 각 필터 템플릿은 행을 기준으로 렌더링되어 대상에서 `expression IN (value)` 조건이 됩니다. `검색` 작업은 선택한 source 범위로 한정된 `/search`를 열고, `Dashboard` 작업은 해당 대시보드를 엽니다. 클릭한 행의 시간 범위는 두 경우 모두 그대로 유지됩니다.
+
+<Info>
+  **대시보드 대상에는 일치하는 필터 선언이 필요합니다**
+
+  대시보드로 전달된 필터는 대상 대시보드에 필터의 **Expression**과 일치하는 표현식을 가진 최상위 [custom filter](/ko/clickstack/features/dashboards/overview#custom-filters)가 선언되어 있을 때만 적용됩니다. 선언된 필터와 일치하지 않으면 해당 값은 클릭 시점에 삭제되며, 대상은 그 표현식에 대해 필터링되지 않은 상태로 열립니다. 이것이 대시보드 모드에서 대상의 선언된 필터를 미리 채워 넣는 이유입니다. 표현식이 일치하면 대상 드롭다운이 클릭한 행의 값으로 자동 채워집니다.
+</Info>
+
+<div id="validation">
+  ## 검증 및 제한 사항
+</div>
+
+* **테이블 타일에만 적용됩니다.** **Row Click Action** 버튼은 chart-builder 테이블과 [SQL 기반](/ko/clickstack/features/dashboards/sql-visualizations) 테이블을 포함한 테이블 타일에만 표시됩니다. 다른 타일 유형에는 행 클릭 작업이 없습니다.
+* **검색 대상은 log 또는 trace source여야 합니다.** 메트릭 및 session source는 검색 페이지에서 볼 수 없으므로 제공되지 않습니다.
+* **Template 이름은 고유해야 합니다.** template target은 이름으로 확인되므로, 이름이 같은 두 source 또는 두 dashboard는 template target으로 사용할 수 없습니다.
+* **Dashboard 대상에는 일치하는 선언된 filter가 필요합니다.** 그래야 전달된 값이 적용됩니다(위의 참고 사항 참조).
+* **표현식 group-by 컬럼에는 alias가 필요합니다.** `SpanAttributes['http.route']`와 같은 맵 속성에 대해 표현식으로 group-by를 수행하면 결과 컬럼의 이름이 원시 표현식 그대로 생성되므로 template에서 참조하기가 불편합니다. chart builder에서 컬럼에 alias를 지정하십시오. **Group By** 입력에서 표현식 뒤에 `AS <alias>`를 추가하고(예: `SpanAttributes['http.route'] AS Route`), template에서 `{{Route}}`를 참조하십시오. 집계된 series도 같은 방식으로 **Alias** 필드의 alias를 사용합니다. `ServiceName`과 같은 일반 컬럼에 대한 group-by는 이미 이름이 명확하므로 alias가 필요하지 않습니다.

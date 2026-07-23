@@ -1,0 +1,75 @@
+---
+sidebarTitle: 'アーキテクチャ'
+slug: /cloud/reference/architecture
+title: 'ClickHouse Cloudのアーキテクチャ'
+description: 'このページでは、ClickHouse Cloudのアーキテクチャについて説明します'
+keywords: ['ClickHouse Cloud', 'クラウドアーキテクチャ', 'ストレージとコンピュートの分離']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Cloud のアーキテクチャ" />
+
+<div id="storage-backed-by-object-store">
+  ## オブジェクトストアをバックエンドとするストレージ
+</div>
+
+* 事実上無制限のストレージ
+* データを手動で分片する必要がない
+* データの保存コストを大幅に抑えられ、特にアクセス頻度の低いデータに適しています
+
+<div id="compute">
+  ## コンピュート
+</div>
+
+* 自動スケーリングとアイドル化: 事前にサイジングする必要がなく、ピーク時の利用に備えて過剰にプロビジョニングする必要もありません
+* 自動アイドル化と再開: 誰も利用していない間、使われていないコンピュートを稼働させておく必要はありません
+* デフォルトでセキュアかつ高可用性を確保
+
+<div id="administration">
+  ## 管理
+</div>
+
+* セットアップ、監視、バックアップ、請求は当社が行います。
+* コスト管理機能はデフォルトで有効になっており、Cloud Console から調整できます。
+
+<div id="service-isolation">
+  ## サービス分離
+</div>
+
+<div id="network-isolation">
+  ### ネットワーク分離
+</div>
+
+すべてのサービスは、ネットワークレイヤーで分離されています。
+
+<div id="compute-isolation">
+  ### コンピュート分離
+</div>
+
+すべてのサービスは、それぞれの Kubernetes 名前空間内の別々のポッドにデプロイされ、ネットワークレベルで分離されています。
+
+<div id="storage-isolation">
+  ### ストレージ分離
+</div>
+
+すべてのサービスは、共有バケット (AWS、GCP) またはストレージコンテナー (Azure) 内の個別のサブパスを使用します。
+
+AWS では、ストレージへのアクセスは AWS IAM によって制御され、各 IAMロールはサービスごとに固有です。Enterprise サービスでは、保存データの高度な分離を実現するために [CMEK](/ja/products/cloud/guides/security/cmek) を有効にできます。現時点で CMEK がサポートされているのは AWS サービスのみです。
+
+GCP と Azure では、サービスごとにオブジェクトストレージレベルで分離されます (すべてのサービスがそれぞれ専用のバケットまたはストレージコンテナーを持ちます) 。
+
+<div id="compute-compute-separation">
+  ## Compute-compute separation
+</div>
+
+[Compute-compute separation](/ja/products/cloud/features/infrastructure/warehouses) を使用すると、共有のオブジェクトストレージを利用しながら、それぞれが独自のサービスURLを持つ複数のコンピュートノードグループを作成できます。これにより、同じデータを共有したまま、書き込みと読み取りのように異なるユースケースごとにコンピュートを分離できます。また、必要に応じて各コンピュートグループを個別にスケーリングできるため、リソースの利用効率も向上します。
+
+<div id="concurrency-limits">
+  ## 同時実行数の制限
+</div>
+
+ClickHouse Cloud サービスでは、1 秒あたりのクエリ数 (QPS) に制限はありません。ただし、レプリカごとの同時実行クエリ数には 1000 件という上限があります。QPS は、最終的には平均クエリ実行時間とサービス内のレプリカ数によって決まります。
+
+セルフマネージドの ClickHouse インスタンスや他のデータベース／データウェアハウスと比べた場合の ClickHouse Cloud の大きな利点の 1 つは、[レプリカを追加する (水平スケーリング) ](/ja/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)ことで同時実行性を簡単に高められる点です。

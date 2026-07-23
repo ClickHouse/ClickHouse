@@ -1,0 +1,334 @@
+---
+description: 'ClickHouse のサンプリングクエリプロファイラツールに関するドキュメント'
+sidebarTitle: 'クエリプロファイリング'
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: 'サンプリングクエリプロファイラ'
+doc_type: 'reference'
+---
+
+ClickHouse では、クエリ実行を分析するためのサンプリングプロファイラが動作します。
+このプロファイラを使用すると、クエリ実行中に最も高頻度で使われているソースコード上のルーチンを特定できます。
+アイドル時間を含む CPU 時間と実時間を追跡できます。
+
+ClickHouse Cloud では、クエリプロファイラは自動的に有効になります。
+次のクエリ例では、関数名とソースコード上の位置を解決したうえで、プロファイル対象のクエリで最も頻出するスタックトレースを特定します。
+
+<Tip>
+  `query_id` の値は、プロファイルしたいクエリの ID に置き換えてください。
+</Tip>
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud では、クエリ結果テーブルの上にあるバーの右端 (テーブル/チャート切り替えの横) の **&quot;...&quot;** をクリックすると、クエリ ID を取得できます。コンテキストメニューが開くので、**&quot;Copy query ID&quot;** をクリックしてください。
+
+    クラスター内のすべてのノードから選択するには、`clusterAllReplicas(default, system.trace_log)` を使用します。
+
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM clusterAllReplicas(default, system.trace_log)
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+</Tabs>
+
+<div id="self-managed-query-profiler">
+  ## セルフマネージド環境でクエリプロファイラを使用する
+</div>
+
+セルフマネージド環境でクエリプロファイラを使用するには、以下の手順に従ってください。
+
+<Steps>
+  <Step>
+    ### デバッグ情報付きの ClickHouse をインストールする
+
+    `clickhouse-common-static-dbg` パッケージをインストールします。
+
+    1. 手順「[Debian リポジトリをセットアップする](/ja/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)」の説明に従います
+    2. `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg` を実行して、デバッグ情報付きでコンパイルされた ClickHouse のバイナリをインストールします
+    3. `sudo service clickhouse-server start` を実行してサーバーを起動します
+    4. `clickhouse-client` を実行します。`clickhouse-common-static-dbg` のデバッグシンボルはサーバーで自動的に使用されるため、有効化のために特別な操作は必要ありません
+  </Step>
+
+  <Step>
+    ### サーバー設定を確認する
+
+    [サーバー設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)の [`trace_log`](/ja/reference/settings/server-settings/settings#trace_log) セクションが設定されていることを確認してください。これはデフォルトで有効です。
+
+    ```xml
+    <!-- トレースログ。クエリプロファイラによって収集されたスタックトレースを保存します。
+         query_profiler_real_time_period_ns および query_profiler_cpu_time_period_ns 設定を参照してください。 -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- クラッシュ時にログをディスクへダンプするかどうかを示します -->
+        <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
+    </trace_log>
+    ```
+
+    このセクションでは、プロファイラの動作結果を含む [trace&#95;log](/ja/reference/system-tables/trace_log) システムテーブルを設定します。
+    このテーブル内のデータは、サーバーの稼働中にのみ有効である点に注意してください。
+    サーバーを再起動しても ClickHouse はこのテーブルをクリーンアップしないため、保存されている仮想メモリアドレスはすべて無効になる可能性があります。
+  </Step>
+
+  <Step>
+    ### プロファイラのタイマーを設定する
+
+    [`query_profiler_cpu_time_period_ns`](/ja/reference/settings/session-settings#query_profiler_cpu_time_period_ns) または [`query_profiler_real_time_period_ns`](/ja/reference/settings/session-settings#query_profiler_real_time_period_ns) を設定します。
+    これら 2 つの設定は同時に使用できます。
+
+    これらの設定により、プロファイラのタイマーを構成できます。
+    これらはセッション設定であるため、サーバー全体、個々のユーザーやユーザープロファイル、対話セッション、さらには個々のクエリごとに異なるサンプリング頻度を設定できます。
+
+    デフォルトのサンプリング頻度は 1 秒あたり 1 サンプルで、CPU タイマーと実時間タイマーの両方が有効になっています。
+    この頻度であれば、サーバーのパフォーマンスに影響を与えずに、ClickHouse クラスターに関する十分な情報を収集できます。
+    個々のクエリごとにプロファイルを取得する必要がある場合は、より高いサンプリング頻度を使用してください。
+  </Step>
+
+  <Step>
+    ### `trace_log` システムテーブルを分析する
+
+    `trace_log` システムテーブルを分析するには、[`allow_introspection_functions`](/ja/reference/settings/session-settings#allow_introspection_functions) 設定で イントロスペクション関数 を有効にします。
+
+    ```sql
+    SET allow_introspection_functions=1
+    ```
+
+    <Note>
+      セキュリティ上の理由により、イントロスペクション関数はデフォルトで無効になっています
+    </Note>
+
+    `addressToLine`、`addressToLineWithInlines`、`addressToSymbol`、`demangle` の [イントロスペクション関数](/ja/reference/functions/regular-functions/introspection) を使用すると、関数名と ClickHouse コード内での位置を取得できます。
+    特定のクエリのプロファイルを取得するには、`trace_log` テーブルのデータを集計する必要があります。
+    データは個々の関数単位でも、スタックトレース全体単位でも集計できます。
+
+    <Tip>
+      `trace_log` の情報を可視化する必要がある場合は、[フレームグラフ](/ja/integrations/connectors/tools/gui#clickhouse-flamegraph) と [speedscope](https://www.speedscope.app) を試してください。
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="flamegraph">
+  ## `flameGraph` 関数でフレームグラフを生成する
+</div>
+
+ClickHouse には、`trace_log` に保存されたスタックトレースから直接フレームグラフを生成する集約関数 [`flameGraph`](/ja/reference/functions/aggregate-functions/flame_graph) があります。
+出力は、[flamegraph.pl](https://github.com/brendangregg/FlameGraph) と互換性のあるフォーマットの文字列配列です。
+
+**構文:**
+
+```sql
+flameGraph(traces, [size = 1], [ptr = 0])
+```
+
+**引数:**
+
+* `traces` — スタックトレース。[`Array(UInt64)`](/ja/reference/data-types/array)。
+* `size` — メモリプロファイリングにおける割り当てサイズ。[`Int64`](/ja/reference/data-types/int-uint)。
+* `ptr` — 割り当てアドレス。[`UInt64`](/ja/reference/data-types/int-uint)。
+
+`ptr` が 0 以外の場合、`flameGraph` は同じサイズとポインタを持つ割り当て (`size > 0`) と解放 (`size < 0`) を対応付けます。
+表示されるのは、解放されていない割り当てだけです。
+対応する割り当てがない解放は無視されます。
+
+<div id="cpu-flame-graph">
+  ### CPU フレームグラフ
+</div>
+
+<Note>
+  以下のクエリを実行するには、[flamegraph.pl](https://github.com/brendangregg/FlameGraph) がインストールされている必要があります。
+
+  次のコマンドでインストールできます。
+
+  ```bash
+  git clone https://github.com/brendangregg/FlameGraph
+  # 次のように使用します:
+  # ~/FlameGraph/flamegraph.pl
+  ```
+
+  以下のクエリでは、`flamegraph.pl` を、お使いのマシン上で `flamegraph.pl` が配置されているパスに置き換えてください
+</Note>
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+```
+
+クエリを実行してから、フレームグラフを作成します。
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(arrayReverse(trace)))
+        FROM system.trace_log
+        WHERE trace_type = 'CPU' AND query_id = '<query_id>'" \
+    | flamegraph.pl > flame_cpu.svg
+```
+
+<div id="memory-flame-graph-all">
+  ### メモリフレームグラフ — 全割り当て
+</div>
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+クエリを実行し、フレームグラフを生成します:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+<div id="memory-flame-graph-unfreed">
+  ### メモリ フレームグラフ — 未解放の割り当て
+</div>
+
+この種類では、ポインタを基準に割り当てと解放を照合し、クエリ中に解放されなかったメモリのみを表示します。
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1,
+    use_uncompressed_cache = 1,
+    merge_tree_max_rows_to_use_cache = 100000000000,
+    merge_tree_max_bytes_to_use_cache = 1000000000000;
+```
+
+フレームグラフを作成するには、以下のクエリを実行します。
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
+```
+
+<div id="memory-flame-graph-time-point">
+  ### メモリフレームグラフ — ある時点でのアクティブなメモリ割り当て
+</div>
+
+この方法を使うと、ピークメモリ使用量を特定し、その時点で何が割り当てられていたかを可視化できます。
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+<div id="find-memory-usage-over-time">
+  #### メモリ使用量の推移を確認する
+</div>
+
+```sql
+SELECT
+    event_time,
+    formatReadableSize(max(s)) AS m
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+)
+GROUP BY event_time
+ORDER BY event_time;
+```
+
+<div id="find-time-point-maximum-memory-usage">
+  #### メモリ使用量が最大となる時点を特定する
+</div>
+
+```sql
+SELECT
+    argMax(event_time, s),
+    max(s)
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+);
+```
+
+<div id="build-flame-graph">
+  #### その時点でアクティブな割り当てのフレームグラフを作成する
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time <= '<time_point>'
+            ORDER BY event_time
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+```
+
+<div id="build-flame-graph-deallocations">
+  #### その時点以降の解放処理のフレームグラフを作成する (後から何が解放されたのかを把握するため)
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, -size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time > '<time_point>'
+            ORDER BY event_time DESC
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+
+<div id="example">
+  ## 例
+</div>
+
+以下のコードスニペットでは、次の処理を行います。
+
+* `trace_log` データを、クエリ識別子と当日の日付で絞り込みます。
+* スタックトレースごとに集計します。
+* イントロスペクション関数を使用して、次の内容を含むレポートを取得します。
+  * シンボル名と、それに対応するソースコード関数名。
+  * それらの関数のソースコード上の位置。
+
+```sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = '<query_id>') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+```

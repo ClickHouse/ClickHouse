@@ -67,6 +67,8 @@ String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & a
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// script_line_number
     writeBinary(static_cast<UInt8>(0), buf);                   /// have_jwt = no (>= 54476)
     writeBinary(String(""), buf);                              /// client_agent (>= 54485)
+    writeBinary(false, buf);                                   /// is_internal (>= 54486)
+    writeBinary(static_cast<UInt8>(0), buf);                   /// have_current_roles = no (>= 54488)
     buf.finalize();
     return buf.str();
 }
@@ -216,4 +218,42 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTripsSecondaryQuery)
         ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION)) << "address: " << good;
         EXPECT_EQ(info.initial_address->toString(), good);
     }
+}
+
+/// `current_roles` is tri-state: nullopt = not sent (remote keeps defaults), empty = SET ROLE NONE (remote
+/// drops defaults), non-empty = active roles. Empty must round-trip as empty, not collapse to nullopt.
+TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
+{
+    auto round_trip = [](const std::optional<std::vector<String>> & roles)
+    {
+        ClientInfo out;
+        out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        out.initial_user = "default";
+        out.initial_query_id = "query-id";
+        out.initial_address = std::make_shared<Poco::Net::SocketAddress>("127.0.0.1:9000");
+        out.interface = ClientInfo::Interface::TCP;
+        out.current_roles = roles;
+
+        WriteBufferFromOwnString buf;
+        out.write(buf, DBMS_TCP_PROTOCOL_VERSION);
+        buf.finalize();
+
+        ClientInfo in_info;
+        ReadBufferFromString in(buf.str());
+        in_info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+        return in_info.current_roles;
+    };
+
+    /// Not sent stays not sent.
+    EXPECT_FALSE(round_trip(std::nullopt).has_value());
+
+    /// SET ROLE NONE: empty-but-present survives as an empty list, not nullopt.
+    auto none = round_trip(std::vector<String>{});
+    ASSERT_TRUE(none.has_value());
+    EXPECT_TRUE(none->empty());
+
+    /// Active roles round-trip verbatim.
+    auto some = round_trip(std::vector<String>{"role_a", "role_b"});
+    ASSERT_TRUE(some.has_value());
+    EXPECT_EQ(*some, (std::vector<String>{"role_a", "role_b"}));
 }

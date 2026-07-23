@@ -1,0 +1,134 @@
+---
+alias: []
+description: 'HiveText フォーマットに関するドキュメント'
+input_format: true
+keywords: ['HiveText']
+output_format: false
+slug: /interfaces/formats/HiveText
+title: 'HiveText'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✗  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+`HiveText` は、[Apache Hive](https://hive.apache.org/)
+のテーブルで使われるテキストシリアライゼーションフォーマット (Hive の `LazySimpleSerDe` が生成するフォーマット) を読み取ります。これは [`CSV`](/ja/reference/formats/CSV/CSV) に似た区切り付きテキスト
+フォーマットで、フィールドは Hive のデフォルトの区切り文字 `\x01` (Ctrl-A) で
+区切られます。フィールドの区切り文字は
+[`input_format_hive_text_fields_delimiter`](#format-settings) で設定できます。
+
+`HiveText` は入力専用のフォーマットです。データにはヘッダー行がありません。値は宛先テーブルのカラムに位置に基づいて
+対応付けられるため、カラム名と型はデータから推論されるのではなく、テーブル (または明示的に指定された
+構造) から取得されます。読み取り時、ClickHouse は
+日付と時刻を best-effort モードでパースし ([`date_time_input_format`](/ja/reference/settings/formats#date_time_input_format) を参照) 、
+末尾の省略されたフィールドをカラムのデフォルト値で補完し、認識できないフィールドは
+スキップします。
+
+フィールド内では、値は Hive のネストされた区切り文字ではなく、`CSV` と同じエスケープ規則を使って
+パースされます。特に、
+型 [`Array`](/ja/reference/data-types/array) のカラムは角括弧付きの
+表現 (たとえば `"['a','b','c']"`) から読み取られ、
+Hive のコレクション区切り文字 `\x02` で区切られた値からは読み取られません。
+
+<Info>
+  **ネストされた区切り文字の設定は効果がありません**
+
+  [`input_format_hive_text_collection_items_delimiter`](#format-settings) および
+  [`input_format_hive_text_map_keys_delimiter`](#format-settings) の設定は
+  互換性のために受け付けられますが、現時点ではパース時に使用されません。
+</Info>
+
+デフォルトでは、行ごとにフィールド数が可変であることが許可されています (
+[`input_format_hive_text_allow_variable_number_of_columns`](#format-settings) を参照) 。
+テーブルよりフィールド数が少ない行では、不足しているカラムがデフォルト値で補完され、
+余分な末尾フィールドがある行では、その余分なフィールドはスキップされます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+以下の例では、入力ファイルを読みやすくするため、[`input_format_hive_text_fields_delimiter`](#format-settings) を使ってデフォルトのフィールド区切り文字をコンマ (`,`) に上書きしています。
+
+<div id="reading-data">
+  ### HiveTextファイルの読み込み
+</div>
+
+カンマ区切りのフィールドを含む `hive_data.txt` ファイルがあるとします。
+
+```text title="hive_data.txt"
+1,3
+3,5,9
+```
+
+カラム名と型を定義したテーブルを作成し、`FORMAT HiveText` を使ってそのテーブルにファイルの内容を挿入します:
+
+```sql title="Query"
+CREATE TABLE test_tbl (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_tbl FROM INFILE 'hive_data.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_tbl;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 3 │ 0 │
+│ 3 │ 5 │ 9 │
+└───┴───┴───┘
+```
+
+最初の行 `1,3` には 2 つのフィールドしかないため、不足しているカラム `c`
+にはデフォルト値 `0` が設定されます。
+
+<div id="variable-number-of-columns">
+  ### 可変数のカラム
+</div>
+
+デフォルトの `input_format_hive_text_allow_variable_number_of_columns = 1` では、
+テーブルのカラム数より多くのフィールドを持つ行では、末尾の余分なフィールドは
+そのままスキップされます:
+
+```text title="hive_extras.txt"
+1,2,3,4,5
+6,7,8
+```
+
+```sql title="Query"
+CREATE TABLE test_extras (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_extras FROM INFILE 'hive_extras.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_extras ORDER BY a;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 2 │ 3 │
+│ 6 │ 7 │ 8 │
+└───┴───┴───┘
+```
+
+代わりに `input_format_hive_text_allow_variable_number_of_columns = 0` を設定すると、
+フィールド数が厳密にチェックされ、テーブルのフィールド数より少ない行があると
+パース時に例外が発生します。
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+| Setting                                                   | Description                                                                 | Default |
+| --------------------------------------------------------- | --------------------------------------------------------------------------- | ------- |
+| `input_format_hive_text_fields_delimiter`                 | Hive テキストファイル内のフィールド間の区切り文字                                                 | `\x01`  |
+| `input_format_hive_text_collection_items_delimiter`       | Hive テキストファイル内のコレクション (array または map) の項目間の区切り文字。指定できますが、現時点ではパース時に使用されません。 | `\x02`  |
+| `input_format_hive_text_map_keys_delimiter`               | Hive テキストファイル内の map のキーと値のペア間の区切り文字。指定できますが、現時点ではパース時に使用されません。              | `\x03`  |
+| `input_format_hive_text_allow_variable_number_of_columns` | Hive Text 入力で余分なカラムを無視し (ファイルのカラム数が想定より多い場合) 、不足しているフィールドはデフォルト値として扱います     | `1`     |

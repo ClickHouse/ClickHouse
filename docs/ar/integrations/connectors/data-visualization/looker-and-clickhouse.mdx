@@ -1,0 +1,79 @@
+---
+sidebarTitle: 'Looker'
+slug: /integrations/looker
+keywords: ['ClickHouse', 'Looker', 'الاتصال', 'التكامل', 'UI']
+description: 'Looker هي منصة مؤسسية لذكاء الأعمال (BI) وتطبيقات البيانات والتحليلات المضمّنة، وتساعدك على استكشاف الرؤى ومشاركتها في الوقت الفعلي.'
+title: 'Looker'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+يمكن لـ Looker الاتصال بـ ClickHouse Cloud أو بنشر داخل البنية التحتية المحلية عبر مصدر بيانات ClickHouse الرسمي.
+
+<div id="1-gather-your-connection-details">
+  ## 1. اجمع تفاصيل الاتصال الخاصة بك
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-data-source">
+  ## 2. أنشئ مصدر بيانات ClickHouse
+</div>
+
+انتقل إلى Admin -&gt; Database -&gt; Connections وانقر على زر &quot;Add Connection&quot; في الزاوية العلوية اليمنى.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="إضافة اتصال جديد في واجهة Looker لإدارة قواعد البيانات" border />
+
+<br />
+
+اختر اسمًا لمصدر البيانات، وحدد `ClickHouse` من القائمة المنسدلة الخاصة بلهجة SQL. ثم أدخل بيانات الاعتماد في النموذج.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="تحديد بيانات اعتماد ClickHouse في نموذج اتصال Looker" border />
+
+<br />
+
+إذا كنت تستخدم ClickHouse Cloud أو كان إعداد النشر لديك يتطلب SSL، فتأكد من تمكين SSL ضمن الإعدادات الإضافية.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="تمكين SSL لاتصال ClickHouse في إعدادات Looker" border />
+
+<br />
+
+اختبر الاتصال أولًا، ثم بعد اكتمال الاختبار اتصل بمصدر بيانات ClickHouse الجديد.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="اختبار الاتصال والاتصال بمصدر بيانات ClickHouse" border />
+
+<br />
+
+يمكنك الآن ربط مصدر بيانات ClickHouse بمشروع Looker الخاص بك.
+
+<div id="3-known-limitations">
+  ## 3. القيود المعروفة
+</div>
+
+1. تُعامَل أنواع البيانات التالية كسلاسل نصية افتراضيًا:
+   * Array - لا يعمل التسلسل كما هو متوقع بسبب قيود JDBC مشغّل
+   * Decimal* - يمكن تغييره إلى number في النموذج
+   * LowCardinality(...) - يمكن تغييره إلى نوع مناسب في النموذج
+   * Enum8, Enum16
+   * UUID
+   * Tuple
+   * Map
+   * JSON
+   * Nested
+   * FixedString
+   * أنواع Geo
+     * MultiPolygon
+     * Polygon
+     * Point
+     * Ring
+2. [ميزة التجميع المتماثل](https://cloud.google.com/looker/docs/reference/param-explore-symmetric-aggregates) غير مدعومة
+3. [الربط الخارجي الكامل](https://cloud.google.com/looker/docs/reference/param-explore-join-type#full_outer) غير مُنفَّذ بعد في المشغّل

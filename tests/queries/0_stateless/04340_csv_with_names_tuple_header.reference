@@ -1,0 +1,62 @@
+-- CSVWithNames: header flattened to match data (default)
+"User.ID","User.Name","Network.ID","Network.Name"
+123,"Sophia",1,"Net1"
+-- CSVWithNamesAndTypes: names and types rows both flattened (default)
+"User.ID","User.Name"
+"UInt64","String"
+1,"a"
+-- opt-out: keep the single top-level tuple name and type
+"User"
+"Tuple(ID UInt64, Name String)"
+1,"a"
+-- not flattened when values are not flattened either
+"User"
+"(1,'a')"
+-- nested tuples: recursive dotted names
+"T.A.X","T.A.Y.P","T.A.Y.Q","T.B"
+1,2,3,"b"
+-- unnamed tuple: positional element names
+"U.1","U.2"
+1,"a"
+-- mixed plain and tuple columns
+"x","U.ID","U.Name","y"
+5,1,"a","z"
+-- no tuples: header unchanged
+"a","b"
+1,"x"
+-- empty tuple in a mixed row: still occupies one field, header keeps one cell
+"x","t","y"
+"UInt8","Tuple()","UInt8"
+1,,2
+-- non-null Nullable(Tuple(...)): value flattens, so the header flattens the inner tuple too
+"User.ID","User.Name"
+"UInt64","String"
+1,"a"
+-- scalar Nullable column: stays one cell with the full Nullable type name
+"n","s"
+"Nullable(UInt64)","String"
+1,"x"
+-- CustomSeparatedWithNames, CSV rule, comma field delimiter: header flattened (delimiters match)
+"x","User.ID","User.Name"
+5,1,"a"
+-- CustomSeparatedWithNamesAndTypes, CSV rule, comma field delimiter: names and types flattened
+"User.ID","User.Name"
+"UInt64","String"
+1,"a"
+-- CustomSeparatedWithNames, CSV rule, non-comma (|) field delimiter: header NOT flattened (matches one-field tuple value)
+"x"|"User"
+5|1,"a"
+-- CustomSeparatedWithNames, CSV rule, default tab field delimiter: header NOT flattened
+"x"	"User"
+5	1,"a"
+-- CustomSeparatedWithNames with non-CSV escaping rule: header not flattened
+'User'
+(1,'a')
+-- round-trip: opt-out single-name header reads back by name
+(1,'a')
+-- round-trip: flattened header reads back positionally (use_header = 0)
+(1,'a')
+-- round-trip: CSVWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)
+(1,'a')
+-- round-trip: CustomSeparatedWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)
+(1,'a')

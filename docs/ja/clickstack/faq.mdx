@@ -1,0 +1,91 @@
+---
+slug: /use-cases/observability/clickstack/faq
+title: 'ClickStack よくある質問'
+sidebarTitle: 'よくある質問'
+description: 'ClickStack のアラート、ダッシュボード、ドリルダウン、メトリクス検出に関するよくある質問。'
+doc_type: 'guide'
+keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボード', 'ドリルダウン', 'メトリクス検出']
+---
+
+このページでは、アラート、ダッシュボードとドリルダウン、メトリクス検出など、ClickStack の機能に関するよくある質問にお答えします。
+
+<div id="alerting">
+  ## アラート
+</div>
+
+<Accordion title="ClickStack ではどの種類のアラートをサポートしていますか？">
+  ClickStack は 2 種類のアラートをサポートしています。
+
+  * [検索アラート](/ja/clickstack/features/alerts#search-alerts): 一定時間内に一致したログまたはトレースの件数がしきい値を上回る、または下回ると通知を送信します。
+  * [ダッシュボードチャートアラート](/ja/clickstack/features/alerts#dashboard-alerts): ダッシュボードタイルにプロットされたメトリクスが定義したしきい値を超えると通知を送信します。
+
+  どちらのアラートタイプも、静的なしきい値条件を使用します。詳細については、[アラート](/ja/clickstack/features/alerts) を参照してください。
+</Accordion>
+
+<Accordion title="比率、p95/p99、複数メトリクスの数式など、複雑なメトリクス条件に対してアラートを設定できますか？">
+  2 つのメトリクスの比率、p95、p99 の値は、[チャートビルダー](/ja/clickstack/features/dashboards/overview#navigate-chart-explorer) UI を使ってダッシュボードタイルにプロットできます。続いて、それらのタイルにしきい値ベースのアラートを作成できます。
+
+  ただし、現時点で ClickStack は以下をサポートしていません。
+
+  * メトリクス向けのカスタム SQL クエリに対するアラート。
+  * 複数条件または複数メトリクスのアラートルールを 1 つのアラートにまとめること。
+  * 動的なアラート条件や異常検知ベースのアラート条件 (異常検知は今後対応予定です)。
+
+  複雑なメトリクスに対してアラートを設定する必要がある場合は、まず可視化をダッシュボードチャートとして作成し、そのチャートにしきい値アラートを追加する方法を推奨します。
+</Accordion>
+
+<Accordion title="アラート用途で materialized view を使用できますか？">
+  materialized view は、該当する場合、ClickStack のアラートで自動的に使用されます。ただし、現時点では OpenTelemetry のメトリクスデータソースで materialized view はサポートされていません。メトリクスについては、ClickStack はデフォルトの [ClickHouse OpenTelemetry metrics schema](/ja/clickstack/ingesting-data/schemas) で最も適切に動作します。materialized view の詳細については、[Materialized views](/ja/clickstack/managing/materialized-views) を参照してください。
+</Accordion>
+
+<div id="dashboards-and-drill-downs">
+  ## ダッシュボードとドリルダウン
+</div>
+
+<Accordion title="ClickStack はパラメータ化されたダッシュボードやダッシュボード変数をサポートしていますか？">
+  ClickStack は、ClickHouse からクエリしたデータで値が設定される、ダッシュボード上のカスタムドロップダウンフィルターをサポートしています。これらのフィルターを使うと、ダッシュボード上のすべてのタイルを特定の値 (たとえば、サービス名、環境、ホスト) に動的に絞り込めます。
+
+  ClickStack は現在、Grafana のテンプレート変数のような再利用可能なダッシュボード変数には対応していません。ClickStack はデータソースとして ClickHouse のみを使用するため、変数の抽象化レイヤーを用意しなくても、ドリルダウンやフィルタリングの機能をネイティブに提供できます。
+
+  ダッシュボードの作成方法やフィルターの適用方法について詳しくは、[ダッシュボード](/ja/clickstack/features/dashboards/overview) を参照してください。
+</Accordion>
+
+<Accordion title="どのようなドリルダウン機能が利用できますか？">
+  ClickStack は、次のドリルダウンワークフローをサポートしています。
+
+  * [ダッシュボードレベルのフィルタリング](/ja/clickstack/features/dashboards/overview#filter-dashboards): ダッシュボードレベルで適用した Lucene または SQL のフィルターと時間範囲の調整は、すべてのタイルに反映されます。
+  * カスタムダッシュボードフィルター: カスタムダッシュボードでは、データ内の値が設定される明示的なフィルターコントロールをサポートしており、ユーザーは手動でクエリを書かなくても、すべてのタイルを絞り込めます。
+  * クリックしてイベントを表示: ダッシュボードタイル内のデータをクリックして **View Events** を選択すると、ログおよびトレースデータに関連するフィルターが適用された [Search](/ja/clickstack/features/search) ページに移動します。
+  * [テーブルの行クリックによるドリルダウン](/ja/clickstack/features/dashboards/row-click-drilldowns): テーブルタイルは、行をクリックすると Search ページまたは別のダッシュボードが開き、その行の値がフィルターとして引き継がれるよう設定できます。これにより、サービス一覧からサービスごとの詳細ダッシュボードにドリルダウンするといった、多段階のワークフローをサポートできます。
+  * [組み込みダッシュボードのドリルダウン](/ja/clickstack/features/dashboards/overview#presets): [Services](/ja/clickstack/features/dashboards/overview#services-dashboard)、[ClickHouse](/ja/clickstack/features/dashboards/overview#clickhouse-dashboard)、[Kubernetes](/ja/clickstack/features/dashboards/overview#kubernetes-dashboard) の各ダッシュボードには、タブをまたいで移動できる、より充実した組み込みのドリルダウンナビゲーションが含まれています。
+
+  <Note>
+    **View Events** のドリルダウンは、ログおよびトレースのデータで最も効果的に機能します。メトリクスデータは [Search](/ja/clickstack/features/search) ページでは表示できないため、メトリクスタイルからドリルダウンすると、代わりに選択した時間範囲付近のログにリンクされます。
+  </Note>
+</Accordion>
+
+<div id="metrics-discovery">
+  ## メトリクス検出
+</div>
+
+<Accordion title="メトリクスを閲覧・検索するためのUIはありますか？">
+  ![メトリクス属性エクスプローラー](/images/clickstack/faq/metrics-explorer.webp)
+
+  メトリクス名は、[チャートビルダー](/ja/clickstack/features/dashboards/overview#navigate-chart-explorer) のメトリクス名ドロップダウンから確認できます。メトリクスを選択すると、Metric Attribute Explorer パネルに、そのメトリクスの説明、単位、利用可能な属性とその値が表示されます。これにより、属性を参照し、パネルから直接フィルターやグループ化フィールドとして追加できます。
+
+  現時点では、ログ検索のような専用のメトリクス検索ページはありません。メトリクス検出の改善は、現在も積極的に進められている開発分野です。
+</Accordion>
+
+<Accordion title="メトリクスについて、長期的にはSQLベースの検出が想定されていますか？">
+  いいえ。現時点では SQL クエリを使ってメトリクスを検出できますが、これは長期的に想定されている方法ではありません。より優れたメトリクス検出ツールの開発が積極的に進められています。
+</Accordion>
+
+<div id="further-reading">
+  ## 参考資料
+</div>
+
+* [アラート](/ja/clickstack/features/alerts): 検索アラート、ダッシュボードチャートアラート、Webhook インテグレーション。
+* [ダッシュボード](/ja/clickstack/features/dashboards/overview): 可視化の作成、ダッシュボードの構築、フィルターの適用。
+* [検索](/ja/clickstack/features/search): Lucene と SQL 構文を使ったログとトレースのクエリ。
+* [スキーマ](/ja/clickstack/ingesting-data/schemas): ログ、トレース、メトリクス向けの OpenTelemetry データスキーマ。
+* [アーキテクチャ](/ja/clickstack/architecture): ClickStack のコンポーネントと、それらがどのように連携するか。

@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Consejos de conexión'
+slug: /integrations/tableau/connection-tips
+keywords: ['clickhouse', 'tableau', 'en línea', 'mysql', 'conectar', 'integrar', 'ui']
+description: 'Consejos de conexión para Tableau al usar el conector oficial de ClickHouse.'
+title: 'Consejos de conexión'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="initial-sql-tab">
+  ## Pestaña Initial SQL
+</div>
+
+Si la casilla *Set Session ID* está activada en la pestaña Advanced (de forma predeterminada), puede establecer [ajustes](/es/reference/settings/session-settings) a nivel de sesión usando
+
+```text
+SET my_setting=value;
+```
+
+<div id="advanced-tab">
+  ## Pestaña Advanced
+</div>
+
+En el 99 % de los casos no necesitas la pestaña Advanced; para el 1 % restante, puedes usar la siguiente configuración:
+
+* **Parámetros de conexión personalizados**. De forma predeterminada, `socket_timeout` ya está especificado; puede ser necesario cambiar este parámetro si algunas extracciones tardan mucho en actualizarse. El valor de este parámetro se especifica en milisegundos. El resto de los parámetros se puede consultar [aquí](https://github.com/ClickHouse/clickhouse-jdbc/blob/master/clickhouse-client/src/main/java/com/clickhouse/client/config/ClickHouseClientOption.java); añádelos en este campo separados por comas
+
+* **JDBC Driver custom&#95;http&#95;params**. Este campo te permite añadir algunos parámetros a la cadena de conexión de ClickHouse pasando valores al [`custom_http_params` del driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration). Por ejemplo, así se especifica `session_id` cuando se activa la casilla *Set Session ID*
+
+* **JDBC Driver `typeMappings`**. Este campo te permite [pasar una lista de asignaciones de tipos de datos de ClickHouse a tipos de datos de Java usados por el JDBC driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration). El connector muestra automáticamente los enteros grandes como cadenas gracias a este parámetro; puedes cambiarlo pasando tu propio conjunto de asignaciones *(no sé por qué)* usando
+  ```text
+  UInt256=java.lang.Double,Int256=java.lang.Double
+  ```
+  Lee más sobre las asignaciones en la sección correspondiente
+
+* **JDBC Driver URL Parameters**. En este campo puedes pasar el resto de los [parámetros del driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration), por ejemplo `jdbcCompliance`. Ten en cuenta que los valores de los parámetros deben pasarse en formato URL encoded y que, si pasas `custom_http_params` o `typeMappings` tanto en este campo como en los campos anteriores de la pestaña Advanced, los valores de esos dos campos anteriores tendrán prioridad
+
+* Casilla **Set Session ID**. Es necesaria para establecer configuraciones a nivel de sesión en la pestaña Initial SQL; genera un `session_id` con un timestamp y un número seudoaleatorio con el formato `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
+
+<div id="limited-support-for-uint64-int128-uint256-data-types">
+  ## Compatibilidad limitada con los tipos de datos UInt64, Int128, (U)Int256
+</div>
+
+De forma predeterminada, el driver muestra los campos de tipo *UInt64, Int128, (U)Int256* como cadenas, **pero solo los muestra, no los convierte**. Esto significa que, cuando intente escribir el siguiente campo calculado, obtendrá un error
+
+```text
+LEFT([myUInt256], 2) // ¡Error!
+```
+
+Para trabajar con campos Integer de gran tamaño igual que con cadenas, es necesario envolver explícitamente el campo en la función STR()
+
+```text
+LEFT(STR([myUInt256]), 2) // ¡Funciona bien!
+```
+
+Sin embargo, dado que estos campos se usan con mayor frecuencia para obtener el número de valores únicos *(ID como Watch ID y Visit ID en Yandex.Metrica)* o como una *Dimensión* para especificar el nivel de detalle de la visualización, funcionan bien.
+
+```text
+COUNTD([myUInt256]) // ¡También funciona bien!
+```
+
+Al usar la vista previa de datos (View data) de una tabla con campos UInt64, ya no aparece ningún error.

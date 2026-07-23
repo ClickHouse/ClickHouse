@@ -1,0 +1,1324 @@
+---
+slug: /materialized-view/incremental-materialized-view
+title: 'Vista materializada incremental'
+description: 'Cómo usar vistas materializadas incrementales para mejorar el rendimiento de las consultas'
+keywords: ['vistas materializadas incrementales', 'mejorar el rendimiento de las consultas', 'optimización de consultas']
+score: 10000
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="background">
+  ## Contexto
+</div>
+
+Las vistas materializadas incrementales (vistas materializadas) permiten trasladar el coste del cálculo del tiempo de consulta al tiempo de inserción, lo que se traduce en consultas `SELECT` más rápidas.
+
+A diferencia de las bases de datos transaccionales como Postgres, una vista materializada en ClickHouse es simplemente un disparador que ejecuta una consulta sobre bloques de datos a medida que se insertan en una tabla. El resultado de esta consulta se inserta en una segunda &quot;tabla de destino&quot;. Si se insertan más filas, los resultados volverán a enviarse a la tabla de destino, donde los resultados intermedios se actualizarán y fusionarán. Este resultado fusionado equivale a ejecutar la consulta sobre todos los datos originales.
+
+La principal motivación de las vistas materializadas es que los resultados insertados en la tabla de destino representan el resultado de una agregación, un filtrado o una transformación de filas. A menudo, estos resultados son una representación más pequeña de los datos originales (un resumen parcial en el caso de las agregaciones). Esto, junto con el hecho de que la consulta resultante para leer los resultados de la tabla de destino es sencilla, hace que los tiempos de consulta sean menores que si el mismo cálculo se realizara sobre los datos originales, trasladando el cálculo (y, por tanto, la latencia de la consulta) del tiempo de consulta al tiempo de inserción.
+
+Las vistas materializadas en ClickHouse se actualizan en tiempo real a medida que los datos fluyen hacia la tabla en la que se basan, funcionando más como índices que se actualizan continuamente. Esto contrasta con otras bases de datos, donde las vistas materializadas suelen ser instantáneas estáticas de una consulta que deben actualizarse (de forma similar a las [vistas materializadas actualizables](/es/reference/statements/create/view#refreshable-materialized-view) de ClickHouse).
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de vista materializada" />
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+A modo de ejemplo, utilizaremos el conjunto de datos de Stack Overflow documentado en [&quot;Schema Design&quot;](/es/guides/clickhouse/data-modelling/schema-design).
+
+Supongamos que queremos obtener el número de votos positivos y negativos por día para una publicación.
+
+```sql
+CREATE TABLE votes
+(
+    `Id` UInt32,
+    `PostId` Int32,
+    `VoteTypeId` UInt8,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 29.359 sec. Processed 238.98 million rows, 2.13 GB (8.14 million rows/s., 72.45 MB/s.)
+```
+
+Esta es una consulta bastante sencilla en ClickHouse gracias a la función [`toStartOfDay`](/es/reference/functions/regular-functions/date-time-functions#toStartOfDay):
+
+```sql
+SELECT toStartOfDay(CreationDate) AS day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY day
+ORDER BY day ASC
+LIMIT 10
+```
+
+```response
+┌─────────────────day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 00:00:00 │       6 │         0 │
+│ 2008-08-01 00:00:00 │     182 │        50 │
+│ 2008-08-02 00:00:00 │     436 │       107 │
+│ 2008-08-03 00:00:00 │     564 │       100 │
+│ 2008-08-04 00:00:00 │    1306 │       259 │
+│ 2008-08-05 00:00:00 │    1368 │       269 │
+│ 2008-08-06 00:00:00 │    1701 │       211 │
+│ 2008-08-07 00:00:00 │    1544 │       211 │
+│ 2008-08-08 00:00:00 │    1241 │       212 │
+│ 2008-08-09 00:00:00 │     576 │        46 │
+└─────────────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.133 sec. Processed 238.98 million rows, 2.15 GB (1.79 billion rows/s., 16.14 GB/s.)
+Peak memory usage: 363.22 MiB.
+```
+
+Esta consulta ya es rápida gracias a ClickHouse, pero ¿podemos mejorarla?
+
+Si queremos calcular esto en el momento de inserción mediante una vista materializada, necesitamos una tabla que reciba los resultados. Esta tabla debe conservar únicamente 1 fila por día. Si se recibe una actualización para un día existente, las demás columnas deben fusionarse con la fila de ese día. Para que esta fusión de estados incrementales tenga lugar, los estados parciales deben almacenarse en las demás columnas.
+
+Esto requiere un tipo de motor especial en ClickHouse: el [SummingMergeTree](/es/reference/engines/table-engines/mergetree-family/summingmergetree). Este reemplaza todas las filas con la misma clave de ordenación por una única fila que contiene los valores sumados de las columnas numéricas. La siguiente tabla fusionará cualquier fila con la misma fecha, sumando todas las columnas numéricas:
+
+```sql
+CREATE TABLE up_down_votes_per_day
+(
+  `Day` Date,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY Day
+```
+
+Para ilustrar el funcionamiento de nuestra vista materializada, supongamos que la tabla de votos está vacía y aún no ha recibido ningún dato. La vista materializada ejecuta el `SELECT` anterior sobre los datos insertados en `votes` y envía los resultados a `up_down_votes_per_day`:
+
+```sql
+CREATE MATERIALIZED VIEW up_down_votes_per_day_mv TO up_down_votes_per_day AS
+SELECT toStartOfDay(CreationDate)::Date AS Day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY Day
+```
+
+La cláusula `TO` es fundamental aquí, ya que indica adónde se enviarán los resultados, es decir, a `up_down_votes_per_day`.
+
+Podemos volver a llenar nuestra tabla Votes con el `insert` anterior:
+
+```sql
+INSERT INTO votes SELECT toUInt32(Id) AS Id, toInt32(PostId) AS PostId, VoteTypeId, CreationDate, UserId, BountyAmount
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 111.964 sec. Processed 477.97 million rows, 3.89 GB (4.27 million rows/s., 34.71 MB/s.)
+Peak memory usage: 283.49 MiB.
+```
+
+Al finalizar, podemos confirmar el tamaño de nuestra tabla `up_down_votes_per_day`: deberíamos tener 1 fila por día:
+
+```sql
+SELECT count()
+FROM up_down_votes_per_day
+FINAL
+```
+
+```response
+┌─count()─┐
+│    5723 │
+└─────────┘
+```
+
+Hemos reducido aquí de forma efectiva el número de filas de 238 millones (en `votes`) a 5000 al almacenar el resultado de nuestra consulta. Sin embargo, lo importante es que, si se insertan nuevos votos en la tabla `votes`, se enviarán nuevos valores a `up_down_votes_per_day` para el día correspondiente, donde se combinarán automáticamente de forma asíncrona en segundo plano, conservando solo una fila por día. Así, `up_down_votes_per_day` siempre será pequeña y estará actualizada.
+
+Dado que la combinación de filas es asíncrona, puede haber más de una fila por día cuando un usuario consulta los datos. Para asegurarnos de que cualquier fila pendiente se combine en tiempo de consulta, tenemos dos opciones:
+
+* Usar el modificador `FINAL` en el nombre de la tabla. Hicimos esto en la consulta de recuento anterior.
+* Agregar por la clave de ordenación utilizada en nuestra tabla final, es decir, `CreationDate`, y sumar las métricas. Normalmente, esto es más eficiente y flexible (la tabla puede usarse para otras cosas), pero la primera opción puede ser más sencilla para algunas consultas. A continuación mostramos ambas:
+
+```sql
+SELECT
+        Day,
+        UpVotes,
+        DownVotes
+FROM up_down_votes_per_day
+FINAL
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+10 rows in set. Elapsed: 0.004 sec. Processed 8.97 thousand rows, 89.68 KB (2.09 million rows/s., 20.89 MB/s.)
+Peak memory usage: 289.75 KiB.
+```
+
+```sql
+SELECT Day, sum(UpVotes) AS UpVotes, sum(DownVotes) AS DownVotes
+FROM up_down_votes_per_day
+GROUP BY Day
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 │       6 │         0 │
+│ 2008-08-01 │     182 │        50 │
+│ 2008-08-02 │     436 │       107 │
+│ 2008-08-03 │     564 │       100 │
+│ 2008-08-04 │    1306 │       259 │
+│ 2008-08-05 │    1368 │       269 │
+│ 2008-08-06 │    1701 │       211 │
+│ 2008-08-07 │    1544 │       211 │
+│ 2008-08-08 │    1241 │       212 │
+│ 2008-08-09 │     576 │        46 │
+└────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.010 sec. Processed 8.97 thousand rows, 89.68 KB (907.32 thousand rows/s., 9.07 MB/s.)
+Peak memory usage: 567.61 KiB.
+```
+
+Esto ha acelerado nuestra consulta de 0.133s a 0.004s: ¡más de 25 veces más rápido!
+
+<Warning>
+  **Importante: `ORDER BY` = `GROUP BY`**
+
+  En la mayoría de los casos, las columnas usadas en la cláusula `GROUP BY` de la transformación de las vistas materializadas deben coincidir con las usadas en la cláusula `ORDER BY` de la tabla de destino si se utilizan los motores de tabla `SummingMergeTree` o `AggregatingMergeTree`. Estos motores dependen de las columnas de `ORDER BY` para fusionar filas con valores idénticos durante las operaciones de merge en segundo plano. Si las columnas de `GROUP BY` y `ORDER BY` no están alineadas, puede producirse un rendimiento deficiente de las consultas, merges subóptimos o incluso discrepancias en los datos.
+</Warning>
+
+<div id="a-more-complex-example">
+  ### Un ejemplo más complejo
+</div>
+
+El ejemplo anterior usa vistas materializadas para calcular y mantener dos sumas por día. Las sumas representan la forma más simple de agregación para mantener estados parciales, ya que basta con añadir los nuevos valores a los existentes a medida que llegan. Sin embargo, las vistas materializadas de ClickHouse pueden usarse con cualquier tipo de agregación.
+
+Supongamos que queremos calcular algunas estadísticas de las publicaciones para cada día: el percentil 99,9 de `Score` y la media de `CommentCount`. La consulta para calcularlo podría verse así:
+
+```sql
+SELECT
+        toStartOfDay(CreationDate) AS Day,
+        quantile(0.999)(Score) AS Score_99th,
+        avg(CommentCount) AS AvgCommentCount
+FROM posts
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌─────────────────Day─┬────────Score_99th─┬────AvgCommentCount─┐
+│ 2024-03-31 00:00:00 │  5.23700000000008 │ 1.3429811866859624 │
+│ 2024-03-30 00:00:00 │                 5 │ 1.3097158891616976 │
+│ 2024-03-29 00:00:00 │  5.78899999999976 │ 1.2827635327635327 │
+│ 2024-03-28 00:00:00 │                 7 │  1.277746158224246 │
+│ 2024-03-27 00:00:00 │ 5.738999999999578 │ 1.2113264918282023 │
+│ 2024-03-26 00:00:00 │                 6 │ 1.3097536945812809 │
+│ 2024-03-25 00:00:00 │                 6 │ 1.2836721018539201 │
+│ 2024-03-24 00:00:00 │ 5.278999999999996 │ 1.2931667891256429 │
+│ 2024-03-23 00:00:00 │ 6.253000000000156 │  1.334061135371179 │
+│ 2024-03-22 00:00:00 │ 9.310999999999694 │ 1.2388059701492538 │
+└─────────────────────┴───────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.113 sec. Processed 59.82 million rows, 777.65 MB (528.48 million rows/s., 6.87 GB/s.)
+Peak memory usage: 658.84 MiB.
+```
+
+Como antes, podemos crear una vista materializada que ejecute la consulta anterior a medida que se insertan nuevas publicaciones en nuestra tabla `posts`.
+
+A modo de ejemplo, y para evitar cargar los datos de publicaciones desde S3, crearemos una tabla duplicada `posts_null` con el mismo esquema que `posts`. Sin embargo, esta tabla no almacenará ningún dato y simplemente la usará la vista materializada cuando se inserten filas. Para evitar el almacenamiento de datos, podemos usar el [tipo de motor de tabla `Null`](/es/reference/engines/table-engines/special/null).
+
+```sql
+CREATE TABLE posts_null AS posts ENGINE = Null
+```
+
+El motor de tabla Null es una optimización muy potente; piensa en él como `/dev/null`. Nuestra vista materializada calculará y almacenará las estadísticas resumidas cuando nuestra tabla `posts_null` reciba filas en el momento de la inserción; solo actúa como disparador. Sin embargo, los datos en bruto no se almacenarán. Aunque en nuestro caso probablemente sigamos queriendo almacenar los posts originales, este enfoque puede usarse para calcular agregados evitando la sobrecarga de almacenamiento de los datos en bruto.
+
+La vista materializada queda así:
+
+```sql
+CREATE MATERIALIZED VIEW post_stats_mv TO post_stats_per_day AS
+       SELECT toStartOfDay(CreationDate) AS Day,
+       quantileState(0.999)(Score) AS Score_quantiles,
+       avgState(CommentCount) AS AvgCommentCount
+FROM posts_null
+GROUP BY Day
+```
+
+Observa cómo añadimos el sufijo `State` al final de nuestras funciones de agregación. Esto garantiza que se devuelva el estado de agregación de la función en lugar del resultado final. Este contendrá información adicional que permitirá que este estado parcial se combine con otros estados. Por ejemplo, en el caso de un promedio, incluirá un recuento y una suma de la columna.
+
+> Los estados de agregación parciales son necesarios para calcular resultados correctos. Por ejemplo, para calcular un promedio, simplemente promediar los promedios de subrangos produce resultados incorrectos.
+
+Ahora creamos la tabla de destino para esta vista, `post_stats_per_day`, que almacena estos estados de agregación parciales:
+
+```sql
+CREATE TABLE post_stats_per_day
+(
+  `Day` Date,
+  `Score_quantiles` AggregateFunction(quantile(0.999), Int32),
+  `AvgCommentCount` AggregateFunction(avg, UInt8)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Day
+```
+
+Si bien antes `SummingMergeTree` era suficiente para almacenar recuentos, necesitamos un tipo de motor más avanzado para otras funciones: [`AggregatingMergeTree`](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+Para indicar a ClickHouse que se almacenarán estados de agregación, definimos `Score_quantiles` y `AvgCommentCount` con el tipo `AggregateFunction`, especificando la función de la que provienen los estados parciales y el tipo de sus columnas de origen. Al igual que en `SummingMergeTree`, las filas con el mismo valor de clave `ORDER BY` se fusionarán (`Day` en el ejemplo anterior).
+
+Para poblar `post_stats_per_day` mediante nuestra vista materializada, simplemente podemos insertar todas las filas de `posts` en `posts_null`:
+
+```sql
+INSERT INTO posts_null SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 13.329 sec. Processed 119.64 million rows, 76.99 GB (8.98 million rows/s., 5.78 GB/s.)
+```
+
+> En producción, lo habitual sería adjuntar la vista materializada a la tabla `posts`. Aquí hemos usado `posts_null` para ilustrar la tabla `Null`.
+
+Nuestra consulta final debe utilizar el sufijo `Merge` en nuestras funciones (ya que las columnas almacenan estados de agregación parciales):
+
+```sql
+SELECT
+        Day,
+        quantileMerge(0.999)(Score_quantiles),
+        avgMerge(AvgCommentCount)
+FROM post_stats_per_day
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+Ten en cuenta que aquí usamos `GROUP BY` en lugar de `FINAL`.
+
+<div id="other-applications">
+  ## Otras aplicaciones
+</div>
+
+Lo anterior se centra principalmente en el uso de vistas materializadas para actualizar de forma incremental agregaciones parciales de datos, trasladando así el cálculo del tiempo de consulta al tiempo de inserción. Más allá de este caso de uso habitual, las vistas materializadas tienen muchas otras aplicaciones.
+
+<div id="filtering-and-transformation">
+  ### Filtrado y transformación
+</div>
+
+En algunas situaciones, puede que queramos insertar solo un subconjunto de las filas y columnas al realizar la inserción. En este caso, nuestra tabla `posts_null` podría recibir inserciones, con una consulta `SELECT` que filtre las filas antes de insertarlas en la tabla `posts`. Por ejemplo, supongamos que quisiéramos transformar una columna `Tags` de nuestra tabla `posts`. Esta contiene una lista de nombres de etiquetas delimitada por barras verticales. Al convertirla en un array, podemos agregar con más facilidad por valores individuales de etiqueta.
+
+> Podríamos realizar esta transformación al ejecutar un `INSERT INTO SELECT`. La vista materializada nos permite encapsular esta lógica en el DDL de ClickHouse y mantener simple nuestro `INSERT`, aplicando la transformación a cualquier fila nueva.
+
+Nuestra vista materializada para esta transformación se muestra a continuación:
+
+```sql
+CREATE MATERIALIZED VIEW posts_mv TO posts AS
+        SELECT * EXCEPT Tags, arrayFilter(t -> (t != ''), splitByChar('|', Tags)) as Tags FROM posts_null
+```
+
+<div id="lookup-table">
+  ### Tabla de consulta
+</div>
+
+Debe tener en cuenta los patrones de acceso al elegir una clave de ordenación de ClickHouse. Deben utilizarse las columnas que se usan con frecuencia en las cláusulas de filtrado y agregación. Esto puede resultar restrictivo en escenarios en los que los usuarios tienen patrones de acceso más diversos que no pueden encapsularse en un único conjunto de columnas. Por ejemplo, considere la siguiente tabla `comments`:
+
+```sql
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+```response
+0 rows in set. Elapsed: 46.357 sec. Processed 90.38 million rows, 11.14 GB (1.95 million rows/s., 240.22 MB/s.)
+```
+
+La clave de ordenación aquí optimiza la tabla para consultas que filtran por `PostId`.
+
+Supongamos que un usuario desea filtrar por un `UserId` específico y calcular su `Score` promedio:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.778 sec. Processed 90.38 million rows, 361.59 MB (116.16 million rows/s., 464.74 MB/s.)
+Peak memory usage: 217.08 MiB.
+```
+
+Aunque es rápido (los datos son pequeños para ClickHouse), podemos ver por el número de filas procesadas —90,38 millones— que esto requiere un escaneo completo de la tabla. Para conjuntos de datos más grandes, podemos usar una vista materializada para buscar los valores de nuestra clave de ordenación `PostId` con los que filtrar la columna `UserId`. Estos valores pueden usarse después para realizar una búsqueda eficiente.
+
+En este ejemplo, nuestra vista materializada puede ser muy simple: seleccionar solo `PostId` y `UserId` de `comments` durante la inserción. Estos resultados, a su vez, se envían a una tabla `comments_posts_users` ordenada por `UserId`. A continuación, creamos una versión nula de la tabla `Comments` y la usamos para poblar nuestra vista y la tabla `comments_posts_users`:
+
+```sql
+CREATE TABLE comments_posts_users (
+  PostId UInt32,
+  UserId Int32
+) ENGINE = MergeTree ORDER BY UserId
+
+CREATE TABLE comments_null AS comments
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW comments_posts_users_mv TO comments_posts_users AS
+SELECT PostId, UserId FROM comments_null
+
+INSERT INTO comments_null SELECT * FROM comments
+```
+
+```response
+0 rows in set. Elapsed: 5.163 sec. Processed 90.38 million rows, 17.25 GB (17.51 million rows/s., 3.34 GB/s.)
+```
+
+Ahora podemos usar esta vista en una subconsulta para acelerar nuestra consulta anterior:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE PostId IN (
+        SELECT PostId
+        FROM comments_posts_users
+        WHERE UserId = 8592047
+) AND UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 88.61 thousand rows, 771.37 KB (7.09 million rows/s., 61.73 MB/s.)
+```
+
+<div id="chaining">
+  ### Encadenamiento / cascada de vistas materializadas
+</div>
+
+Las vistas materializadas pueden encadenarse (o disponerse en cascada), lo que permite establecer flujos de trabajo complejos.
+Para obtener más información, consulte la guía [&quot;Vistas materializadas en cascada&quot;](/es/concepts/features/materialized-views/cascading-materialized-views).
+
+<div id="materialized-views-and-joins">
+  ## Vistas materializadas y JOINs
+</div>
+
+<Info>
+  **Vistas materializadas actualizables**
+
+  Lo siguiente se aplica solo a las vistas materializadas incrementales. Las vistas materializadas actualizables ejecutan periódicamente su consulta sobre todo el conjunto de datos de destino y admiten plenamente los JOINs. Considere usarlas para JOINs complejos si se puede tolerar que los resultados estén menos actualizados.
+</Info>
+
+Las vistas materializadas incrementales en ClickHouse admiten plenamente operaciones `JOIN`, pero con una restricción crucial: **la vista materializada solo se activa con inserciones en la tabla de origen (la tabla situada más a la izquierda en la consulta).** Las tablas del lado derecho de los JOINs no activan actualizaciones, aunque sus datos cambien. Este comportamiento es especialmente importante al crear vistas materializadas **incrementales**, donde los datos se agregan o transforman en el momento de la inserción.
+
+Cuando una vista materializada incremental se define con un `JOIN`, la tabla situada más a la izquierda en la consulta `SELECT` actúa como origen. Cuando se insertan nuevas filas en esta tabla, ClickHouse ejecuta la consulta de la vista materializada *solo* con esas filas recién insertadas. Las tablas del lado derecho del JOIN se leen completas durante esta ejecución, pero sus cambios por sí solos no activan la vista.
+
+Este comportamiento hace que los JOINs en las vistas materializadas se parezcan a un snapshot join con datos de dimensión estáticos.
+
+Esto funciona bien para enriquecer datos con tablas de referencia o de dimensión. Sin embargo, las actualizaciones en las tablas del lado derecho (p. ej., metadatos de usuario) no actualizarán retroactivamente la vista materializada. Para ver los datos actualizados, deben llegar nuevas inserciones a la tabla de origen.
+
+<div id="materialized-views-and-joins-example">
+  ### Ejemplo
+</div>
+
+Veamos un ejemplo concreto con el [conjunto de datos de Stack Overflow](/es/guides/clickhouse/data-modelling/schema-design). Usaremos una vista materializada para calcular **las insignias diarias por usuario**, incluido el nombre para mostrar del usuario de la tabla `users`.
+
+Como recordatorio, los esquemas de nuestras tablas son:
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` UInt32,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `DisplayName` LowCardinality(String),
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `Location` LowCardinality(String),
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32
+)
+ENGINE = MergeTree
+ORDER BY Id;
+```
+
+Supondremos que nuestra tabla `users` ya está poblada:
+
+```sql
+INSERT INTO users
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet');
+```
+
+La vista materializada y la tabla de destino asociada se definen así:
+
+```sql
+CREATE TABLE daily_badges_by_user
+(
+    Day Date,
+    UserId Int32,
+    DisplayName LowCardinality(String),
+    Gold UInt32,
+    Silver UInt32,
+    Bronze UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY (DisplayName, UserId, Day);
+
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user AS
+SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+<Info>
+  **Alineación entre agrupación y ordenación**
+
+  La cláusula `GROUP BY` de la vista materializada debe incluir `DisplayName`, `UserId` y `Day` para que coincida con el `ORDER BY` de la tabla de destino `SummingMergeTree`. Esto garantiza que las filas se agreguen y fusionen correctamente. Si se omite cualquiera de estos elementos, se pueden obtener resultados incorrectos o fusiones ineficientes.
+</Info>
+
+Si ahora cargamos las insignias, se activará la vista y se rellenará la tabla `daily_badges_by_user`.
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 433.762 sec. Processed 1.16 billion rows, 28.50 GB (2.67 million rows/s., 65.70 MB/s.)
+```
+
+Si queremos ver las insignias que ha obtenido un usuario específico, podemos escribir la siguiente consulta:
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+8 rows in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 642.14 KB (1.86 million rows/s., 36.44 MB/s.)
+```
+
+Ahora, si este usuario recibe una nueva insignia y se inserta una fila, nuestra vista se actualizará:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2025-04-13 │ 2936484 │ gingerwizard │    1 │      0 │      0 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+9 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 642.27 KB (1.96 million rows/s., 38.50 MB/s.)
+```
+
+<Warning>
+  Fíjese en la latencia de la inserción aquí. La fila de usuario insertada se une a toda la tabla `users`, lo que afecta significativamente al rendimiento de la inserción. A continuación proponemos varios enfoques para resolverlo en [&quot;Uso de la tabla de origen en filtros y JOINs&quot;](/es/concepts/features/materialized-views/incremental-materialized-view#using-source-table-in-filters-and-joins-in-materialized-views).
+</Warning>
+
+Por el contrario, si insertamos una insignia para un usuario nuevo y, a continuación, la fila del usuario, nuestra vista materializada no podrá capturar las métricas de los usuarios.
+
+```sql
+INSERT INTO badges VALUES (53505059, 23923286, 'Good Answer', now(), 'Bronze', 0);
+INSERT INTO users VALUES (23923286, 1, now(),  'brand_new_user', now(), 'UK', 1, 1, 0);
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user';
+```
+
+```response
+0 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 644.32 KB (1.98 million rows/s., 38.94 MB/s.)
+```
+
+La vista, en este caso, solo se ejecuta para la inserción de la insignia antes de que exista la fila del usuario. Si insertamos otra insignia para el usuario, se inserta una fila, como era de esperar:
+
+```sql
+INSERT INTO badges VALUES (53505060, 23923286, 'Teacher', now(), 'Bronze', 0);
+
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user'
+```
+
+```response
+┌────────Day─┬───UserId─┬─DisplayName────┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2025-04-13 │ 23923286 │ brand_new_user │    0 │      0 │      1 │
+└────────────┴──────────┴────────────────┴──────┴────────┴────────┘
+
+1 row in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 644.48 KB (1.87 million rows/s., 36.72 MB/s.)
+```
+
+Tenga en cuenta, sin embargo, que este resultado es incorrecto.
+
+<div id="join-best-practices">
+  ### Buenas prácticas para JOINs en vistas materializadas
+</div>
+
+* **Use la tabla más a la izquierda como desencadenante.** Solo la tabla del lado izquierdo de la sentencia `SELECT` activa la vista materializada. Los cambios en las tablas del lado derecho no desencadenarán actualizaciones.
+
+* **Inserte antes los datos de las tablas unidas.** Asegúrese de que los datos de las tablas unidas existan antes de insertar filas en la tabla de origen. El JOIN se evalúa en el momento de la inserción, por lo que la falta de datos dará lugar a filas sin coincidencia o valores nulos.
+
+* **Limite las columnas extraídas de los JOINs.** Seleccione solo las columnas necesarias de las tablas unidas para minimizar el uso de memoria y reducir la latencia en la inserción (vea más abajo).
+
+* **Evalúe el rendimiento en la inserción.** Los JOINs aumentan el coste de las inserciones, especialmente con tablas grandes en el lado derecho. Haga benchmark de las tasas de inserción con datos de producción representativos.
+
+* **Prefiera Dictionaries para lookups simples**. Use [Dictionaries](/es/concepts/features/dictionaries/index) para lookups de clave-valor (por ejemplo, de ID de usuario a nombre) y así evitar operaciones JOIN costosas.
+
+* **Alinee `GROUP BY` y `ORDER BY` para mejorar la eficiencia de la fusión.** Al usar `SummingMergeTree` o `AggregatingMergeTree`, asegúrese de que `GROUP BY` coincida con la cláusula `ORDER BY` de la tabla de destino para permitir una fusión eficiente de filas.
+
+* **Use alias de columna explícitos.** Cuando las tablas tengan nombres de columna coincidentes, use alias para evitar ambigüedades y garantizar resultados correctos en la tabla de destino.
+
+* **Tenga en cuenta el volumen y la frecuencia de inserción.** Los JOINs funcionan bien con cargas de inserción moderadas. Para una ingestión de alto throughput, considere usar tablas de staging, pre-joins u otros enfoques, como Dictionaries y [Refreshable Materialized Views](/es/concepts/features/materialized-views/refreshable-materialized-view).
+
+<div id="using-source-table-in-filters-and-joins-in-materialized-views">
+  ### Uso de la tabla de origen en filtros y JOIN
+</div>
+
+Al trabajar con vistas materializadas en ClickHouse, es importante entender cómo se trata la tabla de origen durante la ejecución de la consulta de la vista materializada. En concreto, la tabla de origen de la consulta de la vista materializada se sustituye por el bloque de datos insertado. Este comportamiento puede dar lugar a resultados inesperados si no se entiende correctamente.
+
+<div id="example-scenario">
+  #### Escenario de ejemplo
+</div>
+
+Considere la siguiente configuración:
+
+```sql
+CREATE TABLE t0 (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw1_inner (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw2_inner (`c0` Int) ENGINE = Memory;
+
+CREATE VIEW vt0 AS SELECT * FROM t0;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN ( SELECT * FROM t0 ) AS x ON t0.c0 = x.c0;
+
+CREATE MATERIALIZED VIEW mvw2 TO mvw2_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN vt0 ON t0.c0 = vt0.c0;
+
+INSERT INTO t0 VALUES (1),(2),(3);
+
+INSERT INTO t0 VALUES (1),(2),(3),(4),(5);
+
+SELECT * FROM mvw1;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  5 │
+└────┘
+```
+
+```sql
+SELECT * FROM mvw2;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  8 │
+└────┘
+```
+
+<div id="explanation">
+  #### Explicación
+</div>
+
+En el ejemplo anterior, tenemos dos vistas materializadas, `mvw1` y `mvw2`, que realizan operaciones similares, pero con una ligera diferencia en la forma en que hacen referencia a la tabla de origen `t0`.
+
+En `mvw1`, la tabla `t0` se referencia directamente dentro de una subconsulta `(SELECT * FROM t0)` en el lado derecho del JOIN. Cuando se insertan datos en `t0`, la consulta de la vista materializada se ejecuta sustituyendo `t0` por el bloque de datos insertado. Esto significa que la operación JOIN se realiza solo sobre las filas recién insertadas, no sobre toda la tabla.
+
+En el segundo caso, al hacer JOIN con `vt0`, la vista lee todos los datos de `t0`. Esto garantiza que la operación JOIN tenga en cuenta todas las filas de `t0`, no solo el bloque recién insertado.
+
+La diferencia clave radica en cómo ClickHouse maneja la tabla de origen en la consulta de la vista materializada. Cuando una vista materializada se desencadena por una inserción, la tabla de origen (`t0` en este caso) se sustituye por el bloque de datos insertado. Este comportamiento puede aprovecharse para optimizar las consultas, pero también debe tenerse en cuenta cuidadosamente para evitar resultados inesperados.
+
+<div id="use-cases-and-caveats">
+  ### Casos de uso y advertencias
+</div>
+
+En la práctica, puede usar este comportamiento para optimizar las vistas materializadas que solo necesitan procesar un subconjunto de los datos de la tabla de origen. Por ejemplo, puede usar una subconsulta para filtrar la tabla de origen antes de unirla a otras tablas. Esto puede ayudar a reducir la cantidad de datos que procesa la vista materializada y mejorar el rendimiento.
+
+```sql
+CREATE TABLE t0 (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t1 (id UInt32, description String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO t1 VALUES (1, 'A'), (2, 'B'), (3, 'C');
+
+CREATE TABLE mvw1_target_table (id UInt32, value String, description String) ENGINE = MergeTree() ORDER BY id;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_target_table AS
+SELECT t0.id, t0.value, t1.description
+FROM t0
+JOIN (SELECT * FROM t1 WHERE t1.id IN (SELECT id FROM t0)) AS t1
+ON t0.id = t1.id;
+```
+
+En este ejemplo, el conjunto creado a partir de la subconsulta `IN (SELECT id FROM t0)` solo contiene las filas recién insertadas, lo que puede ayudar a filtrar `t1` con respecto a ese conjunto.
+
+<div id="example-with-stack-overflow">
+  #### Ejemplo con Stack Overflow
+</div>
+
+Considere nuestro [ejemplo anterior de vista materializada](/es/concepts/features/materialized-views/incremental-materialized-view#example) para calcular **insignias diarias por usuario**, incluido el nombre para mostrar del usuario de la tabla `users`.
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+Esta vista afectó significativamente a la latencia de inserción en la tabla `badges`, p. ej.
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+Con el enfoque anterior, podemos optimizar esta vista. Añadiremos un filtro a la tabla `users` usando los ID de usuario de las filas insertadas en badges:
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN
+(
+    SELECT
+        Id,
+        DisplayName
+    FROM users
+    WHERE Id IN (
+        SELECT UserId
+        FROM badges
+    )
+) AS u ON b.UserId = u.Id
+GROUP BY
+    Day,
+    b.UserId,
+    u.DisplayName
+```
+
+Esto no solo acelera la inserción inicial de insignias:
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 132.118 sec. Processed 323.43 million rows, 4.69 GB (2.45 million rows/s., 35.49 MB/s.)
+Peak memory usage: 1.99 GiB.
+```
+
+Pero también significa que las futuras inserciones de insignias son eficientes:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 0.583 sec.
+```
+
+En la operación anterior, solo se recupera una fila de la tabla `users` correspondiente al id de usuario `2936484`. Esta consulta también está optimizada mediante la clave de ordenación `Id` de la tabla.
+
+<div id="materialized-views-and-unions">
+  ## Vistas materializadas y uniones
+</div>
+
+Las consultas `UNION ALL` se usan habitualmente para combinar datos de varias tablas de origen en un único conjunto de resultados.
+
+Aunque `UNION ALL` no se admite directamente en las vistas materializadas incrementales, puedes lograr el mismo resultado creando una vista materializada independiente para cada rama de `SELECT` y escribiendo sus resultados en una tabla de destino compartida.
+
+Para este ejemplo, usaremos el conjunto de datos de Stack Overflow. Considera las tablas `badges` y `comments` que aparecen a continuación, que representan las insignias obtenidas por un usuario y los comentarios que hace en las publicaciones:
+
+```sql
+CREATE TABLE stackoverflow.comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY CreationDate
+
+CREATE TABLE stackoverflow.badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+```
+
+Estas se pueden completar con los siguientes comandos `INSERT INTO`:
+
+```sql
+INSERT INTO stackoverflow.badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO stackoverflow.comments SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+```
+
+Supongamos que queremos crear una vista unificada de la actividad de los usuarios, que muestre la última actividad de cada usuario al combinar estas dos tablas:
+
+```sql
+SELECT
+ UserId,
+ argMax(description, event_time) AS last_description,
+ argMax(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+LIMIT 10
+```
+
+Supongamos que tenemos una tabla de destino para recibir los resultados de esta consulta. Nótese el uso del motor de tabla [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree) y de [AggregateFunction](/es/reference/data-types/aggregatefunction) para garantizar que los resultados se combinen correctamente:
+
+```sql
+CREATE TABLE user_activity
+(
+    `UserId` String,
+    `last_description` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `activity_type` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `last_activity` SimpleAggregateFunction(max, DateTime64(3, 'UTC'))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY UserId
+```
+
+Si se quiere que esta tabla se actualice a medida que se insertan nuevas filas en `badges` o en `comments`, un enfoque ingenuo de este problema sería intentar crear una vista materializada con la consulta `UNION` anterior:
+
+```sql
+CREATE MATERIALIZED VIEW user_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(description, event_time) AS last_description,
+ argMaxState(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+```
+
+Aunque esto es sintácticamente válido, producirá resultados no deseados: la vista solo se activará con las inserciones en la tabla `comments`. Por ejemplo:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+Las inserciones en la tabla `badges` no activarán la vista, por lo que `user_activity` no recibirá actualizaciones:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+Para solucionarlo, simplemente creamos una vista materializada para cada sentencia SELECT:
+
+```sql
+DROP TABLE user_activity_mv;
+TRUNCATE TABLE user_activity;
+
+CREATE MATERIALIZED VIEW comment_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Text, CreationDate) AS last_description,
+ argMaxState('comment', CreationDate) AS activity_type,
+    max(CreationDate) AS last_activity
+FROM stackoverflow.comments
+GROUP BY UserId;
+
+CREATE MATERIALIZED VIEW badges_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Name, Date) AS last_description,
+ argMaxState('badge', Date) AS activity_type,
+    max(Date) AS last_activity
+FROM stackoverflow.badges
+GROUP BY UserId;
+```
+
+Ahora, al insertar en cualquiera de las dos tablas, se obtienen los resultados correctos. Por ejemplo, si insertamos en la tabla `comments`:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 10:18:47.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+Asimismo, las inserciones en la tabla `badges` se reflejan en la tabla `user_activity`:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ gingerwizard │ badge         │ 2025-04-15 10:20:18.000 │
+└─────────┴──────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="materialized-views-parallel-vs-sequential">
+  ## Procesamiento paralelo frente a secuencial
+</div>
+
+Como se mostró en el ejemplo anterior, una tabla puede actuar como fuente para varias vistas materializadas. El orden en que se ejecutan depende de la configuración [`parallel_view_processing`](/es/reference/settings/session-settings#parallel_view_processing).
+
+De forma predeterminada, esta configuración es `0` (`false`), lo que significa que las vistas materializadas se ejecutan secuencialmente en orden de `uuid`.
+
+Por ejemplo, considere la siguiente tabla `source` y 3 vistas materializadas, cada una de las cuales envía filas a una tabla `target`:
+
+```sql
+CREATE TABLE source
+(
+    `message` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE target
+(
+    `message` String,
+    `from` String,
+    `now` DateTime64(9),
+    `sleep` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE MATERIALIZED VIEW mv_2 TO target
+AS SELECT
+    message,
+    'mv2' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_3 TO target
+AS SELECT
+    message,
+    'mv3' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_1 TO target
+AS SELECT
+    message,
+    'mv1' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+```
+
+Observe que cada una de las vistas hace una pausa de 1 segundo antes de insertar sus filas en la tabla `target`, e incluye también su nombre y la hora de inserción.
+
+Insertar una fila en la tabla `source` tarda ~3 segundos, y cada vista se ejecuta de manera secuencial:
+
+```sql
+INSERT INTO source VALUES ('test')
+```
+
+```response
+1 row in set. Elapsed: 3.786 sec.
+```
+
+Podemos confirmar la llegada de filas de cada una con un `SELECT`:
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 14:52:01.306162309 │
+│ test    │ mv1  │ 2025-04-15 14:52:02.307693521 │
+│ test    │ mv2  │ 2025-04-15 14:52:03.309250283 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.015 sec.
+```
+
+Esto corresponde al `uuid` de las vistas:
+
+```sql
+SELECT
+    name,
+ uuid
+FROM system.tables
+WHERE name IN ('mv_1', 'mv_2', 'mv_3')
+ORDER BY uuid ASC
+```
+
+```response
+┌─name─┬─uuid─────────────────────────────────┐
+│ mv_3 │ ba5e36d0-fa9e-4fe8-8f8c-bc4f72324111 │
+│ mv_1 │ b961c3ac-5a0e-4117-ab71-baa585824d43 │
+│ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
+└──────┴──────────────────────────────────────┘
+
+3 filas en el conjunto. Elapsed: 0.004 sec.
+```
+
+Por el contrario, veamos qué sucede si insertamos una fila con `parallel_view_processing=1` activado. Con esta opción activada, las vistas se ejecutan en paralelo, sin garantizar el orden en que las filas llegan a la tabla de destino:
+
+```sql
+TRUNCATE target;
+SET parallel_view_processing = 1;
+
+INSERT INTO source VALUES ('test');
+```
+
+```response
+1 row in set. Elapsed: 1.588 sec.
+```
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 19:47:32.242937372 │
+│ test    │ mv1  │ 2025-04-15 19:47:32.243058183 │
+│ test    │ mv2  │ 2025-04-15 19:47:32.337921800 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+Aunque el orden de llegada de las filas de cada vista sea el mismo, esto no está garantizado, como demuestra la similitud en el momento de inserción de cada fila. Tenga en cuenta también la mejora en el rendimiento de inserción.
+
+<div id="materialized-views-when-to-use-parallel">
+  ### Cuándo usar el procesamiento en paralelo
+</div>
+
+Habilitar `parallel_view_processing=1` puede mejorar significativamente el rendimiento de inserción, como se muestra arriba, especialmente cuando varias vistas materializadas están asociadas a una sola tabla. Sin embargo, es importante entender las contrapartidas:
+
+* **Mayor presión durante la inserción**: Todas las vistas materializadas se ejecutan simultáneamente, lo que aumenta el uso de CPU y memoria. Si cada vista realiza cálculos pesados o JOINs, esto puede sobrecargar el sistema.
+* **Necesidad de un orden de ejecución estricto**: En flujos de trabajo poco frecuentes en los que el orden de ejecución de las vistas es importante (p. ej., dependencias encadenadas), la ejecución en paralelo puede provocar un estado incoherente o condiciones de carrera. Aunque es posible diseñar una solución para evitarlo, estas configuraciones son frágiles y pueden dejar de funcionar en versiones futuras.
+
+<Info>
+  **Valores predeterminados históricos y estabilidad**
+
+  La ejecución secuencial fue la opción predeterminada durante mucho tiempo, en parte debido a la complejidad del manejo de errores. Históricamente, un fallo en una vista materializada podía impedir que se ejecutaran las demás. Las versiones más recientes han mejorado esto al aislar los fallos por bloque, pero la ejecución secuencial sigue ofreciendo una semántica de fallos más clara.
+</Info>
+
+En general, habilita `parallel_view_processing=1` cuando:
+
+* Tienes varias vistas materializadas independientes
+* Buscas maximizar el rendimiento de inserción
+* Conoces la capacidad del sistema para manejar la ejecución concurrente de vistas
+
+Déjalo deshabilitado cuando:
+
+* Las vistas materializadas dependen unas de otras
+* Necesitas una ejecución predecible y ordenada
+* Estás depurando o auditando el comportamiento de inserción y quieres una reproducción determinista
+
+<div id="materialized-views-common-table-expressions-ctes">
+  ## Vistas materializadas y expresiones de tabla comunes (CTE)
+</div>
+
+Las expresiones de tabla comunes (CTE) **no recursivas** son compatibles con las vistas materializadas.
+
+<Info>
+  **Las expresiones de tabla comunes **no** se materializan**
+
+  ClickHouse no materializa las CTE; en su lugar, sustituye la definición de la CTE directamente en la consulta, lo que puede dar lugar a múltiples evaluaciones de la misma expresión (si la CTE se usa más de una vez).
+</Info>
+
+Considere el siguiente ejemplo, que calcula la actividad diaria de cada tipo de publicación.
+
+```sql
+CREATE TABLE daily_post_activity
+(
+    Day Date,
+ PostType String,
+ PostsCreated SimpleAggregateFunction(sum, UInt64),
+ AvgScore AggregateFunction(avg, Int32),
+ TotalViews SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Day, PostType);
+
+CREATE MATERIALIZED VIEW daily_post_activity_mv TO daily_post_activity AS
+WITH filtered_posts AS (
+    SELECT
+ toDate(CreationDate) AS Day,
+ PostTypeId,
+ Score,
+ ViewCount
+    FROM posts
+    WHERE Score > 0 AND PostTypeId IN (1, 2)  -- Pregunta o Respuesta
+)
+SELECT
+    Day,
+    CASE PostTypeId
+        WHEN 1 THEN 'Question'
+        WHEN 2 THEN 'Answer'
+    END AS PostType,
+    count() AS PostsCreated,
+    avgState(Score) AS AvgScore,
+    sum(ViewCount) AS TotalViews
+FROM filtered_posts
+GROUP BY Day, PostTypeId;
+```
+
+Aunque aquí el CTE no es estrictamente necesario, a modo de ejemplo, la vista funcionará como se espera:
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```sql
+SELECT
+    Day,
+    PostType,
+    avgMerge(AvgScore) AS AvgScore,
+    sum(PostsCreated) AS PostsCreated,
+    sum(TotalViews) AS TotalViews
+FROM daily_post_activity
+GROUP BY
+    Day,
+    PostType
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─PostType─┬───────────AvgScore─┬─PostsCreated─┬─TotalViews─┐
+│ 2024-03-31 │ Question │ 1.3317757009345794 │          214 │       9728 │
+│ 2024-03-31 │ Answer   │ 1.4747191011235956 │          356 │          0 │
+│ 2024-03-30 │ Answer   │ 1.4587912087912087 │          364 │          0 │
+│ 2024-03-30 │ Question │ 1.2748815165876777 │          211 │       9606 │
+│ 2024-03-29 │ Question │ 1.2641509433962264 │          318 │      14552 │
+│ 2024-03-29 │ Answer   │ 1.4706927175843694 │          563 │          0 │
+│ 2024-03-28 │ Answer   │  1.601637107776262 │          733 │          0 │
+│ 2024-03-28 │ Question │ 1.3530864197530865 │          405 │      24564 │
+│ 2024-03-27 │ Question │ 1.3225806451612903 │          434 │      21346 │
+│ 2024-03-27 │ Answer   │ 1.4907539118065434 │          703 │          0 │
+└────────────┴──────────┴────────────────────┴──────────────┴────────────┘
+
+10 rows in set. Elapsed: 0.013 sec. Processed 11.45 thousand rows, 663.87 KB (866.53 thousand rows/s., 50.26 MB/s.)
+Peak memory usage: 989.53 KiB.
+```
+
+En ClickHouse, las CTE se expanden en línea, lo que significa que, en la práctica, se copian y pegan dentro de la consulta durante la optimización y **no** se materializan. Esto implica lo siguiente:
+
+* Si una CTE hace referencia a una tabla distinta de la tabla de origen (es decir, aquella a la que está asociada la vista materializada) y se usa en una cláusula `JOIN` o `IN`, se comportará como una subconsulta o un `JOIN`, no como un disparador.
+* La vista materializada seguirá activándose solo con inserciones en la tabla de origen principal, pero la CTE se volverá a ejecutar en cada inserción, lo que puede generar una sobrecarga innecesaria, especialmente si la tabla a la que hace referencia es grande.
+
+Por ejemplo,
+
+```sql
+WITH recent_users AS (
+  SELECT Id FROM stackoverflow.users WHERE CreationDate > now() - INTERVAL 7 DAY
+)
+SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
+```
+
+En este caso, la CTE `users` se vuelve a evaluar con cada inserción en `posts`, y la vista materializada no se actualizará cuando se inserten nuevos `users`, sino solo cuando se inserten `posts`.
+
+En general, use las CTE para la lógica que opera sobre la misma tabla de origen a la que está asociada la vista materializada, o asegúrese de que las tablas a las que se hace referencia sean pequeñas y sea poco probable que provoquen cuellos de botella de rendimiento. Como alternativa, considere [las mismas optimizaciones que para los JOIN con vistas materializadas](/es/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

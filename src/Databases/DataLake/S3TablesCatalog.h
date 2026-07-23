@@ -35,7 +35,7 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::S3_TABLES; }
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
 
     bool tryGetTableMetadata(
         const std::string & namespace_name,
@@ -47,12 +47,17 @@ public:
 protected:
     /// Override the network primitives instead of `getAuthHeaders` so the SigV4 signer has
     /// access to the final URL, method, and request body for canonicalisation.
+    /// `catalog_state` and `auth_headers` are unused here: authentication is derived from the
+    /// SigV4 signer rather than from the catalog state snapshot.
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+        const CatalogState & catalog_state,
         const std::string & endpoint,
         const Poco::URI::QueryParameters & params,
-        const DB::HTTPHeaderEntries & headers) const override;
+        const DB::HTTPHeaderEntries & headers,
+        const std::optional<DB::HTTPHeaderEntries> & auth_headers) const override;
 
     void sendRequest(
+        const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,

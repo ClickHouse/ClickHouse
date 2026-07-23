@@ -1,0 +1,93 @@
+---
+alias: []
+description: 'MySQLDump 格式文档'
+input_format: true
+keywords: ['MySQLDump']
+output_format: false
+slug: /interfaces/formats/MySQLDump
+title: 'MySQLDump'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+ClickHouse 支持读取 MySQL [转储](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html)。
+
+它会读取转储中属于同一张表的 `INSERT` 查询里的所有数据。
+如果包含多个表，默认会读取第一张表的数据。
+
+<Note>
+  该格式支持 schema inference：如果转储中包含指定表的 `CREATE` 查询，则会根据该查询推断其结构；否则会根据 `INSERT` 查询中的数据推断 schema。
+</Note>
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+假设有如下 SQL 转储文件：
+
+```sql title="dump.sql"
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+可以运行以下查询：
+
+```sql title="Query"
+DESCRIBE TABLE file(dump.sql, MySQLDump) 
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SELECT *
+FROM file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+您可以使用 [`input_format_mysql_dump_table_name`](/zh/reference/settings/formats#input_format_mysql_dump_table_name) 设置来指定要从中读取数据的表名。
+如果将 `input_format_mysql_dump_map_columns` 设置为 `1`，并且转储中包含指定表的 `CREATE` 查询，或 `INSERT` 查询中包含列名，则输入数据中的列会按名称映射到表中的列。
+如果将 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats#input_format_skip_unknown_fields) 设置为 `1`，则会跳过名称未知的列。

@@ -1,0 +1,151 @@
+---
+title: كيف يمكنني تحويل الملفات من Parquet إلى CSV أو JSON؟
+description: "تعرّف على كيفية استخدام أداة `clickhouse-local` من ClickHouse لتحويل ملفات Parquet بسهولة إلى صيغ CSV أو JSON."
+date: 2023-03-22
+tags: ['مصادر البيانات', 'تنسيقات البيانات']
+keywords: ['التحويل', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="converting-files-from-parquet-to-csv-or-json">
+  ## تحويل الملفات من Parquet إلى CSV أو JSON
+</div>
+
+يمكنك استخدام `clickhouse-local` لتحويل الملفات بين أي من [تنسيقات الإدخال والإخراج](/ar/reference/formats/index) التي يدعمها ClickHouse (وهي أكثر من 70 تنسيقًا مختلفًا!). في هذه المقالة، سنحوّل ملف Parquet في S3 إلى ملفي CSV وJSON.
+
+لنبدأ من البداية. يوفّر ClickHouse مجموعة من [دوال الجداول](/ar/reference/functions/table-functions/index) التي تقرأ من الملفات وقواعد البيانات والموارد الأخرى، ثم تحوّل البيانات إلى جدول. للتوضيح، لنفترض أن لدينا ملف Parquet في S3. سنستخدم دالة الجدول `s3` لقراءته (ويعرف ClickHouse أنه ملف Parquet استنادًا إلى اسم الملف).
+
+لكن أولًا، لننزّل الملف التنفيذي `clickhouse`:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="accessing-the-data-using-a-table-function">
+  ## الوصول إلى البيانات باستخدام دالة الجدول
+</div>
+
+لنتحقق من إمكانية قراءة الملف باستخدام `DESCRIBE` على الجدول الناتج الذي تُنشئه دالة الجدول `s3`:
+
+```bash
+./clickhouse local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+يحتوي هذا الملف تحديدًا على أسعار المنازل للعقارات التي بيعت في المملكة المتحدة. تبدو الاستجابة كما يلي:
+
+```response
+price	Nullable(Int64)
+date	Nullable(UInt16)
+postcode1	Nullable(String)
+postcode2	Nullable(String)
+type	Nullable(String)
+is_new	Nullable(UInt8)
+duration	Nullable(String)
+addr1	Nullable(String)
+addr2	Nullable(String)
+street	Nullable(String)
+locality	Nullable(String)
+town	Nullable(String)
+district	Nullable(String)
+county	Nullable(String)
+```
+
+يمكنك تنفيذ أي استعلام تريده على البيانات. على سبيل المثال، لنرَ أيُّ البلدات لديها أعلى متوسط لأسعار المنازل:
+
+```bash
+./clickhouse local -q "SELECT
+   town,
+   avg(price) AS avg_price
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+GROUP BY town
+ORDER BY avg_price DESC
+LIMIT 10"
+```
+
+تكون الاستجابة كما يلي:
+
+```bash
+GATWICK	16818750
+CHALFONT ST GILES	938090.0985915493
+VIRGINIA WATER	789301.1320224719
+COBHAM	699874.7111622555
+BEACONSFIELD	677247.5483146068
+ESHER	616004.6888297872
+KESTON	607585.8597560975
+GERRARDS CROSS	566330.2959086584
+ASCOT	551491.2975753123
+WEYBRIDGE	548974.828692494
+```
+
+<div id="convert-the-parquet-file-to-a-csv">
+  ## حوِّل ملف Parquet إلى ملف CSV
+</div>
+
+يمكنك إرسال نتيجة أي استعلام SQL إلى ملف. لنأخذ جميع الأعمدة من ملف Parquet الموجود لدينا في S3 ونرسل الناتج إلى ملف CSV جديد. وبما أن ملف الإخراج ينتهي بـ `.csv`، فإن ClickHouse يعرف أنه يجب استخدام صيغة الإخراج `CSV`:
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+INTO OUTFILE 'house_prices.csv'"
+```
+
+لنتحقق من نجاح ذلك:
+
+```response
+$ tail house_prices.csv
+70000,10508,"YO8","9XN","detached",0,"freehold","7","","POPPY CLOSE","SELBY","SELBY","SELBY","NORTH YORKSHIRE"
+130000,14274,"YO8","9XP","detached",0,"freehold","10","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+150000,18180,"YO8","9XP","detached",0,"freehold","11","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+157000,18088,"YO8","9XP","detached",0,"freehold","12","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+134000,17333,"YO8","9XP","semi-detached",0,"freehold","16","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+250000,13405,"YO8","9YA","detached",0,"freehold","6","","YORKDALE COURT","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+59500,11166,"YO8","9YB","semi-detached",0,"freehold","4","","YORKDALE DRIVE","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+142500,17648,"YO8","9YB","semi-detached",0,"freehold","4A","","YORKDALE DRIVE","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+230000,15125,"YO8","9YD","detached",0,"freehold","1","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+250000,15950,"YO8","9YD","detached",0,"freehold","3","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+```
+
+<div id="convert-the-parquet-file-to-a-json">
+  ## حوّل ملف Parquet إلى تنسيق JSON
+</div>
+
+لتحويل ملف Parquet إلى JSON، ما عليك سوى تغيير امتداد ملف الإخراج:
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+INTO OUTFILE 'house_prices.ndjson'"
+```
+
+لنتأكد من نجاح العملية:
+
+```response
+ $ tail house_prices.ndjson
+{"price":"70000","date":10508,"postcode1":"YO8","postcode2":"9XN","type":"detached","is_new":0,"duration":"freehold","addr1":"7","addr2":"","street":"POPPY CLOSE","locality":"SELBY","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"130000","date":14274,"postcode1":"YO8","postcode2":"9XP","type":"detached","is_new":0,"duration":"freehold","addr1":"10","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"150000","date":18180,"postcode1":"YO8","postcode2":"9XP","type":"detached","is_new":0,"duration":"freehold","addr1":"11","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"157000","date":18088,"postcode1":"YO8","postcode2":"9XP","type":"detached","is_new":0,"duration":"freehold","addr1":"12","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"134000","date":17333,"postcode1":"YO8","postcode2":"9XP","type":"semi-detached","is_new":0,"duration":"freehold","addr1":"16","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"250000","date":13405,"postcode1":"YO8","postcode2":"9YA","type":"detached","is_new":0,"duration":"freehold","addr1":"6","addr2":"","street":"YORKDALE COURT","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"59500","date":11166,"postcode1":"YO8","postcode2":"9YB","type":"semi-detached","is_new":0,"duration":"freehold","addr1":"4","addr2":"","street":"YORKDALE DRIVE","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"142500","date":17648,"postcode1":"YO8","postcode2":"9YB","type":"semi-detached","is_new":0,"duration":"freehold","addr1":"4A","addr2":"","street":"YORKDALE DRIVE","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"230000","date":15125,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"1","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"250000","date":15950,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"3","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+```
+
+<div id="convert-csv-to-parquet">
+  ## تحويل CSV إلى Parquet
+</div>
+
+يعمل هذا في كلا الاتجاهين - إذ يمكننا بسهولة قراءة ملف CSV الجديد وإخراجه كملف Parquet. ويمكن لـ ClickHouse قراءة الملف المحلي `house_prices.csv` باستخدام دالة الجدول `file`، كما يُخرج ClickHouse الملف بتنسيق Parquet استنادًا إلى امتداد اسم الملف `.parquet` (أو كان بإمكاننا إضافة بند `FORMAT Parquet`):
+
+```bash
+./clickhouse local -q "SELECT *
+FROM file('house_prices.csv')
+INTO OUTFILE 'house_prices.parquet'"
+```
+
+كما ذكرنا أعلاه، يمكنك استخدام أيٍّ من [تنسيقات الإدخال والإخراج](/ar/reference/formats/index) في ClickHouse مع `clickhouse local` لتحويل الملفات بسهولة إلى صيغ مختلفة.

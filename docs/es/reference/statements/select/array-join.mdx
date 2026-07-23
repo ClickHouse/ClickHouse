@@ -1,0 +1,405 @@
+---
+description: 'Documentación de la cláusula ARRAY JOIN'
+sidebarTitle: 'ARRAY JOIN'
+slug: /sql-reference/statements/select/array-join
+title: 'Cláusula ARRAY JOIN'
+doc_type: 'reference'
+---
+
+Es una operación habitual en las tablas que contienen una columna de tipo Array generar una nueva tabla con una fila por cada elemento individual del array de esa columna original, mientras que los valores de las demás columnas se duplican. Este es el caso básico de lo que hace la cláusula `ARRAY JOIN`.
+
+Su nombre proviene de que puede interpretarse como la ejecución de un `JOIN` con un array o una estructura de datos anidada. Su propósito es similar al de la función [arrayJoin](/es/reference/functions/regular-functions/array-join), pero la funcionalidad de la cláusula es más amplia.
+
+Sintaxis:
+
+```sql
+SELECT <expr_list>
+FROM <left_subquery>
+[LEFT] ARRAY JOIN <array>
+[WHERE|PREWHERE <expr>]
+...
+```
+
+A continuación se enumeran los tipos de `ARRAY JOIN` admitidos:
+
+* `ARRAY JOIN` - En el caso base, los arrays vacíos no se incluyen en el resultado de `JOIN`.
+* `LEFT ARRAY JOIN` - El resultado de `JOIN` contiene filas con arrays vacíos. El valor de un array vacío se establece en el valor predeterminado del tipo de elemento del array (normalmente 0, una cadena vacía o NULL).
+
+<div id="basic-array-join-examples">
+  ## Ejemplos básicos de ARRAY JOIN
+</div>
+
+<div id="array-join-left-array-join-examples">
+  ### ARRAY JOIN y LEFT ARRAY JOIN
+</div>
+
+Los ejemplos siguientes muestran el uso de las cláusulas `ARRAY JOIN` y `LEFT ARRAY JOIN`. Vamos a crear una tabla con una columna de tipo [Array](/es/reference/data-types/array) e insertar valores en ella:
+
+```sql
+CREATE TABLE arrays_test
+(
+    s String,
+    arr Array(UInt8)
+) ENGINE = Memory;
+
+INSERT INTO arrays_test
+VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
+```
+
+```response
+┌─s───────────┬─arr─────┐
+│ Hello       │ [1,2]   │
+│ World       │ [3,4,5] │
+│ Goodbye     │ []      │
+└─────────────┴─────────┘
+```
+
+En el ejemplo siguiente se usa la cláusula `ARRAY JOIN`:
+
+```sql
+SELECT s, arr
+FROM arrays_test
+ARRAY JOIN arr;
+```
+
+```response
+┌─s─────┬─arr─┐
+│ Hello │   1 │
+│ Hello │   2 │
+│ World │   3 │
+│ World │   4 │
+│ World │   5 │
+└───────┴─────┘
+```
+
+En el siguiente ejemplo se usa la cláusula `LEFT ARRAY JOIN`:
+
+```sql
+SELECT s, arr
+FROM arrays_test
+LEFT ARRAY JOIN arr;
+```
+
+```response
+┌─s───────────┬─arr─┐
+│ Hello       │   1 │
+│ Hello       │   2 │
+│ World       │   3 │
+│ World       │   4 │
+│ World       │   5 │
+│ Goodbye     │   0 │
+└─────────────┴─────┘
+```
+
+<div id="array-join-arrayEnumerate">
+  ### ARRAY JOIN y la función arrayEnumerate
+</div>
+
+Esta función se usa normalmente con `ARRAY JOIN`. Permite contar algo solo una vez por cada array después de aplicar `ARRAY JOIN`. Ejemplo:
+
+```sql
+SELECT
+    count() AS Reaches,
+    countIf(num = 1) AS Hits
+FROM test.hits
+ARRAY JOIN
+    GoalsReached,
+    arrayEnumerate(GoalsReached) AS num
+WHERE CounterID = 160656
+LIMIT 10
+```
+
+```text
+┌─Reaches─┬──Hits─┐
+│   95606 │ 31406 │
+└─────────┴───────┘
+```
+
+En este ejemplo, Reaches es el número de conversiones (las cadenas obtenidas tras aplicar `ARRAY JOIN`) y Hits es el número de páginas vistas (las cadenas antes de `ARRAY JOIN`). En este caso concreto, puede obtener el mismo resultado de una forma más sencilla:
+
+```sql
+SELECT
+    sum(length(GoalsReached)) AS Reaches,
+    count() AS Hits
+FROM test.hits
+WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
+```
+
+```text
+┌─Reaches─┬──Hits─┐
+│   95606 │ 31406 │
+└─────────┴───────┘
+```
+
+<div id="array_join_arrayEnumerateUniq">
+  ### ARRAY JOIN y arrayEnumerateUniq
+</div>
+
+Esta función es útil cuando se usa `ARRAY JOIN` y se agregan elementos de un array.
+
+En este ejemplo, para cada ID de objetivo se calcula el número de conversiones (cada elemento de la estructura de datos anidada Goals es un objetivo alcanzado, al que nos referimos como una conversión) y el número de sesiones. Sin `ARRAY JOIN`, habríamos contado el número de sesiones como sum(Sign). Pero en este caso concreto, las filas se multiplicaron por la estructura anidada Goals, así que, para contar cada sesión una sola vez después de esto, aplicamos una condición al valor de la función `arrayEnumerateUniq(Goals.ID)`.
+
+```sql
+SELECT
+    Goals.ID AS GoalID,
+    sum(Sign) AS Reaches,
+    sumIf(Sign, num = 1) AS Visits
+FROM test.visits
+ARRAY JOIN
+    Goals,
+    arrayEnumerateUniq(Goals.ID) AS num
+WHERE CounterID = 160656
+GROUP BY GoalID
+ORDER BY Reaches DESC
+LIMIT 10
+```
+
+```text
+┌──GoalID─┬─Reaches─┬─Visits─┐
+│   53225 │    3214 │   1097 │
+│ 2825062 │    3188 │   1097 │
+│   56600 │    2803 │    488 │
+│ 1989037 │    2401 │    365 │
+│ 2830064 │    2396 │    910 │
+│ 1113562 │    2372 │    373 │
+│ 3270895 │    2262 │    812 │
+│ 1084657 │    2262 │    345 │
+│   56599 │    2260 │    799 │
+│ 3271094 │    2256 │    812 │
+└─────────┴─────────┴────────┘
+```
+
+<div id="using-aliases">
+  ## Uso de alias
+</div>
+
+Se puede especificar un alias para un array en la cláusula `ARRAY JOIN`. En este caso, se puede acceder a un elemento del array mediante ese alias, pero al propio array se accede mediante su nombre original. Ejemplo:
+
+```sql
+SELECT s, arr, a
+FROM arrays_test
+ARRAY JOIN arr AS a;
+```
+
+```response
+┌─s─────┬─arr─────┬─a─┐
+│ Hello │ [1,2]   │ 1 │
+│ Hello │ [1,2]   │ 2 │
+│ World │ [3,4,5] │ 3 │
+│ World │ [3,4,5] │ 4 │
+│ World │ [3,4,5] │ 5 │
+└───────┴─────────┴───┘
+```
+
+Con alias, puede realizar `ARRAY JOIN` con un array externo. Por ejemplo:
+
+```sql
+SELECT s, arr_external
+FROM arrays_test
+ARRAY JOIN [1, 2, 3] AS arr_external;
+```
+
+```response
+┌─s───────────┬─arr_external─┐
+│ Hello       │            1 │
+│ Hello       │            2 │
+│ Hello       │            3 │
+│ World       │            1 │
+│ World       │            2 │
+│ World       │            3 │
+│ Goodbye     │            1 │
+│ Goodbye     │            2 │
+│ Goodbye     │            3 │
+└─────────────┴──────────────┘
+```
+
+Se pueden separar varios arrays con comas en la cláusula `ARRAY JOIN`. En este caso, el `JOIN` se realiza sobre ellos simultáneamente (la suma directa, no el producto cartesiano). Tenga en cuenta que, de forma predeterminada, todos los arrays deben tener el mismo tamaño. Ejemplo:
+
+```sql
+SELECT s, arr, a, num, mapped
+FROM arrays_test
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped;
+```
+
+```response
+┌─s─────┬─arr─────┬─a─┬─num─┬─mapped─┐
+│ Hello │ [1,2]   │ 1 │   1 │      2 │
+│ Hello │ [1,2]   │ 2 │   2 │      3 │
+│ World │ [3,4,5] │ 3 │   1 │      4 │
+│ World │ [3,4,5] │ 4 │   2 │      5 │
+│ World │ [3,4,5] │ 5 │   3 │      6 │
+└───────┴─────────┴───┴─────┴────────┘
+```
+
+El siguiente ejemplo utiliza la función [arrayEnumerate](/es/reference/functions/regular-functions/array-functions#arrayEnumerate):
+
+```sql
+SELECT s, arr, a, num, arrayEnumerate(arr)
+FROM arrays_test
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
+```
+
+```response
+┌─s─────┬─arr─────┬─a─┬─num─┬─arrayEnumerate(arr)─┐
+│ Hello │ [1,2]   │ 1 │   1 │ [1,2]               │
+│ Hello │ [1,2]   │ 2 │   2 │ [1,2]               │
+│ World │ [3,4,5] │ 3 │   1 │ [1,2,3]             │
+│ World │ [3,4,5] │ 4 │   2 │ [1,2,3]             │
+│ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
+└───────┴─────────┴───┴─────┴─────────────────────┘
+```
+
+Se pueden unir varios arrays de distinto tamaño usando: `SETTINGS enable_unaligned_array_join = 1`. Ejemplo:
+
+```sql
+SELECT s, arr, a, b
+FROM arrays_test ARRAY JOIN arr AS a, [['a','b'],['c']] AS b
+SETTINGS enable_unaligned_array_join = 1;
+```
+
+```response
+┌─s───────┬─arr─────┬─a─┬─b─────────┐
+│ Hello   │ [1,2]   │ 1 │ ['a','b'] │
+│ Hello   │ [1,2]   │ 2 │ ['c']     │
+│ World   │ [3,4,5] │ 3 │ ['a','b'] │
+│ World   │ [3,4,5] │ 4 │ ['c']     │
+│ World   │ [3,4,5] │ 5 │ []        │
+│ Goodbye │ []      │ 0 │ ['a','b'] │
+│ Goodbye │ []      │ 0 │ ['c']     │
+└─────────┴─────────┴───┴───────────┘
+```
+
+<div id="array-join-with-nested-data-structure">
+  ## ARRAY JOIN con estructuras de datos anidadas
+</div>
+
+`ARRAY JOIN` también funciona con [estructuras de datos anidadas](/es/reference/data-types/nested-data-structures/index):
+
+```sql
+CREATE TABLE nested_test
+(
+    s String,
+    nest Nested(
+    x UInt8,
+    y UInt32)
+) ENGINE = Memory;
+
+INSERT INTO nested_test
+VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
+```
+
+```response
+┌─s───────┬─nest.x──┬─nest.y─────┐
+│ Hello   │ [1,2]   │ [10,20]    │
+│ World   │ [3,4,5] │ [30,40,50] │
+│ Goodbye │ []      │ []         │
+└─────────┴─────────┴────────────┘
+```
+
+```sql
+SELECT s, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN nest;
+```
+
+```response
+┌─s─────┬─nest.x─┬─nest.y─┐
+│ Hello │      1 │     10 │
+│ Hello │      2 │     20 │
+│ World │      3 │     30 │
+│ World │      4 │     40 │
+│ World │      5 │     50 │
+└───────┴────────┴────────┘
+```
+
+Al especificar nombres de estructuras de datos anidadas en `ARRAY JOIN`, el significado es el mismo que el de `ARRAY JOIN` con todos los elementos del array que la componen. A continuación se muestran ejemplos:
+
+```sql
+SELECT s, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN `nest.x`, `nest.y`;
+```
+
+```response
+┌─s─────┬─nest.x─┬─nest.y─┐
+│ Hello │      1 │     10 │
+│ Hello │      2 │     20 │
+│ World │      3 │     30 │
+│ World │      4 │     40 │
+│ World │      5 │     50 │
+└───────┴────────┴────────┘
+```
+
+Esta variante también tiene sentido:
+
+```sql
+SELECT s, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN `nest.x`;
+```
+
+```response
+┌─s─────┬─nest.x─┬─nest.y─────┐
+│ Hello │      1 │ [10,20]    │
+│ Hello │      2 │ [10,20]    │
+│ World │      3 │ [30,40,50] │
+│ World │      4 │ [30,40,50] │
+│ World │      5 │ [30,40,50] │
+└───────┴────────┴────────────┘
+```
+
+Se puede usar un alias para una estructura de datos anidada para seleccionar el resultado de `JOIN` o el array de origen. Ejemplo:
+
+```sql
+SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN nest AS n;
+```
+
+```response
+┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
+│ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
+│ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
+│ World │   3 │  30 │ [3,4,5] │ [30,40,50] │
+│ World │   4 │  40 │ [3,4,5] │ [30,40,50] │
+│ World │   5 │  50 │ [3,4,5] │ [30,40,50] │
+└───────┴─────┴─────┴─────────┴────────────┘
+```
+
+Ejemplo de uso de la función [arrayEnumerate](/es/reference/functions/regular-functions/array-functions#arrayEnumerate):
+
+```sql
+SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
+FROM nested_test
+ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
+```
+
+```response
+┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
+│ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
+│ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
+│ World │   3 │  30 │ [3,4,5] │ [30,40,50] │   1 │
+│ World │   4 │  40 │ [3,4,5] │ [30,40,50] │   2 │
+│ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
+└───────┴─────┴─────┴─────────┴────────────┴─────┘
+```
+
+<div id="implementation-details">
+  ## Detalles de implementación
+</div>
+
+El orden de ejecución de la consulta se optimiza al ejecutar `ARRAY JOIN`. Aunque `ARRAY JOIN` siempre debe especificarse antes de la cláusula [WHERE](/es/reference/statements/select/where)/[PREWHERE](/es/reference/statements/select/prewhere) en una consulta, técnicamente pueden ejecutarse en cualquier orden, a menos que el resultado de `ARRAY JOIN` se use como filtro. El optimizador de consultas controla el orden de ejecución.
+
+<div id="incompatibility-with-short-circuit-function-evaluation">
+  ### Incompatibilidad con la evaluación de funciones con cortocircuito
+</div>
+
+La [evaluación de funciones con cortocircuito](/es/reference/settings/session-settings#short_circuit_function_evaluation) es una característica que optimiza la ejecución de expresiones complejas en funciones específicas como `if`, `multiIf`, `and` y `or`. Evita que se produzcan posibles excepciones, como la división entre cero, durante la ejecución de estas funciones.
+
+`arrayJoin` siempre se ejecuta y no es compatible con la evaluación de funciones con cortocircuito. Esto se debe a que es una función especial que se procesa por separado de todas las demás funciones durante el análisis y la ejecución de la consulta, y requiere una lógica adicional que no funciona con la ejecución con cortocircuito. La razón es que el número de filas del resultado depende del resultado de `arrayJoin`, e implementar la ejecución diferida de `arrayJoin` es demasiado complejo y costoso.
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Trabajar con datos de series temporales en ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

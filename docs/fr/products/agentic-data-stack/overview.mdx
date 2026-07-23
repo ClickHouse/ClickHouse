@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Vue d’ensemble'
+title: 'Agentic Data Stack'
+description: 'Analytique agentique sur ClickHouse : entièrement gérée dans ClickHouse Cloud, ou auto-hébergée sous la forme d’une stack open source composée de ClickHouse, du serveur MCP, de LibreChat et de Langfuse.'
+doc_type: 'landing-page'
+keywords: ['agentic data stack', 'analytique agentique', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'IA']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Le moyen le plus simple de faire de l’analytique agentique sur ClickHouse est d’utiliser [ClickHouse Agents](/fr/products/cloud/features/ai-ml/agents) dans ClickHouse Cloud : entièrement géré, sans aucune infrastructure à gérer. Les utilisateurs posent des questions en langage naturel, et un agent IA y répond en interrogeant directement la base de données.
+
+Pour l’auto-hébergement, l’**Agentic Data Stack** est une stack open-source modulaire. Vous l’exécutez vous-même, connectez vos propres modèles et conservez vos conversations et vos données dans votre propre environnement. Elle repose sur [ClickHouse](/fr/get-started/setup/install), le [ClickHouse MCP server](/fr/products/agentic-data-stack/components/mcp-server), [LibreChat](/fr/products/agentic-data-stack/components/librechat) et [Langfuse](/fr/products/agentic-data-stack/components/langfuse).
+
+<div id="what-is-agentic-analytics">
+  ## Qu’est-ce que l’analytique agentique ?
+</div>
+
+Avec l’analytique agentique, le modèle appuie ses réponses sur des requêtes exécutées sur vos données. À partir d’une question, l’agent examine les bases de données et les tables disponibles, détermine les requêtes à exécuter, les lance dans ClickHouse, puis construit une réponse à partir des résultats. Il peut affiner une requête, en exécuter une autre dans la continuité, ou enchaîner plusieurs étapes. Lorsqu’une requête échoue ou renvoie un résultat inattendu, il s’adapte et réessaie au lieu de s’arrêter.
+
+<div id="what-you-can-do">
+  ## Ce que vous pouvez faire
+</div>
+
+* **Poser des questions en langage naturel** et obtenir des réponses à partir de vos propres données.
+* **Créer des agents sans code** en leur fournissant des instructions d’agent et des outils, puis en les réutilisant.
+* **Partager des agents et des conversations** sous forme de liens en lecture seule, afin que d’autres puissent retracer les requêtes à l’origine d’une réponse.
+* **Générer des graphiques et des visualisations interactifs** à partir des résultats de requête dans une conversation.
+* **Évaluer et améliorer les réponses** en notant les réponses dans Langfuse avec une validation humaine ou un juge LLM, puis en affinant vos prompts et vos agents.
+
+<div id="architecture">
+  ## Comment les composants s&#39;articulent
+</div>
+
+<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Architecture d’Agentic Data Stack : les utilisateurs interagissent avec LibreChat, qui se connecte à un LLM, à ClickHouse via le serveur MCP, et à Langfuse pour le tracing" size="md" />
+
+Un utilisateur pose une question dans LibreChat. Le modèle prépare une réponse et, via le serveur MCP, appelle des outils pour explorer et interroger ClickHouse. Les résultats sont renvoyés, puis l’agent rédige une réponse. Langfuse, basé sur OpenTelemetry, enregistre chaque exécution, du prompt à l’appel d’outil jusqu’à la réponse, permet d’évaluer automatiquement les résultats ou via une revue humaine, et suit la qualité, le coût et la latence.
+
+Le ClickHouse MCP server repose sur le [Model Context Protocol](https://modelcontextprotocol.io/), un standard ouvert. Il fonctionne donc avec n’importe quel client compatible MCP ou framework d’agents, et pas seulement avec LibreChat. Consultez les [guides MCP](/fr/guides/use-cases/ai-ml/MCP) pour les clients et les bibliothèques d’agents.
+
+<div id="components">
+  ## Composants
+</div>
+
+| Composant             | Rôle                                                                 | En savoir plus                                                    |
+| --------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| ClickHouse            | Le moteur analytique interrogé par l’agent                           | [Prise en main de ClickHouse](/fr/get-started/setup/install)    |
+| ClickHouse MCP server | La norme ouverte qui expose ClickHouse à l’agent sous forme d’outils | [Serveur MCP](/fr/products/agentic-data-stack/components/mcp-server) |
+| LibreChat             | L’interface de chat et d’agent utilisée par les utilisateurs         | [LibreChat](/fr/products/agentic-data-stack/components/librechat)    |
+| Langfuse              | Observabilité pour chaque prompt, appel d’outil et réponse           | [Langfuse](/fr/products/agentic-data-stack/components/langfuse)      |
+
+<div id="get-started">
+  ## Premiers pas
+</div>
+
+Il existe deux façons d’utiliser l’analytique agentique sur ClickHouse :
+
+* **Managed (ClickHouse Cloud) :** la voie la plus rapide, sans configuration. [ClickHouse Agents](/fr/products/cloud/features/ai-ml/agents) propose un chat hébergé et des agents pour interagir avec vos données. Les différents composants sont également disponibles en mode managé : le [Remote MCP server](/fr/products/cloud/features/ai-ml/remote-mcp) et [Langfuse Cloud](https://cloud.langfuse.com).
+* **Auto-hébergé (open source) :** exécutez vous-même toute la stack avec [Docker Compose](/fr/products/agentic-data-stack/docker-setup), en connectant vos propres modèles et en gardant vos données dans votre environnement.
+
+Pour essayer la stack sur des jeux de données publics sans rien installer, utilisez [AgentHouse](https://llm.clickhouse.com), la démo hébergée.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+Autres fonctionnalités d’IA open-source sur ClickHouse :
+
+* [Génération SQL par l’IA](/fr/guides/use-cases/ai-ml/ai-powered-sql-generation) : du langage naturel vers SQL dans ClickHouse Client et clickhouse-local
+* [Recherche vectorielle avec QBit](/fr/guides/use-cases/ai-ml/vector-search) : recherche vectorielle ajustable à l’exécution

@@ -1,0 +1,399 @@
+---
+slug: /guides/replacing-merge-tree
+title: 'ReplacingMergeTree エンジンの使い方'
+description: 'ClickHouse で ReplacingMergeTree エンジンを使用する方法についてのガイド'
+keywords: ['replacingmergetree', '挿入', '重複排除']
+doc_type: 'guide'
+sidebarTitle: 'ReplacingMergeTree エンジンの使い方'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+トランザクション型データベースは、更新や削除を伴うトランザクション処理向けのworkloadsに最適化されていますが、OLAPデータベースでは、こうした操作に対する保証は限定的です。代わりに、分析queriesを大幅に高速化するために、batchesで挿入される不変データ向けに最適化されています。ClickHouseは、mutationsによる更新操作に加え、行を軽量に削除する手段も提供していますが、カラム指向のstructureであるため、これらの操作は上で説明したとおり慎重にスケジュールする必要があります。これらの操作は非同期に処理され、単一のthreadで実行され、さらに (更新の場合は) ディスク上のデータを書き換える必要があります。したがって、多数の小さな変更には使用すべきではありません。
+更新行および削除行のstreamを処理しつつ、上記のような使用パターンを避けるには、ClickHouseのtable engineであるReplacingMergeTreeを使用できます。
+
+<div id="automatic-upserts-of-inserted-rows">
+  ## 挿入された行の自動 upsert
+</div>
+
+[ReplacingMergeTree table engine](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な insert を使って更新操作を効率的に再現します。
+これは、テーブルエンジンが重複行を識別できることに依存しています。これは、一意性の判定に `ORDER BY` 句を使うことで実現されます。つまり、2 つの行が `ORDER BY` で指定されたカラムに対して同じ値を持つ場合、それらは重複と見なされます。テーブル定義時に指定する `version` カラムにより、2 つの行が重複と識別された場合に最新バージョンの行を保持できます。つまり、version の値が最も大きい行が保持されます。
+このプロセスを以下の例で示します。ここでは、行は A カラム (このテーブルの `ORDER BY`) によって一意に識別されます。これらの行は 2 つの batches として挿入され、その結果、ディスク上に 2 つのパーツが作成されたと仮定します。その後、非同期のバックグラウンドプロセスで、これらのパーツがマージされます。
+
+ReplacingMergeTree では、さらに deleted カラムも指定できます。このカラムには 0 または 1 を設定でき、値が 1 の場合はその行 (およびその重複) が削除済みであることを示し、それ以外では 0 を使用します。**注意: 削除済みの行はマージ時には削除されません。**
+
+このプロセスでは、パーツマージ中に次のことが起こります。
+
+* A カラムの値 1 で識別される行には、version 2 の更新行と version 3 の削除行 (deleted カラムの値は 1) の両方があります。したがって、削除済みとしてマークされた最新の行が保持されます。
+* A カラムの値 2 で識別される行には、2 つの更新行があります。新しい方の行が保持され、price カラムの値は 6 になります。
+* A カラムの値 3 で識別される行には、version 1 の行と version 2 の削除行があります。この削除行が保持されます。
+
+このマージプロセスの結果、最終状態を表す 4 行が残ります。
+
+<br />
+
+<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree のプロセス" />
+
+<br />
+
+削除済みの行は決して削除されない点に注意してください。これらは `OPTIMIZE table FINAL CLEANUP` によって強制的に削除できます。これには実験的な設定 `allow_experimental_replacing_merge_with_cleanup=1` が必要です。これは、以下の条件下でのみ実行してください。
+
+1. クリーンアップで削除対象となる古いバージョンを持つ行が、操作の実行後に挿入されないことを確実にできること。これらが挿入されると、削除済みの行がすでに存在しないため、誤って保持されます。
+2. クリーンアップを実行する前に、すべてのレプリカが同期していることを確認してください。これは次のコマンドで実現できます。
+
+<br />
+
+```sql
+SYSTEM SYNC REPLICA table
+```
+
+(1) が保証されたら、このコマンドとそれに続くクリーンアップが完了するまで、insert を一時停止することを推奨します。
+
+> ReplacingMergeTree で deletes を処理する方法は、上記の条件でクリーンアップ期間を確保できる場合を除き、delete の割合が少量から中程度 (10%未満) の table にのみ推奨されます。
+
+> ヒント: 今後変更されない一部のパーティションに対して `OPTIMIZE FINAL CLEANUP` を実行できる場合もあります。
+
+<div id="choosing-a-primarydeduplication-key">
+  ## プライマリ/重複排除キーの選択
+</div>
+
+前述のとおり、ReplacingMergeTree では、さらに重要な制約を満たす必要があります。`ORDER BY` のカラムの値は、変更をまたいでも行を一意に識別できなければなりません。そのため、Postgres のようなトランザクションデータベースから移行する場合は、元の Postgres の主キーを ClickHouse の `ORDER BY` 句に含める必要があります。
+
+ClickHouse の利用者であれば、テーブルの `ORDER BY` 句に含めるカラムを選び、[クエリパフォーマンスを最適化する](/ja/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)ことには慣れているでしょう。一般に、これらのカラムは [よく実行されるクエリに基づいて選択し、カーディナリティの低い順に並べる](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales)べきです。重要なのは、ReplacingMergeTree では追加の制約があることです。つまり、これらのカラムは不変でなければなりません。たとえば Postgres からレプリケーションする場合は、基になる Postgres のデータで変化しないカラムだけをこの句に追加してください。他のカラムは変更されてもかまいませんが、これらのカラムは行を一意に識別するため、常に同じ値である必要があります。
+分析ワークロードでは、通常、Postgres の主キーはあまり役に立ちません。特定の 1 行を対象にしたルックアップを行うことはほとんどないためです。カラムはカーディナリティの低い順に並べることを推奨しており、さらに [ORDER BY の前方にあるカラムに一致する条件のほうが通常は高速](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently) であることから、Postgres の主キーは `ORDER BY` の末尾に追加するべきです (分析上の価値がある場合を除きます) 。Postgres で複数のカラムが主キーを構成している場合は、カーディナリティとクエリ上の有用性を考慮しつつ、それらを `ORDER BY` に追加する必要があります。また、`MATERIALIZED` カラムで値を連結して、一意の主キーを生成する方法も検討できます。
+
+Stack Overflow データセットの posts テーブルを考えてみましょう。
+
+```sql
+CREATE TABLE stackoverflow.posts_updateable
+(
+       `Version` UInt32,
+       `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(Version, Deleted)
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+```
+
+`ORDER BY` キーとして `(PostTypeId, toDate(CreationDate), CreationDate, Id)` を使用します。各投稿で一意な `Id` カラムにより、行を重複排除できます。必要に応じて、`Version` カラムと `Deleted` カラムをスキーマに追加します。
+
+<div id="querying-replacingmergetree">
+  ## ReplacingMergeTree のクエリ
+</div>
+
+マージ時に ReplacingMergeTree は、`ORDER BY` カラムの値を一意の識別子として使って重複した行を特定し、最も大きいバージョンだけを残すか、最新バージョンが削除を示している場合は重複した行をすべて削除します。ただし、これで保証されるのは最終的な整合性だけであり、行が必ず重複排除されるわけではないため、これに依存すべきではありません。
+
+<Info>
+  **重複排除されたデータを読み取るには FINAL を使用する**
+
+  重複排除は background merges の間にのみ行われるため、通常の `SELECT` でも重複した行や削除済みの行が返されることがあります。クエリ時に正しい結果を取得するには、`FINAL` modifier を使用してください。これにより、クエリの実行時に重複排除と削除行の除去が完了します。
+</Info>
+
+上記の Posts テーブルについて考えてみましょう。このデータセットは通常の方法でロードできますが、値として 0 を指定した deleted カラムと version カラムを追加します。例を簡単にするため、ここでは 10000 行のみをロードします。
+
+```sql
+INSERT INTO stackoverflow.posts_updateable SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet') WHERE AnswerCount > 0 LIMIT 10000
+```
+
+```response
+0 rows in set. Elapsed: 1.980 sec. Processed 8.19 thousand rows, 3.52 MB (4.14 thousand rows/s., 1.78 MB/s.)
+```
+
+行数を確認しましょう：
+
+```sql
+SELECT count() FROM stackoverflow.posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+ここで、回答後の統計を更新します。これらの値を更新するのではなく、5000行の新しいコピーを挿入し、それらのバージョン番号に 1 を加えます (つまり、テーブル内には 150 行が存在することになります) 。これは、単純な `INSERT INTO SELECT` でシミュレートできます。
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0
+LIMIT 5000
+```
+
+```response
+0 rows in set. Elapsed: 4.056 sec. Processed 1.42 million rows, 2.20 GB (349.63 thousand rows/s., 543.39 MB/s.)
+```
+
+さらに、deleted カラムの値を 1 にして行を再挿入することで、ランダムに 1000 件の投稿を削除します。これも同様に、単純な `INSERT INTO SELECT` で再現できます。
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        1 AS Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount + 1 AS AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0 AND AnswerCount > 0
+LIMIT 1000
+```
+
+```response
+0 rows in set. Elapsed: 0.166 sec. Processed 135.53 thousand rows, 212.65 MB (816.30 thousand rows/s., 1.28 GB/s.)
+```
+
+上記の操作の結果は 16,000 行、つまり 10,000 + 5000 + 1000 になります。実際には、元の合計より 1000 行少ないだけなので、10,000 - 1000 = 9000 であるはずです。
+
+```sql
+SELECT count()
+FROM posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+結果は、発生しているマージの状況によって異なります。重複した行があるため、合計値が異なっていることがわかります。テーブルに `FINAL` を適用すると、正しい結果が得られます。
+
+```sql
+SELECT count()
+FROM posts_updateable
+FINAL
+```
+
+```response
+┌─count()─┐
+│    9000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 11.81 thousand rows, 212.54 KB (2.14 million rows/s., 38.61 MB/s.)
+Peak memory usage: 8.14 MiB.
+```
+
+<div id="final-performance">
+  ## `FINAL` のパフォーマンス
+</div>
+
+`FINAL` 演算子は、クエリにわずかなパフォーマンス上のオーバーヘッドをもたらします。
+これは、クエリが主キーカラムでフィルタリングされていない場合に特に顕著です。
+その結果、より多くのデータが読み取られ、重複排除のオーバーヘッドも増加します。`WHERE` 条件でキーカラムを
+フィルタリングに使用すると、読み込まれて重複排除に回されるデータ量を減らせます。
+
+`WHERE` 条件でキーカラムを使用しない場合、ClickHouse は現在、`FINAL` 使用時に `PREWHERE` 最適化を利用しません。この最適化は、フィルタされていないカラムについて読み取る行数を減らすことを目的としています。この `PREWHERE` を再現し、パフォーマンスを改善できる可能性がある例は、[こちら](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance)で確認できます。
+
+<div id="exploiting-partitions-with-replacingmergetree">
+  ## ReplacingMergeTree でパーティションを活用する
+</div>
+
+ClickHouse では、データのマージはパーティション単位で行われます。ReplacingMergeTree を使用する場合は、**そのパーティションキーが行ごとに変わらない**ことを保証できるなら、ベストプラクティスに従ってテーブルをパーティション化することを推奨します。これにより、同じ行に対する更新は同じ ClickHouse パーティションに送られます。ここで説明するベストプラクティスに従っている限り、Postgres と同じパーティションキーを使い回すこともできます。
+
+これが当てはまる場合は、`FINAL` クエリのパフォーマンスを向上させるために、`do_not_merge_across_partitions_select_final=1` という設定を使用できます。この設定により、FINAL 使用時にはパーティションごとに個別にマージと処理が行われます。
+
+次の posts テーブルでは、パーティション化を使用していません。
+
+```sql
+CREATE TABLE stackoverflow.posts_no_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+INSERT INTO stackoverflow.posts_no_part SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 182.895 sec. Processed 59.82 million rows, 38.07 GB (327.07 thousand rows/s., 208.17 MB/s.)
+```
+
+`FINAL` が実際に処理を行う必要があるように、重複した行を insert して `AnswerCount` を増やし、100万行を更新します。
+
+```sql
+INSERT INTO posts_no_part SELECT Version + 1 AS Version, Deleted, Id, PostTypeId, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount + 1 AS AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate
+FROM posts_no_part
+LIMIT 1000000
+```
+
+`FINAL` を使用して、年ごとの回答の合計を計算します:
+
+```sql
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_no_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │        371480 │
+...
+│ 2024 │        127765 │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 2.338 sec. Processed 122.94 million rows, 1.84 GB (52.57 million rows/s., 788.58 MB/s.)
+Peak memory usage: 2.09 GiB.
+```
+
+年でパーティション化されたテーブルに対しても同じ手順を繰り返し、`do_not_merge_across_partitions_select_final=1` を指定して上記のクエリをもう一度実行します。
+
+```sql
+CREATE TABLE stackoverflow.posts_with_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+// populate & update omitted
+
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_with_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │       387832  │
+│ 2009 │       1165506 │
+│ 2010 │       1755437 │
+...
+│ 2023 │       787032  │
+│ 2024 │       127765  │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
+```
+
+ご覧のとおり、このケースでは、重複排除をパーティション単位で並列に実行できるため、パーティション化によってクエリのパフォーマンスが大幅に向上しました。
+
+<div id="merge-behavior-considerations">
+  ## マージ動作に関する考慮事項
+</div>
+
+ClickHouseのマージ選択メカニズムは、単にパーツをマージするだけではありません。以下では、この挙動をReplacingMergeTreeの文脈で見ていきながら、古いデータをより積極的にマージするための設定オプションや、大きなパーツに関する考慮事項について説明します。
+
+<div id="merge-selection-logic">
+  ### マージ選択ロジック
+</div>
+
+マージではパーツ数をできるだけ減らすことを目指しますが、同時に書き込み増幅のコストとのバランスも考慮されます。そのため、内部計算の結果、過度な書き込み増幅を招くパーツ範囲はマージ対象から除外されます。この挙動により、不要なリソース消費を防ぎ、ストレージコンポーネントの寿命を延ばすことができます。
+
+<div id="merging-behavior-on-large-parts">
+  ### 大きなパーツにおけるマージ動作
+</div>
+
+ClickHouse の ReplacingMergeTree エンジンは、パーツをマージして重複する行を管理し、指定した一意キーに基づいて各行の最新バージョンのみを保持するよう最適化されています。ただし、マージ後のパーツが `max_bytes_to_merge_at_max_space_in_pool` のしきい値に達すると、`min_age_to_force_merge_seconds` が設定されていても、以降のマージ対象には選ばれなくなります。その結果、継続的なデータ挿入に伴って蓄積する可能性がある重複の除去を、自動マージに頼ることはできなくなります。
+
+これに対処するには、`OPTIMIZE FINAL` を実行して、パーツを手動でマージし、重複を削除できます。自動マージとは異なり、`OPTIMIZE FINAL` は `max_bytes_to_merge_at_max_space_in_pool` のしきい値を回避し、利用可能なリソース、特にディスク容量のみに基づいてパーツをマージし、各パーティションでパーツが 1 つだけ残るまで処理を進めます。ただし、この方法は大規模なテーブルではメモリ消費が大きくなる可能性があり、新しいデータが追加されるたびに繰り返し実行が必要になる場合があります。
+
+パフォーマンスを維持しつつ、より持続可能な解決策とするには、テーブルのパーティション化を推奨します。これにより、パーツがマージの最大サイズに達するのを防ぎやすくなり、継続的な手動最適化の必要性も減らせます。
+
+<div id="partitioning-and-merging-across-partitions">
+  ### パーティション化とパーティションをまたぐマージ
+</div>
+
+ReplacingMergeTree でパーティションを活用するで説明したように、ベストプラクティスとしてテーブルのパーティション化を推奨します。パーティション化するとデータが分離されるため、マージの効率が向上し、特にクエリ実行時にパーティションをまたぐマージを回避できます。この動作は 23.12 以降のバージョンでさらに強化されており、パーティションキーがソートキーのプレフィックスである場合、クエリ実行時にはパーティションをまたぐマージは行われず、クエリパフォーマンスが向上します。
+
+<div id="tuning-merges-for-better-query-performance">
+  ### クエリパフォーマンスを向上させるためのマージの調整
+</div>
+
+デフォルトでは、`min_age_to_force_merge_seconds` と `min_age_to_force_merge_on_partition_only` はそれぞれ 0 と false に設定されており、これらの機能は無効です。この構成では、ClickHouse はパーティションの経過時間に基づいてマージを強制せず、標準のマージ動作を適用します。
+
+`min_age_to_force_merge_seconds` に値を指定すると、ClickHouse は指定した期間より古いパーツに対して、通常のマージヒューリスティクスを無視します。これは一般に、パーツの総数を最小限に抑えることが目的の場合にのみ効果的ですが、ReplacingMergeTree ではクエリ実行時にマージ対象となるパーツ数を減らすことで、クエリパフォーマンスの向上につながる場合があります。
+
+この挙動は、`min_age_to_force_merge_on_partition_only=true` を設定することでさらに調整できます。この設定では、積極的なマージを行う条件として、パーティション内のすべてのパーツが `min_age_to_force_merge_seconds` で指定した時間より古くなっている必要があります。この構成により、古いパーティションは時間の経過とともに 1 つのパーツまでマージされ、データが集約されることでクエリパフォーマンスを維持できます。
+
+<div id="recommended-settings">
+  ### 推奨設定
+</div>
+
+<Warning>
+  マージ動作の調整は高度な運用です。本番ワークロードでこれらの設定を有効にする前に、ClickHouse Support に相談することを推奨します。
+</Warning>
+
+ほとんどの場合、`min_age_to_force_merge_seconds` には低い値、つまりパーティション期間より大幅に短い値を設定するのが望ましいです。これによりパーツ数を最小限に抑え、`FINAL` 演算子によるクエリ実行時の不要な マージ を防げます。
+
+たとえば、すでに単一のパーツに マージ 済みの月次パーティションを考えてみてください。このパーティション内で小さな想定外の insert により新しいパーツが作成されると、マージ が完了するまで ClickHouse は複数のパーツを読み取る必要があるため、クエリパフォーマンスが低下することがあります。`min_age_to_force_merge_seconds` を設定すると、これらのパーツが積極的に マージ されるようになり、クエリパフォーマンスの低下を防げます。

@@ -51,6 +51,10 @@ endif()
 # file and CMAKE_BUILD_TYPE=Release. Now that we build in-process, we have to
 # strip those flags explicitly. We keep:
 #   * --gcc-toolchain= / --no-default-config (toolchain bits from cmake/linux/toolchain-*.cmake)
+#   * -isystem +<path> / -nostdlibinc (musl header paths and the glibc-header
+#     opt-out added by the USE_MUSL toolchain — the runtime objects are linked
+#     into every musl executable and must honor the same "musl headers only"
+#     contract as the rest of the build)
 #   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
 #   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
 # The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
@@ -66,7 +70,7 @@ endif()
 # state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
 # drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
 # or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+|-nostdlibinc|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})

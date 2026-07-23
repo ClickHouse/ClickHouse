@@ -1,0 +1,83 @@
+---
+description: 'Clickhouse-disks のドキュメント'
+sidebarTitle: 'clickhouse-disks'
+slug: /operations/utilities/clickhouse-disks
+title: 'Clickhouse-disks'
+doc_type: 'reference'
+---
+
+ClickHouse のディスクに対して、ファイルシステムのような操作を提供するユーティリティです。対話型モードと非対話型モードの両方で利用できます。
+
+<div id="program-wide-options">
+  ## プログラム共通オプション
+</div>
+
+* `--config-file, -C` -- ClickHouse の config ファイルのパス。デフォルトは `/etc/clickhouse-server/config.xml` です。
+* `--save-logs` -- 実行したコマンドの進行状況を `/var/log/clickhouse-server/clickhouse-disks.log` に記録します。
+* `--log-level` -- 記録するイベントの[種類](/ja/reference/settings/server-settings/settings#logger)。デフォルトは `none` です。
+* `--disk` -- `mkdir, move, read, write, remove` コマンドで使用するディスク。デフォルトは `default` です。
+* `--query, -q` -- 対話型モードを起動せずに実行できる単一のクエリ
+* `--help, -h` -- すべてのオプションとコマンドを説明付きで表示します
+
+<div id="lazy-initialization">
+  ## 遅延初期化
+</div>
+
+config で利用可能なすべてのディスクは、遅延初期化されます。つまり、各ディスクに対応するオブジェクトは、そのディスクが何らかのコマンドで実際に使用されたときにのみ初期化されます。これは、ユーティリティの堅牢性を高めるとともに、config に記述されていてもユーザーが使用しておらず、初期化時に失敗する可能性があるディスクにアクセスしないようにするためです。ただし、clickhouse-disks の起動時に初期化されるディスクが 1 つ必要です。このディスクは、コマンドラインの `--disk` パラメータで指定します (デフォルト値は `default`) 。
+
+<div id="default-disks">
+  ## デフォルトのディスク
+</div>
+
+起動後、設定で指定されていないディスクが 2 つ、初期化に使用できます。
+
+1. **`local` ディスク**: このディスクは、`clickhouse-disks` ユーティリティを起動したローカルファイルシステムを模倣するよう設計されています。初期パスは `clickhouse-disks` の起動元ディレクトリで、ファイルシステムのルートディレクトリにマウントされます。
+
+2. **`default` ディスク**: このディスクは、設定の `clickhouse/path` パラメータで指定されたディレクトリ (デフォルト値は `/var/lib/clickhouse`) でローカルファイルシステムにマウントされます。初期パスは `/` に設定されます。
+
+<div id="clickhouse-disks-state">
+  ## Clickhouse-disks の状態
+</div>
+
+追加された各ディスクごとに、このユーティリティは現在のディレクトリ (通常のファイルシステムと同様のもの) を保持します。ユーザーは現在のディレクトリを変更したり、ディスクを切り替えたりできます。
+
+状態はプロンプト &quot;`disk_name`:`path_name`&quot; に表示されます
+
+<div id="commands">
+  ## コマンド
+</div>
+
+このドキュメントファイルでは、必須の位置引数はすべて `<parameter>`、名前付き引数は `[--parameter value]` と表記します。すべての位置パラメータは、対応する名前の名前付きパラメータとして指定することもできます。
+
+* `cd (change-dir, change_dir) [--disk disk] <path>`
+  ディスク `disk` 上のパス `path` にカレントディレクトリを変更します (デフォルト値は現在のディスクです) 。ディスクの切り替えは行われません。
+* `copy (cp) [--disk-from disk_1] [--disk-to disk_2] <path-from> <path-to>`.
+  ディスク `disk_1` 上の `path-from` からデータを再帰的にコピーし、
+  ディスク `disk_2` 上の `path-to` にコピーします (どちらもデフォルト値は現在のディスクで、非対話型モードではパラメータ `disk` になります) 。
+* `current_disk_with_path (current, current_disk, current_path)`
+  現在の状態を次のフォーマットで表示します:
+  `Disk: "current_disk" Path: "current path on current disk"`
+* `help [<command>]`
+  コマンド `command` のヘルプメッセージを表示します。`command` が指定されていない場合は、すべてのコマンドに関する情報を表示します。
+* `move (mv) <path-from> <path-to>`.
+  現在のディスク内で、`path-from` から `path-to` へファイルまたはディレクトリを移動します。
+* `remove (rm, delete) <path>`.
+  現在のディスク上で `path` を再帰的に削除します。
+* `link (ln) <path-from> <path-to>`.
+  現在のディスク上で `path-from` から `path-to` へのハードリンクを作成します。
+* `list (ls) [--recursive] <path>`
+  現在のディスク上の `path` にあるファイルを一覧表示します。デフォルトでは再帰的に表示しません。
+* `list-disks (list_disks, ls-disks, ls_disks)`.
+  ディスク名を一覧表示します。
+* `mkdir [--recursive] <path>` on a current disk.
+  ディレクトリを作成します。デフォルトでは再帰的に作成しません。
+* `read (r) <path-from> [--path-to path]`
+  `path-from` からファイルを読み取り、`path` に出力します (指定されていない場合は `stdout`) 。
+* `read-bitmap <path-from> [--values]`
+  `path-from` にある delete-bitmap (`.rbm`) サイドカーを調べます。マジックとバージョン、CRC の有効性、カーディナリティ (削除された行数)、および行範囲を表示します。`--values` を指定すると、すべての set bits (削除された行のオフセット) も昇順でダンプします。
+* `read-checksums <path>`
+  現在のディスク上にある `MergeTree` data part の `checksums.txt` ファイルを読み取り、`name`、`file_size`、`file_hash`、`uncompressed_size`、`uncompressed_hash` の各カラムを持つ、タブ区切りで human-readable なテーブルとして `stdout` に出力します。最後の 2 つのカラムは compressed ファイルにのみ含まれます。
+* `switch-disk [--path path] <disk>`
+  パス `path` でディスク `disk` に切り替えます (`path` が指定されていない場合、デフォルト値はディスク `disk` 上の直前のパスです) 。
+* `write (w) [--path-from path] <path-to>`.
+  `path` から `path-to` にファイルを書き込みます (`path` が指定されていない場合は `stdin`、入力は Ctrl+D で終了する必要があります) 。

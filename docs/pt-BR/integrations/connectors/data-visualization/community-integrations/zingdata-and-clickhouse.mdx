@@ -1,0 +1,103 @@
+---
+sidebarTitle: 'Zing Data'
+slug: /integrations/zingdata
+keywords: ['Zing Data']
+description: 'Zing Data é uma plataforma simples de inteligência de negócios social para ClickHouse, feita para iOS, Android e web.'
+title: 'Conectar o Zing Data ao ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.zingdata.com/" target="_blank">Zing Data</a> é uma plataforma de exploração e visualização de dados. O Zing Data se conecta ao ClickHouse usando o driver JS fornecido pelo ClickHouse.
+
+<div id="how-to-connect">
+  ## Como se conectar
+</div>
+
+1. Reúna seus detalhes de conexão.
+
+<ConnectionDetails />
+
+2. Baixe ou acesse o Zing Data
+
+   * Para usar o ClickHouse com o Zing Data no celular, baixe o aplicativo do Zing Data na [Google Play Store](https://play.google.com/store/apps/details?id=com.getzingdata.android) ou na [Apple App Store](https://apps.apple.com/us/app/zing-data-collaborative-bi/id1563294091).
+
+   * Para usar o ClickHouse com o Zing Data na web, acesse o [console web do Zing](https://console.getzingdata.com/) e crie uma conta.
+
+3. Adicione uma fonte de dados
+
+   * Para interagir com seus dados do ClickHouse no Zing Data, você precisa definir uma ***fonte de dados***. No menu do aplicativo móvel do Zing Data, selecione **Sources** e clique em **Add a Datasource**.
+
+   * Para adicionar uma fonte de dados na web, clique em **Data Sources** no menu superior, depois em **New Datasource** e selecione **ClickHouse** no menu suspenso
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_01.webp" alt="Interface do Zing Data mostrando o botão New Datasource e a opção ClickHouse no menu suspenso" border />
+
+   <br />
+
+4. Preencha os detalhes de conexão e clique em **Check Connection**.
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_02.webp" alt="Formulário de configuração de conexão do ClickHouse no Zing Data com campos para servidor, porta, banco de dados, nome de usuário e senha" border />
+
+   <br />
+
+5. Se a conexão for bem-sucedida, o Zing levará você para a seleção de tabelas. Selecione as tabelas desejadas e clique em **Save**. Se o Zing não conseguir se conectar à sua fonte de dados, você verá uma mensagem pedindo que verifique suas credenciais e tente novamente. Se, mesmo após verificar suas credenciais e tentar novamente, o problema persistir, <a id="contact_link" href="mailto:hello@getzingdata.com">entre em contato com o suporte do Zing aqui.</a>
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_03.webp" alt="Interface de seleção de tabelas do Zing Data mostrando as tabelas disponíveis do ClickHouse com caixas de seleção" border />
+
+   <br />
+
+6. Depois que a fonte de dados do ClickHouse for adicionada, ela ficará disponível para todos na sua organização do Zing, na aba **Data Sources** / **Sources**.
+
+<div id="creating-charts-and-dashboards-in-zing-data">
+  ## Criando gráficos e dashboards no Zing Data
+</div>
+
+1. Depois de adicionar sua fonte de dados do ClickHouse, clique em **Zing App** na web ou na fonte de dados no celular para começar a criar gráficos.
+
+2. Clique em uma tabela na lista de tabelas para criar um gráfico.
+
+   <Image size="sm" img="/images/integrations/data-visualization/zing_04.webp" alt="Interface do Zing Data mostrando a lista de tabelas com tabelas ClickHouse disponíveis" border />
+
+   <br />
+
+3. Use o construtor visual de consultas para selecionar os campos, agregações etc. desejados e clique em **Run Question**.
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_05.webp" alt="Interface do construtor visual de consultas do Zing Data com seleção de campos e opções de agregação" border />
+
+   <br />
+
+4. Se você já estiver familiarizado com SQL, também poderá escrever SQL personalizado para executar consultas e criar um gráfico.
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_06.webp" alt="Modo do editor SQL no Zing Data mostrando a interface para escrever consultas SQL" border />
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_07.webp" alt="Resultados de consultas SQL no Zing Data com dados exibidos em formato tabular" border />
+
+5. Um exemplo de gráfico seria assim. A pergunta pode ser salva usando o menu de três pontos. Você pode comentar no gráfico, marcar membros da equipe, criar alertas em tempo real, alterar o tipo de gráfico etc.
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_08.webp" alt="Exemplo de visualização de gráfico no Zing Data mostrando dados do ClickHouse com menu de opções" border />
+
+   <br />
+
+6. É possível criar dashboards usando o ícone &quot;+&quot; em **Dashboards** na tela inicial. Perguntas existentes podem ser arrastadas para serem exibidas no dashboard.
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_09.webp" alt="Visualização de dashboard do Zing Data mostrando várias visualizações organizadas em um layout de dashboard" border />
+
+   <br />
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* [Documentação](https://docs.getzingdata.com/docs/)
+* [Quick Start](https://getzingdata.com/quickstart/)
+* Guia para [criar dashboards](https://getzingdata.com/blog/new-feature-create-multi-question-dashboards/)

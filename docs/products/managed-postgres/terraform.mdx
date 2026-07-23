@@ -1,0 +1,168 @@
+---
+slug: /cloud/managed-postgres/terraform
+sidebarTitle: 'Terraform'
+title: 'Managed Postgres Terraform reference'
+description: 'Reference for managing ClickHouse Managed Postgres services with the ClickHouse Terraform provider.'
+keywords: ['managed postgres', 'terraform', 'infrastructure as code', 'iac', 'provider', 'programmatic']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
+
+ClickHouse Managed Postgres services can be created and managed using the `clickhouse_postgres_service` resource in the [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). This page covers provider setup and configuration examples for the resource and its companion data sources.
+
+<Note>
+This resource is in alpha and its behavior may change in future provider versions. It ships in the regular provider build and is available from provider version **v3.17.1** — check the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) for details.
+</Note>
+
+## Provider setup {#provider-setup}
+
+Add the ClickHouse provider to your Terraform configuration:
+
+```hcl
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = ">= 3.17.1"
+    }
+  }
+}
+
+provider "clickhouse" {
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+See [Managing API keys](/products/cloud/features/admin-features/api/openapi) for instructions on creating an API key to use with the provider.
+
+## Resource overview {#resource-overview}
+
+The `clickhouse_postgres_service` resource has the following arguments:
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `name` | Yes | Human-readable name for the service. Immutable — changing it destroys and recreates the service. |
+| `cloud_provider` | For a standard create | Cloud provider hosting the instance. Currently only `aws` is supported. Omit for a read replica or point-in-time restore (inherited from the source). |
+| `region` | For a standard create | Cloud region (for example, `us-east-1`). Omit for a read replica or point-in-time restore (inherited from the source). |
+| `size` | For a standard create | Instance size (VM SKU), for example `m6gd.large`. Resizable in place. Omit for a point-in-time restore (the restored instance comes up at the backup's size). |
+| `postgres_version` | No | Major Postgres version (for example, `18`). Changing the major version destroys and recreates the service. |
+| `ha_type` | No | High-availability mode: `none`, `async`, or `sync`. See [High availability](#high-availability). |
+| `password` | No | Superuser password. Omit to have the server generate one. Stored in (sensitive) state. |
+| `pg_config` | No | Postgres server parameters as a key-value map. |
+| `pgbouncer_config` | No | PgBouncer connection-pooler parameters as a key-value map. |
+| `tags` | No | Resource tags as a key-value map. |
+| `read_replica_of` | No | ID of a primary service to replicate. See [Read replicas](#read-replicas). Mutually exclusive with `restore_to_point_in_time`. |
+| `restore_to_point_in_time` | No | Create the service by restoring another service to a point in time. See [Point-in-time restore](#point-in-time-restore). Mutually exclusive with `read_replica_of`. |
+
+The following attributes are read-only and populated by ClickHouse Cloud after creation: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, `username`, and `connection_string` (sensitive).
+
+<Warning>
+The `password` is stored in plain text in your Terraform state. Protect your state file accordingly — for example, use a remote backend with encryption at rest. If you omit `password`, the server generates one and the provider reads it back into state on each refresh.
+</Warning>
+
+## Create a service {#create-a-service}
+
+```hcl
+resource "clickhouse_postgres_service" "example" {
+  name           = "my-postgres"
+  cloud_provider = "aws"
+  region         = "us-east-1"
+  size           = "m6gd.large"
+
+  # High-availability mode — number of standby replicas:
+  #   "none"  – primary only, no standby (default)
+  #   "async" – 1 standby, asynchronous replication
+  #   "sync"  – 2 standbys, synchronous replication
+  ha_type = "async"
+
+  tags = {
+    environment = "production"
+    team        = "data"
+  }
+}
+```
+
+To manage the password yourself, set `password` — it must be at least 12 characters with at least one lowercase letter, one uppercase letter, and one digit. Omit it and the server generates one.
+
+## High availability {#high-availability}
+
+The `ha_type` argument controls the number of standby replicas:
+
+| `ha_type` | Standbys | Replication |
+|-----------|----------|-------------|
+| `none` | None (primary only) | — |
+| `async` | 1 standby | Asynchronous — writes commit without waiting for the standby |
+| `sync` | 2 standbys | Synchronous — the primary waits for acknowledgement from at least one standby |
+
+`ha_type` is mutable post-create; changing it triggers an HA transition. See [High availability](/products/managed-postgres/high-availability) for details.
+
+## Read replicas {#read-replicas}
+
+Set `read_replica_of` to the `id` of a primary service to create a streaming read replica. A replica inherits the primary's `cloud_provider`, `region`, `postgres_version`, and superuser — omit those (and `password`):
+
+```hcl
+resource "clickhouse_postgres_service" "replica" {
+  name            = "my-postgres-replica"
+  size            = "m6gd.large"
+  read_replica_of = clickhouse_postgres_service.example.id
+}
+```
+
+See [Read replicas](/products/managed-postgres/read-replicas) for details.
+
+## Point-in-time restore {#point-in-time-restore}
+
+Set `restore_to_point_in_time` to create a service by restoring another service's backup to a point in time. `cloud_provider`, `region`, and `postgres_version` are inherited from the source (omit them); `size` and `ha_type` must be omitted:
+
+```hcl
+resource "clickhouse_postgres_service" "restored" {
+  name = "my-postgres-restored"
+
+  restore_to_point_in_time = {
+    source_id      = clickhouse_postgres_service.example.id
+    restore_target = "2026-06-01T12:00:00Z"
+  }
+}
+```
+
+The whole block is create-time only: changing `source_id` or `restore_target`, or removing the block, destroys and recreates the service. See [Backup and restore](/products/managed-postgres/backup-and-restore) for details.
+
+## Data sources {#data-sources}
+
+Three companion data sources let you look up existing services:
+
+```hcl
+# A single service by ID.
+data "clickhouse_postgres_service" "example" {
+  id = clickhouse_postgres_service.example.id
+}
+
+# All Managed Postgres services in the organization.
+data "clickhouse_postgres_services" "all" {}
+
+# The CA certificates for a service, for TLS connections.
+data "clickhouse_postgres_service_ca_certificates" "certs" {
+  service_id = clickhouse_postgres_service.example.id
+}
+```
+
+## Importing existing services {#importing-existing-services}
+
+Existing Managed Postgres services can be imported into Terraform state using the service ID. The password is recovered on import — the server echoes it on `GET`:
+
+```bash
+terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+## Unsupported operations {#unsupported-operations}
+
+The following are intentionally absent from the resource schema:
+
+- Operational commands (restart, promote, switchover).
+- IP allowlists, private endpoints, backup configuration, maintenance windows, customer-managed encryption keys, and BYOC.
+- Configurable lifecycle timeouts — there is no `timeouts {}` block.

@@ -1,0 +1,371 @@
+---
+slug: /dictionary
+title: 'Diccionario'
+keywords: ['diccionario', 'diccionarios']
+description: 'Un diccionario proporciona una representación de los datos en formato clave-valor para búsquedas rápidas.'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Un diccionario en ClickHouse proporciona una representación en memoria de los datos en formato [clave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) procedentes de varias [fuentes internas y externas](/es/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimizada para búsquedas con latencia ultrabaja.
+
+Los diccionarios son útiles para:
+
+* Mejorar el rendimiento de las consultas, especialmente cuando se usan con `JOIN`s
+* Enriquecer los datos ingeridos sobre la marcha sin ralentizar el proceso de ingestión
+
+<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso del diccionario en ClickHouse" />
+
+<div id="speeding-up-joins-using-a-dictionary">
+  ## Acelerar los JOIN usando un Diccionario
+</div>
+
+Los diccionarios pueden usarse para acelerar un tipo específico de `JOIN`: el [tipo `LEFT ANY`](/es/reference/statements/select/join#supported-types-of-join), en el que la clave de join debe coincidir con el atributo clave del almacenamiento clave-valor subyacente.
+
+<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Uso de un Diccionario con LEFT ANY JOIN" />
+
+Si este es el caso, ClickHouse puede aprovechar el diccionario para realizar un [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Este es el algoritmo de join más rápido de ClickHouse y puede aplicarse cuando el [motor de tabla](/es/reference/engines/table-engines/index) de la tabla del lado derecho admite solicitudes clave-valor de baja latencia. ClickHouse tiene tres motores de tabla que ofrecen esto: [Join](/es/reference/engines/table-engines/special/join) (que básicamente es una tabla hash precalculada), [EmbeddedRocksDB](/es/reference/engines/table-engines/integrations/embedded-rocksdb) y [Diccionario](/es/reference/engines/table-engines/special/dictionary). Describiremos el enfoque basado en diccionarios, pero el funcionamiento es el mismo para los tres motores.
+
+El algoritmo de direct join requiere que la tabla derecha esté respaldada por un diccionario, de modo que los datos que se van a unir de esa tabla ya estén presentes en memoria en forma de una estructura de datos clave-valor de baja latencia.
+
+<div id="example">
+  ### Ejemplo
+</div>
+
+Usando el [conjunto de datos de Stack Overflow](/es/get-started/sample-datasets/stackoverflow), respondamos a la pregunta:
+*¿Cuál es la publicación más controvertida relacionada con SQL en Hacker News?*
+
+Consideraremos controvertida una publicación cuando tenga una cantidad similar de votos a favor y en contra. Calculamos esta diferencia absoluta: cuanto más cerca esté el valor de 0, mayor será la controversia. Supondremos que la publicación debe tener al menos 10 votos a favor y 10 en contra; las publicaciones que no reciben votos no suelen ser muy controvertidas.
+
+Con nuestros datos normalizados, esta consulta requiere actualmente un `JOIN` entre las tablas `posts` y `votes`:
+
+```sql
+WITH PostIds AS
+(
+         SELECT Id
+         FROM posts
+         WHERE Title ILIKE '%SQL%'
+)
+SELECT
+    Id,
+    Title,
+    UpVotes,
+    DownVotes,
+    abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+INNER JOIN
+(
+    SELECT
+         PostId,
+         countIf(VoteTypeId = 2) AS UpVotes,
+         countIf(VoteTypeId = 3) AS DownVotes
+    FROM votes
+    WHERE PostId IN (PostIds)
+    GROUP BY PostId
+    HAVING (UpVotes > 10) AND (DownVotes > 10)
+) AS votes ON posts.Id = votes.PostId
+WHERE Id IN (PostIds)
+ORDER BY Controversial_ratio ASC
+LIMIT 1
+```
+
+```response
+Row 1:
+──────
+Id:                     25372161
+Title:                  How to add exception handling to SqlDataSource.UpdateCommand
+UpVotes:                13
+DownVotes:              13
+Controversial_ratio: 0
+
+1 rows in set. Elapsed: 1.283 sec. Processed 418.44 million rows, 7.23 GB (326.07 million rows/s., 5.63 GB/s.)
+Peak memory usage: 3.18 GiB.
+```
+
+> **Utilice conjuntos de datos más pequeños en el lado derecho de `JOIN`**: Esta consulta puede parecer más verbosa de lo necesario, ya que el filtrado de `PostId` se realiza tanto en la consulta externa como en la subconsulta. Se trata de una optimización de rendimiento que garantiza un tiempo de respuesta rápido de la consulta. Para obtener un rendimiento óptimo, asegúrese siempre de que el lado derecho de `JOIN` sea el conjunto más pequeño posible. Para obtener consejos sobre cómo optimizar el rendimiento de `JOIN` y comprender los algoritmos disponibles, recomendamos [esta serie de artículos del blog](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1).
+
+Aunque esta consulta es rápida, requiere que escribamos el `JOIN` con cuidado para lograr un buen rendimiento. Idealmente, simplemente filtraríamos las publicaciones para quedarnos con las que contienen &quot;SQL&quot; antes de examinar los recuentos de `UpVote` y `DownVote` del subconjunto de publicaciones para calcular nuestra métrica.
+
+<div id="applying-a-dictionary">
+  #### Aplicar un diccionario
+</div>
+
+Para ilustrar estos conceptos, usamos un diccionario para nuestros datos de votos. Dado que los diccionarios suelen mantenerse en memoria ([ssd&#95;cache](/es/reference/statements/create/dictionary/layouts/ssd-cache) es la excepción), debes tener en cuenta el tamaño de los datos. Para confirmar el tamaño de nuestra tabla `votes`:
+
+```sql
+SELECT table,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table IN ('votes')
+GROUP BY table
+```
+
+```response
+┌─table───────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ votes           │ 1.25 GiB        │ 3.79 GiB          │  3.04 │
+└─────────────────┴─────────────────┴───────────────────┴───────┘
+```
+
+Los datos se almacenarán sin comprimir en nuestro diccionario, por lo que necesitaremos al menos 4 GB de memoria si almacenáramos todas las columnas (no lo haremos) en un diccionario. El diccionario se replicará en todo el clúster, así que esta cantidad de memoria debe reservarse *por nodo*.
+
+> En el ejemplo siguiente, los datos de nuestro diccionario provienen de una tabla de ClickHouse. Aunque esta es la fuente más común de los diccionarios, se admiten [varias fuentes](/es/reference/statements/create/dictionary/sources/overview#dictionary-sources), incluidos archivos, HTTP y bases de datos como [Postgres](/es/reference/statements/create/dictionary/sources/postgresql). Como mostraremos, los diccionarios pueden actualizarse automáticamente, lo que ofrece una forma ideal de garantizar que los conjuntos de datos pequeños sujetos a cambios frecuentes estén disponibles para direct joins.
+
+Nuestro diccionario requiere una clave primaria sobre la que se realizarán las búsquedas. Esto es conceptualmente idéntico a la clave primaria de una base de datos transaccional y debe ser única. Nuestra consulta anterior requiere una búsqueda sobre la clave de join: `PostId`. A su vez, el diccionario debe poblarse con el total de votos positivos y negativos por `PostId` de nuestra tabla `votes`. Esta es la consulta para obtener los datos de este diccionario:
+
+```sql
+SELECT PostId,
+   countIf(VoteTypeId = 2) AS UpVotes,
+   countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY PostId
+```
+
+Para crear nuestro diccionario, se requiere el siguiente DDL; observe el uso de la consulta anterior:
+
+```sql
+CREATE DICTIONARY votes_dict
+(
+  `PostId` UInt64,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+PRIMARY KEY PostId
+SOURCE(CLICKHOUSE(QUERY 'SELECT PostId, countIf(VoteTypeId = 2) AS UpVotes, countIf(VoteTypeId = 3) AS DownVotes FROM votes GROUP BY PostId'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+```response
+0 rows in set. Elapsed: 36.063 sec.
+```
+
+> En OSS autogestionado, el comando anterior debe ejecutarse en todos los nodos. En ClickHouse Cloud, el Diccionario se replicará automáticamente en todos los nodos. Lo anterior se ejecutó en un nodo de ClickHouse Cloud con 64 GB de RAM y tardó 36 s en cargarse.
+
+Para confirmar la memoria que consume nuestro Diccionario:
+
+```sql
+SELECT formatReadableSize(bytes_allocated) AS size
+FROM system.dictionaries
+WHERE name = 'votes_dict'
+```
+
+```response
+┌─size─────┐
+│ 4.00 GiB │
+└──────────┘
+```
+
+Ahora se pueden obtener los votos positivos y negativos de un `PostId` concreto con una simple función `dictGet`. A continuación, obtenemos los valores de la publicación `11227902`:
+
+```sql
+SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
+```
+
+```response
+┌─votes──────┐
+│ (34999,32) │
+└────────────┘
+```
+
+Aprovechando esto en nuestra consulta anterior, podemos eliminar el JOIN:
+
+```sql
+WITH PostIds AS
+(
+        SELECT Id
+        FROM posts
+        WHERE Title ILIKE '%SQL%'
+)
+SELECT Id, Title,
+        dictGet('votes_dict', 'UpVotes', Id) AS UpVotes,
+        dictGet('votes_dict', 'DownVotes', Id) AS DownVotes,
+        abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+WHERE (Id IN (PostIds)) AND (UpVotes > 10) AND (DownVotes > 10)
+ORDER BY Controversial_ratio ASC
+LIMIT 3
+```
+
+```response
+3 rows in set. Elapsed: 0.551 sec. Processed 119.64 million rows, 3.29 GB (216.96 million rows/s., 5.97 GB/s.)
+Peak memory usage: 552.26 MiB.
+```
+
+No solo esta consulta es mucho más sencilla, sino que además es más del doble de rápida. Esto podría optimizarse aún más cargando en el diccionario únicamente las publicaciones con más de 10 votos positivos y negativos, y almacenando solo un valor de controversia precalculado.
+
+<div id="query-time-enrichment">
+  ## Enriquecimiento en tiempo de consulta
+</div>
+
+Los diccionarios pueden utilizarse para consultar valores en tiempo de consulta. Estos valores pueden devolverse en los resultados o usarse en agregaciones. Supongamos que creamos un diccionario para asociar los ID de usuario con su ubicación:
+
+```sql
+CREATE DICTIONARY users_dict
+(
+  `Id` Int32,
+  `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM stackoverflow.users'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+Podemos usar este diccionario para enriquecer los resultados de las publicaciones:
+
+```sql
+SELECT
+        Id,
+        Title,
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location
+FROM posts
+WHERE Title ILIKE '%clickhouse%'
+LIMIT 5
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────┬─Location──────────────┐
+│ 52296928 │ Comparison between two Strings in ClickHouse                  │ Spain                 │
+│ 52345137 │ How to use a file to migrate data from mysql to a clickhouse? │ 中国江苏省Nanjing Shi   │
+│ 61452077 │ How to change PARTITION in clickhouse                         │ Guangzhou, 广东省中国   │
+│ 55608325 │ Clickhouse select last record without max() on all table      │ Moscow, Russia        │
+│ 55758594 │ ClickHouse create temporary table                             │ Perm', Russia         │
+└──────────┴───────────────────────────────────────────────────────────────┴───────────────────────┘
+
+5 rows in set. Elapsed: 0.033 sec. Processed 4.25 million rows, 82.84 MB (130.62 million rows/s., 2.55 GB/s.)
+Peak memory usage: 249.32 MiB.
+```
+
+Al igual que en el ejemplo anterior de join, podemos usar el mismo diccionario para determinar de forma eficiente de dónde procede la mayoría de las publicaciones:
+
+```sql
+SELECT
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location,
+        count() AS c
+FROM posts
+WHERE location != ''
+GROUP BY location
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+│ United Kingdom         │ 537699 │
+└────────────────────────┴────────┘
+
+5 rows in set. Elapsed: 0.763 sec. Processed 59.82 million rows, 239.28 MB (78.40 million rows/s., 313.60 MB/s.)
+Peak memory usage: 248.84 MiB.
+```
+
+<div id="index-time-enrichment">
+  ## Enriquecimiento durante la indexación
+</div>
+
+En el ejemplo anterior, usamos un diccionario en tiempo de consulta para eliminar un join. Los diccionarios también se pueden usar para enriquecer filas en tiempo de inserción. Esto suele ser apropiado si el valor de enriquecimiento no cambia y existe en una fuente externa que puede usarse para rellenar el diccionario. En este caso, enriquecer la fila en tiempo de inserción evita tener que consultar el diccionario en tiempo de consulta.
+
+Supongamos que la `Location` de un usuario en Stack Overflow nunca cambia (en realidad sí cambia), concretamente la columna `Location` de la tabla `users`. Supongamos que queremos hacer una consulta analítica sobre la tabla `posts` por ubicación. Esta contiene un `UserId`.
+
+Un diccionario proporciona una correspondencia entre el id de usuario y la ubicación, respaldada por la tabla `users`:
+
+```sql
+CREATE DICTIONARY users_dict
+(
+    `Id` UInt64,
+    `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM users WHERE Id >= 0'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+> Omitimos los usuarios con un `Id < 0`, lo que nos permite usar el tipo de diccionario `Hashed`. Los usuarios con `Id < 0` son usuarios del sistema.
+
+Para aprovechar este diccionario en el momento de la inserción en la tabla Posts, necesitamos modificar el esquema:
+
+```sql
+CREATE TABLE posts_with_location
+(
+    `Id` UInt32,
+    `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+     ...
+    `Location` MATERIALIZED dictGet(users_dict, 'Location', OwnerUserId::'UInt64')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+En el ejemplo anterior, `Location` se declara como una columna `MATERIALIZED`. Esto significa que el valor puede proporcionarse como parte de una consulta `INSERT` y que siempre se calculará.
+
+> ClickHouse también admite [columnas `DEFAULT`](/es/reference/statements/create/table#default_values) (donde el valor puede insertarse o calcularse si no se proporciona).
+
+Para rellenar la tabla, podemos usar la instrucción habitual `INSERT INTO SELECT` desde S3:
+
+```sql
+INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 36.830 sec. Processed 238.98 million rows, 2.64 GB (6.49 million rows/s., 71.79 MB/s.)
+```
+
+Ahora podemos obtener el nombre de la ubicación de la que proviene la mayoría de las publicaciones:
+
+```sql
+SELECT Location, count() AS c
+FROM posts_with_location
+WHERE Location != ''
+GROUP BY Location
+ORDER BY c DESC
+LIMIT 4
+```
+
+```response
+┌─Location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+└────────────────────────┴────────┘
+
+4 rows in set. Elapsed: 0.142 sec. Processed 59.82 million rows, 1.08 GB (420.73 million rows/s., 7.60 GB/s.)
+Peak memory usage: 666.82 MiB.
+```
+
+<div id="advanced-dictionary-topics">
+  ## Temas avanzados sobre diccionarios
+</div>
+
+Para obtener orientación sobre cómo elegir los layouts de diccionario, cuándo usar diccionarios en lugar de JOINs y cómo supervisar su uso, consulta [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices).
+
+<div id="refreshing-dictionaries">
+  ### Actualización de diccionarios
+</div>
+
+Hemos especificado un `LIFETIME` para el diccionario de `MIN 600 MAX 900`. `LIFETIME` es el intervalo de actualización del diccionario, y estos valores hacen que se recargue periódicamente en un intervalo aleatorio de entre 600 y 900 s. Este intervalo aleatorio es necesario para distribuir la carga en el origen del diccionario cuando se actualiza en un gran número de servidores. Durante las actualizaciones, la versión anterior de un diccionario puede seguir consultándose; solo la carga inicial bloquea las consultas. Tenga en cuenta que establecer `(LIFETIME(0))` impide que los diccionarios se actualicen.
+Los diccionarios pueden recargarse de forma forzada mediante el comando `SYSTEM RELOAD DICTIONARY`.
+
+Para orígenes de base de datos como ClickHouse y Postgres, puede configurar una consulta que actualice los diccionarios solo si realmente han cambiado (esto lo determina la respuesta de la consulta), en lugar de hacerlo a intervalos periódicos. Puede encontrar más detalles [aquí](/es/reference/statements/create/dictionary/lifetime).
+
+<div id="other-dictionary-types">
+  ### Otros tipos de diccionarios
+</div>
+
+ClickHouse también admite diccionarios [jerárquicos](/es/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/es/reference/statements/create/dictionary/layouts/polygon) y de [expresión regular](/es/reference/statements/create/dictionary/layouts/regexp-tree).
+
+<div id="more-reading">
+  ### Más información
+</div>
+
+* [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices) — selección del layout, diccionarios frente a JOINs, monitorización
+* [Uso de diccionarios para acelerar consultas](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [Configuración avanzada de diccionarios](/es/reference/statements/create/dictionary)

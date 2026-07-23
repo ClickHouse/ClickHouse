@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Configure backup schedules'
+slug: /cloud/manage/backups/configurable-backups
+description: 'Guide showing how to configure backups'
+title: 'Configure backup schedules'
+keywords: ['backups', 'cloud backups', 'restore']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True"/>
+
+To configure the backup schedule for a service, go to the **Settings** tab in the console and click on **Change backup configuration**.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configure backup settings" border/>
+
+This opens a tab to the right where you can choose values for retention, frequency, and start time. You will need to save the chosen settings for them to take effect.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Select backup retention and frequency" border/>
+
+<Note>
+Start time and frequency are mutually exclusive. Start time takes precedence.
+</Note>
+
+<Note>
+Changing the backup schedule can cause higher monthly charges for storage as some of the backups might not be covered in the default backups for the service. See ["Understanding backup cost"](/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

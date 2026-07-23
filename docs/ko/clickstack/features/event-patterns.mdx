@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/event_patterns
+title: 'ClickStack의 이벤트 패턴'
+sidebarTitle: '이벤트 패턴'
+description: 'ClickStack의 이벤트 패턴'
+doc_type: 'guide'
+keywords: ['ClickStack', 'event patterns', '로그 분석', '패턴 매칭', '관측성']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack의 이벤트 패턴를 사용하면 유사한 메시지를 자동으로 클러스터링해 대량의 로그나 트레이스를 빠르게 파악할 수 있습니다. 따라서 수백만 건의 개별 이벤트를 일일이 살펴보는 대신, 의미 있는 소수의 그룹만 검토하면 됩니다.
+
+<Image img="/images/use-cases/observability/event_patterns.webp" alt="Event patterns" size="lg" />
+
+이를 통해 어떤 오류나 경고가 새로 발생한 것인지, 어떤 것이 반복적으로 나타나는지, 또 어떤 것이 로그 볼륨의 급격한 증가를 유발하는지를 훨씬 쉽게 파악할 수 있습니다. 패턴은 동적으로 생성되므로 정규식을 정의하거나 파싱 규칙을 유지 관리할 필요가 없습니다 - 포맷과 관계없이 ClickStack이 이벤트에 자동으로 맞춰집니다.
+
+이처럼 높은 수준에서 살펴보면 incident response를 넘어, 비용 절감을 위해 줄일 수 있는 잡음이 많은 로그 소스를 식별하고, 서비스가 생성하는 다양한 타입의 로그를 파악하며, 시스템이 이미 필요한 신호를 내보내고 있는지도 더 빠르게 확인할 수 있습니다.
+
+<div id="accessing-event-patterns">
+  ## 이벤트 패턴 사용하기
+</div>
+
+이벤트 패턴은 ClickStack의 **검색** 패널에서 바로 사용할 수 있습니다.
+
+좌측 상단의 **Analysis Mode** 셀렉터에서 **이벤트 패턴**를 선택하면, 기본 결과 테이블 대신 유사한 이벤트를 군집화해 보여주는 보기로 전환됩니다.
+
+<Image img="/images/use-cases/observability/event_patterns_highlight.webp" alt="이벤트 패턴" size="lg" />
+
+이 보기는 기본 **Results Table**의 대안으로, **Results Table**에서는 개별 로그나 trace를 하나씩 스크롤하며 확인할 수 있습니다.
+
+<div id="recommendations">
+  ## 권장 사항
+</div>
+
+이벤트 패턴은 데이터의 **범위를 좁힌 부분 집합**에 적용할 때 가장 효과적입니다. 예를 들어, 이벤트 패턴을 활성화하기 전에 단일 서비스로 필터링하면, 한 번에 수천 개의 서비스에 패턴을 적용하는 것보다 일반적으로 더 관련성 높고 흥미로운 메시지를 확인할 수 있습니다.
+
+또한 ID나 페이로드가 서로 달라도 반복되는 오류를 간결한 클러스터로 그룹화할 수 있으므로, 오류 메시지를 요약하는 데 특히 강력합니다.
+
+실제 예시는 [원격 데모 데이터세트](/ko/clickstack/example-datasets/remote-demo-data#identify-error-patterns)에서 이벤트 패턴이 어떻게 사용되는지 확인하십시오.

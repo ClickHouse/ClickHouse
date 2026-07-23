@@ -527,9 +527,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (save_metadata_callback)
         save_metadata_callback(disk);
 
+    /// Also remove any leftover `txn_version.txt.tmp`: leaving it without the main file makes the
+    /// cloned/frozen part load as a rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`)
+    /// and get discarded as `Outdated`. Remove the temporary file before the main file so the cleanup
+    /// is fail-closed: a failure between the two removals leaves a valid `txn_version.txt` rather than
+    /// the dangerous tmp-only state.
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -537,6 +543,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -583,9 +590,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (save_metadata_callback)
         save_metadata_callback(dst_disk);
 
+    /// Also remove any leftover `txn_version.txt.tmp`: leaving it without the main file makes the
+    /// cloned/frozen part load as a rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`)
+    /// and get discarded as `Outdated`. Remove the temporary file before the main file so the cleanup
+    /// is fail-closed: a failure between the two removals leaves a valid `txn_version.txt` rather than
+    /// the dangerous tmp-only state.
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -593,6 +606,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     else
     {
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -939,6 +953,9 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
+        /// A leftover `txn_version.txt.tmp` would otherwise be missed here and leave the directory
+        /// non-empty, forcing the slow recursive-removal fallback below.
+        request.emplace_back(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
@@ -1035,6 +1052,68 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(const std::string & name) const
+{
+    /// Prefix gate: only "skp_idx_..." names can be archive members, so unrelated files never load
+    /// or probe skp_idx.packed.
+    if (!looksLikePackedSkipIndexFile(name))
+        return nullptr;
+    auto reader = getSkipIndicesPackedReader();
+    return (reader && reader->exists(name)) ? reader : nullptr;
+}
+
+bool DataPartStorageOnDiskBase::existsFile(const std::string & name) const
+{
+    if (getArchiveReaderForFile(name))
+        return true;
+    return existsFileImpl(name);
+}
+
+size_t DataPartStorageOnDiskBase::getFileSize(const std::string & file_name) const
+{
+    if (auto reader = getArchiveReaderForFile(file_name))
+        return reader->getFileSize(file_name);
+    return getFileSizeImpl(file_name);
+}
+
+void DataPartStorageOnDiskBase::prepareRead(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    if (auto reader = getArchiveReaderForFile(name))
+    {
+        /// Members of skp_idx.packed skip the disk's normal pipeline (filesystem cache, async
+        /// prefetch) and read through PackedFilesReader::readFile, which opens the archive via the
+        /// underlying disk and wraps the result with ReadBufferFromFileView at the right offset.
+        /// The archive's current location is captured here, so the reader holds no path of its own.
+        auto disk = volume->getDisk();
+        String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+        ReadPipeline::BufferCreator creator =
+            [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+            {
+                return reader->readFile(disk, archive_path, name, s, read_hint);
+            };
+        pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
+        return;
+    }
+    prepareReadImpl(name, settings, read_hint, pipeline);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExists(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    if (auto reader = getArchiveReaderForFile(name))
+        return reader->readFile(
+            volume->getDisk(),
+            fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
+            name, settings, read_hint);
+    return readFileIfExistsImpl(name, settings, read_hint);
+}
+
 std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
@@ -1106,6 +1185,25 @@ bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
     return getSkipIndicesPackedReader() != nullptr;
 }
 
+void DataPartStorageOnDiskBase::copyArchiveEntryTo(
+    const PackedFilesReader & source_archive,
+    const String & file_name,
+    PackedFilesWriter & target,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings) const
+{
+    /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
+    /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
+    const auto file_size = source_archive.getFileSize(file_name);
+    auto src = readFile(file_name, read_settings, file_size);
+    auto dst = target.writeFile(file_name, write_settings);
+    copyData(*src, *dst);
+    dst->finalize();
+    /// Carry over the uncompressed size so the rewritten archive keeps v1 accounting.
+    if (auto uncompressed = source_archive.getFileUncompressedSize(file_name))
+        target.setUncompressedSize(file_name, *uncompressed);
+}
+
 void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     const NameSet & file_names,
     PackedFilesWriter & target,
@@ -1119,21 +1217,10 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (!source_archive)
         return;
 
-    /// Route reads through readFile (a virtual on the storage), not source_archive->readFile.
-    /// Equivalent on full storage today (the existing looksLikePackedSkipIndexFile overlay ends
-    /// up calling the same archive reader), but storage subclasses where skp_idx.packed isn't a
-    /// flat disk file need this entry point so the virtual readFile can compose the read
-    /// correctly. Keeps the helper subclass-friendly without adding behavioural risk here.
     for (const auto & file_name : file_names)
     {
-        if (!source_archive->exists(file_name))
-            continue;
-
-        const auto file_size = source_archive->getFileSize(file_name);
-        auto src = readFile(file_name, read_settings, file_size);
-        auto dst = target.writeFile(file_name, write_settings);
-        copyData(*src, *dst);
-        dst->finalize();
+        if (source_archive->exists(file_name))
+            copyArchiveEntryTo(*source_archive, file_name, target, read_settings, write_settings);
     }
 }
 
@@ -1167,13 +1254,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
             continue;
 
         any_kept = true;
-        const auto file_size = source_archive->getFileSize(file_name);
-        /// See copyPackedSkipIndicesFilesInto: go through the storage's readFile so subclasses
-        /// that need to compose the read (e.g. archive-in-archive) get a chance to intervene.
-        auto src = readFile(file_name, read_settings, file_size);
-        auto dst = writer.writeFile(file_name, write_settings);
-        copyData(*src, *dst);
-        dst->finalize();
+        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, write_settings);
     }
 
     if (!any_kept)
@@ -1181,7 +1262,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
 
     auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     HashingWriteBuffer hashing(*out);
-    auto [packed_index, _] = writer.finalize(hashing);
+    auto [packed_index, _] = writer.finalize(hashing, {}, PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE);
     hashing.finalize();
 
     auto & checksum = checksums.files[packed_filename];

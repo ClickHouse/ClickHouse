@@ -1,0 +1,144 @@
+---
+sidebarTitle: 'PostgreSQL CDC'
+slug: /cloud/reference/billing/clickpipes/postgres-cdc
+title: 'ClickPipes для PostgreSQL CDC'
+description: 'Обзор тарификации ClickPipes для PostgreSQL CDC'
+doc_type: 'reference'
+keywords: ['тарификация', 'clickpipes', 'цены cdc', 'затраты', 'ценообразование']
+---
+
+В этом разделе описана модель ценообразования для коннектора ClickPipes для CDC (фиксация изменений данных) в Postgres. При разработке этой модели мы стремились сохранить
+конкурентоспособные цены, оставаясь верными нашему ключевому принципу:
+
+> Сделать перенос данных из Postgres в ClickHouse для
+> аналитики в реальном времени простым и доступным для клиентов.
+
+Этот коннектор более чем в **5 раз выгоднее по стоимости**, чем внешние
+ETL-инструменты и аналогичные возможности на других платформах баз данных.
+
+<Note>
+  Тарификация начала учитываться в ежемесячных счетах с **1 сентября 2025 года**
+  для всех клиентов (как существующих, так и новых), использующих ClickPipes для PostgreSQL CDC.
+</Note>
+
+
+
+## Pricing dimensions {#pricing-dimensions}
+
+There are two main dimensions to pricing:
+
+1. **Принимаемые данные**: необработанные несжатые байты, поступающие из Postgres и загружаемые в ClickHouse.
+2. **Вычислительные ресурсы**: вычислительные единицы, выделяемые на уровне сервиса для обслуживания нескольких ClickPipes с CDC для Postgres, не зависят от вычислительных единиц, используемых сервисом ClickHouse Cloud. Эти дополнительные вычислительные ресурсы предназначены исключительно для ClickPipes с CDC для Postgres. Оплата вычислительных ресурсов производится на уровне сервиса, а не за каждый отдельный пайп. Каждая вычислительная единица включает 2 vCPU и 8 ГБ оперативной памяти.
+
+### ingested data {#ingested-data}
+
+The Postgres CDC connector operates in two main phases:
+
+- **Initial load / resync**: This captures a full snapshot of Postgres tables
+  and occurs when a pipe is first created or re-synced.
+- **Continuous Replication (CDC)**: Ongoing replication of changes—such as inserts,
+  updates, deletes, and schema changes—from Postgres to ClickHouse.
+
+In most use cases, continuous replication accounts for over 90% of a ClickPipe
+life cycle. Because initial loads involve transferring a large volume of data all
+at once, we offer a lower rate for that phase.
+
+| Phase                            | Cost         |
+|----------------------------------|--------------|
+| **Initial load / resync**        | $0.10 per GB |
+| **Continuous Replication (CDC)** | $0.20 per GB |
+
+### Compute {#compute}
+
+This dimension covers the compute units provisioned per service just for Postgres
+ClickPipes. Compute is shared across all Postgres пайп within a service. **It
+is provisioned when the first Postgres пайп is created and deallocated when no
+Postgres CDC пайп remain**. The amount of compute provisioned depends on your
+organization's tier:
+
+| Tier                         | Cost                                          |
+|------------------------------|-----------------------------------------------|
+| **Basic Tier**               | 0.5 compute unit per service — $0.10 per hour |
+| **Scale or Enterprise Tier** | 1 compute unit per service — $0.20 per hour   |
+
+### Example {#example}
+
+Let's say your service is in Scale tier and has the following setup:
+
+- 2 Postgres ClickPipes running continuous replication
+- Each pipe ingests 500 GB of data changes (CDC) per month
+- When the first pipe is kicked off, the service provisions **1 compute unit under the Scale Tier** for Postgres CDC
+
+#### Monthly cost breakdown {#cost-breakdown}
+
+**принимаемые данные (CDC)**:
+
+$$ 2 \text{ pipes} \times 500 \text{ GB} = 1,000 \text{ GB per month} $$
+
+$$ 1,000 \text{ GB} \times \$0.20/\text{GB} = \$200 $$
+
+**Compute**:
+
+$$1 \text{ compute unit} \times \$0.20/\text{hr} \times 730 \text{ hours (approximate month)} = \$146$$
+
+<Note>
+Compute is shared across both pipes
+</Note>
+
+**Total Monthly Cost**:
+
+$$\$200 \text{ (ingest)} + \$146 \text{ (compute)} = \$346$$
+
+<div id="faq-postgres-cdc-clickpipe">
+  ## FAQ по Postgres CDC ClickPipes
+</div>
+
+<Accordion title="При тарификации принимаемые данные измеряются по сжатому или несжатому размеру?">
+  Принимаемые данные измеряются как *несжатые данные*, поступающие из Postgres, — как
+  во время начальной загрузки, так и при CDC (через слот репликации). По умолчанию Postgres не
+  сжимает данные при передаче, а ClickPipe обрабатывает сырые,
+  несжатые байты.
+</Accordion>
+
+<Accordion title="Когда тарификация Postgres CDC начнет отображаться в моих счетах?">
+  Тарификация Postgres CDC ClickPipes начала отображаться в ежемесячных счетах с
+  **1 сентября 2025 года** для всех клиентов — как существующих, так и новых.
+</Accordion>
+
+<Accordion title="Будет ли с меня взиматься плата, если я приостановлю свои пайпы?">
+  Нет, пока пайп приостановлен, плата за ингестию данных не взимается, поскольку данные не передаются.
+  Однако плата за вычислительный ресурс по-прежнему взимается — 0,5 или 1 compute unit — в зависимости от
+  уровня вашей организации. Это фиксированная стоимость на уровне сервиса, и она распространяется на все
+  пайпы в рамках этого сервиса.
+</Accordion>
+
+<Accordion title="Как мне оценить стоимость?">
+  Страница Overview в ClickPipes показывает метрики как для начальной загрузки/ресинхронизации, так и для
+  объемов данных CDC. Вы можете оценить стоимость Postgres CDC по этим метрикам
+  в сочетании с тарификацией ClickPipes.
+</Accordion>
+
+<Accordion title="Могу ли я масштабировать вычислительный ресурс, выделенный для Postgres CDC в моем сервисе?">
+  По умолчанию масштабирование вычислительного ресурса не настраивается пользователем. Выделенные ресурсы
+  оптимизированы для эффективной обработки рабочих нагрузок большинства клиентов. Если в вашем сценарии
+  требуется больше или меньше вычислительного ресурса, создайте тикет в поддержку, чтобы мы могли рассмотреть
+  ваш запрос.
+</Accordion>
+
+<Accordion title="Какова гранулярность тарификации?">
+  * **вычислительный ресурс**: тарифицируется почасово. Неполные часы округляются до следующего часа.
+  * **принимаемые данные**: измеряются и тарифицируются за гигабайт (GB) несжатых данных.
+</Accordion>
+
+<Accordion title="Могу ли я использовать свои кредиты ClickHouse Cloud для Postgres CDC через ClickPipes?">
+  Да. Тарификация ClickPipes является частью единой тарификации ClickHouse Cloud. Любые
+  имеющиеся у вас кредиты платформы автоматически применяются и к использованию ClickPipes.
+</Accordion>
+
+<Accordion title="Каких дополнительных затрат мне ожидать от Postgres CDC ClickPipes в рамках моих текущих ежемесячных расходов на ClickHouse Cloud?">
+  Стоимость зависит от вашего сценария использования, объема данных и уровня организации.
+  Тем не менее у большинства существующих клиентов расходы после окончания пробного периода увеличиваются на **0–15%**
+  относительно их текущих ежемесячных затрат на ClickHouse Cloud. Фактические затраты могут различаться
+  в зависимости от вашей рабочей нагрузки: некоторые рабочие нагрузки связаны с большими объемами данных при
+  меньшей обработке, тогда как другие требуют более интенсивной обработки при меньшем объеме данных.
+</Accordion>

@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: "Mode local uniquement"
+description: "Déployer ClickStack uniquement en mode local - La stack d’observabilité ClickHouse"
+doc_type: 'guide'
+keywords: ['clickstack', 'déploiement', 'mise en place', 'configuration', 'observabilité']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import JSONSupport from '/snippets/fr/_json_support.mdx';
+
+Semblable à l’[image tout-en-un](/fr/clickstack/deployment/docker-compose), cette image Docker complète regroupe tous les composants de ClickStack :
+
+* **ClickHouse**
+* **HyperDX**
+* **collecteur OpenTelemetry (OTel)** (exposant OTLP sur les ports `4317` et `4318`)
+* **MongoDB** (pour l’état persistant de l’application)
+
+**Cependant, l’authentification des utilisateurs est désactivée dans cette distribution de HyperDX**
+
+<div id="suitable-for">
+  ### Convient pour
+</div>
+
+* Démonstrations
+* Débogage
+* Développement avec HyperDX
+
+<div id="deployment-steps">
+  ## Étapes de déploiement
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Déployer avec Docker
+
+    Le mode local déploie l’UI HyperDX sur le port 8080.
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+  </Step>
+
+  <Step>
+    ### Accéder à l’UI HyperDX
+
+    Accédez à [http://localhost:8080](http://localhost:8080) pour ouvrir l’UI HyperDX.
+
+    **Il ne vous sera pas demandé de créer un utilisateur, car l’authentification n’est pas activée dans ce mode de déploiement.**
+
+    Connectez-vous à votre propre cluster ClickHouse externe, par exemple ClickHouse Cloud.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Créer une connexion" size="md" />
+
+    Créez une source, conservez toutes les valeurs par défaut et renseignez le champ `Table` avec la valeur `otel_logs`. Tous les autres paramètres devraient être détectés automatiquement, ce qui vous permettra de cliquer sur `Save New Source`.
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Créer une source de logs" size="md" />
+  </Step>
+</Steps>
+
+<JSONSupport />

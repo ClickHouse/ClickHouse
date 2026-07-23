@@ -1,0 +1,173 @@
+---
+sidebarTitle: '高级用法'
+keywords: ['clickhouse', 'python', 'advanced', 'raw', 'async', 'threading']
+description: 'ClickHouse Connect 高级用法'
+slug: /integrations/language-clients/python/advanced-usage
+title: '高级用法'
+doc_type: 'reference'
+---
+
+<div id="raw-api">
+  ## 底层 API
+</div>
+
+对于无需在 ClickHouse 数据与原生或第三方数据类型及结构之间进行转换的场景，ClickHouse Connect 客户端提供了一些方法，可直接使用 ClickHouse 连接。
+
+<div id="client-rawquery-method">
+  ### 客户端 `raw_query` 方法
+</div>
+
+`Client.raw_query` 方法允许通过客户端连接直接使用 ClickHouse HTTP 查询接口。返回值是一个未经处理的 `bytes` 对象。它通过极简接口提供了便捷封装，支持参数绑定、错误处理、重试和 settings 管理：
+
+| 参数                | 类型               | 默认值        | 说明                                                                                                                            |
+| ----------------- | ---------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| query             | str              | *Required* | 任何有效的 ClickHouse 查询                                                                                                           |
+| parameters        | dict or iterable | *None*     | 请参见[参数说明](/zh/integrations/language-clients/python/driver-api#parameters-argument)。                                              |
+| settings          | dict             | *None*     | 请参见[settings 说明](/zh/integrations/language-clients/python/driver-api#settings-argument)。                                         |
+| fmt               | str              | *None*     | 结果字节使用的 ClickHouse 输出格式。 (如果未指定，ClickHouse 使用 TSV)                                                                            |
+| use&#95;database  | bool             | True       | 在查询上下文中使用分配给 ClickHouse Connect 客户端的数据库                                                                                       |
+| external&#95;data | ExternalData     | *None*     | 一个 ExternalData 对象，包含可供查询使用的文件或二进制数据。请参见[高级查询 (外部数据) ](/zh/integrations/language-clients/python/advanced-querying#external-data) |
+
+如何处理返回的 `bytes` 对象由调用方负责。请注意，`Client.query_arrow` 只是对此方法的一个轻量封装，使用的是 ClickHouse `Arrow` 输出格式。
+
+<div id="client-rawstream-method">
+  ### 客户端 `raw_stream` 方法
+</div>
+
+`Client.raw_stream` 方法与 `raw_query` 方法的 API 相同，但它返回一个 `io.IOBase` 对象，可作为 `bytes` 对象的生成器或流来源使用。目前，`query_arrow_stream` 方法正在使用它。
+
+<div id="client-rawinsert-method">
+  ### Client `raw_insert` 方法
+</div>
+
+`Client.raw_insert` 方法允许通过客户端连接直接插入 `bytes` 对象或 `bytes` 对象生成器。由于它不会对插入载荷进行任何处理，因此性能非常高。该方法提供了用于指定设置和插入格式的选项：
+
+| 参数               | 类型                                     | 默认值    | 描述                                                                                     |
+| ---------------- | -------------------------------------- | ------ | -------------------------------------------------------------------------------------- |
+| table            | str                                    | *必填*   | 简单表名或带数据库限定名的表名                                                                        |
+| column&#95;names | Sequence[str]                          | *None* | 插入块的列名。如果 `fmt` 参数不包含列名，则为必填项                                                          |
+| insert&#95;block | str, bytes, Generator[bytes], BinaryIO | *必填*   | 要插入的数据。字符串将使用客户端编码进行编码。                                                                |
+| settings         | dict                                   | *None* | 请参见 [settings 描述](/zh/integrations/language-clients/python/driver-api#settings-argument)。 |
+| fmt              | str                                    | *None* | `insert_block` 字节的 ClickHouse 输入格式。 (如果未指定，ClickHouse 使用 TSV)                          |
+
+调用方有责任确保 `insert_block` 采用指定的格式，并使用指定的压缩方法。ClickHouse Connect 会将这些原始插入用于文件上传和 PyArrow 表，并将解析工作交由 ClickHouse 服务器 处理。
+
+<div id="saving-query-results-as-files">
+  ## 将查询结果保存为文件
+</div>
+
+你可以使用 `raw_stream` 方法直接将文件从 ClickHouse 流式写入本地文件系统。例如，如果你想将某个查询的结果保存为 CSV 文件，可以使用以下代码片段：
+
+```python
+import clickhouse_connect
+
+if __name__ == '__main__':
+    client = clickhouse_connect.get_client()
+    query = 'SELECT number, toString(number) AS number_as_str FROM system.numbers LIMIT 5'
+    fmt = 'CSVWithNames'  # or CSV, or CSVWithNamesAndTypes, or TabSeparated, etc.
+    stream = client.raw_stream(query=query, fmt=fmt)
+    with open("output.csv", "wb") as f:
+        for chunk in stream:
+            f.write(chunk)
+```
+
+上述代码会生成一个 `output.csv` 文件，内容如下：
+
+```csv
+"number","number_as_str"
+0,"0"
+1,"1"
+2,"2"
+3,"3"
+4,"4"
+```
+
+同样，你也可以将数据保存为 [TabSeparated](/zh/reference/formats/TabSeparated/TabSeparated) 等其他格式。有关所有可用格式选项的概述，请参阅 [输入和输出数据格式](/zh/reference/formats/index)。
+
+<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
+  ## 多线程、多进程和异步/事件驱动用例
+</div>
+
+ClickHouse Connect 非常适合用于多线程、多进程以及事件循环驱动/异步应用程序。所有查询和插入处理都在单个线程内完成，因此这些操作通常是线程安全的。 (未来可能会在较低层级为某些操作引入并行处理，以克服单线程带来的性能损耗；但即便如此，线程安全性仍会得到保证。)
+
+由于每个已执行的查询或插入都会分别在各自的 `QueryContext` 或 `InsertContext` 对象中维护状态，这些辅助对象本身并不是线程安全的，因此不应在多个处理流之间共享。有关上下文对象的更多讨论，请参见 [QueryContexts](/zh/integrations/language-clients/python/advanced-querying#querycontexts) 和 [InsertContexts](/zh/integrations/language-clients/python/advanced-inserting#insertcontexts) 部分。
+
+此外，对于同时有两个或更多查询和/或插入“在进行中”的应用程序，还需要注意另外两个方面。第一是与查询/插入关联的 ClickHouse“会话”，第二是 ClickHouse Connect Client 实例使用的 HTTP 连接池。
+
+<div id="asyncclient-wrapper">
+  ## AsyncClient 包装器
+</div>
+
+ClickHouse Connect 为常规 `Client` 提供了一个异步包装层，因此可以在 `asyncio` 环境中使用该客户端。
+
+要获取 `AsyncClient` 实例，可以使用 `get_async_client` 工厂函数；它接受的参数与标准 `get_client` 相同：
+
+```python
+import asyncio
+
+import clickhouse_connect
+
+async def main():
+    client = await clickhouse_connect.get_async_client()
+    result = await client.query("SELECT name FROM system.databases LIMIT 1")
+    print(result.result_rows)
+    # 输出：
+    # [('INFORMATION_SCHEMA',)]
+
+asyncio.run(main())
+```
+
+`AsyncClient` 与标准 `Client` 具有相同的方法和参数，但在适用情况下，这些方法会以协程形式提供。在内部，`Client` 中执行 I/O 操作的方法会被包装到 [run&#95;in&#95;executor](https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.run_in_executor) 调用中。
+
+使用 `AsyncClient` 包装器时，多线程性能会有所提升，因为在等待 I/O 操作完成期间，执行线程和 GIL 都会被释放。
+
+注意：与常规 `Client` 不同，`AsyncClient` 默认会强制将 `autogenerate_session_id` 设为 `False`。
+
+另请参阅：[run&#95;async 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/run_async.py)。
+
+<div id="managing-clickhouse-session-ids">
+  ## 管理 ClickHouse 会话 ID
+</div>
+
+每个 ClickHouse 查询都在 ClickHouse “会话”的上下文中执行。目前，会话 主要有两个用途：
+
+* 将特定的 ClickHouse settings 关联到多个查询 (请参见[用户 settings](/zh/reference/settings/session-settings)) 。ClickHouse `SET` 命令用于在用户 会话 范围内更改 settings。
+* 跟踪[临时表](/zh/reference/statements/create/table#temporary-tables)。
+
+默认情况下，通过 ClickHouse Connect `Client` 实例执行的每个查询都会使用该客户端的 会话 ID。使用单个客户端时，`SET` 语句和临时表都能按预期工作。但是，ClickHouse 服务器 不允许在同一个 会话 中执行并发查询 (如果尝试这样做，客户端会引发 `ProgrammingError`) 。对于需要执行并发查询的应用程序，请使用以下模式之一：
+
+1. 为每个需要 会话 隔离的线程/进程/event handler 创建单独的 `Client` 实例。这样可以保留每个客户端各自的 会话 状态 (临时表和 `SET` 值) 。
+2. 如果不需要共享 会话 状态，请在调用 `query`、`command` 或 `insert` 时，通过 `settings` argument 为每个查询指定唯一的 `session_id`。
+3. 通过在创建客户端之前设置 `autogenerate_session_id=False`，禁用共享客户端上的 会话 (或者直接将其传递给 `get_client`) 。
+
+```python
+from clickhouse_connect import common
+import clickhouse_connect
+
+common.set_setting('autogenerate_session_id', False)  # 这项设置务必在创建客户端之前完成
+client = clickhouse_connect.get_client(host='somehost.com', user='dbuser', password=1234)
+```
+
+或者，直接将 `autogenerate_session_id=False` 传递给 `get_client(...)`。
+
+在这种情况下，ClickHouse Connect 不会发送 `session_id`；服务器不会将不同的请求视为属于同一会话。临时表和会话级设置不会在请求之间保留。
+
+<div id="customizing-the-http-connection-pool">
+  ## 自定义 HTTP 连接池
+</div>
+
+ClickHouse Connect 使用 `urllib3` 连接池来管理与服务器之间的底层 HTTP 连接。默认情况下，所有客户端实例共享同一个连接池，这对于绝大多数使用场景已经足够。该默认连接池会为应用程序使用的每个 ClickHouse 服务器维护最多 8 个 HTTP Keep-Alive 连接。
+
+对于大型多线程应用，使用独立的连接池可能更合适。可以通过主 `clickhouse_connect.get_client` 函数的 `pool_mgr` 关键字参数提供自定义连接池：
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver import httputil
+
+big_pool_mgr = httputil.get_pool_manager(maxsize=16, num_pools=12)
+
+client1 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+```
+
+如上例所示，客户端既可以共享同一个池管理器，也可以为每个客户端分别创建单独的池管理器。有关创建 PoolManager 时可用选项的更多信息，请参阅 [`urllib3` 文档](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior)。

@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/rbac
+title: 'Controle de Acesso Baseado em Funções (RBAC)'
+sidebarTitle: 'Controle de Acesso Baseado em Funções'
+toc_max_heading_level: 2
+description: 'Configure o Controle de Acesso Baseado em Funções no ClickStack para gerenciar as permissões da equipe em painéis, buscas salvas, fontes, alertas e muito mais.'
+doc_type: 'guide'
+keywords: ['clickstack', 'rbac', 'funções', 'permissões', 'controle de acesso', 'segurança']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O ClickStack inclui controle de acesso baseado em funções (RBAC), para que você possa definir funções personalizadas com permissões detalhadas sobre [dashboards](/pt-BR/clickstack/features/dashboards/overview), [Saved searches](/pt-BR/clickstack/features/search), Sources, [alertas](/pt-BR/clickstack/features/alerts), webhooks e notebooks. As permissões funcionam em dois níveis: acesso no nível do recurso (sem acesso, leitura ou gerenciamento por tipo de recurso) e regras detalhadas opcionais que restringem o acesso a recursos individuais por nome, tag ou ID. O ClickStack inclui três funções integradas, e você pode criar funções personalizadas para atender às necessidades da sua equipe.
+
+<Info>
+  **Somente no Managed ClickStack**
+
+  O RBAC está disponível apenas em implantações do Managed ClickStack.
+</Info>
+
+<div id="user-access-prerequisites">
+  ## Pré-requisitos de acesso do usuário
+</div>
+
+O ClickStack autentica via ClickHouse Cloud. Antes de atribuir funções do ClickStack, cada usuário deve:
+
+1. **Ser convidado para a sua organização do ClickHouse Cloud.** Um administrador da organização convida usuários pelo console do Cloud. Consulte [Gerenciar usuários do Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) para mais detalhes.
+2. **Ter acesso ao SQL Console no serviço.** Acesse **Settings** → **SQL Console Access** no seu serviço e defina o nível de permissão apropriado:
+
+| Acesso ao SQL Console no Cloud              | Acesso ao ClickStack                                                                          |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **SQL Console Admin** (Acesso total)        | Acesso total ao ClickStack. Necessário para habilitar [alertas](/pt-BR/clickstack/features/alerts). |
+| **SQL Console Read Only** (Somente leitura) | Pode visualizar dados de observabilidade e criar dashboards.                                  |
+| **No access**                               | Não pode acessar o ClickStack.                                                                |
+
+Quando um usuário tem acesso ao Cloud, ele aparece na página **Team Settings** do ClickStack, onde você pode atribuir uma função do ClickStack.
+
+<Tabs>
+  <Tab title="Usuários e funções do Cloud">
+    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="Página de usuários e funções do ClickHouse Cloud" size="lg" />
+  </Tab>
+
+  <Tab title="Configurações da equipe do ClickStack">
+    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Página Configurações da equipe do ClickStack mostrando os membros da equipe e suas funções" size="lg" />
+  </Tab>
+</Tabs>
+
+<div id="built-in-roles">
+  ## Funções nativas
+</div>
+
+O ClickStack inclui três funções do sistema. Não é possível editar nem excluir essas funções. A função Admin é atribuída ao criador da equipe por padrão.
+
+| Permissão                            | Admin | Member | ReadOnly |
+| ------------------------------------ | :---: | :----: | :------: |
+| Ler todos os recursos                |   ✓   |    ✓   |     ✓    |
+| Gerenciar dashboards                 |   ✓   |    ✓   |          |
+| Gerenciar saved searches             |   ✓   |    ✓   |          |
+| Gerenciar sources                    |   ✓   |    ✓   |          |
+| Gerenciar alerts                     |   ✓   |    ✓   |          |
+| Gerenciar webhooks                   |   ✓   |    ✓   |          |
+| Gerenciar notebooks                  |   ✓   |    ✓   |          |
+| Atualizar as configurações da equipe |   ✓   |    ✓   |          |
+| Criar/excluir equipes                |   ✓   |        |          |
+| Gerenciar usuários e convites        |   ✓   |        |          |
+
+<div id="assigning-roles">
+  ## Atribuir funções aos membros da equipe
+</div>
+
+A página **Team Settings** lista todos os membros da equipe com sua função atual. Para alterar a função de um usuário, clique em **Editar** ao lado do nome dele e selecione uma nova função. Cada usuário tem exatamente uma função.
+
+<div id="default-new-user-role">
+  ### Função padrão para novos usuários
+</div>
+
+Você pode definir uma função padrão para novos usuários em [Políticas de segurança](#security-policies). Os novos usuários adicionados automaticamente à equipe recebem essa função.
+
+<div id="creating-a-role">
+  ## Criando uma função personalizada
+</div>
+
+<Steps>
+  <Step>
+    ### Navegue até Team Settings
+
+    Abra **Team Settings** e role até **RBAC Roles**.
+
+    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+  </Step>
+
+  <Step>
+    ### Adicione uma nova função
+
+    Clique em **+ Add Role**. Insira um **Role Name** e, opcionalmente, adicione uma **Description**.
+  </Step>
+
+  <Step>
+    ### Configure as permissões e salve
+
+    Defina as permissões da função e, em seguida, clique em **Create Role**.
+
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="modal Add Role" size="md" />
+  </Step>
+</Steps>
+
+As funções personalizadas aparecem ao lado das funções do sistema na seção **RBAC Roles**, com os controles **Edit** e **Delete**.
+
+<div id="role-permissions">
+  ## Permissões da função
+</div>
+
+<div id="resource-permissions">
+  ### Permissões de recursos
+</div>
+
+Cada função concede um nível de acesso para cada tipo de recurso. Os três níveis são:
+
+| Nível de acesso | O que permite                                                                          |
+| --------------- | -------------------------------------------------------------------------------------- |
+| **Sem acesso**  | O tipo de recurso fica totalmente oculto para a função.                                |
+| **Leitura**     | Visualizar o recurso e sua configuração, mas sem poder criá-lo, editá-lo ou excluí-lo. |
+| **Gerenciar**   | Controle total — criar, editar e excluir recursos desse tipo.                          |
+
+Os tipos de recurso que você pode controlar são:
+
+* **[Dashboards](/pt-BR/clickstack/features/dashboards/overview)** — layouts e gráficos de dashboard salvos.
+* **[Saved searches](/pt-BR/clickstack/features/search)** — consultas persistidas de logs/traces/eventos.
+* **Sources** — configurações de fontes de ingestão.
+* **[Alerts](/pt-BR/clickstack/features/alerts)** — regras de alerta e respectivas configurações de notificação.
+* **Webhooks** — destinos de notificação de saída (como Slack, PagerDuty e endpoints HTTP genéricos) para os quais os [alerts](/pt-BR/clickstack/features/alerts) são enviados. Isso não se refere à API do ClickStack.
+* **Notebooks** — notebooks colaborativos de investigação.
+
+<div id="administrative-permissions">
+  ### Permissões administrativas
+</div>
+
+Além das permissões de recursos, cada função inclui duas configurações administrativas:
+
+* **Usuários** (Sem acesso · Acesso limitado) — controla se a função pode visualizar os membros da equipe e suas funções. Somente Admins podem convidar, remover ou atualizar usuários.
+* **Equipe** (Leitura · Gerenciamento) — controla se a função pode visualizar ou modificar as configurações da equipe, como políticas de segurança e configuração de RBAC.
+
+<div id="fine-grained-access-rules">
+  ### Regras de acesso granular
+</div>
+
+Dashboards, Saved Searches, Sources e Notebooks oferecem controles granulares que restringem o acesso a recursos individuais dentro de uma categoria. Use esses controles quando precisar limitar uma função a recursos específicos, em vez de conceder acesso amplo a todo o tipo de recurso.
+
+<div id="access-control-modes">
+  #### Acesso padrão vs. controles granulares
+</div>
+
+Cada tipo de recurso tem um **Modo de controle de acesso**:
+
+* **Acesso padrão** — aplica um único nível de acesso (Sem acesso, Leitura ou Gerenciar) a todos os recursos desse tipo.
+* **Controles granulares** — permite definir regras de acesso com base em condições para recursos específicos. Os recursos que não corresponderem a nenhuma regra ficarão, por padrão, sem acesso.
+
+Para alternar entre os modos, clique na seta para expandir um tipo de recurso no editor da função e, em seguida, alterne o **Modo de controle de acesso**.
+
+<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="Modos de Acesso padrão vs. Controles granulares no editor da função" size="md" />
+
+<div id="configuring-access-rules">
+  #### Configurando regras de acesso
+</div>
+
+Cada regra de acesso consiste em uma **condição** e um **nível de acesso**. As condições correspondem aos recursos com base em suas propriedades:
+
+<Image img="/images/clickstack/rbac/condition-tip.webp" alt="Dica da condição: corresponda recursos por Nome ou Tag (mostrado no título) ou por ID (encontrado na URL)" size="md" />
+
+| Campo da condição | Operadores       | O que corresponde                                                                                                                                                   | Exemplo                                                                                             |
+| ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Name**          | `is`, `contains` | O nome de exibição do recurso — por exemplo, o título do dashboard.                                                                                                 | Name contains `production` — corresponde a qualquer dashboard com &quot;production&quot; no título. |
+| **Tag**           | `is`, `contains` | Tags atribuídas ao recurso pelo painel de tags no canto superior direito da visualização do recurso. Disponível apenas para Dashboards, Saved Searches e Notebooks. | Tag is `critical` — corresponde a recursos com a tag &quot;critical&quot;.                          |
+| **ID**            | `is`, `contains` | O identificador do recurso, encontrado na barra de URL quando você abre o recurso.                                                                                  | ID is `abc123` — corresponde a um único recurso específico.                                         |
+
+A captura de tela a seguir mostra o ID do dashboard destacado na barra de URL e uma tag &quot;TESTING&quot; visível no painel de tags (canto superior direito).
+
+<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="Dashboard mostrando o ID do recurso na barra de URL e uma tag no canto superior direito" size="lg" />
+
+Você pode adicionar várias regras por tipo de recurso. Cada regra é verificada de forma independente usando lógica OR — um recurso fica acessível se corresponder a **qualquer** regra. Recursos que não correspondem a nenhuma regra não ficam acessíveis.
+
+<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Dica das regras de acesso com lógica OR" size="md" />
+
+**Exemplo**: Para conceder a uma função acesso somente leitura a dashboards de teste, expanda Dashboards, mude para Fine-Grained Controls e adicione duas regras:
+
+* **Name** `contains` `testing` com nível de acesso **Read**
+* **Tag** `is` `testing` com nível de acesso **Read**
+
+Um dashboard que corresponda a qualquer uma das regras fica acessível.
+
+<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="Duas regras de acesso granular unidas por OR: Name contains testing com acesso Read e Tag is testing com acesso Read" size="md" />
+
+<div id="security-policies">
+  ## Políticas de segurança
+</div>
+
+A seção **Security Policies** em **Team Settings** oferece controles adicionais.
+
+**Default New User Role** define automaticamente a função atribuída aos novos usuários que entram na equipe.
+
+**Generative AI** permite ativar ou desativar recursos baseados em LLM (como a geração de consultas em linguagem natural) viabilizados pela Anthropic ou pelo Amazon Bedrock. Quando desativada, nenhum dado é enviado a provedores de IA.
+
+<Image img="/images/clickstack/rbac/security-policies.webp" alt="Políticas de segurança" size="lg" />

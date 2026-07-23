@@ -1,0 +1,130 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/claude-agent-sdk
+sidebarTitle: '集成 Claude Agent SDK'
+title: '如何使用 Claude Agent SDK 和 ClickHouse MCP 服务器构建 AI Agent'
+description: '了解如何使用 Claude Agent SDK 和 ClickHouse MCP 服务器构建 AI Agent'
+keywords: ['ClickHouse', 'MCP', 'Claude']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在本指南中，你将学习如何构建一个 [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) AI agent，使其能够通过 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 与 [ClickHouse SQL playground](https://sql.clickhouse.com/) 交互。
+
+<Info>
+  **示例 notebook**
+
+  你可以在 [examples 代码仓库](https://github.com/ClickHouse/examples/blob/main/ai/mcp/claude-agent/claude-agent.ipynb)中找到本示例对应的 notebook。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你的系统上需要已安装 Python。
+* 你的系统上需要已安装 `pip`。
+* 你需要一个 Anthropic API key
+
+你既可以在 Python REPL 中执行以下步骤，也可以通过脚本执行。
+
+<Steps>
+  <Step>
+    ## 安装库
+
+    运行以下命令安装 Claude Agent SDK 库：
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q claude-agent-sdk
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## 设置凭据
+
+    接下来，你需要提供 Anthropic API key：
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="响应"
+    Enter Anthropic API Key: ········
+    ```
+
+    接下来，定义连接到 ClickHouse SQL playground 所需的凭据：
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## 初始化 MCP 服务器和 Claude Agent SDK agent
+
+    现在将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground，
+    然后初始化 agent 并向它提一个问题：
+
+    ```python
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, UserMessage, TextBlock, ToolUseBlock
+    ```
+
+    ```python
+    options = ClaudeAgentOptions(
+        allowed_tools=[
+            "mcp__mcp-clickhouse__list_databases",
+            "mcp__mcp-clickhouse__list_tables", 
+            "mcp__mcp-clickhouse__run_select_query",
+            "mcp__mcp-clickhouse__run_chdb_select_query"
+        ],
+        mcp_servers={
+            "mcp-clickhouse": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--with", "mcp-clickhouse",
+                    "--python", "3.10",
+                    "mcp-clickhouse"
+                ],
+                "env": env
+            }
+        }
+    )
+
+    async for message in query(prompt="Tell me something interesting about UK property sales", options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(f"🤖 {block.text}")
+                if isinstance(block, ToolUseBlock):
+                    print(f"🛠️ {block.name} {block.input}")
+        elif isinstance(message, UserMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(block.text)
+    ```
+
+    请注意，`for` 代码块中的代码为了简洁起见对输出做了过滤。
+
+    ```response title="响应"
+    🤖 我会查询 ClickHouse 数据库，找一些关于英国房产交易的有趣信息。
+
+    先让我看看有哪些数据库可用：
+    🛠️ mcp__mcp-clickhouse__list_databases {}
+    🤖 很好！这里有一个 “uk” 数据库。让我看看有哪些表可用：
+    🛠️ mcp__mcp-clickhouse__list_tables {'database': 'uk'}
+    🤖 太好了！`uk_price_paid` 表中有超过 3000 万条房产交易记录。让我找点有意思的内容：
+    🛠️ mcp__mcp-clickhouse__run_select_query {'query': "\nSELECT \n    street,\n    town,\n    max(price) as max_price,\n    min(price) as min_price,\n    max(price) - min(price) as price_difference,\n    count() as sales_count\nFROM uk.uk_price_paid\nWHERE street != ''\nGROUP BY street, town\nHAVING sales_count > 100\nORDER BY price_difference DESC\nLIMIT 1\n"}
+    🤖 这里有个很有意思的发现：**伦敦的 Baker Street**（没错，就是福尔摩斯那条著名的街道！）在所有成交超过 100 笔的街道中，房价区间最大——最低成交价仅为 **£2,500**，最高则达到 **£5.943 亿**，惊人的价差超过 **5.94 亿英镑**！
+
+    这也说得通，因为 Baker Street 是伦敦最负盛名的地址之一，穿过 Marylebone 等富裕地区，而且在这个数据集中一共记录了 541 笔成交。
+    ```
+  </Step>
+</Steps>

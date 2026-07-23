@@ -1,0 +1,13 @@
+---
+title: イントロ
+---
+
+<PrivatePreviewBadge />
+
+<Note>
+  [こちら](https://clickhouse.com/cloud/clickpipes/bigquery-connector)からプライベートプレビューのウェイトリストに登録できます。
+</Note>
+
+BigQuery ClickPipe は、BigQuery から ClickHouse Cloud へデータを取り込むための、フルマネージドで耐障害性に優れた仕組みです。プライベートプレビューでは、BigQuery のデータセットを探索やプロトタイピング向けに一括で読み込めるよう、**初期ロード** レプリケーション方式をサポートしています。将来的には **CDC** もサポートされる予定です。それまでは、初期ロード完了後に BigQuery のエクスポートデータを ClickHouse Cloud に継続的に同期する方法として、[Google Cloud Storage ClickPipe](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview) の利用を推奨します。
+
+BigQuery ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。

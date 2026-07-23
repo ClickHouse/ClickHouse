@@ -1,0 +1,145 @@
+---
+description: 'Permite que o ClickHouse se conecte a bancos de dados externos via ODBC.'
+sidebarTitle: 'ODBC'
+slug: /engines/table-engines/integrations/odbc
+title: 'Motor de tabela ODBC'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Permite que o ClickHouse se conecte a bancos de dados externos via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+Para implementar conexões ODBC com segurança, o ClickHouse usa um programa separado, `clickhouse-odbc-bridge`. Se o driver ODBC for carregado diretamente do `clickhouse-server`, problemas no driver podem causar a falha do servidor ClickHouse. O ClickHouse inicia automaticamente o `clickhouse-odbc-bridge` quando necessário. O programa de bridge ODBC é instalado a partir do mesmo pacote que o `clickhouse-server`.
+
+Este motor oferece suporte ao tipo de dado [Nullable](/pt-BR/reference/data-types/nullable).
+
+<div id="creating-a-table">
+  ## Criar uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+)
+ENGINE = ODBC(datasource, external_database, external_table)
+```
+
+Veja uma descrição detalhada da consulta [CREATE TABLE](/pt-BR/reference/statements/create/table).
+
+A estrutura da tabela pode ser diferente da estrutura da tabela de origem:
+
+* Os nomes das colunas devem ser os mesmos da tabela de origem, mas você pode usar apenas algumas delas e em qualquer ordem.
+* Os tipos das colunas podem ser diferentes dos da tabela de origem. O ClickHouse tenta [converter](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) os valores para os tipos de dados do ClickHouse.
+* A configuração [external&#95;table&#95;functions&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#external_table_functions_use_nulls) define como lidar com colunas Nullable. Valor padrão: 1. Se for 0, a função de tabela não cria colunas Nullable e insere valores padrão em vez de nulos. Isso também se aplica a valores NULL dentro de arrays.
+
+**Parâmetros do motor**
+
+* `datasource` — Nome da seção com as configurações de conexão no arquivo `odbc.ini`.
+* `external_database` — Nome de um banco de dados em um SGBD externo.
+* `external_table` — Nome de uma tabela em `external_database`.
+
+Esses parâmetros também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+**Recuperando dados da instalação local do MySQL via ODBC**
+
+Este exemplo foi testado no Ubuntu Linux 18.04 e no servidor MySQL 5.7.
+
+Certifique-se de que o unixODBC e o MySQL Connector estejam instalados.
+
+Por padrão (se instalado a partir de pacotes), o ClickHouse é iniciado como o usuário `clickhouse`. Portanto, é necessário criar e configurar esse usuário no servidor MySQL.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
+```
+
+Em seguida, configure a conexão em `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USER = clickhouse
+PASSWORD = clickhouse
+```
+
+Você pode verificar a conexão usando o utilitário `isql` da instalação do unixODBC.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+Tabela no MySQL:
+
+```text
+mysql> CREATE DATABASE test;
+Query OK, 1 row affected (0,01 sec)
+
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test.test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test.test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Tabela no ClickHouse que recupera dados da tabela do MySQL:
+
+```sql
+CREATE TABLE odbc_t
+(
+    `int_id` Int32,
+    `float_nullable` Nullable(Float32)
+)
+ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
+```
+
+```sql
+SELECT * FROM odbc_t
+```
+
+```text
+┌─int_id─┬─float_nullable─┐
+│      1 │           ᴺᵁᴸᴸ │
+└────────┴────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [Dicionários ODBC](/pt-BR/reference/statements/create/dictionary/sources/odbc)
+* [Função de tabela ODBC](/pt-BR/reference/functions/table-functions/odbc)

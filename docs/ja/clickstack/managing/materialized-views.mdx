@@ -1,0 +1,844 @@
+---
+slug: /use-cases/observability/clickstack/materialized_views
+title: 'ClickStack - materialized views'
+sidebarTitle: 'Materialized views'
+description: 'materialized view を使用した ClickStack のパフォーマンスチューニング'
+doc_type: 'guide'
+keywords: ['clickstack', 'オブザーバビリティ', 'materialized views', 'パフォーマンス', '最適化', '可視化', '集計']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+ClickStack では、[インクリメンタルmaterialized view (IMV) ](/ja/concepts/features/materialized-views/incremental-materialized-view) を活用することで、たとえば時間の経過に沿って 1 分ごとの平均リクエスト所要時間を算出するような、集約負荷の高いクエリに依存する可視化を高速化できます。この機能によりクエリ性能を大幅に向上でき、通常は 1 日あたり約 10 TB 以上を扱う大規模なデプロイメントで特に効果を発揮します。また、1 日あたり PB 規模までのスケーリングも可能になります。インクリメンタルmaterialized view はベータのため、注意して使用してください。
+
+<Note>
+  アラートも materialized view の恩恵を受け、自動的に活用されます。
+  これにより、多数のアラートを実行する際の計算オーバーヘッドを削減できます。特に、アラートは通常きわめて高頻度で実行されるためです。
+  実行時間の短縮は、応答性とリソース消費の両面で有効です。
+</Note>
+
+<div id="what-are-incremental-materialized-views">
+  ## インクリメンタルmaterialized view とは
+</div>
+
+インクリメンタルmaterialized view を使用すると、計算コストをクエリ時から挿入時へ移せるため、`SELECT` クエリを大幅に高速化できます。
+
+Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized view は保存されたスナップショットではありません。代わりに、ソーステーブルにデータブロックが挿入されるたびに、そのブロックに対してクエリを実行するトリガーとして機能します。このクエリの出力は、別のターゲットテーブルに書き込まれます。さらにデータが挿入されると、新しい部分結果が追記され、ターゲットテーブル内でマージされます。マージ後の結果は、元のデータセット全体に対して集計を実行した結果と同等です。
+
+materialized view を使う主な目的は、ターゲットテーブルに書き込まれるデータが、集計、フィルタリング、または変換の結果になることです。ClickStack では、これらは集計専用に使用されます。こうした結果は通常、生の入力データよりもはるかに小さく、多くの場合は部分集計状態を表します。さらに、事前集計済みのターゲットテーブルはシンプルにクエリできるため、生データに対してクエリ時に同じ計算を行う場合と比べて、クエリレイテンシを大幅に低減できます。
+
+ClickHouse の materialized view は、データがソーステーブルに流入するのに合わせて継続的に更新され、常に最新の索引のように振る舞います。これは、多くの他のデータベースにおける materialized view が静的なスナップショットであり、ClickHouse の [リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view) と同様に定期的な更新が必要なのとは異なります。
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view の図" />
+
+インクリメンタルmaterialized view は、新しいデータが到着した際に view への変更分だけを計算し、計算を挿入時に寄せます。ClickHouse はインジェスト向けに高度に最適化されているため、挿入される各ブロックに対して view を維持する増分コストは、クエリ実行時に得られる削減効果に比べて小さく抑えられます。集計計算のコストは、読み取りのたびに毎回支払うのではなく、挿入全体に分散されます。そのため、事前集計済みの結果をクエリする方が再計算するよりもはるかに低コストであり、結果として、ペタバイト規模であっても下流の可視化に対して低い運用コストとほぼリアルタイムの性能を実現できます。
+
+このモデルは、更新のたびに view 全体を再計算するシステムや、スケジュールされた更新に依存するシステムとは根本的に異なります。materialized view の仕組みや作成方法についてさらに詳しく知りたい場合は、上記のリンク先ガイドを参照してください。
+
+materialized view を追加するごとに挿入時のオーバーヘッドも増えるため、使用は慎重に選ぶ必要があります。
+
+<Tip>
+  view は、最も一般的なダッシュボードと可視化のためにのみ作成してください。
+  機能がベータの間は、利用を 20 個未満の view に抑えてください。
+  このしきい値は、今後のリリースで引き上げられる見込みです。
+</Tip>
+
+<Note>
+  1 つの materialized view で、異なるグルーピングに対する複数のメトリクスを計算できます。たとえば、1 分単位のバケットごとに、サービス名単位で最小値、最大値、p95 の duration を計算できます。これにより、1 つの view で 1 つだけでなく、多くの可視化に対応できます。したがって、各 view の価値を最大化し、ダッシュボードやワークフロー全体で再利用されるようにするには、メトリクスを共通の view に集約することが重要です。
+</Note>
+
+先に進む前に、ClickHouse の materialized view について、より深く理解しておくことをお勧めします。
+詳細は、[インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) に関するガイドを参照してください。
+
+<div id="selecting-visualizatons-for-acceleration">
+  ## 高速化の対象とする可視化の選定
+</div>
+
+materialized view を作成する前に、どの可視化を高速化したいのか、またどのワークフローがユーザーにとって最も重要かを把握しておくことが重要です。
+
+ClickStack では、materialized view は**集約負荷の高い可視化を高速化する**ために設計されています。つまり、時間の経過に沿って 1 つ以上のメトリクスを計算するクエリです。たとえば、**1 分ごとの平均リクエスト Duration**、**サービスごとのリクエスト数**、**時間経過に伴うエラー率**などがあります。materialized view は時系列の可視化に対応することを目的としているため、必ず集約と時間ベースのグループ化を含める必要があります。
+
+一般的には、次を推奨します。
+
+<div id="identify-high-impact-visualizations">
+  ### 効果の高い可視化を特定する
+</div>
+
+高速化の有力な候補は、一般に次のいずれかのカテゴリに当てはまります。
+
+* 頻繁に更新され、常時表示されるダッシュボードの可視化。たとえば、壁面ディスプレイに表示する概要レベルの監視ダッシュボードです。
+* ランブックで使われる診断ワークフロー。インシデント対応中に特定のチャートを繰り返し参照し、すばやく結果を返す必要があるものです。
+* HyperDX の中核的な機能。具体的には次のようなものです。
+  * 検索ページのヒストグラム表示。
+  * APM、Services、Kubernetes ビューなど、プリセットされたダッシュボードで使われる可視化。
+
+これらの可視化は、ユーザーや時間範囲をまたいで繰り返し実行されることが多いため、計算処理をクエリ時から挿入時へ移す対象として最適です。
+
+<div id="balance-benefit-against-insert-time-cost">
+  ### 効果と挿入時コストのバランスを取る
+</div>
+
+materialized view は挿入時に追加の処理負荷をもたらすため、必要なものだけを慎重に作成する必要があります。すべての可視化が事前集約の恩恵を受けるわけではなく、利用頻度の低いグラフを高速化しても、通常はそのオーバーヘッドに見合いません。materialized view の総数は 20 未満に抑えるべきです。
+
+<Note>
+  本番環境に移行する前に、materialized view によって生じるリソースオーバーヘッド、特に CPU 使用率、ディスク I/O、[マージ処理](/ja/resources/support-center/tips-and-tricks/too-many-parts) を必ず検証してください。materialized view は 1 つ増えるごとに挿入時の処理を増やし、追加のパーツも生成するため、マージが追いつき、パーツ数が安定した状態を維持できることを確認することが重要です。これは、オープンソース版 ClickHouse では [システムテーブル](/ja/reference/system-tables/tables) と [組み込みのオブザーバビリティダッシュボード](/ja/guides/oss/deployment-and-scaling/monitoring/monitoring#built-in-advanced-observability-dashboard)、ClickHouse Cloud では組み込みのメトリクスと [ClickHouse Cloud の監視ダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard) を使って監視できます。過剰なパーツ数の診断と緩和については、[パーツが多すぎる](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) を参照してください。
+</Note>
+
+重要度の高い可視化を特定したら、次のステップは統合です。
+
+<div id="consolidate-visualizations-into-shared-views">
+  ### 可視化を共有ビューに集約する
+</div>
+
+ClickStack のすべての materialized view では、[`toStartOfMinute`](/ja/reference/functions/regular-functions/date-time-functions#toStartOfMinute) などの関数を使って、データを時間間隔ごとにグループ化する必要があります。ただし、多くの可視化では、サービス名、スパン名、ステータスコードなど、追加の grouping key も共通して使用されます。複数の可視化で同じグループ化の次元を使う場合は、多くの場合、1 つの materialized view で対応できます。
+
+例として (トレースの場合) :
+
+* 時系列で見たサービス名ごとの平均 Duration  - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* 時系列で見たサービス名ごとのリクエスト数 - `SELECT count() count, toStartOfMinute(Timestamp) as time, ServiceName FROM otel_traces GROUP BY ServiceName, time`
+* 時系列で見たステータスコードごとの平均 Duration - `SELECT avg(Duration), toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+* 時系列で見たステータスコードごとのリクエスト数 - `SELECT count() count, toStartOfMinute(Timestamp) as time, StatusCode FROM otel_traces GROUP BY StatusCode, time`
+
+各クエリや chart ごとに個別の materialized view を作成する代わりに、これらをサービス名とステータスコードで集約する 1 つのビューにまとめることができます。この単一のビューで、count、平均 Duration、最大 Duration、さらにはパーセンタイルなど、複数のメトリクスを計算でき、それらを複数の可視化で再利用できます。上記を組み合わせたクエリの例を以下に示します。
+
+```sql
+SELECT avg(Duration), max(Duration), count(), quantiles(0.95,0.99)(Duration), toStartOfMinute(Timestamp) as time, ServiceName, StatusCode
+FROM otel_traces
+GROUP BY time, ServiceName, StatusCode
+```
+
+このようにビューを統合すると、insert 時のオーバーヘッドを削減でき、materialized view の総数を抑えられるほか、part 数に関する問題も減り、継続的な保守も容易になります。
+
+この段階では、**まずはクエリに注目してください**。具体的には、高速化したい可視化で実行されるクエリです。次のセクションでは、複数の集計クエリを 1 つの materialized view にまとめる例を示します。
+
+<div id="creating-a-materialized-view">
+  ## materialized view の作成
+</div>
+
+高速化したい可視化、または可視化のセットを特定したら、次にその基になるクエリを洗い出します。実際には、可視化の設定を確認し、生成された SQL をレビューして、使用されている集計メトリクスや適用されている関数を重点的に確認することになります。
+
+<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="生成された SQL" />
+
+<Note>
+  HyperDX 内のコンポーネントでデバッグパネルを利用できない場合は、ブラウザーのコンソールを確認できます。そこにはすべてのクエリが記録されています。
+</Note>
+
+必要なクエリを整理したら、次に ClickHouse の[**集計状態関数**](/ja/reference/data-types/aggregatefunction)について理解しておく必要があります。materialized view は、計算を クエリ時 から 挿入時 に移すために、これらの関数を利用します。materialized view は最終的な集計値を保存するのではなく、**中間的な集計状態** を計算して保存し、それらは後で クエリ時 にマージおよび確定されます。通常、これらは元のテーブルより大幅に小さくなります。これらの状態には専用のデータ型があり、ターゲットテーブルのスキーマ内で明示的に表現する必要があります。
+
+参考までに、ClickHouse のドキュメントでは、集計状態関数と、それらの保存に使用されるテーブルエンジン `AggregatingMergeTree` について、詳しい概要と例を提供しています。
+
+* [集計関数と状態](/ja/reference/functions/aggregate-functions/index)
+* [AggregatingMergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree)
+
+以下の動画では、AggregatingMergeTree と集計関数の使い方の例を確認できます。
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="ClickHouse における集計状態" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+先に進む前に、これらの概念を理解しておくことを**強く推奨**します。
+
+<div id="example-materialized-view">
+  ### materialized view の例
+</div>
+
+以下の元のクエリは、サービス名とステータスコードごとにグループ化し、1 分ごとの平均 duration、最大 duration、イベント数、およびパーセンタイルを計算します。
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+このクエリを高速化するには、対応する集計状態を格納するターゲットテーブル `otel_traces_1m` を作成します。
+
+```sql
+CREATE TABLE otel_traces_1m
+(
+    `Timestamp` DateTime,
+    `ServiceName` LowCardinality(String),
+    `StatusCode` LowCardinality(String),
+    `count` SimpleAggregateFunction(sum, UInt64),
+    `avg__Duration` AggregateFunction(avg, UInt64),
+    `max__Duration` SimpleAggregateFunction(max, Int64),
+    `quantiles__Duration` AggregateFunction(quantiles(0.95, 0.99), Int64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Timestamp, ServiceName, StatusCode);
+```
+
+materialized view - `otel_traces_1m_mv` - の定義では、新しいデータが挿入されるたびに、これらの状態が計算されて書き込まれます:
+
+```sql
+CREATE MATERIALIZED VIEW otel_traces_1m_mv TO otel_traces_1m
+AS
+SELECT
+    toStartOfMinute(Timestamp) AS Timestamp,
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avgState(Duration) AS avg__Duration,
+    maxSimpleState(Duration) AS max__Duration,
+    quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+FROM otel_v2.otel_traces
+GROUP BY
+    Timestamp,
+    ServiceName,
+    StatusCode;
+```
+
+この materialized view は、次の 2 つの部分で構成されます。
+
+1. ターゲットテーブル。中間結果を保存するためのスキーマと集約状態の型を定義します。これらの状態をバックグラウンドで正しくマージするには、[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) エンジンが必要です。
+2. materialized view のクエリは INSERT 時に自動的に実行されます。元のクエリと比べて、最終的な集約関数ではなく、`avgState` や `quantilesState` などの状態関数を使用します。
+
+その結果、サービス名とステータスコードごとに 1 分単位の集約状態を保存するコンパクトなテーブルが得られます。このテーブルのサイズは時間とカーディナリティに応じて予測可能に増加し、バックグラウンドマージ後は、生データに対して元の集約を実行した場合と同じ結果を表します。このテーブルをクエリするコストは、ソースの traces テーブルから直接集約する場合よりも大幅に低く、大規模環境でも高速で一貫した可視化パフォーマンスを実現できます。
+
+<div id="materialized-view-usage-in-clickstack">
+  ## ClickStack で materialized view を使用する
+</div>
+
+ClickHouse で materialized view を作成したら、可視化、ダッシュボード、アラートで自動的に利用できるようにするために、ClickStack に登録する必要があります。
+
+<div id="registering-a-view">
+  ### 使用するための materialized view の登録
+</div>
+
+materialized view は、ビューの派生元である**元のソーステーブル**に対応する HyperDX の**ログソース**に登録する必要があります。
+
+<Steps>
+  <Step>
+    #### ログソースを編集する
+
+    HyperDX で該当する**ログソース**に移動し、**設定を編集**ダイアログを開きます。materialized view のセクションまでスクロールします。
+
+    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="ログソースを編集" />
+  </Step>
+
+  <Step>
+    #### materialized view を追加する
+
+    **Add materialized view** を選択し、続いて materialized view の基盤となるデータベースとターゲットテーブルを選択します。
+
+    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="ログソースを編集" />
+  </Step>
+
+  <Step>
+    #### メトリクスを選択する
+
+    ほとんどの場合、timestamp、dimension、メトリクスのカラムは自動的に推測されます。そうでない場合は、手動で指定してください。
+
+    メトリクスでは、以下を対応付ける必要があります。
+
+    * 元のカラム名 (例: `Duration`)
+    * materialized view 内の対応する集約カラム (例: `avg__Duration`)
+
+    dimensions では、timestamp を除き、ビューがグループ化に使用するすべてのカラムを指定します。
+
+    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="メトリクスを選択" />
+  </Step>
+
+  <Step>
+    #### 時間粒度を選択する
+
+    materialized view の**時間粒度**を選択します。たとえば 1 分です。
+
+    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="時間粒度を選択" />
+  </Step>
+
+  <Step>
+    #### 最小日付を選択する
+
+    materialized view にデータが含まれている最小日時を指定します。これはビュー内で利用可能な最も早い timestamp を表し、インジェストが継続していることを前提とすると、通常はビューが作成された時刻です。
+
+    <Note>
+      materialized view は作成時に**自動ではバックフィルされない**ため、作成後に挿入されたデータから生成された行のみが含まれます。
+      materialized view のバックフィルに関する完全なガイドは、[&quot;データのバックフィル&quot;](/ja/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables) を参照してください。
+    </Note>
+
+    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="最小時刻を選択" />
+
+    正確な開始時刻が不明な場合は、たとえば次のようにターゲットテーブルから最小 timestamp をクエリして確認できます。
+
+    ```sql
+    SELECT min(Timestamp) FROM otel_traces_1m
+    ```
+  </Step>
+
+  <Step>
+    #### ログソースを保存する
+
+    ログソース設定を保存します。
+
+    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="ログソースを保存" />
+  </Step>
+</Steps>
+
+materialized view を登録すると、ダッシュボード、可視化、または アラート を変更しなくても、条件を満たすクエリでは ClickStack が自動的にそれを使用します。ClickStack は実行時に各クエリを評価し、materialized view を適用できるかどうかを判断します。
+
+<div id="verifying-acceleration-in-dashboards-and-visualizations">
+  ### ダッシュボードと可視化で高速化を確認する
+</div>
+
+インクリメンタルmaterialized view には、**view の作成後に挿入された**データしか含まれないことを覚えておくことが重要です。これらは自動的にバックフィルされないため、軽量でメンテナンスコストも低く抑えられます。そのため、ユーザーは view を登録する際に、その view が有効な時間範囲を明示的に指定する必要があります。
+
+<Note>
+  ClickStack は、materialized view の最小タイムスタンプがクエリの時間範囲の開始時刻以下である場合にのみ、その materialized view を使用します。これにより、その view に必要なデータがすべて含まれていることが保証されます。クエリは内部的に時間ベースのサブクエリへ分割されますが、materialized view はクエリ全体に適用されるか、まったく適用されないかのいずれかです。今後の改善により、条件を満たすサブクエリに対してのみ view を選択的に使用できるようになる可能性があります。
+</Note>
+
+ClickStack には、materialized view が使用されているかどうかを確認するための分かりやすい視覚的インジケーターが用意されています。
+
+1. **最適化ステータスを確認する** ダッシュボードまたは可視化を表示しているときに、稲妻または `Accelerated` アイコンを探してください。
+
+* **緑色の稲妻** は、そのクエリが materialized view によって高速化されていることを示します。
+* **オレンジ色の稲妻** は、そのクエリがソーステーブルに対して実行されていることを示します。
+
+<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="高速化された可視化" />
+
+2. **最適化の詳細を確認する** 稲妻アイコンをクリックすると、次の内容を示す詳細パネルが開きます。
+
+* **使用中の materialized view**: クエリに対して選択された view。推定行数も含まれます。
+* **スキップされた materialized view**: 互換性はあるものの選択されなかった view。推定スキャンサイズも表示されます。
+* **互換性のない materialized view**: 使用できなかった view と、その具体的な理由。
+
+3. **よくある非互換の理由を理解する** 次の場合、materialized view は使用されないことがあります。
+
+* **クエリの時間範囲** の開始時刻が、view の最小タイムスタンプより前である。
+* **可視化の粒度** が、view の粒度の倍数ではない。
+* クエリで要求されている **集約関数** が、その view に存在しない。
+* クエリで `count(if(...))` のような **カスタムの count 式** を使用しており、それを view の集約状態から導出できない。
+
+これらのインジケーターにより、可視化が高速化されているかどうかを簡単に確認し、特定の view が選択された理由を理解し、view が適用対象にならなかった理由を診断できます。
+
+<div id="how-views-are-selected">
+  ### 可視化に対して materialized view がどのように選択されるか
+</div>
+
+可視化の実行時、ClickStack では、基となるテーブルや複数の materialized view を含む複数の候補を利用できる場合があります。最適なパフォーマンスを確保するため、ClickStack は ClickHouse の [`EXPLAIN ESTIMATE`](/ja/reference/statements/explain#explain-estimate) の仕組みを使って、最も効率のよい選択肢を自動的に評価して選択します。
+
+選択プロセスは、明確に定義された次の手順で進みます。
+
+1. **互換性を確認する**
+   ClickStack はまず、次の点を確認して、materialized view がそのクエリに利用可能かどうかを判断します。
+   * **時間範囲のカバー**: クエリの時間範囲が、materialized view で利用可能なデータ範囲内に完全に収まっている必要があります。
+   * **粒度**: 可視化の時間バケットは、ビューの粒度と同じか、それより粗い必要があります。
+   * **集計**: 要求されたメトリクスがビュー内に存在し、その集計状態から計算可能である必要があります。
+
+2. **クエリを変換する**
+   互換性のあるビューに対しては、ClickStack はクエリを書き換え、materialized view のテーブルを対象にします。
+   * 集計関数は、対応する materialized columns にマッピングされます。
+   * 集計状態には `-Merge` combinator が適用されます。
+   * 時間バケット化は、ビューの粒度に合うよう調整されます。
+
+3. **最適な候補を選択する**
+   互換性のある materialized view が複数ある場合、ClickStack は各候補に対して [`EXPLAIN ESTIMATE`](/ja/reference/statements/explain#explain-estimate) クエリを実行し、スキャンされる推定行数とグラニュール数を比較します。推定スキャンコストが最も低いビューが選択されます。
+
+4. **スムーズにフォールバックする**
+   互換性のある materialized view がない場合、ClickStack は自動的にソーステーブルへのクエリにフォールバックします。
+
+このアプローチにより、スキャンされるデータ量を一貫して最小限に抑えつつ、可視化定義を変更することなく、予測しやすい低レイテンシのパフォーマンスを実現できます。
+
+必要なすべての次元がビューに含まれている限り、可視化にフィルター、検索制約、または時間バケット化が含まれていても、materialized view は引き続き利用できます。これにより、可視化定義を変更することなく、ダッシュボード、ヒストグラム、フィルター付きチャートをビューで高速化できます。
+
+<div id="example-of-choosing-materialized-view">
+  #### materialized view の選択例
+</div>
+
+同じトレースソース上に作成された 2 つの materialized view を考えてみましょう。
+
+* `otel_traces_1m`：分、`ServiceName`、`StatusCode` ごとにグループ化
+* `otel_traces_1m_v2`：分、`ServiceName`、`StatusCode`、`SpanName` ごとにグループ化
+
+2 つ目のビューには追加の grouping key が含まれているため、生成される行数が増え、スキャンするデータ量も多くなります。
+
+可視化で**時間の経過に伴うサービスごとの平均 duration**を要求する場合、どちらのビューも技術的には有効です。ClickStack は各候補に対して [`EXPLAIN ESTIMATE`](/ja/reference/statements/explain#explain-estimate) クエリを発行し、推定 granule 数を比較します。つまり、次のようになります。
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table──────────┬─parts─┬──rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m │     1 │ 49385 │     6 │
+└──────────┴────────────────┴───────┴───────┴───────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+```sql
+EXPLAIN ESTIMATE
+SELECT
+    toStartOfHour(Timestamp) AS hour,
+    ServiceName,
+    avgMerge(avg__Duration) AS avg__Duration
+FROM otel_v2.otel_traces_1m_v2
+GROUP BY
+    hour,
+    ServiceName
+ORDER BY hour DESC
+```
+
+```response
+┌─database─┬─table─────────────┬─parts─┬───rows─┬─marks─┐
+│ otel_v2  │ otel_traces_1m_v2 │     1 │ 212519 │    26 │
+└──────────┴───────────────────┴───────┴────────┴───────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+`otel_traces_1m` はサイズが小さく、スキャンするグラニュール数も少ないため、自動的に選択されます。
+
+どちらの materialized view も基となるテーブルを直接クエリするより高性能ですが、要件を満たす中で最も小さい view を選ぶことで、最高のパフォーマンスが得られます。
+
+<div id="alerts">
+  ### アラート
+</div>
+
+アラートクエリでは、互換性がある場合、自動的に materialized view が使用されます。同じ最適化ロジックが適用されるため、アラートの評価が高速化されます。
+
+<div id="backfilling-a-materialized-view">
+  ## materialized view のバックフィル
+</div>
+
+前述のとおり、インクリメンタルmaterialized view に含まれるのは、**ビューの作成後に挿入された**データのみであり、自動的にバックフィルされることはありません。この設計により、ビューは軽量で、維持コストも低く抑えられますが、その一方で、ビューの最小タイムスタンプより前のデータを必要とするクエリには使用できません。
+
+ほとんどの場合、これは許容可能です。一般的な ClickStack のワークロードは、直近 24 時間のような新しいデータを対象とするため、新しく作成したビューは、作成から 1 日以内に完全に利用可能になります。ただし、より長い期間にまたがるクエリでは、十分な時間が経過するまでビューを利用できない可能性があります。
+
+このような場合、ユーザーは materialized view に履歴データを**バックフィル**することを検討できます。
+
+バックフィルは、**計算コストが高くなる可能性があります**。通常運用では、materialized view はデータの到着に応じて段階的に更新されるため、コンピュートコストは時間とともに均等に分散されます。
+
+バックフィルでは、この処理をはるかに短い期間に集中させるため、**単位時間あたりの CPU 使用量とメモリ使用量が大幅に増加します。**
+
+データセットのサイズと保持期間によっては、妥当な時間内にバックフィルを完了するために、クラスターを一時的にスケールさせる必要があります。これには、垂直方向のスケーリング、または ClickHouse Cloud では水平方向のスケーリングが含まれます。
+
+追加リソースを確保しない場合、バックフィルは本番ワークロードに悪影響を及ぼす可能性があり、クエリレイテンシやインジェストスループットの低下を招くこともあります。**非常に大きなデータセットや長い履歴範囲では、バックフィルが現実的でない、あるいはまったく実施できない場合もあります**。
+
+要するに、バックフィルは多くの場合、コストや運用リスクに見合いません。検討すべきなのは、履歴データの高速化が極めて重要な例外的ケースに限られます。実施する場合は、パフォーマンス、コスト、本番環境への影響のバランスを取るため、以下で説明する管理されたアプローチに従うことを推奨します。
+
+<div id="backfilling-approaches">
+  ### バックフィルのアプローチ
+</div>
+
+<Info>
+  **POPULATE は避けてください**
+
+  [POPULATE](/ja/reference/statements/create/view#materialized-view) コマンドを使って materialized view をバックフィルする方法は、取り込みを停止している小規模なデータセットの場合を除き、推奨されません。この処理では、POPULATE 処理の完了後に materialized view が作成されるため、ソーステーブルに挿入された行を取りこぼす可能性があります。さらに、POPULATE はすべてのデータを対象に実行されるため、大規模なデータセットでは中断やメモリ制限の影響を受けやすくなります。
+</Info>
+
+次の集約に対応する materialized view をバックフィルしたいとします。この集約では、サービス名とステータスコードごとにグループ化した 1 分単位のメトリクスを計算します。
+
+```sql
+SELECT
+    toStartOfMinute(Timestamp),
+    ServiceName,
+    StatusCode,
+    count() AS count,
+    avg(Duration),
+    max(Duration),
+    quantiles(0.95, 0.99)(Duration)
+FROM otel_traces
+GROUP BY
+    time,
+    ServiceName,
+    StatusCode
+```
+
+前述のとおり、インクリメンタルmaterialized view は自動ではバックフィルされません。新しいデータに対するインクリメンタルな動作を維持しつつ履歴データを安全にバックフィルするには、以下の方法を推奨します。
+
+<div id="direct-backfill">
+  #### `INSERT INTO SELECT` を使用した直接バックフィル
+</div>
+
+この方法は、**小規模なデータセット**や**比較的軽い集計クエリ**に最適です。つまり、クラスターのリソースを枯渇させることなく、妥当な時間内にバックフィル全体を完了できる場合に適しています。一般的には、バックフィルクエリが数分、長くても数時間以内で完了し、一時的な CPU 使用率や I/O 使用量の増加を許容できる場合に向いています。より大規模なデータセットや、より負荷の高い集計では、代わりに以下の増分バックフィル方式またはブロックベースのバックフィル方式を検討してください。
+
+<Steps>
+  <Step>
+    ##### ビューの現在の対象範囲を確認する
+
+    バックフィルを行う前に、まず materialized VIEW にどこまでのデータがすでに含まれているかを確認します。これは、ターゲットテーブルに存在する最小の timestamp をクエリすることで確認できます。
+
+    ```sql
+    SELECT min(Timestamp)
+    FROM otel_traces_1m;
+    ```
+
+    この timestamp は、そのビューがクエリに対応できる最も早い時点を表します。ClickStack からこの timestamp より前のデータを要求するクエリは、基となるテーブルにフォールバックします。
+  </Step>
+
+  <Step>
+    ##### バックフィルが必要かどうかを判断する
+
+    ほとんどの ClickStack デプロイメントでは、クエリの対象は直近 24 時間のような新しいデータに集中します。このような場合、新しく作成されたビューは作成後まもなく十分に利用可能になるため、バックフィルは不要です。
+
+    前の手順で返された timestamp がユースケースに対して十分古ければ、バックフィルは必要ありません。バックフィルを検討すべきなのは、次の場合に限られます。
+
+    * クエリが長い過去期間にまたがることが多い。
+    * その期間において、そのビューがパフォーマンス上重要である。
+    * データセットのサイズと集計コストを踏まえて、バックフィルの実行が現実的である。
+  </Step>
+
+  <Step>
+    ##### 欠落している過去データをバックフィルする
+
+    バックフィルが必要な場合は、現在の最小 timestamp より前のデータを対象に、上で記録した timestamp より古いデータだけを読み取るよう変更したビューのクエリを使って、materialized VIEW のターゲットテーブルを埋めます。ターゲットテーブルは AggregatingMergeTree を使用しているため、バックフィルクエリでは**最終値ではなく集計状態を挿入する必要があります**。
+
+    <Warning>
+      このクエリは大量のデータを処理する可能性があり、多くのリソースを消費することがあります。バックフィルを実行する前に、利用可能な CPU、メモリ、I/O 容量を必ず確認してください。まず `FORMAT Null` を付けてクエリを実行し、実行時間とリソース使用量の目安を把握するのが有効です。
+
+      クエリ自体の実行に何時間もかかる見込みであれば、この方法は**推奨されません**。
+    </Warning>
+
+    以下のクエリでは、`WHERE` 句を追加することで、ビュー内に存在する最も古い timestamp より前のデータだけを集計対象にしている点に注目してください。
+
+    ```sql
+    INSERT INTO otel_traces_1m
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    )
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+  </Step>
+</Steps>
+
+<div id="incremental-backfill-null-table">
+  #### Null テーブルを使ったインクリメンタルバックフィル
+</div>
+
+より大規模なデータセットや、より多くのリソースを要する集計クエリでは、単一の `INSERT INTO SELECT` を使った直接的なバックフィルは現実的でなかったり、安全でなかったりすることがあります。このような場合は、**インクリメンタルバックフィル**のアプローチを推奨します。この方法は、インクリメンタルmaterialized view の通常の動作により近く、履歴データセット全体を一度に集計するのではなく、扱いやすいブロック単位でデータを処理します。
+
+このアプローチが適しているのは、次のような場合です。
+
+* バックフィルクエリがそのままでは何時間も実行されてしまう場合。
+* 全体を集計した際のメモリ使用量のピークが高すぎる場合。
+* バックフィル中の CPU とメモリの消費を厳密に制御したい場合。
+* 中断された場合でも安全に再開できる、より耐障害性の高いプロセスが必要な場合。
+
+重要なポイントは、[**Null テーブル**](/ja/reference/engines/table-engines/special/null)をインジェスト用のバッファとして使うことです。Null テーブル自体にはデータは保存されませんが、それに接続された materialized view は引き続き実行されるため、データが流れるにつれて集計状態をインクリメンタルに計算できます。
+
+<Steps>
+  <Step>
+    ##### バックフィル用の Null テーブルを作成する
+
+    materialized view の集計に必要なカラムだけを含む軽量な Null テーブルを作成します。これにより、I/O とメモリ使用量を最小限に抑えられます。
+
+    ```sql
+    CREATE TABLE otel_traces_backfill
+    (
+        Timestamp DateTime64(9),
+        ServiceName LowCardinality(String),
+        StatusCode LowCardinality(String),
+        Duration UInt64
+    )
+    ENGINE = Null;
+    ```
+  </Step>
+
+  <Step>
+    ##### Null テーブルに materialized view を接続する
+
+    次に、プライマリ materialized view が使用しているものと同じ集計テーブルをターゲットとする materialized view を Null テーブル上に作成します。
+
+    ```sql
+    CREATE MATERIALIZED VIEW otel_traces_1m_mv_backfill
+    TO otel_traces_1m
+    AS
+    SELECT
+        toStartOfMinute(Timestamp) AS Timestamp,
+        ServiceName,
+        StatusCode,
+        count() AS count,
+        avgState(Duration) AS avg__Duration,
+        maxSimpleState(Duration) AS max__Duration,
+        quantilesState(0.95, 0.99)(Duration) AS quantiles__Duration
+    FROM otel_traces_backfill
+    GROUP BY
+        Timestamp,
+        ServiceName,
+        StatusCode;
+    ```
+
+    この materialized view は、Null テーブルに行が挿入されるたびにインクリメンタルに実行され、小さなブロック単位で集計状態を生成します。
+  </Step>
+
+  <Step>
+    ##### データをインクリメンタルにバックフィルする
+
+    最後に、履歴データを Null テーブルに挿入します。materialized view はデータをブロック単位で処理し、生の行を永続化することなく、集計状態をターゲットテーブルに出力します。
+
+    ```sql
+    INSERT INTO otel_traces_backfill
+    SELECT
+        Timestamp,
+        ServiceName,
+        StatusCode,
+        Duration
+    FROM otel_traces
+    WHERE Timestamp < (
+        SELECT min(Timestamp) FROM otel_traces_1m
+    );
+    ```
+
+    データはインクリメンタルに処理されるため、メモリ使用量は上限を保ったまま予測しやすく、通常のインジェスト動作に近い形になります。
+
+    <Note>
+      安全性をさらに高めるため、バックフィル用の materialized view の出力先を一時的なターゲットテーブル (たとえば `otel_traces_1m_v2`) にすることも検討してください。バックフィルが正常に完了したら、[パーティションを移動](/ja/reference/statements/alter/partition#move-partition-to-table)してプライマリのターゲットテーブルに移せます。たとえば `ALTER TABLE otel_traces_1m_v2 MOVE PARTITION '2026-01-02' TO otel_traces_1m` のようにします。これにより、バックフィルが中断されたり、リソース制限によって失敗したりした場合でも、簡単に復旧できます。
+    </Note>
+
+    挿入パフォーマンスの改善やリソースの削減・制御など、このプロセスのチューニングに関する詳細は、[&quot;Backfilling.&quot;](/ja/guides/clickhouse/data-modelling/backfilling#tuning-performance--resources) を参照してください。
+  </Step>
+</Steps>
+
+<div id="recommendations">
+  ## 推奨事項
+</div>
+
+以下の推奨事項は、ClickStack で materialized view を設計・運用する際のベストプラクティスをまとめたものです。これらのガイドラインに従うことで、materialized view を効果的かつ予測可能で、コスト効率よく運用しやすくなります。
+
+<div id="granularity-selection-and-alignment">
+  ### 粒度の選択と整合性
+</div>
+
+materialized view が使用されるのは、可視化またはアラートの粒度が、その VIEW の粒度の**正確な整数倍**である場合に限られます。この粒度の決まり方は、チャートの種類によって異なります。
+
+* **時系列チャート** (x 軸が時刻の line または bar chart) :
+  チャートで明示的に指定した粒度は、materialized view の粒度の倍数である必要があります。
+  たとえば、10 分粒度のチャートでは、10 分、5 分、2 分、1 分粒度の materialized view は使用できますが、20 分や 3 分粒度の VIEW は使用できません。
+
+* **非時系列チャート** (number、table、または summary chart) :
+  実効粒度は `(time range / 80)` から算出され、HyperDX がサポートする最も近い粒度に切り上げられます。この算出された粒度も、materialized view の粒度の倍数である必要があります。
+
+これらのルールにより、次のことが言えます。
+
+* **10 分粒度の materialized view は作成しないでください**。
+  ClickStack はチャートとアラートで 15 分粒度をサポートしていますが、10 分粒度はサポートしていません。そのため、10 分粒度の materialized view は、一般的な 15 分粒度の可視化やアラートと互換性がありません。
+* **1 分**または**1 時間**粒度を推奨します。これらは、ほとんどのチャートおよびアラート設定と無理なく組み合わせられます。
+
+粒度が大きいほど (たとえば 1 時間) 、VIEW は小さくなり、ストレージのオーバーヘッドも低くなります。一方、粒度が小さいほど (たとえば 1 分) 、より細かな分析に柔軟に対応できます。重要なワークフローを支えられる範囲で、できるだけ小さい粒度を選択してください。
+
+<div id="limit-and-consolidate-materialized-views">
+  ### materialized view を制限して集約する
+</div>
+
+materialized view を追加するたびに、insert 時のオーバーヘッドが増え、part と merge にかかる負荷も高まります。
+以下のガイドラインを推奨します。
+
+* 1 つのログソースあたり **materialized view は 20 個以下** にしてください。
+* 一般的には **materialized view が 10 個前後** が最適です。
+* 複数の可視化で共通の次元を使う場合は、1 つの materialized view にまとめてください。
+
+可能であれば、同じ materialized view で複数のメトリクスを計算し、複数のチャートに対応できるようにしてください。
+
+<div id="choose-dimensions-carefully">
+  ### 次元は慎重に選択する
+</div>
+
+グループ化やフィルタリングによく使われる次元だけを含めてください。
+
+* グループ化カラムを追加するたびに、ビューのサイズは大きくなります。
+* クエリの柔軟性と、ストレージおよび挿入時のコストのバランスを取りましょう。
+* ビューに含まれていないカラムに対するフィルタを使うと、ClickStack はソーステーブルにフォールバックします。
+
+<Info>
+  **ヒント**
+
+  一般的で、ほぼ常に有用なベースラインは、**サービス名と count メトリクスでグループ化した materialized view**です。これにより、検索やダッシュボードで高速なヒストグラムやサービスレベルの概要を表示できます。
+</Info>
+
+<div id="naming-conventions-for-aggregation-columns">
+  ### 集約カラムの命名規則
+</div>
+
+materialized view の集約カラムは、自動推論を可能にするため、厳密な命名規則に従う必要があります。
+
+* パターン: `<aggFn>__<sourceColumn>`
+* 例:
+  * `avg__Duration`
+  * `max__Duration`
+  * 行数のカウントには `count__`
+
+ClickStack は、この規則に基づいてクエリを materialized view のカラムに正しくマッピングします。
+
+<div id="quantiles-and-sketch-selection">
+  ### 分位点とスケッチの選択
+</div>
+
+分位点関数によって、性能面とストレージ面の特性は異なります。
+
+* `quantiles` はディスク上により大きなスケッチを生成しますが、挿入時の計算コストは低めです。
+* `quantileTDigest` は挿入時の計算コストは高くなりますが、より小さなスケッチを生成するため、VIEW に対するクエリが高速になることがよくあります。
+
+両方の関数で、挿入時にスケッチサイズを指定できます (たとえば `quantile(0.5)`) 。生成されたスケッチは、後から別の分位点の値 (たとえば `quantile(0.95)`) で引き続きクエリできます。ご自身のワークロードに最適なバランスを見つけるには、実際に試してみることをおすすめします。
+
+<div id="validate-effectiveness-continously">
+  ### 効果を継続的に検証する
+</div>
+
+materialized view が実際に効果を発揮していることを、常に確認してください。
+
+* UI の高速化インジケーターで利用状況を確認します。
+* VIEW を有効にする前後でクエリのパフォーマンスを比較します。
+* リソース使用量とマージの挙動を監視します。
+
+materialized view は、クエリパターンの変化に応じて定期的に見直しと調整が必要なパフォーマンス最適化として扱うべきです。
+
+<div id="advanced-configurations">
+  ### 高度な設定
+</div>
+
+より複雑なワークロードでは、異なるアクセスパターンに対応するために複数の materialized VIEW を使用できます。たとえば、次のようなものがあります。
+
+* **直近のデータは高解像度で保持し、過去のデータは粗い粒度のビューで扱う**
+* **概要向けのサービスレベルのビューと、詳細な診断向けの endpoint レベルのビュー**
+
+これらのパターンは、適切に使い分ければパフォーマンスを大幅に向上させる可能性がありますが、導入するのはまずよりシンプルな構成を検証してからにすべきです。
+
+これらの推奨事項に従うことで、materialized VIEW の有効性と保守性を維持しながら、ClickStack の実行モデルとの整合性も保ちやすくなります。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+<div id="common-incompatibility-reasons">
+  ### 一般的な非互換の理由
+</div>
+
+次のいずれかの条件に当てはまる場合、materialized view は**使用されません**。
+
+* **クエリの時間範囲**
+  クエリの時間範囲の開始時刻が materialized view の最小タイムスタンプより前の場合。VIEW は自動的にバックフィルされないため、完全にカバーしている時間範囲のクエリにしか対応できません。
+
+* **粒度の不一致**
+  可視化の実効粒度は、materialized view の粒度の整数倍である必要があります。具体的には次のとおりです。
+
+  * **時系列チャート** (x 軸が時間の折れ線グラフまたは棒グラフ) の場合、チャートで選択した粒度は VIEW の粒度の倍数である必要があります。たとえば、10 分粒度のチャートでは、10 分、5 分、2 分、1 分の materialized view は使用できますが、20 分や 3 分粒度の VIEW は使用できません。
+  * **時系列以外のチャート** (数値チャートまたはテーブルチャート) の場合、実効粒度は `(time range / 80)` として計算し、HyperDX がサポートする最も近い粒度に切り上げたうえで、これも VIEW の粒度の倍数である必要があります。
+
+* **未対応の集計関数**
+  クエリが materialized view に含まれていない集計を要求している場合。使用できるのは、VIEW で明示的に計算・保存されている集計だけです。
+
+* **カスタム count 式**
+  `count(if(...))` などの式や、その他の条件付きカウントを使用するクエリは、標準的な集計状態から導出できないため、materialized view は使用できません。
+
+<div id="design-and-operational-constraints">
+  ### 設計上および運用上の制約
+</div>
+
+* **自動バックフィルなし**
+  インクリメンタルmaterialized view には、作成後に挿入されたデータしか含まれません。過去データの高速化には明示的なバックフィルが必要であり、大規模なデータセットではコストが高すぎたり、現実的でなかったりする場合があります。
+
+* **粒度のトレードオフ**
+  粒度が非常に細かい VIEW は、ストレージ使用量と挿入時のオーバーヘッドを増やす一方、粒度が粗い VIEW は柔軟性を下げます。粒度は、想定されるクエリパターンに合わせて慎重に選ぶ必要があります。
+
+* **次元の爆発的増加**
+  グループ化する次元を多く追加すると、VIEW のサイズが大幅に増加し、効果が薄れることがあります。VIEW には、一般的によく使われるグループ化用およびフィルタリング用のカラムだけを含めるべきです。
+
+* **VIEW 数のスケーラビリティの限界**
+  materialized view を追加するたびに挿入時のオーバーヘッドが増え、マージ負荷も高まります。VIEW を作りすぎると、インジェストやバックグラウンドマージに悪影響を及ぼす可能性があります。
+
+これらの制約を理解しておくことで、materialized view を実際に効果のある場面に適用し、気付かないうちに低速なソーステーブルへのクエリにフォールバックする構成を避けやすくなります。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="materialied-view-not-being-used">
+  ### materialized view が使用されていない
+</div>
+
+**確認 1: 日付範囲**
+
+* 最適化モーダルを開き、「Date range not supported.」と表示されていないか確認します。
+* クエリの日付範囲が materialized view の最小日付より後になっていることを確認します。
+* materialized view にすべての履歴データが含まれている場合は、最小日付の設定を削除します。
+
+**確認 2: 粒度**
+
+* チャートの粒度が MV の粒度の倍数になっていることを確認します。
+* チャートを「Auto」に設定するか、互換性のある粒度を手動で選択してみてください。
+
+**確認 3: 集計**
+
+* チャートで使用している集計が MV に含まれているか確認します。
+* 最適化モーダルの「Available aggregated columns」を確認します。
+
+**確認 4: 次元**
+
+* group by のカラムが MV の次元カラムに含まれていることを確認します。
+* 最適化モーダルの「Available group/filter columns」を確認します。
+
+<div id="slow-mv-queries">
+  ### 遅い materialized view クエリ
+</div>
+
+**問題 1: materialized view の粒度が細かすぎる**
+
+* 粒度が細かすぎるため (例: 1 秒) 、MV の行数が多くなりすぎています。
+* 解決策: より粗い粒度の MV を作成します (例: 1 分または 1 時間) 。
+
+**問題 2: 次元が多すぎる**
+
+* 次元カラムが多いため、MV のカーディナリティが高くなっています。
+* 解決策: 次元カラムを、最もよく使われるものに絞ります。
+
+**問題 3: 行数の多い MV が複数ある**
+
+* システムが各 MV に対して `EXPLAIN` を実行しています。
+* 解決策: ほとんど使われない MV や、常にスキップされる MV を削除します。
+
+<div id="config-errors">
+  ### 設定エラー
+</div>
+
+**エラー: &quot;少なくとも1つの集計カラムが必要です&quot;**
+
+* MVの設定に、少なくとも1つの集計カラムを追加してください。
+
+**エラー: &quot;count 以外の集計にはソースカラムが必要です&quot;**
+
+* 集計対象のカラムを指定してください (ソースカラムを省略できるのは count のみです) 。
+
+**エラー: &quot;粒度のフォーマットが無効です&quot;**
+
+* ドロップダウンから、用意されている粒度を1つ選択してください。
+* 有効な SQL の interval 形式で指定する必要があります (例: `1 hour`。`1 h` は無効です) 。

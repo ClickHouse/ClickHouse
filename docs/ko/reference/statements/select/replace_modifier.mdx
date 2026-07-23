@@ -1,0 +1,34 @@
+---
+description: '쿼리의 외부 테이블 표현식이 반환하는 각 행에 대해 일부 함수를 호출할 수 있게 해주는 APPLY 수정자를 설명하는 문서입니다.'
+sidebarTitle: 'REPLACE'
+slug: /sql-reference/statements/select/replace-modifier
+title: 'REPLACE 수정자'
+keywords: ['REPLACE', 'modifier']
+doc_type: 'reference'
+---
+
+> 하나 이상의 [표현식 별칭](/ko/reference/syntax#expression-aliases)을 지정할 수 있습니다.
+
+각 별칭은 `SELECT *` 문에 있는 컬럼 이름과 일치해야 합니다. 출력 컬럼 목록에서는 별칭과 일치하는
+컬럼이 해당 `REPLACE`의 표현식으로 대체됩니다.
+
+이 수정자는 컬럼의 이름이나 순서는 변경하지 않습니다. 하지만 값과 값의 유형은 바뀔 수 있습니다.
+
+**구문:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**예시:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```

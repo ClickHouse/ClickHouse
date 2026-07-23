@@ -1,0 +1,110 @@
+---
+slug: /sql-reference/table-functions/generate_series
+sidebarTitle: 'generate_series'
+title: 'generate_series (generateSeries)'
+description: 'start부터 stop까지의 정수를 양 끝값을 포함해 담은 단일 `generate_series` 컬럼 (UInt64)으로 이루어진 테이블을 반환합니다.'
+doc_type: 'reference'
+---
+
+별칭: `generateSeries`
+
+<div id="syntax">
+  ## 구문
+</div>
+
+start부터 stop까지의 정수를 양 끝값을 포함하여 담은 단일 &#39;generate&#95;series&#39; 컬럼(`UInt64`)이 있는 테이블을 반환합니다:
+
+```sql
+generate_series(START, STOP)
+```
+
+`STEP`으로 지정된 간격으로 start부터 stop까지(양 끝값 포함)의 정수를 담은 단일 `generate_series` 컬럼(`UInt64`)이 있는 테이블(table)을 반환합니다:
+
+```sql
+generate_series(START, STOP, STEP)
+```
+
+`STEP`는 음수일 수 있으며, 이 경우 수열은 `START`에서 `STOP`까지 내림차순으로 생성됩니다. `STEP`가 음수인데 `START < STOP`이면 결과는 비어 있습니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+다음 쿼리는 내용은 같지만 컬럼 이름이 다른 테이블을 반환합니다:
+
+```sql
+SELECT * FROM numbers(10, 5);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     11 │
+│     12 │
+│     13 │
+│     14 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 14);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              11 │
+│              12 │
+│              13 │
+│              14 │
+└─────────────────┘
+```
+
+그리고 다음 쿼리는 동일한 내용을 가지지만 컬럼 이름이 다른 테이블을 반환합니다(단, 두 번째 방법이 더 효율적입니다):
+
+```sql
+SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     13 │
+│     16 │
+│     19 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 20, 3);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              13 │
+│              16 │
+│              19 │
+└─────────────────┘
+```
+
+내림차순 수열을 생성합니다:
+
+```sql
+SELECT * FROM generate_series(9, 0, -1);
+```
+
+```response
+┌─generate_series─┐
+│               9 │
+│               8 │
+│               7 │
+│               6 │
+│               5 │
+│               4 │
+│               3 │
+│               2 │
+│               1 │
+│               0 │
+└─────────────────┘
+```

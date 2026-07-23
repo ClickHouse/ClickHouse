@@ -112,21 +112,27 @@ S3TablesCatalog::S3TablesCatalog(
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always,
         /* urlEscapePath = */ false);
 
-    config = loadConfig();
+    /// The signer is fully initialised above, so the virtual `createReadBuffer` reached by
+    /// `loadConfig` dispatches to this class's SigV4 implementation.
+    CatalogState initial_state;
+    initial_state.config = loadConfig(initial_state);
 
-    if (config.prefix.empty())
+    if (initial_state.config.prefix.empty())
     {
         String encoded_warehouse;
         Poco::URI::encode(warehouse_, "", encoded_warehouse);
-        config.prefix = encoded_warehouse;
+        initial_state.config.prefix = encoded_warehouse;
     }
+
+    state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
 }
 
-/// S3 Tables only supports a single level of namespaces (no nesting),
-/// so we use flat getNamespaces() instead of the base class's getNamespacesRecursive().
-DB::Names S3TablesCatalog::getTables() const
+/// S3 Tables only supports a single level of namespaces (no nesting), so we list the root
+/// namespaces directly with `listChildNamespaces("")` instead of the base class's recursive
+/// `getNamespacesRecursive`.
+CatalogTables S3TablesCatalog::getTables() const
 {
-    auto namespaces = getNamespaces("");
+    auto namespaces = listChildNamespaces("");
 
     auto & pool = getContext()->getIcebergCatalogThreadpool();
     DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
@@ -138,13 +144,19 @@ DB::Names S3TablesCatalog::getTables() const
         runner.enqueueAndKeepTrack(
             [&, ns]
             {
-                auto tables_in_ns = RestCatalog::getTables(ns);
+                auto tables_in_ns = listTablesInNamespace(ns);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_ns.begin(), tables_in_ns.end(), std::back_inserter(tables));
             });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
-    return tables;
+
+    /// A REST catalog is Iceberg-only, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 bool S3TablesCatalog::tryGetTableMetadata(
@@ -212,14 +224,15 @@ bool S3TablesCatalog::tryGetTableMetadata(
 
 void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
+    const auto state_snapshot = state.get();
     const std::string endpoint
-        = (base_url / config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
+        = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
         + "?purgeRequested=True";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
         LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=True)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
@@ -263,9 +276,11 @@ DB::HTTPHeaderEntries extractSigV4AuthHeaders(DB::HTTPHeaderEntries && all_signe
 }
 
 DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
+    const CatalogState & /* catalog_state */,
     const std::string & endpoint,
     const Poco::URI::QueryParameters & params,
-    const DB::HTTPHeaderEntries & headers) const
+    const DB::HTTPHeaderEntries & headers,
+    const std::optional<DB::HTTPHeaderEntries> & /* auth_headers */) const
 {
     const auto & context = getContext();
 
@@ -297,6 +312,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
 }
 
 void S3TablesCatalog::sendRequest(
+    const CatalogState & /* catalog_state */,
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
     const String & method,

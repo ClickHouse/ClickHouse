@@ -1,0 +1,541 @@
+---
+sidebarTitle: 'Materializaciones'
+slug: /integrations/dbt/materializations
+description: 'Materializaciones disponibles y su configuración'
+keywords: ['clickhouse', 'dbt', 'materializaciones', 'vista materializada', 'incremental']
+title: 'Materializaciones'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Esta sección cubre todas las materializaciones disponibles en dbt-clickhouse, incluidas las características experimentales.
+
+<div id="general-materialization-configurations">
+  ## Configuraciones generales de materialización
+</div>
+
+La siguiente tabla muestra configuraciones compartidas por algunas de las materializaciones disponibles. Para obtener información más detallada sobre las configuraciones generales de los modelos de dbt, consulta la [documentación de dbt](https://docs.getdbt.com/category/general-configs):
+
+| Opción             | Descripción                                                                                                                                                                          | Valor predeterminado, si existe |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| engine             | El motor de tabla (tipo de tabla) que se utilizará al crear tablas                                                                                                                     | `MergeTree()`                   |
+| order&#95;by       | Una tupla de nombres de columna o expresiones arbitrarias. Esto permite crear un índice disperso pequeño que ayuda a encontrar los datos más rápido.                                 | `tuple()`                       |
+| partition&#95;by   | Una partición es una agrupación lógica de registros de una tabla según un criterio especificado. La clave de partición puede ser cualquier expresión de las columnas de la tabla.    |                                 |
+| primary&#95;key    | Al igual que `order_by`, es una expresión de primary key de ClickHouse. Si no se especifica, ClickHouse usará la expresión `order_by` como primary key.                              |                                 |
+| settings           | Un mapa/diccionario de configuraciones de &quot;TABLE&quot; que se usará en sentencias DDL como &#39;CREATE TABLE&#39; con este modelo                                               |                                 |
+| query&#95;settings | Un mapa/diccionario de configuraciones de ClickHouse a nivel de usuario que se usará con las sentencias `INSERT` o `DELETE` junto con este modelo                                    |                                 |
+| ttl                | Una expresión TTL que se usará con la tabla. La expresión TTL es una cadena que puede usarse para especificar el TTL de la tabla.                                                    |                                 |
+| sql&#95;security   | El usuario de ClickHouse que se utilizará al ejecutar la consulta subyacente de la vista. [Valores aceptados](/es/reference/statements/create/view#sql_security): `definer`, `invoker`. |                                 |
+| definer            | Si `sql_security` se estableció en `definer`, debes especificar cualquier usuario existente o `CURRENT_USER` en la cláusula `definer`.                                               |                                 |
+
+<div id="supported-table-engines">
+  ### Motores de tabla compatibles
+</div>
+
+| Tipo                       | Detalles                                                                               |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| MergeTree (predeterminado) | [documentación](/es/reference/engines/table-engines/mergetree-family/mergetree).          |
+| HDFS                       | [documentación](/es/reference/engines/table-engines/integrations/hdfs)                    |
+| MaterializedPostgreSQL     | [documentación](/es/reference/engines/table-engines/integrations/materialized-postgresql) |
+| S3                         | [documentación](/es/reference/engines/table-engines/integrations/s3)                      |
+| EmbeddedRocksDB            | [documentación](/es/reference/engines/table-engines/integrations/embedded-rocksdb)        |
+| Hive                       | [documentación](/es/reference/engines/table-engines/integrations/hive)                    |
+
+**Nota**: para las vistas materializadas, se admiten todos los motores de la familia *MergeTree.
+
+<div id="experimental-supported-table-engines">
+  #### Motores de tabla compatibles experimentales
+</div>
+
+| Tipo              | Detalles                                                      |
+| ----------------- | ------------------------------------------------------------- |
+| Tabla distribuida | [docs](/es/reference/engines/table-engines/special/distributed). |
+| Diccionario       | [docs](/es/reference/engines/table-engines/special/dictionary)   |
+
+Si tienes problemas para conectarte a ClickHouse desde dbt con alguno de los motores anteriores, informa del problema
+[aquí](https://github.com/ClickHouse/dbt-clickhouse/issues).
+
+<div id="a-note-on-model-settings">
+  ### Una nota sobre la configuración del modelo
+</div>
+
+ClickHouse tiene varios tipos o niveles de &quot;configuración&quot;. En la configuración del modelo anterior, se pueden
+configurar dos de ellos. `settings` se refiere a la cláusula `SETTINGS`
+usada en sentencias DDL del tipo `CREATE TABLE/VIEW`, por lo que, en general, se trata de configuraciones específicas del
+motor de tabla concreto de ClickHouse. La nueva
+`query_settings` se usa para añadir una cláusula `SETTINGS` a las consultas `INSERT` y `DELETE` utilizadas para la materialización del modelo (
+incluidas las materializaciones incrementales).
+Hay cientos de configuraciones en ClickHouse, y no siempre está claro cuál es una configuración de &quot;tabla&quot; y cuál es una
+configuración de &quot;usuario&quot; (aunque estas últimas suelen estar
+disponibles en la tabla `system.settings`). En general, se recomiendan los valores predeterminados, y cualquier uso de estas propiedades
+debe investigarse y probarse cuidadosamente.
+
+<div id="column-configuration">
+  ### Configuración de columna
+</div>
+
+> ***NOTA:*** Las opciones de configuración de columna que se indican a continuación requieren que se apliquen los [contratos de modelo](https://docs.getdbt.com/docs/collaborate/govern/model-contracts).
+
+| Opción | Descripción                                                                                                                                                                                                                                | Valor predeterminado, si corresponde |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| codec  | Una cadena formada por argumentos pasados a `CODEC()` en el DDL de la columna. Por ejemplo: `codec: "Delta, ZSTD"` se compilará como `CODEC(Delta, ZSTD)`.                                                                                 |                                      |
+| ttl    | Una cadena formada por una [expresión TTL (time-to-live)](/es/concepts/features/operations/delete/ttl) que define una regla TTL en el DDL de la columna. Por ejemplo: `ttl: ts + INTERVAL 1 DAY` se compilará como `TTL ts + INTERVAL 1 DAY`. |                                      |
+
+<div id="example-of-schema-configuration">
+  #### Ejemplo de configuración de esquema
+</div>
+
+```yaml
+models:
+  - name: table_column_configs
+    description: 'Testing column-level configurations'
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: ts
+        data_type: timestamp
+        codec: ZSTD
+      - name: x
+        data_type: UInt8
+        ttl: ts + INTERVAL 1 DAY
+```
+
+<div id="adding-complex-types">
+  #### Añadir tipos complejos
+</div>
+
+dbt determina automáticamente el tipo de datos de cada columna analizando el SQL utilizado para crear el modelo. Sin embargo, en algunos casos, este proceso puede no determinar con precisión el tipo de datos, lo que genera conflictos con los tipos especificados en la propiedad `data_type` del contrato. Para solucionarlo, recomendamos usar la función `CAST()` en el SQL del modelo para definir explícitamente el tipo deseado. Por ejemplo:
+
+```sql
+{{
+    config(
+        materialized="materialized_view",
+        engine="AggregatingMergeTree",
+        order_by=["event_type"],
+    )
+}}
+
+select
+  -- event_type puede inferirse como String pero podríamos preferir LowCardinality(String):
+  CAST(event_type, 'LowCardinality(String)') as event_type,
+  -- countState() puede inferirse como `AggregateFunction(count)` pero podríamos preferir cambiar el tipo del argumento utilizado:
+  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count, 
+  -- maxSimpleState() puede inferirse como `SimpleAggregateFunction(max, String)` pero podríamos preferir cambiar también el tipo del argumento utilizado:
+  CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
+from {{ ref('user_events') }}
+group by event_type
+```
+
+<div id="materialization-view">
+  ## Materialización: vista
+</div>
+
+Un modelo de dbt puede crearse como una [vista de ClickHouse](/es/reference/functions/table-functions/view)
+y configurarse con la siguiente sintaxis:
+
+Archivo del proyecto (`dbt_project.yml`):
+
+```yaml
+models:
+  <resource-path>:
+    +materialized: view
+```
+
+O el bloque de configuración (`models/<model_name>.sql`):
+
+```python
+{{ config(materialized = "view") }}
+```
+
+<div id="materialization-table">
+  ## Materialización: tabla
+</div>
+
+Un modelo de dbt puede crearse como una [tabla de ClickHouse](/es/reference/system-tables/tables) y
+configurarse con la siguiente sintaxis:
+
+Archivo del proyecto (`dbt_project.yml`):
+
+```yaml
+models:
+  <resource-path>:
+    +materialized: table
+    +order_by: [ <column-name>, ... ]
+    +engine: <engine-type>
+    +partition_by: [ <column-name>, ... ]
+```
+
+O el bloque de configuración (`models/<model_name>.sql`):
+
+```python
+{{ config(
+    materialized = "table",
+    engine = "<engine-type>",
+    order_by = [ "<column-name>", ... ],
+    partition_by = [ "<column-name>", ... ],
+      ...
+    ]
+) }}
+```
+
+<div id="data-skipping-indexes">
+  ### Índices de omisión de datos
+</div>
+
+Puede añadir [índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes) a las materializaciones `table` mediante la configuración `indexes`:
+
+```sql
+{{ config(
+        materialized='table',
+        indexes=[{
+          'name': 'your_index_name',
+          'definition': 'your_column TYPE minmax GRANULARITY 2'
+        }]
+) }}
+```
+
+<div id="projections">
+  ### Proyecciones
+</div>
+
+Puede añadir [proyecciones](/es/concepts/features/projections/projections) a las materializaciones `table` y `distributed_table` mediante la configuración `projections`:
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'your_projection_name',
+               'query': 'SELECT department, avg(age) AS avg_age GROUP BY department'
+           }
+       ]
+) }}
+```
+
+**Nota**: En las tablas distribuidas, la proyección se aplica a las tablas `_local`, no a la tabla proxy distribuida.
+
+<div id="materialization-incremental">
+  ## Materialización: incremental
+</div>
+
+El modelo de tabla se reconstruirá en cada ejecución de dbt. Esto puede ser inviable y extremadamente costoso para conjuntos de resultados de mayor tamaño o transformaciones complejas. Para resolver este problema y reducir el tiempo de compilación, un modelo de dbt puede crearse como una tabla incremental de ClickHouse y configurarse con la siguiente sintaxis:
+
+Definición del modelo en `dbt_project.yml`:
+
+```yaml
+models:
+  <resource-path>:
+    +materialized: incremental
+    +order_by: [ <column-name>, ... ]
+    +engine: <engine-type>
+    +partition_by: [ <column-name>, ... ]
+    +unique_key: [ <column-name>, ... ]
+    +inserts_only: [ True|False ]
+```
+
+O bien en el bloque de configuración de `models/<model_name>.sql`:
+
+```python
+{{ config(
+    materialized = "incremental",
+    engine = "<engine-type>",
+    order_by = [ "<column-name>", ... ],
+    partition_by = [ "<column-name>", ... ],
+    unique_key = [ "<column-name>", ... ],
+    inserts_only = [ True|False ],
+      ...
+    ]
+) }}
+```
+
+<div id="incremental-configurations">
+  ### Configuraciones
+</div>
+
+A continuación, se enumeran las configuraciones específicas de este tipo de materialización:
+
+| Opción                   | Descripción                                                                                                                                                                                                                                                                                                                                      | ¿Obligatorio?                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `unique_key`             | Una tupla de nombres de columna que identifica de forma única las filas. Para obtener más información sobre las restricciones de unicidad, consulta [aquí](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                | Obligatorio. Si no se proporciona, las filas modificadas se añadirán dos veces a la tabla incremental. |
+| `inserts_only`           | Ha quedado obsoleto en favor de la `strategy` incremental `append`, que funciona de la misma manera. Si se establece en True para un modelo incremental, las actualizaciones incrementales se insertarán directamente en la tabla de destino sin crear una tabla intermedia. Si se establece `inserts_only`, se ignorará `incremental_strategy`. | Opcional (predeterminado: `False`)                                                                     |
+| `incremental_strategy`   | La estrategia que se utilizará para la materialización incremental. Se admiten `delete+insert`, `append`, `insert_overwrite` o `microbatch`. Para obtener más información sobre las estrategias, consulta [aquí](#incremental-model-strategies)                                                                                                  | Opcional (predeterminado: &#39;default&#39;)                                                           |
+| `incremental_predicates` | Condiciones adicionales que se aplicarán a la materialización incremental (solo se aplican a la estrategia `delete+insert`                                                                                                                                                                                                                       | Opcional                                                                                               |
+
+<div id="incremental-model-strategies">
+  ### Estrategias para modelos incrementales
+</div>
+
+`dbt-clickhouse` admite tres estrategias para modelos incrementales.
+
+<div id="default-legacy-strategy">
+  #### La estrategia predeterminada (heredada)
+</div>
+
+Históricamente, ClickHouse solo ha ofrecido compatibilidad limitada con actualizaciones y eliminaciones, en forma de &quot;mutaciones&quot; asíncronas.
+Para emular el comportamiento esperado de dbt,
+dbt-clickhouse crea de forma predeterminada una nueva tabla temporal que contiene todos los registros &quot;antiguos&quot; no afectados (no eliminados, no modificados),
+además de cualquier registro nuevo o actualizado,
+y luego intercambia esta tabla temporal con la relación del modelo incremental existente. Esta es la única estrategia
+que conserva la relación original si algo
+sale mal antes de que se complete la operación; sin embargo, como implica una copia completa de la tabla original, su ejecución puede resultar bastante
+costosa y lenta.
+
+<div id="delete-insert-strategy">
+  #### La estrategia Delete+Insert
+</div>
+
+ClickHouse añadió las &quot;eliminaciones ligeras&quot; como una funcionalidad experimental en la versión 22.8. Las eliminaciones ligeras son significativamente
+más rápidas que las operaciones
+ALTER TABLE ... DELETE
+porque no requieren reescribir las partes de datos de ClickHouse. La estrategia incremental `delete+insert`
+utiliza eliminaciones ligeras para implementar
+materializaciones incrementales con un rendimiento significativamente mejor que la estrategia &quot;heredada&quot;. Sin embargo, hay advertencias importantes
+al usar esta estrategia:
+
+* Las eliminaciones ligeras deben estar habilitadas en tu servidor de ClickHouse mediante la configuración
+  `allow_experimental_lightweight_delete=1`, o
+  debes establecer `use_lw_deletes=true` en tu perfil (lo que habilitará esa configuración para tus sesiones de dbt)
+* Las eliminaciones ligeras ya están listas para producción, pero puede haber problemas de rendimiento y de otro tipo en versiones de ClickHouse
+  anteriores a la 23.3.
+* Esta estrategia opera directamente sobre la tabla/relación afectada (sin crear tablas intermedias ni temporales),
+  por lo que, si surge algún problema durante la operación, es
+  probable que los datos del modelo incremental queden en un estado no válido
+* Al usar eliminaciones ligeras, dbt-clickhouse habilita la configuración `allow_nondeterministic_mutations`. En algunos casos
+  muy raros, al usar incremental&#95;predicates no deterministas,
+  esto podría dar lugar a una condición de carrera para los elementos actualizados/eliminados (y a los mensajes de log relacionados en los logs de ClickHouse).
+  Para garantizar resultados coherentes, los
+  predicados incrementales solo deben incluir subconsultas sobre datos que no se modificarán durante la materialización
+  incremental.
+
+<div id="microbatch-strategy">
+  #### La estrategia Microbatch (requiere dbt-core &gt;= 1.9)
+</div>
+
+La estrategia incremental `microbatch` es una característica de dbt-core desde la versión 1.9, diseñada para gestionar de forma eficiente transformaciones de grandes volúmenes de datos de series temporales. En dbt-clickhouse, se basa en la estrategia incremental `delete_insert` existente y divide la carga incremental en lotes de series temporales predefinidos según las configuraciones del modelo `event_time` y `batch_size`.
+
+Además de gestionar transformaciones de gran tamaño, microbatch permite:
+
+* [Reprocesar lotes fallidos](https://docs.getdbt.com/docs/build/incremental-microbatch#retry).
+* Detectar automáticamente la [ejecución paralela de lotes](https://docs.getdbt.com/docs/build/parallel-batch-execution).
+* Eliminar la necesidad de lógica condicional compleja para la [carga histórica](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
+
+Para obtener información detallada sobre el uso de microbatch, consulta la [documentación oficial](https://docs.getdbt.com/docs/build/incremental-microbatch).
+
+<div id="available-microbatch-configurations">
+  ##### Configuraciones disponibles de Microbatch
+</div>
+
+| Opción                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                  | Valor predeterminado, si aplica |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| event&#95;time         | La columna que indica &quot;en qué momento ocurrió la fila&quot;. Es obligatoria para tu modelo microbatch y para cualquier dependencia directa que deba filtrarse.                                                                                                                                                                                                                          |                                 |
+| begin                  | El &quot;inicio de los tiempos&quot; para el modelo microbatch. Es el punto de partida para cualquier ejecución inicial o full-refresh. Por ejemplo, un modelo microbatch con granularidad diaria ejecutado el 2024-10-01 con begin = &#39;2023-10-01 procesará 366 lotes (¡es un año bisiesto!) más el lote de &quot;hoy&quot;.                                                             |                                 |
+| batch&#95;size         | La granularidad de tus lotes. Los valores admitidos son `hour`, `day`, `month` y `year`                                                                                                                                                                                                                                                                                                      |                                 |
+| lookback               | Procesa X lotes anteriores al marcador más reciente para capturar registros que llegan con retraso.                                                                                                                                                                                                                                                                                          | 1                               |
+| concurrent&#95;batches | Anula la detección automática de dbt para ejecutar lotes de forma concurrente (al mismo tiempo). Lee más sobre [cómo configurar lotes concurrentes](https://docs.getdbt.com/docs/build/incremental-microbatch#configure-concurrent_batches). Si se establece en true, los lotes se ejecutan de forma concurrente (en paralelo). false ejecuta los lotes de forma secuencial (uno tras otro). |                                 |
+
+<div id="append-strategy">
+  #### La estrategia Append
+</div>
+
+Esta estrategia sustituye la configuración `inserts_only` en versiones anteriores de dbt-clickhouse. Este enfoque simplemente añade
+filas nuevas a la relación existente.
+Como resultado, las filas duplicadas no se eliminan y no hay ninguna tabla temporal ni intermedia. Es el enfoque más rápido
+si se permiten duplicados
+en los datos o si la consulta incremental los excluye mediante la cláusula/filtro WHERE.
+
+<div id="insert-overwrite-strategy">
+  #### La estrategia insert_overwrite (Experimental)
+</div>
+
+> [IMPORTANT]
+> Actualmente, la estrategia insert&#95;overwrite no es totalmente funcional con materializaciones distribuidas.
+
+Realiza los siguientes pasos:
+
+1. Crea una tabla temporal de preparación con la misma estructura que la relación del modelo incremental:
+   `CREATE TABLE <staging> AS <target>`.
+2. Inserta únicamente los registros nuevos (generados por `SELECT`) en la tabla de preparación.
+3. Reemplaza únicamente las particiones nuevas (presentes en la tabla de preparación) en la tabla de destino.
+
+Este enfoque tiene las siguientes ventajas:
+
+* Es más rápido que la estrategia predeterminada porque no copia la tabla completa.
+* Es más seguro que otras estrategias porque no modifica la tabla original hasta que la operación INSERT se completa
+  correctamente: en caso de fallo intermedio, la tabla original no se modifica.
+* Aplica la buena práctica de ingeniería de datos de la &quot;inmutabilidad de las particiones&quot;, lo que simplifica el procesamiento
+  incremental y paralelo de datos, las reversiones, etc.
+
+La estrategia requiere que `partition_by` esté definido en la configuración del modelo. Ignora cualquier otro
+parámetro de la configuración del modelo específico de otras estrategias.
+
+<div id="materialized-view">
+  ## Materialización: materialized_view
+</div>
+
+La materialización `materialized_view` crea una [vista materializada](/es/reference/statements/create/view#materialized-view) de ClickHouse que actúa como un disparador de inserción, transformando e insertando automáticamente nuevas filas de una tabla de origen en una tabla de destino. Esta es una de las materializaciones más potentes disponibles en dbt-clickhouse.
+
+Dado su alcance, esta materialización tiene su propia página dedicada. **[Ve a la guía de vistas materializadas](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)** para consultar la documentación completa
+
+<div id="materialization-dictionary">
+  ## Materialización: diccionario (experimental)
+</div>
+
+Consulte las pruebas
+en https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py para ver
+ejemplos de cómo
+implementar materializaciones para diccionarios de ClickHouse
+
+<div id="materialization-distributed-table">
+  ## Materialización: distributed_table (experimental)
+</div>
+
+La tabla distribuida se crea con los siguientes pasos:
+
+1. Crea una vista temporal con una consulta SQL para obtener la estructura correcta
+2. Crea tablas locales vacías a partir de la vista
+3. Crea una tabla distribuida a partir de las tablas locales.
+4. Los datos se insertan en la tabla distribuida, por lo que se distribuyen entre los segmentos sin duplicarse.
+
+Notas:
+
+* Las consultas de dbt-clickhouse ahora incluyen automáticamente la configuración `insert_distributed_sync = 1` para garantizar que
+  las operaciones posteriores de materialización incremental
+  se ejecuten correctamente. Esto podría hacer que algunas inserciones en tablas distribuidas se ejecuten más lentamente de lo
+  esperado.
+
+<div id="distributed-table-model-example">
+  ### Ejemplo de modelo de tabla distribuida
+</div>
+
+```sql
+{{
+    config(
+        materialized='distributed_table',
+        order_by='id, created_at',
+        sharding_key='cityHash64(id)',
+        engine='ReplacingMergeTree'
+    )
+}}
+
+select id, created_at, item
+from {{ source('db', 'table') }}
+```
+
+<div id="distributed-table-generated-migrations">
+  ### Migraciones generadas
+</div>
+
+```sql
+CREATE TABLE db.table_local on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = ReplacingMergeTree
+    ORDER BY (id, created_at);
+
+CREATE TABLE db.table on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = Distributed ('cluster', 'db', 'table_local', cityHash64(id));
+```
+
+<div id="incremental-configurations">
+  ### Configuraciones
+</div>
+
+A continuación se enumeran las configuraciones específicas de este tipo de materialización:
+
+| Opción           | Descripción                                                                                                                                                                                   | Valor predeterminado, si existe |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| sharding&#95;key | La clave de segmentación determina el servidor de destino al insertar en una tabla con motor Distributed. La clave de segmentación puede ser aleatoria o ser el resultado de una función hash | `rand()`)                       |
+
+<div id="materialization-distributed-incremental">
+  ## materialización: distributed_incremental (experimental)
+</div>
+
+Modelo incremental basado en la misma idea que una tabla distribuida; la principal dificultad es procesar correctamente todas las
+estrategias incrementales.
+
+1. *La estrategia Append* solo inserta datos en la tabla distribuida.
+2. *La estrategia Delete+Insert* crea una tabla temporal distribuida para trabajar con todos los datos en cada segmento.
+3. *La estrategia predeterminada (heredada)* crea tablas temporales e intermedias distribuidas por la misma razón.
+
+Solo se reemplazan las tablas de segmento, porque la tabla distribuida no almacena datos.
+La tabla distribuida se vuelve a cargar solo cuando el modo full&#95;refresh está habilitado o cuando la estructura de la tabla puede haber cambiado.
+
+<div id="distributed-incremental-model-example">
+  ### Ejemplo de modelo incremental Distributed
+</div>
+
+```sql
+{{
+    config(
+        materialized='distributed_incremental',
+        engine='MergeTree',
+        incremental_strategy='append',
+        unique_key='id,created_at'
+    )
+}}
+
+select id, created_at, item
+from {{ source('db', 'table') }}
+```
+
+<div id="distributed-table-generated-migrations">
+  ### Migraciones generadas
+</div>
+
+```sql
+CREATE TABLE db.table_local on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = MergeTree;
+
+CREATE TABLE db.table on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = Distributed ('cluster', 'db', 'table_local', cityHash64(id));
+```
+
+<div id="snapshot">
+  ## Instantánea
+</div>
+
+Las instantáneas de dbt permiten registrar los cambios de un modelo mutable a lo largo del tiempo. Esto, a su vez, permite
+realizar consultas sobre modelos en un momento determinado, donde los analistas pueden &quot;retroceder en el tiempo&quot; para ver el estado anterior de un modelo. Esta funcionalidad es
+compatible con el conector de ClickHouse y se configura mediante la siguiente sintaxis:
+
+Bloque de configuración en `snapshots/<model_name>.sql`:
+
+```python
+{{
+   config(
+     schema = "<schema-name>",
+     unique_key = "<column-name>",
+     strategy = "<strategy>",
+     updated_at = "<updated-at-column-name>",
+   )
+}}
+```
+
+Para obtener más información sobre la configuración, consulta la página de referencia de [configuración de snapshots](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
+
+<div id="contracts-and-constraints">
+  ## Contratos y restricciones
+</div>
+
+Solo se admiten contratos de tipos de columna exactos. Por ejemplo, un contrato con una columna de tipo UInt32 fallará si el modelo
+devuelve un UInt64 u otro tipo entero.
+ClickHouse también admite *solo* restricciones `CHECK` sobre toda la tabla/modelo. No se admiten restricciones `CHECK` de clave primaria, clave foránea, únicas ni a nivel de columna.
+(Consulta la documentación de ClickHouse sobre las claves primarias/de ORDER BY.)

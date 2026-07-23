@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
@@ -32,6 +34,9 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
+    CoordinationMode getCoordinationMode() const { return mode; }
+    size_t getMinMarksPerRequest() const { return min_marks_per_request; }
+
 private:
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
@@ -47,6 +52,7 @@ private:
     const bool has_soft_limit_below_one_block;
 
     size_t min_marks_per_task{0};
+    size_t min_marks_per_request{0};
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;

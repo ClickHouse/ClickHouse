@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'Documentação do formato PrettySpaceNoEscapes'
+input_format: false
+keywords: ['PrettySpaceNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettySpaceNoEscapes
+title: 'PrettySpaceNoEscapes'
+doc_type: 'reference'
+---
+
+import PrettyFormatSettings from '/snippets/pt-BR/common-pretty-format-settings.mdx';
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✗       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+Difere do formato [`PrettySpace`](/pt-BR/reference/formats/Pretty/PrettySpace) por não usar [sequências de escape ANSI](http://en.wikipedia.org/wiki/ANSI_escape_code).
+Isso é necessário para exibir esse formato em um navegador, bem como para usar o utilitário de linha de comando `watch`.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+<PrettyFormatSettings />

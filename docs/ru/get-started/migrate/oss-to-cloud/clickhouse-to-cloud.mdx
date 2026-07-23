@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'Использование remoteSecure'
+slug: /cloud/migration/clickhouse-to-cloud
+title: Миграция между самоуправляемым ClickHouse и ClickHouse Cloud с помощью remoteSecure
+description: 'Страница с описанием миграции между самоуправляемым ClickHouse и ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['миграция', 'ClickHouse Cloud', 'OSS', 'Миграция из самоуправляемого ClickHouse в Cloud']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import AddARemoteSystem from '/snippets/ru/_add_remote_ip_access_list_detail.mdx';
+
+import CompatibilityNote from '/snippets/ru/compatibility.mdx';
+
+<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+
+В этом руководстве показано, как выполнить миграцию с самоуправляемого сервера ClickHouse в ClickHouse Cloud, а также как переносить данные между сервисами ClickHouse Cloud.
+Функция [`remoteSecure`](/ru/reference/functions/table-functions/remote) используется в запросах `SELECT` и `INSERT` для доступа к удалённым серверам ClickHouse, что позволяет переносить таблицы так же просто, как выполнить запрос `INSERT INTO` со встроенным `SELECT`.
+
+<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
+  ## Миграция с самоуправляемого ClickHouse в ClickHouse Cloud
+</div>
+
+<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+
+Независимо от того, разбита ли ваша исходная таблица на сегменты и/или реплицируется ли она, в ClickHouse Cloud вам нужно только создать целевую таблицу (параметр Engine для этой таблицы можно не указывать — `SharedMergeTree` будет автоматически выбран в качестве движка таблицы),
+а ClickHouse Cloud автоматически позаботится о вертикальном и горизонтальном масштабировании.
+Вам не нужно думать о том, как реплицировать таблицу и разбивать ее на сегменты.
+
+В этом примере самоуправляемый сервер ClickHouse является *источником*, а сервис ClickHouse Cloud — *пунктом назначения*.
+
+<div id="overview">
+  ### Обзор
+</div>
+
+Процесс выглядит следующим образом:
+
+1. Добавьте в исходный сервис пользователя только для чтения
+2. Продублируйте структуру исходной таблицы в целевом сервисе
+3. Перенесите данные из источника в целевой сервис методом Pull или Push — в зависимости от сетевой доступности источника
+4. Удалите исходный сервер из IP Access List целевого сервиса (если применимо)
+5. Удалите из исходного сервиса пользователя только для чтения
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### Миграция таблиц из одной системы в другую:
+</div>
+
+В этом примере показана миграция одной таблицы с самоуправляемого сервера ClickHouse в ClickHouse Cloud.
+
+<CompatibilityNote />
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  ### В исходной системе ClickHouse (системе, где сейчас хранятся данные)
+</div>
+
+* Добавьте пользователя с правами только на чтение, который сможет читать исходную таблицу (`db.table` в этом примере)
+
+```sql
+CREATE USER exporter
+IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+SETTINGS readonly = 1;
+```
+
+```sql
+GRANT SELECT ON db.table TO exporter;
+```
+
+* Скопируйте определение таблицы
+
+```sql
+SELECT create_table_query
+FROM system.tables
+WHERE database = 'db' AND table = 'table'
+```
+
+<div id="on-the-destination-clickhouse-cloud-system">
+  ### В целевой системе ClickHouse Cloud:
+</div>
+
+* Создайте целевую базу данных:
+
+```sql
+CREATE DATABASE db
+```
+
+* Используя оператор CREATE TABLE для исходной таблицы, создайте таблицу назначения.
+
+<Tip>
+  При выполнении оператора CREATE измените ENGINE на ReplicatedMergeTree без каких-либо параметров. В ClickHouse Cloud таблицы всегда реплицируются, и правильные параметры подставляются автоматически. При этом сохраните секции `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY`, `TTL` и `SETTINGS`.
+</Tip>
+
+```sql
+CREATE TABLE db.table ...
+```
+
+* Используйте функцию `remoteSecure`, чтобы pull данные из самоуправляемого источника
+
+<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+
+```sql
+INSERT INTO db.table SELECT * FROM
+remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+<Note>
+  Если исходная система недоступна из внешних сетей, данные можно не pull, а push, так как функция `remoteSecure` работает и для выборок, и для вставки. См. следующий вариант.
+</Note>
+
+* Используйте функцию `remoteSecure`, чтобы push данные в сервис ClickHouse Cloud
+
+<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+
+<Tip>
+  **Добавьте удалённую систему в IP Access List сервиса ClickHouse Cloud**
+
+  Чтобы функция `remoteSecure` могла подключиться к вашему сервису ClickHouse Cloud, IP-адрес удалённой системы должен быть разрешён в IP Access List. Разверните раздел **Manage your IP Access List** под этой подсказкой, чтобы получить дополнительную информацию.
+</Tip>
+
+<AddARemoteSystem />
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
+'default', 'PASS') SELECT * FROM db.table
+```
+
+<div id="migrating-between-clickhouse-cloud-services">
+  ## Миграция между сервисами ClickHouse Cloud
+</div>
+
+<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+
+Вот несколько примеров, когда может потребоваться миграция данных между сервисами ClickHouse Cloud:
+
+* Миграция данных из восстановленной резервной копии
+* Копирование данных из сервиса разработки в staging-сервис (или из staging в production)
+
+В этом примере используются два сервиса ClickHouse Cloud, которые далее будут называться *источник* и *пункт назначения*. Данные будут переноситься из источника в пункт назначения по схеме pull. При желании можно использовать и push, но здесь показан pull, так как в этом случае используется пользователь только для чтения.
+
+<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+
+Миграция состоит из нескольких шагов:
+
+1. Определите один сервис ClickHouse Cloud как *источник*, а другой — как *пункт назначения*
+2. Добавьте пользователя только для чтения в сервис-источник
+3. Продублируйте структуру исходной таблицы в целевом сервисе
+4. Временно разрешите доступ по IP к сервису-источнику
+5. Скопируйте данные из источника в пункт назначения
+6. Снова настройте IP Access List для пункта назначения
+7. Удалите пользователя только для чтения из сервиса-источника
+
+<div id="add-a-read-only-user-to-the-source-service">
+  #### Добавьте в исходный сервис пользователя с правом только на чтение
+</div>
+
+* Добавьте пользователя с правом только на чтение, которому будет доступно чтение исходной таблицы (`db.table` в этом примере)
+
+  ```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+  ```
+
+  ```sql
+  GRANT SELECT ON db.table TO exporter;
+  ```
+
+* Скопируйте определение таблицы
+  ```sql
+  select create_table_query
+  from system.tables
+  where database = 'db' and table = 'table'
+  ```
+
+<div id="duplicate-the-table-structure-on-the-destination-service">
+  #### Продублируйте структуру таблицы в целевом сервисе
+</div>
+
+В целевом сервисе создайте базу данных, если она ещё не существует:
+
+* Создайте целевую базу данных:
+  ```sql
+  CREATE DATABASE db
+  ```
+
+* Используя оператор CREATE TABLE из исходного сервиса, создайте таблицу в целевом сервисе.
+
+  В целевом сервисе создайте таблицу, используя результат `select create_table_query...` из исходного сервиса:
+
+  ```sql
+  CREATE TABLE db.table ...
+  ```
+
+<div id="allow-remote-access-to-the-source-service">
+  #### Разрешите удалённый доступ к сервису-источнику
+</div>
+
+Чтобы pull данные из источника в пункт назначения, сервис-источник должен принимать подключения. Временно отключите функцию IP Access List на сервисе-источнике.
+
+<Tip>
+  Если вы планируете и дальше использовать исходный сервис ClickHouse Cloud, экспортируйте текущий IP Access List в JSON‑файл, прежде чем открывать доступ отовсюду; это позволит затем импортировать список доступа обратно после переноса данных.
+</Tip>
+
+Измените список разрешённых и временно выберите доступ **Anywhere**. Подробности см. в документации [IP Access List](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="copy-the-data-from-source-to-destination">
+  #### Скопируйте данные из исходного сервиса в целевой сервис
+</div>
+
+* Используйте функцию `remoteSecure`, чтобы pull данные из исходного сервиса ClickHouse Cloud
+  Подключитесь к целевому сервису. Выполните эту команду на целевом сервисе ClickHouse Cloud:
+
+  ```sql
+  INSERT INTO db.table SELECT * FROM
+  remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+  ```
+
+* Проверьте данные в целевом сервисе
+
+<div id="re-establish-the-ip-access-list-on-the-source">
+  #### Повторно настройте IP Access List для исходного сервиса
+</div>
+
+Если вы ранее экспортировали список доступа, то можете импортировать его обратно с помощью **Share**; в противном случае снова добавьте свои IP-адреса в список доступа.
+
+<div id="remove-the-read-only-exporter-user">
+  #### Удалите пользователя `exporter` только для чтения
+</div>
+
+```sql
+DROP USER exporter
+```
+
+* Измените IP Access List сервиса, чтобы ограничить доступ

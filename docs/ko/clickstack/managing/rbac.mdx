@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/rbac
+title: '역할 기반 접근 제어(RBAC)'
+sidebarTitle: '역할 기반 접근 제어'
+toc_max_heading_level: 2
+description: 'ClickStack에서 역할 기반 접근 제어를 구성하여 대시보드, 저장된 검색, SOURCES, 알림 등의 팀별 권한을 관리합니다.'
+doc_type: 'guide'
+keywords: ['clickstack', 'rbac', '역할', '권한', '접근 제어', '보안']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack에는 역할 기반 접근 제어(RBAC)가 포함되어 있어 [대시보드](/ko/clickstack/features/dashboards/overview), [저장된 검색](/ko/clickstack/features/search), SOURCES, [알림](/ko/clickstack/features/alerts), 웹훅, 노트북에 대해 세분화된 권한을 가진 사용자 지정 역할을 정의할 수 있습니다. 권한은 두 가지 수준으로 작동합니다. 즉, 리소스 수준 접근 권한(리소스 유형별 접근 없음, 읽기 또는 관리)과 이름, 태그 또는 ID를 기준으로 개별 리소스에 대한 접근을 제한하는 선택적 세분화 규칙입니다. ClickStack에는 기본 제공 역할 3개가 포함되어 있으며, 팀의 요구에 맞는 사용자 지정 역할을 만들 수 있습니다.
+
+<Info>
+  **Managed ClickStack 전용**
+
+  RBAC는 Managed ClickStack 배포에서만 사용할 수 있습니다.
+</Info>
+
+<div id="user-access-prerequisites">
+  ## 사용자 액세스 사전 요구 사항
+</div>
+
+ClickStack은 ClickHouse Cloud를 통해 인증합니다. ClickStack 역할을 할당하려면 각 사용자가 먼저 다음 조건을 충족해야 합니다:
+
+1. **ClickHouse Cloud 조직에 초대되어 있어야 합니다.** 조직 관리자는 Cloud Console에서 사용자를 초대합니다. 자세한 내용은 [Manage cloud users](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)를 참조하십시오.
+2. **서비스에서 SQL 콘솔 액세스 권한이 있어야 합니다.** 해당 서비스의 **설정** → **SQL 콘솔 액세스**로 이동한 다음, 적절한 권한 수준을 설정하십시오:
+
+| Cloud SQL 콘솔 액세스         | ClickStack 액세스                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| **SQL 콘솔 관리자** (전체 액세스)  | ClickStack에 완전히 액세스할 수 있습니다. [알림](/ko/clickstack/features/alerts)을 활성화하려면 이 권한이 필요합니다. |
+| **SQL 콘솔 읽기 전용** (읽기 전용) | 관측성 데이터를 조회하고 대시보드를 만들 수 있습니다.                                                      |
+| **액세스 없음**               | ClickStack에 액세스할 수 없습니다.                                                            |
+
+사용자에게 Cloud 액세스 권한이 부여되면 ClickStack **Team Settings** 페이지에 표시되며, 여기서 ClickStack 역할을 할당할 수 있습니다.
+
+<Tabs>
+  <Tab title="Cloud Users and roles">
+    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud Users and roles 페이지" size="lg" />
+  </Tab>
+
+  <Tab title="ClickStack Team Settings">
+    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="팀 구성원과 각 역할이 표시된 ClickStack Team Settings 페이지" size="lg" />
+  </Tab>
+</Tabs>
+
+<div id="built-in-roles">
+  ## 기본 제공 역할
+</div>
+
+ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 편집하거나 삭제할 수 없습니다. 관리자 역할은 기본적으로 팀 생성자에게 할당됩니다.
+
+| 권한          | 관리자 |  멤버 | 읽기 전용 |
+| ----------- | :-: | :-: | :---: |
+| 모든 리소스 읽기   |  ✓  |  ✓  |   ✓   |
+| 대시보드 관리     |  ✓  |  ✓  |       |
+| 저장된 검색 관리   |  ✓  |  ✓  |       |
+| SOURCES 관리       |  ✓  |  ✓  |       |
+| 알림 관리       |  ✓  |  ✓  |       |
+| 웹훅 관리       |  ✓  |  ✓  |       |
+| 노트북 관리      |  ✓  |  ✓  |       |
+| 팀 설정 변경     |  ✓  |  ✓  |       |
+| 팀 생성/삭제     |  ✓  |     |       |
+| 사용자 및 초대 관리 |  ✓  |     |       |
+
+<div id="assigning-roles">
+  ## 팀 구성원에게 역할 할당하기
+</div>
+
+**Team Settings** 페이지에는 모든 팀 구성원과 현재 역할이 표시됩니다. 역할을 변경하려면 사용자 이름 옆의 **Edit**를 클릭한 다음 새 역할을 선택하세요. 각 사용자에게는 역할이 정확히 하나씩 있습니다.
+
+<div id="default-new-user-role">
+  ### 기본 신규 사용자 역할
+</div>
+
+[보안 정책](#security-policies)에서 신규 사용자의 기본 역할을 설정할 수 있습니다. 팀에 자동 참여하는 신규 사용자에게는 이 역할이 자동으로 할당됩니다.
+
+<div id="creating-a-role">
+  ## 사용자 지정 역할 만들기
+</div>
+
+<Steps>
+  <Step>
+    ### Team Settings로 이동
+
+    **Team Settings**를 열고 **RBAC Roles** 섹션으로 스크롤합니다.
+
+    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC 역할" size="lg" />
+  </Step>
+
+  <Step>
+    ### 새 역할 추가
+
+    **+ Add Role**를 클릭합니다. **Role Name**을 입력하고, 필요하면 **Description**을 추가합니다.
+  </Step>
+
+  <Step>
+    ### 권한 구성 및 저장
+
+    역할에 대한 권한을 설정한 다음 **Create Role**를 클릭합니다.
+
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="역할 추가 모달" size="md" />
+  </Step>
+</Steps>
+
+사용자 지정 역할은 RBAC Roles 섹션에 시스템 역할과 함께 표시되며, **Edit** 및 **Delete** 버튼이 제공됩니다.
+
+<div id="role-permissions">
+  ## 역할 권한
+</div>
+
+<div id="resource-permissions">
+  ### 리소스 권한
+</div>
+
+각 역할(Role)은 리소스 유형별로 접근 수준을 부여합니다. 세 가지 수준은 다음과 같습니다.
+
+| 접근 수준     | 허용되는 작업                                     |
+| --------- | ------------------------------------------- |
+| **접근 없음** | 해당 리소스 유형이 역할에서 완전히 숨겨집니다.                  |
+| **읽기**    | 리소스와 해당 구성을 볼 수 있지만 생성, 편집 또는 삭제는 할 수 없습니다. |
+| **관리**    | 전체 제어 — 해당 유형의 리소스를 생성, 편집 및 삭제할 수 있습니다.    |
+
+제어할 수 있는 리소스 유형은 다음과 같습니다.
+
+* **[대시보드](/ko/clickstack/features/dashboards/overview)** — 저장된 대시보드 레이아웃과 차트입니다.
+* **[저장된 검색](/ko/clickstack/features/search)** — 저장된 로그/트레이스/이벤트 쿼리입니다.
+* **SOURCES** — 수집 소스 구성입니다.
+* **[알림](/ko/clickstack/features/alerts)** — 알림 규칙과 해당 알림 설정입니다.
+* **웹훅** — [알림](/ko/clickstack/features/alerts)이 전달하는 외부 알림 대상(예: Slack, PagerDuty, 일반 HTTP 엔드포인트)입니다. 이는 ClickStack API를 의미하지 않습니다.
+* **노트북** — 협업용 조사 노트북입니다.
+
+<div id="administrative-permissions">
+  ### 관리 권한
+</div>
+
+리소스 권한 외에도 각 역할에는 2가지 관리 설정이 포함됩니다:
+
+* **사용자** (액세스 없음 · 제한된 액세스) — 역할이 팀 구성원과 해당 구성원의 역할을 볼 수 있는지 제어합니다. 사용자를 초대, 제거 또는 업데이트할 수 있는 권한은 관리자에게만 있습니다.
+* **팀** (읽기 · 관리) — 역할이 보안 정책 및 RBAC 구성과 같은 팀 수준의 설정을 보거나 수정할 수 있는지 제어합니다.
+
+<div id="fine-grained-access-rules">
+  ### 세분화된 액세스 규칙
+</div>
+
+대시보드, 저장된 검색, SOURCES 및 노트북은 범주 내 개별 리소스에 대한 액세스를 제한하는 세분화된 제어를 지원합니다. 전체 리소스 유형에 대한 포괄적인 액세스 권한을 부여하는 대신 역할을 특정 리소스로 제한해야 할 때 사용하십시오.
+
+<div id="access-control-modes">
+  #### 기본 액세스와 세분화된 제어
+</div>
+
+각 리소스 유형에는 **액세스 제어 모드**가 있습니다.
+
+* **기본 액세스** — 해당 유형의 모든 리소스에 단일 액세스 수준(액세스 없음, 읽기 또는 관리)을 적용합니다.
+* **세분화된 제어** — 조건에 따라 특정 리소스에 일치하는 액세스 규칙을 정의할 수 있습니다. 어떤 규칙에도 일치하지 않는 리소스에는 기본적으로 액세스 권한이 부여되지 않습니다.
+
+모드를 전환하려면 역할 편집기에서 셰브론을 클릭해 리소스 유형을 펼친 다음 **액세스 제어 모드**를 전환하십시오.
+
+<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="역할 편집기의 기본 액세스와 세분화된 제어 모드" size="md" />
+
+<div id="configuring-access-rules">
+  #### 액세스 규칙 구성
+</div>
+
+각 액세스 규칙은 **조건**과 **액세스 수준**으로 이루어집니다. 조건은 리소스의 속성을 기준으로 리소스를 식별합니다.
+
+<Image img="/images/clickstack/rbac/condition-tip.webp" alt="조건 툴팁: 이름 또는 태그(제목에 표시됨), 혹은 ID(URL에서 확인 가능)를 기준으로 리소스를 식별" size="md" />
+
+| 조건 필드    | 연산자              | 일치 대상                                                                                         | 예시                                                                           |
+| -------- | ---------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Name** | `is`, `contains` | 리소스의 표시 이름입니다. 예를 들어 대시보드 제목이 이에 해당합니다.                                                       | Name contains `production` — 제목에 &quot;production&quot;이 포함된 모든 대시보드와 일치합니다. |
+| **Tag**  | `is`, `contains` | 리소스 보기의 오른쪽 상단 태그 패널을 통해 리소스에 할당된 태그입니다. 대시보드, 저장된 검색, 노트북에서만 사용할 수 있습니다. | Tag is `critical` — &quot;critical&quot; 태그가 지정된 리소스와 일치합니다.                 |
+| **ID**   | `is`, `contains` | 리소스를 열었을 때 URL 표시줄에서 확인할 수 있는 리소스 식별자입니다.                                                     | ID is `abc123` — 특정 리소스 하나와 일치합니다.                                           |
+
+다음 스크린샷에는 URL 표시줄에서 강조된 대시보드 ID와 태그 패널(오른쪽 상단)에 표시된 &quot;TESTING&quot; 태그가 함께 나와 있습니다.
+
+<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="URL 표시줄의 리소스 ID와 오른쪽 상단의 태그가 표시된 대시보드" size="lg" />
+
+리소스 유형마다 여러 규칙을 추가할 수 있습니다. 각 규칙은 OR 논리로 독립적으로 평가됩니다. 즉, 리소스가 **어느 하나의** 규칙과 일치하면 액세스할 수 있습니다. 어떤 규칙과도 일치하지 않는 리소스에는 액세스할 수 없습니다.
+
+<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="OR 논리가 적용된 액세스 규칙 툴팁" size="md" />
+
+**예시**: 역할에 테스트용 대시보드에 대한 읽기 전용 액세스를 부여하려면 대시보드를 펼치고, 세분화된 제어로 전환한 다음, 다음 두 규칙을 추가합니다.
+
+* **Name** `contains` `testing` 및 액세스 수준 **Read**
+* **Tag** `is` `testing` 및 액세스 수준 **Read**
+
+두 규칙 중 하나라도 일치하는 대시보드에는 액세스할 수 있습니다.
+
+<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="OR로 결합된 두 개의 세분화된 액세스 규칙: Name contains testing에 Read 액세스, 그리고 Tag is testing에 Read 액세스" size="md" />
+
+<div id="security-policies">
+  ## 보안 정책
+</div>
+
+**Team Settings**의 **Security Policies** 섹션에서는 추가 제어 옵션을 제공합니다.
+
+**Default New User Role**은 팀에 새로 참여하는 사용자에게 자동으로 할당할 역할을 설정합니다.
+
+**Generative AI**를 사용하면 Anthropic 또는 Amazon Bedrock으로 구동되는 LLM 기반 기능(예: 자연어 쿼리 생성)을 활성화하거나 비활성화할 수 있습니다. 비활성화하면 데이터가 AI 프로바이더로 전송되지 않습니다.
+
+<Image img="/images/clickstack/rbac/security-policies.webp" alt="보안 정책" size="lg" />

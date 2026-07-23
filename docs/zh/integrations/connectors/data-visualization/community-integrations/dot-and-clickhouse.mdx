@@ -1,0 +1,82 @@
+---
+sidebarTitle: 'Dot'
+slug: /integrations/dot
+keywords: ['clickhouse', 'dot', 'ai', '聊天机器人', 'mysql', '集成', '界面', '虚拟助手']
+description: 'AI 聊天机器人 | Dot 是一款智能虚拟数据助手，能够回答业务数据问题、检索定义和相关数据资产，甚至还能协助进行数据建模，由 ClickHouse 驱动。'
+title: 'Dot'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Dot](https://www.getdot.ai/) 是你的 **AI 数据分析师**。
+它可直接连接 ClickHouse，让你能够用自然语言提出数据相关问题、探索数据、验证假设，并回答“为什么”这类问题——这一切都可以直接在 Slack、Microsoft Teams、ChatGPT 或原生 Web UI 中完成。
+
+<div id="pre-requisites">
+  ## 前提条件
+</div>
+
+* 一个 ClickHouse 数据库，可自托管，也可使用 [ClickHouse Cloud](https://clickhouse.com/cloud)
+* 一个 [Dot](https://www.getdot.ai/) 账户  
+
+<div id="connecting-dot-to-clickhouse">
+  ## 将 Dot 连接到 ClickHouse
+</div>
+
+<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="在 Dot 中配置 ClickHouse 连接（浅色模式）" border />
+
+<br />
+
+1. 在 Dot UI 中，前往 **Settings → Connections**。
+2. 点击 **Add new connection**，然后选择 **ClickHouse**。
+3. 填写连接详细信息：
+   * **Host**：ClickHouse server 主机名或 ClickHouse Cloud 端点
+   * **Port**：`8443` (ClickHouse Cloud HTTPS) 或 `8123` (self-hosted HTTP) 
+   * **Username / Password**：具有读取权限的用户
+   * **Database**：可选，用于设置默认 schema
+4. 点击 **Connect**。
+
+<Image img="/images/integrations/data-visualization/dot_02.webp" alt="连接 ClickHouse" size="sm" />
+
+Dot 使用 **查询下推**：ClickHouse 负责大规模的繁重计算，而 Dot 可确保结果准确可信。
+
+<div id="highlights">
+  ## 亮点
+</div>
+
+Dot 通过对话让数据更易获取：
+
+* **用自然语言提问**：无需编写 SQL，即可获得答案。
+* **原因分析**：通过追问，深入理解趋势和异常。
+* **无缝融入你的工作流**：可在 Slack、Microsoft Teams、ChatGPT 或 Web 应用中使用。
+* **结果可信**：Dot 会依据你的 schema 和定义验证查询，尽可能减少错误。
+* **可扩展**：基于查询下推，将 Dot 的智能与 ClickHouse 的速度结合起来。
+
+<div id="security">
+  ## 安全与治理
+</div>
+
+Dot 已具备企业级可用性：
+
+* **权限与角色**：继承 ClickHouse 的用户访问控制
+* **行级安全**：如果已在 ClickHouse 中配置，则可支持
+* **TLS / SSL**：ClickHouse Cloud 默认启用；自托管需手动配置
+* **治理与验证**：训练/验证空间有助于减少幻觉
+* **合规性**：已通过 SOC 2 Type I 认证
+
+<div id="additional-resources">
+  ## 更多资源
+</div>
+
+* Dot 官网：[https://www.getdot.ai/](https://www.getdot.ai/)
+* 文档：[https://docs.getdot.ai/](https://docs.getdot.ai/)
+* Dot 应用：[https://app.getdot.ai/](https://app.getdot.ai/)
+
+现在，你可以使用 **ClickHouse + Dot** 以对话方式分析数据，将 Dot 的 AI 助手与 ClickHouse 快速、可扩展的分析引擎结合起来。

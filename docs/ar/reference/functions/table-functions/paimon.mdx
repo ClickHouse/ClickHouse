@@ -1,0 +1,141 @@
+---
+description: 'يوفّر واجهة شبيهة بالجدول للقراءة فقط للوصول إلى جداول Apache Paimon
+  المخزّنة في Amazon S3 أو Azure أو HDFS أو محليًا.'
+sidebarTitle: 'paimon'
+slug: /sql-reference/table-functions/paimon
+title: 'paimon'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimon-table-function">
+  # دالة الجدول paimon
+</div>
+
+<ExperimentalBadge />
+
+يوفّر واجهة شبيهة بالجدول للقراءة فقط لجداول Apache [Paimon](https://paimon.apache.org/) المخزّنة في Amazon S3 أو Azure أو HDFS أو محليًا.
+
+<div id="syntax">
+  ## الصياغة
+</div>
+
+```sql
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFS(path_to_table, [,format] [,compression_method])
+
+paimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+يتوافق وصف المعاملات هنا مع وصف المعاملات في دوال الجداول `s3` و`azureBlobStorage` و`HDFS` و`file`، كلٌّ بحسب ما يقابله.
+ويشير `format` إلى تنسيق ملفات البيانات في جدول Paimon.
+
+بالنسبة إلى `paimonS3`، يمكن استخدام المعلَمة الاختيارية `extra_credentials` لتمرير `role_arn` من أجل الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.
+
+<div id="returned-value">
+  ### القيمة المعادة
+</div>
+
+جدول ذو بنية محددة لقراءة البيانات من جدول Paimon المحدد.
+
+<div id="defining-a-named-collection">
+  ## تعريف مجموعة مسماة
+</div>
+
+فيما يلي مثال على تهيئة مجموعة مسماة لتخزين عنوان URL وبيانات الاعتماد:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
+DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="aliases">
+  ## الأسماء المستعارة
+</div>
+
+أصبحت دالة الجدول `paimon` الآن اسمًا مستعارًا لـ `paimonS3`.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، فستكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
+* `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
+
+<div id="data-types-supported">
+  ## أنواع البيانات المدعومة
+</div>
+
+| نوع بيانات Paimon                 | نوع البيانات في ClickHouse |
+| --------------------------------- | -------------------------- |
+| BOOLEAN                           | Int8                       |
+| TINYINT                           | Int8                       |
+| SMALLINT                          | Int16                      |
+| INTEGER                           | Int32                      |
+| BIGINT                            | Int64                      |
+| FLOAT                             | Float32                    |
+| DOUBLE                            | Float64                    |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                     |
+| DATE                              | Date                       |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
+| CHAR                              | FixedString(1)             |
+| BINARY(n)                         | FixedString(n)             |
+| DECIMAL(P,S)                      | Decimal(P,S)               |
+| ARRAY                             | Array                      |
+| MAP                               | Map                        |
+
+<div id="partition-supported">
+  ## التقسيم المدعوم
+</div>
+
+أنواع البيانات المدعومة ضمن مفاتيح التقسيم في Paimon:
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [دالة الجدول العنقودية لـ Paimon](/ar/reference/functions/table-functions/paimonCluster)

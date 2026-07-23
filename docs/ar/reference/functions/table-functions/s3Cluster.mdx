@@ -1,0 +1,107 @@
+---
+description: 'امتداد لدالة الجدول s3 يتيح معالجة الملفات من Amazon S3 وGoogle Cloud Storage بالتوازي عبر عدة عقد ضمن عنقود محدد.'
+sidebarTitle: 's3Cluster'
+slug: /sql-reference/table-functions/s3Cluster
+title: 's3Cluster'
+doc_type: 'reference'
+---
+
+هذا امتداد لدالة الجدول [s3](/ar/reference/functions/table-functions/s3).
+
+يتيح معالجة الملفات من [Amazon S3](https://aws.amazon.com/s3/) وGoogle Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) بالتوازي عبر عدة عقد ضمن عنقود محدد. على العقدة المُبادِرة، يُنشئ اتصالًا بجميع العقد في العنقود، ويفكّ توسيع أحرف النجمة في مسار ملف S3، ثم يوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يستعلم من العقدة المُبادِرة عن المهمة التالية المطلوب معالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
+s3Cluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+| المعامل                                 | الوصف                                                                                                                                                                                                                                                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`                          | اسم عنقود يُستخدم لبناء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.                                                                                                                                                                                                              |
+| `url`                                   | المسار إلى ملف أو مجموعة من الملفات. يدعم أحرف البدل التالية في وضع `readonly`: `*`, `**`, `?`, `{'abc','def'}` و `{N..M}` حيث إن `N` و `M` — أرقام، و `abc` و `def` — سلاسل نصية. لمزيد من المعلومات، راجع [Wildcards In Path](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path). |
+| `NOSIGN`                                | إذا جرى توفير هذه الكلمة المفتاحية بدلًا من بيانات الاعتماد، فلن تُوقَّع أي من الطلبات.                                                                                                                                                                                                              |
+| `access_key_id` and `secret_access_key` | مفاتيح تحدد بيانات الاعتماد المطلوب استخدامها مع نقطة النهاية المحددة. اختيارية.                                                                                                                                                                                                                     |
+| `session_token`                         | رمز الجلسة المستخدم مع المفاتيح المحددة. ويكون اختياريًا عند تمرير المفاتيح.                                                                                                                                                                                                                         |
+| `format`                                | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                    |
+| `structure`                             | بنية الجدول. التنسيق هو `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                               |
+| `compression_method`                    | هذا المعامل اختياري. القيم المدعومة: `none` و `gzip` أو `gz` و `brotli` أو `br` و `xz` أو `LZMA` و `zstd` أو `zst`. افتراضيًا، سيُكتشَف أسلوب الضغط تلقائيًا من امتداد الملف.                                                                                                                        |
+| `headers`                               | هذا المعامل اختياري. يتيح تمرير ترويسات في طلب S3. مرِّرها بالتنسيق `headers(key=value)`، مثل `headers('x-amz-request-payer' = 'requester')`. راجع [here](/ar/reference/functions/table-functions/s3#accessing-requester-pays-buckets) للاطلاع على مثال للاستخدام.                                      |
+| `extra_credentials`                     | اختياري. يمكن تمرير `roleARN` عبر هذا المعامل. راجع [here](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role) للاطلاع على مثال.                                                                                                    |
+
+يمكن أيضًا تمرير المعاملات باستخدام [المجموعة المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، تعمل `url` و `access_key_id` و `secret_access_key` و `format` و `structure` و `compression_method` بالطريقة نفسها، كما تُدعَم بعض المعاملات الإضافية:
+
+| المعامل                       | الوصف                                                                                                                                                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`                    | يُلحَق بـ `url` إذا جرى تحديده.                                                                                                                                                                                        |
+| `use_environment_credentials` | مُمكَّن افتراضيًا، ويتيح تمرير معلمات إضافية باستخدام متغيرات البيئة `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`. |
+| `no_sign_request`             | معطَّل افتراضيًا.                                                                                                                                                                                                      |
+| `expiration_window_seconds`   | القيمة الافتراضية هي 120.                                                                                                                                                                                              |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+جدول بالبنية المحددة لقراءة البيانات من الملف المحدد أو كتابتها فيه.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+اعرض البيانات من جميع الملفات في المجلدين `/root/data/clickhouse` و`/root/data/database/`، باستخدام جميع العُقد في عنقود `cluster_simple`:
+
+```sql
+SELECT * FROM s3Cluster(
+    'cluster_simple',
+    'http://minio1:9001/root/data/{clickhouse,database}/*',
+    'minio',
+    'ClickHouse_Minio_P@ssw0rd',
+    'CSV',
+    'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
+) ORDER BY (name, value, polygon);
+```
+
+احسب العدد الإجمالي للصفوف في جميع الملفات في العنقود `cluster_simple`:
+
+<Tip>
+  إذا كانت قائمة الملفات تحتوي على نطاقات رقمية بأصفار بادئة، فاستخدم الصيغة التي تتضمن أقواسًا لكل رقم على حدة، أو استخدم `?`.
+</Tip>
+
+لحالات الاستخدام في بيئات الإنتاج، يُوصى باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). وفيما يلي المثال:
+
+```sql
+
+CREATE NAMED COLLECTION creds AS
+        access_key_id = 'minio',
+        secret_access_key = 'ClickHouse_Minio_P@ssw0rd';
+SELECT count(*) FROM s3Cluster(
+    'cluster_simple', creds, url='https://s3-object-url.csv',
+    format='CSV', structure='name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
+)
+```
+
+<div id="accessing-private-and-public-buckets">
+  ## الوصول إلى الحاويات الخاصة والعامة
+</div>
+
+يمكن للمستخدمين استخدام الأساليب نفسها الموثقة للدالة s3 [هنا](/ar/reference/functions/table-functions/s3#accessing-public-buckets).
+
+<div id="optimizing-performance">
+  ## تحسين الأداء
+</div>
+
+للتعرّف على تفاصيل تحسين أداء الدالة `s3`، راجع [دليلنا المفصل](/ar/integrations/connectors/data-ingestion/AWS/performance).
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك S3](/ar/reference/engines/table-engines/integrations/s3)
+* [دالة الجدول S3](/ar/reference/functions/table-functions/s3)

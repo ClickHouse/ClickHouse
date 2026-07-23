@@ -309,7 +309,7 @@ TEST(SchedulerTimeSharedWorkloadNode, List)
 TEST(SchedulerTimeSharedWorkloadNode, ThrottlerLeakyBucket)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
@@ -338,7 +338,7 @@ TEST(SchedulerTimeSharedWorkloadNode, ThrottlerLeakyBucket)
 TEST(SchedulerTimeSharedWorkloadNode, ThrottlerPacing)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     // Zero burst allows you to send one request of any `size` and than throttle for `size/max_bytes_per_second` seconds.
@@ -357,7 +357,7 @@ TEST(SchedulerTimeSharedWorkloadNode, ThrottlerPacing)
 TEST(SchedulerTimeSharedWorkloadNode, ThrottlerBucketFilling)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
@@ -390,7 +390,7 @@ TEST(SchedulerTimeSharedWorkloadNode, ThrottlerBucketFilling)
 TEST(SchedulerTimeSharedWorkloadNode, ThrottlerAndFairness)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
@@ -685,7 +685,7 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateParentOfIntermediateNode)
 TEST(SchedulerTimeSharedWorkloadNode, UpdateThrottlerMaxSpeed)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
@@ -716,7 +716,7 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateThrottlerMaxSpeed)
 TEST(SchedulerTimeSharedWorkloadNode, UpdateThrottlerMaxBurst)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});

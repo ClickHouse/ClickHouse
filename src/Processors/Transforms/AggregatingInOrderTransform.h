@@ -34,6 +34,7 @@ public:
         size_t max_block_bytes_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
+        size_t limit_hint_,
         RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     AggregatingInOrderTransform(
@@ -43,6 +44,7 @@ public:
         const SortDescription & group_by_description_,
         size_t max_block_size_,
         size_t max_block_bytes_,
+        size_t limit_hint_,
         RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     ~AggregatingInOrderTransform() override;
@@ -86,6 +88,8 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
     UInt64 res_rows = 0;
+
+    size_t limit_hint = 0;
 
     bool need_generate = false;
     bool block_end_reached = false;

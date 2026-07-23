@@ -1,0 +1,1327 @@
+---
+alias: []
+description: 'Documentação do formato RowBinary'
+input_format: true
+keywords: ['RowBinary']
+output_format: true
+slug: /interfaces/formats/RowBinary
+title: 'RowBinary'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/pt-BR/common-row-binary-format-settings.mdx';
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `RowBinary` processa os dados linha por linha em formato binário.
+Linhas e valores são listados consecutivamente, sem separadores.
+Como os dados estão em formato binário, o delimitador após `FORMAT RowBinary` é estritamente definido da seguinte forma:
+
+* Qualquer quantidade de espaços em branco:
+  * `' '` (espaço - código `0x20`)
+  * `'\t'` (tabulação - código `0x09`)
+  * `'\f'` (avanço de página - código `0x0C`)
+* Seguido de exatamente uma sequência de nova linha:
+  * no estilo Windows `"\r\n"`
+  * ou no estilo Unix `'\n'`
+* Imediatamente seguido por dados binários.
+
+<Note>
+  Este formato é menos eficiente que o formato [Native](/pt-BR/reference/formats/Native), pois é baseado em linhas.
+</Note>
+
+<div id="data-types-wire-format">
+  ## Formato wire dos tipos de dados
+</div>
+
+<Tip>
+  A maioria das consultas apresentadas nos exemplos pode ser executada com `curl`, com saída em arquivo.
+
+  ```bash
+  curl -XPOST "http://localhost:8123?default_format=RowBinary" \
+    --data-binary "SELECT 42 :: UInt32"  > out.bin
+  ```
+</Tip>
+
+Em seguida, os dados podem ser examinados com um editor hexadecimal.
+
+<div id="unsigned-leb128">
+  ### LEB128 sem sinal (Base 128 little-endian)
+</div>
+
+Uma codificação de inteiro sem sinal, little-endian e de largura variável usada para codificar o comprimento de tipos de dados de tamanho variável, como `String`, `Array` e `Map`. Uma implementação de exemplo pode ser encontrada na [página do LEB128 na Wikipédia](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer).
+
+<div id="integer-types">
+  ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+</div>
+
+Todos os tipos inteiros são codificados com uma quantidade apropriada de bytes em **little-endian**. Os tipos com sinal (`Int8` a `Int256`) usam a representação em **complemento de dois**. A maioria das linguagens oferece suporte à extração desses inteiros de arrays de bytes, usando ferramentas nativas ou bibliotecas amplamente conhecidas. Para `Int128`/`Int256` e `UInt128`/`UInt256`, que excedem os tamanhos de inteiros nativos da maioria das linguagens, pode ser necessária uma desserialização personalizada.
+
+<div id="bool">
+  ### Bool
+</div>
+
+Valores booleanos são codificados em um único byte e podem ser desserializados de forma semelhante a `UInt8`.
+
+* `0` é `false`
+* `1` é `true`
+
+<div id="float32-float64">
+  ### Float32, Float64
+</div>
+
+Números de ponto flutuante em **little-endian**, codificados em 4 bytes para `Float32` e em 8 bytes para `Float64`. Assim como ocorre com os inteiros, a maioria das linguagens oferece ferramentas adequadas para desserializar esses valores.
+
+<div id="bfloat16">
+  ### BFloat16
+</div>
+
+[BFloat16](/pt-BR/reference/data-types/float#bfloat16) (Brain Floating Point) é um formato de ponto flutuante de 16 bits com o intervalo de Float32 e precisão reduzida, o que o torna útil para workloads de aprendizado de máquina. O formato binário é essencialmente os 16 bits mais significativos de um valor Float32. Se a sua linguagem não tiver suporte nativo a ele, a forma mais fácil de lidar com isso é ler e gravar como UInt16, convertendo de e para Float32:
+
+Para converter BFloat16 em Float32 (pseudocódigo):
+
+```text
+// Leia 2 bytes como UInt16 little-endian
+// Desloque para a esquerda 16 bits para obter os bits do Float32
+bfloat16Bits = readUInt16()
+float32Bits = bfloat16Bits << 16
+floatValue = reinterpretAsFloat32(float32Bits)
+```
+
+Para converter Float32 para BFloat16 (pseudocódigo):
+
+```text
+// Desloca os bits de Float32 16 posições à direita para truncar para BFloat16
+float32Bits = reinterpretAsUInt32(floatValue)
+bfloat16Bits = float32Bits >> 16
+writeUInt16(bfloat16Bits)
+```
+
+Exemplos de valores subjacentes para `BFloat16`:
+
+```sql
+SELECT CAST(1.25, 'BFloat16')
+```
+
+```text
+0xA0, 0x3F, // 1.25 como BFloat16
+```
+
+<div id="decimal">
+  ### Decimal32, Decimal64, Decimal128, Decimal256
+</div>
+
+Os tipos Decimal são representados como inteiros **little-endian** com a respectiva largura de bits.
+
+* `Decimal32` - 4 bytes, ou `Int32`.
+* `Decimal64` - 8 bytes, ou `Int64`.
+* `Decimal128` - 16 bytes, ou `Int128`.
+* `Decimal256` - 32 bytes, ou `Int256`.
+
+Ao desserializar um valor Decimal, as partes inteira e fracionária podem ser obtidas usando o pseudocódigo a seguir:
+
+```text
+let scale_multiplier = 10 ** scale
+let whole_part = trunc(value / scale_multiplier)  // truncar em direção ao zero
+let fractional_part = value % scale_multiplier
+let result = Decimal(whole_part, fractional_part)
+```
+
+Onde `trunc` faz o truncamento em direção a zero (e não a divisão por piso, que se comporta de forma diferente para valores negativos), e `scale` é o número de dígitos após a vírgula decimal. Por exemplo, para `Decimal(10, 2)` (equivalente a `Decimal32(2)`), a escala é `2`, e o valor `12345` será representado como `(123, 45)`.
+
+A serialização exige a operação inversa:
+
+```text
+let scale_multiplier = 10 ** scale
+let result = whole_part * scale_multiplier + fractional_part
+```
+
+Veja mais detalhes na [documentação do ClickHouse sobre os tipos Decimal](/pt-BR/reference/data-types/decimal).
+
+<div id="string">
+  ### String
+</div>
+
+As strings do ClickHouse são **sequências arbitrárias de bytes**. Não precisam ser UTF-8 válidas. O prefixo de comprimento é o **tamanho em bytes**, não a quantidade de caracteres.
+
+Codificada em duas partes:
+
+1. Um inteiro de tamanho variável (LEB128) que indica o tamanho da string em bytes.
+2. Os bytes brutos da string.
+
+Por exemplo, uma string `foobar` será codificada usando *sete* bytes da seguinte forma:
+
+```text
+0x06, // comprimento LEB128 da string (6)
+0x66, // 'f'
+0x6f, // 'o'
+0x6f, // 'o'
+0x62, // 'b'
+0x61, // 'a'
+0x72, // 'r'
+```
+
+<div id="fixedstring">
+  ### FixedString
+</div>
+
+Diferentemente de `String`, `FixedString` tem comprimento fixo, definido no schema. Ela é codificada como uma sequência de bytes, preenchida com bytes zero à direita se o valor for menor que `N`.
+
+<Note>
+  Ao ler uma `FixedString`, os bytes zero à direita podem ser apenas preenchimento ou caracteres `\0` reais nos dados; no wire, não há como distingui-los. O próprio ClickHouse preserva todos os `N` bytes exatamente como estão.
+</Note>
+
+Uma `FixedString(3)` vazia contém apenas zeros de preenchimento:
+
+```text
+0x00, 0x00, 0x00
+```
+
+`FixedString(3)` não vazia contendo a string `hi`:
+
+```text
+0x68, // 'h'
+0x69, // 'i'
+0x00, // zero de preenchimento
+```
+
+`FixedString(3)` não vazio contendo a string `bar`:
+
+```text
+0x62, // 'b'
+0x61, // 'a'
+0x72, // 'r'
+```
+
+Não é necessário usar preenchimento no último exemplo, já que todos os *três* bytes são utilizados.
+
+<div id="date">
+  ### Date
+</div>
+
+Armazenado como `UInt16` (dois bytes), representando o número de dias transcorridos desde `1970-01-01`.
+
+Faixa de valores suportada: `[1970-01-01, 2149-06-06]`.
+
+Exemplos de valores subjacentes para `Date`:
+
+```sql
+SELECT CAST('2024-01-15', 'Date') AS d
+```
+
+```text
+0x19, 0x4D, // 19737 como UInt16 (little-endian) = 19737 dias desde 1970-01-01
+```
+
+<div id="date32">
+  ### Date32
+</div>
+
+Armazenado como `Int32` (quatro bytes), representando o número de dias ***antes ou depois*** de `1970-01-01`.
+
+Intervalo de valores suportado: `[1900-01-01, 2299-12-31]`.
+
+Exemplos de valores subjacentes para `Date32`:
+
+```sql
+SELECT CAST('2024-01-15', 'Date32') AS d
+```
+
+```text
+0x19, 0x4D, 0x00, 0x00, // 19737 como Int32 (little-endian) = 19737 dias desde 1970-01-01
+```
+
+Uma data anterior à época Unix:
+
+```sql
+SELECT CAST('1900-01-01', 'Date32') AS d
+```
+
+```text
+0x21, 0x9C, 0xFF, 0xFF, // -25567 como Int32 (little-endian) = 25567 dias antes de 1970-01-01
+```
+
+<div id="datetime">
+  ### DateTime
+</div>
+
+Armazenado como `UInt32` (quatro bytes), representando o número de segundos ***desde*** `1970-01-01 00:00:00 UTC`.
+
+Sintaxe:
+
+```text
+DateTime([timezone])
+```
+
+Por exemplo, `DateTime` ou `DateTime('UTC')`.
+
+<Note>
+  O valor binário é sempre um deslocamento em relação à epoch UTC. O fuso horário não altera a codificação. No entanto, o fuso horário **de fato** afeta como valores de string são interpretados na inserção: inserir `'2024-01-15 10:30:00'` em uma coluna `DateTime('America/New_York')` armazena um valor de epoch diferente de inserir a mesma string em uma coluna `DateTime('UTC')`, porque a string é interpretada como hora local no fuso horário da coluna. No wire, ambos são apenas segundos de epoch em `UInt32`.
+</Note>
+
+Intervalo de valores com suporte: `[1970-01-01 00:00:00, 2106-02-07 06:28:15]`.
+
+Exemplos de valores subjacentes para `DateTime`:
+
+```sql
+SELECT CAST('2024-01-15 10:30:00', 'DateTime(\'UTC\')') AS d
+```
+
+```text
+0x28, 0x09, 0xA5, 0x65, // 1705314600 como UInt32 (little-endian)
+```
+
+<div id="datetime64">
+  ### DateTime64
+</div>
+
+Armazenado como `Int64` (oito bytes), representando o número de **ticks** ***antes ou após*** `1970-01-01 00:00:00 UTC`. A resolução do tick é definida pelo parâmetro `precision`; veja a sintaxe abaixo:
+
+```text
+DateTime64(precision, [timezone])
+```
+
+Onde `precision` é um inteiro de `0` a `9`. Normalmente, usa-se apenas: `3` (milissegundos), `6` (microssegundos),
+`9` (nanossegundos).
+
+Exemplos de definições válidas de `DateTime64`: `DateTime64(0)`, `DateTime64(3)`, `DateTime64(6, 'UTC')` ou `DateTime64(9, 'Europe/Amsterdam')`.
+
+<Note>
+  Assim como em `DateTime`, o valor binário é sempre um deslocamento em relação à epoch UTC. O fuso horário afeta como valores textuais são interpretados na inserção (consulte a observação sobre [DateTime](#datetime)), mas a codificação em si é sempre em ticks `Int64` desde a epoch UTC.
+</Note>
+
+O valor `Int64` subjacente do tipo `DateTime64` pode ser interpretado como a quantidade das seguintes unidades antes ou depois da epoch UNIX:
+
+* `DateTime64(0)` - segundos.
+* `DateTime64(3)` - milissegundos.
+* `DateTime64(6)` - microssegundos.
+* `DateTime64(9)` - nanossegundos.
+
+Intervalo de valores suportados: `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`.
+
+Valores subjacentes de exemplo para `DateTime64`:
+
+* `DateTime64(3)`: o valor `1546300800000` representa `2019-01-01 00:00:00 UTC`.
+* `DateTime64(6)`: o valor `1705314600123456` representa `2024-01-15 10:30:00.123456 UTC`.
+* `DateTime64(9)`: o valor `1705314600123456789` representa `2024-01-15 10:30:00.123456789 UTC`.
+
+<Note>
+  A precisão do valor máximo é 8. Se for usada a precisão máxima de 9 dígitos (nanossegundos), o valor máximo suportado será 2262-04-11 23:47:16 UTC.
+</Note>
+
+<div id="time">
+  ### Time
+</div>
+
+Armazenado como `Int32`, representando um valor de hora em segundos. Valores negativos são válidos.
+
+Faixa de valores compatível: `[-999:59:59, 999:59:59]` (ou seja, `[-3599999, 3599999]` segundos).
+
+<Note>
+  No momento, a configuração `enable_time_time64_type` deve ser definida como `1` para usar `Time` ou `Time64`.
+</Note>
+
+Valores subjacentes de exemplo para `Time`:
+
+```sql
+SET enable_time_time64_type = 1;
+SELECT CAST('15:32:16', 'Time') AS t
+```
+
+```text
+0x80, 0xDA, 0x00, 0x00, // 55936 segundos = 15:32:16
+```
+
+<div id="time64">
+  ### Time64
+</div>
+
+Armazenado internamente como um `Decimal64` (que é armazenado como `Int64`), representa um valor de tempo com segundos fracionários e precisão configurável. Valores negativos são válidos.
+
+Sintaxe:
+
+```text
+Time64(precision)
+```
+
+Onde `precision` é um inteiro de `0` a `9`. Valores comuns: `3` (milissegundos), `6` (microssegundos), `9` (nanossegundos).
+
+Intervalo de valores com suporte: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
+
+<Note>
+  No momento, a configuração `enable_time_time64_type` deve ser definida como `1` para usar `Time` ou `Time64`.
+</Note>
+
+O valor `Int64` subjacente representa segundos fracionários escalados por `10^precision`.
+
+Exemplos de valores subjacentes para `Time64`:
+
+```sql
+SET enable_time_time64_type = 1;
+SELECT CAST('15:32:16.123456', 'Time64(6)') AS t
+```
+
+```text
+0x40, 0x82, 0x0D, 0x06,
+0x0D, 0x00, 0x00, 0x00, // 55936123456 como Int64
+// 55936123456 / 10^6 = 55936.123456 Seconds = 15:32:16.123456
+```
+
+<div id="interval-types">
+  ### Tipos de intervalo
+</div>
+
+Todos os tipos de intervalo são armazenados como `Int64` (oito bytes, little-endian). O valor representa a quantidade da respectiva unidade de tempo. Valores negativos são válidos.
+
+Os tipos de intervalo são: `IntervalNanosecond`, `IntervalMicrosecond`, `IntervalMillisecond`, `IntervalSecond`, `IntervalMinute`, `IntervalHour`, `IntervalDay`, `IntervalWeek`, `IntervalMonth`, `IntervalQuarter`, `IntervalYear`.
+
+<Note>
+  O nome do tipo de intervalo (por exemplo, `IntervalSecond` vs `IntervalDay`) determina a unidade do valor armazenado. A representação no wire é sempre a mesma.
+</Note>
+
+Exemplos de valores subjacentes:
+
+```sql
+SELECT INTERVAL 5 SECOND   AS a,
+     INTERVAL 10 DAY     AS b,
+     INTERVAL -7 DAY     AS c,
+     INTERVAL 3 YEAR     AS d,
+     INTERVAL 500 MICROSECOND AS e
+```
+
+```text
+// IntervalSecond: 5
+0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+// IntervalDay: 10
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+// IntervalDay: -7
+0xF9, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+// IntervalYear: 3
+0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+// IntervalMicrosecond: 500
+0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+```
+
+<div id="enum8-enum16">
+  ### Enum8, Enum16
+</div>
+
+É armazenado como um único byte (`Enum8` == `Int8`) ou dois bytes (`Enum16` == `Int16`), representando o índice do valor do enum na definição do enum. Observe que o tipo de armazenamento é **com sinal** — os valores do enum podem ser negativos (por exemplo, `Enum8('a' = -128, 'b' = 0)`).
+
+Um Enum pode ser definido de forma simples, assim:
+
+```sql
+SELECT 1 :: Enum8('hello' = 1, 'world' = 2) AS e;
+```
+
+```text
+   ┌─e─────┐
+1. │ hello │
+   └───────┘
+```
+
+O Enum8 definido acima terá o seguinte mapeamento de valores no cliente:
+
+```text
+Map<Int8, String> {
+  1: 'hello',
+  2: 'world'
+}
+```
+
+Ou, de forma mais complexa, assim:
+
+```sql
+SELECT 42 :: Enum16('f\'' = 1, 'x =' = 2, 'b\'\'' = 3, '\'c=4=' = 42, '4' = 1234) AS e;
+```
+
+```text
+   ┌─e─────┐
+1. │ 'c=4= │
+   └───────┘
+```
+
+O Enum16 definido acima terá os seguintes valores mapeados no cliente:
+
+```text
+Map<Int16, String> {
+  1:    'f\'',
+  2:    'x =',
+  3:    'b\'',
+  42:   '\'c=4=',
+  1234: '4'
+}
+```
+
+Para o parser de tipo de dados, o principal desafio é acompanhar caracteres escapados na definição de `enum`, como `\'`, e símbolos especiais, como `=`, que podem aparecer dentro de strings entre aspas.
+
+<div id="uuid">
+  ### UUID
+</div>
+
+Representado como uma sequência de 16 bytes. O UUID é armazenado como **dois valores `UInt64` little-endian**: os primeiros 8 bytes da representação padrão do UUID têm a ordem dos bytes invertida, e os 8 bytes seguintes são invertidos de forma independente.
+
+Por exemplo, dado o UUID `61f0c404-5cb3-11e7-907b-a6006ad3dba0`:
+
+* Representação padrão em bytes: `61 f0 c4 04 5c b3 11 e7` | `90 7b a6 00 6a d3 db a0`
+* Primeira metade invertida (LE UInt64): `e7 11 b3 5c 04 c4 f0 61`
+* Segunda metade invertida (LE UInt64): `a0 db d3 6a 00 a6 7b 90`
+
+Valores subjacentes de exemplo para `UUID`:
+
+* `61f0c404-5cb3-11e7-907b-a6006ad3dba0` é representado como:
+
+```text
+0xE7, 0x11, 0xB3, 0x5C, 0x04, 0xC4, 0xF0, 0x61,
+0xA0, 0xDB, 0xD3, 0x6A, 0x00, 0xA6, 0x7B, 0x90,
+```
+
+* O UUID padrão `00000000-0000-0000-0000-000000000000` é representado como 16 bytes zerados:
+
+```text
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+```
+
+Isso pode ser usado quando um novo registro foi inserido, mas o UUID não foi especificado.
+
+<div id="ipv4">
+  ### IPv4
+</div>
+
+Armazenado em quatro bytes como `UInt32`, na ordem de bytes **little-endian**. Observe que isso difere da ordem de bytes de rede tradicional (big-endian), comumente usada para endereços IP. Exemplos de valores subjacentes para `IPv4`:
+
+```sql
+SELECT    
+  CAST('0.0.0.0',         'IPv4') AS a,
+  CAST('127.0.0.1',       'IPv4') AS b,
+  CAST('192.168.0.1',     'IPv4') AS c,
+  CAST('255.255.255.255', 'IPv4') AS d,
+  CAST('168.212.226.204', 'IPv4') AS e
+```
+
+```text
+0x00, 0x00, 0x00, 0x00, // 0.0.0.0
+0x01, 0x00, 0x00, 0x7f, // 127.0.0.1
+0x01, 0x00, 0xa8, 0xc0, // 192.168.0.1
+0xff, 0xff, 0xff, 0xff, // 255.255.255.255
+0xcc, 0xe2, 0xd4, 0xa8, // 168.212.226.204
+```
+
+<div id="ipv6">
+  ### IPv6
+</div>
+
+Armazenado em 16 bytes em **ordem de bytes big-endian / ordem de bytes de rede** (MSB primeiro). Exemplos de valores subjacentes para `IPv6`:
+
+```sql
+SELECT
+    CAST('2a02:aa08:e000:3100::2',        'IPv6') AS a,
+    CAST('2001:44c8:129:2632:33:0:252:2', 'IPv6') AS b,
+    CAST('2a02:e980:1e::1',               'IPv6') AS c
+```
+
+```text
+// 2a02:aa08:e000:3100::2
+0x2A, 0x02, 0xAA, 0x08, 0xE0, 0x00, 0x31, 0x00, 
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+// 2001:44c8:129:2632:33:0:252:2
+0x20, 0x01, 0x44, 0xC8, 0x01, 0x29, 0x26, 0x32, 
+0x00, 0x33, 0x00, 0x00, 0x02, 0x52, 0x00, 0x02,
+// 2a02:e980:1e::1
+0x2A, 0x02, 0xE9, 0x80, 0x00, 0x1E, 0x00, 0x00, 
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+```
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+Um tipo de dado Nullable é codificado da seguinte forma:
+
+1. Um único byte que indica se o valor é `NULL` ou não:
+   * `0x00` significa que o valor não é `NULL`.
+   * `0x01` significa que o valor é `NULL`.
+2. Se o valor não for `NULL`, o tipo de dado subjacente será codificado normalmente. Se o valor for `NULL`, **nenhum byte adicional** será gravado para o tipo subjacente.
+
+Por exemplo, um valor `Nullable(UInt32)`:
+
+```sql
+SELECT    
+   CAST(42,   'Nullable(UInt32)') AS a,
+   CAST(NULL, 'Nullable(UInt32)') AS b
+```
+
+```text
+0x00,                   // Não é NULL - o valor vem a seguir
+0x2A, 0x00, 0x00, 0x00, // UInt32(42)
+0x01,                   // NULL - nada vem a seguir
+```
+
+<div id="lowcardinality">
+  ### LowCardinality
+</div>
+
+No formato RowBinary, o marcador de baixa cardinalidade não afeta o wire format. Por exemplo, um `LowCardinality(String)` é codificado da mesma forma que um `String` regular.
+
+<Warning>
+  Isso se aplica apenas ao RowBinary. No formato Native, `LowCardinality` usa uma codificação diferente, baseada em dicionário.
+</Warning>
+
+<Note>
+  Uma coluna pode ser definida como `LowCardinality(Nullable(T))`, mas não é possível defini-la como `Nullable(LowCardinality(T))` — isso sempre resultará em um erro do servidor.
+</Note>
+
+Em testes, [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/pt-BR/reference/settings/session-settings#allow_suspicious_low_cardinality_types) pode ser definido como `1` para permitir a maioria dos tipos de dados em `LowCardinality`, para uma cobertura melhor.
+
+<div id="array">
+  ### Array
+</div>
+
+Um array é codificado da seguinte maneira:
+
+1. Um [inteiro de tamanho variável (LEB128)](#unsigned-leb128) que indica o número de elementos no array.
+2. Os elementos do array, codificados da mesma forma que o tipo de dado subjacente.
+
+Por exemplo, um array com valores `UInt32`:
+
+```sql
+SELECT CAST(array(1, 2, 3), 'Array(UInt32)') AS arr
+```
+
+```text
+0x03,                   // LEB128 - o array tem 3 elementos
+0x01, 0x00, 0x00, 0x00, // UInt32(1)
+0x02, 0x00, 0x00, 0x00, // UInt32(2)
+0x03, 0x00, 0x00, 0x00, // UInt32(3)
+```
+
+Um exemplo um pouco mais complexo:
+
+```sql
+SELECT array('foobar', 'qaz') AS arr
+```
+
+```text
+0x02,             // LEB128 - o array tem 2 elementos
+0x06,             // LEB128 - a primeira string tem 6 bytes
+0x66, 0x6f, 0x6f, 
+0x62, 0x61, 0x72, // 'foobar'
+0x03,             // LEB128 - a segunda string tem 3 bytes
+0x71, 0x61, 0x7a, // 'qaz'
+```
+
+<Note>
+  Um array pode conter valores Nullable, mas o próprio array não pode ser Nullable.
+</Note>
+
+O seguinte é válido:
+
+```sql
+SELECT CAST([NULL, 'foo'], 'Array(Nullable(String))') AS arr;
+```
+
+```text
+   ┌─arr──────────┐
+1. │ [NULL,'foo'] │
+   └──────────────┘
+```
+
+E será codificado da seguinte forma:
+
+```text
+0x02,             // LEB128  - o array tem 2 elementos
+0x01,             // É NULL - nada se segue para este elemento
+0x00,             // NÃO É NULL - os dados se seguem
+0x03,             // LEB128  - a string tem 3 bytes
+0x66, 0x6f, 0x6f, // 'foo'
+```
+
+Um exemplo de como lidar com arrays multidimensionais pode ser visto na [seção Geo](#geo-types).
+
+<div id="tuple">
+  ### Tuple
+</div>
+
+Uma tupla é codificada com todos os seus elementos em sequência, cada um no respectivo wire format, sem metainformações nem delimitadores adicionais.
+
+```sql
+CREATE OR REPLACE TABLE foo
+(
+    `t` Tuple(
+           UInt32,
+           String,
+           Array(UInt8)
+        )
+)
+ENGINE = Memory;
+INSERT INTO foo VALUES ((42, 'foo', array(99, 144)));
+```
+
+```text
+0x2a, 0x00, 0x00, 0x00, // 42 como UInt32
+0x03,                   // LEB128 - a string tem 3 bytes
+0x66, 0x6f, 0x6f,       // 'foo'
+0x02,                   // LEB128 - o array tem 2 elementos
+0x63,                   // 99 como UInt8
+0x90,                   // 144 como UInt8
+```
+
+A codificação em string do tipo de dado Tuple apresenta desafios semelhantes aos do [tipo Enum](#enum8-enum16), como acompanhar os símbolos escapados e os caracteres especiais; agora, com Tuple, também é necessário acompanhar os parênteses de abertura e de fechamento. Além disso, observe que os Tuples mais complexos podem conter outros Tuples aninhados, Arrays, maps e até enums.
+
+Por exemplo, na tabela a seguir, o Tuple contém um enum com uma crase e um parêntese no nome, o que pode causar problemas de parsing se não for tratado corretamente:
+
+```sql
+CREATE OR REPLACE TABLE foo
+(
+   `t` Tuple(
+          Enum8('f\'()' = 0),
+          Array(Nullable(Tuple(UInt32, String)))
+       )
+) ENGINE = Memory;
+```
+
+<div id="map">
+  ### Map
+</div>
+
+Um `map` pode ser visto como um `Array(Tuple(K, V))`, em que `K` é o tipo da chave e `V` é o tipo do valor. O `map` é codificado da seguinte forma:
+
+1. Um [inteiro de tamanho variável (LEB128)](#unsigned-leb128) que indica o número de elementos no `map`.
+2. Os elementos do `map` como pares chave-valor, codificados de acordo com seus tipos correspondentes.
+
+Por exemplo, um `map` com chaves `String` e valores `UInt32`:
+
+```sql
+SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
+```
+
+```text
+0x02,                   // LEB128 - o map tem 2 elementos
+0x03,                   // LEB128 - a primeira chave tem 3 bytes
+0x66, 0x6f, 0x6f,       // 'foo'
+0x01, 0x00, 0x00, 0x00, // UInt32(1)
+0x03,                   // LEB128 - a segunda chave tem 3 bytes
+0x62, 0x61, 0x72,       // 'bar'
+0x02, 0x00, 0x00, 0x00, // UInt32(2)
+```
+
+<Note>
+  É possível ter maps com estruturas profundamente aninhadas, como `Map(String, Map(Int32, Array(Nullable(String))))`, que serão codificados de forma semelhante à descrita acima.
+</Note>
+
+<div id="variant">
+  ### Variant
+</div>
+
+Esse tipo representa uma união de outros tipos de dados. O tipo `Variant(T1, T2, ..., TN)` significa que cada linha desse tipo tem um valor do tipo `T1`, `T2`, …, `TN` ou nenhum deles (valor `NULL`).
+
+<Warning>
+  Embora, para o usuário final, `Variant(T1, T2)` signifique exatamente a mesma coisa que `Variant(T2, T1)`, a ordem dos tipos na definição importa para o wire format: os tipos na definição são sempre ordenados em ordem alfabética, e isso é importante, pois a variante exata é codificada por um &quot;discriminante&quot; — o índice do tipo de dado na definição.
+</Warning>
+
+Considere o exemplo a seguir:
+
+```sql
+SET allow_experimental_variant_type = 1,
+    allow_suspicious_variant_types = 1;
+CREATE OR REPLACE TABLE foo
+(
+  -- A ordem dos tipos na entrada do usuário não importa;
+  -- os tipos são sempre ordenados alfabeticamente no wire format.
+  `var` Variant(
+           Array(Int16),
+           Bool,
+           Date,
+           FixedString(6),
+           Float32, Float64,
+           Int128, Int16, Int32, Int64, Int8,
+           String,
+           UInt128, UInt16, UInt32, UInt64, UInt8
+       )
+)
+ENGINE = MergeTree
+ORDER BY ();
+INSERT INTO foo VALUES (true), ('foobar' :: FixedString(6)), (100.5 :: Float64), (100 :: Int128), ([1, 2, 3] :: Array(Int16));
+SELECT * FROM foo FORMAT RowBinary;
+```
+
+```text
+0x01,                               // índice de tipo -> Bool
+ 0x01,                               // true
+ 0x03,                               // índice de tipo -> FixedString(6)
+ 0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
+ 0x05,                               // índice de tipo -> Float64
+ 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x20, 0x59, 0x40,             // 100.5 como Float64
+ 0x06,                               // índice de tipo -> Int128
+ 0x64, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00,             // 100 como Int128
+ 0x00,                               // índice de tipo -> Array(Int16)
+ 0x03,                               // LEB128 - o array tem 3 elementos
+ 0x01, 0x00,                         // 1 como Int16
+ 0x02, 0x00,                         // 2 como Int16
+ 0x03, 0x00,                         // 3 como Int16
+```
+
+Um valor `NULL` é codificado com um byte discriminador de `0xFF`:
+
+```sql
+SELECT NULL :: Variant(UInt32, String)
+```
+
+```text
+0xFF, // discriminante = NULL
+```
+
+A configuração [allow&#95;suspicious&#95;variant&#95;types](/pt-BR/reference/settings/session-settings#allow_suspicious_variant_types) pode ser usada para permitir testes mais abrangentes do tipo `Variant`.
+
+<div id="dynamic">
+  ### Dynamic
+</div>
+
+O tipo `Dynamic` pode armazenar valores de qualquer tipo, determinados em tempo de execução. No formato RowBinary, cada valor é autodescritivo: a primeira parte é a especificação do tipo em [neste formato](/pt-BR/reference/data-types/data-types-binary-encoding). Em seguida, vem o conteúdo, com a codificação do valor conforme descrita neste documento. Portanto, para analisar um valor, basta usar o índice do tipo para determinar o parser correto e, em seguida, reutilizar a lógica de parsing do RowBinary que você já usa em outro lugar.
+
+```text
+[BinaryTypeIndex][type-specific parameters...][value]
+```
+
+Em que `BinaryTypeIndex` é um único byte que identifica o tipo. Veja a referência [aqui](/pt-BR/reference/data-types/data-types-binary-encoding) para os índices de tipo e os parâmetros.
+
+Um valor Dynamic `NULL` é codificado com `BinaryTypeIndex` `0x00` (o tipo `Nothing`), sem bytes adicionais:
+
+```sql
+SELECT NULL::Dynamic
+```
+
+```text
+00                        # BinaryTypeIndex: Nothing (0x00), representa NULL
+```
+
+**Exemplos:**
+
+```sql
+SELECT 42::Dynamic
+```
+
+```text
+0a                        # BinaryTypeIndex: Int64 (0x0A)
+2a 00 00 00 00 00 00 00   # valor Int64: 42
+```
+
+```sql
+SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
+```
+
+```text
+14                        # BinaryTypeIndex: DateTime64WithTimezone (0x14)
+03                        # UInt8: precisão
+10                        # VarUInt: comprimento do nome do timezone
+41 6d 65 72 69 63 61 2f   # "America/"
+4e 65 77 5f 59 6f 72 6b   # "New_York"
+c0 6c be 0d 8d 01 00 00   # Int64: timestamps
+```
+
+<div id="json">
+  ### JSON
+</div>
+
+O tipo JSON codifica dados em duas categorias distintas:
+
+1. **Caminhos tipados** - Caminhos declarados com tipos explícitos no esquema (por exemplo, `JSON(user_id UInt32, name String)`)
+2. **Caminhos dinâmicos/caminhos de overflow quando o limite de caminhos dinâmicos é ultrapassado** - Caminhos descobertos em tempo de execução armazenados como tipo `Dynamic`. A codificação do valor é precedida pela definição do tipo.
+
+O formato de transmissão e as regras são diferentes para essas duas categorias.
+
+| Categoria do caminho           | Incluído na serialização   | Codificação do valor               | Variant/Nullable permitidos |
+| ------------------------------ | -------------------------- | ---------------------------------- | --------------------------- |
+| **Caminhos com tipo definido** | Sempre (mesmo quando NULL) | Formato binário específico do tipo | Sim                         |
+| **Caminhos dinâmicos**         | Apenas se não for NULL     | Dinâmico                           | Não                         |
+
+Os caminhos são serializados em três grupos, escritos sequencialmente: caminhos tipados, caminhos dinâmicos e, por fim, caminhos de shared data (overflow). Os caminhos tipados e dinâmicos são escritos em uma ordem definida pela implementação (determinada pela iteração interna do hash map), enquanto os caminhos de shared data são escritos em ordem alfabética. Os leitores não devem depender de nenhuma ordenação específica de caminhos. O desserializador despacha cada caminho pelo nome, não pela posição.
+
+Cada linha JSON no formato RowBinary é serializada como:
+
+```text
+[VarUInt: number_of_paths]
+[String: path_1][value_1]
+[String: path_2][value_2]
+...
+```
+
+**Exemplos:**
+
+**1. JSON simples apenas com paths tipados:**
+
+Schema: `JSON(user_id UInt32, active Bool)`
+
+Linha: `{"user_id": 42, "active": true}`
+
+Codificação binária (hex com anotações):
+
+```text
+02                              # VarUInt: 2 caminhos no total
+
+# Caminho tipado "active"
+06 61 63 74 69 76 65            # String: "active" (comprimento 6 + bytes)
+01                              # Bool/UInt8 valor: true (1)
+
+# Caminho tipado "user_id"
+07 75 73 65 72 5F 69 64         # String: "user_id" (comprimento 7 + bytes)
+2A 00 00 00                     # UInt32 valor: 42 (little-endian)
+```
+
+**2. JSON simples com caminhos tipados e dinâmicos:**
+
+Schema: `JSON(user_id UInt32, active Bool)`
+
+Linha: `{"user_id": 42, "active": true, "name": "Alice"}`
+
+Codificação binária (hex com anotações):
+
+```text
+03                              # VarUInt: 3 caminhos no total
+
+# Caminho tipado "active"
+06 61 63 74 69 76 65            # String: "active" (comprimento 6 + bytes)
+01                              # Valor Bool/UInt8: true (1)
+
+# Caminho dinâmico "name"
+04 6E 61 6D 65                  # String: "name" (comprimento 4 + bytes)
+15                              # BinaryTypeIndex: String (0x15)
+05 41 6C 69 63 65               # Valor String: "Alice" (comprimento 5 + bytes)
+
+# Caminho tipado "user_id"
+07 75 73 65 72 5F 69 64         # String: "user_id" (comprimento 7 + bytes)
+2A 00 00 00                     # Valor UInt32: 42 (little-endian)
+```
+
+**3. Tratamento de valores NULL:**
+
+Com uma coluna Nullable tipada, você obtém null:
+
+Schema: `JSON(score Nullable(Int32))`
+
+Linha: `{"score": null }`
+
+Codificação binária (hex com anotações):
+
+```text
+01                              # VarUInt: 1 caminho no total
+
+# Caminho tipado "score" (Nullable)
+05 73 63 6f 72 65               # String: "score" (length 5 + bytes)
+01                              # Flag Nullable: 1 (é NULL, nenhum valor a seguir)
+```
+
+Com uma coluna tipada não anulável, você obtém o valor padrão:
+
+Schema: `JSON(name String)`
+
+Linha: `{"name": null}`
+
+Codificação binária:
+
+```text
+01                              # VarUInt: 1 path (os paths NULL dinâmicos são ignorados!)
+
+04 6e 61 6d 65  # "name"
+00              # Comprimento da String 0 (string vazia)
+```
+
+Com um path dinâmico, ele é ignorado:
+
+Schema: `JSON(id UInt64)`
+
+Linha: `{"id": 100, "metadata": null}`
+
+Codificação binária:
+
+```text
+01                              # VarUInt: 1 caminho (caminhos NULL dinâmicos são ignorados!)
+
+# Caminho tipado "id"
+02 69 64                        # String: "id" (comprimento 2 + bytes)
+64 00 00 00 00 00 00 00         # UInt64 valor: 100 (little-endian)
+```
+
+Nota: O caminho `metadata` com valor NULL **não é incluído** porque caminhos dinâmicos são serializados apenas quando não são nulos. Esta é uma diferença fundamental em relação aos caminhos tipados.
+
+**4. Objetos JSON aninhados:**
+
+Esquema: `JSON()`
+
+Linha: `{"user": {"name": "Bob", "age": 30}}`
+
+Codificação binária (hex com anotações):
+
+```text
+02                              # VarUInt: 2 caminhos (objetos aninhados são achatados)
+
+# Caminho dinâmico "user.age"
+08 75 73 65 72 2E 61 67 65      # String: "user.age" (comprimento 8 + bytes)
+0A                              # BinaryTypeIndex: Int64 (0x0A)
+1E 00 00 00 00 00 00 00         # Valor Int64: 30 (little-endian)
+
+# Caminho dinâmico "user.name"
+09 75 73 65 72 2E 6E 61 6D 65   # String: "user.name" (comprimento 9 + bytes)
+15                              # BinaryTypeIndex: String (0x15)
+03 42 6F 62                     # Valor String: "Bob" (comprimento 3 + bytes)
+
+```
+
+Observação: objetos aninhados são achatados em caminhos separados por ponto (por exemplo, `user.name` em vez de uma estrutura aninhada).
+
+**Alternativa: JSON no modo String**
+
+Com a configuração `output_format_binary_write_json_as_string=1`, colunas JSON são serializadas como uma única string de texto JSON, em vez do formato binário estruturado. Há uma configuração correspondente para gravar em colunas JSON, `input_format_binary_read_json_as_string`. A escolha da configuração aqui depende de onde você quer fazer o parse do JSON: no cliente ou no servidor.
+
+<div id="geo-types">
+  ### Tipos Geo
+</div>
+
+Geo é uma categoria de tipos de dados que representam dados geográficos. Ela inclui:
+
+* `Point` - na forma de `Tuple(Float64, Float64)`.
+* `Ring` - na forma de `Array(Point)` ou `Array(Tuple(Float64, Float64))`.
+* `Polygon` - na forma de `Array(Ring)` ou `Array(Array(Tuple(Float64, Float64)))`.
+* `MultiPolygon` - na forma de `Array(Polygon)` ou `Array(Array(Array(Tuple(Float64, Float64))))`.
+* `LineString` - na forma de `Array(Point)` ou `Array(Tuple(Float64, Float64))`.
+* `MultiLineString` - na forma de `Array(LineString)` ou `Array(Array(Tuple(Float64, Float64)))`.
+
+O wire format dos valores Geo é exatamente o mesmo de Tuple e Array. Os headers do formato `RowBinaryWithNamesAndTypes` conterão os aliases desses tipos, por exemplo, `Point`, `Ring`, `Polygon`, `MultiPolygon`, `LineString` e `MultiLineString`.
+
+```sql
+SELECT    (1.0, 2.0)                                       :: Point           AS point,
+    [(3.0, 4.0), (5.0, 6.0)]                         :: Ring            AS ring,
+    [[(7.0, 8.0), (9.0, 10.0)], [(11.0, 12.0)]]      :: Polygon         AS polygon,
+    [[[(13.0, 14.0), (15.0, 16.0)], [(17.0, 18.0)]]] :: MultiPolygon    AS multi_polygon,
+    [(19.0, 20.0), (21.0, 22.0)]                     :: LineString      AS line_string,
+    [[(23.0, 24.0), (25.0, 26.0)], [(27.0, 28.0)]]   :: MultiLineString AS multi_line_string
+```
+
+```text
+// Point - ou Tuple(Float64, Float64)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y
+// Ring - ou Array(Tuple(Float64, Float64))
+0x02, // LEB128 - o array "ring" tem 2 pontos
+   // Ring - Ponto #1
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, 
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, 
+   // Ring - Ponto #2
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40, 
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, 
+// Polygon - ou Array(Array(Tuple(Float64, Float64)))
+0x02, // LEB128 - o array "polygon" tem 2 rings
+   0x02, // LEB128 - o primeiro ring tem 2 pontos
+      // Polygon - Ring #1 - Ponto #1
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40,
+      // Polygon - Ring #1 - Ponto #2
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24, 0x40, 
+  0x01, // LEB128 - o segundo ring tem 1 ponto
+      // Polygon - Ring #2 - Ponto #1 (o único)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x40, 
+// MultiPolygon - ou Array(Array(Array(Tuple(Float64, Float64))))
+0x01, // LEB128 - o array "multi_polygon" tem 1 polygon
+   0x02, // LEB128 - o primeiro polygon tem 2 rings
+      0x02, // LEB128 - o primeiro ring tem 2 pontos
+         // MultiPolygon - Polygon #1 - Ring #1 - Ponto #1
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x40, 
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x40,
+         // MultiPolygon - Polygon #1 - Ring #1 - Ponto #2
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2E, 0x40, 
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 
+      0x01, // LEB128 - o segundo ring tem 1 ponto
+        // MultiPolygon - Polygon #1 - Ring #2 - Ponto #1 (o único)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x40, 
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0x40, 
+ // LineString - ou Array(Tuple(Float64, Float64))
+ 0x02, // LEB128 - a line string tem 2 pontos
+    // LineString - Ponto #1
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33, 0x40, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34, 0x40,
+    // LineString - Ponto #2
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x40, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x40, 
+ // MultiLineString - ou Array(Array(Tuple(Float64, Float64)))
+ 0x02, // LEB128 - a multi line string tem 2 line strings
+   0x02, // LEB128 - a primeira line string tem 2 pontos
+     // MultiLineString - LineString #1 - Ponto #1
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x37, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x40, 
+     // MultiLineString - LineString #1 - Ponto #2
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3A, 0x40, 
+   0x01, // LEB128 - a segunda line string tem 1 ponto
+     // MultiLineString - LineString #2 - Ponto #1 (o único)
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3B, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
+```
+
+<div id="geometry">
+  ### Geometry
+</div>
+
+`Geometry` é um tipo `Variant` que pode conter qualquer um dos tipos Geo listados acima. No wire format, ele é codificado exatamente como um `Variant`, com um byte discriminante indicando qual tipo geo vem em seguida.
+
+Os índices discriminantes de Geometry são:
+
+| Índice | Tipo            |
+| ------ | --------------- |
+| 0      | LineString      |
+| 1      | MultiLineString |
+| 2      | MultiPolygon    |
+| 3      | Point           |
+| 4      | Polygon         |
+| 5      | Ring            |
+
+Estrutura do wire format:
+
+```text
+// 1 byte discriminant (0-5)
+// seguido pelos dados do tipo geo correspondente
+```
+
+Exemplo de codificação de um `Point` como `Geometry`:
+
+```sql
+SELECT ((1.0, 2.0)::Point)::Geometry
+```
+
+```text
+0x03,                                           // discriminant = 3 (Point)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 como Float64
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 como Float64
+```
+
+Codificação de exemplo de um `Ring` como `Geometry`:
+
+```text
+0x05,       // discriminante = 5 (Ring)
+0x02,       // LEB128 - array tem 2 pontos
+// Ponto #1
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, // X = 3.0
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, // Y = 4.0
+// Ponto #2
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40, // X = 5.0
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
+```
+
+<div id="nested">
+  ### Nested
+</div>
+
+O wire format de `Nested` depende da configuração `flatten_nested`.
+
+<Warning>
+  Todos os arrays em uma única linha **devem ter o mesmo tamanho**. Essa é uma restrição imposta pelo servidor. Tamanhos diferentes causarão erros de inserção.
+</Warning>
+
+<div id="nested-flattened">
+  #### `flatten_nested = 1` (padrão)
+</div>
+
+Com a configuração padrão, `Nested` é transformado em arrays independentes. Cada subcoluna se torna uma coluna `Array` separada, com um nome separado por pontos:
+
+```sql
+CREATE OR REPLACE TABLE foo
+(
+    n Nested(a String, b Int32)
+) ENGINE = MergeTree ORDER BY ();
+-- flatten_nested=1 é o padrão
+INSERT INTO foo VALUES (['foo', 'bar'], [42, 144]);
+```
+
+`DESCRIBE TABLE foo` mostra as colunas desaninhadas:
+
+```text
+   ┌─name─┬─type──────────┐
+1. │ n.a  │ Array(String) │
+2. │ n.b  │ Array(Int32)  │
+   └──────┴───────────────┘
+```
+
+Cada array é serializado individualmente, conforme descrito na seção [Array](#array):
+
+```text
+0x02,                   // LEB128 - 2 elementos String no primeiro array (n.a)
+ 0x03,                   // LEB128 - a primeira string tem 3 bytes
+ 0x66, 0x6F, 0x6F,       // 'foo'
+ 0x03,                   // LEB128 - a segunda string tem 3 bytes
+ 0x62, 0x61, 0x72,       // 'bar'
+0x02,                   // LEB128 - 2 elementos Int32 no segundo array (n.b)
+ 0x2A, 0x00, 0x00, 0x00, // 42 como Int32
+ 0x90, 0x00, 0x00, 0x00, // 144 como Int32
+```
+
+<div id="nested-unflattened">
+  #### `flatten_nested = 0`
+</div>
+
+Com `flatten_nested = 0`, `Nested` é mantido como uma única coluna do tipo `Array(Tuple(...))`. O nome da coluna não é separado por pontos:
+
+```sql
+SET flatten_nested = 0;
+CREATE OR REPLACE TABLE foo
+(
+    n Nested(a String, b Int32)
+) ENGINE = MergeTree ORDER BY ();
+INSERT INTO foo VALUES ([('foo', 42), ('bar', 144)]);
+```
+
+`DESCRIBE TABLE foo` exibe uma única coluna:
+
+```text
+   ┌─name─┬─type───────────────────────┐
+1. │ n    │ Nested(a String, b Int32)  │
+   └──────┴────────────────────────────┘
+```
+
+A codificação é `Array(Tuple(String, Int32))`: um prefixo com o comprimento do Array, depois os campos da Tuple de cada elemento, em ordem:
+
+```text
+0x02,                   // LEB128 - 2 elementos no array
+ 0x03,                   // LEB128 - primeira tupla, field a: 3 bytes
+ 0x66, 0x6F, 0x6F,       // 'foo'
+ 0x2A, 0x00, 0x00, 0x00, // primeira tupla, field b: 42 como Int32
+ 0x03,                   // LEB128 - segunda tupla, field a: 3 bytes
+ 0x62, 0x61, 0x72,       // 'bar'
+ 0x90, 0x00, 0x00, 0x00, // segunda tupla, field b: 144 como Int32
+```
+
+Observe que os campos são intercalados por elemento (a₁, b₁, a₂, b₂), em vez de serem agrupados por coluna (a₁, a₂, b₁, b₂), como na representação plana.
+
+<div id="simpleaggregatefunction">
+  ### SimpleAggregateFunction
+</div>
+
+`SimpleAggregateFunction(func, T)` é codificado de forma idêntica ao seu tipo de dados subjacente `T`. O nome da função de agregação não afeta o formato de transmissão.
+
+Por exemplo, `SimpleAggregateFunction(max, UInt32)` é codificado da mesma forma que um `UInt32` simples:
+
+```sql
+CREATE TABLE test_saf
+(
+    key UInt32,
+    val SimpleAggregateFunction(max, UInt32)
+) ENGINE = AggregatingMergeTree ORDER BY key;
+
+INSERT INTO test_saf VALUES (1, 42);
+SELECT val FROM test_saf;
+```
+
+O cabeçalho RowBinaryWithNamesAndTypes informa o tipo como `SimpleAggregateFunction(max, UInt32)`, mas o valor efetivamente transmitido é apenas um `UInt32`:
+
+```text
+0x2A, 0x00, 0x00, 0x00, // 42 como UInt32
+```
+
+<div id="aggregatefunction">
+  ### AggregateFunction
+</div>
+
+`AggregateFunction(func, T)` armazena o estado intermediário completo de uma função de agregação. Diferentemente de `SimpleAggregateFunction`, que também armazena um estado intermediário, mas o codifica de forma idêntica ao tipo de dados subjacente, `AggregateFunction` armazena um blob binário opaco cujo formato é específico de cada função de agregação.
+
+<Warning>
+  Os estados de agregação **não têm prefixo de comprimento** em RowBinary. Um parser precisa entender o formato interno de serialização de cada função de agregação específica para saber quantos bytes consumir. Na prática, a maioria dos clientes trata os estados de agregação como opacos e usa os combinadores `*State` / `*Merge` para deixar que o servidor cuide da serialização.
+</Warning>
+
+O formato interno varia de acordo com a função. Alguns exemplos simples:
+
+**`countState`** — armazena a contagem como um VarUInt (LEB128):
+
+```sql
+SELECT countState(number) FROM numbers(5)
+```
+
+```text
+0x05, // VarUInt: 5
+```
+
+**`sumState`** — armazena a soma acumulada em um inteiro de tamanho fixo. A quantidade de bits depende do tipo do argumento (`UInt64` para argumentos inteiros):
+
+```sql
+SELECT sumState(toUInt32(number)) FROM numbers(5) -- soma = 0+1+2+3+4 = 10
+```
+
+```text
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10 como UInt64
+```
+
+**`minState` / `maxState`** — armazena um byte de sinalização, seguido do valor no tipo subjacente. O sinalizador é `0x00` para um estado vazio (nenhum valor encontrado) ou `0x01` quando há um valor:
+
+```sql
+SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
+```
+
+```text
+0x01,                   // flag: tem valor
+0x04, 0x00, 0x00, 0x00, // 4 como UInt32
+```
+
+Um estado vazio (sem linhas agregadas):
+
+```sql
+SELECT minState(toUInt32(number)) FROM numbers(0)
+```
+
+```text
+0x00, // flag: sem valor
+```
+
+<Note>
+  Funções mais complexas, como `uniq`, `quantile` ou `groupArray`, usam formatos específicos de implementação. Se você precisar ler ou gravar esses estados, consulte o código-fonte do ClickHouse da função em questão.
+</Note>
+
+<div id="qbit">
+  ### QBit
+</div>
+
+`QBit` é um tipo de vetor para consultas eficientes com diferentes níveis de precisão. Internamente, ele é armazenado em formato transposto. Na transmissão, QBit é simplesmente um `Array` do tipo de elemento subjacente (`Float32`, `Float64` ou `BFloat16`). A otimização de transposição de bits para armazenamento acontece no lado do servidor, não no protocolo RowBinary.
+
+Sintaxe:
+
+```text
+QBit(element_type, dimension)
+```
+
+Onde `element_type` é `Float32`, `Float64` ou `BFloat16`, e `dimension` é a dimensão fixa do vetor.
+
+wire format: idêntico a `Array(element_type)`:
+
+```text
+// comprimento LEB128
+// seguido de `length` elementos de `element_type`
+```
+
+Exemplo de codificação de `QBit(Float32, 4)` contendo `[1.0, 2.0, 3.0, 4.0]`:
+
+```sql
+SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
+```
+
+```text
+0x04,                   // LEB128 - array tem 4 elementos
+0x00, 0x00, 0x80, 0x3F, // 1.0 como Float32
+0x00, 0x00, 0x00, 0x40, // 2.0 como Float32
+0x00, 0x00, 0x40, 0x40, // 3.0 como Float32
+0x00, 0x00, 0x80, 0x40, // 4.0 como Float32
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+<RowBinaryFormatSettings />

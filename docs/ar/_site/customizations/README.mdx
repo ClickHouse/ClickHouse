@@ -1,0 +1,30 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # التخصيصات
+</div>
+
+نصوص برمجية مخصّصة لتخصيص مظهر موقع Mintlify وسلوكه.
+تُحمَّل عبر المصفوفة `scripts` في `docs.json` وتُشغَّل في كل صفحة.
+
+راجع وثائق Mintlify حول [النصوص البرمجية المخصّصة](https://www.mintlify.com/docs/customize/custom-scripts) لمزيد من المعلومات.
+
+<div id="scripts">
+  ## النصوص البرمجية
+</div>
+
+* `ask-ai-button.js` — يضبط تنسيق زر Ask-AI وسلوكه.
+* `cookie-banner.js` — يُدرج شريط الموافقة على ملفات تعريف الارتباط ويديره.
+* `custom-footer.js` — يعرض تذييل الموقع المخصّص (`#ch-custom-footer`).
+* `inkeep-init.js` — يستبدل البحث الأصلي في Mintlify (⌘K / شريط البحث في شريط التنقل) بنافذة البحث المنبثقة الخاصة بـ Inkeep. للبحث فقط؛ ويبقى AI Chat على Kapa.
+* `kapa-init.js` — يهيّئ أداة RAG الخاصة بـ Kapa.ai.
+* `navbar-cta.js` — يضيف زر الحث على اتخاذ إجراء &quot;البدء&quot; إلى شريط التنقل.
+* `clickhouse-sql-lexer-wasm.js` — يوفّر المحلّل المعجمي لـ SQL الخاص بـ ClickHouse (`src/Parsers/Lexer.cpp` المُصرَّف إلى WebAssembly) كمتغيّر عام بصيغة base64. نسخة مأخوذة من ClickHouse `programs/server/play.html`؛ أعد الاستخراج إذا تغيّر المحلّل المعجمي/قائمة الكلمات المفتاحية في المصدر الأصلي.
+* `clickhouse-sql-highlight.js` — يعيد تمييز كتل الشيفرة `language="sql"` باستخدام المحلّل المعجمي WASM (ألوان أصلية لـ ClickHouse، مطابقة لـ play.html / clickhouse-client) بدلًا من Shiki. يجب تحميله بعد `clickhouse-sql-lexer-wasm.js`. وتُترك اللغات الأخرى كما عرضها Shiki.
+* `quickstart-back-link.js` — في صفحات الدليل السريع، ينقل شارة &quot;جميع الأدلة السريعة&quot; المُولَّدة تلقائيًا من أعلى المحتوى إلى الترويسة فوق العنوان (موضع مسار التنقل).
+
+لربط نص برمجي جديد، أضف الإدخال
+`{ "src": "/_site/customizations/<name>.js" }`
+إلى مصفوفة `scripts` ذات المستوى الأعلى في `docs.json`.

@@ -1,0 +1,76 @@
+---
+description: 'يتيح الوصول إلى جميع الشظايا (المهيأة في قسم `remote_servers`) في
+  عنقود دون إنشاء جدول Distributed.'
+sidebarTitle: 'cluster'
+slug: /sql-reference/table-functions/cluster
+title: 'clusterAllReplicas'
+doc_type: 'reference'
+---
+
+يتيح الوصول إلى جميع الشظايا (المهيأة في قسم `remote_servers`) في عنقود دون إنشاء جدول [Distributed](/ar/reference/engines/table-engines/special/distributed). ولا يُستعلم إلا من نسخة متماثلة واحدة لكل شظية.
+
+الدالة `clusterAllReplicas` — مماثلة لـ `cluster`، ولكن يُستعلم من جميع النسخ المتماثلة. وتُستخدم كل نسخة متماثلة في العنقود كشظية/اتصال منفصل.
+
+<Note>
+  تُدرج جميع العناقيد المتاحة في جدول [system.clusters](/ar/reference/system-tables/clusters).
+</Note>
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| الوسائط                     | النوع                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`              | اسم العنقود المستخدم لإنشاء مجموعة من العناوين ومَعلمات الاتصال بالخوادم البعيدة والمحلية. تُستخدم القيمة `default` إذا لم يتم تحديده. |
+| `db.table` or `db`, `table` | اسم قاعدة بيانات وجدول.                                                                                                                |
+| `sharding_key`              | مفتاح التجزئة. اختياري. يجب تحديده إذا كان العنقود يحتوي على أكثر من شظية واحدة.                                                        |
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+مجموعة البيانات من العناقيد.
+
+<div id="using_macros">
+  ## استخدام وحدات الماكرو
+</div>
+
+يمكن أن يتضمن `cluster_name` وحدات ماكرو — أي إحلالًا داخل `{}`. وتُؤخذ القيمة المُحَلَّة من قسم [macros](/ar/reference/settings/server-settings/settings#macros) في ملف تهيئة الخادم.
+
+مثال:
+
+```sql
+SELECT * FROM cluster('{cluster}', default.example_table);
+```
+
+<div id="usage_recommendations">
+  ## الاستخدام والتوصيات
+</div>
+
+يُعد استخدام دوال الجداول `cluster` و`clusterAllReplicas` أقل كفاءة من إنشاء جدول `Distributed`، لأنه في هذه الحالة يُعاد إنشاء الاتصال بالخادم مع كل طلب. عند معالجة عدد كبير من الاستعلامات، يُرجى دائمًا إنشاء جدول `Distributed` مسبقًا، وعدم استخدام دوال الجداول `cluster` و`clusterAllReplicas`.
+
+قد تكون دوال الجداول `cluster` و`clusterAllReplicas` مفيدة في الحالات التالية:
+
+* الوصول إلى عنقود محدد لمقارنة البيانات، واستكشاف الأخطاء وإصلاحها، والاختبار.
+* إجراء استعلامات على عناقيد ClickHouse ونسخها المتماثلة المختلفة لأغراض البحث.
+* الطلبات الموزعة غير المتكررة التي تُنفَّذ يدويًا.
+
+تُؤخذ إعدادات الاتصال مثل `host` و`port` و`user` و`password` و`compression` و`secure` من قسم الإعدادات `<remote_servers>`. راجع التفاصيل في [محرك Distributed](/ar/reference/engines/table-engines/special/distributed).
+
+<div id="related">
+  ## موضوعات ذات صلة
+</div>
+
+* [skip&#95;unavailable&#95;shards](/ar/reference/settings/session-settings#skip_unavailable_shards)
+* [load&#95;balancing](/ar/reference/settings/session-settings#load_balancing)

@@ -22,8 +22,6 @@ namespace zkutil
 
 namespace DB
 {
-enum class InsertDeduplicationVersions : uint8_t;
-
 
 class StorageReplicatedMergeTree;
 struct BlockWithPartition;
@@ -90,7 +88,7 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<DeduplicationHash> detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes);
+    std::vector<DeduplicationHash> detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes);
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
@@ -111,7 +109,7 @@ protected:
     /// Returns total number of replicas.
     size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
-    size_t getQuorumSize() const;
+    size_t getQuorumSize(size_t total_replicas) const;
     bool isQuorumEnabled() const;
     String quorumLogMessage() const; /// Used in logs for debug purposes
     void resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::string actual_part_name);
@@ -132,15 +130,16 @@ protected:
     };
 
     QuorumInfo quorum_info;
-    /// std::nullopt means use majority quorum.
-    /// 0 or 1 means no quorum, larger than 1 means quorum size.
+    /// The configured quorum requirement (from the `insert_quorum` setting):
+    /// std::nullopt means majority quorum, 0 or 1 means no quorum, larger than 1 means a fixed quorum size.
     std::optional<size_t> required_quorum_size;
-    size_t quorum_replicas_num = 0;
+    /// The total number of replicas the table has, discovered at insert time in `checkQuorumPrecondition`.
+    /// Only the majority-quorum calculation in `getQuorumSize` needs it; it is 0 until then.
+    size_t total_replicas_count = 0;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
     UInt64 deduplication_cache_version = 0;
-    UInt64 deduplication_async_inserts_cache_version = 0;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;
@@ -156,7 +155,6 @@ protected:
     std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     bool is_async_insert = true;
-    InsertDeduplicationVersions insert_deduplication_version = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
 };
 
 }

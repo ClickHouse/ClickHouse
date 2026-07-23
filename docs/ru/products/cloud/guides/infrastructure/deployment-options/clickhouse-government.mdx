@@ -1,0 +1,62 @@
+---
+title: 'ClickHouse Government'
+slug: /cloud/infrastructure/clickhouse-government
+keywords: ['government', 'fips', 'fedramp', 'gov cloud']
+description: 'Обзор предложения ClickHouse Government'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="overview">
+  ## Обзор
+</div>
+
+ClickHouse Government — это пакет для самостоятельного развертывания, включающий ту же проприетарную версию ClickHouse, которая используется в ClickHouse Cloud, а также наш ClickHouse Operator, настроенный для разделения вычислительных ресурсов и хранилища и усиленный для соответствия строгим требованиям государственных учреждений и организаций государственного сектора.
+
+<Info>
+  **Примечание**
+
+  ClickHouse Government предназначен для государственных учреждений, организаций государственного сектора и облачных компаний-разработчиков ПО, продающих решения таким учреждениям и организациям, и обеспечивает полный контроль над выделенной инфраструктурой и ее управлением. Минимальный размер развертывания — 2 ТБ. Этот вариант доступен только по [запросу](https://clickhouse.com/government).
+</Info>
+
+<div id="benefits-over-os">
+  ## Преимущества по сравнению с версиями с открытым исходным кодом
+</div>
+
+Следующие возможности отличают ClickHouse Government от самоуправляемых развертываний с открытым исходным кодом:
+
+* Нативное разделение вычислительных ресурсов и хранилища
+* Проприетарные облачные возможности, такие как [shared merge tree](/ru/products/cloud/features/infrastructure/shared-merge-tree) и [хранилище](/ru/products/cloud/features/infrastructure/warehouses)
+* Версии ClickHouse и оператора, полностью протестированные и проверенные в ClickHouse Cloud
+* Документация по [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf), помогающая ускорить получение Authorization to Operate (ATO)
+* API для программного управления, включая резервное копирование и масштабирование
+
+<div id="architecture">
+  ## Архитектура
+</div>
+
+ClickHouse Government полностью разворачивается в вашей собственной среде, обеспечивая облачно-нативное разделение вычислительных ресурсов и хранилища.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="Архитектура ClickHouse Government" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## Поддерживаемые конфигурации
+</div>
+
+ClickHouse Government в настоящее время поддерживает следующие конфигурации:
+
+| Среда | Оркестрация                      | Хранилище                   | Статус                 |
+| :---- | :------------------------------- | :-------------------------- | :--------------------- |
+| AWS   | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Доступно               |
+| GCP   | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | Предварительная версия |
+
+<div id="onboarding-process">
+  ## Процесс онбординга
+</div>
+
+Клиенты могут [связаться с нами](https://clickhouse.com/company/contact?loc=nav), чтобы запросить звонок и обсудить, подходит ли ClickHouse Government для их сценария использования. Рассматриваются сценарии использования, соответствующие минимальным требованиям по масштабу и развертываемые в поддерживаемых конфигурациях. Онбординг доступен в ограниченном объеме. Процесс установки предполагает следование руководству по установке для конкретной среды, в которой будет развернут ClickHouse, с использованием образов и Helm-чартов, загруженных из AWS ECR.

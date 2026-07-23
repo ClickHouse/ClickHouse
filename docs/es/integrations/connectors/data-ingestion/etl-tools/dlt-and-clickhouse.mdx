@@ -1,0 +1,265 @@
+---
+sidebarTitle: 'dlt'
+keywords: ['ClickHouse', 'dlt', 'conectar', 'integrar', 'etl', 'integración de datos']
+description: 'Carga datos en ClickHouse con la integración de dlt'
+title: 'Conecta dlt con ClickHouse'
+slug: /integrations/data-ingestion/etl-tools/dlt-and-clickhouse
+doc_type: 'guide'
+---
+
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://dlthub.com/docs/intro" target="_blank">dlt</a> es una biblioteca de código abierto que puedes añadir a tus scripts de Python para cargar datos desde diversas fuentes de datos, a menudo desordenadas, en conjuntos de datos bien estructurados y actualizados en tiempo real.
+
+<div id="install-dlt-with-clickhouse">
+  ## Instalar dlt con ClickHouse
+</div>
+
+<div id="to-install-the-dlt-library-with-clickhouse-dependencies">
+  ### Para instalar la biblioteca `dlt` con las dependencias de ClickHouse:
+</div>
+
+```bash
+pip install "dlt[clickhouse]"
+```
+
+<div id="setup-guide">
+  ## Guía de configuración
+</div>
+
+<Steps>
+  <Step>
+    ### Inicializa el proyecto `dlt`
+
+    Empieza inicializando un nuevo proyecto `dlt` de la siguiente manera:
+
+    ```bash
+    dlt init chess clickhouse
+    ```
+
+    <Note>
+      Este comando inicializará tu pipeline con chess como origen y ClickHouse como destino.
+    </Note>
+
+    El comando anterior genera varios archivos y directorios, incluidos `.dlt/secrets.toml` y un archivo de requisitos para ClickHouse. Puedes instalar las dependencias necesarias especificadas en el archivo de requisitos ejecutando lo siguiente:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    o con `pip install dlt[clickhouse]`, que instala la biblioteca `dlt` y las dependencias necesarias para trabajar con ClickHouse como destino.
+  </Step>
+
+  <Step>
+    ### Configura la base de datos de ClickHouse
+
+    Para cargar datos en ClickHouse, necesitas crear una base de datos en ClickHouse. Aquí tienes un resumen general de lo que debes hacer:
+
+    1. Puedes usar una base de datos de ClickHouse existente o crear una nueva.
+
+    2. Para crear una base de datos nueva, conéctate a tu servidor ClickHouse con la herramienta de línea de comandos `clickhouse-client` o con el cliente SQL que prefieras.
+
+    3. Ejecuta los siguientes comandos SQL para crear una nueva base de datos, un usuario y conceder los permisos necesarios:
+
+    ```bash
+    CREATE DATABASE IF NOT EXISTS dlt;
+    CREATE USER dlt IDENTIFIED WITH sha256_password BY 'Dlt*12345789234567';
+    GRANT CREATE, ALTER, SELECT, DELETE, DROP, TRUNCATE, OPTIMIZE, SHOW, INSERT, dictGet ON dlt.* TO dlt;
+    GRANT SELECT ON INFORMATION_SCHEMA.COLUMNS TO dlt;
+    GRANT CREATE TEMPORARY TABLE, S3 ON *.* TO dlt;
+    ```
+  </Step>
+
+  <Step>
+    ### Agrega las credenciales
+
+    A continuación, configura las credenciales de ClickHouse en el archivo `.dlt/secrets.toml` como se muestra a continuación:
+
+    ```bash
+    [destination.clickhouse.credentials]
+    database = "dlt"                         # Nombre de la base de datos que creaste
+    username = "dlt"                         # Nombre de usuario de ClickHouse; el predeterminado suele ser "default"
+    password = "Dlt*12345789234567"          # Contraseña de ClickHouse, si corresponde
+    host = "localhost"                       # Host del servidor ClickHouse
+    port = 9000                              # Puerto de ClickHouse; el valor predeterminado es 9000
+    http_port = 8443                         # Puerto HTTP para conectarte a la interfaz HTTP del servidor ClickHouse. El valor predeterminado es 8443.
+    secure = 1                               # Establécelo en 1 si usas HTTPS; de lo contrario, 0.
+
+    [destination.clickhouse]
+    dataset_table_separator = "___"          # Separador para los nombres de tabla del conjunto de datos.
+    ```
+
+    <Info>
+      **HTTP&#95;PORT**
+
+      El parámetro `http_port` especifica el número de puerto que se debe usar al conectarse a la interfaz HTTP del servidor ClickHouse. Esto es diferente del puerto predeterminado 9000, que se usa para el protocolo TCP nativo.
+
+      Debes establecer `http_port` si no estás usando staging externo (es decir, no configuras el parámetro staging en tu pipeline). Esto se debe a que el staging integrado del almacenamiento local de ClickHouse usa la biblioteca <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse-connect</a>, que se comunica con ClickHouse a través de HTTP.
+
+      Asegúrate de que tu servidor ClickHouse esté configurado para aceptar conexiones HTTP en el puerto especificado por `http_port`. Por ejemplo, si estableces `http_port = 8443`, entonces ClickHouse debería estar escuchando solicitudes HTTP en el puerto 8443. Si estás usando staging externo, puedes omitir el parámetro `http_port`, ya que clickhouse-connect no se usará en este caso.
+    </Info>
+
+    Puedes pasar una cadena de conexión a la base de datos similar a la que usa la biblioteca `clickhouse-driver`. Las credenciales anteriores se verán así:
+
+    ```bash
+    # mantenlo en la parte superior de tu archivo toml, antes de que comience cualquier sección.
+    destination.clickhouse.credentials="clickhouse://dlt:Dlt*12345789234567@localhost:9000/dlt?secure=1"
+    ```
+  </Step>
+</Steps>
+
+<div id="write-disposition">
+  ## Disposición de escritura
+</div>
+
+Se admiten todas las [disposiciones de escritura](https://dlthub.com/docs/general-usage/incremental-loading#choosing-a-write-disposition)
+.
+
+Las disposiciones de escritura en la biblioteca dlt definen cómo deben escribirse los datos en el destino. Hay tres tipos de disposiciones de escritura:
+
+**Replace**: Esta disposición reemplaza los datos en el destino con los datos del recurso. Elimina todas las clases y objetos, y vuelve a crear el esquema antes de cargar los datos. Puede obtener más información <a href="https://dlthub.com/docs/general-usage/full-loading">aquí</a>.
+
+**Merge**: Esta disposición combina los datos del recurso con los datos del destino. Para la disposición `merge`, deberá especificar una `primary_key` para el recurso. Puede obtener más información <a href="https://dlthub.com/docs/general-usage/incremental-loading">aquí</a>.
+
+**Append**: Esta es la disposición predeterminada. Añade los datos a los datos existentes en el destino, ignorando el campo `primary_key`.
+
+<div id="data-loading">
+  ## Carga de datos
+</div>
+
+Los datos se cargan en ClickHouse con el método más eficiente según su origen:
+
+* Para los archivos locales, se utiliza la biblioteca `clickhouse-connect` para cargarlos directamente en tablas de ClickHouse mediante el comando `INSERT`.
+* Para los archivos en almacenamiento remoto como `S3`,` Google Cloud Storage` o `Azure Blob Storage`, se utilizan funciones de tabla de ClickHouse, como s3, gcs y azureBlobStorage, para leer los archivos e insertar los datos en las tablas.
+
+<div id="datasets">
+  ## Conjuntos de datos
+</div>
+
+`ClickHouse` no admite varios conjuntos de datos en una misma base de datos, mientras que `dlt` depende de ellos por varios motivos. Para que `ClickHouse` funcione con `dlt`, los nombres de las tablas generadas por `dlt` en tu base de datos `ClickHouse` llevarán el prefijo del nombre del conjunto de datos, separado por el `dataset_table_separator` configurable. Además, se creará una tabla centinela especial que no contendrá ningún dato, lo que permitirá a `dlt` reconocer qué conjuntos de datos virtuales ya existen en un destino de `ClickHouse`.
+
+<div id="supported-file-formats">
+  ## Formatos de archivo compatibles
+</div>
+
+* <a href="https://dlthub.com/docs/dlt-ecosystem/file-formats/jsonl">jsonl</a> es el formato preferido tanto para la carga directa como para el staging.
+* <a href="https://dlthub.com/docs/dlt-ecosystem/file-formats/parquet">parquet</a> es compatible tanto con la carga directa como con el staging.
+
+El destino `clickhouse` presenta algunas diferencias específicas con respecto a los destinos SQL predeterminados:
+
+1. `ClickHouse` tiene un tipo de dato `object` experimental, pero hemos comprobado que puede ser algo impredecible, por lo que el destino ClickHouse de dlt cargará el tipo de dato complejo en una columna de texto. Si necesita esta funcionalidad, póngase en contacto con nuestra comunidad de Slack y estudiaremos incorporarla.
+2. `ClickHouse` no admite el tipo de dato `time`. `time` se cargará en una columna `text`.
+3. `ClickHouse` no admite el tipo de dato `binary`. En su lugar, los datos binarios se cargarán en una columna `text`. Al cargar desde `jsonl`, los datos binarios serán una cadena en base64, y al cargar desde parquet, el objeto `binary` se convertirá en `text`.
+4. `ClickHouse` permite agregar columnas no nulas a una tabla con datos.
+5. `ClickHouse` puede producir errores de redondeo en determinadas condiciones al usar el tipo de dato float o double. Si no puede permitirse errores de redondeo, asegúrese de usar el tipo de dato decimal. Por ejemplo, al cargar el valor 12.7001 en una columna double con el formato de archivo del cargador establecido en `jsonl`, se producirá de forma predecible un error de redondeo.
+
+<div id="supported-column-hints">
+  ## Indicadores de columna compatibles
+</div>
+
+ClickHouse admite los siguientes <a href="https://dlthub.com/docs/general-usage/schema#tables-and-columns">indicadores de columna</a>:
+
+* `primary_key` - marca la columna como parte de la clave primaria. Varias columnas pueden tener este indicador para crear una clave primaria compuesta.
+
+<div id="table-engine">
+  ## Motor de tabla
+</div>
+
+De forma predeterminada, las tablas se crean con el motor de tabla `ReplicatedMergeTree` en ClickHouse. Puede especificar un motor de tabla alternativo mediante `table_engine_type` con el adaptador ClickHouse:
+
+```bash
+from dlt.destinations.adapters import clickhouse_adapter
+
+@dlt.resource()
+def my_resource():
+  ...
+
+clickhouse_adapter(my_resource, table_engine_type="merge_tree")
+```
+
+Los valores compatibles son:
+
+* `merge_tree` - crea tablas con el motor `MergeTree`
+* `replicated_merge_tree` (predeterminado) - crea tablas con el motor `ReplicatedMergeTree`
+
+<div id="staging-support">
+  ## Compatibilidad con staging
+</div>
+
+ClickHouse admite Amazon S3, Google Cloud Storage y Azure Blob Storage como destinos de staging para archivos.
+
+`dlt` subirá archivos Parquet o jsonl a la ubicación de staging y usará las funciones de tabla de ClickHouse para cargar los datos directamente desde los archivos en staging.
+
+Consulta la documentación del sistema de archivos para obtener información sobre cómo configurar las credenciales de los destinos de staging:
+
+* <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/filesystem#aws-s3">Amazon S3</a>
+* <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/filesystem#google-storage">Google Cloud Storage</a>
+* <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/filesystem#azure-blob-storage">Azure Blob Storage</a>
+
+Para ejecutar un pipeline con staging habilitado:
+
+```bash
+pipeline = dlt.pipeline(
+  pipeline_name='chess_pipeline',
+  destination='clickhouse',
+  staging='filesystem',  # añade esto para activar el staging
+  dataset_name='chess_data'
+)
+```
+
+<div id="using-google-cloud-storage-as-a-staging-area">
+  ### Uso de Google Cloud Storage como área de staging
+</div>
+
+dlt admite el uso de Google Cloud Storage (GCS) como área de staging al cargar datos en ClickHouse. Esto se gestiona automáticamente mediante la <a href="/es/reference/functions/table-functions/gcs">función de tabla GCS</a> de ClickHouse, que dlt utiliza internamente.
+
+La función de tabla GCS de ClickHouse solo admite la autenticación mediante claves Hash-based Message Authentication Code (HMAC). Para habilitar esto, GCS ofrece un modo de compatibilidad con S3 que emula la API de Amazon S3. ClickHouse aprovecha esto para permitir el acceso a buckets de GCS a través de su integración con S3.
+
+Para configurar el staging de GCS con autenticación HMAC en dlt:
+
+1. Cree claves HMAC para su cuenta de servicio de GCS siguiendo la <a href="https://cloud.google.com/storage/docs/authentication/managing-hmackeys#create">guía de Google Cloud</a>.
+
+2. Configure las claves HMAC, así como `client_email`, `project_id` y `private_key` de su cuenta de servicio en la configuración del destino ClickHouse de su proyecto de dlt en `config.toml`:
+
+```bash
+[destination.filesystem]
+bucket_url = "gs://dlt-ci"
+
+[destination.filesystem.credentials]
+project_id = "a-cool-project"
+client_email = "my-service-account@a-cool-project.iam.gserviceaccount.com"
+private_key = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkaslkdjflasjnkdcopauihj...wEiEx7y+mx\nNffxQBqVVej2n/D93xY99pM=\n-----END PRIVATE KEY-----\n"
+
+[destination.clickhouse.credentials]
+database = "dlt"
+username = "dlt"
+password = "Dlt*12345789234567"
+host = "localhost"
+port = 9440
+secure = 1
+gcp_access_key_id = "JFJ$$*f2058024835jFffsadf"
+gcp_secret_access_key = "DFJdwslf2hf57)%$02jaflsedjfasoi"
+```
+
+Nota: Además de las claves HMAC `bashgcp_access_key_id` y `gcp_secret_access_key`), ahora también debes proporcionar `client_email`, `project_id` y `private_key` de tu cuenta de servicio en `[destination.filesystem.credentials]`. Esto se debe a que el soporte de staging de GCS está implementado actualmente como una solución temporal y aún no está optimizado.
+
+dlt pasará estas credenciales a ClickHouse, que se encargará de la autenticación y del acceso a GCS.
+
+Se está trabajando activamente para simplificar y mejorar en el futuro la configuración del staging de GCS para el destino ClickHouse de dlt. El soporte adecuado para el staging de GCS se está siguiendo en estos issues de GitHub:
+
+* Hacer que el destino filesystem <a href="https://github.com/dlt-hub/dlt/issues/1272"> funcione</a> con gcs en modo de compatibilidad con s3
+* Soporte para el área de staging de Google Cloud Storage<a href="https://github.com/dlt-hub/dlt/issues/1181"> </a>
+
+<div id="dbt-support">
+  ### Soporte para dbt
+</div>
+
+La integración con <a href="https://dlthub.com/docs/dlt-ecosystem/transformations/dbt/">dbt</a> suele estar disponible a través de dbt-clickhouse.
+
+<div id="syncing-of-dlt-state">
+  ### Sincronización del estado de `dlt`
+</div>
+
+Este destino es totalmente compatible con la sincronización del estado de <a href="https://dlthub.com/docs/general-usage/state#syncing-state-with-destination">dlt</a>.

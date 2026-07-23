@@ -1,0 +1,147 @@
+---
+description: 'Этот движок обеспечивает интеграцию с экосистемой Azure Blob Storage.'
+sidebarTitle: 'Azure Blob Storage'
+slug: /engines/table-engines/integrations/azureBlobStorage
+title: 'Движок таблицы AzureBlobStorage'
+doc_type: 'reference'
+---
+
+Этот движок обеспечивает интеграцию с экосистемой [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+
+<div id="create-table">
+  ## CREATE TABLE
+</div>
+
+```sql
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+```
+
+<div id="engine-parameters">
+  ### Параметры движка
+</div>
+
+* `endpoint` — URL конечной точки AzureBlobStorage с контейнером и префиксом. При необходимости также может содержать account&#95;name, если этого требует используемый метод аутентификации. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) Либо эти параметры можно передать отдельно через storage&#95;account&#95;url, account&#95;name и container. Для указания префикса следует использовать endpoint.
+* `endpoint_contains_account_name` - Этот флаг указывает, содержит ли endpoint account&#95;name, так как он нужен только для некоторых методов аутентификации. (По умолчанию: true)
+* `connection_string|storage_account_url` — connection&#95;string включает имя учётной записи и ключ ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)), либо здесь можно указать URL учётной записи хранилища, а имя учётной записи и ключ учётной записи передать отдельными параметрами (см. параметры account&#95;name и account&#95;key)
+* `container_name` - Имя контейнера
+* `blobpath` - путь к файлу. В режиме только для чтения поддерживаются следующие подстановочные шаблоны: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc'`, `'def'` — строки.
+* `account_name` - если используется storage&#95;account&#95;url, здесь можно указать имя учётной записи
+* `account_key` - если используется storage&#95;account&#95;url, здесь можно указать ключ учётной записи
+* `format` — [Формат](/ru/reference/formats/index) файла.
+* `compression` — Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить `auto`).
+* `partition_strategy` – Варианты: `wildcard` или `hive`. Для `wildcard` требуется `{_partition_id}` в пути, который заменяется ключом партиционирования. `hive` не допускает подстановочных шаблонов, предполагает, что путь является корнем таблицы, и создаёт каталоги партиций в стиле Hive, где в качестве имён файлов используются Snowflake ID, а в качестве расширения — формат файла. По умолчанию используется настройка `file_like_engine_default_partition_strategy` (`wildcard` при настройках `compatibility` старее `26.6`, иначе `hive`).
+* `partition_columns_in_data_file` - Используется только со стратегией партиционирования `hive`. Указывает ClickHouse, следует ли ожидать, что столбцы партиции будут записаны в файл данных. По умолчанию `false`.
+* `extra_credentials` - Используйте `client_id` и `tenant_id` для аутентификации. Если указаны extra&#95;credentials, они имеют приоритет над `account_name` и `account_key`.
+
+**Пример**
+
+Для локальной разработки Azure Storage можно использовать эмулятор Azurite. Подробнее [здесь](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Если вы используете локальный экземпляр Azurite, в командах ниже может потребоваться заменить `http://localhost:10000` на `http://azurite1:10000`; здесь предполагается, что Azurite доступен на хосте `azurite1`.
+
+```sql
+CREATE TABLE test_table (key UInt64, data String)
+    ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV');
+
+INSERT INTO test_table VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+SELECT * FROM test_table;
+```
+
+```text
+┌─key──┬─data──┐
+│  1   │   a   │
+│  2   │   b   │
+│  3   │   c   │
+└──────┴───────┘
+```
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+
+<div id="authentication">
+  ## Аутентификация
+</div>
+
+Сейчас доступны 3 способа аутентификации:
+
+* `Managed Identity` — можно использовать, указав `endpoint`, `connection_string` или `storage_account_url`.
+* `SAS Token` — можно использовать, указав `endpoint`, `connection_string` или `storage_account_url`. Определяется по наличию символа `?` в URL. Примеры см. в [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens).
+* `Workload Identity` — можно использовать, указав `endpoint` или `storage_account_url`. Если в конфигурации задан параметр `use_workload_identity`, для аутентификации используется [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications).
+
+<div id="data-cache">
+  ### Кэш данных
+</div>
+
+Движок таблицы `Azure` поддерживает кэширование данных на локальном диске.
+Параметры конфигурации файлового кэша и примеры его использования см. в этом [разделе](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache).
+Кэширование зависит от пути и ETag объекта в хранилище, поэтому ClickHouse не будет читать устаревшую версию кэша.
+
+Чтобы включить кэширование, используйте настройки `filesystem_cache_name = '<name>'` и `enable_filesystem_cache = 1`.
+
+```sql
+SELECT *
+FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
+```
+
+1. добавьте в файл конфигурации ClickHouse следующий раздел:
+
+```xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_azure>
+            <path>path to cache directory</path>
+            <max_size>10Gi</max_size>
+        </cache_for_azure>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. повторно использовать конфигурацию кэша (и, следовательно, хранилище кэша) из раздела `storage_configuration` ClickHouse, [описанного здесь](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache)
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — необязателен. В большинстве случаев ключ партиционирования не нужен, а если он всё же нужен, то обычно не стоит делать его детальнее, чем по месяцам. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком мелкое партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
+
+Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](/ru/reference/data-types/date). Имена партиций в этом случае имеют формат `"YYYYMM"`.
+
+<div id="partition-strategy">
+  #### Стратегия партиционирования
+</div>
+
+`wildcard`: заменяет подстановку `{_partition_id}` в пути к файлу фактическим ключом партиционирования. Чтение не поддерживается. По умолчанию выбирается только при настройках `compatibility` ниже `26.6`; в противном случае по умолчанию используется `hive` (см. настройку `file_like_engine_default_partition_strategy`).
+
+`hive` реализует секционирование в стиле Hive для чтения и записи. Чтение реализовано с помощью рекурсивного glob-шаблона. При записи файлы создаются в следующем формате: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+
+Примечание: при использовании стратегии партиционирования `hive` настройка `use_hive_partitioning` не действует.
+
+Пример стратегии партиционирования `hive`:
+
+```sql
+arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
+
+arthur :) insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
+
+arthur :) select _path, * from azure_table;
+
+   ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+1. │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
+2. │ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
+   └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+[Табличная функция Azure Blob Storage](/ru/reference/functions/table-functions/azureBlobStorage)

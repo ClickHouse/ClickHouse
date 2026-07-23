@@ -1,0 +1,1429 @@
+---
+description: 'توثيق نوع بيانات JSON في ClickHouse، الذي يوفّر دعمًا أصليًا للتعامل مع بيانات JSON'
+keywords: ['json', 'نوع البيانات']
+sidebarTitle: 'JSON'
+slug: /sql-reference/data-types/newjson
+title: 'نوع بيانات JSON'
+doc_type: 'reference'
+---
+
+import WhenToUseJson from '/snippets/ar/_when-to-use-json.mdx';
+
+<Card title="هل تبحث عن دليل؟" href="/ar/concepts/best-practices/json-type" icon="book">
+  اطّلع على دليلنا لأفضل ممارسات JSON للاطلاع على أمثلة وميزات متقدمة واعتبارات تتعلق باستخدام نوع JSON.
+</Card>
+
+يخزّن النوع `JSON` مستندات JavaScript Object Notation ‏(JSON) في عمود واحد.
+
+<Note>
+  في ClickHouse مفتوح المصدر، تم تصنيف نوع بيانات JSON على أنه جاهز للإنتاج في الإصدار 25.3. ولا يُنصح باستخدام هذا النوع في بيئة الإنتاج في الإصدارات السابقة.
+</Note>
+
+لإعلان عمود من النوع `JSON`، يمكنك استخدام البنية التالية:
+
+```sql
+<column_name> JSON
+(
+    max_dynamic_paths=N,
+    max_dynamic_types=M,
+    some.path TypeName,
+    SKIP path.to.skip,
+    SKIP REGEXP 'paths_regexp'
+)
+```
+
+حيث تُعرَّف المعلمات في البنية أعلاه كما يلي:
+
+| المعلمة                     | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                         | القيمة الافتراضية |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `max_dynamic_paths`         | معلمة اختيارية تشير إلى عدد المسارات التي يمكن تخزينها بشكل منفصل كأعمدة فرعية ضمن كتلة بيانات واحدة تُخزَّن بشكل منفصل (على سبيل المثال ضمن جزء بيانات واحد لجدول MergeTree). <br /><br />إذا تم تجاوز هذا الحد، فسيتم تخزين جميع المسارات الأخرى معًا في بنية واحدة تُسمى [البيانات المشتركة](#shared-data-structure).<br /><br />توجد أيضًا [طرق](#controlling-the-number-of-dynamic-paths) لتغيير الحد الأقصى للمسارات الديناميكية دون تغيير هذه المعلمة. | `1024`            |
+| `max_dynamic_types`         | معلمة اختيارية تتراوح بين `1` و `255` تشير إلى عدد أنواع البيانات المختلفة التي يمكن تخزينها بشكل منفصل داخل عمود مسار واحد من النوع `Dynamic` ضمن كتلة بيانات واحدة تُخزَّن بشكل منفصل (على سبيل المثال ضمن جزء بيانات واحد لجدول MergeTree). <br /><br />إذا تم تجاوز هذا الحد، فسيتم تخزين جميع الأنواع الجديدة معًا في بنية واحدة تُسمى `shared variant`.                                                                                                 | `32`              |
+| `some.path TypeName`        | تلميح نوع اختياري لمسار معيّن في JSON. ستُخزَّن هذه المسارات دائمًا كأعمدة فرعية بالنوع المحدد.                                                                                                                                                                                                                                                                                                                                                               |                   |
+| `SKIP path.to.skip`         | تلميح اختياري لمسار معيّن يجب تخطيه أثناء تحليل JSON. لن يتم أبدًا تخزين هذه المسارات في عمود JSON. إذا كان المسار المحدد كائن JSON متداخلًا، فسيتم تخطي الكائن المتداخل بالكامل.                                                                                                                                                                                                                                                                             |                   |
+| `SKIP REGEXP 'path_regexp'` | تلميح اختياري يتضمن تعبيرًا نمطيًا يُستخدم لتخطي المسارات أثناء تحليل JSON. لن يتم أبدًا تخزين أي مسار يطابق هذا التعبير النمطي في عمود JSON.                                                                                                                                                                                                                                                                                                                 |                   |
+
+<WhenToUseJson />
+
+<div id="creating-json">
+  ## إنشاء `JSON`
+</div>
+
+في هذا القسم، سنستعرض الطرق المختلفة التي يمكنك من خلالها إنشاء `JSON`.
+
+<div id="using-json-in-a-table-column-definition">
+  ### استخدام `JSON` ضمن تعريف عمود في جدول
+</div>
+
+```sql title="Query (Example 1)"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), ('{"f" : "Hello, World!"}'), ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="Response (Example 1)"
+┌─json────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"]}          │
+│ {"f":"Hello, World!"}                       │
+│ {"a":{"b":"43","e":"10"},"c":["4","5","6"]} │
+└─────────────────────────────────────────────┘
+```
+
+```sql title="Query (Example 2)"
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), ('{"f" : "Hello, World!"}'), ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="Response (Example 2)"
+┌─json──────────────────────────────┐
+│ {"a":{"b":42},"c":["1","2","3"]}  │
+│ {"a":{"b":0},"f":"Hello, World!"} │
+│ {"a":{"b":43},"c":["4","5","6"]}  │
+└───────────────────────────────────┘
+```
+
+<div id="using-cast-with-json">
+  ### استخدام CAST مع `::JSON`
+</div>
+
+يمكن تحويل أنواع مختلفة باستخدام البنية الخاصة `::JSON`.
+
+<div id="cast-from-string-to-json">
+  #### التحويل باستخدام CAST من `String` إلى `JSON`
+</div>
+
+```sql title="Query"
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
+```
+
+```text title="Response"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
+<div id="cast-from-tuple-to-json">
+  #### CAST من `Tuple` إلى `JSON`
+</div>
+
+```sql title="Query"
+SET enable_named_columns_in_function_tuple = 1;
+SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
+```
+
+```text title="Response"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
+<div id="cast-from-map-to-json">
+  #### CAST من `Map` إلى `JSON`
+</div>
+
+```sql title="Query"
+SET use_variant_as_common_type=1;
+SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
+```
+
+```text title="Response"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  يتم تخزين مسارات JSON بشكل مسطّح. وهذا يعني أنه عند تنسيق كائن JSON انطلاقًا من مسار مثل `a.b.c`
+  لا يمكن معرفة ما إذا كان ينبغي إنشاء الكائن بالشكل `{ "a.b.c" : ... }` أو `{ "a": { "b": { "c": ... } } }`.
+  ويفترض تنفيذنا دائمًا الاحتمال الثاني.
+
+  على سبيل المثال:
+
+  ```sql title="استعلام"
+  SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
+  ```
+
+  سيُرجع:
+
+  ```response title="الاستجابة"
+     ┌─json───────────────────┐
+  1. │ {"a":{"b":{"c":"42"}}} │
+     └────────────────────────┘
+  ```
+
+  وليس:
+
+  ```sql
+     ┌─json───────────┐
+  1. │ {"a.b.c":"42"} │
+     └────────────────┘
+  ```
+</Note>
+
+<div id="reading-json-paths-as-sub-columns">
+  ## قراءة مسارات JSON كأعمدة فرعية
+</div>
+
+يدعم النوع `JSON` قراءة كل مسار بوصفه عمودًا فرعيًا منفصلًا.
+إذا لم يُحدَّد نوع المسار المطلوب في تعريف النوع `JSON`،
+فسيكون العمود الفرعي لهذا المسار دائمًا من النوع [Dynamic](/ar/reference/data-types/dynamic).
+
+على سبيل المثال:
+
+```sql title="Query"
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World!", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="Response"
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+```sql title="Query (Reading JSON paths as sub-columns)"
+SELECT json.a.b, json.a.g, json.c, json.d FROM test;
+```
+
+```text title="Response (Reading JSON paths as sub-columns)"
+┌─json.a.b─┬─json.a.g─┬─json.c──┬─json.d─────┐
+│       42 │ 42.42    │ [1,2,3] │ 2020-01-01 │
+│        0 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
+│       43 │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
+└──────────┴──────────┴─────────┴────────────┘
+```
+
+يمكنك أيضًا استخدام الدالة `getSubcolumn` لقراءة الأعمدة الفرعية من النوع JSON:
+
+```sql title="Query"
+SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 'c'), getSubcolumn(json, 'd') FROM test;
+```
+
+```text title="Response"
+┌─getSubcolumn(json, 'a.b')─┬─getSubcolumn(json, 'a.g')─┬─getSubcolumn(json, 'c')─┬─getSubcolumn(json, 'd')─┐
+│                        42 │ 42.42                     │ [1,2,3]                 │ 2020-01-01              │
+│                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+إذا لم يُعثر على المسار المطلوب في البيانات، فسيُملأ بقيم `NULL`:
+
+```sql title="Query"
+SELECT json.non.existing.path FROM test;
+```
+
+```text title="Response"
+┌─json.non.existing.path─┐
+│ ᴺᵁᴸᴸ                   │
+│ ᴺᵁᴸᴸ                   │
+│ ᴺᵁᴸᴸ                   │
+└────────────────────────┘
+```
+
+لنتحقق من أنواع بيانات الأعمدة الفرعية المُعادة:
+
+```sql title="Query"
+SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;
+```
+
+```text title="Response"
+┌─toTypeName(json.a.b)─┬─toTypeName(json.a.g)─┬─toTypeName(json.c)─┬─toTypeName(json.d)─┐
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+└──────────────────────┴──────────────────────┴────────────────────┴────────────────────┘
+```
+
+كما نرى، بالنسبة إلى `a.b`، يكون النوع `UInt32` كما حددناه في تعريف نوع JSON،
+أما في جميع الأعمدة الفرعية الأخرى، فالنوع هو `Dynamic`.
+
+ومن الممكن أيضًا قراءة الأعمدة الفرعية من النوع `Dynamic` باستخدام الصياغة الخاصة `json.some.path.:TypeName`:
+
+```sql title="Query"
+SELECT
+    json.a.g.:Float64,
+    dynamicType(json.a.g),
+    json.d.:Date,
+    dynamicType(json.d)
+FROM test
+```
+
+```text title="Response"
+┌─json.a.g.:`Float64`─┬─dynamicType(json.a.g)─┬─json.d.:`Date`─┬─dynamicType(json.d)─┐
+│               42.42 │ Float64               │     2020-01-01 │ Date                │
+│                ᴺᵁᴸᴸ │ None                  │     2020-01-02 │ Date                │
+│               43.43 │ Float64               │           ᴺᵁᴸᴸ │ None                │
+└─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
+```
+
+يمكن تحويل الأعمدة الفرعية في `Dynamic` إلى أي نوع بيانات. في هذه الحالة، سيتم طرح استثناء إذا تعذّر تحويل النوع الداخلي داخل `Dynamic` إلى النوع المطلوب:
+
+```sql title="Query"
+SELECT json.a.g::UInt64 AS uint
+FROM test;
+```
+
+```text title="Response"
+┌─uint─┐
+│   42 │
+│    0 │
+│   43 │
+└──────┘
+```
+
+```sql title="Query"
+SELECT json.a.g::UUID AS float
+FROM test;
+```
+
+```text title="Response"
+Received exception from server:
+Code: 48. DB::Exception: Received from localhost:9000. DB::Exception:
+Conversion between numeric types and UUID is not supported.
+Probably the passed UUID is unquoted:
+while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CAST(__table1.json.a.g, 'UUID'_String) UUID : 0'.
+(NOT_IMPLEMENTED)
+```
+
+<Note>
+  لقراءة الأعمدة الفرعية بكفاءة من أجزاء Compact في MergeTree، تأكّد من تفعيل إعداد MergeTree ‏[write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ar/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts).
+</Note>
+
+<div id="reading-json-sub-objects-as-sub-columns">
+  ## قراءة الكائنات الفرعية في JSON كأعمدة فرعية
+</div>
+
+يدعم النوع `JSON` قراءة الكائنات المتداخلة كأعمدة فرعية من النوع `JSON` باستخدام الصياغة الخاصة `json.^some.path`:
+
+```sql title="Query"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":"42","g":42.42}},"c":["1","2","3"],"d":{"e":{"f":{"g":"Hello, World","h":["1","2","3"]}}}} │
+│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World!"}                                                 │
+│ {"a":{"b":{"c":"43","e":"10","g":43.43}},"c":["4","5","6"]}                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT json.^a.b, json.^d.e.f FROM test;
+```
+
+```text title="Response"
+┌─json.^`a`.b───────────────────┬─json.^`d`.e.f──────────────────────────┐
+│ {"c":"42","g":42.42}          │ {"g":"Hello, World","h":["1","2","3"]} │
+│ {}                            │ {"h":["4","5","6"]}                    │
+│ {"c":"43","e":"10","g":43.43} │ {}                                     │
+└───────────────────────────────┴────────────────────────────────────────┘
+```
+
+<Note>
+  عندما تُخزَّن المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، فقد لا تكون قراءة الأعمدة الفرعية للكائنات الفرعية فعّالة، لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. أما مع `map_with_buckets` أو تسلسل البيانات المشتركة `advanced`، فتكون قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
+</Note>
+
+<div id="reading-json-combined-sub-columns">
+  ## قراءة الأعمدة الفرعية المجمّعة في JSON
+</div>
+
+يدعم النوع `JSON` قراءة مسار باعتباره **عمودًا فرعيًا مجمّعًا** باستخدام الصياغة الخاصة `json.@some.path`.
+ويُرجع العمود الفرعي المجمّع لمسار معيّن ما يلي:
+
+* القيمة الحرفية المخزّنة في ذلك المسار على أنها `Dynamic`، إذا كان المسار يحتوي على قيمة حرفية.
+* كائن JSON فرعيًا في ذلك المسار على أنه `Dynamic`، إذا لم يكن المسار يحتوي على قيمة حرفية ولكن كانت له مسارات فرعية متداخلة.
+* `NULL`، إذا لم تكن هناك قيمة حرفية أو أي مسارات فرعية لذلك المسار.
+
+ويكون هذا مفيدًا عندما قد يحتوي المسار على قيمة قياسية أو كائن متداخل عبر صفوف مختلفة، كما أنه أسهل من الاستعلام بشكل منفصل عن العمود الفرعي للقيمة الحرفية (`json.a`) والعمود الفرعي للكائن الفرعي (`json.^a`).
+
+يقارن المثال التالي بين أنواع الأعمدة الفرعية الثلاثة للمسار `a`:
+
+```sql title="Query"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : 42, "b" : {"c" : 1, "d" : "Hello"}}'), ('{"a" : {"x": 1, "y": 2}, "b" : {"c" : 1}}'), ('{"c" : "World"}');
+SELECT json FROM test;
+```
+
+```text title="Response"
+┌─json────────────────────────────┐
+│ {"a":42,"b":{"c":1,"d":"Hello"}}│
+│ {"a":{"x":1,"y":2},"b":{"c":1}}│
+│ {"c":"World"}                   │
+└─────────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    json.a,
+    dynamicType(json.a),
+    json.^a,
+    toTypeName(json.^a),
+    json.@a,
+    dynamicType(json.@a)
+FROM test;
+```
+
+```text title="Response"
+┌─json.a─┬─dynamicType(json.a)─┬─json.^a───────┬─toTypeName(json.^a)─┬─json.@a───────┬─dynamicType(json.@a)─┐
+│ 42     │ Int64               │ {}            │ JSON                │ 42            │ Int64                │
+│ NULL   │ None                │ {"x":1,"y":2} │ JSON                │ {"x":1,"y":2} │ JSON                 │
+│ NULL   │ None                │ {}            │ JSON                │ NULL          │ None                 │
+└────────┴─────────────────────┴───────────────┴─────────────────────┴───────────────┴──────────────────────┘
+```
+
+* الصف 1: تحتوي `a` على قيمة حرفية `42`. يُرجع `json.a` هذه القيمة بصيغة `Dynamic(Int64)`، ويُرجع `json.^a` كائنًا فرعيًا فارغًا `{}` (لا توجد مفاتيح متداخلة تحت `a`)، ويُرجع `json.@a` القيمة الحرفية `42`.
+* الصف 2: تحتوي `a` على كائن متداخل. يُرجع `json.a` القيمة `NULL` (لا توجد قيمة حرفية في هذا المسار)، ويُرجع `json.^a` الكائن الفرعي بصيغة `JSON`، ويُرجع `json.@a` أيضًا الكائن الفرعي بصيغة `Dynamic(JSON)`.
+* الصف 3: `a` غير موجودة بالكامل. يُرجع كلٌّ من `json.a` و`json.@a` القيمة `NULL`، بينما يُرجع `json.^a` كائنًا فارغًا `{}`.
+
+<Note>
+  عند تخزين المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، قد تكون قراءة الأعمدة الفرعية المجمّعة غير فعّالة لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. ومع `map_with_buckets` أو تسلسل البيانات المشتركة `advanced`، تصبح قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
+</Note>
+
+<div id="type-inference-for-paths">
+  ## استنتاج الأنواع للمسارات
+</div>
+
+أثناء تحليل `JSON`، يحاول ClickHouse تحديد نوع البيانات الأنسب لكل مسار JSON.
+ويعمل ذلك بطريقة مشابهة لـ [الاستدلال التلقائي على المخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)،
+ويُتحكَّم فيه بالإعدادات نفسها:
+
+* [input&#95;format&#95;try&#95;infer&#95;dates](/ar/reference/settings/formats#input_format_try_infer_dates)
+* [input&#95;format&#95;try&#95;infer&#95;datetimes](/ar/reference/settings/formats#input_format_try_infer_datetimes)
+* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ar/reference/settings/formats#schema_inference_make_columns_nullable)
+* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/ar/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
+* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/ar/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/ar/reference/settings/formats#input_format_json_read_numbers_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/ar/reference/settings/formats#input_format_json_read_bools_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/ar/reference/settings/formats#input_format_json_read_bools_as_numbers)
+* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/ar/reference/settings/formats#input_format_json_read_arrays_as_strings)
+* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/ar/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+
+لنلقِ نظرة على بعض الأمثلة:
+
+```sql title="Query"
+SELECT JSONAllPathsWithTypes('{"a" : "2020-01-01", "b" : "2020-01-01 10:00:00"}'::JSON) AS paths_with_types settings input_format_try_infer_dates=1, input_format_try_infer_datetimes=1;
+```
+
+```text title="Response"
+┌─paths_with_types─────────────────┐
+│ {'a':'Date','b':'DateTime64(9)'} │
+└──────────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT JSONAllPathsWithTypes('{"a" : "2020-01-01", "b" : "2020-01-01 10:00:00"}'::JSON) AS paths_with_types settings input_format_try_infer_dates=0, input_format_try_infer_datetimes=0;
+```
+
+```text title="Response"
+┌─paths_with_types────────────┐
+│ {'a':'String','b':'String'} │
+└─────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types settings schema_inference_make_columns_nullable=1;
+```
+
+```text title="Response"
+┌─paths_with_types───────────────┐
+│ {'a':'Array(Nullable(Int64))'} │
+└────────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types settings schema_inference_make_columns_nullable=0;
+```
+
+```text title="Response"
+┌─paths_with_types─────┐
+│ {'a':'Array(Int64)'} │
+└──────────────────────┘
+```
+
+<div id="handling-arrays-of-json-objects">
+  ## التعامل مع مصفوفات من كائنات JSON
+</div>
+
+تُحلَّل مسارات JSON التي تحتوي على مصفوفة من الكائنات على أنها من النوع `Array(JSON)`، وتُدرَج في عمود `Dynamic` لذلك المسار.
+ولقراءة مصفوفة من الكائنات، يمكنك استخراجها من عمود `Dynamic` كعمود فرعي:
+
+```sql title="Query"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES
+('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
+('{"a" : {"b" : [1, 2, 3]}}'),
+('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
+SELECT json FROM test;
+```
+
+```text title="Response"
+┌─json────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":[{"c":"42","d":"Hello","f":[[{"g":42.42}]],"k":{"j":"1000"}},{"c":"43"},{"d":"My","e":["1","2","3"],"f":[[{"g":43.43,"h":"2020-01-01"}]],"k":{"j":"2000"}}]}} │
+│ {"a":{"b":["1","2","3"]}}                                                                                                                                               │
+│ {"a":{"b":[{"c":"44","f":[[{"h":"2020-01-02"}]]},{"d":"World","e":["4","5","6"],"f":[[{"g":44.44}]],"k":{"j":"3000"}}]}}                                                │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT json.a.b, dynamicType(json.a.b) FROM test;
+```
+
+```text title="Response"
+┌─json.a.b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─dynamicType(json.a.b)────────────────────────────────────┐
+│ ['{"c":"42","d":"Hello","f":[[{"g":42.42}]],"k":{"j":"1000"}}','{"c":"43"}','{"d":"My","e":["1","2","3"],"f":[[{"g":43.43,"h":"2020-01-01"}]],"k":{"j":"2000"}}'] │ Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)) │
+│ [1,2,3]                                                                                                                                                           │ Array(Nullable(Int64))                                   │
+│ ['{"c":"44","f":[[{"h":"2020-01-02"}]]}','{"d":"World","e":["4","5","6"],"f":[[{"g":44.44}]],"k":{"j":"3000"}}']                                                  │ Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)) │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+```
+
+كما قد تكون لاحظت، جرى تقليل المعلمتين `max_dynamic_types`/`max_dynamic_paths` في نوع `JSON` المتداخل مقارنةً بالقيم الافتراضية.
+وهذا ضروري لتجنّب ازدياد عدد الأعمدة الفرعية بشكل غير متحكَّم فيه داخل المصفوفات المتداخلة من كائنات JSON.
+
+لنحاول قراءة الأعمدة الفرعية من عمود `JSON` متداخل:
+
+```sql title="Query"
+SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f, json.a.b.:`Array(JSON)`.d FROM test;
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f───────────────────────────────────┬─json.a.b.:`Array(JSON)`.d─┐
+│ [42,43,NULL]              │ [[['{"g":42.42}']],NULL,[['{"g":43.43,"h":"2020-01-01"}']]] │ ['Hello',NULL,'My']       │
+│ []                        │ []                                                          │ []                        │
+│ [44,NULL]                 │ [[['{"h":"2020-01-02"}']],[['{"g":44.44}']]]                │ [NULL,'World']            │
+└───────────────────────────┴─────────────────────────────────────────────────────────────┴───────────────────────────┘
+```
+
+يمكننا تجنّب كتابة أسماء الأعمدة الفرعية لـ `Array(JSON)` باستخدام صيغة خاصة:
+
+```sql title="Query"
+SELECT json.a.b[].c, json.a.b[].f, json.a.b[].d FROM test;
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f───────────────────────────────────┬─json.a.b.:`Array(JSON)`.d─┐
+│ [42,43,NULL]              │ [[['{"g":42.42}']],NULL,[['{"g":43.43,"h":"2020-01-01"}']]] │ ['Hello',NULL,'My']       │
+│ []                        │ []                                                          │ []                        │
+│ [44,NULL]                 │ [[['{"h":"2020-01-02"}']],[['{"g":44.44}']]]                │ [NULL,'World']            │
+└───────────────────────────┴─────────────────────────────────────────────────────────────┴───────────────────────────┘
+```
+
+يشير عدد `[]` بعد المسار إلى مستوى الـ Array. على سبيل المثال، سيُحوَّل `json.path[][]` إلى `json.path.:Array(Array(JSON))`
+
+لنلقِ نظرة على المسارات والأنواع داخل `Array(JSON)`:
+
+```sql title="Query"
+SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.b[]))) FROM test;
+```
+
+```text title="Response"
+┌─arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.b.:`Array(JSON)`)))──┐
+│ ('c','Int64')                                                         │
+│ ('d','String')                                                        │
+│ ('f','Array(Array(JSON(max_dynamic_types=8, max_dynamic_paths=64)))') │
+│ ('k.j','Int64')                                                       │
+│ ('e','Array(Nullable(Int64))')                                        │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+لنقرأ الأعمدة الفرعية من عمود `Array(JSON)`:
+
+```sql title="Query"
+SELECT json.a.b[].c.:Int64, json.a.b[].f[][].g.:Float64, json.a.b[].f[][].h.:Date FROM test;
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.c.:`Int64`─┬─json.a.b.:`Array(JSON)`.f.:`Array(Array(JSON))`.g.:`Float64`─┬─json.a.b.:`Array(JSON)`.f.:`Array(Array(JSON))`.h.:`Date`─┐
+│ [42,43,NULL]                       │ [[[42.42]],[],[[43.43]]]                                     │ [[[NULL]],[],[['2020-01-01']]]                            │
+│ []                                 │ []                                                           │ []                                                        │
+│ [44,NULL]                          │ [[[NULL]],[[44.44]]]                                         │ [[['2020-01-02']],[[NULL]]]                               │
+└────────────────────────────────────┴──────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+```
+
+يمكننا أيضًا قراءة الأعمدة الفرعية الخاصة بالكائنات الفرعية من عمود `JSON` متداخل:
+
+```sql title="Query"
+SELECT json.a.b[].^k FROM test
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.^`k`─────────┐
+│ ['{"j":"1000"}','{}','{"j":"2000"}'] │
+│ []                                   │
+│ ['{}','{"j":"3000"}']                │
+└──────────────────────────────────────┘
+```
+
+<div id="handling-json-keys-with-nulls">
+  ## التعامل مع مفاتيح JSON ذات القيمة NULL
+</div>
+
+في تنفيذ JSON لدينا، يُعدّ `null` وغياب القيمة أمرين متكافئين:
+
+```sql title="Query"
+SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
+```
+
+```text title="Response"
+┌─json1─┬─json2─┬─equals(json1, json2)─┐
+│ {}    │ {}    │                    1 │
+└───────┴───────┴──────────────────────┘
+```
+
+وهذا يعني أنه يستحيل تحديد ما إذا كانت بيانات JSON الأصلية تتضمن مسارًا بقيمة NULL أم أنها لم تتضمنه أصلًا.
+
+<div id="handling-json-keys-with-dots">
+  ## التعامل مع مفاتيح JSON التي تحتوي على نقاط
+</div>
+
+يخزّن عمود JSON داخليًا جميع المسارات والقيم بشكلٍ مُسطّح. وهذا يعني أنه، افتراضيًا، يُتعامل مع هذين الكائنين على أنهما متماثلان:
+
+```json
+{"a" : {"b" : 42}}
+{"a.b" : 42}
+```
+
+سيُخزَّن كلاهما داخليًا على شكل زوج يتكوّن من المسار `a.b` والقيمة `42`. وأثناء تنسيق JSON، نُكوِّن دائمًا كائنات متداخلة استنادًا إلى أجزاء المسار المفصولة بنقطة:
+
+```sql title="Query"
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a":{"b":"42"}} │ ['a.b']             │ ['a.b']             │
+└──────────────────┴──────────────────┴─────────────────────┴─────────────────────┘
+```
+
+كما ترى، أصبح JSON الأصلي `{"a.b" : 42}` مُنسقًا الآن على الشكل `{"a" : {"b" : 42}}`.
+
+ويؤدي هذا القيد أيضًا إلى تعذّر تحليل كائنات JSON صالحة مثل هذا:
+
+```sql title="Query"
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json;
+```
+
+```text title="Response"
+Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path found during parsing JSON object: a.b. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert: In scope SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
+```
+
+إذا كنت تريد الاحتفاظ بالمفاتيح التي تحتوي على نقاط وتجنّب تنسيقها ككائنات متداخلة، فيمكنك تفعيل
+الإعداد [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/ar/reference/settings/formats#json_type_escape_dots_in_keys) (متاح بدءًا من الإصدار `25.8`). في هذه الحالة، أثناء التحليل ستُحوَّل جميع النقاط في مفاتيح JSON عبر
+الإفلات إلى `%2E`، ثم يُزال عنها الإفلات مرة أخرى أثناء التنسيق.
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a.b":"42"} │ ['a.b']             │ ['a%2Eb']           │
+└──────────────────┴──────────────┴─────────────────────┴─────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, JSONAllPaths(json);
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ ['a%2Eb','a.b']    │
+└───────────────────────────────────────┴────────────────────┘
+```
+
+لقراءة مفتاح يحتوي على نقطة مُفلَتة كعمود فرعي، يجب استخدام النقطة المُفلَتة في اسم العمود الفرعي:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┘
+```
+
+ملاحظة: بسبب القيود في محلِّل المعرّفات والمُحلِّل، فإن العمود الفرعي `` json.`a.b` `` يعادل العمود الفرعي `json.a.b` ولن يقرأ المسار الذي يحتوي على نقطة مُفلَتة:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.`a.b`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┴──────────────┘
+```
+
+كذلك، إذا كنت تريد تحديد تلميح لمسار JSON يحتوي على مفاتيح تتضمن نقاطًا (أو استخدامه في قسمي `SKIP`/`SKIP REGEX`)، فعليك استخدام نقاط مسبوقة بمحرف الإفلات في التلميح:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(`a%2Eb` UInt8) as json, json.`a%2Eb`, toTypeName(json.`a%2Eb`);
+```
+
+```text title="Response"
+┌─json────────────────────────────────┬─json.a%2Eb─┬─toTypeName(json.a%2Eb)─┐
+│ {"a.b":42,"a":{"b":"Hello World!"}} │         42 │ UInt8                  │
+└─────────────────────────────────────┴────────────┴────────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json, json.`a%2Eb`;
+```
+
+```text title="Response"
+┌─json───────────────────────┬─json.a%2Eb─┐
+│ {"a":{"b":"Hello World!"}} │ ᴺᵁᴸᴸ       │
+└────────────────────────────┴────────────┘
+```
+
+<div id="reading-json-type-from-data">
+  ## قراءة نوع JSON من البيانات
+</div>
+
+تدعم جميع التنسيقات النصية
+([`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow),
+[`TSV`](/ar/reference/formats/TabSeparated/TabSeparated),
+[`CSV`](/ar/reference/formats/CSV/CSV),
+[`CustomSeparated`](/ar/reference/formats/CustomSeparated/CustomSeparated),
+[`Values`](/ar/reference/formats/Values)، إلخ) قراءة نوع `JSON`.
+
+أمثلة:
+
+```sql title="Query"
+SELECT json FROM format(JSONEachRow, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP d.e, SKIP REGEXP \'b.*\')', '
+{"json" : {"a" : {"b" : {"c" : 1, "d" : [0, 1]}}, "b" : "2020-01-01", "c" : 42, "d" : {"e" : {"f" : ["s1", "s2"]}, "i" : [1, 2, 3]}}}
+{"json" : {"a" : {"b" : {"c" : 2, "d" : [2, 3]}}, "b" : [1, 2, 3], "c" : null, "d" : {"e" : {"g" : 43}, "i" : [4, 5, 6]}}}
+{"json" : {"a" : {"b" : {"c" : 3, "d" : [4, 5]}}, "b" : {"c" : 10}, "e" : "Hello, World!"}}
+{"json" : {"a" : {"b" : {"c" : 4, "d" : [6, 7]}}, "c" : 43}}
+{"json" : {"a" : {"b" : {"c" : 5, "d" : [8, 9]}}, "b" : {"c" : 11, "j" : [1, 2, 3]}, "d" : {"e" : {"f" : ["s3", "s4"], "g" : 44}, "h" : "2020-02-02 10:00:00"}}}
+')
+```
+
+```text title="Response"
+┌─json──────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":1}},"c":"42","d":{"i":["1","2","3"]}}          │
+│ {"a":{"b":{"c":2}},"d":{"i":["4","5","6"]}}                   │
+│ {"a":{"b":{"c":3}},"e":"Hello, World!"}                       │
+│ {"a":{"b":{"c":4}},"c":"43"}                                  │
+│ {"a":{"b":{"c":5}},"d":{"h":"2020-02-02 10:00:00.000000000"}} │
+└───────────────────────────────────────────────────────────────┘
+```
+
+بالنسبة إلى التنسيقات النصية مثل `CSV`/`TSV`/إلخ، يُحلَّل `JSON` من سلسلة نصية تحتوي على كائن JSON:
+
+```sql title="Query"
+SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'b.*\')',
+'{"a" : {"b" : {"c" : 1, "d" : [0, 1]}}, "b" : "2020-01-01", "c" : 42, "d" : {"e" : {"f" : ["s1", "s2"]}, "i" : [1, 2, 3]}}
+{"a" : {"b" : {"c" : 2, "d" : [2, 3]}}, "b" : [1, 2, 3], "c" : null, "d" : {"e" : {"g" : 43}, "i" : [4, 5, 6]}}
+{"a" : {"b" : {"c" : 3, "d" : [4, 5]}}, "b" : {"c" : 10}, "e" : "Hello, World!"}
+{"a" : {"b" : {"c" : 4, "d" : [6, 7]}}, "c" : 43}
+{"a" : {"b" : {"c" : 5, "d" : [8, 9]}}, "b" : {"c" : 11, "j" : [1, 2, 3]}, "d" : {"e" : {"f" : ["s3", "s4"], "g" : 44}, "h" : "2020-02-02 10:00:00"}}')
+```
+
+```text title="Response"
+┌─json──────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":1}},"c":"42","d":{"i":["1","2","3"]}}          │
+│ {"a":{"b":{"c":2}},"d":{"i":["4","5","6"]}}                   │
+│ {"a":{"b":{"c":3}},"e":"Hello, World!"}                       │
+│ {"a":{"b":{"c":4}},"c":"43"}                                  │
+│ {"a":{"b":{"c":5}},"d":{"h":"2020-02-02 10:00:00.000000000"}} │
+└───────────────────────────────────────────────────────────────┘
+```
+
+<div id="reaching-the-limit-of-dynamic-paths-inside-json">
+  ## الوصول إلى الحد الأقصى للمسارات الديناميكية داخل JSON
+</div>
+
+لا يستطيع نوع البيانات `JSON` تخزين سوى عدد محدود من المسارات داخليًا على هيئة أعمدة فرعية منفصلة.
+ويبلغ هذا الحد افتراضيًا `1024`، لكن يمكنك تغييره في تعريف النوع باستخدام المعلمة `max_dynamic_paths`.
+
+عند الوصول إلى هذا الحد، ستُخزَّن جميع المسارات الجديدة المُدرجة في عمود `JSON` في بنية بيانات مشتركة واحدة.
+ولا يزال من الممكن قراءة هذه المسارات كأعمدة فرعية،
+لكن ذلك قد يكون أقل كفاءة ([راجع القسم الخاص بالبيانات المشتركة](#shared-data-structure)).
+وهذا الحد ضروري لتجنّب وجود عدد هائل من الأعمدة الفرعية المختلفة، مما قد يجعل الجدول غير قابل للاستخدام.
+
+لنرَ ما يحدث عند الوصول إلى هذا الحد في بضعة سيناريوهات مختلفة.
+
+<div id="reaching-the-limit-during-data-parsing">
+  ### الوصول إلى الحد أثناء تحليل البيانات
+</div>
+
+أثناء تحليل كائنات `JSON` في البيانات، وعند الوصول إلى الحد للكتلة الحالية من البيانات،
+ستُخزَّن جميع المسارات الجديدة في بنية بيانات مشتركة. يمكننا استخدام دالتي الاستبطان التاليتين `JSONDynamicPaths` و`JSONSharedDataPaths`:
+
+```sql title="Query"
+SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONEachRow, 'json JSON(max_dynamic_paths=3)', '
+{"json" : {"a" : {"b" : 42}, "c" : [1, 2, 3]}}
+{"json" : {"a" : {"b" : 43}, "d" : "2020-01-01"}}
+{"json" : {"a" : {"b" : 44}, "c" : [4, 5, 6]}}
+{"json" : {"a" : {"b" : 43}, "d" : "2020-01-02", "e" : "Hello", "f" : {"g" : 42.42}}}
+{"json" : {"a" : {"b" : 43}, "c" : [7, 8, 9], "f" : {"g" : 43.43}, "h" : "World"}}
+')
+```
+
+```text title="Response"
+┌─json───────────────────────────────────────────────────────────┬─JSONDynamicPaths(json)─┬─JSONSharedDataPaths(json)─┐
+│ {"a":{"b":"42"},"c":["1","2","3"]}                             │ ['a.b','c','d']        │ []                        │
+│ {"a":{"b":"43"},"d":"2020-01-01"}                              │ ['a.b','c','d']        │ []                        │
+│ {"a":{"b":"44"},"c":["4","5","6"]}                             │ ['a.b','c','d']        │ []                        │
+│ {"a":{"b":"43"},"d":"2020-01-02","e":"Hello","f":{"g":42.42}}  │ ['a.b','c','d']        │ ['e','f.g']               │
+│ {"a":{"b":"43"},"c":["7","8","9"],"f":{"g":43.43},"h":"World"} │ ['a.b','c','d']        │ ['f.g','h']               │
+└────────────────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────┘
+```
+
+كما نرى، بعد إدراج المسارين `e` و `f.g`، تم الوصول إلى الحد،
+وأُدرجا في بنية بيانات مشتركة.
+
+<div id="during-merges-of-data-parts-in-mergetree-table-engines">
+  ### أثناء دمج أجزاء البيانات في محركات جداول MergeTree
+</div>
+
+أثناء دمج عدة أجزاء بيانات في جدول `MergeTree`، قد يصل العمود `JSON` في جزء البيانات الناتج إلى حدّ المسارات الديناميكية،
+وبالتالي لن يتمكن من تخزين جميع المسارات من الأجزاء المصدرية كأعمدة فرعية.
+في هذه الحالة، يحدد ClickHouse المسارات التي ستبقى كأعمدة فرعية بعد الدمج، والمسارات التي ستُخزَّن في بنية البيانات المشتركة.
+في معظم الحالات، يحاول ClickHouse الإبقاء على المسارات التي تحتوي على
+أكبر عدد من القيم غير `NULL`، ونقل المسارات الأقل شيوعًا إلى بنية البيانات المشتركة. ومع ذلك، يعتمد هذا على طريقة التنفيذ.
+
+لنلقِ نظرة على مثال لهذا النوع من الدمج.
+لنبدأ أولًا بإنشاء جدول يحتوي على عمود `JSON`، وضبط حدّ المسارات الديناميكية على `3`، ثم إدراج قيم تحتوي على `5` مسارات مختلفة:
+
+```sql title="Query"
+CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) ENGINE=MergeTree ORDER BY id;
+SYSTEM STOP MERGES test;
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as a) FROM numbers(5);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as b) FROM numbers(4);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as c) FROM numbers(3);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as d) FROM numbers(2);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as e) FROM numbers(1);
+```
+
+سينشئ كل insert جزء بيانات منفصلًا، بحيث يحتوي العمود `JSON` على مسار واحد:
+
+```sql title="Query"
+SELECT
+    count(),
+    groupArrayArrayDistinct(JSONDynamicPaths(json)) AS dynamic_paths,
+    groupArrayArrayDistinct(JSONSharedDataPaths(json)) AS shared_data_paths,
+    _part
+FROM test
+GROUP BY _part
+ORDER BY _part ASC
+```
+
+```text title="Response"
+┌─count()─┬─dynamic_paths─┬─shared_data_paths─┬─_part─────┐
+│       5 │ ['a']         │ []                │ all_1_1_0 │
+│       4 │ ['b']         │ []                │ all_2_2_0 │
+│       3 │ ['c']         │ []                │ all_3_3_0 │
+│       2 │ ['d']         │ []                │ all_4_4_0 │
+│       1 │ ['e']         │ []                │ all_5_5_0 │
+└─────────┴───────────────┴───────────────────┴───────────┘
+```
+
+الآن، لنَدمج جميع الأجزاء في جزء واحد ونرَ ماذا سيحدث:
+
+```sql title="Query"
+SELECT
+    count(),
+    groupArrayArrayDistinct(JSONDynamicPaths(json)) AS dynamic_paths,
+    groupArrayArrayDistinct(JSONSharedDataPaths(json)) AS shared_data_paths,
+    _part
+FROM test
+GROUP BY _part
+ORDER BY _part ASC
+```
+
+```text title="Response"
+┌─count()─┬─dynamic_paths─┬─shared_data_paths─┬─_part─────┐
+│      15 │ ['a','b','c'] │ ['d','e']         │ all_1_5_2 │
+└─────────┴───────────────┴───────────────────┴───────────┘
+```
+
+كما نرى، احتفظ ClickHouse بالمسارات الأكثر تكرارًا `a` و`b` و`c`، ونقل المسارين `d` و`e` إلى بنية بيانات مشتركة.
+
+<div id="shared-data-structure">
+  ## بنية البيانات المشتركة
+</div>
+
+كما ذُكر في القسم السابق، عند بلوغ الحد `max_dynamic_paths`، تُخزَّن جميع المسارات الجديدة في بنية بيانات مشتركة واحدة.
+في هذا القسم، سنستعرض تفاصيل بنية البيانات المشتركة وكيفية قراءة الأعمدة الفرعية للمسارات منها.
+
+راجع قسم [&quot;دوال الاستبطان&quot;](/ar/reference/data-types/newjson#introspection-functions) للاطلاع على تفاصيل الدوال المستخدمة لفحص محتويات عمود JSON.
+
+<div id="shared-data-structure-in-memory">
+  ### بنية البيانات المشتركة في الذاكرة
+</div>
+
+في الذاكرة، تكون بنية البيانات المشتركة مجرد عمود فرعي من النوع `Map(String, String)` يخزّن ربطًا بين مسار JSON مُسطَّح وقيمة مُرمَّزة ترميزًا ثنائيًا.
+ولاستخراج عمود فرعي لمسار منه، نمرّ ببساطة على جميع الصفوف في عمود `Map` هذا ونحاول العثور على المسار المطلوب وقيمه.
+
+<div id="shared-data-structure-in-merge-tree-parts">
+  ### بنية البيانات المشتركة في أجزاء MergeTree
+</div>
+
+في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، نُخزّن البيانات في أجزاء بيانات تحتفظ بكل شيء على القرص (محليًا أو عن بُعد). ويمكن تخزين البيانات على القرص بطريقة تختلف عن تخزينها في الذاكرة.
+يوجد حاليًا 3 تنسيقات serialization مختلفة لبنية البيانات المشتركة في أجزاء بيانات MergeTree: ‏`map` و`map_with_buckets`
+و`advanced`.
+
+يخضع إصدار serialization للتحكم عبر إعدادات MergeTree
+[object&#95;shared&#95;data&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
+و[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ar/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
+(جزء المستوى الصفري هو الجزء الذي يُنشأ عند insert البيانات إلى الجدول، وخلال merges تكون الأجزاء ذات مستويات أعلى).
+
+ملاحظة: لا يُدعَم تغيير serialization لبنية البيانات المشتركة إلا
+مع `v3` [object serialization version](/ar/reference/settings/merge-tree-settings#object_serialization_version)
+
+<div id="shared-data-map">
+  #### Map
+</div>
+
+في إصدار التسلسل `map`، تُسلسَل البيانات المشتركة كعمود واحد من النوع `Map(String, String)`، تمامًا كما تُخزَّن في
+الذاكرة. لقراءة العمود الفرعي للمسار من هذا النوع من التسلسل، يقرأ ClickHouse عمود `Map` بالكامل ثم
+يستخرج المسار المطلوب في الذاكرة.
+
+يكون هذا التسلسل فعّالًا لكتابة البيانات وقراءة عمود `JSON` بالكامل، لكنه ليس فعّالًا لقراءة الأعمدة الفرعية للمسارات.
+
+<div id="shared-data-map-with-buckets">
+  #### Map مع الحاويات
+</div>
+
+في إصدار تسلسل `map_with_buckets`، تُسلسَل البيانات المشتركة إلى `N` أعمدة (&quot;حاويات&quot;) من النوع `Map(String, String)`.
+ويحتوي كل bucket من هذه الحاويات على مجموعة فرعية فقط من المسارات. لقراءة عمود فرعي لمسار من هذا النوع من التسلسل، يقرأ ClickHouse
+عمود `Map` بالكامل من bucket واحد ثم يستخرج المسار المطلوب في الذاكرة.
+
+يكون هذا التسلسل أقل كفاءة عند كتابة البيانات وقراءة عمود `JSON` بالكامل، لكنها أكثر كفاءة عند قراءة الأعمدة الفرعية للمسارات
+لأنها لا تقرأ البيانات إلا من الحاويات المطلوبة.
+
+يُتحكَّم في عدد الحاويات `N` بواسطة إعدادات MergeTree [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ar/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (8 افتراضيًا)
+و[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (32 افتراضيًا).
+والحد الأقصى المسموح به لكلا الإعدادين هو 256.
+
+<div id="shared-data-advanced">
+  #### متقدّم
+</div>
+
+في إصدار التسلسل `advanced`، تُسلسَل البيانات المشتركة ضمن بنية بيانات خاصة تُحسِّن إلى أقصى حد أداء
+قراءة الأعمدة الفرعية للمسارات، وذلك عبر تخزين بعض المعلومات الإضافية التي تتيح قراءة بيانات المسارات المطلوبة فقط.
+كما يدعم هذا التسلسل أيضًا الحاويات، بحيث تحتوي كل حاوية على مجموعة فرعية فقط من المسارات.
+
+يُعد هذا التسلسل غير فعّال نسبيًا عند كتابة البيانات (لذلك لا يُنصح باستخدامه مع الأجزاء ذات المستوى الصفري)، كما أن قراءة عمود `JSON` بالكامل أقل كفاءةً قليلًا مقارنةً بتسلسل `map`، لكنه فعّال جدًا عند قراءة الأعمدة الفرعية للمسارات.
+
+ملاحظة: بسبب تخزين بعض المعلومات الإضافية داخل بنية البيانات، يكون حجم التخزين على القرص أكبر مع هذا التسلسل مقارنةً
+بتسلسلي `map` و`map_with_buckets`.
+
+للاطلاع على نظرة عامة أكثر تفصيلًا حول تسلسلات البيانات المشتركة الجديدة وتفاصيل التنفيذ، اقرأ [منشور المدونة](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+<div id="controlling-the-number-of-dynamic-paths">
+  ## التحكّم في عدد المسارات الديناميكية داخل JSON في أجزاء MergeTree
+</div>
+
+الطريقة الرئيسية لفرض حدّ على المسارات الديناميكية في JSON هي استخدام المَعلَمة `max_dynamic_paths` داخل تعريف النوع JSON.
+لكن تغيير `max_dynamic_paths` للأعمدة الحالية يتطلّب تشغيل `ALTER TABLE <table> MODIFY COLUMN <column> JSON(max_dynamic_paths=K)`، مما يبدأ عملية mutation في الخلفية تعيد كتابة جميع الأجزاء الموجودة.
+وقد تكون هذه العملية ثقيلة جدًا، ويمكن أن تؤثر في أداء الخادم حتى اكتمالها. ولتجنّب ذلك، يمكنك استخدام هذه الإعدادات الثلاثة التي تساعدك على تغيير حدّ المسارات الديناميكية في جداول MergeTree لأجزاء البيانات الجديدة:
+
+* `merge_max_dynamic_subcolumns_in_wide_part` - إعداد في MergeTree يحدّ من عدد الأعمدة الفرعية الديناميكية لكل عمود JSON أثناء merge إلى جزء بيانات Wide.
+* `merge_max_dynamic_subcolumns_in_compact_part` - إعداد في MergeTree يحدّ من عدد الأعمدة الفرعية الديناميكية لكل عمود JSON أثناء merge إلى جزء بيانات Compact.
+* `max_dynamic_subcolumns_in_json_type_parsing` - إعداد session يحدّ من عدد الأعمدة الفرعية الديناميكية لكل عمود JSON أثناء parsing بيانات JSON إلى عمود JSON.
+
+ملاحظة: لا يمكن أن يتجاوز حدّ المسارات الديناميكية القيمة المحددة في المَعلَمة `max_dynamic_paths`، حتى إذا كانت قيم الإعدادات المذكورة أعلى.
+
+<div id="introspection-functions">
+  ## دوال الاستبطان
+</div>
+
+توجد عدة دوال تساعد على فحص محتوى عمود JSON:
+
+* [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths)
+* [`JSONAllPathsWithTypes`](/ar/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes)
+* [`JSONAllValues`](/ar/reference/functions/regular-functions/json-functions#JSONAllValues)
+* [`JSONDynamicPaths`](/ar/reference/functions/regular-functions/json-functions#JSONDynamicPaths)
+* [`JSONDynamicPathsWithTypes`](/ar/reference/functions/regular-functions/json-functions#JSONDynamicPathsWithTypes)
+* [`JSONSharedDataPaths`](/ar/reference/functions/regular-functions/json-functions#JSONSharedDataPaths)
+* [`JSONSharedDataPathsWithTypes`](/ar/reference/functions/regular-functions/json-functions#JSONSharedDataPathsWithTypes)
+* [`distinctDynamicTypes`](/ar/reference/functions/aggregate-functions/distinctDynamicTypes)
+* [`distinctJSONPaths and distinctJSONPathsAndTypes`](/ar/reference/functions/aggregate-functions/distinctJSONPaths)
+
+**أمثلة**
+
+لنفحص محتوى مجموعة بيانات [GH Archive](https://www.gharchive.org/) ليوم `2020-01-01`:
+
+```sql title="Query"
+SELECT arrayJoin(distinctJSONPaths(json))
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+```
+
+```text title="Response"
+┌─arrayJoin(distinctJSONPaths(json))─────────────────────────┐
+│ actor.avatar_url                                           │
+│ actor.display_login                                        │
+│ actor.gravatar_id                                          │
+│ actor.id                                                   │
+│ actor.login                                                │
+│ actor.url                                                  │
+│ created_at                                                 │
+│ id                                                         │
+│ org.avatar_url                                             │
+│ org.gravatar_id                                            │
+│ org.id                                                     │
+│ org.login                                                  │
+│ org.url                                                    │
+│ payload.action                                             │
+│ payload.before                                             │
+│ payload.comment._links.html.href                           │
+│ payload.comment._links.pull_request.href                   │
+│ payload.comment._links.self.href                           │
+│ payload.comment.author_association                         │
+│ payload.comment.body                                       │
+│ payload.comment.commit_id                                  │
+│ payload.comment.created_at                                 │
+│ payload.comment.diff_hunk                                  │
+│ payload.comment.html_url                                   │
+│ payload.comment.id                                         │
+│ payload.comment.in_reply_to_id                             │
+│ payload.comment.issue_url                                  │
+│ payload.comment.line                                       │
+│ payload.comment.node_id                                    │
+│ payload.comment.original_commit_id                         │
+│ payload.comment.original_position                          │
+│ payload.comment.path                                       │
+│ payload.comment.position                                   │
+│ payload.comment.pull_request_review_id                     │
+...
+│ payload.release.node_id                                    │
+│ payload.release.prerelease                                 │
+│ payload.release.published_at                               │
+│ payload.release.tag_name                                   │
+│ payload.release.tarball_url                                │
+│ payload.release.target_commitish                           │
+│ payload.release.upload_url                                 │
+│ payload.release.url                                        │
+│ payload.release.zipball_url                                │
+│ payload.size                                               │
+│ public                                                     │
+│ repo.id                                                    │
+│ repo.name                                                  │
+│ repo.url                                                   │
+│ type                                                       │
+└─arrayJoin(distinctJSONPaths(json))─────────────────────────┘
+```
+
+```sql title="Query"
+SELECT arrayJoin(distinctJSONPathsAndTypes(json))
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+SETTINGS date_time_input_format = 'best_effort'
+```
+
+```text title="Response"
+┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
+│ ('actor.avatar_url',['String'])                             │
+│ ('actor.display_login',['String'])                          │
+│ ('actor.gravatar_id',['String'])                            │
+│ ('actor.id',['Int64'])                                      │
+│ ('actor.login',['String'])                                  │
+│ ('actor.url',['String'])                                    │
+│ ('created_at',['DateTime'])                                 │
+│ ('id',['String'])                                           │
+│ ('org.avatar_url',['String'])                               │
+│ ('org.gravatar_id',['String'])                              │
+│ ('org.id',['Int64'])                                        │
+│ ('org.login',['String'])                                    │
+│ ('org.url',['String'])                                      │
+│ ('payload.action',['String'])                               │
+│ ('payload.before',['String'])                               │
+│ ('payload.comment._links.html.href',['String'])             │
+│ ('payload.comment._links.pull_request.href',['String'])     │
+│ ('payload.comment._links.self.href',['String'])             │
+│ ('payload.comment.author_association',['String'])           │
+│ ('payload.comment.body',['String'])                         │
+│ ('payload.comment.commit_id',['String'])                    │
+│ ('payload.comment.created_at',['DateTime'])                 │
+│ ('payload.comment.diff_hunk',['String'])                    │
+│ ('payload.comment.html_url',['String'])                     │
+│ ('payload.comment.id',['Int64'])                            │
+│ ('payload.comment.in_reply_to_id',['Int64'])                │
+│ ('payload.comment.issue_url',['String'])                    │
+│ ('payload.comment.line',['Int64'])                          │
+│ ('payload.comment.node_id',['String'])                      │
+│ ('payload.comment.original_commit_id',['String'])           │
+│ ('payload.comment.original_position',['Int64'])             │
+│ ('payload.comment.path',['String'])                         │
+│ ('payload.comment.position',['Int64'])                      │
+│ ('payload.comment.pull_request_review_id',['Int64'])        │
+...
+│ ('payload.release.node_id',['String'])                      │
+│ ('payload.release.prerelease',['Bool'])                     │
+│ ('payload.release.published_at',['DateTime'])               │
+│ ('payload.release.tag_name',['String'])                     │
+│ ('payload.release.tarball_url',['String'])                  │
+│ ('payload.release.target_commitish',['String'])             │
+│ ('payload.release.upload_url',['String'])                   │
+│ ('payload.release.url',['String'])                          │
+│ ('payload.release.zipball_url',['String'])                  │
+│ ('payload.size',['Int64'])                                  │
+│ ('public',['Bool'])                                         │
+│ ('repo.id',['Int64'])                                       │
+│ ('repo.name',['String'])                                    │
+│ ('repo.url',['String'])                                     │
+│ ('type',['String'])                                         │
+└─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
+```
+
+<div id="alter-modify-column-to-json-type">
+  ## ALTER MODIFY COLUMN إلى النوع JSON
+</div>
+
+يمكن تعديل جدول موجود وتغيير نوع العمود إلى النوع `JSON` الجديد. حاليًا، لا يُدعَم `ALTER` إلا عند التحويل من النوع `String`.
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE test (json String) ENGINE=MergeTree ORDER BY tuple();
+INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}'), ('{"c" : "2020-01-01"}');
+ALTER TABLE test MODIFY COLUMN json JSON;
+SELECT json, json.a, json.b, json.c FROM test;
+```
+
+```text title="Response"
+┌─json─────────────────────────┬─json.a─┬─json.b──┬─json.c─────┐
+│ {"a":"42"}                   │ 42     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ       │
+│ {"a":"43","b":"Hello"}       │ 43     │ Hello   │ ᴺᵁᴸᴸ       │
+│ {"a":"44","b":["1","2","3"]} │ 44     │ [1,2,3] │ ᴺᵁᴸᴸ       │
+│ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
+└──────────────────────────────┴────────┴─────────┴────────────┘
+```
+
+<div id="lazy-type-hints">
+  ## تلميحات الأنواع الكسولة (تجريبية)
+</div>
+
+<Note>
+  هذه الميزة تجريبية، وتتطلب أن يكون الإعداد `allow_experimental_json_lazy_type_hints` مُمكّنًا.
+</Note>
+
+عند إضافة تلميحات الأنواع أو تعديلها في عمود JSON باستخدام `ALTER TABLE ... MODIFY COLUMN`، يعيد ClickHouse عادةً كتابة جميع أجزاء البيانات لتطبيق تلميحات الأنواع الجديدة وتخزينها فعليًا. وقد تكون هذه العملية باهظة التكلفة جدًا للجداول التي تحتوي على كميات كبيرة من البيانات التاريخية (مئات التيرابايتات).
+
+تتيح **تلميحات الأنواع الكسولة** إضافة تلميحات الأنواع كعملية تقتصر على البيانات الوصفية فقط، من دون إعادة كتابة البيانات الحالية:
+
+* **الأجزاء القديمة**: تُطبَّق تلميحات الأنواع وقت الاستعلام عبر التحويل من `Dynamic` إلى النوع المشار إليه
+* **الأجزاء الجديدة**: تُطبَّق تلميحات الأنواع وتُخزَّن فعليًا أثناء عمليات `INSERT`
+* **عمليات الدمج**: تُطبَّق تلميحات الأنواع وتُخزَّن فعليًا عند دمج الأجزاء
+
+وهذا يعني أنه يمكنك إضافة تلميحات الأنواع فورًا، وستُحوَّل البيانات تدريجيًا مع حدوث عمليات الدمج العادية في الخلفية.
+
+<div id="enabling-lazy-type-hints">
+  ### تمكين تلميحات الأنواع الكسولة
+</div>
+
+```sql
+SET allow_experimental_json_lazy_type_hints = 1;
+```
+
+<div id="lazy-type-hints-example">
+  ### مثال
+</div>
+
+```sql title="Query"
+-- Create a table and insert data
+CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
+
+-- Enable experimental setting
+SET allow_experimental_json_lazy_type_hints = 1;
+
+-- Add type hints - this completes instantly without mutation
+ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
+
+-- Query the data - type hints are applied at read time
+SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
+```
+
+```text title="Response"
+┌─json.user_id─┬─toTypeName(json.user_id)─┬─json.score─┬─toTypeName(json.score)─┐
+│          123 │ UInt64                   │       95.5 │ Float64                │
+└──────────────┴──────────────────────────┴────────────┴────────────────────────┘
+```
+
+<div id="verifying-no-mutation-occurred">
+  ### التحقق من عدم حدوث أي mutation
+</div>
+
+يمكنك التحقق من أن `ALTER` قد اكتملت من دون حدوث mutation عبر فحص جدول `system.mutations`:
+
+```sql
+SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
+```
+
+عند تفعيل تلميحات الأنواع المؤجَّلة، لا يُرجع هذا الاستعلام أي صفوف، مما يؤكد أن العملية اقتصرت على البيانات الوصفية فقط.
+
+<div id="materializing-type-hints">
+  ### تجسيد تلميح الأنواع
+</div>
+
+لتجسيد تلميح الأنواع في البيانات الموجودة، يمكنك إما:
+
+1. **انتظار عمليات الدمج في الخلفية**: سيعمل ClickHouse تلقائيًا على تجسيد تلميح الأنواع عند دمج الأجزاء
+2. **فرض الدمج**: استخدم `OPTIMIZE TABLE test_lazy FINAL` لدمج جميع الأجزاء فورًا
+3. **إعادة كتابة الأجزاء**: استخدم `ALTER TABLE test_lazy REWRITE PARTS` لإعادة كتابة الأجزاء باستخدام البيانات الوصفية الجديدة
+
+<div id="lazy-type-hints-limitations">
+  ### القيود
+</div>
+
+* هذه الميزة تجريبية وقد تتغير في الإصدارات المستقبلية
+* قد يترتب على تحويل الأنواع وقت الاستعلام عبء كبير على الأداء مقارنةً بالأنواع المُخزَّنة مسبقًا، خاصةً مع كائنات JSON الكبيرة
+* لا تنطبق هذه الميزة إلا عند تعديل `typed_paths` (تلميحات الأنواع)؛ أما معلمات JSON الأخرى مثل `max_dynamic_paths` أو `SKIP` أو `SKIP REGEXP` فما تزال تتطلب إجراء mutations
+
+<div id="comparison-between-values-of-the-json-type">
+  ## مقارنة قيم نوع JSON
+</div>
+
+تُقارَن كائنات JSON بصورة مماثلة لـ Maps.
+
+على سبيل المثال:
+
+```sql title="Query"
+CREATE TABLE test (json1 JSON, json2 JSON) ENGINE=Memory;
+INSERT INTO test FORMAT JSONEachRow
+{"json1" : {}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : [1, 2, 3]}}
+{"json1" : {"a" : 42}, "json2" : {"a" : "Hello"}}
+{"json1" : {"a" : 42}, "json2" : {"b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42, "b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41, "b" : 42}}
+
+SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
+```
+
+```text title="Response"
+┌─json1──────┬─json2───────────────┬─less(json1, json2)─┬─equals(json1, json2)─┬─greater(json1, json2)─┐
+│ {}         │ {}                  │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {}                  │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"41"}          │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"42"}          │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {"a":["1","2","3"]} │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"Hello"}       │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"b":"42"}          │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"42","b":"42"} │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"41","b":"42"} │                  0 │                    0 │                     1 │
+└────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
+```
+
+**ملاحظة:** إذا احتوى مساران على قيم من أنواع بيانات مختلفة، فتُقارَن وفقًا لـ[قاعدة المقارنة](/ar/reference/data-types/variant#comparing-values-of-variant-data) الخاصة بنوع البيانات `Variant`.
+
+<div id="data-skipping-indexes-for-json">
+  ## فهارس تخطي البيانات في JSON
+</div>
+
+يمكن استخدام [فهارس تخطي البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) مع أعمدة `JSON` بثلاث طرق:
+
+1. **فهارس لأعمدة فرعية محددة** — أنشئ فهرس تخطٍّ قياسيًا لمسار JSON معروف، تمامًا كما تفعل مع عمود عادي. يفهرس هذا *القيم* الموجودة في ذلك المسار.
+2. **فهارس قائمة على المسار باستخدام `JSONAllPaths`** — فهرسة *مجموعة المسارات* الموجودة في كل حبيبة لتخطي الحبيبات التي يستحيل أن تحتوي على المسار المطلوب في الاستعلام.
+3. **فهارس قائمة على القيم باستخدام `JSONAllValues`** — فهرسة *جميع القيم* عبر كل مسارات JSON باستخدام [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) لتسريع البحث النصي الكامل في أي عمود JSON فرعي باستخدام فهرس واحد.
+
+<div id="json-indexes-on-subcolumns">
+  ### فهارس على أعمدة فرعية محددة
+</div>
+
+يمكنك إنشاء فهرس تخطٍ على أي عمود فرعي في JSON باستخدام الصياغة نفسها المستخدمة مع الأعمدة العادية.
+يعمل أي [نوع فهرس مدعوم](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (`minmax`، `set`، `bloom_filter`، `tokenbf_v1`، `ngrambf_v1`، إلخ).
+
+هناك طريقتان للإشارة إلى عمود فرعي في JSON داخل تعبير الفهرس:
+
+* **مسار محدد النوع** مُعلَن في تلميح الأنواع لـ JSON — يُوصَل إليه بالاسم مباشرةً: `json.a`.
+* **مسار ديناميكي** مع تحويل نوع صريح — استخدم صياغة التحويل `::`: `json.b::String`.
+
+يمكنك أيضًا استخدام تعبيرات تجمع بين عدة أعمدة فرعية، على سبيل المثال `json.a || json.b::String`.
+
+<div id="json-indexes-on-subcolumns-example">
+  #### مثال
+</div>
+
+```sql title="Query"
+CREATE TABLE sensor_data
+(
+    data JSON(sensor_id UInt32),
+    INDEX idx_sensor data.sensor_id TYPE minmax GRANULARITY 1,
+    INDEX idx_location data.location::String TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', number, 'location', 'room_' || toString(number))) FROM numbers(4);
+INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', number, 'location', 'room_' || toString(number))) FROM numbers(4, 4);
+```
+
+يُضيّق فهرس `minmax` على العمود الفرعي `data.sensor_id` ذي النوع المحدد نطاق الفحص ليقتصر على الحبيبات المطابقة:
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.sensor_id < 2;
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx_sensor
+        Description: minmax GRANULARITY 1
+        Parts: 1/2
+        Granules: 2/8
+```
+
+يعمل فهرس `bloom_filter` أيضًا على العمود الفرعي المُحوَّل `data.location::String`:
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'room_5';
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx_location
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/2
+        Granules: 1/8
+```
+
+<div id="json-indexes-jsonallpaths">
+  ### فهارس قائمة على المسارات باستخدام JSONAllPaths
+</div>
+
+يمكن أيضًا إنشاء [فهارس تخطي البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) على أعمدة `JSON` باستخدام الدالة [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths).
+ويعمل ذلك بطريقة مشابهة لإنشاء فهارس التخطي على أعمدة [`Map`](/ar/reference/data-types/map) عبر `mapKeys` — إذ يخزّن الفهرس مجموعة مسارات JSON الموجودة في كل حبيبة، ويستخدمها لتخطي الحبيبات التي لا يمكن أن تحتوي على المسار المطلوب في الاستعلام.
+
+<div id="json-indexes-jsonallpaths-supported-types">
+  #### أنواع الفهارس المدعومة
+</div>
+
+يمكن استخدام `JSONAllPaths` مع أنواع فهارس التخطي التالية:
+
+* [`bloom_filter`](/ar/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) — يدعم `equals` و`in` و`IS NOT NULL`.
+* [`tokenbf_v1`](/ar/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) — يدعم `equals` و`IS NOT NULL`.
+* [`ngrambf_v1`](/ar/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — يدعم `equals` و`IS NOT NULL`.
+* [`text`](/ar/reference/engines/table-engines/mergetree-family/textindexes) (فهرس مقلوب) — يدعم `equals` و`in` و`IS NOT NULL`.
+
+<div id="json-indexes-on-subcolumns-example">
+  #### مثال
+</div>
+
+```sql title="Query"
+CREATE TABLE events
+(
+    data JSON,
+    INDEX idx JSONAllPaths(data) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO events VALUES ('{"user": {"name": "Alice"}, "action": "login"}');
+INSERT INTO events VALUES ('{"metric": {"cpu": 0.95}, "host": "srv1"}');
+```
+
+يمكنك استخدام `EXPLAIN indexes = 1` للتحقق من استخدام فهرس التخطي. عندما يكون المسار موجودًا في جزء واحد فقط، يتجاوز الفهرس الجزء الآخر:
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name = 'Alice';
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/2
+        Granules: 1/2
+```
+
+عندما لا يكون المسار موجودًا في أي جزء، تُتخطّى جميع الأجزاء والحبيبات:
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM events WHERE data.nonexistent = 1;
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx
+        Description: bloom_filter GRANULARITY 1
+        Parts: 0/2
+        Granules: 0/2
+```
+
+يستخدم `IS NOT NULL` أيضًا الفهرس — إذ يتجاوز الحبيبات التي يكون فيها المسار غير موجود (لأن القيمة ستكون `NULL`):
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/2
+        Granules: 1/2
+```
+
+<div id="json-indexes-jsonallpaths-how-it-works">
+  #### كيف يعمل
+</div>
+
+يُنتج التعبير `JSONAllPaths(json_column)` قيمة `Array(String)` تحتوي على جميع المسارات الموجودة في قيمة JSON.
+يخزّن فهرس التخطي سلاسل المسارات هذه في بنية البيانات الخاصة به (`bloom filter` أو `inverted index`).
+عندما يطبّق الاستعلام عامل تصفية على `json.some.path`، يتحقق الفهرس مما إذا كانت السلسلة `"some.path"` موجودة في الفهرس لكل حبيبة، ويتجاوز الحبيبات التي لا تحتوي عليها.
+
+<div id="json-indexes-jsonallpaths-safety-with-missing-paths">
+  #### الأمان عند غياب المسارات
+</div>
+
+عندما يكون مسار JSON غائبًا عن حبيبة، فإن قيمة العمود الفرعي تكون:
+
+* `NULL` مع النوع `Dynamic` (مثل `json.path`) والأعمدة الفرعية من النوع `Nullable` (مثل `json.path.:Int64`) — تُرجِع المقارنات مع `NULL` دائمًا false، لذا يكون skipping آمنًا.
+* القيمة الافتراضية للنوع في تعبيرات `CAST` غير `Nullable` (مثل `json.path::Int64` الذي ينتج `0` عند غياب المسار) — لا يكون skipping آمنًا إلا عندما تختلف القيمة المُقارَنة عن القيمة الافتراضية. ويتولى الفهرس هذا التمييز تلقائيًا.
+
+<div id="json-indexes-jsonallvalues">
+  ### البحث النصي الكامل باستخدام JSONAllValues
+</div>
+
+يمكن استخدام [الفهارس النصية](/ar/reference/engines/table-engines/mergetree-family/textindexes) لتسريع البحث النصي الكامل في أعمدة JSON من خلال الدالة [`JSONAllValues`](/ar/reference/functions/regular-functions/json-functions#JSONAllValues).
+تُرجع `JSONAllValues` جميع القيم من عمود JSON بصيغة `Array(String)`، ويمكن فهرستها باستخدام فهرس نصي.
+ويغطي فهرس واحد على `JSONAllValues(json_column)` جميع مسارات JSON، مما يتيح البحث النصي الكامل في أي عمود فرعي دون الحاجة إلى إنشاء فهارس منفصلة لكل مسار.
+
+راجع [الفهارس المستندة إلى القيم باستخدام JSONAllValues](/ar/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) في توثيق الفهارس النصية للاطلاع على التفاصيل والأمثلة.
+
+<div id="tips-for-better-usage-of-the-json-type">
+  ## نصائح لتحسين استخدام نوع JSON
+</div>
+
+قبل إنشاء عمود `JSON` وتحميل البيانات فيه، ضع النصائح التالية في اعتبارك:
+
+* افحص بياناتك وحدّد أكبر عدد ممكن من تلميحات المسارات مع أنواعها. فهذا يجعل التخزين والقراءة أكثر كفاءة بدرجة كبيرة.
+* فكّر في المسارات التي ستحتاج إليها والمسارات التي لن تحتاج إليها أبدًا. حدّد المسارات التي لن تحتاج إليها في قسم `SKIP`، وفي قسم `SKIP REGEXP` عند الحاجة. سيؤدي ذلك إلى تحسين التخزين.
+* لا تضبط المعلَمة `max_dynamic_paths` على قيم مرتفعة جدًا، لأن ذلك قد يقلّل من كفاءة التخزين والقراءة.
+  ورغم أن ذلك يعتمد بدرجة كبيرة على معلمات النظام مثل الذاكرة وCPU وما إلى ذلك، فإن القاعدة العامة هي ألا تضبط `max_dynamic_paths` على قيمة تتجاوز 10 000 لتخزين نظام الملفات المحلي و1024 لتخزين نظام الملفات البعيد.
+
+<div id="further-reading">
+  ## للمزيد من القراءة
+</div>
+
+* [كيف بنينا نوع بيانات JSON جديدًا وقويًا لـ ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
+* [تحدي JSON لمليار مستند: ClickHouse في مواجهة MongoDB وElasticsearch وغيرهما](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

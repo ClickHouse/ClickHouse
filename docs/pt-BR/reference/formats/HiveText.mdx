@@ -1,0 +1,136 @@
+---
+alias: []
+description: 'Documentação do formato HiveText'
+input_format: true
+keywords: ['HiveText']
+output_format: false
+slug: /interfaces/formats/HiveText
+title: 'HiveText'
+doc_type: 'Referência'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✗     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+`HiveText` lê o formato de serialização de texto usado pelas tabelas do [Apache Hive](https://hive.apache.org/)
+(o formato gerado pelo `LazySimpleSerDe` do Hive). É um formato de texto delimitado,
+semelhante ao [`CSV`](/pt-BR/reference/formats/CSV/CSV), em que os campos são
+separados pelo delimitador padrão do Hive `\x01` (Ctrl-A). O delimitador de campos pode ser
+configurado por meio de [`input_format_hive_text_fields_delimiter`](#format-settings).
+
+`HiveText` é um formato apenas de entrada. Os dados não têm linha de cabeçalho: os valores são
+mapeados por posição para as colunas da tabela de destino, portanto os nomes e tipos das colunas
+são obtidos da tabela (ou de uma estrutura fornecida
+explicitamente), em vez de serem inferidos a partir dos dados. Durante a leitura, o ClickHouse analisa
+datas e horas no modo best effort (consulte [`date_time_input_format`](/pt-BR/reference/settings/formats#date_time_input_format)),
+preenche campos finais omitidos com os valores padrão das colunas e ignora campos que não
+reconhece.
+
+Dentro de um campo, os valores são analisados usando as mesmas regras de escape do `CSV`, em vez
+dos delimitadores aninhados do Hive. Em particular, uma coluna do tipo
+[`Array`](/pt-BR/reference/data-types/array) é lida a partir da representação
+entre colchetes (por exemplo, `"['a','b','c']"`), e não de valores separados pelo
+delimitador de coleção do Hive `\x02`.
+
+<Info>
+  **As configurações de delimitadores aninhados não têm efeito**
+
+  As configurações [`input_format_hive_text_collection_items_delimiter`](#format-settings) e
+  [`input_format_hive_text_map_keys_delimiter`](#format-settings) são
+  aceitas por compatibilidade, mas atualmente não são usadas durante a análise.
+</Info>
+
+Por padrão, as linhas podem ter um número variável de campos (consulte
+[`input_format_hive_text_allow_variable_number_of_columns`](#format-settings)):
+linhas com menos campos do que a tabela têm as colunas ausentes preenchidas com
+valores padrão, e linhas com campos extras no final têm esses campos extras ignorados.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Os exemplos abaixo substituem o delimitador de campos padrão por uma vírgula (`,`) usando
+[`input_format_hive_text_fields_delimiter`](#format-settings), para facilitar a leitura dos arquivos de entrada.
+
+<div id="reading-data">
+  ### Leitura de um arquivo HiveText
+</div>
+
+Dado o arquivo `hive_data.txt`, com campos separados por vírgulas:
+
+```text title="hive_data.txt"
+1,3
+3,5,9
+```
+
+Criamos uma tabela que define os nomes e os tipos das colunas e inserimos nela o arquivo com `FORMAT HiveText`:
+
+```sql title="Query"
+CREATE TABLE test_tbl (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_tbl FROM INFILE 'hive_data.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_tbl;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 3 │ 0 │
+│ 3 │ 5 │ 9 │
+└───┴───┴───┘
+```
+
+Observe que a primeira linha, `1,3`, tem apenas dois campos, então a coluna ausente `c`
+é preenchida com o valor padrão `0`.
+
+<div id="variable-number-of-columns">
+  ### Número variável de colunas
+</div>
+
+Com o padrão `input_format_hive_text_allow_variable_number_of_columns = 1`,
+as linhas que têm mais campos do que a tabela simplesmente têm os campos
+adicionais ao final ignorados:
+
+```text title="hive_extras.txt"
+1,2,3,4,5
+6,7,8
+```
+
+```sql title="Query"
+CREATE TABLE test_extras (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_extras FROM INFILE 'hive_extras.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_extras ORDER BY a;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 2 │ 3 │
+│ 6 │ 7 │ 8 │
+└───┴───┴───┘
+```
+
+Em vez disso, definir `input_format_hive_text_allow_variable_number_of_columns = 0`
+impõe uma contagem estrita de campos, e uma linha com menos campos do que a tabela gera
+uma exceção de análise.
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+| Configuração                                              | Descrição                                                                                                                                  | Padrão |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| `input_format_hive_text_fields_delimiter`                 | Delimitador entre campos no Hive Text File                                                                                                 | `\x01` |
+| `input_format_hive_text_collection_items_delimiter`       | Delimitador entre itens de coleção (array ou map) no Hive Text File. É aceito, mas atualmente não é usado durante a análise.               | `\x02` |
+| `input_format_hive_text_map_keys_delimiter`               | Delimitador entre um par de chave/valor de map no Hive Text File. É aceito, mas atualmente não é usado durante a análise.                  | `\x03` |
+| `input_format_hive_text_allow_variable_number_of_columns` | Ignora colunas extras na entrada Hive Text (se o arquivo tiver mais colunas do que o esperado) e trata campos ausentes como valores padrão | `1`    |
