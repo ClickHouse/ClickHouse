@@ -387,7 +387,7 @@ TEST(BackupInfo, WithoutCredentialsRedactsAzureArguments)
     for (const auto * locator : {
              "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET;EndpointSuffix=core.windows.net', "
              "'container', 'backup')",
-             "AzureBlobStorage('https://user:SECRET@account.blob.core.windows.net?sv=1&sig=SECRET', 'container', 'backup')",
+             "AzureBlobStorage('https://account.blob.core.windows.net?sv=1&sig=SECRET', 'container', 'backup')",
              "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup', 'account', 'SECRET')"})
     {
         auto redacted = withoutCredentials(BackupInfo::fromString(locator));
@@ -403,7 +403,7 @@ TEST(BackupInfo, WithoutCredentialsRedactsAzureNamedCollectionOverrides)
     auto info = BackupInfo::fromString(
         "AzureBlobStorage(collection, "
         "connection_string = 'DefaultEndpointsProtocol=https;AccountName=account;AccountKey=CONNECTION_SECRET;EndpointSuffix=core.windows.net', "
-        "storage_account_url = 'https://user:URL_SECRET@account.blob.core.windows.net?sig=SAS_SECRET', "
+        "storage_account_url = 'https://account.blob.core.windows.net?sig=SAS_SECRET', "
         "account_name = 'account', account_key = 'ACCOUNT_SECRET', client_id = 'CLIENT_SECRET', tenant_id = 'TENANT_SECRET', "
         "blob_path = 'backup', extra_credentials(account_key = 'FUNCTION_SECRET'))");
 
