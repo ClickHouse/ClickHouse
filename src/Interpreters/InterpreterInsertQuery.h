@@ -66,6 +66,17 @@ public:
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
+    /// Convert SELECT output to the insert schema, without attaching the write sink.
+    static Block convertSelectToInsertSchema(
+        QueryPipelineBuilder & pipeline,
+        const ASTInsertQuery & query,
+        const StoragePtr & table,
+        const ContextPtr & context_,
+        bool no_destination,
+        bool allow_materialized);
+
+    static bool queryHasOrderByAll(const ASTPtr & select);
+
 private:
     static Block getSampleBlock(
         const Names & names,
