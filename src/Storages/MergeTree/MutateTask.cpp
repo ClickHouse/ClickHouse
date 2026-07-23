@@ -2392,13 +2392,26 @@ private:
     {
         bool noop = false;
         ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
-        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
+
+        /// Carry hardlinked projections (not rebuilt, so absent from getProjectionParts) into the manifest finalizePart writes.
+        for (const auto & [dir_name, _] : ctx->source_part->checksums.files)
+        {
+            if (IDataPartStorage::Projection::dirNameType(dir_name) != IDataPartStorage::Projection::Status::Live)
+                continue;
+            if (ctx->all_gathered_data.checksums.has(dir_name))
+                continue;
+            if (ctx->new_data_part->getDataPartStorage().hasProjection(dir_name))
+                ctx->all_gathered_data.checksums.addFile(dir_name, ctx->source_part->checksums.files.at(dir_name));
+        }
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
         out_mut->finalizeIndexGranularity();
         out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, nullptr);
+
+        /// Load projections now that the manifest is written, so the live in-memory part exposes them without a reload.
+        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->out.reset();
     }
 
