@@ -206,22 +206,19 @@ Once materialized views have been created in ClickHouse, they must be registered
 Materialized views should be registered against the **source** in HyperDX that corresponds to the **original source table** from which the view was derived.
 
 <Steps>
-<Step>
-#### Edit the source {#edit-the-source}
+<Step title="Edit the source" id="edit-the-source">
 
 Navigate to the relevant **source** in HyperDX and open the **Edit configuration** dialog. Scroll to the section for materialized views.
 
 <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Edit sources"/>
 </Step>
-<Step>
-#### Add the materialized view {#add-the-materialized-view}
+<Step title="Add the materialized view" id="add-the-materialized-view">
 
 Select **Add materialized view**, then choose the database and target table that back the materialized view.
 
 <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Edit sources"/>
 </Step>
-<Step>
-#### Select metrics {#select-metrics}
+<Step title="Select metrics" id="select-metrics">
 
 In most cases, the timestamp, dimension, and metric columns will be inferred automatically. If not, specify them manually.
 
@@ -233,15 +230,13 @@ For dimensions, specify all the columns, other than the timestamp, that the view
 
 <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Select Metrics"/>
 </Step>
-<Step>
-#### Select the time granularity {#select-time-granularity}
+<Step title="Select the time granularity" id="select-time-granularity">
 
 Select the **time granularity** of the materialized view, for example, one minute.
 
 <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Select Time Granularity"/>
 </Step>
-<Step>
-#### Select the minimum date {#specify-the-minimum-date}
+<Step title="Select the minimum date" id="specify-the-minimum-date">
 
 Specify the minimum date for which the materialized view contains data. This represents the earliest timestamp available in the view and is typically the time at which the view was created, assuming ingestion has been continuous.
 
@@ -258,8 +253,7 @@ If the exact start time is unclear, you can determine it by querying the minimum
 SELECT min(Timestamp) FROM otel_traces_1m
 ```
 </Step>
-<Step>
-#### Save the source {#save-the-source}
+<Step title="Save the source" id="save-the-source">
 
 Save the source configuration.
 
@@ -438,8 +432,7 @@ As discussed earlier, incremental materialized views aren't backfilled automatic
 This approach is best suited for **smaller datasets** or **relatively lightweight aggregation queries** where the full backfill can be completed in a reasonable amount of time without exhausting cluster resources. It's typically appropriate when the backfill query can run in minutes, or at most a few hours, and when temporary increases in CPU, and I/O usage are acceptable. For larger datasets or more expensive aggregations, consider the incremental, or block-based backfilling approaches below instead.
 
 <Steps>
-<Step>
-##### Determine the current coverage of the view {#determine-current-coverage-of-view}
+<Step title="Determine the current coverage of the view" id="determine-current-coverage-of-view">
 
 Before attempting any backfill, first establish what data the materialized view already contains. This is done by querying the minimum timestamp present in the target table:
 
@@ -450,8 +443,7 @@ FROM otel_traces_1m;
 
 This timestamp represents the earliest point from which the view can satisfy queries. Any query from ClickStack requesting data earlier than this timestamp will fall back to the base table.
 </Step>
-<Step>
-##### Decide whether backfilling is necessary {#decide-whether-backfilling-is-neccessary}
+<Step title="Decide whether backfilling is necessary" id="decide-whether-backfilling-is-neccessary">
 
 In most ClickStack deployments, queries focus on recent data, such as the last 24 hours. In these cases, newly created views become fully usable shortly after creation, and backfilling is unnecessary.
 
@@ -461,8 +453,7 @@ If the timestamp returned in the previous step is sufficiently old for your use 
 - The view is critical for performance across those ranges.
 - The dataset size and aggregation cost make backfilling feasible.
 </Step>
-<Step>
-##### Backfill missing historical data {#backfill-missing-historical-data}
+<Step title="Backfill missing historical data" id="backfill-missing-historical-data">
 
 If backfilling is required, populate the materialized view's target table for timestamps earlier than the current minimum using the query from the view modified to only read data older than the timestamp recorded above. Because the target table uses AggregatingMergeTree, the backfill query **must insert aggregation states, not final values**.
 
@@ -510,8 +501,7 @@ This approach is appropriate when:
 The key idea is to use a [**Null table**](/reference/engines/table-engines/special/null) as an ingestion buffer. While the Null table doesn't store data, any materialized views attached to it will still execute, allowing aggregation states to be computed incrementally as data flows through.
 
 <Steps>
-<Step>
-##### Create a Null table for backfilling {#create-null-table}
+<Step title="Create a Null table for backfilling" id="create-null-table">
 
 Create a lightweight Null table that contains only the columns required by the materialized view's aggregation. This minimizes I/O and memory usage.
 
@@ -526,8 +516,7 @@ CREATE TABLE otel_traces_backfill
 ENGINE = Null;
 ```
 </Step>
-<Step>
-##### Attach a materialized view to the Null table {#attach-mv-to-null-table}
+<Step title="Attach a materialized view to the Null table" id="attach-mv-to-null-table">
 
 Next, create a materialized view on the Null table that targets the same aggregation table used by your primary materialized view.
 
@@ -552,8 +541,7 @@ GROUP BY
 
 This materialized view will execute incrementally as rows are inserted into the Null table, producing aggregation states in small blocks.
 </Step>
-<Step>
-##### Backfill data incrementally {#incremental-backfill}
+<Step title="Backfill data incrementally" id="incremental-backfill">
 
 Finally, insert historical data into the Null table. The materialized view will process the data block by block, emitting aggregation states into the target table without persisting the raw rows.
 

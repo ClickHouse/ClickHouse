@@ -66,8 +66,8 @@ sudo ./llvm.sh 21
 </div>
 
 <Note>
-  تُعد Rust تبعية اختيارية لـ ClickHouse.
-  إذا لم تكن Rust مثبّتة، فستُستبعَد بعض ميزات ClickHouse من عملية البناء.
+تُعد Rust تبعية اختيارية لـ ClickHouse.
+إذا لم تكن Rust مثبّتة، فستُستبعَد بعض ميزات ClickHouse من عملية البناء.
 </Note>
 
 أولًا، اتبع الخطوات الواردة في [وثائق Rust الرسمية](https://www.rust-lang.org/tools/install) لتثبيت `rustup`.
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-  ## بناء ClickHouse
+## بناء ClickHouse
 </div>
 
 نوصي بإنشاء مجلد منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-  إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
+إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
 </Note>
 
 شغّل ninja لإتمام عملية البناء:
@@ -133,16 +133,17 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-  تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
-
-  :::tip
-  يوفّر CMake اختصارات للأوامر أعلاه:
-
-  ```sh
-  cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
-  cmake --build build  # تجميع
-  ```
+تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
 </Note>
+
+<Tip>
+يوفّر CMake اختصارات للأوامر أعلاه:
+
+```sh
+cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
+cmake --build build  # تجميع
+```
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## تشغيل الملف التنفيذي لـ ClickHouse

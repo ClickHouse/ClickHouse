@@ -70,8 +70,7 @@ In this example we'll create the same simple executable user-defined function `i
 Previously we created it using SQL, but this time we will create it using Python and configure it via the UI.
 
 <Steps>
-<Step>
-### Create the Python file {#create-python-file}
+<Step title="Create the Python file" id="create-python-file">
 
 Create a new file `main.py` locally:
 
@@ -100,8 +99,7 @@ ClickHouse Cloud expects to find `main.py` in the zip file you will upload via t
 If you name the file something else you will encounter an error.
 </Note>
 </Step>
-<Step>
-### Bundle dependencies and local files {#bundle-dependencies}
+<Step title="Bundle dependencies and local files" id="bundle-dependencies">
 
 To include dependency packages and any additional local files (such as wheel files, configuration files, or data files), place them in the same directory as your `main.py` and `requirements.txt`. When you create the ZIP archive, include all files:
 
@@ -136,8 +134,7 @@ zip is_business_hours.zip main.py
 ClickHouse Cloud rejects UDF archives that contain symbolic links. Make sure your ZIP bundle contains only regular files and directories — uploads with symlinks will fail validation.
 </Warning>
 </Step>
-<Step>
-### Create a UDF via the UI {#create-udf-via-ui}
+<Step title="Create a UDF via the UI" id="create-udf-via-ui">
 
 1. From the Cloud console homepage, click on the name of your organization in the bottom-left menu.
 2. Select **User-defined functions** from the menu.
@@ -155,8 +152,7 @@ ClickHouse Cloud rejects UDF archives that contain symbolic links. Make sure you
     - Otherwise, the status progresses from **building** to **provisioning**. Your service must be awake to complete provisioning. If your service is idle, click **Wake Up Service** in the **UDF details** panel next to the service name.
     - Once complete, the status changes to **deployed**.
 </Step>
-<Step>
-### Test your UDF {#test-your-udf}
+<Step title="Test your UDF" id="test-your-udf">
 
 1.  return back to the home page of the SQL Console by clicking **Settings - return to your service view** from the top left corner of the page
 2.  click **SQL Console** in the left hand menu
@@ -172,8 +168,7 @@ You should see the result:
 true    false
 ```
 </Step>
-<Step>
-### Create a new version {#create-new-version}
+<Step title="Create a new version" id="create-new-version">
 
 To change a UDF's code, create a new version. The **Edit** panel only manages which services a UDF is assigned to; uploading a file there won't replace the deployed code.
 

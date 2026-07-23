@@ -12,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -1008,7 +1009,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.dictionary_as_low_cardinality);
+        format_settings.orc.dictionary_as_low_cardinality,
+        format_settings.date_time_overflow_behavior);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
@@ -1226,12 +1228,14 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_,
-    bool dictionary_as_low_cardinality_)
+    bool dictionary_as_low_cardinality_,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
+    , date_time_overflow_behavior(date_time_overflow_behavior_)
 {
 }
 
@@ -1737,40 +1741,65 @@ static ColumnWithTypeAndName readColumnWithDateData(
     return {std::move(internal_column), internal_type, column_name};
 }
 
-static ColumnWithTypeAndName
-readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithTimestampData(
+    const orc::ColumnVectorBatch * orc_column,
+    const String & column_name,
+    const DataTypePtr & type_hint,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
     const auto * orc_ts_column = dynamic_cast<const orc::TimestampVectorBatch *>(orc_column);
 
-    auto internal_type = std::make_shared<DataTypeDateTime64>(9);
+    /// ORC stores timestamps as (seconds, nanoseconds). ClickHouse used to convert them through a fixed
+    /// DateTime64(9) intermediate (seconds * 1e9 + nanoseconds), which overflows Int64 for timestamps beyond
+    /// ~year 2262 even when the requested DateTime64 scale can represent the value (e.g. Iceberg's DateTime64(6)).
+    /// Read directly at the requested scale so such values round-trip like Parquet, and only handle overflow when
+    /// even the target scale does not fit Int64.
+    UInt32 scale = 9;
+    if (type_hint)
+    {
+        const auto * dt64_hint = typeid_cast<const DataTypeDateTime64 *>(removeNullable(recursiveRemoveLowCardinality(type_hint)).get());
+        if (dt64_hint)
+            scale = dt64_hint->getScale();
+    }
+
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDateTime64 &>(*internal_column).getData();
     column_data.reserve(orc_ts_column->numElements);
 
-    constexpr Int64 multiplier = 1e9L;
+    /// Factor to go from nanoseconds down to the target scale (scale is in [0, 9]).
+    const Int128 divisor = DecimalUtils::scaleMultiplier<Int128>(9 - scale);
+    const Int128 int64_min = std::numeric_limits<Int64>::min();
+    const Int128 int64_max = std::numeric_limits<Int64>::max();
+
     for (size_t i = 0; i < orc_ts_column->numElements; ++i)
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
         {
-            Int64 timestamp_value = 0;
-            Int64 seconds = orc_ts_column->data[i];
-            Int64 nanoseconds = orc_ts_column->nanoseconds[i];
+            const Int64 seconds = orc_ts_column->data[i];
+            const Int64 nanoseconds = orc_ts_column->nanoseconds[i];
 
-            /// Check for overflow when converting timestamp to DateTime64(9)
-            bool overflow = common::mulOverflow(seconds, multiplier, timestamp_value);
-            overflow |= common::addOverflow(timestamp_value, nanoseconds, timestamp_value);
+            /// seconds * 1e9 + nanoseconds cannot overflow Int128 (|seconds| < 2^63, product < ~9.2e27 << Int128 max).
+            const Int128 nanos_total = static_cast<Int128>(seconds) * 1'000'000'000 + nanoseconds;
+            /// Integer division truncates toward zero, matching the DateTime64(9) -> DateTime64(scale) cast that ran afterwards.
+            Int128 value = nanos_total / divisor;
 
-            if (overflow)
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Timestamp value in column \"{}\" is out of range for DateTime64: seconds={}, nanoseconds={}",
-                    column_name,
-                    seconds,
-                    nanoseconds);
+            if (value < int64_min || value > int64_max)
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    value = value < int64_min ? int64_min : int64_max;
+                else
+                    /// Throw for both `throw` and `ignore` (the default): keep the historical behavior and never silently corrupt data.
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Timestamp value in column \"{}\" is out of range for DateTime64({}): seconds={}, nanoseconds={}",
+                        column_name,
+                        scale,
+                        seconds,
+                        nanoseconds);
+            }
 
-            Decimal64 decimal64;
-            decimal64.value = timestamp_value;
-            column_data.emplace_back(std::move(decimal64));
+            column_data.push_back(DateTime64(static_cast<Int64>(value)));
         }
         else
             column_data.push_back(0);
@@ -1892,7 +1921,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithDateData(orc_column, column_name, type_hint);
         case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
-            return readColumnWithTimestampData(orc_column, column_name);
+            return readColumnWithTimestampData(orc_column, column_name, type_hint, date_time_overflow_behavior);
         case orc::DECIMAL:
         {
             auto interal_type = parseORCType(orc_type, false, false, nullptr, skipped);

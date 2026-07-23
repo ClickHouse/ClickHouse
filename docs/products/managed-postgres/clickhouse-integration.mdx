@@ -25,8 +25,7 @@ Before you proceed, ensure that your Postgres service is accessible to the Click
 Click **Replicate data in ClickHouse** to start setting up your ClickPipe.
 
 <Steps>
-<Step>
-## Configure the replication service {#configure-replication-service}
+<Step title="Configure the replication service" id="configure-replication-service">
 
 Fill in the replication settings:
 
@@ -42,8 +41,7 @@ Fill in the replication settings:
 
 Click **Next** to proceed.
 </Step>
-<Step>
-## Configure replication settings {#replication-settings}
+<Step title="Configure replication settings" id="replication-settings">
 
 Fine-tune how data is replicated:
 
@@ -57,14 +55,13 @@ Fine-tune how data is replicated:
 
 Click **Next** to proceed.
 </Step>
-<Step>
-## Select tables to replicate {#select-tables}
+<Step title="Select tables to replicate" id="select-tables">
 
 Choose a destination database and select which tables to replicate:
 
 - **Destination database**: Select an existing ClickHouse database or create a new one
 - **Prefix default destination table names with schema name**: Adds the Postgres schema as a prefix to avoid naming conflicts
-- **Preserve NULL values from source**: Maintains NULL values instead of converting to defaults
+- **Preserve NULL values from source**: Maintains NULL values instead of converting to type defaults. This setting applies to all tables in the pipe and cannot be changed after the pipe is created.
 - **Remove deleted rows during merges**: For [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, physically removes deleted rows during background merges
 
 Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.
@@ -73,8 +70,7 @@ Expand schemas and select individual tables to replicate. You can also customize
 
 Click **Replicate data to ClickHouse** to start the replication.
 </Step>
-<Step>
-## Monitor your ClickPipe {#monitor-clickpipe}
+<Step title="Monitor your ClickPipe" id="monitor-clickpipe">
 
 Once the ClickPipe starts, you'll see it listed in the same menu. The initial snapshot of all data may take some time depending on the size of your tables.
 

@@ -25,8 +25,7 @@ This example can be found as a notebook in the [examples repository](https://git
 You can run the following steps either from your Python REPL or via script.
 
 <Steps>
-<Step>
-## Install libraries {#install-libraries}
+<Step title="Install libraries" id="install-libraries">
 
 Install the CrewAI library by running the following commands:
 
@@ -36,8 +35,7 @@ pip install -q "crewai-tools[mcp]"
 pip install -q ipywidgets
 ```
 </Step>
-<Step>
-## Setup credentials {#setup-credentials}
+<Step title="Setup credentials" id="setup-credentials">
 
 Next, you'll need to provide your OpenAI API key:
 
@@ -62,8 +60,7 @@ env = {
 }
 ```
 </Step>
-<Step>
-## Initialize MCP server and CrewAI agent {#initialize-mcp-and-agent}
+<Step title="Initialize MCP server and CrewAI agent" id="initialize-mcp-and-agent">
 
 Now configure the ClickHouse MCP server to point at the ClickHouse SQL playground 
 and also initialize our agent and ask it a question:

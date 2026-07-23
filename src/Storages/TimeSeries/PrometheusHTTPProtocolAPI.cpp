@@ -96,6 +96,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
         writeQueryResponse(response, executor, converter.getResultType());
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {

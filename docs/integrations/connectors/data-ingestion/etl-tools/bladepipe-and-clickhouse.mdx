@@ -31,8 +31,7 @@ Currently BladePipe supports for data integration to ClickHouse from the followi
 More sources are to be supported.
 
 <Steps>
-<Step>
-## Download and run BladePipe {#1-run-bladepipe}
+<Step title="Download and run BladePipe" id="1-run-bladepipe">
 1. Log in to <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
 
 2. Follow the instructions in <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Install Worker (Docker)</a> or <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Install Worker (Binary)</a> to download and install a BladePipe Worker.
@@ -41,8 +40,7 @@ More sources are to be supported.
   Alternatively, you can download and deploy <a href="https://doc.bladepipe.com/productOP/onPremise/installation/install_all_in_one_binary" target="_blank">BladePipe Enterprise</a>.
 </Note>
 </Step>
-<Step>
-## Add ClickHouse as a target {#2-add-clickhouse-as-a-target}
+<Step title="Add ClickHouse as a target" id="2-add-clickhouse-as-a-target">
 
 <Note>
   1. BladePipe supports ClickHouse version `20.12.3.3` or above.
@@ -57,8 +55,7 @@ More sources are to be supported.
 
 3. Click "Add DataSource" at the bottom, and a ClickHouse instance is added.
 </Step>
-<Step>
-## Add MySQL as a source {#3-add-mysql-as-a-source}
+<Step title="Add MySQL as a source" id="3-add-mysql-as-a-source">
 In this tutorial, we use a MySQL instance as the source, and explain the process of loading MySQL data to ClickHouse.
 
 <Note>
@@ -73,8 +70,7 @@ To use MySQL as a source, make sure that the user has the <a href="https://doc.b
 
 3. Click "Add DataSource" at the bottom, and a MySQL instance is added.
 </Step>
-<Step>
-## Create a pipeline {#4-create-a-pipeline}
+<Step title="Create a pipeline" id="4-create-a-pipeline">
 
 1. In BladePipe, click "DataJob" > "Create DataJob".
 
@@ -93,8 +89,7 @@ To use MySQL as a source, make sure that the user has the <a href="https://doc.b
 6. Confirm the DataJob creation, and the DataJob runs automatically.
     <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob is running" />
 </Step>
-<Step>
-## Verify the data {#5-verify-the-data}
+<Step title="Verify the data" id="5-verify-the-data">
 1. Stop data write in MySQL instance and wait for ClickHouse to merge data.
 <Note>
 Due to the unpredictable timing of ClickHouse's automatic merging, you can manually trigger a merging by running the `OPTIMIZE TABLE xxx FINAL;` command. Note that there is a chance that this manual merging may not always succeed.
