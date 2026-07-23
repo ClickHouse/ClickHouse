@@ -76,9 +76,16 @@ bool isBareMetricName(const String & name)
 /// `metric_name = '<match>'` predicate. Treating a full selector as a literal metric name would look up
 /// a metric literally named `go_info{group="PROD"}` and silently return the wrong metadata, so reject
 /// anything that is not a bare metric name with a clear `NOT_IMPLEMENTED` error (fail closed) instead.
+/// An explicitly empty `match[]` value (e.g. `?match[]=`) is not a valid series selector either:
+/// Prometheus rejects it with a parse error rather than silently dropping it, so it is rejected here
+/// too (fail closed) instead of falling back to an unfiltered or partially filtered result.
 void checkMatchParamIsSupported(const String & match_param)
 {
-    if (!match_param.empty() && !isBareMetricName(match_param))
+    if (match_param.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid empty value of the 'match[]' parameter: expected a series selector");
+    if (!isBareMetricName(match_param))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "The Prometheus metadata endpoints currently support only a bare metric name in the 'match[]' "
@@ -89,16 +96,16 @@ void checkMatchParamIsSupported(const String & match_param)
 /// Prometheus allows the `match[]` parameter to be repeated, and the result is the union of the series
 /// matched by each selector. Within the bare-metric-name subset supported so far that union is an exact
 /// `metric_name IN (...)` predicate. Returns an empty string when there is no filter to apply (no
-/// `match[]` values, or only empty ones). Each value is validated by `checkMatchParamIsSupported`, so a
-/// full series selector anywhere in the list is rejected (fail closed) instead of being silently dropped.
+/// `match[]` values at all). Each value is validated by `checkMatchParamIsSupported`, so an empty value
+/// or a full series selector anywhere in the list is rejected (fail closed) instead of being silently
+/// dropped.
 String makeMetricNameCondition(const Strings & match_params)
 {
     Strings metric_names;
     for (const auto & match_param : match_params)
     {
         checkMatchParamIsSupported(match_param);
-        if (!match_param.empty())
-            metric_names.push_back(match_param);
+        metric_names.push_back(match_param);
     }
 
     if (metric_names.empty())
@@ -640,17 +647,15 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    /// Prometheus requires at least one non-empty `match[]` series selector on `/api/v1/series`
-    /// (unlike `/labels` and `/label/<name>/values`, where it is optional). Without it the endpoint
-    /// would run an unbounded `SELECT DISTINCT ... FROM <tags>` over the whole table and return a
-    /// potentially huge response for a malformed or incomplete client call, so reject it (fail closed).
-    bool has_match = false;
-    for (const auto & match_param : match_params)
-        has_match |= !match_param.empty();
-    if (!has_match)
+    /// Prometheus requires at least one `match[]` series selector on `/api/v1/series` (unlike
+    /// `/labels` and `/label/<name>/values`, where it is optional). Without it the endpoint would run
+    /// an unbounded `SELECT DISTINCT ... FROM <tags>` over the whole table and return a potentially
+    /// huge response for a malformed or incomplete client call, so reject it (fail closed). An
+    /// explicitly empty `match[]` value is rejected by `makeMetricNameCondition` below.
+    if (match_params.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The Prometheus /api/v1/series endpoint requires at least one non-empty 'match[]' series selector");
+            "The Prometheus /api/v1/series endpoint requires at least one 'match[]' series selector");
 
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();

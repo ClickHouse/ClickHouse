@@ -7,6 +7,8 @@
    silently returning the wrong metadata.
 3. Prometheus allows `match[]` to be repeated; the result is the union over all the given metric names,
    and a repeated value must not be silently dropped.
+4. An explicitly empty `match[]` value is rejected (Prometheus fails to parse an empty selector) instead
+   of being silently dropped, which would fall back to unfiltered or partially filtered metadata.
 """
 
 import pytest
@@ -157,3 +159,39 @@ def test_selector_anywhere_in_repeated_match_rejected():
     data = response.json()
     assert data["status"] == "error", f"Expected error status, got: {data}"
     assert "match[]" in data["error"], f"Unexpected error message: {data}"
+
+
+def test_empty_match_value_is_rejected():
+    """An explicitly empty `match[]` value (`?match[]=`) is not a valid series selector: Prometheus
+    rejects it with a parse error instead of silently dropping it, so all three metadata endpoints
+    must return a 400 instead of falling back to unfiltered metadata."""
+    for path in (
+        "/api/v1/series?match[]=",
+        "/api/v1/labels?match[]=",
+        "/api/v1/label/host/values?match[]=",
+    ):
+        url = f"http://{node.ip_address}:9093{path}"
+        response = requests.get(url)
+        assert response.status_code == 400, f"{path}: expected 400, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["status"] == "error", f"{path}: expected error status, got: {data}"
+        assert "match[]" in data["error"], f"{path}: unexpected error message: {data}"
+
+
+def test_empty_match_value_mixed_with_valid_is_rejected():
+    """An empty `match[]` value must be rejected even when another value in the list is a valid bare
+    metric name; otherwise the request would fail open and return partially filtered metadata."""
+    for path in (
+        "/api/v1/series?match[]=&match[]=cpu_usage",
+        "/api/v1/labels?match[]=&match[]=cpu_usage",
+        "/api/v1/label/host/values?match[]=&match[]=cpu_usage",
+        "/api/v1/series?match[]=cpu_usage&match[]=",
+        "/api/v1/labels?match[]=cpu_usage&match[]=",
+        "/api/v1/label/host/values?match[]=cpu_usage&match[]=",
+    ):
+        url = f"http://{node.ip_address}:9093{path}"
+        response = requests.get(url)
+        assert response.status_code == 400, f"{path}: expected 400, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["status"] == "error", f"{path}: expected error status, got: {data}"
+        assert "match[]" in data["error"], f"{path}: unexpected error message: {data}"

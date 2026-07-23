@@ -460,7 +460,7 @@ Each endpoint needs a handler of type `query_api`. Because the label-values endp
 ```
 
 :::note
-Each `match[]` value currently supports a plain metric name only. A full series selector with label matchers (e.g. `cpu_usage{host="server1"}`) is not yet parsed and is rejected with an explicit error rather than being treated as a metric literally named `cpu_usage{host="server1"}`.
+Each `match[]` value currently supports a plain metric name only. A full series selector with label matchers (e.g. `cpu_usage{host="server1"}`) is not yet parsed and is rejected with an explicit error rather than being treated as a metric literally named `cpu_usage{host="server1"}`. An explicitly empty `match[]` value (e.g. `?match[]=`) is rejected as well, as in Prometheus, instead of being silently ignored.
 :::
 
 # Functions {#functions}
