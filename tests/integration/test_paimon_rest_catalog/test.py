@@ -146,7 +146,28 @@ def test_paimon_rest_catalog(started_cluster):
         f" region='cn-hangzhou';",
         settings={"allow_experimental_database_paimon_rest_catalog": 1},
     )
-    node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
+    # The DLF server shares the warehouse with the bearer server, so the table
+    # created above must be visible. Every request is signed individually (the
+    # DLF v4 signature covers method, path and query parameters), so these
+    # queries verify that signing works for requests other than the initial
+    # config one made at CREATE DATABASE time.
+    assert (
+        node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
+        == "test.test_table\n"
+    )
+    assert node.query(
+        "DESC `test.test_table`;", database="paimon_rest_db_dlf"
+    ) == (
+        "f_string\tNullable(String)\t\t\t\t\t\n"
+        "f_int\tNullable(Int32)\t\t\t\t\t\n"
+        "f_bigint\tNullable(Int64)\t\t\t\t\t\n"
+    )
+    assert (
+        node.query(
+            "SELECT count(1) FROM `test.test_table`;", database="paimon_rest_db_dlf"
+        )
+        == "10\n"
+    )
 
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
     with pytest.raises(QueryRuntimeException) as exc_info:
