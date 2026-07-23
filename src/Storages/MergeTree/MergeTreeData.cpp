@@ -358,6 +358,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_empty_part_inject_stale_dir[];
+    extern const char claim_inject_stale_part_dir[];
 }
 
 namespace ErrorCodes
@@ -3743,6 +3744,64 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
 {
     temporary_parts.add(part_dir_name);
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
+}
+
+void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const
+{
+    /// The claim guarantees that no concurrent operation owns this name, so an existing directory can
+    /// only be a stale leftover of an operation that was interrupted (or rolled back) after creating the
+    /// directory and retried later with the same deterministic name. It must be removed BEFORE the part
+    /// storage is constructed, so packed storage does not seed its archive reader or snapshot the mark
+    /// layout (`index_granularity_info`) from the stale contents, and so `freeze`/`freezeRemote` (via
+    /// `Backup`) does not reject a non-empty destination.
+    chassert(temporary_parts.contains(part_dir_name));
+
+    auto relative_part_dir = fs::path(relative_data_path) / part_dir_name;
+    if (!disk->existsDirectory(relative_part_dir))
+        return;
+
+    LOG_WARNING(log, "Removing stale temporary directory {}", (fs::path(disk->getPath()) / relative_part_dir).string());
+
+    /// Same rule as in `clearOldTemporaryDirectories`: even a temporary part could be downloaded with
+    /// zero-copy replication, and we don't control the amount of refs for temporary parts, so we cannot
+    /// decide whether the blobs can be removed or not.
+    const auto settings = getSettings();
+    bool keep_shared = false;
+    if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
+    {
+        LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}",
+            (fs::path(disk->getPath()) / relative_part_dir).string());
+        keep_shared = true;
+    }
+
+    disk->removeSharedRecursive(relative_part_dir, keep_shared, {});
+}
+
+scope_guard MergeTreeData::claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover) const
+{
+    /// Only temporary names may be auto-reclaimed. For anything else (e.g. "detached/<dir>" during
+    /// ATTACH) the directory contents are the payload, and reclaiming would destroy user data.
+    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot claim {}: not a temporary part directory name", part_dir_name);
+
+    scope_guard temporary_directory_lock = getTemporaryPartDirectoryHolder(part_dir_name);
+
+    /// For testing: simulate a stale leftover directory of a previously interrupted operation. The dummy
+    /// file makes the directory non-empty, so the reclaim below exercises removal of a non-empty
+    /// directory.
+    fiu_do_on(FailPoints::claim_inject_stale_part_dir,
+    {
+        auto relative_part_dir = fs::path(relative_data_path) / part_dir_name;
+        disk->createDirectories(relative_part_dir);
+        auto out = disk->writeFile(relative_part_dir / "stale_dummy_file.txt");
+        writeString("stale", *out);
+        out->finalize();
+    });
+
+    if (may_have_leftover)
+        reclaimStaleTemporaryPartDirectory(disk, part_dir_name);
+
+    return temporary_directory_lock;
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::asMutableDeletingPart(const DataPartPtr & part)

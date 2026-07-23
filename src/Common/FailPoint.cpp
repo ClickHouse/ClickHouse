@@ -147,6 +147,7 @@ static struct InitFiu
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(lazy_pipe_fds_fail_close) \
     ONCE(create_empty_part_inject_stale_dir) \
+    REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \

@@ -1462,6 +1462,27 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
+    /// Removes a stale leftover directory `relative_data_path / part_dir_name` on `disk`, if any.
+    /// Requires the name to be claimed in `temporary_parts` by the caller, which guarantees that no
+    /// concurrent operation owns it, so an existing directory can only be a stale leftover of an
+    /// interrupted operation. The leftover must be removed BEFORE the part storage is constructed:
+    /// otherwise packed storage would seed its archive reader and snapshot the mark layout
+    /// (`index_granularity_info`) from the stale contents at construction, and `freeze`/`freezeRemote`
+    /// (via `Backup`) would reject a non-empty destination. Removal uses `removeSharedRecursive` with
+    /// the same `keep_shared` rule as `clearOldTemporaryDirectories`, so shared zero-copy blobs are
+    /// preserved.
+    void reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const;
+
+    /// Claims the temporary directory name (exclusive; throws a `LOGICAL_ERROR` exception if it is
+    /// already claimed) and, if `may_have_leftover`, reclaims a stale leftover directory on `disk` via
+    /// `reclaimStaleTemporaryPartDirectory`. Returns the guard that releases the claim.
+    /// `part_dir_name` must be a temporary name: it has to start with "tmp" and contain no '/'. This
+    /// prevents misuse on names like "detached/<dir>" whose directory contents are the payload and must
+    /// never be auto-reclaimed. Callers that know the name is collision-free (e.g. derived from a block
+    /// number allocated by Keeper) may pass `may_have_leftover = false` to avoid paying a disk probe
+    /// (an object storage roundtrip) per operation.
+    scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
+
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
