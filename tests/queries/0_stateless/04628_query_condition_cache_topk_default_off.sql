@@ -2,13 +2,14 @@
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate.
 --
--- The query condition cache (QCC) for `ORDER BY ... LIMIT n` (TopK dynamic filtering) reads is
+-- The query condition cache (QCC) for `ORDER BY ... LIMIT n` (TopK) reads is
 -- gated behind the `use_query_condition_cache_for_top_k` setting and is DISABLED by default.
 -- This test asserts the default-off contract at every gated touch point:
 --   * a TopK read must not reuse an entry primed by a plain `SELECT ... WHERE` with the same
 --     predicate (no predicate-only reuse path) — including skip-index-only TopK shapes where no
 --     `__topKFilter` node is folded into the filter DAG, so the plain condition hash of the TopK
---     read would otherwise match the plain `WHERE` entry;
+--     read would otherwise match the plain `WHERE` entry, and TopK reads with an existing
+--     `PREWHERE`, whose `PREWHERE` consult key is never TopK-salted;
 --   * a TopK read must not write any QCC entry (neither the WHERE write in
 --     `updateQueryConditionCache`, nor index-analysis exclusions in `selectRangesToRead`,
 --     nor row-level entries from the reader);
@@ -104,6 +105,56 @@ ORDER BY event_time_microseconds;
 
 SELECT '--- Skip-index-only TopK still returns the planted row';
 SELECT v1 FROM tab_idx WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 SETTINGS use_top_k_dynamic_filtering = 0;
+
+SELECT '--- A TopK read with an existing PREWHERE must not reuse a plain PREWHERE entry either';
+
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+-- A read that already has a `PREWHERE` cannot take dynamic filtering, so the plan is stamped as
+-- TopK via the minmax skip index alone. The `PREWHERE` consult key in
+-- `filterPartsByQueryConditionCache` is never TopK-salted, so without the read-side gate the TopK
+-- read would hit the entry primed by the plain `PREWHERE` query.
+SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_prime';
+SELECT v1 FROM tab_idx PREWHERE v2 = 30000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04628_pw_topk_after_prime';
+SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_plain_reuse';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Column: (any QCC hit). Expected: prime = 0, topk-after-prime = 0, plain-reuse = 1.
+SELECT
+    log_comment,
+    ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04628_pw_prime', '04628_pw_topk_after_prime', '04628_pw_plain_reuse')
+ORDER BY event_time_microseconds;
+
+SELECT '--- PREWHERE TopK still returns the planted row';
+SELECT v1 FROM tab_idx PREWHERE v2 = 30000 ORDER BY v1 ASC LIMIT 5;
+
+SELECT '--- A PREWHERE TopK read must not write any QCC entry either';
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+SELECT v1 FROM tab_idx PREWHERE v2 = 30000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04628_pw_topk_write_1';
+SELECT v1 FROM tab_idx PREWHERE v2 = 30000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04628_pw_topk_write_2';
+
+-- Expected: 0 entries — the reader-level `PREWHERE` write path is gated off as well.
+SELECT count() FROM system.query_condition_cache;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Column: (any QCC hit). Expected: 0 for both runs.
+SELECT
+    log_comment,
+    ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04628_pw_topk_write_1', '04628_pw_topk_write_2')
+ORDER BY event_time_microseconds;
 
 DROP TABLE tab_idx;
 
