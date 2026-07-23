@@ -190,6 +190,7 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
+        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
@@ -1480,7 +1481,7 @@ class JobConfigs:
             # introduced under ./docs.
             exclude_paths=[
                 "./docs/README.md",
-                "./docs/_description_templates/",
+                "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
