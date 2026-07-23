@@ -605,8 +605,15 @@ test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
   || { echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"; false; }
 ```
 
-For other artifacts (server logs, core dumps, query masks), list them with `--links` and pull
-the specific URLs you need — `--download-logs` only fetches the one logs bundle.
+For other artifacts, list available URLs with `--links` and try to find the logs and artifacts
+helping to narrow the issue down. The files alongside this skill describe the layout and
+signal-bearing members for each job family:
+- `artifacts-integration.md` — integration tests (`logs.tar.gz` archive structure,
+  `pytest_parallel.jsonl` schema, per-node server logs)
+- `artifacts-stateless.md` — stateless and fast tests (individual log files, `.zst` fetching)
+- `artifacts-stress.md` — stress tests (`clickhouse-server.initial.log`, `fatal.log`,
+  `hung_check.log`, compressed logs)
+- `artifacts-build.md` — build failures (full build log, truncation, tidy vs compiler errors)
 
 For an integration-test failure, pull the relevant longrepr:
 
