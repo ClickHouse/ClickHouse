@@ -432,9 +432,6 @@ def test_system_queue_metadata(started_cluster, engine_name):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 0,
-            # Keep `processing` nodes ephemeral so they disappear right after
-            # processing finishes - otherwise the counts would be racy.
-            "use_persistent_processing_nodes": False,
         },
         engine_name=engine_name,
     )
@@ -541,8 +538,6 @@ def test_system_queue_metadata_ordered(started_cluster):
             # A single processed pointer (no buckets) keeps the test deterministic.
             "s3queue_buckets": 1,
             "s3queue_processing_threads_num": 1,
-            # Pin processing-node persistence so the counts are deterministic.
-            "use_persistent_processing_nodes": False,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -632,8 +627,6 @@ def test_system_queue_metadata_ordered_buckets(started_cluster):
             "keeper_path": keeper_path,
             "s3queue_buckets": buckets,
             "s3queue_processing_threads_num": buckets,
-            # Pin processing-node persistence so the counts are deterministic.
-            "use_persistent_processing_nodes": False,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -713,8 +706,6 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
             # No buckets, so the pointers live directly under `processed/<partition>`.
             "s3queue_buckets": 1,
             "s3queue_processing_threads_num": 1,
-            # Pin processing-node persistence so the counts are deterministic.
-            "use_persistent_processing_nodes": False,
         },
         partitioning_mode="regex",
         partition_regex=partition_regex,
@@ -789,6 +780,115 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
     node.query(f"DROP TABLE {table_name} SYNC")
 
 
+def test_system_queue_metadata_ordered_partitioned_buckets(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_part_buckets_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    partition_regex = r"(?P<hostname>[^_]+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)"
+    partition_component = "hostname"
+    buckets = 4
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # buckets > 1 together with partitioning exercises the combined
+            # `buckets/<n>/processed/<partition>` layout in read_processed_pointers.
+            "s3queue_buckets": buckets,
+            "s3queue_processing_threads_num": buckets,
+        },
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component=partition_component,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    # Many distinct partitions (hostnames) so partition pointers land under
+    # several buckets. A file is linked to a bucket by the hash of its path,
+    # so the exact bucket distribution is not deterministic, but every
+    # partition must end up under some `buckets/<n>/processed/<hostname>`.
+    hostnames = [f"server-{i}" for i in range(1, 9)]
+    for hostname in hostnames:
+        put_s3_file_content(
+            started_cluster,
+            f"{files_path}/{hostname}_20251217T100000.000000Z_0001.csv",
+            b"1,1,1\n",
+        )
+
+    for _ in range(60):
+        if len(hostnames) == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # processed_nodes is NULL in ordered mode.
+    assert (
+        "1"
+        == node.query(
+            f"""
+            SELECT processed_nodes IS NULL
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        ).strip()
+    )
+
+    # Fetch the `processed_path` map as (key, value) pairs so each pointer's
+    # value can be checked against its key.
+    pairs = (
+        node.query(
+            f"""
+            SELECT e.1, e.2
+            FROM (
+                SELECT arrayJoin(processed_path) AS e
+                FROM system.s3_queue_metadata
+                WHERE zookeeper_path ilike '%{keeper_path}%'
+            )
+            ORDER BY 1
+            """
+        )
+        .strip()
+        .split("\n")
+    )
+    assert pairs and pairs != [""], "processed_path must not be empty"
+
+    root_keys = set()
+    partitions_seen = set()
+    for pair in pairs:
+        key, _, value = pair.partition("\t")
+        parts = key.split("/")
+        assert parts[0] == "buckets" and parts[2] == "processed", key
+        if len(parts) == 3:
+            # A bucket root. It points at a real file once that bucket has
+            # processed one; buckets that processed nothing keep the empty
+            # startup pointer, so only check the value when it is set.
+            root_keys.add(key)
+            if value:
+                assert files_path in value, value
+        else:
+            # A per-partition child, which always holds the last processed path.
+            assert len(parts) == 4, key
+            partitions_seen.add(parts[3])
+            assert files_path in value, value
+
+    # The reader must return both shapes: every bucket root (all created upfront)
+    # and a `buckets/<n>/processed/<partition>` child for every processed partition.
+    assert root_keys == {f"buckets/{i}/processed" for i in range(buckets)}, root_keys
+    assert partitions_seen == set(hostnames), (partitions_seen, hostnames)
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
 def test_system_queue_metadata_ordered_partitioned_last_processed(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"test_system_queue_metadata_part_last_{generate_random_string()}"
@@ -854,8 +954,6 @@ def test_system_queue_metadata_auxiliary_keeper(started_cluster):
             # A single processed pointer (no buckets) keeps the test deterministic.
             "s3queue_buckets": 1,
             "s3queue_processing_threads_num": 1,
-            # Pin processing-node persistence so the counts are deterministic.
-            "use_persistent_processing_nodes": False,
         },
     )
     create_mv(node, table_name, dst_table_name)
