@@ -3,7 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
@@ -31,7 +30,7 @@ template <typename T>
 concept has_max_string_size = requires { T::max_string_size; };
 
 template <typename Impl, typename Name>
-class FunctionsStringSimilarity : public IFunction
+class FunctionsStringSimilarity final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

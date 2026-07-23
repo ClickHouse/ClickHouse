@@ -9,7 +9,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_)
+void FutureMergedMutatedPart::assign(
+    MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection)
 {
     if (parts_.empty())
         return;
@@ -29,7 +30,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         max_level = std::max(max_level, part->info.level);
     }
 
-    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1);
+    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
     future_part_type = std::min(future_part_type, chosen_format.part_type);
     future_part_storage_type = std::min(future_part_storage_type, chosen_format.storage_type);
     assign(std::move(parts_), std::move(patch_parts_), {future_part_type, future_part_storage_type});

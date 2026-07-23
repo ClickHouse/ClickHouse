@@ -187,9 +187,9 @@ protected:
         }
         else
         {
-            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
                 transform_message, stats.blocks, stats.rows, stats.bytes,
-                seconds, stats.rows / seconds, ReadableSize(stats.bytes / seconds));
+                seconds, static_cast<double>(stats.rows) / seconds, ReadableSize(static_cast<double>(stats.bytes) / seconds));
         }
     }
 

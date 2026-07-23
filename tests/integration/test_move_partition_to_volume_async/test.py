@@ -6,13 +6,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
-from helpers.wait_for_helpers import (
-    wait_for_delete_empty_parts,
-    wait_for_delete_inactive_parts,
-    wait_for_merges,
-)
+from helpers.mock_servers import start_s3_mock
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -20,7 +14,7 @@ CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs"
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_s3_mock(cluster, "broken_s3", "8086")
 
 
 @pytest.fixture(scope="function")
@@ -42,7 +36,7 @@ def cluster():
 
         cluster.start()
 
-        start_s3_mock(cluster, "broken_s3", "8083")
+        start_s3_mock(cluster, "broken_s3", "8086")
 
         for _, node in cluster.instances.items():
             node.stop_clickhouse()

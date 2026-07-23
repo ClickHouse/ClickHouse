@@ -107,7 +107,7 @@ private:
             if (offset + bits_per_val > 64)
                 value |= compressed_data[pos + 1] << (64 - offset);
 
-            return min_val + (value & maskLowBits<UInt64>(bits_per_val));
+            return min_val + (value & maskLowBits<UInt64>(static_cast<unsigned char>(bits_per_val)));
         }
 
         size_t num_vals;

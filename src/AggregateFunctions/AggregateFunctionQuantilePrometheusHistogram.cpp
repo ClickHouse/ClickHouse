@@ -110,7 +110,7 @@ private:
         if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
             return std::numeric_limits<Value>::quiet_NaN();
         CumulativeHistogramValue max_position = max_bucket.second;
-        Float64 position = max_position * level;
+        Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
 
@@ -147,7 +147,7 @@ private:
             }
             else
             {
-                Float64 position = max_position * levels[indices[j]];
+                Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
                 result[indices[j]] = quantileInterpolated(array, size, position);
             }
         }
@@ -156,13 +156,13 @@ private:
     /// Calculate quantile, using linear interpolation between the bucket's lower and upper bound
     Value quantileInterpolated(const Pair * array, size_t size, Float64 position) const
     {
-        const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return a.second < b; });
+        const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return static_cast<Float64>(a.second) < b; });
         if (upper_bound_it == array)
         {
             if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
-                return static_cast<Value>(upper_bound_it->first * (position / upper_bound_it->second));
+                return static_cast<Value>(static_cast<Float64>(upper_bound_it->first) * (position / static_cast<Float64>(upper_bound_it->second)));
             }
             else
             {
@@ -182,8 +182,14 @@ private:
         UnderlyingType histogram_bucket_upper_bound = upper_bound_it->first;
         CumulativeHistogramValue histogram_bucket_upper_value = upper_bound_it->second;
 
+        /// Subtract in the original integer types and cast the difference to `Float64`,
+        /// so we don't lose 1-count resolution above `2^53` for `UInt64` cumulative counts.
+        Float64 bucket_bound_width = static_cast<Float64>(histogram_bucket_upper_bound - histogram_bucket_lower_bound);
+        Float64 bucket_value_width = static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value);
+        Float64 position_offset = position - static_cast<Float64>(histogram_bucket_lower_value);
+
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
-        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - histogram_bucket_lower_value) / (histogram_bucket_upper_value - histogram_bucket_lower_value));
+        return static_cast<Value>(static_cast<Float64>(histogram_bucket_lower_bound) + bucket_bound_width * position_offset / bucket_value_width);
     }
 };
 
@@ -243,14 +249,89 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantilePrometheusHistogram::name, createAggregateFunctionQuantile<FuncQuantilePrometheusHistogram>);
-    factory.registerFunction(
-        NameQuantilesPrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesPrometheusHistogram>, properties});
+    FunctionDocumentation::Description description_quantilePrometheusHistogram = R"(
+Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a histogram using linear interpolation, taking into account the cumulative value and upper bounds of each histogram bucket.
+
+To get the interpolated value, all the passed values are combined into an array, which are then sorted by their corresponding bucket upper bound values.
+Quantile interpolation is then performed similarly to the PromQL [histogram_quantile()](https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) function on a classic histogram, performing a linear interpolation using the lower and upper bound of the bucket in which the quantile position is found.
+
+**See Also**
+
+- [median](/sql-reference/aggregate-functions/reference/median)
+- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md)
+    )";
+    FunctionDocumentation::Syntax syntax_quantilePrometheusHistogram = R"(
+quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
+    )";
+    FunctionDocumentation::Parameters parameters_quantilePrometheusHistogram = {
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: `0.5`. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).", {"Float64"}}
+    };
+    FunctionDocumentation::Arguments arguments_quantilePrometheusHistogram = {
+        {"bucket_upper_bound", "Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`.", {"Float*"}},
+        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases.", {"UInt*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantilePrometheusHistogram = {"Returns the quantile of the specified level. The floating-point type of the result matches the type of `bucket_upper_bound`.", {"Float32", "Float64"}};
+    FunctionDocumentation::Examples examples_quantilePrometheusHistogram = {
+    {
+        "Usage example",
+        R"(
+SELECT quantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value)
+FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6), (0.5, 11), (1, 14), (inf, 19));
+        )",
+        R"(
+┌─quantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value)─┐
+│                                                                     0.35 │
+└──────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantilePrometheusHistogram = {25, 10};
+    FunctionDocumentation::Category category_quantilePrometheusHistogram = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantilePrometheusHistogram = {description_quantilePrometheusHistogram, syntax_quantilePrometheusHistogram, arguments_quantilePrometheusHistogram, parameters_quantilePrometheusHistogram, returned_value_quantilePrometheusHistogram, examples_quantilePrometheusHistogram, introduced_in_quantilePrometheusHistogram, category_quantilePrometheusHistogram};
+
+    factory.registerFunction(NameQuantilePrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilePrometheusHistogram>, documentation_quantilePrometheusHistogram});
+
+    FunctionDocumentation::Description description_quantilesPrometheusHistogram = R"(
+Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a histogram using linear interpolation at different levels simultaneously, taking into account the cumulative value and upper bounds of each histogram bucket.
+
+This function is equivalent to [`quantilePrometheusHistogram`](/sql-reference/aggregate-functions/reference/quantilePrometheusHistogram) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+    )";
+    FunctionDocumentation::Syntax syntax_quantilesPrometheusHistogram = R"(
+quantilesPrometheusHistogram(level1, level2, ...)(bucket_upper_bound, cumulative_bucket_value)
+    )";
+    FunctionDocumentation::Parameters parameters_quantilesPrometheusHistogram = {
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float64"}}
+    };
+    FunctionDocumentation::Arguments arguments_quantilesPrometheusHistogram = {
+        {"bucket_upper_bound", "Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`.", {"Float*"}},
+        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases.", {"UInt*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantilesPrometheusHistogram = {"Array of quantiles of the specified levels in the same order as the levels were specified. The floating-point type of the result matches the type of `bucket_upper_bound`.", {"Array(Float32)", "Array(Float64)"}};
+    FunctionDocumentation::Examples examples_quantilesPrometheusHistogram = {
+    {
+        "Usage example",
+        R"(
+SELECT quantilesPrometheusHistogram(0.25, 0.5, 0.75)(bucket_upper_bound, cumulative_bucket_value)
+FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6), (0.5, 11), (1, 14), (inf, 19));
+        )",
+        R"(
+┌─quantilesPrometheusHistogram(0.25, 0.5, 0.75)(bucket_upper_bound, cumulative_bucket_value)─┐
+│ [0,0.35,1]                                                                                 │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantilesPrometheusHistogram = {25, 10};
+    FunctionDocumentation::Category category_quantilesPrometheusHistogram = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantilesPrometheusHistogram = {description_quantilesPrometheusHistogram, syntax_quantilesPrometheusHistogram, arguments_quantilesPrometheusHistogram, parameters_quantilesPrometheusHistogram, returned_value_quantilesPrometheusHistogram, examples_quantilesPrometheusHistogram, introduced_in_quantilesPrometheusHistogram, category_quantilesPrometheusHistogram};
+
+    factory.registerFunction(NameQuantilesPrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesPrometheusHistogram>, documentation_quantilesPrometheusHistogram, properties});
 }
 
 }

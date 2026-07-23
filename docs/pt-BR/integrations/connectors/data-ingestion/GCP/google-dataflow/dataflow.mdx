@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Integrando o Dataflow ao ClickHouse'
+slug: /integrations/google-dataflow/dataflow
+description: 'Você pode fazer a ingestão de dados no ClickHouse usando o Google Dataflow'
+title: 'Integrando o Google Dataflow ao ClickHouse'
+doc_type: 'guide'
+keywords: ['Google Dataflow ClickHouse', 'integração entre Dataflow e ClickHouse', 'Apache Beam ClickHouse', 'conector ClickHouseIO', 'integração entre Google Cloud e ClickHouse']
+---
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Google Dataflow](https://cloud.google.com/dataflow) é um serviço totalmente gerenciado de processamento de dados em streaming e em lote. Ele oferece suporte a pipelines escritos em Java ou Python e é baseado no SDK do Apache Beam.
+
+Há duas maneiras principais de usar o Google Dataflow com o ClickHouse, e ambas utilizam o [`ClickHouseIO Apache Beam connector`](/pt-BR/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+São elas:
+
+* [Java runner](#1-java-runner)
+* [Modelos predefinidos](#2-predefined-templates)
+
+<div id="1-java-runner">
+  ## Java runner
+</div>
+
+O [Java runner](/pt-BR/integrations/connectors/data-ingestion/GCP/google-dataflow/java-runner) permite implementar pipelines personalizados no Dataflow usando a integração `ClickHouseIO` do SDK do Apache Beam. Essa abordagem oferece total flexibilidade e controle sobre a lógica do pipeline, permitindo adaptar o processo de ETL a requisitos específicos.
+No entanto, essa opção exige conhecimento de programação em Java e familiaridade com o framework Apache Beam.
+
+<div id="key-features">
+  ### Principais recursos
+</div>
+
+* Alto grau de personalização.
+* Ideal para casos de uso complexos ou avançados.
+* Exige programação e conhecimento da API Beam.
+
+<div id="2-predefined-templates">
+  ## Modelos predefinidos
+</div>
+
+O ClickHouse oferece [modelos predefinidos](/pt-BR/integrations/connectors/data-ingestion/GCP/google-dataflow/templates) projetados para casos de uso específicos, como importações em lote do BigQuery ou ingestão via streaming do Pub/Sub para o ClickHouse. Esses modelos estão prontos para uso e simplificam o processo de integração, sendo uma excelente opção se você prefere uma solução sem código.
+
+<div id="key-features">
+  ### Principais recursos
+</div>
+
+* Não exige programação em Beam.
+* Configuração rápida e fácil para casos de uso simples.
+* Também é adequada se você tiver pouca experiência em programação.
+
+Ambas as abordagens são totalmente compatíveis com o Google Cloud e o ecossistema ClickHouse, oferecendo flexibilidade de acordo com sua experiência técnica e os requisitos do projeto.

@@ -1,0 +1,124 @@
+---
+slug: /shards
+title: 'Сегменты и реплики таблиц'
+description: 'Что такое сегменты и реплики таблиц в ClickHouse'
+keywords: ['сегмент', 'сегменты', 'сегментирование', 'реплика', 'реплики']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<br />
+
+<Note>
+  Эта тема не применима к ClickHouse Cloud, где [параллельные реплики](/ru/products/cloud/features/infrastructure/parallel-replicas) работают как несколько сегментов в традиционных ClickHouse-кластерах с архитектурой shared-nothing, а Объектное хранилище [заменяет](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability) реплики, обеспечивая высокую доступность и отказоустойчивость.
+</Note>
+
+<div id="what-are-table-shards-in-clickhouse">
+  ## Что такое сегменты таблицы в ClickHouse?
+</div>
+
+В традиционных кластерах ClickHouse с архитектурой [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) разбиение на сегменты используется, когда ① данные слишком велики для одного сервера или ② один сервер слишком медленно обрабатывает данные. На следующем рисунке показан случай ①, когда таблица [uk&#95;price&#95;paid&#95;simple](/ru/concepts/core-concepts/parts) превышает возможности одной машины:
+
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+В таком случае данные можно распределить между несколькими серверами ClickHouse в виде сегментов таблицы:
+
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+Каждый сегмент хранит часть данных и работает как обычная таблица ClickHouse, к которой можно обращаться независимо. Однако запросы будут обрабатывать только эту часть данных, что в зависимости от их распределения может быть вполне подходящим вариантом. Обычно [distributed таблица](/ru/reference/engines/table-engines/special/distributed) (часто по одной на сервер) предоставляет единое представление всего набора данных. Она сама не хранит данные, а перенаправляет запросы **SELECT** ко всем сегментам, собирает результаты и направляет **INSERTS** так, чтобы данные распределялись равномерно.
+
+<div id="distributed-table-creation">
+  ## Создание distributed таблицы
+</div>
+
+Чтобы проиллюстрировать перенаправление запроса **SELECT** и маршрутизацию **INSERT**, рассмотрим таблицу из примера [Что такое части таблицы](/ru/concepts/core-concepts/parts), разделённую между двумя сегментами на двух серверах ClickHouse. Сначала покажем DDL-оператор для создания соответствующей **distributed таблицы** для этой конфигурации:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_dist ON CLUSTER test_cluster
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
+```
+
+Предложение `ON CLUSTER` превращает DDL-оператор в [распределённый DDL-оператор](/ru/reference/statements/distributed-ddl), указывая ClickHouse создать таблицу на всех серверах, перечисленных в [определении кластера](/ru/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas#configure-clickhouse-servers) `test_cluster`. Для распределённого DDL также требуется дополнительный компонент [Keeper](https://clickhouse.com/clickhouse/keeper) в [архитектуре кластера](/ru/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+Для [параметров движка Distributed](/ru/reference/engines/table-engines/special/distributed#distributed-parameters) мы указываем имя кластера (`test_cluster`), имя базы данных (`uk`) для сегментированной целевой таблицы, имя самой сегментированной целевой таблицы (`uk_price_paid_simple`) и **ключ сегментирования** для маршрутизации INSERT. В этом примере мы используем функцию [rand](/ru/reference/functions/regular-functions/random-functions#rand), чтобы случайным образом распределять строки по сегментам. Однако в качестве ключа сегментирования можно использовать любое выражение — даже сложное — в зависимости от конкретного сценария. В следующем разделе показано, как работает маршрутизация INSERT.
+
+<div id="insert-routing">
+  ## Маршрутизация INSERT
+</div>
+
+На диаграмме ниже показано, как в ClickHouse обрабатываются INSERT-запросы в distributed таблицу:
+
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① INSERT-запрос (с одной строкой), направленный в distributed таблицу, отправляется на сервер ClickHouse, на котором размещена эта таблица, — напрямую или через балансировщик нагрузки.
+
+② Для каждой строки из INSERT-запроса (в нашем примере она всего одна) ClickHouse вычисляет ключ сегментирования (здесь — rand()), берёт результат по модулю числа серверов-сегментов и использует его как идентификатор целевого сервера (идентификаторы начинаются с 0 и увеличиваются на 1). Затем строка пересылается и ③ вставляется в сегмент таблицы на соответствующем сервере.
+
+В следующем разделе объясняется, как работает перенаправление SELECT.
+
+<div id="select-forwarding">
+  ## Перенаправление SELECT
+</div>
+
+Эта диаграмма показывает, как в ClickHouse обрабатываются запросы SELECT с distributed таблицей:
+
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① Запрос SELECT с агрегацией, направленный к distributed таблице, отправляется на соответствующий сервер ClickHouse — либо напрямую, либо через балансировщик нагрузки.
+
+② distributed таблица перенаправляет запрос на все серверы, содержащие сегменты целевой таблицы, где каждый сервер ClickHouse **параллельно** вычисляет свой локальный результат агрегации.
+
+Затем сервер ClickHouse, на котором размещена исходная distributed таблица, ③ собирает все локальные результаты, ④ объединяет их в итоговый глобальный результат и ⑤ возвращает его отправителю запроса.
+
+<div id="what-are-table-replicas-in-clickhouse">
+  ## Что такое реплики таблиц в ClickHouse?
+</div>
+
+Репликация в ClickHouse обеспечивает **целостность данных** и **отказоустойчивость**, поддерживая **копии данных сегментов** на нескольких серверах. Поскольку отказы оборудования неизбежны, репликация предотвращает потерю данных, гарантируя, что у каждого сегмента есть несколько реплик. Операции записи можно направлять в любую реплику — напрямую или через [distributed таблицу](#distributed-table-creation), которая выбирает реплику для выполнения операции. Изменения автоматически распространяются на другие реплики. В случае сбоя или обслуживания данные остаются доступными на других репликах, а после восстановления вышедший из строя хост автоматически синхронизируется, чтобы оставаться в актуальном состоянии.
+
+Обратите внимание, что для репликации в [архитектуре кластера](/ru/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) требуется компонент [Keeper](https://clickhouse.com/clickhouse/keeper).
+
+На следующей диаграмме показан кластер ClickHouse с шестью серверами, где два сегмента таблицы `Shard-1` и `Shard-2`, представленные ранее, имеют по три реплики. В этот кластер отправляется запрос:
+
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="СЕГМЕНТЫ" />
+
+<br />
+
+Обработка запросов работает аналогично конфигурациям без реплик: запрос выполняется только на одной реплике из каждого сегмента.
+
+> Реплики не только обеспечивают целостность данных и отказоустойчивость, но и повышают пропускную способность обработки запросов, позволяя выполнять несколько запросов параллельно на разных репликах.
+
+① Запрос к distributed таблице отправляется на соответствующий сервер ClickHouse — напрямую или через балансировщик нагрузки.
+
+② distributed таблица перенаправляет запрос на одну реплику из каждого сегмента, где каждый сервер ClickHouse с выбранной репликой параллельно вычисляет свой локальный результат запроса.
+
+Остальное работает [так же](#select-forwarding), как и в конфигурациях без реплик, и на диаграмме выше не показано. Сервер ClickHouse, на котором размещена изначально выбранная distributed таблица, собирает все локальные результаты, объединяет их в итоговый глобальный результат и возвращает его отправителю запроса.
+
+Обратите внимание, что в ClickHouse можно настроить стратегию перенаправления запросов для ②. По умолчанию — в отличие от диаграммы выше — distributed таблица [предпочитает](/ru/reference/settings/session-settings#prefer_localhost_replica) локальную реплику, если она доступна, но можно использовать и другие [стратегии](/ru/reference/settings/session-settings#load_balancing) балансировки нагрузки.
+
+<div id="where-to-find-more-information">
+  ## Где найти дополнительную информацию
+</div>
+
+Чтобы узнать больше, чем даёт это общее введение в сегменты и реплики таблицы, ознакомьтесь с нашим [руководством по развертыванию и масштабированию](/ru/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+Мы также настоятельно рекомендуем это обучающее видео, чтобы глубже разобраться в сегментах и репликах ClickHouse:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vBjCJtw_Ei0?si=WqopTrnti6usCMRs" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

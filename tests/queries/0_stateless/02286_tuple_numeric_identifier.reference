@@ -4,7 +4,4 @@ CREATE TABLE default.t_tuple_numeric\n(\n    `t` Tuple(\n        `1` Tuple(\n   
 2	3	4
 2	3	4
 2	3	4
-Tuple(\n    `1` Tuple(\n        `2` Int8,\n        `3` Int8),\n    `4` Int8)
-{"t":{"1":{"2":2,"3":3},"4":4}}
-2	3	4
 (('value'))

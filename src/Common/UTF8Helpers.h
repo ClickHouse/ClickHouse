@@ -111,6 +111,10 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix = 0) noexcept
   */
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept;
 
+/** Calculate the number of bytes before limit-th code point.
+  */
+size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept;
+
 }
 
 }

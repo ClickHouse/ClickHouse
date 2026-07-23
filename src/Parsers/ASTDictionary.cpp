@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTDictionaryRange::clone() const
 {
-    auto res = std::make_shared<ASTDictionaryRange>();
+    auto res = make_intrusive<ASTDictionaryRange>();
     res->min_attr_name = min_attr_name;
     res->max_attr_name = max_attr_name;
     return res;
@@ -28,7 +28,7 @@ void ASTDictionaryRange::formatImpl(WriteBuffer & ostr,
 
 ASTPtr ASTDictionaryLifetime::clone() const
 {
-    auto res = std::make_shared<ASTDictionaryLifetime>();
+    auto res = make_intrusive<ASTDictionaryLifetime>();
     res->min_sec = min_sec;
     res->max_sec = max_sec;
     return res;
@@ -46,7 +46,7 @@ void ASTDictionaryLifetime::formatImpl(WriteBuffer & ostr,
 
 ASTPtr ASTDictionaryLayout::clone() const
 {
-    auto res = std::make_shared<ASTDictionaryLayout>();
+    auto res = make_intrusive<ASTDictionaryLayout>();
     res->layout_type = layout_type;
     if (parameters) res->set(res->parameters, parameters->clone());
     res->has_brackets = has_brackets;
@@ -75,7 +75,7 @@ void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
 
 ASTPtr ASTDictionarySettings::clone() const
 {
-    auto res = std::make_shared<ASTDictionarySettings>();
+    auto res = make_intrusive<ASTDictionarySettings>();
     res->changes = changes;
 
     return res;
@@ -101,7 +101,7 @@ void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
 
 ASTPtr ASTDictionary::clone() const
 {
-    auto res = std::make_shared<ASTDictionary>();
+    auto res = make_intrusive<ASTDictionary>();
 
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());

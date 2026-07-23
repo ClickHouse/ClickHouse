@@ -1,0 +1,12 @@
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_indexed)
+    Indexes:
+      PrimaryKey
+        Keys:
+          id
+        Condition: (id in [5, 5])
+        Parts: 1/1
+        Granules: 1/1
+        Search Algorithm: binary search
+      Ranges: 1

@@ -1,4 +1,4 @@
--- Tests that functions replaceOne(), replaceAll(), replaceRegexpOne(), replaceRegexpAll() work with with non-const pattern and replacement arguments
+-- Tests that functions replaceOne(), replaceAll(), replaceRegexpOne(), replaceRegexpAll() work with non-const pattern and replacement arguments
 
 DROP TABLE IF EXISTS test_tab;
 

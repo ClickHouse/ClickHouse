@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Artie'
+keywords: ['clickhouse', 'Artie', 'подключить', 'интегрировать', 'cdc', 'etl', 'интеграция данных', 'реальное время', 'стриминг']
+slug: /integrations/artie
+description: 'Передавайте данные в ClickHouse с помощью стриминговой CDC-платформы Artie'
+title: 'Подключите Artie к ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+<a href="https://www.artie.com/" target="_blank">Artie</a> — это полностью управляемая платформа стриминга данных в реальном времени, которая реплицирует данные из продакшна в ClickHouse, обеспечивая аналитику для клиентов, операционные процессы и агентный ИИ в продакшне.
+
+<div id="overview">
+  ## Обзор
+</div>
+
+Artie — современный инфраструктурный слой данных для эпохи ИИ: полностью управляемая платформа стриминга данных в реальном времени, которая непрерывно синхронизирует данные из продакшна с вашим хранилищем.
+
+По мере того как компании начинают использовать свои хранилища для ИИ-нагрузок в реальном времени, операционной аналитики и клиентских data-продуктов, они стандартизируют инфраструктуру, которая работает быстро, надежно и рассчитана на масштабирование.
+
+Мы даем компаниям те самые стриминговые конвейеры и глубокую обсервабилити, которые Netflix, DoorDash и Instacart создавали собственными силами, — без найма 10+ инженеров и 1–2 лет работы над платформой. Artie автоматизирует весь жизненный цикл ингестии — захват изменений, слияния, дозагрузки и обсервабилити — без необходимости в инженерном сопровождении и разворачивается за считанные минуты.
+
+Такие лидеры рынка, как ClickUp, Substack и Alloy, используют Artie не только для решения текущих проблем с конвейерами, но и для того, чтобы подготовить свой стек данных к будущему по мере ускорения своей ИИ-стратегии.
+
+<Steps>
+  <Step>
+    ## Создайте аккаунт Artie
+
+    Перейдите на <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> и заполните форму, чтобы запросить доступ.
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Страница регистрации Artie" />
+  </Step>
+
+  <Step>
+    ## Найдите свои учетные данные ClickHouse
+
+    После создания сервиса в ClickHouse Cloud найдите следующие обязательные параметры:
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## Создайте новый конвейер в Artie
+
+    Перейдите в Artie, используя информацию, собранную на предыдущих шагах, и создайте новый конвейер, выполнив 3 шага.
+
+    1. **Подключите источник** - Настройте исходную базу данных (Postgres, MySQL, Events API и т. д.)
+    2. **Выберите таблицы, которые хотите реплицировать** - Укажите, какие таблицы синхронизировать с ClickHouse
+    3. **Подключите пункт назначения** - Введите учетные данные ClickHouse
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Интерфейс редактирования конвейера Artie" />
+  </Step>
+</Steps>
+
+<div id="contact-us">
+  ## Свяжитесь с нами
+</div>
+
+Если у вас есть вопросы, обратитесь к нашей <a href="https://www.artie.com/docs/destinations/clickhouse" target="_blank">документации по ClickHouse</a> или напишите команде на <a href="mailto:hi@artie.com">hi@artie.com</a>.
+
+<div id="product-screenshots">
+  ## Скриншоты продукта
+</div>
+
+Портал аналитики
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="Портал аналитики" />
+
+Мониторинг конвейеров и таблиц
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="Встроенный мониторинг" />
+
+Ежедневные уведомления об изменениях схемы
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="Уведомление об изменении схемы" />

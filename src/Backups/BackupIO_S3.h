@@ -4,13 +4,12 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <IO/S3Common.h>
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 
 #include <functional>
@@ -49,6 +48,8 @@ public:
         const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
+        const String & external_id,
+        const std::optional<S3::S3AuthSettings> & named_collection_auth,
         bool allow_s3_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -62,6 +63,8 @@ public:
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
+
+    std::map<String, String> getSerializedSettings() const override;
 
 private:
     const S3::URI s3_uri;
@@ -82,6 +85,8 @@ public:
         const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
+        const String & external_id,
+        const std::optional<S3::S3AuthSettings> & named_collection_auth,
         bool allow_s3_native_copy,
         const String & storage_class_name,
         const ReadSettings & read_settings_,
@@ -95,13 +100,16 @@ public:
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
-    void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                          bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
+    void copyFileFromDisk(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
+
+    std::map<String, String> getSerializedSettings() const override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;

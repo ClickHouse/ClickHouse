@@ -1,0 +1,288 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/concepts
+title: 'المفاهيم المناظرة في ClickStack وElastic'
+sidebarTitle: 'المفاهيم المناظرة'
+description: 'المفاهيم المناظرة - ClickStack وElastic'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="elastic-vs-clickstack">
+  ## Elastic Stack مقابل ClickStack
+</div>
+
+يغطي كلٌّ من Elastic Stack وClickStack الأدوار الأساسية لمنصة الرصد، لكنهما يتعاملان مع هذه الأدوار وفق فلسفات تصميم مختلفة. وتشمل هذه الأدوار ما يلي:
+
+* **واجهة المستخدم والتنبيهات**: أدوات للاستعلام عن البيانات، وبناء لوحات المعلومات، وإدارة التنبيهات.
+* **التخزين ومحرك الاستعلام**: الأنظمة الخلفية المسؤولة عن تخزين بيانات الرصد وتقديم الاستعلامات التحليلية.
+* **جمع البيانات وETL**: الوكلاء ومسارات المعالجة التي تجمع بيانات القياس عن بُعد وتعالجها قبل إدخالها.
+
+يوضح الجدول أدناه كيف يوزّع كل Stack مكوناته على هذه الأدوار:
+
+| **الدور**                     | **Elastic Stack**                                       | **ClickStack**                                                 | **ملاحظات**                                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **واجهة المستخدم والتنبيهات** | **Kibana** — لوحات المعلومات، والبحث، والتنبيهات        | **ClickStack UI (HyperDX)** — واجهة آنية، والبحث، والتنبيهات   | يعمل كلاهما بوصفه الواجهة الأساسية للمستخدمين، بما في ذلك التصورات وإدارة التنبيهات. وقد صُممت ClickStack UI خصيصًا للرصد وترتبط ارتباطًا وثيقًا بدلالات OpenTelemetry.                        |
+| **التخزين ومحرك الاستعلام**   | **Elasticsearch** — مخزن مستندات JSON مع فهرس مقلوب     | **ClickHouse** — قاعدة بيانات عمودية التوجّه مع محرك متّجه     | يستخدم Elasticsearch فهرسًا مقلوبًا محسّنًا للبحث؛ بينما يستخدم ClickHouse تخزينًا عموديًا وSQL لتحليلات عالية السرعة على البيانات المهيكلة وشبه المهيكلة.                                     |
+| **جمع البيانات**              | **Elastic Agent**، **Beats** (مثل Filebeat وMetricbeat) | **OpenTelemetry Collector** (طرفي + بوابة)                     | يدعم Elastic مُرسِلات مخصصة ووكيلًا موحدًا تديره Fleet. ويعتمد ClickStack على OpenTelemetry، مما يتيح جمع البيانات ومعالجتها بصورة محايدة للمورّد.                                             |
+| **Instrumentation SDKs**      | **Elastic APM agents** (احتكارية)                       | **OpenTelemetry SDKs** (يوزعها ClickStack)                     | ترتبط SDKs الخاصة بـ Elastic ارتباطًا وثيقًا بـ Elastic Stack. ويعتمد ClickStack على OpenTelemetry SDKs للسجلات والمقاييس وآثار التتبّع في اللغات الرئيسية.                                    |
+| **ETL / معالجة البيانات**     | **Logstash**، ingest pipelines                          | **OpenTelemetry Collector** + materialized views في ClickHouse | يستخدم Elastic ingest pipelines وLogstash لإجراء التحويل. وينقل ClickStack المعالجة إلى insert time عبر materialized views ومعالجات OTel collector، التي تحوّل البيانات بكفاءة وبصورة تدريجية. |
+| **فلسفة المعمارية**           | تكامل رأسي، ووكلاء وتنسيقات احتكارية                    | مكونات قائمة على معايير مفتوحة ومترابطة بشكل غير محكم          | يبني Elastic منظومة متكاملة بإحكام. بينما يركز ClickStack على الوحداتية والمعايير (OpenTelemetry وSQL وobject storage) لتحقيق المرونة والكفاءة من حيث التكلفة.                                 |
+
+يركز ClickStack على المعايير المفتوحة وقابلية التشغيل البيني، إذ إنه أصلي بالكامل لـ OpenTelemetry من مرحلة الجمع حتى واجهة المستخدم. وعلى النقيض من ذلك، يوفّر Elastic منظومة مترابطة بإحكام لكنها أكثر تكاملًا رأسيًا، مع وكلاء وتنسيقات احتكارية.
+
+وبالنظر إلى أن **Elasticsearch** و**ClickHouse** هما المحركان الأساسيان المسؤولان عن تخزين البيانات ومعالجتها والاستعلام عنها ضمن كل Stack، فإن فهم أوجه الاختلاف بينهما أمر أساسي. فهذه الأنظمة تشكّل أساس الأداء وقابلية التوسع والمرونة في معمارية الرصد بأكملها. ويستعرض القسم التالي الفروق الرئيسية بين Elasticsearch وClickHouse، بما في ذلك كيفية نمذجة البيانات، والتعامل مع الإدخال، وتنفيذ الاستعلامات، وإدارة التخزين.
+
+<div id="elasticsearch-vs-clickhouse">
+  ## Elasticsearch vs ClickHouse
+</div>
+
+ينظّم كلٌّ من ClickHouse وElasticsearch البيانات ويستعلمان عنها باستخدام نماذج أساسية مختلفة، لكن كثيرًا من المفاهيم الأساسية يؤدي وظائف متشابهة. يوضّح هذا القسم أهم أوجه التكافؤ لمن لديهم إلمام بـ Elastic، ويربطها بما يقابلها في ClickHouse. وعلى الرغم من اختلاف المصطلحات، يمكن إعادة تطبيق معظم مسارات عمل observability — وغالبًا بكفاءة أعلى — في ClickStack.
+
+<div id="core-structural-concepts">
+  ### المفاهيم الهيكلية الأساسية
+</div>
+
+| **Elasticsearch** | **ClickHouse / SQL**      | **الوصف**                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **حقل**           | **عمود**                  | الوحدة الأساسية للبيانات، وتحتوي على قيمة واحدة أو أكثر من نوع محدد. يمكن لحقول Elasticsearch تخزين الأنواع الأساسية، بالإضافة إلى المصفوفات والكائنات. ولا يمكن أن يكون للحقل إلا نوع واحد. كما يدعم ClickHouse المصفوفات والكائنات (`Tuples`, `Maps`, `Nested`)، بالإضافة إلى الأنواع الديناميكية مثل [`Variant`](/ar/reference/data-types/variant) و[`Dynamic`](/ar/reference/data-types/dynamic)، والتي تسمح للعمود بأن يحتوي على أنواع متعددة. |
+| **مستند**         | **صف**                    | مجموعة من الحقول (الأعمدة). تكون مستندات Elasticsearch أكثر مرونة افتراضيًا، إذ تُضاف الحقول الجديدة ديناميكيًا استنادًا إلى البيانات (يُستدل على النوع من ). أما صفوف ClickHouse فتكون مرتبطة بالمخطط افتراضيًا، ويحتاج المستخدمون إلى إدراج جميع أعمدة الصف أو مجموعة فرعية منها. ويدعم النوع [`JSON`](/ar/guides/clickhouse/data-formats/json/intro) في ClickHouse إنشاء أعمدة ديناميكية شبه مهيكلة مماثلة استنادًا إلى البيانات المُدرجة.    |
+| **فهرس**          | **جدول**                  | وحدة تنفيذ الاستعلام والتخزين. في كلا النظامين، تُنفَّذ الاستعلامات على الفهارس أو الجداول، التي تخزّن الصفوف/المستندات.                                                                                                                                                                                                                                                                                                                      |
+| *ضمني*            | مخطط (SQL)                | تجمع مخططات SQL الجداول ضمن مساحات أسماء، وغالبًا ما تُستخدم للتحكم في الوصول. لا يحتوي Elasticsearch وClickHouse على مخططات، لكنهما يدعمان الأمان على مستوى الصف والجدول عبر الأدوار وRBAC.                                                                                                                                                                                                                                                  |
+| **مجموعة**        | **مجموعة / قاعدة بيانات** | مجموعات Elasticsearch هي مثيلات تشغيل تدير فهرسًا واحدًا أو أكثر. وفي ClickHouse، تنظم قواعد البيانات الجداول ضمن مساحة أسماء منطقية، ما يوفّر نفس التجميع المنطقي الذي توفّره المجموعة في Elasticsearch. أما مجموعة ClickHouse فهي مجموعة موزعة من العقد، مشابهة لـ Elasticsearch، لكنها منفصلة ومستقلة عن البيانات نفسها.                                                                                                                   |
+
+<div id="data-modeling-and-flexibility">
+  ### نمذجة البيانات والمرونة
+</div>
+
+يُعرف Elasticsearch بمرونة المخطط من خلال [التعيينات الديناميكية](https://www.elastic.co/docs/manage-data/data-store/mapping/dynamic-mapping). تُنشأ الحقول عند إدخال المستندات، ويُستنتج نوعها تلقائيًا ما لم يتم تحديد مخطط. أما ClickHouse فهو أكثر صرامة افتراضيًا — إذ تُعرَّف الجداول بمخططات صريحة — لكنه يوفّر مرونة عبر الأنواع [`Dynamic`](/ar/reference/data-types/dynamic) و[`Variant`](/ar/reference/data-types/variant) و[`JSON`](/ar/guides/clickhouse/data-formats/json/intro). وتتيح هذه الأنواع إدخال البيانات شبه المهيكلة، مع إنشاء الأعمدة ديناميكيًا واستنتاج الأنواع بصورة مشابهة لـ Elasticsearch. وبالمثل، يتيح النوع [`Map`](/ar/reference/data-types/map) تخزين أزواج مفتاح-قيمة غير محددة مسبقًا، وإن كان يفرض نوعًا واحدًا لكل من المفتاح والقيمة.
+
+يتميّز نهج ClickHouse في مرونة الأنواع بوضوح أكبر وتحكّم أفضل. وعلى خلاف Elasticsearch، حيث قد تتسبب تعارضات الأنواع في أخطاء أثناء الإدخال، يتيح ClickHouse تخزين بيانات مختلطة الأنواع في أعمدة [`Variant`](/ar/reference/data-types/variant)، ويدعم تطور المخطط من خلال استخدام النوع [`JSON`](/ar/guides/clickhouse/data-formats/json/intro).
+
+إذا لم تكن تستخدم [`JSON`](/ar/guides/clickhouse/data-formats/json/intro)، فسيكون المخطط معرّفًا بشكل ثابت. وإذا لم تُوفَّر قيم لصف ما، فإما أن يكون النوع [`Nullable`](/ar/reference/data-types/nullable) (وهو غير مستخدم في ClickStack)، أو تُستخدم القيمة الافتراضية للنوع، مثل القيمة الفارغة لـ `String`.
+
+<div id="ingestion-and-transformation">
+  ### الإدخال والتحويل
+</div>
+
+يستخدم Elasticsearch مسارات الإدخال مع المعالجات (مثل `enrich` و`rename` و`grok`) لتحويل المستندات قبل الفهرسة. وفي ClickHouse، يمكن تحقيق وظائف مشابهة باستخدام [**العروض المادية التزايدية**](/ar/concepts/features/materialized-views/incremental-materialized-view)، التي يمكنها [التصفية والتحويل](/ar/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation) أو [الإثراء](/ar/concepts/features/materialized-views/incremental-materialized-view#lookup-table) للبيانات الواردة، ثم إدراج النتائج في الجداول الهدف. ويمكنك أيضًا إدراج البيانات في جدول يستخدم محرك `Null` إذا كنت تحتاج فقط إلى تخزين مخرجات العرض المادي. وهذا يعني الاحتفاظ فقط بنتائج أي عروض مادية، مع تجاهل البيانات الأصلية، مما يوفر مساحة التخزين.
+
+وبالنسبة إلى الإثراء، يدعم Elasticsearch [معالجات enrich مخصصة](https://www.elastic.co/docs/reference/enrich-processor/enrich-processor) لإضافة سياق إلى المستندات. أما في ClickHouse، فيمكن استخدام [**القواميس**](/ar/concepts/features/dictionaries/index) في كلٍّ من [وقت الاستعلام](/ar/concepts/features/dictionaries/index#query-time-enrichment) و[وقت الإدخال](/ar/concepts/features/dictionaries/index#index-time-enrichment) لإثراء الصفوف - على سبيل المثال، [ربط عناوين IP بالمواقع](/ar/guides/use-cases/observability/build-your-own/schema-design#using-ip-dictionaries) أو تطبيق [عمليات lookup لـ user agent](/ar/guides/use-cases/observability/build-your-own/schema-design#using-regex-dictionaries-user-agent-parsing) عند الإدراج.
+
+<div id="query-languages">
+  ### لغات الاستعلام
+</div>
+
+يدعم Elasticsearch [عددًا من لغات الاستعلام](https://www.elastic.co/docs/explore-analyze/query-filter/languages)، بما في ذلك استعلامات [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) و[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql) و[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql) و[KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (بنمط Lucene)، لكنه يوفّر دعمًا محدودًا لعمليات JOIN — إذ لا تتوفر إلا **عمليات LEFT OUTER JOIN** عبر [`ES|QL`](https://www.elastic.co/guide/en/elasticsearch/reference/8.x/esql-commands.html#esql-lookup-join). في المقابل، يدعم ClickHouse **صياغة SQL الكاملة**، بما في ذلك [جميع أنواع JOIN](/ar/reference/statements/select/join#supported-types-of-join) و[دوال النوافذ](/ar/reference/functions/window-functions/index) والاستعلامات الفرعية (بما فيها المترابطة) وCTEs. وهذه ميزة كبيرة إذا كنت بحاجة إلى الربط بين إشارات observability وبيانات الأعمال أو بيانات البنية التحتية.
+
+في ClickStack، [توفّر واجهة المستخدم واجهة بحث متوافقة مع Lucene](/ar/clickstack/features/search) لتسهيل الانتقال، إلى جانب الدعم الكامل لـ SQL عبر backend الخاص بـ ClickHouse. وهذه الصياغة مماثلة لصياغة [query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) في Elastic. ولمقارنة دقيقة لهذه الصياغة، راجع [&quot;البحث في ClickStack وElastic&quot;](/ar/clickstack/migration/elastic/search).
+
+<div id="file-formats-and-interfaces">
+  ### تنسيقات الملفات والواجهات
+</div>
+
+يدعم Elasticsearch استيعاب JSON (و[CSV بشكل محدود](https://www.elastic.co/docs/reference/enrich-processor/csv-processor)). أمّا ClickHouse فيدعم أكثر من **70 تنسيق ملفات**، بما في ذلك Parquet وProtobuf وArrow وCSV وغيرها، وذلك لكلٍّ من الاستيعاب والتصدير. وهذا يسهّل التكامل مع مسارات المعالجة والأدوات الخارجية.
+
+يوفّر كلا النظامين واجهة برمجة تطبيقات REST، لكن ClickHouse يوفّر أيضًا **بروتوكولًا أصليًا** للتفاعل بزمن انتقال منخفض ومعدل نقل مرتفع. وتدعم الواجهة الأصلية عرض تقدّم الاستعلام والضغط والتدفّق بكفاءة أعلى من HTTP، وهي الخيار الافتراضي لمعظم عمليات الاستيعاب في بيئات الإنتاج.
+
+<div id="indexing-and-storage">
+  ### الفهرسة والتخزين
+</div>
+
+<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+
+يُعد مفهوم التقسيم إلى **shards** عنصرًا أساسيًا في نموذج قابلية التوسع في Elasticsearch. يُقسَّم كل ① [**فهرس**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) إلى **shards**، وكل منها عبارة عن فهرس Lucene فعلي يُخزَّن على القرص على هيئة segments. ويمكن أن يحتوي shard على نسخة فعلية واحدة أو أكثر تُسمّى replica shards لتعزيز المرونة. ولتحقيق قابلية التوسع، يمكن توزيع shards وreplicas على عدة عُقد. ويتكوّن shard الواحد ② من segment واحدة أو أكثر غير قابلة للتغيير. وتمثّل segment البنية الأساسية للفهرسة في Lucene، وهي مكتبة Java التي توفّر إمكانات الفهرسة والبحث التي يستند إليها Elasticsearch.
+
+<Info>
+  **معالجة insert في Elasticsearch**
+
+  Ⓐ تنتقل المستندات المُدرجة حديثًا Ⓑ أولًا إلى مخزن مؤقت للفهرسة داخل الذاكرة، ويُفرَّغ افتراضيًا مرة كل ثانية. وتُستخدم صيغة توجيه لتحديد shard الهدف للمستندات المُفرَّغة، ثم تُكتب segment جديدة لذلك shard على القرص. ولتحسين كفاءة الاستعلامات وتمكين الحذف الفعلي للمستندات المحذوفة أو المحدَّثة، تُدمَج segments باستمرار في الخلفية في segments أكبر حتى تصل إلى حجم أقصى قدره 5 GB. ومع ذلك، يمكن فرض merge إلى segments أكبر.
+</Info>
+
+يوصي Elasticsearch بأن يكون حجم shards في حدود [50 GB أو 200 مليون مستند](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards) بسبب [العبء الإضافي لذاكرة JVM heap والبيانات الوصفية](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead). وهناك أيضًا حد صارم يبلغ [2 مليار مستند لكل shard](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit). يوزّع Elasticsearch الاستعلامات بالتوازي عبر shards، لكن تُعالَج كل shard باستخدام **خيط تنفيذ واحد**، ما يجعل الإفراط في التقسيم إلى shards مكلفًا وذا أثر عكسي. وهذا يربط التقسيم ارتباطًا وثيقًا بالتوسع، إذ يتطلب توسيع الأداء مزيدًا من shards (والعُقد).
+
+يقوم Elasticsearch بفهرسة جميع الحقول ضمن [**فهارس معكوسة**](https://www.elastic.co/docs/manage-data/data-store/index-basics) لتمكين البحث السريع، مع استخدام اختياري لـ [**doc values**](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/doc-values) من أجل aggregations والفرز والوصول إلى الحقول عبر السكربتات. وتستخدم الحقول الرقمية وحقول Geo [أشجار Block K-D](https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf) لإجراء عمليات البحث على البيانات الجغرافية المكانية وعلى النطاقات الرقمية ونطاقات التاريخ.
+
+ومن المهم أن Elasticsearch يخزّن المستند الأصلي الكامل في [`_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field) (مضغوطًا باستخدام `LZ4` أو `Deflate` أو `ZSTD`)، بينما لا يخزّن ClickHouse تمثيلًا منفصلًا للمستند. إذ تُعاد بنية البيانات من الأعمدة عند query time، ما يوفّر مساحة التخزين. وهذه الإمكانية نفسها متاحة في Elasticsearch باستخدام [Synthetic `_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source)، مع بعض [القيود](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source-restrictions). كما أن تعطيل `_source` له أيضًا [تبعات](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#include-exclude) لا تنطبق على ClickHouse.
+
+في Elasticsearch، تتحكم [تعيينات الفهرس](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html) (وهي ما يعادل مخططات الجداول في ClickHouse) في نوع الحقول وبُنى البيانات المستخدمة لهذا التخزين وتنفيذ الاستعلامات.
+
+أما ClickHouse، فعلى النقيض، فهو **column-oriented** — إذ يُخزَّن كل عمود بشكل مستقل، لكنه يظل دائمًا مرتبًا وفقًا لـ primary/ordering key الخاص بالجدول. ويتيح هذا الترتيب استخدام [فهارس أساسية متناثرة](/ar/concepts/core-concepts/primary-indexes)، ما يسمح لـ ClickHouse بتخطّي البيانات بكفاءة أثناء تنفيذ الاستعلامات. وعندما تُصفّي الاستعلامات حسب حقول primary key، لا يقرأ ClickHouse إلا الأجزاء ذات الصلة من كل عمود، ما يقلل بدرجة كبيرة من disk I/O ويحسّن الأداء — حتى من دون فهرس كامل على كل عمود.
+
+<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+
+يدعم ClickHouse أيضًا [**skip indexes**](/ar/concepts/features/performance/skip-indexes/skipping-indexes)، التي تسرّع التصفية عبر الحساب المسبق لبيانات الفهرس لأعمدة محددة. ويجب تعريفها صراحةً، لكنها قد تحسّن الأداء بشكل ملحوظ. بالإضافة إلى ذلك، يتيح ClickHouse تحديد [compression codecs](/ar/guides/use-cases/observability/build-your-own/schema-design#using-codecs) وخوارزميات الضغط لكل عمود — وهو ما لا يدعمه Elasticsearch (إذ إن [الضغط](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) فيه ينطبق فقط على تخزين JSON في `_source`).
+
+يدعم ClickHouse أيضًا التقسيم إلى شظايا، لكن نموذجه مُصمَّم لتفضيل **التوسع الرأسي**. يمكن لشظية واحدة تخزين **تريليونات من الصفوف** مع الحفاظ على أداء فعّال ما دامت الذاكرة وCPU والقرص يسمحان بذلك. وعلى خلاف Elasticsearch، لا يوجد **حدّ صارم لعدد الصفوف** لكل شظية. والشظايا في ClickHouse منطقية — وهي عمليًا جداول مستقلة — ولا تتطلب التقسيم ما لم تتجاوز مجموعة البيانات سعة عقدة واحدة. ويحدث ذلك عادةً بسبب قيود سعة القرص، ولا يُلجأ إلى التقسيم إلى شظايا ①  إلا عند الحاجة إلى التوسع الأفقي، مما يقلل التعقيد والأعباء الإضافية. في هذه الحالة، وعلى نحو مماثل لـ Elasticsearch، ستحتفظ الشظية بمجموعة فرعية من البيانات. وتُنظَّم البيانات داخل الشظية الواحدة على هيئة مجموعة من ② أجزاء بيانات غير قابلة للتغيير تحتوي على ③ عدة هياكل بيانات.
+
+تكون المعالجة داخل شظية ClickHouse **متوازية بالكامل**، ويُنصح المستخدمون بالتوسع رأسيًا لتجنب تكاليف الشبكة المرتبطة بنقل البيانات عبر العقد.
+
+<Info>
+  **معالجة الإدراج في ClickHouse**
+
+  تكون عمليات الإدراج في ClickHouse **متزامنة افتراضيًا** — فلا يتم تأكيد الكتابة إلا بعد commit — ولكن يمكن تهيئتها لاستخدام **عمليات إدراج غير متزامنة** لمواءمة التخزين المؤقت والتجميع على دفعات بأسلوب مشابه لـ Elastic. وإذا استُخدمت [إدراجات البيانات غير المتزامنة](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)، فإن الصفوف المُدرجة حديثًا تنتقل أولًا إلى Ⓐ مخزن مؤقت للإدراج داخل الذاكرة، ويُفرَّغ افتراضيًا مرة كل 200 مللي ثانية. وإذا استُخدمت عدة شظايا، فسيُستخدم [جدول موزّع](/ar/reference/engines/table-engines/special/distributed) لتوجيه الصفوف المُدرجة حديثًا إلى الشظية المستهدفة. ويُكتب جزء بيانات جديد لتلك الشظية على القرص.
+</Info>
+
+<div id="distribution-and-replication">
+  ### التوزيع والنسخ المتماثل
+</div>
+
+في حين يستخدم كلٌّ من Elasticsearch وClickHouse المجموعات، والشرائح، والنسخ المتماثلة لضمان قابلية التوسع وتحمّل الأعطال، فإن نموذج كلٍّ منهما يختلف اختلافًا كبيرًا من حيث آلية التنفيذ وخصائص الأداء.
+
+يستخدم Elasticsearch نموذج **primary-secondary** للنسخ المتماثل. فعند كتابة البيانات إلى شريحة أساسية، تُنسخ بشكل متزامن إلى نسخة متماثلة واحدة أو أكثر. وتكون هذه النسخ المتماثلة نفسها شرائح كاملة موزعة عبر العُقد لضمان التكرار. ولا يؤكد Elasticsearch عمليات الكتابة إلا بعد أن تؤكد جميع النسخ المتماثلة المطلوبة تنفيذ العملية — وهو نموذج يوفّر **اتساقًا تسلسليًا** شبه كامل، مع أن **القراءات المتسخة** من النسخ المتماثلة تظل ممكنة قبل اكتمال المزامنة. وتتولى **عقدة رئيسية** تنسيق المجموعة، وإدارة توزيع الشرائح، وحالتها الصحية، وانتخاب القائد.
+
+في المقابل، يستخدم ClickHouse **الاتساق النهائي** افتراضيًا، مع تنسيق يتم بواسطة **Keeper** - وهو بديل خفيف الوزن لـ ZooKeeper. ويمكن إرسال عمليات الكتابة إلى أي نسخة متماثلة مباشرةً أو عبر [**جدول موزّع**](/ar/reference/engines/table-engines/special/distributed)، الذي يختار نسخة متماثلة تلقائيًا. ويكون النسخ المتماثل غير متزامن - إذ تُنقل التغييرات إلى النسخ المتماثلة الأخرى بعد تأكيد عملية الكتابة. وللحصول على ضمانات أكثر صرامة، يدعم ClickHouse [**الاتساق التسلسلي**](/ar/get-started/migrate/postgres/appendix#sequential-consistency)، حيث لا تُؤكَّد عمليات الكتابة إلا بعد تثبيتها عبر النسخ المتماثلة، رغم أن هذا الوضع نادر الاستخدام بسبب أثره في الأداء. وتوحّد الجداول الموزعة الوصول عبر عدة شرائح، إذ تمرّر استعلامات `SELECT` إلى جميع الشرائح وتدمج النتائج. أما في عمليات `INSERT`، فهي توازن الحمل عبر توجيه البيانات بالتساوي بين الشرائح. ويتميّز النسخ المتماثل في ClickHouse بمرونة عالية: إذ يمكن لأي نسخة متماثلة (وهي نسخة من شريحة) قبول عمليات الكتابة، ثم تُزامَن جميع التغييرات بشكل غير متزامن مع النسخ الأخرى. وتتيح هذه المعمارية استمرار خدمة الاستعلامات دون انقطاع أثناء الأعطال أو الصيانة، مع تولّي إعادة المزامنة تلقائيًا - ما يلغي الحاجة إلى فرض نموذج primary-secondary على طبقة البيانات.
+
+<Info>
+  **ClickHouse Cloud**
+
+  في **ClickHouse Cloud**، تعتمد المعمارية نموذج حوسبة بلا موارد مشتركة، حيث **تستند الشريحة الواحدة إلى object storage**. ويحل هذا محل التوافر العالي التقليدي القائم على النسخ المتماثلة، مما يتيح **قراءة الشريحة والكتابة إليها من قِبل عدة عُقد في الوقت نفسه**. ويُمكّن فصل التخزين عن الحوسبة من التوسع المرن من دون إدارة صريحة للنسخ المتماثلة.
+</Info>
+
+باختصار:
+
+* **Elastic**: الشرائح هي بُنى Lucene مادية مرتبطة بذاكرة JVM. ويؤدي الإفراط في تقسيم الشرائح إلى تراجع في الأداء. والنسخ المتماثل متزامن وتنسقه عقدة رئيسية.
+* **ClickHouse**: الشرائح منطقية وقابلة للتوسع رأسيًا، مع تنفيذ محلي عالي الكفاءة. والنسخ المتماثل غير متزامن (لكن يمكن أن يكون تسلسليًا)، والتنسيق خفيف الوزن.
+
+في النهاية، يفضّل ClickHouse البساطة والأداء على نطاق واسع من خلال تقليل الحاجة إلى ضبط الشرائح، مع الاستمرار في تقديم ضمانات قوية للاتساق عند الحاجة.
+
+<div id="deduplication-and-routing">
+  ### إلغاء التكرار والتوجيه
+</div>
+
+يعتمد Elasticsearch على `_id` لإلغاء تكرار المستندات، ويوجّهها إلى الأجزاء المناسبة بناءً على ذلك. لا يخزّن ClickHouse معرّفًا افتراضيًا للصفوف، لكنه يدعم **إلغاء التكرار وقت الإدراج**، ما يتيح للمستخدمين إعادة محاولة عمليات الإدراج الفاشلة بأمان. ولمزيد من التحكم، تتيح `ReplacingMergeTree` وغيرها من محركات الجداول إلغاء التكرار استنادًا إلى أعمدة محددة.
+
+يضمن توجيه الفهرس في Elasticsearch أن تُوجَّه مستندات معيّنة دائمًا إلى أجزاء معيّنة. وفي ClickHouse، يمكنك تحديد **مفاتيح الأجزاء** أو استخدام جداول `Distributed` لتحقيق تموضع مشابه للبيانات.
+
+<div id="aggregations-execution-model">
+  ### التجميعات ونموذج التنفيذ
+</div>
+
+مع أن كلا النظامين يدعمان تجميع البيانات، فإن ClickHouse يوفّر [عددًا أكبر بكثير من الدوال](/ar/reference/functions/aggregate-functions/reference-index)، بما في ذلك الدوال الإحصائية والتقريبية والدوال التحليلية المتخصصة.
+
+في حالات استخدام قابلية الرصد، يُعدّ احتساب مدى تكرار رسائل السجل أو أحداث معيّنة من أكثر تطبيقات التجميعات شيوعًا (مع إنشاء تنبيه إذا كان هذا التكرار غير معتاد).
+
+المكافئ لاستعلام SQL في ClickHouse `SELECT count(*) FROM ... GROUP BY ...` في Elasticsearch هو [terms aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html)، وهو نوع من [bucket aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html) في Elasticsearch.
+
+يُعد `GROUP BY` في ClickHouse مع `count(*)` وterms aggregation في Elasticsearch متكافئين عمومًا من حيث الوظيفة، لكنهما يختلفان كثيرًا في آلية التنفيذ والأداء وجودة النتائج.
+
+يعتمد هذا التجميع في Elasticsearch على [تقدير النتائج في استعلامات &quot;top-N&quot;](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (مثل أفضل 10 مضيفين حسب العدد) عندما تمتد البيانات المستعلَم عنها عبر عدة shards. يسرّع هذا التقدير التنفيذ، لكنه قد يؤثر في الدقة. يمكنك تقليل هذا الخطأ من خلال [فحص `doc_count_error_upper_bound`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error) وزيادة المعلَمة `shard_size` — ولكن على حساب زيادة استهلاك الذاكرة وتراجع أداء الاستعلام.
+
+يتطلب Elasticsearch أيضًا [إعداد `size`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size) لكل التجميعات المعتمدة على buckets — ولا توجد طريقة لإرجاع جميع المجموعات الفريدة من دون تعيين حد صراحةً. كما أن التجميعات ذات cardinality العالية قد تصطدم [بحدود `max_buckets`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets) أو تتطلب ترقيمًا صفحيًا باستخدام [composite aggregation](https://www.elastic.co/docs/reference/aggregations/bucket/composite-aggregation)، وهو ما يكون غالبًا معقدًا وغير فعّال.
+
+أما ClickHouse، فعلى النقيض، فيجري تجميعات دقيقة مباشرةً. فالدوال مثل `count(*)` تعيد نتائج دقيقة من دون الحاجة إلى تعديلات في الإعدادات، مما يجعل سلوك الاستعلام أبسط وأكثر قابلية للتنبؤ.
+
+ولا يفرض ClickHouse حدودًا على الحجم. يمكنك تنفيذ استعلامات group-by غير مقيّدة عبر مجموعات بيانات كبيرة. وإذا جرى تجاوز عتبات الذاكرة، فإن ClickHouse [يمكنه spill إلى disk](/ar/reference/statements/select/group-by#group-by-in-external-memory). وتكون التجميعات التي تُجري grouping حسب بادئة المفتاح الأساسي فعّالة للغاية، وغالبًا ما تعمل مع حد أدنى من استهلاك الذاكرة.
+
+<div id="execution-model">
+  #### نموذج التنفيذ
+</div>
+
+يمكن إرجاع الاختلافات المذكورة أعلاه إلى نماذج التنفيذ في Elasticsearch وClickHouse، إذ يتبع كلٌّ منهما نهجًا مختلفًا جذريًا في تنفيذ الاستعلامات والتوازي.
+
+صُمّم ClickHouse لتحقيق أقصى كفاءة على العتاد الحديث. وبشكل افتراضي، يشغّل ClickHouse استعلام SQL باستخدام N من مسارات التنفيذ المتزامنة على جهاز يحتوي على N من أنوية CPU:
+
+<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="تنفيذ ClickHouse" size="lg" />
+
+على عقدة واحدة، تقسّم مسارات التنفيذ البيانات إلى نطاقات مستقلة، مما يتيح معالجتها بالتوازي عبر خيوط CPU. ويشمل ذلك التصفية والتجميع والفرز. وفي النهاية، تُدمَج النتائج المحلية من كل مسار، ويُطبَّق عامل limit إذا كان الاستعلام يتضمن clause من نوع `LIMIT`.
+
+ويُزاد توازي تنفيذ الاستعلام أيضًا عبر:
+
+1. **المعالجة المتجهية SIMD**: تستخدم العمليات على البيانات العمودية [تعليمات CPU SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (مثل [AVX512](https://en.wikipedia.org/wiki/AVX-512))، مما يتيح معالجة القيم على شكل دفعات.
+2. **التوازي على مستوى cluster**: في البيئات الموزعة، تنفّذ كل عقدة query processing محليًا. وتُبث [حالات التجميع الجزئية](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) إلى العقدة المُبادِرة ثم تُدمَج. وإذا كانت مفاتيح `GROUP BY` في الاستعلام متوافقة مع مفاتيح sharding، فيمكن [تقليل الدمج أو تجنبه تمامًا](/ar/reference/settings/session-settings#distributed_group_by_no_merge).
+
+<br />
+
+يتيح هذا النموذج التوسع بكفاءة عبر الأنوية والعقد، مما يجعل ClickHouse ملائمًا جدًا لأعمال analytics واسعة النطاق. كما يتيح استخدام *حالات التجميع الجزئية* دمج النتائج الوسيطة من الخيوط والعقد المختلفة من دون فقدان الدقة.
+
+أما Elasticsearch، فعلى النقيض، فيخصّص خيطًا واحدًا لكل shard لمعظم عمليات التجميع، بغض النظر عن عدد أنوية CPU المتاحة. وتعيد هذه الخيوط أفضل N من النتائج المحلية لكل shard، ثم تُدمَج عند العقدة المنسِّقة. وقد يؤدي هذا النهج إلى عدم الاستفادة الكاملة من موارد النظام، كما قد يسبب بعض أوجه عدم الدقة في aggregations الشاملة، لا سيما عندما تكون المصطلحات المتكررة موزعة عبر عدة shards. ويمكن تحسين الدقة بزيادة parameter ‏`shard_size`، لكن ذلك يأتي على حساب ارتفاع memory usage وlatency للاستعلام.
+
+<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="تنفيذ Elasticsearch" size="lg" />
+
+باختصار، ينفّذ ClickHouse aggregations وqueries بدرجة أدق من التوازي وتحكمًا أكبر في موارد العتاد، بينما يعتمد Elasticsearch على تنفيذ قائم على shard مع قيود أكثر صرامة.
+
+لمزيد من التفاصيل حول آليات aggregations في كلتا التقنيتين، نوصي بقراءة تدوينة المدونة [&quot;ClickHouse vs. Elasticsearch: The Mechanics of Count Aggregations&quot;](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#elasticsearch).
+
+<div id="data-management">
+  ### إدارة البيانات
+</div>
+
+يتبع كلٌّ من Elasticsearch وClickHouse نهجين مختلفين جذريًا في إدارة بيانات observability من السلاسل الزمنية، لا سيما فيما يتعلق بالاحتفاظ بالبيانات، وتدويرها، والتخزين المتدرّج.
+
+<div id="lifecycle-vs-ttl">
+  #### إدارة دورة حياة الفهرس مقابل TTL المدمجة
+</div>
+
+في Elasticsearch، تُدار البيانات طويلة الأمد من خلال **Index Lifecycle Management (ILM)** و**Data Streams**. تتيح لك هذه الميزات تعريف سياسات تحدد متى يتم تدوير الفهارس (على سبيل المثال، بعد بلوغ حجم أو عمر معين)، ومتى تُنقل الفهارس الأقدم إلى طبقات تخزين أقل تكلفة (مثل الطبقات الدافئة أو الباردة)، ومتى تُحذف نهائيًا. وهذا ضروري لأن Elasticsearch **لا يدعم إعادة التقسيم إلى shards**، كما لا يمكن أن تستمر shards في النمو إلى ما لا نهاية من دون تراجع في الأداء. ولإدارة أحجام shards ودعم الحذف بكفاءة، يجب إنشاء فهارس جديدة بصورة دورية وإزالة القديمة — أي تدوير البيانات فعليًا على مستوى الفهرس.
+
+يتبع ClickHouse نهجًا مختلفًا. فعادةً ما تُخزَّن البيانات في **جدول واحد** وتُدار باستخدام **تعبيرات TTL (time-to-live)** على مستوى العمود أو partition. ويمكن **تقسيم البيانات حسب التاريخ**، مما يتيح حذفًا فعّالًا من دون الحاجة إلى إنشاء جداول جديدة أو تنفيذ عمليات تدوير للفهرس. ومع تقادم البيانات واستيفائها شرط TTL، يزيلها ClickHouse تلقائيًا — من دون الحاجة إلى أي بنية تحتية إضافية لإدارة التدوير.
+
+<div id="storage-tiers">
+  #### طبقات التخزين ومعماريات Hot-Warm
+</div>
+
+يدعم Elasticsearch معماريات التخزين **hot-warm-cold-frozen**، حيث تُنقَل البيانات بين طبقات تخزين ذات خصائص أداء مختلفة. وعادةً ما يُضبط ذلك عبر ILM ويرتبط بأدوار العُقد في العنقود.
+
+يدعم ClickHouse **التخزين متعدد الطبقات** من خلال محركات الجداول الأصلية مثل `MergeTree`، والتي يمكنها نقل البيانات الأقدم تلقائيًا بين **وحدات تخزين** مختلفة (مثل: من SSD إلى HDD ثم إلى تخزين الكائنات) استنادًا إلى قواعد مخصّصة. ويمكن لهذا أن يحاكي نهج hot-warm-cold في Elastic — ولكن من دون تعقيد إدارة أدوار متعددة للعُقد أو عدة عناقيد.
+
+<Info>
+  **ClickHouse Cloud**
+
+  في **ClickHouse Cloud**، يصبح هذا أكثر سلاسة: إذ تُخزَّن جميع البيانات في **تخزين الكائنات (مثل S3)**، وتكون موارد المعالجة منفصلة. ويمكن أن تظل البيانات في تخزين الكائنات حتى يُستعلَم عنها، وعندها تُجلَب وتُخزَّن مؤقتًا محليًا (أو في ذاكرة تخزين مؤقت موزعة) — ما يوفّر هيكل تكلفة مماثلًا لطبقة frozen في Elastic، مع خصائص أداء أفضل. وهذا يعني أنه لا حاجة إلى نقل البيانات بين طبقات التخزين، مما يجعل معماريات Hot-Warm غير ضرورية.
+</Info>
+
+<div id="rollups-vs-incremental-aggregates">
+  ### Rollups مقابل التجميعات التزايدية
+</div>
+
+في Elasticsearch، تُنفَّذ **عمليات rollup** أو **التجميعات** باستخدام آلية تُسمى [**transforms**](https://www.elastic.co/guide/en/elasticsearch/reference/current/transforms.html). وتُستخدم هذه الآلية لتلخيص البيانات ذات السلاسل الزمنية على فواصل ثابتة (مثل كل ساعة أو يوميًا) باستخدام نموذج **النافذة المنزلقة**. وتُضبط هذه الآلية على هيئة مهام خلفية متكررة تُجمّع البيانات من فهرس واحد وتكتب النتائج إلى **فهرس rollup** منفصل. ويساعد ذلك على خفض تكلفة الاستعلامات عبر نطاقات زمنية طويلة من خلال تجنب المسح المتكرر للبيانات الخام ذات الكاردينالية العالية.
+
+يوضح المخطط التالي، بصورة تجريدية، كيفية عمل transforms (لاحظ أننا نستخدم اللون الأزرق لجميع المستندات التي تنتمي إلى bucket نفسه ونريد احتساب قيم التجميع له مسبقًا):
+
+<Image img="/images/use-cases/observability/es-transforms.webp" alt="تحويلات Elasticsearch" size="lg" />
+
+تستخدم transforms المستمرة [نقاط التحقق](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) الخاصة بها استنادًا إلى فاصل زمني قابل للضبط للتحقق (أي [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html) الخاصة بـ transform، وقيمتها الافتراضية دقيقة واحدة). في المخطط أعلاه، نفترض أنه عند ① تُنشأ نقطة تحقق جديدة بعد انقضاء فاصل التحقق. بعد ذلك، يفحص Elasticsearch التغييرات في فهرس المصدر الخاص بـ transforms ويكتشف ثلاثة مستندات `blue` جديدة (11 و12 و13) ظهرت منذ نقطة التحقق السابقة. لذلك، يُفلتر فهرس المصدر ليشمل جميع مستندات `blue` الموجودة، ثم يُعاد احتساب قيم التجميع باستخدام [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (للاستفادة من [pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) للنتائج)، ويُحدَّث فهرس الوجهة بمستند يحل محل المستند الذي كان يحتوي على قيم التجميع السابقة. وبالمثل، عند ② و③، تُعالَج نقاط تحقق جديدة عبر التحقق من التغييرات وإعادة احتساب قيم التجميع استنادًا إلى جميع مستندات `blue` الموجودة التي تنتمي إلى bucket نفسه.
+
+يتبع ClickHouse نهجًا مختلفًا جذريًا. فبدلًا من إعادة تجميع البيانات بشكل دوري، يدعم ClickHouse **العروض المادية التزايدية**، التي تحوّل البيانات وتُجمّعها **وقت الإدراج**. فعندما تُكتب بيانات جديدة إلى جدول مصدر، ينفّذ العرض المادي query تجميع بلغة SQL مُعرّفًا مسبقًا على **الكتل المُدرجة** الجديدة فقط، ثم يكتب النتائج المُجمّعة إلى جدول هدف.
+
+ويصبح هذا النموذج ممكنًا بفضل دعم ClickHouse لـ [**حالات التجميع الجزئية**](/ar/reference/data-types/aggregatefunction) — وهي تمثيلات وسيطة لدوال التجميع يمكن تخزينها ودمجها لاحقًا. ويتيح لك ذلك الاحتفاظ بنتائج مُجمّعة جزئيًا تكون سريعة في الاستعلام ومنخفضة الكلفة في التحديث. وبما أن التجميع يحدث مع وصول البيانات، فلا حاجة إلى تشغيل مهام متكررة مكلفة أو إعادة تلخيص البيانات الأقدم.
+
+نوضح بصورة تجريدية آلية عمل العروض المادية التزايدية (لاحظ أننا نستخدم اللون الأزرق لجميع rows التي تنتمي إلى المجموعة نفسها ونريد احتساب قيم التجميع لها مسبقًا):
+
+<Image img="/images/use-cases/observability/ch-mvs.webp" alt="العروض المادية في ClickHouse" size="lg" />
+
+في المخطط أعلاه، يحتوي جدول المصدر الخاص بالعرض المادي بالفعل على data part يخزّن بعض rows `blue` (من 1 إلى 10) التي تنتمي إلى المجموعة نفسها. ولهذه المجموعة، توجد أيضًا data part بالفعل في جدول الهدف الخاص بالعرض، وتخزّن [حالة تجميع جزئية](https://www.youtube.com/watch?v=QDAJTKZT8y4) لمجموعة `blue`. وعندما تحدث عمليات insert عند ① ② ③ إلى جدول المصدر مع rows جديدة، تُنشأ source table data part مقابلة لكل insert، وبالتوازي، ولكل block من rows المُدرجة حديثًا فقط، تُحتسب حالة تجميع جزئية وتُدرج على شكل data part في جدول الهدف الخاص بالعرض المادي. وعند ④ أثناء عمليات دمج الأجزاء في الخلفية، تُدمَج حالات التجميع الجزئية، ما يؤدي إلى تجميع تزايدي للبيانات.
+
+لاحظ أن جميع [دوال التجميع](/ar/reference/functions/aggregate-functions/reference-index) (أكثر من 90 دالة)، بما في ذلك تركيباتها مع [combinators](https://www.youtube.com/watch?v=7ApwD0cfAFI) الخاصة بدوال التجميع، تدعم [حالات التجميع الجزئية](/ar/reference/data-types/aggregatefunction).
+
+وللاطلاع على Example أكثر واقعية حول Elasticsearch مقابل ClickHouse في التجميعات التزايدية، راجع هذا [Example](https://github.com/ClickHouse/examples/tree/main/blog-examples/clickhouse-vs-elasticsearch/continuous-data-transformation#continuous-data-transformation-example).
+
+تشمل مزايا نهج ClickHouse ما يلي:
+
+* **تجميعات مُحدَّثة دائمًا**: تظل العروض المادية متزامنة دائمًا مع الجدول المصدر.
+* **من دون مهام في الخلفية**: تُنفَّذ عمليات التجميع عند الإدراج بدلًا من وقت الاستعلام.
+* **أداء أفضل في الوقت الفعلي**: مثالي لأعباء عمل observability والتحليلات في الوقت الفعلي، حيث تكون التجميعات الأحدث مطلوبة فورًا.
+* **قابل للتركيب**: يمكن تراكب العروض المادية أو ربطها بعروض وجداول أخرى لبناء استراتيجيات أكثر تعقيدًا لتسريع الاستعلامات.
+* **قيم TTL مختلفة**: يمكن تطبيق إعدادات TTL مختلفة على الجدول المصدر والجدول الهدف للعرض المادي.
+
+يُعد هذا النموذج فعّالًا بشكل خاص في حالات استخدام observability التي تحتاج فيها إلى احتساب مقاييس مثل معدلات الأخطاء لكل دقيقة، وزمن الاستجابة، أو تصنيفات أعلى N، من دون فحص مليارات السجلات الخام لكل استعلام.
+
+<div id="lakehouse-support">
+  ### دعم lakehouse
+</div>
+
+يتبع ClickHouse وElasticsearch نهجين مختلفين جذريًا في التكامل مع lakehouse. فـ ClickHouse هو محرك تنفيذ استعلامات متكامل بالكامل، وقادر على تنفيذ الاستعلامات على تنسيقات lakehouse مثل [Iceberg](/ar/reference/functions/table-functions/iceberg) و[Delta Lake](/ar/reference/functions/table-functions/deltalake)، بالإضافة إلى التكامل مع كتالوجات بحيرات البيانات مثل [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog) و[Unity catalog](/ar/guides/use-cases/data-warehousing/unity-catalog). وتعتمد هذه التنسيقات على الاستعلام بكفاءة عن ملفات [Parquet](/ar/reference/formats/Parquet/Parquet)، وهو ما يدعمه ClickHouse بالكامل. كما يمكن لـ ClickHouse قراءة جداول Iceberg وDelta Lake مباشرةً، مما يتيح تكاملًا سلسًا مع معماريات بحيرات البيانات الحديثة.
+
+في المقابل، يرتبط Elasticsearch ارتباطًا وثيقًا بتنسيق بياناته الداخلي ومحرك التخزين المعتمد على Lucene. ولا يمكنه الاستعلام مباشرةً عن تنسيقات lakehouse أو ملفات Parquet، مما يحد من قدرته على الاندماج في معماريات بحيرات البيانات الحديثة. ويتطلب Elasticsearch تحويل البيانات وتحميلها إلى تنسيقه الاحتكاري قبل أن يصبح بالإمكان الاستعلام عنها.
+
+تمتد قدرات ClickHouse في lakehouse إلى ما هو أبعد من مجرد قراءة البيانات:
+
+* **تكامل كتالوج البيانات**: يدعم ClickHouse التكامل مع كتالوجات البيانات مثل [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog)، مما يتيح الاكتشاف التلقائي للجداول المخزنة في تخزين الكائنات والوصول إليها.
+* **دعم تخزين الكائنات**: دعم أصلي للاستعلام عن البيانات الموجودة في [S3](/ar/reference/engines/table-engines/integrations/s3)، و[GCS](/ar/reference/functions/table-functions/gcs)، و[Azure Blob Storage](/ar/reference/engines/table-engines/integrations/azureBlobStorage) من دون الحاجة إلى نقل البيانات.
+* **الاستعلام عبر مصادر متعددة**: القدرة على ربط البيانات عبر مصادر متعددة، بما في ذلك جداول lakehouse، وقواعد البيانات التقليدية، وجداول ClickHouse باستخدام [القواميس الخارجية](/ar/concepts/features/dictionaries/index) و[دوال الجداول](/ar/reference/functions/table-functions/index).
+* **التحميل التزايدي**: دعم التحميل المستمر من جداول lakehouse إلى جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) المحلية، باستخدام ميزات مثل [S3Queue](/ar/reference/engines/table-engines/integrations/s3queue) و[ClickPipes](/ar/integrations/clickpipes/home).
+* **تحسين الأداء**: تنفيذ الاستعلامات الموزعة على بيانات lakehouse باستخدام [دوال cluster](/ar/reference/functions/table-functions/cluster) لتحسين الأداء.
+
+تجعل هذه القدرات ClickHouse خيارًا طبيعيًا للمؤسسات التي تعتمد معماريات lakehouse، إذ تتيح لها الاستفادة من مرونة بحيرات البيانات وأداء قاعدة البيانات العمودية في آنٍ واحد.

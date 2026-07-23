@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTIdentifierTypePair::clone() const
 {
-    auto res = std::make_shared<ASTIdentifierTypePair>();
+    auto res = make_intrusive<ASTIdentifierTypePair>();
     res->children.clear();
 
     if (identifier)

@@ -16,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionRegexpQuoteMeta : public IFunction
+class FunctionRegexpQuoteMeta final : public IFunction
 {
 public:
     static constexpr auto name = "regexpQuoteMeta";
@@ -140,7 +140,7 @@ It escapes zero byte as `\0` instead of `\x00` and it escapes only required char
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRegexpQuoteMeta>(documentation);
 }

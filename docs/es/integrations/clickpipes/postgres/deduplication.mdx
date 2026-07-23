@@ -1,0 +1,232 @@
+---
+sidebarTitle: 'Estrategias de deduplicación'
+description: 'Gestiona duplicados y filas eliminadas.'
+slug: /integrations/clickpipes/postgres/deduplication
+title: 'Estrategias de deduplicación (con CDC)'
+keywords: ['deduplicación', 'postgres', 'clickpipes', 'replacingmergetree', 'final']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Las actualizaciones y eliminaciones replicadas de Postgres a ClickHouse generan filas duplicadas en ClickHouse debido a su estructura de almacenamiento de datos y al proceso de replicación. Esta página explica por qué ocurre esto y qué estrategias usar en ClickHouse para gestionar los duplicados.
+
+<div id="how-does-data-get-replicated">
+  ## ¿Cómo se replican los datos?
+</div>
+
+<div id="PostgreSQL-logical-decoding">
+  ### Decodificación lógica de PostgreSQL
+</div>
+
+ClickPipes usa [Postgres Logical Decoding](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) para capturar los cambios a medida que se producen en Postgres. El proceso de decodificación lógica en Postgres permite que clientes como ClickPipes reciban los cambios en un formato legible para las personas, es decir, como una serie de INSERTs, UPDATEs y DELETEs.
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+ClickPipes mapea las tablas de Postgres a ClickHouse mediante el motor [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree). ClickHouse ofrece su mejor rendimiento con cargas de trabajo de solo anexado y no recomienda UPDATEs frecuentes. Aquí es donde ReplacingMergeTree resulta especialmente potente.
+
+Con ReplacingMergeTree, las actualizaciones se modelan como inserciones con una versión más reciente (`_peerdb_version`) de la fila, mientras que las eliminaciones son inserciones con una versión más reciente y `_peerdb_is_deleted` establecido en true. El motor ReplacingMergeTree deduplica y fusiona los datos en segundo plano, y conserva la versión más reciente de la fila para una clave primaria determinada (id), lo que permite gestionar UPDATEs y DELETEs de forma eficiente como inserciones versionadas.
+
+A continuación se muestra un ejemplo de una sentencia CREATE TABLE ejecutada por ClickPipes para crear la tabla en ClickHouse.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+<div id="illustrative-example">
+  ### Ejemplo ilustrativo
+</div>
+
+La siguiente ilustración muestra un ejemplo básico de sincronización de una tabla `users` entre PostgreSQL y ClickHouse mediante ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="carga inicial de ClickPipes" size="lg" />
+
+**Paso 1** muestra la instantánea inicial de las 2 filas en PostgreSQL y cómo ClickPipes realiza la carga inicial de esas 2 filas en ClickHouse. Como puede observar, ambas filas se copian tal cual en ClickHouse.
+
+**Paso 2** muestra tres operaciones en la tabla `users`: insertar una nueva fila, actualizar una fila existente y eliminar otra fila.
+
+**Paso 3** muestra cómo ClickPipes replica las operaciones INSERT, UPDATE y DELETE en ClickHouse como inserciones versionadas. UPDATE aparece como una nueva versión de la fila con ID 2, mientras que DELETE aparece como una nueva versión del ID 1 marcada como true mediante `_is_deleted`. Debido a esto, ClickHouse tiene tres filas más que PostgreSQL.
+
+Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre merges](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de merge. Sin embargo, el momento en que se produce este merge es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
+
+¿Cómo podemos garantizar resultados idénticos en las consultas tanto en ClickHouse como en PostgreSQL?
+
+<div id="deduplicate-using-final-keyword">
+  ### Deduplicar con la palabra clave FINAL
+</div>
+
+La forma recomendada de deduplicar datos en las consultas de ClickHouse es usar el [modificador FINAL.](/es/reference/statements/select/from#final-modifier) Esto garantiza que solo se devuelvan las filas sin duplicados.
+
+Veamos cómo aplicarlo en tres consultas diferentes.
+
+*Tenga en cuenta la cláusula WHERE en las siguientes consultas, que se utiliza para filtrar las filas eliminadas.*
+
+* **Consulta simple de recuento**: Cuente el número de publicaciones.
+
+Esta es la consulta más sencilla que puede ejecutar para comprobar si la sincronización se realizó correctamente. Las dos consultas deberían devolver el mismo recuento.
+
+```sql
+-- PostgreSQL
+SELECT count(*) FROM posts;
+
+-- ClickHouse 
+SELECT count(*) FROM posts FINAL WHERE _peerdb_is_deleted=0;
+```
+
+* **Agregación simple con JOIN**: Los 10 usuarios que han acumulado más vistas.
+
+Un ejemplo de agregación sobre una sola tabla. Tener duplicados aquí afectaría enormemente al resultado de la función sum.
+
+```sql highlight={8,22}
+-- PostgreSQL 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts p
+LEFT JOIN users u ON u.id = p.owneruserid
+WHERE p.owneruserid > 0
+GROUP BY user_id, display_name
+ORDER BY viewcount DESC
+LIMIT 10;
+
+-- ClickHouse 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts AS p
+FINAL
+LEFT JOIN users AS u
+FINAL ON (u.id = p.owneruserid) AND (u._peerdb_is_deleted = 0)
+WHERE (p.owneruserid > 0) AND (p._peerdb_is_deleted = 0)
+GROUP BY
+    user_id,
+    display_name
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="final-setting">
+  #### configuración FINAL
+</div>
+
+En lugar de añadir el modificador FINAL a cada nombre de tabla de la consulta, puedes usar la [configuración FINAL](/es/reference/settings/session-settings#final) para aplicarlo automáticamente a todas las tablas de la consulta.
+
+Esta configuración puede aplicarse por consulta o a toda una sesión.
+
+```sql
+-- Configuración FINAL por consulta
+SELECT count(*) FROM posts SETTINGS FINAL = 1;
+
+-- Establecer FINAL para la sesión
+SET final = 1;
+SELECT count(*) FROM posts; 
+```
+
+<div id="row-policy">
+  #### ROW policy
+</div>
+
+Una forma sencilla de ocultar el filtro redundante `_peerdb_is_deleted = 0` es usar [ROW policy.](/es/concepts/features/security/access-rights#row-policy-management) A continuación se muestra un ejemplo que crea una política de filas para excluir las filas eliminadas de todas las consultas sobre la tabla votes.
+
+```sql
+-- Aplicar la política de filas a todos los usuarios
+CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO ALL;
+```
+
+> Las políticas de fila se aplican a una lista de usuarios y roles. En este ejemplo, se aplican a todos los usuarios y roles. Esto puede ajustarse para aplicarlas solo a usuarios o roles específicos.
+
+<div id="query-like-with-postgres">
+  ### Consultar como en Postgres
+</div>
+
+Migrar un conjunto de datos analítico de PostgreSQL a ClickHouse suele requerir modificar las consultas de la aplicación para adaptarlas a las diferencias en la forma en que se gestionan los datos y se ejecutan las consultas.
+
+En esta sección se explorarán técnicas para eliminar duplicados de los datos sin modificar las consultas originales.
+
+<div id="views">
+  #### Vistas
+</div>
+
+Las [vistas](/es/reference/statements/create/view#normal-view) son una excelente forma de ocultar la palabra clave FINAL de la consulta, ya que no almacenan ningún dato y simplemente leen de otra tabla cada vez que se accede a ellas.
+
+A continuación se muestra un ejemplo de cómo crear vistas para cada tabla de nuestra base de datos en ClickHouse con la palabra clave FINAL y un filtro para las filas eliminadas.
+
+```sql
+CREATE VIEW posts_view AS SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW users_view AS SELECT * FROM users FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW votes_view AS SELECT * FROM votes FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW comments_view AS SELECT * FROM comments FINAL WHERE _peerdb_is_deleted=0;
+```
+
+Luego, podemos consultar las vistas con la misma consulta que usaríamos en PostgreSQL.
+
+```sql
+-- Posts más vistos
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM posts_view
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="refreshable-material-view">
+  #### Vista materializada actualizable
+</div>
+
+Otro enfoque es usar una [vista materializada actualizable](/es/concepts/features/materialized-views/refreshable-materialized-view), que permite programar la ejecución de consultas para deduplicar filas y almacenar los resultados en una tabla de destino. Con cada actualización programada, la tabla de destino se sustituye por los resultados más recientes de la consulta.
+
+La principal ventaja de este método es que la consulta que usa la palabra clave FINAL se ejecuta solo una vez durante la actualización, lo que elimina la necesidad de que las consultas posteriores sobre la tabla de destino usen FINAL.
+
+Sin embargo, una desventaja es que los datos de la tabla de destino solo estarán tan actualizados como la actualización más reciente. Aun así, para muchos casos de uso, intervalos de actualización de varios minutos a unas pocas horas pueden ser suficientes.
+
+```sql
+-- Crear tabla de posts deduplicados 
+CREATE TABLE deduplicated_posts AS posts;
+
+-- Crear la vista materializada y programar su ejecución cada hora
+CREATE MATERIALIZED VIEW deduplicated_posts_mv REFRESH EVERY 1 HOUR TO deduplicated_posts AS 
+SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0 
+```
+
+Luego, puedes consultar la tabla `deduplicated_posts` con normalidad.
+
+```sql
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM deduplicated_posts
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10;
+```

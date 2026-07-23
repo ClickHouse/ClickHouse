@@ -1,0 +1,85 @@
+---
+description: 'ClickHouse の Nullable データ型修飾子のドキュメント'
+sidebarTitle: 'Nullable(T)'
+slug: /sql-reference/data-types/nullable
+title: 'Nullable(T)'
+doc_type: 'reference'
+---
+
+`T` で許可される通常の値に加えて、「欠損値」を表す特別なマーカー ([NULL](/ja/reference/syntax)) を格納できます。たとえば、`Nullable(Int8)` 型のカラムには `Int8` 型の値を格納でき、値を持たない行には `NULL` が格納されます。
+
+`T` には、次の複合データ型は指定できません。
+
+* [Array](/ja/reference/data-types/array) — サポートされていません
+* [Map](/ja/reference/data-types/map) — サポートされていません
+* [Tuple](/ja/reference/data-types/tuple) — ベータサポートを利用できます*
+
+ただし、複合データ型に `Nullable` 型の値を**含める**ことはできます。たとえば、`Array(Nullable(Int8))` や `Tuple(Nullable(String), Nullable(Int64))` です。
+
+<Info>
+  **ベータ: Nullable Tuple**
+
+  * `enable_nullable_tuple_type = 1` が有効な場合、[Nullable(Tuple(...))](/ja/reference/data-types/tuple#nullable-tuple) がサポートされます。
+</Info>
+
+`Nullable` 型のフィールドは、テーブルの索引に含めることはできません。
+
+ClickHouse サーバー設定で別途指定されていない限り、`NULL` はすべての `Nullable` 型のデフォルト値です。
+
+<div id="storage-features">
+  ## ストレージ機能
+</div>
+
+テーブルのカラムに `Nullable` 型の値を格納するため、ClickHouse は値を格納する通常のファイルに加えて、`NULL` マスク用の別ファイルを使用します。マスクファイル内のエントリによって、ClickHouse はテーブルの各行について、`NULL` と対応するデータ型のデフォルト値を区別できます。ファイルが 1 つ追加されるため、`Nullable` カラムは同等の通常のカラムと比べてより多くのストレージ領域を消費します。
+
+<Note>
+  `Nullable` を使用すると、ほとんどの場合パフォーマンスに悪影響が生じます。データベースを設計する際は、この点を考慮してください。
+</Note>
+
+<div id="finding-null">
+  ## NULL の検出
+</div>
+
+カラム全体を読み取らなくても、`null` サブカラムを使ってカラム内の `NULL` 値を検出できます。対応する値が `NULL` の場合は `1`、それ以外の場合は `0` を返します。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+```text title="Response"
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
+```
+
+```sql
+INSERT INTO t_null VALUES (1, NULL), (2, 3)
+```
+
+```sql
+SELECT x + y FROM t_null
+```
+
+```text
+┌─plus(x, y)─┐
+│       ᴺᵁᴸᴸ │
+│          5 │
+└────────────┘
+```

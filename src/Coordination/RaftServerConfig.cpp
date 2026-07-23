@@ -35,7 +35,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
     if (auto eq_pos = id_str.find('='); std::string_view::npos != eq_pos)
         id_str = id_str.substr(0, eq_pos);
 
-    Int32 id;
+    Int32 id = 0;
     if (!tryParse(id, id_str))
         return std::nullopt;
     if (id < 0)
@@ -47,7 +47,7 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
         return {};
     const std::string_view port = endpoint.substr(port_delimiter + 1);
 
-    uint16_t port_tmp;
+    uint16_t port_tmp = 0;
     if (!tryParse(port_tmp, port))
         return std::nullopt;
 

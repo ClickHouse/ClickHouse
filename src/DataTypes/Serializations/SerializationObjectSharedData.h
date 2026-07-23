@@ -1,7 +1,12 @@
 #pragma once
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation-html"
 
+#include <Common/Exception.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
+
+#include <map>
 
 namespace DB
 {
@@ -13,6 +18,7 @@ namespace ErrorCodes
 
 class SerializationObjectSharedDataPath;
 class SerializationSubObjectSharedData;
+class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of a shared data structure inside Object type.
 class SerializationObjectSharedData final : public SimpleTextSerialization
@@ -67,8 +73,14 @@ public:
         explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
+private:
+    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
 
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
+public:
+    static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
+    static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
+
+    bool supportsPooling() const override { return dynamic_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -133,11 +145,11 @@ private:
         /// Total number of paths in this granule, not only requested ones.
         size_t num_paths = 0;
         /// Mark of the ObjectSharedDataData stream for this granule.
-        MarkInCompressedFile data_stream_mark;
+        MarkInCompressedFile data_stream_mark{};
         /// Mark of the ObjectSharedDataPathsMarks stream for this granule.
-        MarkInCompressedFile paths_marks_stream_mark;
+        MarkInCompressedFile paths_marks_stream_mark{};
         /// Mark of the ObjectSharedDataPathsSubstreamsMetadata stream for this granule.
-        MarkInCompressedFile paths_substreams_metadata_stream_mark;
+        MarkInCompressedFile paths_substreams_metadata_stream_mark{};
 
         void clear()
         {
@@ -231,11 +243,11 @@ private:
     struct PathInfo
     {
         /// Mark of the ObjectSharedDataData stream for this path.
-        MarkInCompressedFile data_mark;
+        MarkInCompressedFile data_mark{};
         /// Mark of the substreams list in ObjectSharedDataSubstreams stream for this path.
-        MarkInCompressedFile substreams_mark;
+        MarkInCompressedFile substreams_mark{};
         /// Mark of the substreams marks in ObjectSharedDataSubstreamsMarks stream for this path.
-        MarkInCompressedFile substreams_marks_mark;
+        MarkInCompressedFile substreams_marks_mark{};
         /// List of substreams for this path.
         std::vector<String> substreams;
         /// Map Substream -> its mark in ObjectSharedDataData stream.
@@ -301,6 +313,7 @@ private:
 
     friend SerializationObjectSharedDataPath;
     friend SerializationSubObjectSharedData;
+    friend SerializationObjectDistinctPaths;
 
     SerializationVersion serialization_version;
     DataTypePtr dynamic_type;
@@ -310,3 +323,4 @@ private:
 };
 
 }
+#pragma clang diagnostic pop

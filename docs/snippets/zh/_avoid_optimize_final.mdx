@@ -1,0 +1,60 @@
+---
+title: 避免使用 OPTIMIZE FINAL
+---
+
+使用 **MergeTree 引擎** 的 ClickHouse 表会将数据以**不可变 parts** 的形式存储在磁盘上，并且每次插入数据时都会创建新的 parts。
+
+每次插入都会创建一个新的 part，其中包含已排序、已压缩的列文件，以及索引、校验和等元数据。有关 part 结构及其形成方式的详细说明，建议参阅这篇[指南](/zh/concepts/core-concepts/parts)。
+
+随着时间推移，后台进程会将较小的 parts 合并成较大的 parts，以减少碎片并提升查询性能。
+
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="简单合并" />
+
+虽然你可能会想手动触发这种合并，例如使用：
+
+```sql
+OPTIMIZE TABLE <table> FINAL;
+```
+
+**在大多数情况下，应避免执行 `OPTIMIZE FINAL` 操作**，因为它会触发资源密集型操作，可能影响集群性能。
+
+<Info>
+  **OPTIMIZE FINAL 与 FINAL**
+
+  `OPTIMIZE FINAL` 和 `FINAL` 并不相同。后者有时必须使用，
+  才能获得无重复结果，例如在使用 `ReplacingMergeTree` 时。一般来说，
+  如果查询过滤的列与主键中的列相同，使用 `FINAL` 通常没问题。
+</Info>
+
+<div id="why-avoid">
+  ## 为何要避免？
+</div>
+
+<div id="its-expensive">
+  ### 开销高昂
+</div>
+
+运行 `OPTIMIZE FINAL` 会强制 ClickHouse 将**所有**活跃 parts 合并成**一个 part**，即使此前已经发生过大型合并也是如此。这个过程包括：
+
+1. **解压缩**所有 parts
+2. **合并**数据
+3. **重新压缩**
+4. **将**最终的 part **写入**磁盘或对象存储
+
+这些步骤都**非常消耗 CPU 和 I/O 资源**，会给系统带来很大压力，尤其是在处理大型数据集时。
+
+<div id="it-ignores-safety-limits">
+  ### 它会忽略安全限制
+</div>
+
+通常，ClickHouse 会避免合并大于约 150 GB 的 parts (可通过 [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/zh/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) 配置) 。但 `OPTIMIZE FINAL` **会无视这一安全保护机制**，这意味着：
+
+* 它可能会尝试将**多个 150 GB 的 parts**合并成一个巨大的 part
+* 这可能导致**合并耗时很长**、**内存压力增大**，甚至出现**内存不足错误**
+* 这些大的 part 之后可能会变得难以继续合并，也就是说，出于上述原因，进一步合并它们的尝试可能会失败。在必须依赖合并才能保证查询时行为正确的情况下，这可能会带来不良后果，例如 [ReplacingMergeTree 中的重复数据不断累积](/zh/concepts/features/operations/insert/deduplication#using-replacingmergetree-for-upserts)，从而导致查询时性能下降。
+
+<div id="let-background-merges-do-the-work">
+  ## 让后台合并来处理即可
+</div>
+
+ClickHouse 已经会执行智能的后台合并，以优化存储和查询效率。这些操作具备增量、资源感知的特性，并且会遵循已配置的阈值。除非你有非常特定的需求 (例如在冻结表或导出之前完成数据定型) ，**否则最好让 ClickHouse 自行管理合并**。

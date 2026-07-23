@@ -1,7 +1,13 @@
-#include <Core/Settings.h>
+#include <Processors/TTL/TTLAggregationAlgorithm.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Processors/TTL/TTLAggregationAlgorithm.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Core/Settings.h>
 
 #include <unordered_set>
 
@@ -23,6 +29,50 @@ namespace Setting
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool optimize_group_by_constant_keys;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+}
+
+namespace
+{
+
+bool isCoveredByGroupByOrSet(const TTLDescription & description, const std::string & column_name)
+{
+    return std::ranges::contains(description.group_by_keys, column_name)
+        || std::ranges::contains(description.set_parts | std::views::transform(&TTLAggregateDescription::column_name), column_name);
+}
+
+std::pair<AggregateDescription, TTLAggregateDescription> prepareAnyAggregate(const ColumnWithTypeAndName & column, const ContextPtr & context)
+{
+    AggregateDescription aggregate;
+    aggregate.column_name = column.name;
+    aggregate.argument_names = {column.name};
+    AggregateFunctionProperties properties;
+    aggregate.function = AggregateFunctionFactory::instance().get("any", NullsAction::EMPTY, {column.type}, {}, properties);
+
+    TTLAggregateDescription set_part;
+    set_part.column_name = column.name;
+    set_part.expression_result_column_name = column.name;
+    set_part.expression = std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{{column.name, aggregate.function->getResultType()}}), ExpressionActionsSettings(context));
+
+    return {std::move(aggregate), std::move(set_part)};
+}
+
+TTLDescription addImplicitlyAggregatedColumns(TTLDescription description, const Block & header, const ContextPtr & context)
+{
+    for (const auto & column : header)
+    {
+        if (isCoveredByGroupByOrSet(description, column.name))
+            continue;
+
+        auto [aggregate, set_part] = prepareAnyAggregate(column, context);
+
+        description.aggregate_descriptions.push_back(std::move(aggregate));
+        description.set_parts.push_back(std::move(set_part));
+    }
+
+    return description;
+}
+
 }
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
@@ -33,7 +83,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     bool force_,
     const Block & header_,
     const MergeTreeData & storage_)
-    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
     , header(header_)
 {
     current_key_value.resize(description.group_by_keys.size());
@@ -66,9 +116,10 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_software_prefetch_in_aggregation],
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
-        settings[Setting::min_chunk_bytes_for_parallel_parsing],
+        static_cast<float>(settings[Setting::min_chunk_bytes_for_parallel_parsing]),
         /*stats_collecting_params_=*/{},
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]);
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
@@ -213,12 +264,33 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
+        auto aggregated_res = aggregator->convertToChunks(aggregation_result, true);
+        auto res_header = aggregator->getParams().getHeader(header, true);
 
-        for (auto & agg_block : aggregated_res)
+        for (auto & agg_chunk : aggregated_res)
         {
+            auto agg_block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
+
             for (const auto & it : description.set_parts)
+            {
                 it.expression->execute(agg_block);
+
+                /// Restore LowCardinality wrappers on SET expression results if needed
+                /// Aggregation strips LowCardinality, but result_columns expects it
+                const auto & result_column_type = header.getByName(it.column_name).type;
+                if (result_column_type->lowCardinality())
+                {
+                    auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
+                    // Only convert if the column doesn't already have LowCardinality
+                    if (!column_with_type.type->lowCardinality())
+                    {
+                        auto nested_type = recursiveRemoveLowCardinality(result_column_type);
+                        column_with_type.column = recursiveLowCardinalityTypeConversion(
+                            column_with_type.column, nested_type, result_column_type);
+                        column_with_type.type = result_column_type;
+                    }
+                }
+            }
 
             /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
             /// the SET values over the GROUP BY because doing it the other way causes unexpected
@@ -252,11 +324,11 @@ void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) con
     if (new_ttl_info.finished())
     {
         data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
         return;
     }
     data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
+    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info);
 }
 
 }

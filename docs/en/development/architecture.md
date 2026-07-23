@@ -8,8 +8,6 @@ title: 'Architecture Overview'
 doc_type: 'reference'
 ---
 
-# Architecture Overview
-
 ClickHouse is a true column-oriented DBMS. Data is stored by columns, and during the execution of arrays (vectors or chunks of columns).
 Whenever possible, operations are dispatched on arrays, rather than on individual values.
 It is called "vectorized query execution" and it helps lower the cost of actual data processing.
@@ -168,7 +166,7 @@ The server initializes the `Context` class with the necessary environment for qu
 We maintain full backward and forward compatibility for the server TCP protocol: old clients can talk to new servers, and new clients can talk to old servers. But we do not want to maintain it eternally, and we are removing support for old versions after about one year.
 
 :::note
-For most external applications, we recommend using the HTTP interface because it is simple and easy to use. The TCP protocol is more tightly linked to internal data structures: it uses an internal format for passing blocks of data, and it uses custom framing for compressed data. We haven't released a C library for that protocol because it requires linking most of the ClickHouse codebase, which is not practical.
+For most external applications, we recommend using the HTTP interface because it is simple and easy to use. The TCP protocol is more tightly linked to internal data structures: it uses an internal format for passing blocks of data, and it uses custom framing for compressed data.
 :::
 
 ## Configuration {#configuration}
@@ -178,6 +176,26 @@ ClickHouse Server is based on POCO C++ Libraries and uses `Poco::Util::AbstractC
 Config is read from multiple files (in XML or YAML format) and merged into single `AbstractConfiguration` by `ConfigProcessor` class. Configuration is loaded at server startup and can be reloaded later if one of config files is updated, removed or added. `ConfigReloader` class is responsible for periodic monitoring of these changes and reload procedure as well. `SYSTEM RELOAD CONFIG` query also triggers config to be reloaded.
 
 For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading its config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
+
+### Context {#context}
+
+ClickHouse manages settings through the hierarchy of contexts:
+* **Global context** - server-wide settings defined via config files
+* **Session context** - user session settings from profiles, user configuration and SET commands
+* **Query context** - query-level settings from SETTINGS clause
+* **Background context** - server-wide settings for background operations (Mutate, Merge) defined via 'background' profile
+
+When scheduling an operation (queries, mutations, etc.) server builds the specific context by merging settings in the following order (later sections override earlier ones):
+1. Global defaults
+2. Global configuration
+3. Profile settings (from `<profiles>` section)
+4. User settings (from `<users>` section)
+5. Session settings (from SET command)
+6. Query settings (from SETTINGS clause)
+
+:::note
+Background operations can be configured via global and 'background' profile settings; session and query settings have no effect in this case. If no explicit configuration given, the configuration will inherit from global context. The default profile name for such operations is 'background', which can be overridden via `background_profile` server setting.
+:::
 
 ## Threads and jobs {#threads-and-jobs}
 

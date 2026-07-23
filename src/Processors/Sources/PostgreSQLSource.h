@@ -41,6 +41,8 @@ protected:
 
     Chunk generate() override;
 
+    void onCancel() noexcept override;
+
     void onStart();
 
 private:
@@ -50,12 +52,12 @@ private:
     bool auto_commit = true;
     ExternalResultDescription description;
 
-    bool started = false;
-    bool is_completed = false;
+    std::atomic<bool> started{false};
+    std::atomic<bool> is_completed{false};
 
     postgres::ConnectionHolderPtr connection_holder;
 
-    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+    UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
 
 protected:
     String query_str;
@@ -67,7 +69,7 @@ protected:
 
 /// Passes transaction object into PostgreSQLSource and does not close transaction after read is finished.
 template <typename T>
-class PostgreSQLTransactionSource : public PostgreSQLSource<T>
+class PostgreSQLTransactionSource final : public PostgreSQLSource<T>
 {
 public:
     using Base = PostgreSQLSource<T>;

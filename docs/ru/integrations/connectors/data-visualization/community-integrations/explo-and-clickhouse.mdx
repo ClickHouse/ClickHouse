@@ -1,0 +1,135 @@
+---
+sidebarTitle: 'Explo'
+slug: /integrations/explo
+keywords: ['clickhouse', 'Explo', 'подключить', 'интегрировать', 'интерфейс']
+description: 'Explo — это простой и удобный инструмент с открытым исходным кодом и графическим интерфейсом, который позволяет задавать вопросы о ваших данных.'
+title: 'Подключение Explo к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Клиентская аналитика для любой платформы. Создано для наглядной визуализации. Разработано с упором на простоту.
+
+<div id="goal">
+  ## Цель
+</div>
+
+В этом руководстве вы подключите данные из ClickHouse к Explo и визуализируете результаты. Диаграмма будет выглядеть так:
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<p />
+
+<Tip>
+  **Добавьте данные**
+
+  Если у вас нет набора данных, с которым можно поработать, вы можете добавить один из примеров. В этом руководстве используется набор данных [UK Price Paid](/ru/get-started/sample-datasets/uk-price-paid), поэтому можно выбрать его. В этой же категории документации есть и другие варианты.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. Соберите сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-explo-to-clickhouse">
+  ## 2.  Подключите Explo к ClickHouse
+</div>
+
+1. Зарегистрируйтесь в Explo.
+
+2. Нажмите вкладку Explo **Data** на левой боковой панели.
+
+<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Вкладка Data" border />
+
+3. Нажмите **Connect Data Source** в правом верхнем углу.
+
+<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+
+4. Заполните информацию на странице **Getting Started**
+
+<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+
+5. Выберите **ClickHouse**
+
+<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+
+6. Введите **учетные данные ClickHouse**.
+
+<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Учетные данные" border />
+
+7. Настройте **безопасность**
+
+<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Безопасность" border />
+
+8. В ClickHouse **добавьте IP-адреса Explo в белый список**.
+   `54.211.43.19, 52.55.98.121, 3.214.169.94 и 54.156.141.148`
+
+<div id="3-create-a-dashboard">
+  ## 3. Создайте панель мониторинга
+</div>
+
+1. Перейдите на вкладку **Панель мониторинга** на левой навигационной панели.
+
+<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Панель мониторинга" border />
+
+2. Нажмите **Создать панель мониторинга** в правом верхнем углу и задайте имя панели мониторинга. Панель мониторинга создана!
+
+<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Создать панель мониторинга" border />
+
+3. Теперь вы увидите экран, похожий на этот:
+
+<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Панель мониторинга Explo" border />
+
+<div id="4-run-a-sql-query">
+  ## 4. Выполните SQL-запрос
+</div>
+
+1. Найдите имя таблицы на правой боковой панели под заголовком схемы. Затем вставьте следующую команду в редактор набора данных:
+   `SELECT * FROM YOUR_TABLE_NAME
+   LIMIT 100`
+
+<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Панель мониторинга Explo" border />
+
+2. Теперь нажмите run и перейдите на вкладку preview, чтобы просмотреть данные.
+
+<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Панель мониторинга Explo" border />
+
+<div id="5-build-a-chart">
+  ## 5. Постройте диаграмму
+</div>
+
+1. Перетащите значок столбчатой диаграммы с левой панели на экран.
+
+<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+
+2. Выберите набор данных. Теперь вы увидите экран, похожий на следующий:
+
+<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+
+3. Заполните поле **county** для оси X и **Price** в разделе оси Y, как показано ниже:
+
+<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+
+4. Теперь измените агрегацию на **AVG**.
+
+<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+
+5. Теперь у нас есть средняя цена домов с разбивкой по округам!
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<div id="learn-more">
+  ## Узнайте больше
+</div>
+
+Подробнее об Explo и создании панелей мониторинга можно узнать, <a href="https://docs.explo.co/" target="_blank">обратившись к документации Explo</a>.

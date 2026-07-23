@@ -1,0 +1,374 @@
+---
+slug: /use-cases/observability/clickstack/integrations/mongodb-logs
+title: 'ClickStack으로 MongoDB 로그 모니터링'
+sidebarTitle: 'MongoDB 로그'
+description: 'ClickStack으로 MongoDB 로그 모니터링'
+doc_type: 'guide'
+keywords: ['MongoDB', '로그', 'OTEL', 'ClickStack', '데이터베이스 모니터링', '느린 쿼리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **핵심 요약**
+
+  OTel `filelog` 수신기를 사용해 MongoDB 서버 로그(4.4+ JSON 포맷)를 ClickStack에서 수집하고 시각화합니다. 데모 데이터세트와 사전 구축된 대시보드가 포함되어 있습니다.
+</Info>
+
+<div id="existing-mongodb">
+  ## 기존 MongoDB 통합
+</div>
+
+이 섹션에서는 ClickStack OTel collector 구성을 수정해 기존 MongoDB 설치에서 ClickStack으로 로그를 전송하도록 설정하는 방법을 설명합니다.
+기존 환경을 직접 구성하기 전에 MongoDB 통합을 테스트하려면 [&quot;데모 데이터세트&quot;](/ko/clickstack/integration-examples/mongodb-logs#demo-dataset) 섹션에 있는 사전 구성된 환경과 샘플 데이터를 사용해 테스트할 수 있습니다.
+
+<div id="prerequisites">
+  ### 사전 요구 사항
+</div>
+
+* 실행 중인 ClickStack 인스턴스
+* 기존 자가 관리형 MongoDB 설치 환경(버전 4.4 이상)
+* MongoDB 로그 파일에 대한 접근 권한
+
+<Steps>
+  <Step>
+    #### MongoDB 로깅 구성 확인
+
+    MongoDB 4.4 이상에서는 기본적으로 구조화된 JSON 로그를 출력합니다. 로그 파일 위치를 확인하세요:
+
+    ```bash
+    cat /etc/mongod.conf | grep -A 5 systemLog
+    ```
+
+    일반적인 MongoDB 로그 위치는 다음과 같습니다.
+
+    * **Linux (apt/yum)**: `/var/log/mongodb/mongod.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/mongodb/mongo.log`
+    * **Docker**: 일반적으로 stdout에 기록되지만, `/var/log/mongodb/mongod.log`에 기록하도록 구성할 수 있습니다
+
+    MongoDB가 stdout으로 로깅하는 경우 `mongod.conf`를 업데이트하여 파일에 기록하도록 구성하십시오:
+
+    ```yaml
+    systemLog:
+      destination: file
+      path: /var/log/mongodb/mongod.log
+      logAppend: true
+    ```
+
+    구성을 변경한 후 MongoDB를 재시작하십시오:
+
+    ```bash
+    # systemd의 경우
+    sudo systemctl restart mongod
+
+    # Docker의 경우
+    docker restart <mongodb-container>
+    ```
+  </Step>
+
+  <Step>
+    #### MongoDB용 사용자 지정 OTel collector 구성 만들기
+
+    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 HyperDX가 관리하는 기본 구성과 머지됩니다.
+
+    다음과 같은 내용으로 `mongodb-monitoring.yaml` 파일을 만드세요:
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000-07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-production"
+
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    <Note>
+      * 사용자 지정 구성에서는 새 수신기와 파이프라인만 정의합니다. processor(`memory_limiter`, `transform`, `batch`)와 exporter(`clickhouse`)는 기본 ClickStack 구성에 이미 정의되어 있으므로 이름만 참조하면 됩니다.
+      * 이 구성은 collector가 시작될 때 기존 로그를 모두 읽도록 `start_at: beginning`을 사용합니다. 프로덕션 배포에서는 collector 재시작 시 로그를 다시 수집하지 않도록 `start_at: end`로 변경하세요.
+    </Note>
+  </Step>
+
+  <Step>
+    #### 사용자 지정 구성을 로드하도록 ClickStack 구성
+
+    기존 ClickStack 배포에서 사용자 지정 collector 구성을 활성화하려면 다음 작업을 수행해야 합니다.
+
+    1. 사용자 지정 구성 파일을 `/etc/otelcol-contrib/custom.config.yaml`에 마운트합니다
+    2. 환경 변수 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`를 설정합니다
+    3. collector가 MongoDB 로그를 읽을 수 있도록 MongoDB 로그 디렉터리를 마운트합니다
+
+    <Tabs>
+      <Tab title="Docker Compose">
+        ClickStack 배포 구성을 업데이트합니다.
+
+        ```yaml
+        services:
+          clickstack:
+            # ... 기존 구성 ...
+            environment:
+              - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+              # ... 기타 환경 변수 ...
+            volumes:
+              - ./mongodb-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+              - /var/log/mongodb:/var/log/mongodb:ro
+              # ... 기타 볼륨 ...
+        ```
+      </Tab>
+
+      <Tab title="Docker Run (All-in-One Image)">
+        Docker와 함께 All-in-One image를 사용하는 경우 다음을 실행합니다.
+
+        ```bash
+        docker run --name clickstack \
+          -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -v "$(pwd)/mongodb-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log/mongodb:/var/log/mongodb:ro \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      ClickStack collector에 MongoDB log file을 읽을 수 있는 적절한 권한이 있는지 확인하십시오. production 환경에서는 읽기 전용 마운트(`:ro`)를 사용하고 최소 권한 원칙을 따르십시오.
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDX에서 로그 확인
+
+    구성이 완료되면 HyperDX에 로그인하여 로그가 정상적으로 수집되는지 확인합니다:
+
+    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB 로그 검색 화면" />
+
+    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB 로그 상세 화면" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 데모 데이터세트
+</div>
+
+프로덕션 시스템을 구성하기 전에 미리 생성된 샘플 데이터세트로 MongoDB 통합을 테스트합니다.
+
+<Steps>
+  <Step>
+    #### 샘플 데이터세트 다운로드
+
+    샘플 로그 파일을 다운로드합니다.
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
+    ```
+  </Step>
+
+  <Step>
+    #### 테스트용 collector 구성 생성
+
+    다음 구성으로 `mongodb-demo.yaml` 파일을 생성합니다.
+
+    ```yaml
+    cat > mongodb-demo.yaml << 'EOF'
+    receivers:
+      filelog/mongodb:
+        include:
+          - /tmp/mongodb-demo/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000-07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-demo"
+
+    service:
+      pipelines:
+        logs/mongodb-demo:
+          receivers: [filelog/mongodb]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 데모 구성으로 ClickStack 실행
+
+    데모 로그와 구성을 사용해 ClickStack을 실행합니다.
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/mongodb-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/mongod.log:/tmp/mongodb-demo/mongod.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    ## HyperDX에서 로그 확인
+
+    ClickStack이 실행되면 다음을 수행합니다.
+
+    1. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인합니다(먼저 계정을 만들어야 할 수 있습니다)
+    2. 검색 보기로 이동한 다음 소스를 `Logs`로 설정합니다
+    3. 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**가 포함되도록 설정합니다
+
+    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB 로그 검색 보기" />
+
+    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB 로그 상세 보기" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
+
+<Steps>
+  <Step>
+    #### 대시보드 구성을 <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">다운로드</TrackedLink>하십시오
+  </Step>
+
+  <Step>
+    #### 사전 구축된 대시보드 가져오기
+
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다.
+    2. 오른쪽 상단의 줄임표 메뉴에서 &quot;Import Dashboard&quot;를 클릭합니다.
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기" />
+
+    3. mongodb-logs-dashboard.json 파일을 업로드한 다음 &quot;Finish Import&quot;를 클릭합니다.
+
+    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="MongoDB 로그 대시보드 가져오기 완료" />
+  </Step>
+
+  <Step>
+    #### 대시보드가 생성되며 모든 시각화가 미리 구성됩니다
+
+    데모 데이터세트를 사용하는 경우 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**가 포함되도록 설정합니다.
+
+    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="MongoDB 로그 대시보드" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="no-logs">
+  ### HyperDX에 로그가 표시되지 않는 경우
+</div>
+
+실제로 적용된 구성에 filelog 수신기가 포함되어 있는지 확인하십시오:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+collector 로그에 오류가 있는지 확인하세요:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+<div id="logs-not-parsing">
+  ### 로그가 제대로 파싱되지 않는 경우
+</div>
+
+MongoDB가 JSON 형식의 로그를 출력하는지 확인하십시오 (4.4+):
+
+```bash
+tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
+```
+
+출력이 유효한 JSON이 아니라면, 사용 중인 MongoDB 버전에서 레거시 텍스트 로그 포맷(pre-4.4)을 사용하고 있을 수 있습니다. 이 경우 `json_parser` 연산자를 `regex_parser`로 대체하거나 MongoDB 4.4+로 업그레이드해야 합니다.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* 중요한 이벤트(오류 급증, 느린 쿼리 임계값 초과)에 대한 [알림](/ko/clickstack/features/alerts)을 설정합니다
+* 특정 사용 사례(레플리카 세트 모니터링, 연결 추적)에 맞는 추가 [대시보드](/ko/clickstack/features/dashboards/overview)를 생성합니다
+
+<div id="going-to-production">
+  ## 프로덕션 환경으로 전환하기
+</div>
+
+이 가이드는 빠르게 설정할 수 있도록 ClickStack에 내장된 OpenTelemetry Collector를 확장합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션용 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

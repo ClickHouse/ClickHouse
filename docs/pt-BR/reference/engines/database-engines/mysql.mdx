@@ -1,0 +1,187 @@
+---
+description: 'Permite conectar-se a bancos de dados em um servidor MySQL remoto e executar
+  consultas `INSERT` e `SELECT` para transferir dados entre o ClickHouse e o MySQL.'
+sidebarTitle: 'MySQL'
+slug: /engines/database-engines/mysql
+title: 'MySQL'
+doc_type: 'referência'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="mysql-database-engine">
+  # Mecanismo de banco de dados MySQL
+</div>
+
+<CloudNotSupportedBadge />
+
+Permite conectar-se a bancos de dados em um servidor MySQL remoto e executar consultas `INSERT` e `SELECT` para transferir dados entre o ClickHouse e o MySQL.
+
+O mecanismo de banco de dados `MySQL` traduz consultas para o servidor MySQL, para que você possa executar operações como `SHOW TABLES` ou `SHOW CREATE TABLE`.
+
+Não é possível executar as seguintes consultas:
+
+* `RENAME`
+* `CREATE TABLE`
+* `ALTER`
+
+<div id="creating-a-database">
+  ## Criar um banco de dados
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
+```
+
+**Parâmetros do mecanismo**
+
+* `host:port` — Endereço do servidor MySQL.
+* `database` — Nome do banco de dados remoto.
+* `user` — Usuário do MySQL.
+* `password` — Senha do usuário.
+
+**Configurações**
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+Habilita a compressão zlib para a conexão via protocolo MySQL. Quando definido como `1`, o ClickHouse solicita a compressão no nível do protocolo ao servidor MySQL.
+
+Valor padrão: `0`.
+
+Exemplo:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="data_types-support">
+  ## Suporte a tipos de dados
+</div>
+
+| MySQL                            | ClickHouse                                       |
+| -------------------------------- | ------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/pt-BR/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/pt-BR/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/pt-BR/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/pt-BR/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/pt-BR/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/pt-BR/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/pt-BR/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/pt-BR/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/pt-BR/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/pt-BR/reference/data-types/float)           |
+| DATE                             | [Date](/pt-BR/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/pt-BR/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/pt-BR/reference/data-types/fixedstring) |
+
+Todos os outros tipos de dados do MySQL são convertidos em [String](/pt-BR/reference/data-types/string).
+
+Há suporte para [Nullable](/pt-BR/reference/data-types/nullable).
+
+<div id="global-variables-support">
+  ## Suporte a variáveis globais
+</div>
+
+Para maior compatibilidade, é possível referenciar variáveis globais no estilo do MySQL, como `@@identifier`.
+
+Há suporte para estas variáveis:
+
+* `version`
+* `max_allowed_packet`
+
+<Note>
+  No momento, essas variáveis são apenas placeholders e não correspondem a nada.
+</Note>
+
+Exemplo:
+
+```sql
+SELECT @@version;
+```
+
+<div id="examples-of-use">
+  ## Exemplos de uso
+</div>
+
+Tabela no MySQL:
+
+```text
+mysql> USE test;
+Database changed
+
+mysql> CREATE TABLE `mysql_table` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from mysql_table;
++------+-----+
+| int_id | value |
++------+-----+
+|      1 |     2 |
++------+-----+
+1 row in set (0,00 sec)
+```
+
+Banco de dados no ClickHouse, com troca de dados com o servidor MySQL:
+
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+```
+
+```sql
+SHOW DATABASES
+```
+
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+
+```sql
+SHOW TABLES FROM mysql_db
+```
+
+```text
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+```sql
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```

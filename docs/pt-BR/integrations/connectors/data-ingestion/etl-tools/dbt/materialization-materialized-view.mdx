@@ -1,0 +1,607 @@
+---
+sidebarTitle: 'Materialização: materialized_view'
+slug: /integrations/dbt/materialization-materialized-view
+description: 'Documentação específica da materialização materialized_view'
+keywords: ['ClickHouse', 'dbt', 'materialized_view', 'refreshable', 'Visões materializadas', 'catchup']
+title: 'Visões materializadas'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Uma materialização `materialized_view` deve ser um `SELECT` a partir de uma tabela de origem existente. Diferentemente do PostgreSQL, uma visão materializada no ClickHouse não é &quot;estática&quot; (e não tem uma operação REFRESH correspondente). Em vez disso, ela atua como um **gatilho de inserção**, inserindo novas linhas em uma tabela de destino ao aplicar a transformação `SELECT` definida às linhas inseridas na tabela de origem. Consulte a [documentação sobre visões materializadas no ClickHouse](/pt-BR/concepts/features/materialized-views/index) para mais detalhes sobre como as visões materializadas funcionam no ClickHouse.
+
+<Note>
+  Para conceitos gerais de materialização e configurações compartilhadas (engine, order&#95;by, partition&#95;by etc.), consulte a página [Materializações](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
+</Note>
+
+<div id="target-table-management">
+  ## Como a tabela de destino é gerenciada
+</div>
+
+Quando você usa a materialização `materialized_view`, o dbt-clickhouse precisa criar tanto uma **visão materializada** quanto uma **tabela de destino** na qual as linhas transformadas são inseridas. Há duas formas de gerenciar a tabela de destino:
+
+| Abordagem             | Descrição                                                                                                                                                                                                                                                                                                                                                                                                  | Status   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| **Destino implícito** | O dbt-clickhouse cria e gerencia a tabela de destino automaticamente no mesmo modelo. O esquema da tabela de destino é inferido a partir do SQL da MV.                                                                                                                                                                                                                                                     | Estável  |
+| **Destino explícito** | Você define a tabela de destino como uma materialização `table` separada e a referencia no modelo da MV usando a macro `materialization_target_table()`. A MV é criada com uma cláusula `TO` apontando para essa tabela. Essa funcionalidade está disponível a partir da **versão 1.10 do dbt-clickhouse**. **Cuidado**: esse recurso está em beta, e a API pode mudar com base no feedback da comunidade. | **Beta** |
+
+A abordagem escolhida afeta como mudanças de esquema, full refreshes e configurações com múltiplas MVs são tratadas. As seções a seguir descrevem cada abordagem em detalhes.
+
+<div id="implicit-target">
+  ## Materialização com destino implícito
+</div>
+
+Este é o comportamento padrão. Quando você define um modelo `materialized_view`, o adaptador irá:
+
+1. Criar uma **tabela de destino** com o nome do modelo
+2. Criar uma **visão materializada** no ClickHouse com o nome `<model_name>_mv`
+
+O esquema da tabela de destino é inferido a partir das colunas na instrução `SELECT` da MV. Todos os recursos (tabela de destino + MVs) compartilham a mesma configuração do modelo.
+
+```sql
+-- models/events_mv.sql
+{{
+    config(
+        materialized='materialized_view',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)'
+    )
+}}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date, event_type
+```
+
+Consulte o [arquivo de teste](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/materialized_view/test_materialized_view.py) para mais exemplos.
+
+<Tip>
+  Você também pode definir `codec` e `ttl` no nível da coluna da tabela de destino ao impor um contrato de modelo. Consulte [Configuração de coluna](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#column-configuration) para mais detalhes.
+</Tip>
+
+<div id="multiple-materialized-views">
+  ### Múltiplas visões materializadas
+</div>
+
+O ClickHouse permite que mais de uma visão materializada grave registros na mesma tabela de destino. Para dar suporte a isso no dbt-clickhouse com a abordagem de destino implícito, você pode construir uma `UNION` no arquivo do modelo, envolvendo o SQL de cada visão materializada com comentários no formato `--my_mv_name:begin` e `--my_mv_name:end`.
+
+Por exemplo, o seguinte criará duas visões materializadas, ambas gravando dados na mesma tabela de destino do modelo. Os nomes das visões materializadas terão o formato `<model_name>_mv1` e `<model_name>_mv2`:
+
+```sql
+--mv1:begin
+select a,b,c from {{ source('raw', 'table_1') }}
+--mv1:end
+union all
+--mv2:begin
+select a,b,c from {{ source('raw', 'table_2') }}
+--mv2:end
+```
+
+<Warning>
+  Ao atualizar um modelo com várias visões materializadas (MVs), especialmente ao renomear uma das MVs,
+  o dbt-clickhouse não remove automaticamente a MV antiga. Em vez disso,
+  você verá o seguinte aviso:
+
+  `Warning - Table <previous table name> was detected with the same pattern as model name <your model name> but was not found in this run. In case it is a renamed mv that was previously part of this model, drop it manually (!!!) `
+</Warning>
+
+<div id="how-to-iterate-the-target-table-schema">
+  ### Como iterar o esquema da tabela de destino
+</div>
+
+A partir da **versão 1.9.8 do dbt-clickhouse**, você pode controlar como o esquema da tabela de destino é atualizado quando `dbt run` encontra colunas diferentes no SQL da MV.
+
+```python
+{{config(
+    materialized='materialized_view',
+    engine='MergeTree()',
+    order_by='(id)',
+    on_schema_change='fail'  # esta configuração
+)}}
+```
+
+Por padrão, o dbt não aplicará nenhuma alteração à tabela de destino (valor da configuração `ignore`), mas você pode alterar essa configuração para seguir o mesmo comportamento da configuração `on_schema_change` [em modelos incrementais](https://docs.getdbt.com/docs/build/incremental-models#what-if-the-columns-of-my-incremental-model-change).
+
+Além disso, você pode usar essa configuração como um mecanismo de proteção. Se defini-la como `fail`, a compilação falhará se as colunas no SQL da MV forem diferentes das da tabela de destino criada na primeira execução de `dbt run`.
+
+<div id="data-catch-up">
+  ### Carga retroativa de dados
+</div>
+
+Por padrão, ao criar ou recriar uma visão materializada (MV), a tabela de destino é preenchida primeiro com os dados históricos antes de a própria MV ser criada (`catchup=True`). Você pode desativar esse comportamento definindo a configuração `catchup` como `False`.
+
+```python
+{{config(
+    materialized='materialized_view',
+    engine='MergeTree()',
+    order_by='(id)',
+    catchup=False  # esta configuração
+)}}
+```
+
+| Operação                                    | `catchup: True` (padrão)                                     | `catchup: False`                                                |
+| ------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
+| Implantação inicial (`dbt run`)             | Tabela de destino preenchida com dados históricos            | Tabela de destino criada vazia                                  |
+| Refresh completo (`dbt run --full-refresh`) | Tabela de destino recriada e preenchida com dados históricos | Tabela de destino recriada vazia, **dados existentes perdidos** |
+| Operação normal                             | A visão materializada captura novas inserções                | A visão materializada captura novas inserções                   |
+
+<Warning>
+  **Risco de perda de dados com Full Refresh**
+
+  Usar `catchup: False` com `dbt run --full-refresh` **descartará todos os dados existentes** na tabela de destino. A tabela será recriada vazia e passará a capturar apenas novos dados. Certifique-se de ter backups caso os dados históricos possam ser necessários mais tarde.
+</Warning>
+
+<div id="explicit-target">
+  ## Materialização com destino explícito (Beta)
+</div>
+
+<Warning>
+  **Beta**
+
+  Este recurso está em beta e está disponível a partir da **versão 1.10 do dbt-clickhouse**. A API pode mudar com base no feedback da comunidade.
+</Warning>
+
+Por padrão, o dbt-clickhouse cria e gerencia tanto a tabela de destino quanto as visões materializadas em um único modelo (a abordagem de [destino implícito](#implicit-target) descrita acima). Essa abordagem tem algumas limitações:
+
+* Todos os recursos (tabela de destino + MVs) compartilham a mesma configuração. Se várias MVs apontarem para a mesma tabela de destino, elas deverão ser definidas em conjunto usando a sintaxe `UNION ALL`.
+* Nenhum desses recursos pode ser tratado separadamente; todos precisam ser gerenciados usando o mesmo arquivo de modelo.
+* Você não consegue controlar facilmente o nome de cada MV.
+* Todas as configurações são compartilhadas entre a tabela de destino e as MVs, o que dificulta configurar cada recurso individualmente e entender qual configuração pertence a cada um.
+
+O recurso de **destino explícito** permite definir a tabela de destino separadamente como uma materialização `table` comum e, em seguida, referenciá-la a partir dos seus modelos de visão materializada.
+
+<div id="explicit-target-benefits">
+  ### Benefícios
+</div>
+
+* **Recursos totalmente separados**: Agora cada recurso pode ser definido separadamente, melhorando a legibilidade.
+* **Recursos 1:1 entre dbt e CH**: Agora você pode usar as ferramentas do dbt para gerenciá-los e iterar sobre eles separadamente.
+* **Diferentes configurações agora disponíveis**: Agora é possível aplicar uma configuração diferente a cada um deles.
+* **Não é mais necessário seguir convenções de nomenclatura**: Agora todos os recursos são criados com o nome que você definir, e não com o nome personalizado adicionado com &#95;mv para as MVs.
+
+<div id="explicit-target-limitations">
+  ### Limitações
+</div>
+
+* A definição da tabela de destino não é algo natural no dbt: não é um SQL que vai ler de uma tabela de origem, então você perde as validações do dbt nesse ponto. O SQL da MV ainda será validado usando os utilitários do dbt, e a compatibilidade dele com as colunas da tabela de destino será validada no nível do CH.
+* **Encontramos alguns problemas relacionados às limitações da função `ref()`**: precisamos usá-la para referenciar modelos entre si, mas ela só pode ser usada para referenciar modelos upstream, não downstream. Isso traz alguns problemas para esta implementação. Criamos uma issue no repositório dbt-core e, no momento, estamos conversando com eles [para buscar possíveis soluções (dbt-labs/dbt-core#12319)](https://github.com/dbt-labs/dbt-core/issues/12319):
+  * Quando `ref()` é chamada de dentro do bloco de configuração, ela retorna o modelo atual, e não o modelo compartilhado. Isso nos impede de defini-la na seção config(), obrigando-nos a usar um comentário para adicionar essa dependência. Estamos seguindo o mesmo padrão definido na documentação do dbt com [a abordagem &quot;--depends&#95;on:&quot;](https://docs.getdbt.com/reference/dbt-jinja-functions/ref#forcing-dependencies).
+  * `ref()` funciona no nosso caso, pois força a criação da tabela de destino primeiro, mas, no gráfico de dependências da documentação gerada, a tabela de destino aparecerá como mais uma dependência upstream, e não downstream, o que dificulta um pouco o entendimento.
+  * `unit-test` também nos obriga a definir alguns dados para a tabela de destino, mesmo quando a ideia não é ler dela. A solução alternativa é simplesmente deixar vazios os dados dessa tabela.
+
+<div id="explicit-target-usage">
+  ### Uso
+</div>
+
+**Passo 1: Defina a tabela de destino como um modelo de tabela comum**
+
+Model `events_daily.sql`:
+
+```sql
+{{
+    config(
+        materialized='table',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)',
+        partition_by='toYYYYMM(event_date)'
+    )
+}}
+
+SELECT
+    toDate(now()) AS event_date,
+    '' AS event_type,
+    toUInt64(0) AS total
+WHERE 0  -- Cria tabela vazia com o schema correto
+```
+
+Esta é a solução alternativa que mencionamos na seção de limitações. Você pode perder algumas validações do dbt aqui, mas o schema ainda será validado pelo ClickHouse.
+
+**Etapa 2: Defina visões materializadas apontando para a tabela de destino**
+
+Por exemplo, você pode definir MVs diferentes em modelos diferentes desta forma, inclusive apontando para a mesma tabela de destino. Observe a nova chamada da macro `{{ materialization_target_table(ref('events_daily')) }}`, que configura a tabela de destino da MV.
+
+Modelo `page_events_aggregator.sql`:
+
+```sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'page_events') }}
+GROUP BY event_date, event_type
+```
+
+Modelo `mobile_events_aggregator.sql`:
+
+```sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'mobile_events') }}
+GROUP BY event_date, event_type
+```
+
+<div id="explicit-target-configuration">
+  ### Opções de configuração
+</div>
+
+Ao usar tabelas de destino explícitas, além das [configurações gerais de materialização](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#general-materialization-configurations) e das [configurações específicas da tabela](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-table), aplicam-se as seguintes configurações:
+
+**Na tabela de destino (`materialized='table'`):**
+
+| Opção                                 | Descrição                                                                                                                                                                                                                                                                                      | Padrão                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mv_on_schema_change`                 | Como lidar com alterações de esquema quando a tabela é usada por MVs gerenciadas pelo dbt. Segue o mesmo comportamento da configuração `on_schema_change` [em modelos incrementais](https://docs.getdbt.com/docs/build/incremental-models#what-if-the-columns-of-my-incremental-model-change). | **Cuidado**: Um modelo `materialized='table'` se comportará normalmente se não houver MVs apontando para ele, portanto, mesmo que essa configuração esteja definida, ela será ignorada. Se a tabela for o destino de MVs, essa configuração terá o valor padrão `mv_on_schema_change='fail'` para proteger os dados nessas tabelas. |
+| `repopulate_from_mvs_on_full_refresh` | Em `--full-refresh`, em vez de executar o SQL da tabela, reconstrói a tabela executando INSERT-SELECTs com o SQL de todas as MVs que apontam para ela.                                                                                                                                         | `False`                                                                                                                                                                                                                                                                                                                             |
+
+**Na visão materializada (`materialized='materialized_view'`):**
+
+| Opção     | Descrição                                                                 | Padrão |
+| --------- | ------------------------------------------------------------------------- | ------ |
+| `catchup` | Define se os dados históricos devem ser preenchidos quando a MV é criada. | `True` |
+
+<Note>
+  Em geral, convém definir apenas `catchup` como `True` nas MVs ou `repopulate_from_mvs_on_full_refresh` como `True` nas tabelas de destino correspondentes. Se você definir ambos como `True`, isso pode duplicar dados.
+</Note>
+
+<div id="explicit-target-common-operations">
+  ### Operações comuns
+</div>
+
+<div id="explicit-target-full-refresh">
+  #### Atualização completa com tabelas de destino explícitas
+</div>
+
+Ao usar `--full-refresh`, as tabelas de destino explícitas serão recriadas (portanto, você poderá perder dados se a ingestão estiver em andamento durante esse processo). O comportamento varia de acordo com a sua configuração:
+
+**Opção 1: comportamento padrão do `--full-refresh`. Tudo é recriado, mas, durante a recriação das MVs, a tabela de destino ficará vazia ou parcialmente carregada.**
+
+Tudo é removido e recriado. Se você quiser reinserir os dados usando o SQL das MVs, mantenha a configuração `catchup=True`:
+
+```sql
+-- models/page_events_aggregator.sql
+{{ config(
+    materialized='materialized_view',
+    catchup=True  -- este é o valor padrão, portanto não é necessário defini-lo explicitamente.
+) }}
+{{ materialization_target_table(ref('events_daily')) }}
+...
+```
+
+**Opção 2: Quero recriar a tabela de destino e não quero ler dados vazios enquanto as MVs estão sendo recriadas.**
+
+Se você precisar primeiro atualizar o SQL das MVs, pode definir `catchup=False` nelas e depois executar um `dbt run` ou `dbt run --full-refresh` nas MVs. Certifique-se de que as MVs sejam criadas antes de executar `--full-refresh` na tabela de destino, pois isso usa as definições das MVs do ClickHouse.
+
+Defina `repopulate_from_mvs_on_full_refresh=True` no modelo da tabela de destino. Em um `dbt run --full-refresh`, isso irá:
+
+1. Criar uma nova tabela temporária
+2. Executar INSERT-SELECT usando o SQL de cada MV
+3. Trocar as tabelas atomicamente
+
+Assim, sua tabela não ficará vazia enquanto as MVs estiverem sendo recriadas.
+
+```sql
+-- models/events_daily.sql
+{{
+    config(
+        materialized='table',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)',
+        repopulate_from_mvs_on_full_refresh=True
+    )
+}}
+...
+```
+
+<div id="explicit-target-changing">
+  #### Alterando a tabela de destino
+</div>
+
+Você não pode alterar a tabela de destino de uma MV sem usar `--full-refresh`. Se tentar executar um `dbt run` normal após alterar a referência `materialization_target_table()`, a compilação falhará com uma mensagem de erro indicando que o destino foi alterado.
+
+Para alterar o destino:
+
+1. Atualize a chamada `materialization_target_table()`
+2. Execute `dbt run --full-refresh -s your_mv_model`
+
+<div id="explicit-target-troubleshooting">
+  ### Solução de problemas comuns
+</div>
+
+<div id="target-table-empty">
+  #### A tabela de destino fica vazia durante/após a execução de `run`
+</div>
+
+Há alguns motivos pelos quais isso pode acontecer:
+
+* As visões materializadas podem estar configuradas com `catchup=False` ou a tabela de destino pode estar configurada com `repopulate_from_mvs_on_full_refresh=False`, portanto nenhuma carga retroativa é executada quando as visões materializadas são criadas ou quando a tabela de destino é recriada. Esse é o comportamento esperado. Portanto, se você quiser reinserir os dados usando o SQL das visões materializadas, defina `catchup=True` na visão materializada (esse é o valor padrão) ou `repopulate_from_mvs_on_full_refresh=True` na tabela de destino. Certifique-se de não ativar os dois ao mesmo tempo para evitar duplicatas. Consulte a [seção de configuração](#explicit-target-configuration) para mais detalhes.
+* Durante a execução de `dbt run --full-refresh`, se as visões materializadas usarem o padrão `catchup=True`, o destino será recriado e as MVs reinserirão os dados sequencialmente. Para evitar essa situação, consulte [Atualização completa com destinos explícitos](#explicit-target-full-refresh).
+
+<div id="full-refresh-with-repopulate-from-mvs-on-full-refresh">
+  #### `dbt run --full-refresh` em uma tabela de destino com `repopulate_from_mvs_on_full_refresh=True` usa a lógica de versões antigas de visões materializadas, e não o SQL que está atualmente no projeto
+</div>
+
+`repopulate_from_mvs_on_full_refresh=True` usa o SQL existente da MV já definido no ClickHouse. Para garantir que a nova definição da visão materializada seja usada, execute um `dbt run` para cada visão materializada antes de executar `dbt run --full-refresh` na tabela de destino.
+
+<div id="duplicate-data">
+  #### Há dados duplicados após a execução de um `run`
+</div>
+
+Possíveis motivos:
+
+* Tanto `catchup=True` nas visões materializadas quanto `repopulate_from_mvs_on_full_refresh=True` na tabela de destino podem estar habilitados: mantenha apenas um deles, dependendo das operações que pretende executar. Consulte a [seção de configuração](#explicit-target-configuration) para mais detalhes.
+* A tabela de destino não foi definida com `WHERE 0`: a tabela de destino deve ser criada vazia, mas a consulta interna pode inserir dados se `WHERE 0` não for incluído. Certifique-se de que a cláusula esteja incluída.
+
+<div id="data-loss-active-ingestion">
+  #### Perda de dados durante a ingestão ativa após a execução de um `dbt run --full-refresh`
+</div>
+
+Algumas linhas da tabela de origem ficam ausentes na tabela de destino após a execução de um `dbt run --full-refresh`.
+As visões materializadas do ClickHouse funcionam como gatilhos de inserção — elas só capturam dados enquanto existem. Durante um full refresh, há uma breve janela em que a MV é removida e recriada (a &quot;janela cega&quot;). Quaisquer linhas inseridas na tabela de origem durante essa janela não são capturadas. Consulte a seção [Comportamento durante a ingestão ativa](#behavior-during-active-ingestion) para mais detalhes.
+
+<div id="debugging-techniques">
+  ### Técnicas de depuração
+</div>
+
+<div id="check-mv-target">
+  #### Verifique o destino atual de uma MV no ClickHouse
+</div>
+
+Consulte `system.tables` para ver para onde uma visão materializada está gravando:
+
+```sql
+SELECT
+    name as mv_name,
+    replaceRegexpOne(
+        create_table_query,
+        '.*TO\\s+`?([^`\\s(]+)`?\\.`?([^`\\s(]+)`?.*',
+        '\\1.\\2'
+    ) AS target_table
+FROM system.tables
+WHERE database = 'your_schema'
+  AND engine = 'MaterializedView'
+```
+
+<div id="check-dbt-recognition">
+  #### Verifique se o dbt reconhece uma tabela como tabela de destino de uma visão materializada
+</div>
+
+Durante a execução do dbt, procure por esta mensagem de log:
+
+> A tabela `<table_name>` está sendo usada como tabela de destino por uma visão materializada gerenciada pelo dbt. Definindo `mv_on_schema_change` como &quot;fail&quot; por padrão para evitar perda de dados.
+
+Se esta mensagem aparecer, o dbt detectou que a tabela é a tabela de destino de pelo menos uma visão materializada gerenciada pelo dbt. Se você espera ver essa mensagem, mas ela não aparecer, verifique se:
+
+* O modelo da visão materializada define `{{ materialization_target_table(ref('your_target')) }}` corretamente
+* O modelo da visão materializada tem `materialized='materialized_view'` na configuração
+* Tanto a visão materializada quanto a tabela de destino foram executadas pelo menos uma vez
+
+<div id="migration-implicit-to-explicit">
+  ### Migrando de destino implícito para destino explícito
+</div>
+
+Se você já tem modelos de visão materializada usando a abordagem de destino implícito e quer migrar para a abordagem de destino explícito, siga estas etapas:
+
+**1. Crie o modelo da tabela de destino**
+
+Crie um novo arquivo de modelo com `materialized='table'` que defina o mesmo esquema da tabela de destino da MV atual. Use uma cláusula `WHERE 0` para criar uma tabela vazia. Use o mesmo nome do modelo atual de visão materializada implícita. A partir de agora, você poderá usar esse modelo para fazer iterações na tabela de destino.
+
+```sql
+-- models/events_daily.sql
+{{
+    config(
+        materialized='table',
+        engine='MergeTree()',
+        order_by='(event_date, event_type)'
+    )
+}}
+
+SELECT
+    toDate(now()) AS event_date,
+    '' AS event_type,
+    toUInt64(0) AS total
+WHERE 0
+```
+
+**2. Atualize seus modelos de MV**
+
+Crie novos modelos que incluam, cada um, o SQL da MV e a chamada da macro `materialization_target_table()` apontando para a nova tabela de destino. Se você estava usando `UNION ALL`, remova essa parte e os comentários.
+
+Para os nomes dos modelos, você terá que seguir esta convenção de nomenclatura:
+
+* se apenas uma MV foi definida, ela terá o nome: `<old_model_name>_mv`
+* se várias MVs foram definidas, cada uma terá o nome: `<old_model_name>_mv_<name_in_comments>`
+
+Antes, em `my_model.sql` (tabela de destino implícita, modelo único com `UNION ALL`):
+
+```sql
+--mv1:begin
+select a, b, c from {{ source('raw', 'table_1') }}
+--mv1:end
+union all
+--mv2:begin
+select a, b, c from {{ source('raw', 'table_2') }}
+--mv2:end
+```
+
+Depois (destino explícito, arquivos de modelo separados):
+
+```sql
+-- models/my_model_mv_mv1.sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+select a, b, c from {{ source('raw', 'table_1') }}
+```
+
+```sql
+-- models/my_model_mv_mv2.sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+select a, b, c from {{ source('raw', 'table_2') }}
+```
+
+**3. Repita esse processo conforme necessário, seguindo as instruções da seção [destino explícito](#explicit-target).**
+
+<div id="behavior-comparison">
+  ## Comparação de comportamento entre as abordagens de destino implícito e destino explícito
+</div>
+
+<div id="general-behavior">
+  ### Como se comportam em geral
+</div>
+
+| Operação                 | Destino implícito                                                                                                                                                                                                                                                                                                                                                               | Destino explícito                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Primeira execução do dbt | Todos os recursos são criados                                                                                                                                                                                                                                                                                                                                                   | Todos os recursos são criados                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Próxima execução do dbt  | **Recursos individuais não podem ser gerenciados; tudo acontece em conjunto:**<br /><br />**tabela de destino**: <br /> alterações gerenciadas pela configuração `on_schema_change`. Por padrão, ela usa a configuração `ignore`, então novas colunas não são processadas.<br /><br />**Visões materializadas**: todas são atualizadas com operações `alter table modify query` | **As alterações podem ser aplicadas individualmente:<br /><br />tabela de destino**: <br />detecção automática para identificar se são tabelas de destino de visões materializadas definidas no dbt. Se forem, a evolução das colunas é gerenciada por padrão pela configuração `mv_on_schema_change` com o valor `fail`, portanto a execução falhará se houver alterações nas colunas. Adicionamos esse valor padrão como uma camada de proteção<br /><br />**Visões materializadas**: seu SQL é atualizado com operações `alter table modify query`. |
+| dbt run --full-refresh   | **Recursos individuais não podem ser gerenciados; tudo acontece em conjunto:<br /><br />tabela de destino**: <br />tabela de destino recriada vazia. `catchup` está disponível para configurar um backfill com o SQL de todas as visões materializadas em conjunto. `catchup` é `True` por padrão<br /><br />**Visões materializadas**: todas são recriadas.                    | **As alterações serão aplicadas individualmente:<br /><br />tabela de destino:** será recriada como de costume.<br /><br />**Visões materializadas**: remover e recriar. `catchup` está disponível para um backfill inicial. `catchup` é `True` por padrão. <br /><br />**Observação: Durante o processo, a tabela de destino ficará vazia ou parcialmente carregada até que as visões materializadas sejam recriadas. Para evitar isso, consulte a próxima seção sobre como iterar na tabela de destino.**                                            |
+
+<div id="behavior-during-active-ingestion">
+  ### Comportamento durante a ingestão ativa
+</div>
+
+Ao iterar seus modelos, você precisa estar ciente de como as diferentes operações interagem com os dados que estão sendo inseridos:
+
+* Como as visões materializadas do ClickHouse atuam como **gatilhos de inserção**, elas só capturam dados enquanto existem. Se uma visão materializada for removida e recriada (por exemplo, durante um `--full-refresh`), quaisquer linhas inseridas na tabela de origem durante esse intervalo **não** serão processadas pela visão materializada. Isso é chamado de visão materializada &quot;cega&quot;.
+* Os diferentes processos de `catchup` se baseiam em operações `INSERT INTO ... SELECT` que usam o SQL das visões materializadas e são independentes do funcionamento delas. Depois que o `INSERT` começa, os novos dados não são capturados por ele, mas serão capturados pela visão materializada anexada.
+
+A tabela a seguir resume a segurança de cada operação quando há inserções ativas na tabela de origem.
+
+<div id="ingestion-implicit-target">
+  #### Operações de destino implícito
+</div>
+
+| Operação                 | Processo interno                                                                                                                                                          | Segurança enquanto inserções estão em andamento                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primeiro `dbt run`       | 1. Criar a tabela de destino<br />2. Inserir dados (se `catchup=True`)<br />3. Criar visões materializadas                                                                | ⚠️ **A visão materializada fica cega entre as etapas 1 e 3.** Quaisquer linhas inseridas na fonte durante esse intervalo não são capturadas.            |
+| `dbt run` subsequente    | `ALTER TABLE ... MODIFY QUERY`                                                                                                                                            | ✅ Seguro. A visão materializada é atualizada atomicamente.                                                                                              |
+| `dbt run --full-refresh` | 1. Criar tabela de backup<br />2. Inserir dados (se `catchup=True`)<br />3. Remover visões materializadas<br />4. Trocar as tabelas<br />5. Recriar visões materializadas | ⚠️ **A visão materializada fica cega durante a recriação.** Os dados inseridos na fonte entre as etapas 3 e 5 não aparecerão na nova tabela de destino. |
+
+<div id="ingestion-explicit-target">
+  #### Operações com destino explícito
+</div>
+
+**Modelos de visão materializada:**
+
+| Operação                        | Processo interno                                                              | Segurança enquanto há inserções em andamento                                                                                                                                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primeiro `dbt run`              | 1. Criar MV (com cláusula `TO`)<br />2. Executar catch-up (se `catchup=True`) | ✅ A MV é criada primeiro, então novas inserções são capturadas imediatamente.<br />⚠️ **O catch-up pode duplicar dados** — a consulta de backfill pode se sobrepor a linhas já processadas pela MV. É seguro ao usar um engine com desduplicação (por exemplo, `ReplacingMergeTree`). |
+| `dbt run` subsequente           | `ALTER TABLE ... MODIFY QUERY`                                                | ✅ Seguro. A MV é atualizada atomicamente.                                                                                                                                                                                                                                             |
+| `dbt run --full-refresh` em MVs | 1. Remover e recriar a MV<br />2. Executar catch-up (se `catchup=True`)       | ⚠️ **A MV fica cega durante a recriação** (entre a remoção e a criação).<br />⚠️ **O catch-up pode duplicar dados** se inserções estiverem acontecendo de forma concorrente.                                                                                                          |
+
+**Modelo de tabela de destino:**
+
+| Operação                                                                | Processo interno                                                                                                       | Segurança enquanto há inserções em andamento                                                                                                                 |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dbt run`                                                               | Alterações de esquema aplicadas de acordo com a configuração `mv_on_schema_change`                                     | ✅ Seguro. Sem movimentação de dados.                                                                                                                         |
+| `dbt run --full-refresh` (padrão)                                       | Recriar a tabela (deixando-a vazia)                                                                                    | ⚠️ **A tabela de destino fica vazia** até que as MVs façam o backfill nela. As MVs continuam inserindo na nova tabela assim que ela passa a existir.         |
+| `dbt run --full-refresh` com `repopulate_from_mvs_on_full_refresh=True` | 1. Criar tabela de backup<br />2. Inserir dados usando o SQL de cada MV<br />3. Fazer o `EXCHANGE TABLES` atomicamente | ⚠️ **A MV fica cega durante a recriação.** Os dados inseridos entre as etapas 1 e 3 não aparecerão na nova tabela. **Isso pode mudar nas próximas versões**. |
+
+<Tip>
+  **Recomendações para ambientes de produção com ingestão ativa**
+
+  * **Pause a ingestão durante operações do dbt, se possível**: isso tornará todas as operações seguras, e nenhum dado será perdido.
+  * **Use um engine com desduplicação, se possível** (por exemplo, `ReplacingMergeTree`) na tabela de destino para lidar com possíveis duplicatas causadas por sobreposição no catch-up.
+  * **Prefira `ALTER TABLE ... MODIFY QUERY`** (`dbt run` normal, sem `--full-refresh`) sempre que possível — isso é sempre seguro.
+  * **Fique atento a janelas problemáticas** durante operações do dbt.
+</Tip>
+
+<div id="refreshable-materialized-views">
+  ## Visões Materializadas Atualizáveis
+</div>
+
+[Visões Materializadas Atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) são um tipo especial de visão materializada no ClickHouse que reexecuta periodicamente a consulta e armazena o resultado, de forma semelhante ao funcionamento das visões materializadas em outros bancos de dados. Isso é útil em cenários nos quais você precisa de snapshots ou agregações periódicas, em vez de gatilhos de inserção em tempo real.
+
+<Tip>
+  Visões materializadas atualizáveis podem ser usadas com **as duas** abordagens: [destino implícito](#implicit-target) e [destino explícito](#explicit-target). A configuração `refreshable` é independente de como a tabela de destino é gerenciada.
+</Tip>
+
+Para usar uma visão materializada atualizável, adicione um objeto de configuração `refreshable` ao seu modelo de MV com as seguintes opções:
+
+| Opção                         | Descrição                                                                                                                                                                   | Obrigatório | Valor padrão |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------ |
+| refresh&#95;interval          | A cláusula de intervalo (obrigatória)                                                                                                                                       | Sim         |              |
+| randomize                     | A cláusula de randomização, que aparecerá após `RANDOMIZE FOR`                                                                                                              |             |              |
+| append                        | Se definido como `True`, cada atualização insere linhas na tabela sem excluir as linhas existentes. A inserção não é atômica, assim como em um `INSERT SELECT` normal.      |             | False        |
+| depends&#95;on                | Uma lista de dependências para a mv atualizável. Forneça as dependências no seguinte formato: `{schema}.{view_name}`                                                        |             |              |
+| depends&#95;on&#95;validation | Define se a existência das dependências fornecidas em `depends_on` deve ser validada. Caso uma dependência não contenha um schema, a validação ocorrerá no schema `default` |             | False        |
+
+<div id="refreshable-implicit-example">
+  ### Exemplo com destino implícito
+</div>
+
+```python
+{{
+    config(
+        materialized='materialized_view',
+        engine='MergeTree()',
+        order_by='(event_date)',
+        refreshable={
+            "interval": "EVERY 5 MINUTE",
+            "randomize": "1 MINUTE",
+            "append": True,
+            "depends_on": ['schema.depend_on_model'],
+            "depends_on_validation": True
+        }
+    )
+}}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date
+```
+
+<div id="refreshable-explicit-example">
+  ### Exemplo com destino explícito
+</div>
+
+```python
+{{
+    config(
+        materialized='materialized_view',
+        refreshable={
+            "interval": "EVERY 1 HOUR",
+            "append": False
+        }
+    )
+}}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date, event_type
+```
+
+<div id="explicit-target-limitations">
+  ### Limitações
+</div>
+
+* Ao criar uma visão materializada atualizável (MV) no ClickHouse que tenha uma dependência, o ClickHouse não gera um
+  erro se a dependência especificada não existir no momento da criação. Em vez disso, a MV atualizável permanece em
+  estado inativo, aguardando que a dependência seja atendida antes de começar a processar atualizações ou ser atualizada.
+  Esse comportamento é intencional, mas pode causar atrasos na disponibilidade dos dados se a dependência necessária não
+  for resolvida rapidamente. Garanta que todas as dependências estejam corretamente definidas e existam antes de criar
+  uma visão materializada atualizável.
+* Até o momento, não há um &quot;vínculo com o dbt&quot; real entre a MV e suas dependências; portanto, a ordem de criação não é
+  garantida.
+* O recurso de atualização não foi testado com várias MVs apontando para o mesmo modelo de destino.

@@ -1,0 +1,349 @@
+---
+sidebarTitle: '插件配置'
+slug: /integrations/grafana/config
+description: 'Grafana 中 ClickHouse 数据源插件的配置选项'
+title: '在 Grafana 中配置 ClickHouse 数据源'
+doc_type: 'guide'
+keywords: ['Grafana 插件配置', '数据源设置', '连接参数', '身份验证设置', '插件选项']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+修改配置最简单的方式，是在 Grafana UI 的插件配置页面中进行，但也可以[通过 YAML 文件预配数据源](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources)。
+
+本页列出了 ClickHouse 插件中可配置的各项选项，以及通过 YAML 预配数据源时可用的配置片段。
+
+如需快速了解所有选项，请在[此处](#all-yaml-options)查看完整的配置选项列表。
+
+<div id="common-settings">
+  ## 通用设置
+</div>
+
+示例配置界面：
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="安全原生配置示例" border />
+
+通用设置的 YAML 配置示例：
+
+```yaml
+jsonData:
+  host: 127.0.0.1 # （必填）服务器地址。
+  port: 9000      # （必填）服务器端口。native 协议默认安全端口为 9440，非安全端口为 9000；HTTP 协议默认安全端口为 8443，非安全端口为 8123。
+
+  protocol: native # （必填）连接所使用的协议，可设置为 "native" 或 "http"。
+  secure: false    # 若使用安全连接，则设置为 true。
+
+  username: default # 用于身份验证的用户名。
+
+  tlsSkipVerify:     <boolean> # 设置为 true 时跳过 TLS 验证。
+  tlsAuth:           <boolean> # 设置为 true 以启用 TLS 客户端身份验证。
+  tlsAuthWithCACert: <boolean> # 提供了 CA 证书时设置为 true，验证自签名 TLS 证书时必须启用。
+
+secureJsonData:
+  password: secureExamplePassword # 用于身份验证的密码。
+
+  tlsCACert:     <string> # TLS CA 证书
+  tlsClientCert: <string> # TLS 客户端证书
+  tlsClientKey:  <string> # TLS 客户端密钥
+```
+
+请注意，从 UI 保存配置时，系统会自动添加一个 `version` 属性。该属性显示保存此配置时所使用的插件版本。
+
+<div id="http-protocol">
+  ### HTTP 协议
+</div>
+
+如果选择通过 HTTP 协议连接，则会显示更多设置选项。
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="额外的 HTTP 配置选项" border />
+
+<div id="http-path">
+  #### HTTP 路径
+</div>
+
+如果 HTTP 服务器通过其他 URL 路径对外提供服务，可以在此处添加。
+
+```yaml
+jsonData:
+  # 不包含开头的斜杠
+  path: additional/path/example
+```
+
+<div id="custom-http-headers">
+  #### 自定义 HTTP 请求头
+</div>
+
+你可以为发送到服务器的请求添加自定义请求头。
+
+请求头可以是明文，也可以是安全值。
+所有请求头键都会以明文形式存储，而安全请求头值会保存在安全配置中 (类似于 `password` 字段) 。
+
+<Warning>
+  **通过 HTTP 发送安全值**
+
+  虽然安全请求头值会安全地存储在配置中，但如果未启用安全连接，该值仍会通过 HTTP 发送。
+</Warning>
+
+明文/安全请求头的 YAML 示例：
+
+```yaml
+jsonData:
+  httpHeaders:
+  - name: X-Example-Plain-Header
+    value: plain text value
+    secure: false
+  - name: X-Example-Secure-Header
+    # 不包含 "value"
+    secure: true
+secureJsonData:
+  secureHttpHeaders.X-Example-Secure-Header: secure header value
+```
+
+<div id="additional-settings">
+  ## 其他设置
+</div>
+
+这些附加设置为可选项。
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="附加设置示例" border />
+
+示例 YAML：
+
+```yaml
+jsonData:
+  defaultDatabase: default # query builder 加载的默认数据库。默认值为 "default"。
+  defaultTable: <string>   # query builder 加载的默认表。
+
+  dialTimeout: 10    # 连接服务器时的拨号超时时间，单位为秒。默认值为 "10"。
+  queryTimeout: 60   # 执行查询时的超时时间，单位为秒。默认值为 60。此设置需要用户具有相应权限，若出现权限错误，可尝试将其设置为 "0" 以禁用该功能。
+  validateSql: false # 设置为 true 时，将在 SQL 编辑器中对 SQL 进行验证。
+```
+
+<div id="opentelemetry">
+  ### OpenTelemetry
+</div>
+
+OpenTelemetry (OTel) 已深度集成到此插件中。
+OpenTelemetry 数据可通过我们的 [exporter 插件](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 导出到 ClickHouse。
+为获得最佳效果，建议同时为 [日志](#logs) 和 [链路追踪](#traces) 配置 OTel。
+
+此外，还必须配置这些默认值，以启用 [数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)；这项功能可支持强大的可观测性工作流。
+
+<div id="logs">
+  ### 日志
+</div>
+
+为加快[日志查询构建](/zh/integrations/connectors/data-visualization/grafana/query-builder#logs)速度，您可以为日志查询设置默认数据库/表以及列。这样会在 query builder 中预加载一个可直接运行的日志查询，从而加快在 Explore 页面中的可观测性浏览。
+
+如果您使用 OpenTelemetry，应该启用“**Use OTel**”开关，并将 **default log table** 设置为 `otel_logs`。
+这会自动覆盖默认列，以使用所选的 OTel schema 版本。
+
+虽然日志并不要求必须使用 OpenTelemetry，但使用统一的日志/trace 数据集有助于借助[数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)实现更流畅的可观测性工作流。
+
+日志配置界面示例：
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="日志配置" border />
+
+日志配置 YAML 示例：
+
+```yaml
+jsonData:
+  logs:
+    defaultDatabase: default # 默认日志数据库。
+    defaultTable: otel_logs  # 默认日志表。如果使用 OTel，应将其设置为 "otel_logs"。
+
+    otelEnabled: false  # 如果启用了 OTel，请设置为 true。
+    otelVersion: latest # 要使用的 OTel collector schema 版本。版本信息显示在 UI 中，"latest" 表示使用插件中可用的最新版本。
+
+    # 打开新日志查询时默认选择的列。启用 OTel 后此设置将被忽略。
+    timeColumn:       <string> # 日志的主时间列。
+    levelColumn:   <string> # 日志的级别/严重程度。值通常为 "INFO"、"error" 或 "Debug"。
+    messageColumn: <string> # 日志的消息/内容。
+```
+
+<div id="traces">
+  ### 链路追踪
+</div>
+
+为加快[链路追踪查询构建](/zh/integrations/connectors/data-visualization/grafana/query-builder#traces)，你可以为 trace 查询设置默认的数据库/表以及列。这样会为 query builder 预加载一条可直接运行的 trace 搜索查询，从而加快在 Explore 页面中浏览可观测性数据的速度。
+
+如果你使用 OpenTelemetry，建议启用“**Use OTel**”开关，并将**默认 trace 表**设置为 `otel_traces`。
+这样会自动覆盖默认列，以使用所选的 OTel schema 版本。
+虽然并非必须使用 OpenTelemetry，但如果链路追踪采用其 schema，此功能效果最佳。
+
+链路追踪配置界面示例：
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="链路追踪配置" border />
+
+链路追踪配置 YAML 示例：
+
+```yaml
+jsonData:
+  traces:
+    defaultDatabase: default  # 默认链路追踪数据库。
+    defaultTable: otel_traces # 默认链路追踪表。如果使用 OTel，应将其设置为 "otel_traces"。
+
+    otelEnabled: false  # 如果启用了 OTel，请设置为 true。
+    otelVersion: latest # 要使用的 OTel collector schema 版本。版本号显示在 UI 中，"latest" 将使用插件中最新的可用版本。
+
+    # 打开新的链路追踪查询时默认选择的列。如果启用了 OTel，此设置将被忽略。
+    traceIdColumn:       <string>    # trace ID 列。
+    spanIdColumn:        <string>    # span ID 列。
+    operationNameColumn: <string>    # 操作名称列。
+    parentSpanIdColumn:  <string>    # 父 span ID 列。
+    serviceNameColumn:   <string>    # 服务名称列。
+    durationTimeColumn:  <string>    # 耗时列。
+    durationUnitColumn:  <time unit> # 耗时单位。可设置为 "seconds"、"milliseconds"、"microseconds" 或 "nanoseconds"。OTel 的默认值为 "nanoseconds"。
+    startTimeColumn:     <string>    # 开始时间列。这是 trace span 的主时间列。
+    tagsColumn:          <string>    # 标签列。该列应为 map 类型。
+    serviceTagsColumn:   <string>    # 服务标签列。该列应为 map 类型。
+```
+
+<div id="column-aliases">
+  ### 列别名
+</div>
+
+列别名是一种便捷方式，让你能够使用不同的名称和类型来查询数据。
+借助别名，你可以将嵌套的 schema 展平，从而在 Grafana 中更轻松地进行选择。
+
+在以下情况下，别名功能可能对你特别有用：
+
+* 你了解自己的 schema 及其大部分嵌套属性/类型
+* 你将数据存储为 Map 类型
+* 你将 JSON 以字符串形式存储
+* 你经常使用函数来转换所选的列
+
+<div id="table-defined-alias-columns">
+  #### 在表中定义的 ALIAS 列
+</div>
+
+ClickHouse 内置了列别名功能，并且可开箱即用地与 Grafana 配合使用。
+别名列可以直接在表中定义。
+
+```sql
+CREATE TABLE alias_example (
+  TimestampNanos DateTime(9),
+  TimestampDate ALIAS toDate(TimestampNanos)
+)
+```
+
+在上述示例中，我们创建了一个名为 `TimestampDate` 的别名，用于将纳秒级时间戳转换为 `Date` 类型。
+这些数据不会像第一列那样存储在磁盘上，而是在查询时计算得出。
+表中定义的别名不会随 `SELECT *` 一起返回，但可以在服务器设置中进行配置。
+
+如需了解更多信息，请参阅 [ALIAS](/zh/reference/statements/create/table#alias) 列类型的文档。
+
+<div id="column-alias-tables">
+  #### 列别名表
+</div>
+
+默认情况下，Grafana 会根据 `DESC table` 的返回结果提供列建议。
+在某些情况下，你可能希望完全覆盖 Grafana 能看到的列。
+这样可以在 Grafana 选择列时隐藏你的 schema；根据表的复杂程度，这可能有助于改善用户体验。
+
+相比在表中直接定义别名，这种方式的好处是你可以轻松更新这些别名，而无需修改表。在某些 schema 中，这类定义可能长达数千项，从而让底层表定义显得杂乱。它还可以隐藏你希望用户忽略的列。
+
+Grafana 要求别名表具有以下列结构：
+
+```sql
+CREATE TABLE aliases (
+  `alias` String,  -- 别名的名称，显示在 Grafana 列选择器中
+  `select` String, -- 在 SQL 生成器中使用的 SELECT 语法
+  `type` String    -- 结果列的类型，插件将据此调整 UI 选项以匹配数据类型。
+)
+```
+
+下面介绍如何使用别名表来复现 `ALIAS` 列的行为：
+
+```sql
+CREATE TABLE example_table (
+  TimestampNanos DateTime(9)
+);
+
+CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
+
+INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- 保留表中的原始列（可选）
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- 添加新列，将 TimestampNanos 转换为 Date 类型
+```
+
+然后，我们就可以将此表配置为供 Grafana 使用。请注意，这个名称可以随意指定，甚至可以在单独的数据库中定义：
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="别名表配置示例" border />
+
+现在，Grafana 看到的将是别名表的结果，而不是 `DESC example_table` 的结果：
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="别名表查询示例" border />
+
+这两种别名方式都可用于执行复杂的类型转换或提取 JSON 字段。
+
+<div id="all-yaml-options">
+  ## 所有 YAML 选项
+</div>
+
+以下是该插件提供的全部 YAML 配置选项。
+部分字段给出了示例值，其他字段则仅显示字段类型。
+
+有关使用 YAML 配置数据源的更多信息，请参阅 [Grafana 文档](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources)。
+
+```yaml
+datasources:
+  - name: Example ClickHouse
+    uid: clickhouse-example
+    type: grafana-clickhouse-datasource
+    jsonData:
+      host: 127.0.0.1
+      port: 9000
+      protocol: native
+      secure: false
+      username: default
+      tlsSkipVerify: <boolean>
+      tlsAuth: <boolean>
+      tlsAuthWithCACert: <boolean>
+      defaultDatabase: default
+      defaultTable: <string>
+      dialTimeout: 10
+      queryTimeout: 60
+      validateSql: false
+      httpHeaders:
+      - name: X-Example-Plain-Header
+        value: plain text value
+        secure: false
+      - name: X-Example-Secure-Header
+        secure: true
+      logs:
+        defaultDatabase: default
+        defaultTable: otel_logs
+        otelEnabled: false
+        otelVersion: latest
+        timeColumn: <string>
+        levelColumn: <string>
+        messageColumn: <string>
+      traces:
+        defaultDatabase: default
+        defaultTable: otel_traces
+        otelEnabled: false
+        otelVersion: latest
+        traceIdColumn: <string>
+        spanIdColumn: <string>
+        operationNameColumn: <string>
+        parentSpanIdColumn: <string>
+        serviceNameColumn: <string>
+        durationTimeColumn: <string>
+        durationUnitColumn: <time unit>
+        startTimeColumn: <string>
+        tagsColumn: <string>
+        serviceTagsColumn: <string>
+    secureJsonData:
+      tlsCACert:     <string>
+      tlsClientCert: <string>
+      tlsClientKey:  <string>
+      secureHttpHeaders.X-Example-Secure-Header: secure header value
+```

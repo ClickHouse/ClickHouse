@@ -1,0 +1,80 @@
+---
+date: 2023-10-26
+title: هل يمكن استخدام ClickHouse للبحث المتجهي؟
+description: تعرّف على كيفية استخدام ClickHouse للبحث المتجهي، بما في ذلك تخزين التضمينات والبحث باستخدام دوال المسافة مثل تشابه جيب التمام.
+tags: ['حالات الاستخدام', 'المفاهيم']
+keywords: ['البحث المتجهي']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-for-vector-search">
+  ## ClickHouse للبحث المتجهي!
+</div>
+
+نعم، يمكن لـ ClickHouse تنفيذ بحث متجهي.
+
+تشمل أبرز مزايا استخدام ClickHouse للبحث المتجهي مقارنةً باستخدام قواعد بيانات متجهية أكثر تخصصًا ما يلي:
+
+* استخدام إمكانات التصفية والبحث النصي الكامل في ClickHouse لتحسين مجموعة البيانات قبل إجراء البحث.
+* إجراء التحليلات على مجموعات البيانات لديك.
+* تنفيذ `JOIN` على بياناتك الحالية.
+* من دون الحاجة إلى إدارة قاعدة بيانات أخرى تزيد تعقيد بنيتك التحتية.
+
+إليك دليل عملي سريعًا حول كيفية استخدام ClickHouse للبحث المتجهي.
+
+<div id="1-create-embeddings">
+  ## 1. أنشئ التضمينات
+</div>
+
+يجب تحويل بياناتك (المستندات أو الصور أو البيانات المنظَّمة) إلى *تضمينات*. نوصي بإنشاء التضمينات باستخدام [واجهة برمجة تطبيقات OpenAI Embeddings](https://platform.openai.com/docs/api-reference/embeddings) أو مكتبة بايثون مفتوحة المصدر [SentenceTransformers](https://www.sbert.net/).
+
+يمكنك اعتبار التضمين مصفوفة كبيرة من أعداد ذات فاصلة عائمة تمثل بياناتك. [اطّلع على هذا الدليل من OpenAI لمعرفة المزيد عن التضمينات](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings).
+
+<div id="2-store-the-embeddings">
+  ## 2. تخزين التضمينات
+</div>
+
+بمجرد إنشاء التضمينات، تحتاج إلى تخزينها في ClickHouse. يجب تخزين كل تضمين في صف منفصل، ويمكن أن يتضمن بيانات وصفية لأغراض التصفية أو التجميع أو التحليلات. فيما يلي مثال على جدول يمكنه تخزين الصور مع التعليقات التوضيحية:
+
+```sql
+CREATE TABLE images
+(
+	`_file` LowCardinality(String),
+	`caption` String,
+	`image_embedding` Array(Float32)
+)
+ENGINE = MergeTree;
+```
+
+<div id="3-search-for-related-embeddings">
+  ## 3. ابحث عن تضمينات ذات صلة
+</div>
+
+لنفترض أنك تريد البحث عن صور للكلاب في مجموعة البيانات الخاصة بك. يمكنك استخدام دالة مسافة مثل `cosineDistance` لأخذ تضمين لصورة كلب ثم البحث عن صور ذات صلة:
+
+```sql
+SELECT
+    _file,
+	caption,
+	cosineDistance(
+        -- An embedding of your "input" dog picture
+        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+        image_embedding
+    ) AS score
+FROM images
+ORDER BY score ASC
+LIMIT 10
+```
+
+يعرض هذا الاستعلام أسماء `_file` و`caption` لأكثر 10 صور يُرجَّح ارتباطها بصورة الكلب التي قدّمتها.
+
+<div id="further-reading">
+  ## للمزيد من القراءة
+</div>
+
+للاطلاع على دليل عملي أكثر تفصيلًا حول البحث المتجهي باستخدام ClickHouse، يُرجى مراجعة:
+
+* [البحث المتجهي الدقيق والتقريبي](/ar/reference/engines/table-engines/mergetree-family/annindexes)

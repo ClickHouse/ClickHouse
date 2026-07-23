@@ -1,0 +1,66 @@
+---
+title: "ClickHouseでユーザーの設定を行う方法"
+description: "`SET` コマンドと `ALTER USER` コマンドを使用して、個々のクエリ、クライアントセッション、または特定のユーザーに対してClickHouseの設定を定義する方法を学びます。"
+date: 2023-03-01
+tags: ['設定']
+keywords: ['SET', 'ALTER', 'ユーザー', 'クエリ', 'セッション']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+ClickHouse では、用途や設定を適用しておきたい期間に応じて、ユーザー設定を定義する方法がいくつかあります。いくつかのシナリオを見ていきましょう...
+
+<div id="configure-a-setting-for-a-single-query">
+  ## 単一のクエリに設定を指定する
+</div>
+
+`SELECT`クエリには、任意の数の設定を指定できる`SETTINGS`句を含めることができます。これらの設定は、そのクエリに対してのみ適用されます。例えば:
+
+```sql
+SELECT *
+FROM my_table
+SETTINGS max_threads = 8;
+```
+
+このクエリでは、スレッドの最大数は 8 になります。
+
+<div id="configure-a-setting-for-a-session">
+  ## セッションに対する設定を構成する
+</div>
+
+`SET` 句を使用すると、クライアントセッションの有効期間中のみ有効な設定を定義できます。これは、アドホックなテストを行う場合や、数個のクエリの実行中だけ設定を有効にし、それ以上長くは保持したくない場合に便利です。
+
+```sql
+SET max_threads = 8;
+
+SELECT *
+FROM my_table;
+```
+
+<div id="configure-a-setting-for-a-particular-user">
+  ## 特定のユーザーの設定を構成する
+</div>
+
+`ALTER USER` を使用すると、特定のユーザーに対してのみ設定を定義できます。たとえば、次のようになります。
+
+```sql
+ALTER USER my_user_name SETTINGS max_threads = 8;
+```
+
+クライアントからログアウトして再度ログインし、その後 `getSetting` 関数を使用すると、正しく反映されたことを確認できます。
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+<Note>
+  この方法で設定を指定すると、ユーザーの現在の設定が上書きされます。つまり、そのユーザーにほかの設定が適用されていても、`ALTER USER` ステートメントでそれらを指定しなければ、失われます。
+
+  設定を保持したい場合は、代わりに `ALTER USER ... MODIFY SETTING ...` を使用してください。
+</Note>

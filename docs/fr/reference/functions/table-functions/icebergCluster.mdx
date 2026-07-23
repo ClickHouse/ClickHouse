@@ -1,0 +1,60 @@
+---
+description: 'Une extension de la fonction de table iceberg qui permet de traiter des fichiers
+  issus d’Apache Iceberg en parallèle sur plusieurs nœuds d’un cluster spécifié.'
+sidebarTitle: 'icebergCluster'
+slug: /sql-reference/table-functions/icebergCluster
+title: 'icebergCluster'
+doc_type: 'reference'
+---
+
+Il s&#39;agit d&#39;une extension de la fonction de table [iceberg](/fr/reference/functions/table-functions/iceberg).
+
+Elle permet de traiter en parallèle, sur plusieurs nœuds d’un cluster spécifié, des fichiers issus d’Apache [Iceberg](https://iceberg.apache.org/). Sur l’initiateur, elle établit une connexion à tous les nœuds du cluster et répartit dynamiquement les fichiers. Sur le nœud worker, elle demande à l’initiateur la tâche suivante à traiter, puis l’exécute. Ce processus se répète jusqu’à ce que toutes les tâches soient terminées.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `cluster_name` — Nom du cluster utilisé pour constituer un ensemble d’adresses et de paramètres de connexion pour les serveurs distants et locaux.
+* La description de tous les autres arguments est identique à celle des arguments de la fonction de table [iceberg](/fr/reference/functions/table-functions/iceberg) équivalente.
+* Un paramètre facultatif `extra_credentials` peut être utilisé pour transmettre un `role_arn` afin d’activer le contrôle d’accès basé sur les rôles dans ClickHouse Cloud. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
+
+**Valeur renvoyée**
+
+Une table de la structure spécifiée pour lire les données du cluster dans la table Iceberg spécifiée.
+
+**Exemples**
+
+```sql
+SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin d’accès au fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
+* `_etag` — eTag du fichier. Type : `LowCardinality(String)`. Si l’eTag est inconnu, la valeur est `NULL`.
+
+**Voir aussi**
+
+* [moteur Iceberg](/fr/reference/engines/table-engines/integrations/iceberg)
+* [fonction de table Iceberg](/fr/reference/functions/table-functions/iceberg)

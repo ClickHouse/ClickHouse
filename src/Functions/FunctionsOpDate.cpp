@@ -1,9 +1,9 @@
-#include <Functions/FunctionFactory.h>
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -15,12 +15,15 @@ namespace ErrorCodes
 namespace
 {
 template <typename Op>
-class FunctionOpDate : public IFunction
+class FunctionOpDate final : public IFunction
 {
 public:
     static constexpr auto name = Op::name;
 
-    explicit FunctionOpDate(ContextPtr context_) : context(context_) {}
+    explicit FunctionOpDate(ContextPtr context_)
+        : op(FunctionFactory::instance().get(Op::internal_name, context_))
+    {
+    }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOpDate<Op>>(context); }
 
@@ -45,7 +48,6 @@ public:
                 arguments[1].type->getName(),
                 getName());
 
-        auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
 
         return op_build->getResultType();
@@ -69,7 +71,6 @@ public:
                 arguments[1].type->getName(),
                 getName());
 
-        auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
 
         auto res_type = op_build->getResultType();
@@ -77,7 +78,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr op;
 };
 
 }
@@ -123,7 +124,7 @@ SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
     };
     FunctionDocumentation::IntroducedIn introduced_in_addDate = {23, 9};
     FunctionDocumentation::Category category_addDate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addDate = {description_addDate, syntax_addDate, arguments_addDate, returned_value_addDate, examples_addDate, introduced_in_addDate, category_addDate
+    FunctionDocumentation documentation_addDate = {description_addDate, syntax_addDate, arguments_addDate, {}, returned_value_addDate, examples_addDate, introduced_in_addDate, category_addDate
     };
     factory.registerFunction<FunctionAddDate>(documentation_addDate, FunctionFactory::Case::Insensitive);
 
@@ -151,7 +152,7 @@ SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
     };
     FunctionDocumentation::IntroducedIn introduced_in_subDate = {23, 9};
     FunctionDocumentation::Category category_subDate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subDate = {description_subDate, syntax_subDate, arguments_subDate, returned_value_subDate, examples_subDate, introduced_in_subDate, category_subDate};
+    FunctionDocumentation documentation_subDate = {description_subDate, syntax_subDate, arguments_subDate, {}, returned_value_subDate, examples_subDate, introduced_in_subDate, category_subDate};
 
     factory.registerFunction<FunctionSubDate>(documentation_subDate, FunctionFactory::Case::Insensitive);
 }

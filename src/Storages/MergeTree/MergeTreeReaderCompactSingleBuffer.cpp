@@ -124,13 +124,10 @@ try
     if (initialized)
         return;
 
-    auto stream_settings = settings;
-    stream_settings.allow_different_codecs = true;
-
     stream = std::make_unique<MergeTreeReaderStreamAllOfMultipleColumns>(
         data_part_info_for_read->getDataPartStorage(), MergeTreeDataPartCompact::DATA_FILE_NAME,
         MergeTreeDataPartCompact::DATA_FILE_EXTENSION, data_part_info_for_read->getMarksCount(),
-        all_mark_ranges, stream_settings,uncompressed_cache,
+        all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
 

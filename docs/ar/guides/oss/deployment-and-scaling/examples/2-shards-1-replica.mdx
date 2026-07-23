@@ -1,0 +1,825 @@
+---
+slug: /architecture/horizontal-scaling
+sidebarTitle: 'التوسع'
+title: 'التوسع'
+description: 'صفحة تصف مثالًا على معمارية مصممة لتوفير قابلية التوسع'
+doc_type: 'guide'
+keywords: ['تجزئة البيانات', 'التوسع الأفقي', 'البيانات الموزعة', 'إعداد العنقود', 'توزيع البيانات']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ConfigExplanation from '/snippets/ar/_config_explanation.mdx';
+import ListenHost from '/snippets/ar/_listen_host.mdx';
+import ServerParameterTable from '/snippets/ar/_server_parameter_table.mdx';
+import KeeperConfig from '/snippets/ar/_keeper_config.mdx';
+import KeeperConfigExplanation from '/snippets/ar/_keeper_explanation.mdx';
+import VerifyKeeperStatus from '/snippets/ar/_verify_keeper_using_mntr.mdx';
+import DedicatedKeeperServers from '/snippets/ar/_dedicated_keeper_servers.mdx';
+import ExampleFiles from '/snippets/ar/_working_example.mdx';
+import CloudTip from '/snippets/ar/_cloud_tip.mdx';
+
+> في هذا المثال، ستتعلم كيفية إعداد عنقود ClickHouse بسيط
+> قابل للتوسّع. هناك خمسة خوادم مُعدّة. يُستخدم اثنان منها لتجزئة البيانات.
+> وتُستخدم الخوادم الثلاثة الأخرى للتنسيق.
+
+تظهر أدناه معمارية العنقود الذي ستقوم بإعداده:
+
+<Image img="/images/deployment-guides/replication-sharding-examples/sharding.webp" size="md" alt="مخطط معمارية لشاردين ونسخة متماثلة واحدة" />
+
+<DedicatedKeeperServers />
+
+<div id="pre-requisites">
+  ## المتطلبات الأساسية
+</div>
+
+* سبق أن قمتَ بإعداد [خادم ClickHouse محلي](/ar/get-started/setup/install)
+* أنت على دراية بمفاهيم الإعداد الأساسية في ClickHouse، مثل [ملفات الإعداد](/ar/concepts/features/configuration/server-config/configuration-files)
+* Docker مُثبَّت على جهازك
+
+<Steps>
+  <Step>
+    ## إعداد بنية الدليل وبيئة الاختبار
+
+    <ExampleFiles />
+
+    في هذا الدليل العملي، ستستخدم [Docker compose](https://docs.docker.com/compose/) لإعداد مجموعة ClickHouse. يمكن تعديل هذا الإعداد ليعمل على أجهزة محلية منفصلة، أو أجهزة افتراضية، أو نسخ سحابية كذلك.
+
+    شغّل الأوامر التالية لإعداد بنية الدليل لهذا المثال:
+
+    ```bash
+    mkdir cluster_2S_1R
+    cd cluster_2S_1R
+
+    # Create clickhouse-keeper directories
+    for i in {01..03}; do
+      mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
+    done
+
+    # Create clickhouse-server directories
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
+    done
+    ```
+
+    أضف ملف `docker-compose.yml` التالي إلى دليل `cluster_2S_1R`:
+
+    ```yaml title="docker-compose.yml"
+    version: '3.8'
+    services:
+      clickhouse-01:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-01
+        hostname: clickhouse-01
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.1
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8123:8123"
+          - "127.0.0.1:9000:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-02:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-02
+        hostname: clickhouse-02
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.2
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8124:8123"
+          - "127.0.0.1:9001:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-01
+        hostname: clickhouse-keeper-01
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.5
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9181:9181"
+      clickhouse-keeper-02:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-02
+        hostname: clickhouse-keeper-02
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.6
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9182:9181"
+      clickhouse-keeper-03:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-03
+        hostname: clickhouse-keeper-03
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.7
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9183:9181"
+    networks:
+      cluster_2S_1R:
+        driver: bridge
+        ipam:
+          config:
+            - subnet: 192.168.7.0/24
+              gateway: 192.168.7.254
+    ```
+
+    أنشئ المجلدات الفرعية والملفات التالية:
+
+    ```bash
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d/config.xml
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d/users.xml
+    done
+    ```
+
+    <ConfigExplanation />
+  </Step>
+
+  <Step>
+    ## تهيئة عقد ClickHouse
+
+    ### إعداد الخادم
+
+    قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. يجب تغيير الأسطر
+    المُمَيَّزة أدناه بحيث تكون مخصصة لكل عقدة:
+
+    ```xml highlight={9,54-57}
+    <clickhouse replace="true">
+        <logger>
+            <level>debug</level>
+            <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+            <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+            <size>1000M</size>
+            <count>3</count>
+        </logger>
+        <display_name>cluster_2S_1R node 1</display_name>
+        <listen_host>0.0.0.0</listen_host>
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+        <user_directories>
+            <users_xml>
+                <path>users.xml</path>
+            </users_xml>
+            <local_directory>
+                <path>/var/lib/clickhouse/access/</path>
+            </local_directory>
+        </user_directories>
+        <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+        </distributed_ddl>
+        <remote_servers>
+            <cluster_2S_1R>
+                <shard>
+                    <replica>
+                        <host>clickhouse-01</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+                <shard>
+                    <replica>
+                        <host>clickhouse-02</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+            </cluster_2S_1R>
+        </remote_servers>
+        <zookeeper>
+            <node>
+                <host>clickhouse-keeper-01</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-02</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-03</host>
+                <port>9181</port>
+            </node>
+        </zookeeper>
+        <macros>
+            <shard>01</shard>
+            <replica>01</replica>
+        </macros>
+    </clickhouse>
+    ```
+
+    | الدليل                                                    | File                                                                                                                                                                             |
+    | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
+
+    يُشرح كل قسم من أقسام ملف الإعداد أعلاه بمزيد من التفاصيل في ما يلي.
+
+    #### الشبكة والتسجيل
+
+    <ListenHost />
+
+    يُعرَّف التسجيل في كتلة `<logger>`. يوفر لك مثال الإعداد هذا سجل تصحيح يُدوَّر عند 1000M ثلاث مرات:
+
+    ```xml
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    ```
+
+    لمزيد من المعلومات حول تهيئة التسجيل، راجع التعليقات المضمّنة في
+    [ملف التهيئة](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) الافتراضي لـ ClickHouse.
+
+    #### تهيئة الكلستر
+
+    يتم ضبط إعداد الكتلة في القسم `<remote_servers>`.
+    هنا يُحدَّد اسم الكتلة `cluster_2S_1R`.
+
+    يُعرِّف الكتلة `<cluster_2S_1R></cluster_2S_1R>` تخطيط الكلستر باستخدام إعدادَي `<shard></shard>` و`<replica></replica>`، ويعمل كقالب لاستعلامات DDL الموزَّعة، وهي الاستعلامات التي تُنفَّذ عبر الكلستر باستخدام جملة `ON CLUSTER`. تكون استعلامات DDL الموزَّعة مسموحاً بها افتراضياً، غير أنه يمكن تعطيلها عبر الإعداد `allow_distributed_ddl_queries`.
+
+    يُترك `internal_replication` مضبوطاً على false بشكل افتراضي نظراً لوجود نسخة واحدة فقط لكل جزء.
+
+    ```xml
+    <remote_servers>
+        <cluster_2S_1R>
+            <shard>
+                <replica>
+                    <host>clickhouse-01</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>clickhouse-02</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_2S_1R>
+    </remote_servers>
+    ```
+
+    <ServerParameterTable />
+
+    #### تهيئة Keeper
+
+    يُحدِّد القسم `<ZooKeeper>` لـ ClickHouse موقع تشغيل ClickHouse Keeper (أو ZooKeeper).
+    نظرًا لاستخدامنا Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
+    مع اسم الـ hostname ورقم المنفذ الخاص به باستخدام الوسمَين `<host>` و`<port>` على التوالي.
+
+    سيُشرح إعداد ClickHouse Keeper في الخطوة التالية من الدليل العملي.
+
+    ```xml
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper-01</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-02</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-03</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    ```
+
+    <Note>
+      على الرغم من أنه يمكن تشغيل ClickHouse Keeper على الخادم نفسه الذي يعمل عليه ClickHouse Server،
+      فإننا نوصي بشدة، في بيئات الإنتاج، بتشغيل ClickHouse Keeper على مضيفات مخصصة.
+    </Note>
+
+    #### تهيئة الماكرو
+
+    بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعاملات للجداول المُتماثلة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
+
+    ```xml
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+    </macros>
+    ```
+
+    <Note>
+      سيُحدَّد كلٌّ منها بشكل مختلف بحسب بنية العنقود.
+    </Note>
+
+    ### تهيئة المستخدم
+
+    عدِّل الآن كل ملف تهيئة فارغ `users.xml` الموجود في
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` بالمحتوى التالي:
+
+    ```xml title="/users.d/users.xml"
+    <?xml version="1.0"?>
+    <clickhouse replace="true">
+        <profiles>
+            <default>
+                <max_memory_usage>10000000000</max_memory_usage>
+                <use_uncompressed_cache>0</use_uncompressed_cache>
+                <load_balancing>in_order</load_balancing>
+                <log_queries>1</log_queries>
+            </default>
+        </profiles>
+        <users>
+            <default>
+                <access_management>1</access_management>
+                <profile>default</profile>
+                <networks>
+                    <ip>::/0</ip>
+                </networks>
+                <quota>default</quota>
+                <access_management>1</access_management>
+                <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
+                <show_named_collections_secrets>1</show_named_collections_secrets>
+            </default>
+        </users>
+        <quotas>
+            <default>
+                <interval>
+                    <duration>3600</duration>
+                    <queries>0</queries>
+                    <errors>0</errors>
+                    <result_rows>0</result_rows>
+                    <read_rows>0</read_rows>
+                    <execution_time>0</execution_time>
+                </interval>
+            </default>
+        </quotas>
+    </clickhouse>
+    ```
+
+    | Directory                                                | File                                                                                                                                                                          |
+    | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
+
+    في هذا المثال، تم تكوين المستخدم default بدون كلمة مرور لتبسيط الإعداد.
+    في التطبيق الفعلي، لا يُنصح بهذا الأسلوب.
+
+    <Note>
+      في هذا المثال، يكون كل ملف `users.xml` مطابقًا للآخر على جميع العقد في العنقود.
+    </Note>
+  </Step>
+
+  <Step>
+    ## تكوين ClickHouse Keeper
+
+    ### إعداد ClickHouse Keeper
+
+    <KeeperConfig />
+
+    | الدليل                                                  | الملف                                                                                                                                                                                        |
+    | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml) |
+
+    <KeeperConfigExplanation />
+
+    <CloudTip />
+  </Step>
+
+  <Step>
+    ## اختبر الإعداد
+
+    تأكد من أن Docker قيد التشغيل على جهازك.
+    ابدأ تشغيل الـcluster باستخدام الأمر `docker-compose up` من جذر الدليل `cluster_2S_1R`:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+    من المفترض أن ترى docker يبدأ بسحب صور ClickHouse وKeeper،
+    ثم تشغيل الحاويات:
+
+    ```bash
+    [+] Running 6/6
+     ✔ Network cluster_2s_1r_default   Created
+     ✔ Container clickhouse-keeper-03  Started
+     ✔ Container clickhouse-keeper-02  Started
+     ✔ Container clickhouse-keeper-01  Started
+     ✔ Container clickhouse-01         Started
+     ✔ Container clickhouse-02         Started
+    ```
+
+    للتأكد من أن الـcluster يعمل، اتصل بأحد `clickhouse-01` أو `clickhouse-02` ونفّذ
+    الاستعلام التالي. يرد أدناه أمر الاتصال بالعقدة الأولى:
+
+    ```bash
+    # Connect to any node
+    docker exec -it clickhouse-01 clickhouse-client
+    ```
+
+    إذا نجح الأمر، فسترى موجّه أوامر ClickHouse client:
+
+    ```response
+    cluster_2S_1R node 1 :)
+    ```
+
+    نفّذ الاستعلام التالي للتحقّق من بُنى العناقيد المعرّفة
+    ولأيّ مضيفين تم تعريفها:
+
+    ```sql title="Query"
+    SELECT 
+        cluster,
+        shard_num,
+        replica_num,
+        host_name,
+        port
+    FROM system.clusters;
+    ```
+
+    ```response title="Response"
+       ┌─cluster───────┬─shard_num─┬─replica_num─┬─host_name─────┬─port─┐
+    1. │ cluster_2S_1R │         1 │           1 │ clickhouse-01 │ 9000 │
+    2. │ cluster_2S_1R │         2 │           1 │ clickhouse-02 │ 9000 │
+    3. │ default       │         1 │           1 │ localhost     │ 9000 │
+       └───────────────┴───────────┴─────────────┴───────────────┴──────┘
+    ```
+
+    نفّذ الاستعلام التالي للتحقق من حالة مجموعة ClickHouse Keeper:
+
+    ```sql title="Query"
+    SELECT *
+    FROM system.zookeeper
+    WHERE path IN ('/', '/clickhouse')
+    ```
+
+    ```response title="Response"
+       ┌─name───────┬─value─┬─path────────┐
+    1. │ task_queue │       │ /clickhouse │
+    2. │ sessions   │       │ /clickhouse │
+    3. │ clickhouse │       │ /           │
+    4. │ keeper     │       │ /           │
+       └────────────┴───────┴─────────────┘
+    ```
+
+    <VerifyKeeperStatus />
+
+    وبهذا، تكون قد أعددت بنجاح عنقود ClickHouse يضم شريحتين ونسخة متماثلة واحدة لكل شريحة.
+    في الخطوة التالية، ستُنشئ جدولًا في العنقود.
+  </Step>
+
+  <Step>
+    ## أنشئ قاعدة بيانات
+
+    الآن بعد أن تحققت من أن العنقود مُعَدّ بشكل صحيح ويعمل، ستعيد إنشاء الجدول نفسه المستخدم في الدليل العملي الخاص بمجموعة البيانات النموذجية [UK property prices](/ar/get-started/sample-datasets/uk-price-paid).
+    ويتكوّن من نحو 30 مليون صف لأسعار العقارات المدفوعة
+    في إنجلترا وويلز منذ عام 1995.
+
+    اتصل بعميل كل مضيف بتشغيل كلٍّ من الأوامر التالية من علامات تبويب
+    أو نوافذ طرفية منفصلة:
+
+    ```bash
+    docker exec -it clickhouse-01 clickhouse-client
+    docker exec -it clickhouse-02 clickhouse-client
+    ```
+
+    يمكنك تشغيل الاستعلام أدناه باستخدام `clickhouse-client` على كل مضيف للتأكد من
+    عدم إنشاء أي قواعد بيانات بعد، باستثناء القواعد الافتراضية:
+
+    ```sql title="Query"
+    SHOW DATABASES;
+    ```
+
+    ```response title="Response"
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+       └────────────────────┘
+    ```
+
+    من عميل `clickhouse-01`، شغّل استعلام DDL **موزّعًا** التالي باستخدام عبارة
+    `ON CLUSTER` لإنشاء قاعدة بيانات جديدة باسم `uk`:
+
+    ```sql highlight={2}
+    CREATE DATABASE IF NOT EXISTS uk 
+    ON CLUSTER cluster_2S_1R;
+    ```
+
+    يمكنك تشغيل الاستعلام نفسه مرة أخرى كما سبق من العميل على كل مضيف
+    للتأكد من أن قاعدة البيانات قد أُنشئت على مستوى العنقود رغم تشغيل
+    الاستعلام على `clickhouse-01` فقط:
+
+    ```sql
+    SHOW DATABASES;
+    ```
+
+    ```response highlight={6}
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+    5. │ uk                 │
+       └────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ## إنشاء جدول على العنقود
+
+    الآن بعد أن أُنشئت قاعدة البيانات، ستُنشئ جدولًا.
+    شغّل الاستعلام التالي من أي عميل من عملاء المضيف:
+
+    ```sql highlight={2}
+    CREATE TABLE IF NOT EXISTS uk.uk_price_paid_local
+    ON CLUSTER cluster_2S_1R
+    (
+        price UInt32,
+        date Date,
+        postcode1 LowCardinality(String),
+        postcode2 LowCardinality(String),
+        type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+        is_new UInt8,
+        duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+        addr1 String,
+        addr2 String,
+        street LowCardinality(String),
+        locality LowCardinality(String),
+        town LowCardinality(String),
+        district LowCardinality(String),
+        county LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY (postcode1, postcode2, addr1, addr2);
+    ```
+
+    لاحظ أنه مطابق للاستعلام المستخدم في جملة `CREATE` الأصلية الخاصة بـ
+    دليل مجموعة البيانات المثال [UK property prices](/ar/get-started/sample-datasets/uk-price-paid)،
+    باستثناء عبارة `ON CLUSTER`.
+
+    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزّع لاستعلامات DDL ‏(لغة تعريف البيانات)
+    مثل `CREATE` و`DROP` و`ALTER` و`RENAME`، بما يضمن تطبيق
+    هذه التغييرات على المخطط عبر جميع العقد في العنقود.
+
+    يمكنك تشغيل الاستعلام أدناه من عميل كل مضيف للتأكد من أن الجدول قد أُنشئ على مستوى العنقود:
+
+    ```sql title="Query"
+    SHOW TABLES IN uk;
+    ```
+
+    ```response title="Response"
+       ┌─name────────────────┐
+    1. │ uk_price_paid_local │
+       └─────────────────────┘
+    ```
+
+    قبل أن نُدرج بيانات الأسعار المدفوعة في المملكة المتحدة، دعونا نجري تجربة سريعة لمعرفة
+    ما الذي يحدث عند إدراج البيانات في جدول عادي من أيٍّ من الخادمين.
+
+    أنشئ قاعدة بيانات وجدولًا اختباريًا باستخدام الاستعلام التالي من أيٍّ من الخادمين:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test ON CLUSTER cluster_2S_1R;
+    CREATE TABLE test.test_table ON CLUSTER cluster_2S_1R
+    (
+        `id` UInt64,
+        `name` String
+    )
+    ENGINE = MergeTree()
+    ORDER BY id;
+    ```
+
+    الآن، من `clickhouse-01`، نفّذ استعلام `INSERT` التالي:
+
+    ```sql
+    INSERT INTO test.test_table (id, name) VALUES (1, 'Clicky McClickface');
+    ```
+
+    انتقل إلى `clickhouse-02` ونفّذ استعلام `INSERT` التالي:
+
+    ```sql title="Query"
+    INSERT INTO test.test_table (id, name) VALUES (1, 'Alexey Milovidov');
+    ```
+
+    الآن، شغّل الاستعلام التالي من `clickhouse-01` أو `clickhouse-02`:
+
+    ```sql
+    -- from clickhouse-01
+    SELECT * FROM test.test_table;
+    --   ┌─id─┬─name───────────────┐
+    -- 1.│  1 │ Clicky McClickface │
+    --   └────┴────────────────────┘
+
+    --from clickhouse-02
+    SELECT * FROM test.test_table;
+    --   ┌─id─┬─name───────────────┐
+    -- 1.│  1 │ Alexey Milovidov   │
+    --   └────┴────────────────────┘
+    ```
+
+    ستلاحظ أنه، بخلاف جدول `ReplicatedMergeTree`، لا يُعاد إلا الصف الذي أُدرج في الجدول على ذلك
+    المضيف تحديدًا، وليس كلا الصفين.
+
+    لقراءة البيانات عبر الشاردين، نحتاج إلى واجهة يمكنها التعامل مع الاستعلامات
+    عبر جميع الشاردات، مع دمج البيانات من كلا الشاردين عندما ننفّذ استعلامات select
+    عليها، أو إدراج البيانات في كلا الشاردين عندما ننفّذ استعلامات insert.
+
+    في ClickHouse تُسمّى هذه الواجهة **جدولًا موزعًا**، وننشئها باستخدام
+    محرك الجدول [`Distributed`](/ar/reference/engines/table-engines/special/distributed). لنلقِ نظرة على كيفية عمله.
+  </Step>
+
+  <Step>
+    ## إنشاء جدول موزّع
+
+    أنشئ جدولًا موزّعًا باستخدام الاستعلام التالي:
+
+    ```sql
+    CREATE TABLE test.test_table_dist ON CLUSTER cluster_2S_1R AS test.test_table
+    ENGINE = Distributed('cluster_2S_1R', 'test', 'test_table', rand())
+    ```
+
+    في هذا المثال، اختيرت الدالة `rand()` كمفتاح للتجزئة بحيث
+    تتوزع عمليات الإدراج عشوائيًا على الأجزاء.
+
+    الآن نفّذ استعلامًا على الجدول الموزّع من أيٍّ من المضيفين، وستحصل
+    على كلا الصفين اللذين أُدرجا على المضيفين كليهما، بخلاف مثالنا السابق:
+
+    ```sql
+    SELECT * FROM test.test_table_dist;
+    ```
+
+    ```response
+       ┌─id─┬─name───────────────┐
+    1. │  1 │ Alexey Milovidov   │
+    2. │  1 │ Clicky McClickface │
+       └────┴────────────────────┘
+    ```
+
+    لنفعل الأمر نفسه مع بيانات أسعار العقارات في المملكة المتحدة. من أيٍّ من الأجهزة المضيفة التي تشغّل العميل،
+    شغّل الاستعلام التالي لإنشاء جدول موزّع باستخدام الجدول الحالي
+    الذي أنشأناه سابقًا باستخدام `ON CLUSTER`:
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS uk.uk_price_paid_distributed
+    ON CLUSTER cluster_2S_1R
+    ENGINE = Distributed('cluster_2S_1R', 'uk', 'uk_price_paid_local', rand());
+    ```
+  </Step>
+
+  <Step>
+    ## إدراج البيانات في جدول موزّع
+
+    الآن اتصل بأيٍّ من المضيفَين وأدرج البيانات:
+
+    ```sql
+    INSERT INTO uk.uk_price_paid_distributed
+    SELECT
+        toUInt32(price_string) AS price,
+        parseDateTimeBestEffortUS(time) AS date,
+        splitByChar(' ', postcode)[1] AS postcode1,
+        splitByChar(' ', postcode)[2] AS postcode2,
+        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+        b = 'Y' AS is_new,
+        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+        addr1,
+        addr2,
+        street,
+        locality,
+        town,
+        district,
+        county
+    FROM url(
+        'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+        'CSV',
+        'uuid_string String,
+        price_string String,
+        time String,
+        postcode String,
+        a String,
+        b String,
+        c String,
+        addr1 String,
+        addr2 String,
+        street String,
+        locality String,
+        town String,
+        district String,
+        county String,
+        d String,
+        e String'
+    ) SETTINGS max_http_get_redirects=10;
+    ```
+
+    بمجرد إدراج البيانات، يمكنك التحقق من عدد الصفوف باستخدام الجدول الموزع:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM uk.uk_price_paid_distributed
+    ```
+
+    ```response title="Response"
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
+       └──────────┘
+    ```
+
+    إذا نفّذت الاستعلام التالي على أيٍّ من المضيفَين، ستلاحظ أن البيانات توزّعت بشكل متساوٍ إلى حدٍّ ما عبر الأجزاء (علمًا بأن اختيار الجزء الذي تُدرج فيه البيانات كان عشوائيًا باستخدام `rand()`، لذا قد تختلف النتائج لديك):
+
+    ```sql
+    -- from clickhouse-01
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+    --    ┌──count()─┐
+    -- 1. │ 15107353 │ -- 15.11 million
+    --    └──────────┘
+
+    --from clickhouse-02
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+    --    ┌──count()─┐
+    -- 1. │ 15105202 │ -- 15.11 million
+    --    └──────────┘
+    ```
+
+    ماذا سيحدث إذا تعطّل أحد المضيفين؟ لنحاكِ هذا السيناريو بإيقاف
+    `clickhouse-01`:
+
+    ```bash
+    docker stop clickhouse-01
+    ```
+
+    تحقق من أن المضيف متوقف عن طريق تشغيل:
+
+    ```bash
+    docker-compose ps
+    ```
+
+    ```response title="Response"
+    NAME                   IMAGE                                        COMMAND            SERVICE                CREATED          STATUS          PORTS
+    clickhouse-02          clickhouse/clickhouse-server:latest          "/entrypoint.sh"   clickhouse-02          X minutes ago    Up X minutes    127.0.0.1:8124->8123/tcp, 127.0.0.1:9001->9000/tcp
+    clickhouse-keeper-01   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-01   X minutes ago    Up X minutes    127.0.0.1:9181->9181/tcp
+    clickhouse-keeper-02   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-02   X minutes ago    Up X minutes    127.0.0.1:9182->9181/tcp
+    clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
+    ```
+
+    الآن من `clickhouse-02` نفِّذ نفس استعلام SELECT الذي أجريناه سابقًا على الجدول الموزَّع:
+
+    ```sql
+    SELECT count(*)
+    FROM uk.uk_price_paid_distributed
+    ```
+
+    ```response title="Response" highlight={6}
+    Received exception from server (version 25.5.2):
+    Code: 279. DB::Exception: Received from localhost:9000. DB::Exception: All connection tries failed. Log:
+
+    Code: 32. DB::Exception: Attempt to read after eof. (ATTEMPT_TO_READ_AFTER_EOF) (version 25.5.2.47 (official build))
+    Code: 209. DB::NetException: Timeout: connect timed out: 192.168.7.1:9000 (clickhouse-01:9000, 192.168.7.1, local address: 192.168.7.2:37484, connection timeout 1000 ms). (SOCKET_TIMEOUT) (version 25.5.2.47 (official build))
+    Code: 198. DB::NetException: Not found address of host: clickhouse-01: (clickhouse-01:9000, 192.168.7.1, local address: 192.168.7.2:37484). (DNS_ERROR) (version 25.5.2.47 (official build))
+
+    : While executing Remote. (ALL_CONNECTION_TRIES_FAILED)
+    ```
+
+    للأسف، مجموعتنا ليست متسامحة مع الأعطال. إذا تعطّل أحد المضيفين، تُعدّ المجموعة غير سليمة ويفشل الاستعلام، خلافًا للجدول المُكرَّر الذي رأيناه في [المثال السابق](/ar/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas)، والذي كنّا قادرين فيه على إدراج البيانات حتى عند تعطّل أحد المضيفين.
+  </Step>
+</Steps>
+
+<div id="conclusion">
+  ## الخاتمة
+</div>
+
+تتمثل ميزة طوبولوجيا هذا العنقود في أن البيانات تُوزَّع عبر
+مضيفين منفصلين، مع استخدام نصف سعة التخزين لكل عقدة. والأهم من ذلك أن الاستعلامات
+تُعالَج عبر كلا الشاردين، مما يحسّن كفاءة
+استخدام الذاكرة ويقلّل عمليات الإدخال/الإخراج على كل مضيف.
+
+أما العيب الرئيسي لطوبولوجيا هذا العنقود فهو، بطبيعة الحال، أن فقدان أحد
+المضيفين يجعلنا غير قادرين على معالجة الاستعلامات.
+
+في [المثال التالي](/ar/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)، سنلقي نظرة على كيفية
+إعداد عنقود يضم شاردين ونسختين متماثلتين، بما يوفّر قابلية التوسع
+وتحمّل الأعطال.

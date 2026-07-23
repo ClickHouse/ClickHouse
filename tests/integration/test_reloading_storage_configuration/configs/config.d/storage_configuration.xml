@@ -6,15 +6,15 @@
             <keep_free_space_bytes>1024</keep_free_space_bytes>
         </default>
         <jbod1>
-            <path>/jbod1/</path>
+            <path>/test_reloading_storage_config_jbod1/</path>
         </jbod1>
         <jbod2>
-            <path>/jbod2/</path>
+            <path>/test_reloading_storage_config_jbod2/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
                                  <!-- 10MB -->
         </jbod2>
         <external>
-            <path>/external/</path>
+            <path>/test_reloading_storage_config_external/</path>
         </external>
     </disks>
 

@@ -1,0 +1,15 @@
+alter_delete_uk
+alter_update_uk_column
+alter_update_non_uk_column
+lightweight_update_uk
+lightweight_force_update_uk
+materialize_uk_a
+materialize_uk_b
+clear_uk_a
+clear_uk_b
+materialize_non_uk_d
+clear_non_uk_d
+2
+2
+uk_on_default_ok
+1

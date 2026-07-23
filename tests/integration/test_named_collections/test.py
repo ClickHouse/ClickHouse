@@ -1,6 +1,8 @@
 import logging
 import os
 import time
+import threading
+import random
 from contextlib import nullcontext as does_not_raise
 
 import pytest
@@ -116,7 +118,7 @@ def test_default_access(cluster):
         node, "named_collection_control>1", "named_collection_control>0"
     )
     assert "named_collection_control>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert 0 == int(node.query("select count() from system.named_collections"))
@@ -125,7 +127,7 @@ def test_default_access(cluster):
         node, "named_collection_control>0", "named_collection_control>1"
     )
     assert "named_collection_control>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -134,11 +136,41 @@ def test_default_access(cluster):
         ).strip()
         == "value1"
     )
+
+    assert (
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'",
+            settings={"format_display_secrets_in_show_and_select": 0}
+        ).strip()
+        == "[HIDDEN]"
+    )
+
+    replace_in_server_config(
+        node, "display_secrets_in_show_and_select>1", "display_secrets_in_show_and_select>0"
+    )
+    assert "display_secrets_in_show_and_select>0" in node.exec_in_container(
+        ["bash", "-c", "cat /etc/clickhouse-server/config.d/named_collections.xml"]
+    )
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'"
+        ).strip()
+        == "[HIDDEN]"
+    )
+
+    replace_in_server_config(
+        node, "display_secrets_in_show_and_select>0", "display_secrets_in_show_and_select>1"
+    )
+    assert "display_secrets_in_show_and_select>1" in node.exec_in_container(
+        ["bash", "-c", "cat /etc/clickhouse-server/config.d/named_collections.xml"]
+    )
+
     replace_in_users_config(
         node, "show_named_collections_secrets>1", "show_named_collections_secrets>0"
     )
     assert "show_named_collections_secrets>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -151,7 +183,7 @@ def test_default_access(cluster):
         node, "show_named_collections_secrets>0", "show_named_collections_secrets>1"
     )
     assert "show_named_collections_secrets>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -534,6 +566,7 @@ def test_sql_commands(cluster, with_keeper):
             ).strip()
         )
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -587,6 +620,7 @@ def test_sql_commands(cluster, with_keeper):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -610,6 +644,7 @@ def test_sql_commands(cluster, with_keeper):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -665,6 +700,7 @@ def test_sql_commands(cluster, with_keeper):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -686,6 +722,7 @@ def test_sql_commands(cluster, with_keeper):
             == node.query("select name from system.named_collections").strip()
         )
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 0 == len(children)
 
@@ -731,6 +768,7 @@ def test_keeper_storage(cluster):
             ).strip()
         )
 
+        zk.sync(ZK_PATH)
         children = zk.get_children(ZK_PATH)
         assert 1 == len(children)
         assert "collection2.sql" in children
@@ -775,6 +813,7 @@ def test_keeper_storage(cluster):
         )
 
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 1 == len(children)
             assert "collection2.sql" in children
@@ -803,6 +842,7 @@ def test_keeper_storage(cluster):
             == node.query("select name from system.named_collections").strip()
         )
         if zk is not None:
+            zk.sync(ZK_PATH)
             children = zk.get_children(ZK_PATH)
             assert 0 == len(children)
 
@@ -835,13 +875,13 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
             "DROP NAMED COLLECTION IF EXISTS test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
         node.query(
-            f"CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
+            "CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
         )
         node.query(
-            f"ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
+            "ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
         )
         node.query(
-            f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+            "DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
     node.query("DROP NAMED COLLECTION IF EXISTS test_nc")
 
@@ -910,3 +950,99 @@ def test_system_named_collection(cluster, instance_name, show_secrets):
     validate_named_collection("collection2", "SQL", "30")
 
     node.query("DROP NAMED COLLECTION collection2")
+
+
+def test_concurrent_create_drop_race_condition(cluster):
+    """
+    Test for race condition when collections are deleted between list and read operations.
+
+    The background update thread in NamedCollectionFactory calls `getAll` which first
+    lists all collections, then reads each one. If a collection is deleted between
+    these operations (by another node or concurrent query), it should not cause an
+    exception.
+
+    This test rapidly creates and drops collections concurrently to trigger this race.
+    The test passes if no "Logical error" occurs (which would indicate chassert failure).
+    """
+    node1 = cluster.instances["node_with_keeper"]
+    node2 = cluster.instances["node_with_keeper_2"]
+
+    num_iterations = 15
+    stop_flag = threading.Event()
+
+    def create_collections(node, prefix, count):
+        for i in range(count):
+            if stop_flag.is_set():
+                break
+            try:
+                coll_name = f"{prefix}_{i}_{random.randint(0, 10000)}"
+                node.query(f"CREATE NAMED COLLECTION IF NOT EXISTS {coll_name} AS key='value'")
+            except Exception:
+                pass  # Ignore errors during concurrent operations
+
+    def drop_collections(node, prefix, count):
+        for i in range(count):
+            if stop_flag.is_set():
+                break
+            try:
+                # Try to drop collections that might or might not exist
+                collections = node.query(
+                    f"SELECT name FROM system.named_collections WHERE name LIKE '{prefix}%'"
+                ).strip().split('\n')
+                for coll in collections:
+                    if coll:
+                        node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
+            except Exception:
+                pass  # Ignore errors during concurrent operations
+
+    try:
+        # Run multiple iterations to increase chance of hitting the race
+        for iteration in range(3):
+            prefix = f"race_test_{iteration}"
+            threads = []
+
+            # Create threads that create collections on both nodes
+            for node in [node1, node2]:
+                t = threading.Thread(target=create_collections, args=(node, prefix, num_iterations))
+                threads.append(t)
+
+            # Create threads that drop collections on both nodes
+            for node in [node1, node2]:
+                t = threading.Thread(target=drop_collections, args=(node, prefix, num_iterations))
+                threads.append(t)
+
+            # Start all threads
+            for t in threads:
+                t.start()
+
+            # Wait for all threads to complete
+            for t in threads:
+                t.join(timeout=60)
+
+            # Small delay between iterations
+            time.sleep(0.1)
+
+        # Verify both nodes are still healthy by running a simple query
+        for node in [node1, node2]:
+            result = node.query("SELECT 1").strip()
+            assert result == "1", "Node health check failed"
+
+        # Check for logical errors in server logs - this is the key assertion
+        # A logical error would indicate the race condition caused an exception (chassert failure)
+        for node, name in [(node1, "node_with_keeper"), (node2, "node_with_keeper_2")]:
+            logs = node.grep_in_log("Logical error")
+            assert not logs, f"{name}: Found logical error in logs: {logs[:500]}"
+
+    finally:
+        stop_flag.set()
+        # Cleanup any remaining collections from this test
+        for node in [node1, node2]:
+            try:
+                collections = node.query(
+                    "SELECT name FROM system.named_collections WHERE name LIKE 'race_test_%'"
+                ).strip().split('\n')
+                for coll in collections:
+                    if coll:
+                        node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
+            except Exception:
+                pass

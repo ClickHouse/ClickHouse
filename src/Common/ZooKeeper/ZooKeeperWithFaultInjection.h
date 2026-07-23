@@ -234,6 +234,7 @@ public:
     zkutil::ZooKeeper::FutureGet asyncTryGet(std::string path);
 
     zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+    zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
 
     zkutil::ZooKeeper::FutureRemove asyncTryRemove(std::string path, int32_t version = -1);
 

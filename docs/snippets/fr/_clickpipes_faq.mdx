@@ -1,0 +1,84 @@
+---
+title: FAQ ClickPipes
+---
+
+<Accordion title="Que sont les répliques ClickPipes ?">
+  ClickPipes ingère des données depuis des sources de données distantes via une infrastructure dédiée
+  qui fonctionne et se met à l&#39;échelle indépendamment du service ClickHouse Cloud.
+  C&#39;est pourquoi il utilise des répliques de calcul dédiées.
+  Les schémas ci-dessous montrent une architecture simplifiée.
+
+  Pour les ClickPipes de streaming, les répliques ClickPipes accèdent aux sources de données distantes (par ex. un broker Kafka),
+  récupèrent les données, les traitent et les ingèrent dans le service ClickHouse de destination.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="Répliques ClickPipes - ClickPipes de streaming" border force />
+
+  Dans le cas des ClickPipes de stockage objet,
+  la réplique ClickPipes orchestre la tâche de chargement des données
+  (identification des fichiers à copier, maintien de l&#39;état et déplacement des partitions),
+  tandis que les données sont récupérées directement par le service ClickHouse.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="Répliques ClickPipes - Object Storage ClickPipes" border force />
+</Accordion>
+
+<Accordion title="Quel est le nombre de répliques par défaut et quelle est leur taille ?">
+  Chaque ClickPipe utilise par défaut 1 réplique disposant de 2 GiB de RAM et de 0,5 vCPU.
+  Cela correspond à **0.25** unité de calcul ClickHouse (1 unité = 8 GiB de RAM, 2 vCPU).
+</Accordion>
+
+<Accordion title="Les répliques ClickPipes peuvent-elles être mises à l'échelle ?">
+  Oui, ClickPipes for streaming peut être mis à l&#39;échelle à la fois horizontalement et verticalement.
+  La mise à l&#39;échelle horizontale ajoute des répliques pour augmenter le débit, tandis que la mise à l&#39;échelle verticale augmente les ressources (CPU et RAM) allouées à chaque réplique pour prendre en charge des workloads plus intensifs.
+  Cela peut être configuré lors de la création du ClickPipe, ou à tout autre moment dans **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+</Accordion>
+
+<Accordion title="De combien de répliques ClickPipes ai-je besoin ?">
+  Cela dépend du débit du workload et des exigences de latence.
+  Nous recommandons de commencer avec la valeur par défaut d&#39;1 réplique, de mesurer votre latence, puis d&#39;ajouter des répliques si nécessaire.
+  Gardez à l&#39;esprit que pour les Kafka ClickPipes, vous devez également mettre à l&#39;échelle les partitions du broker Kafka en conséquence.
+  Les options de mise à l&#39;échelle sont disponibles dans « Settings » pour chaque ClickPipe de streaming.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="Répliques ClickPipes - De combien de répliques ClickPipes ai-je besoin ?" border force />
+</Accordion>
+
+<Accordion title="À quoi ressemble la structure tarifaire de ClickPipes ?">
+  Elle se compose de deux dimensions :
+
+  * **Compute** : prix par unité et par heure
+    Compute représente le coût d&#39;exécution des pods de réplique ClickPipes, qu&#39;ils ingèrent activement des données ou non.
+    Cela s&#39;applique à tous les types de ClickPipes.
+  * **Ingested data** : tarification par Go
+    Le tarif des données ingérées s&#39;applique à tous les ClickPipes de streaming
+    (Kafka, Confluent, Amazon MSK, Amazon Kinesis, Redpanda, WarpStream,
+    Azure Event Hubs) pour les données transférées via les pods de réplique.
+    Le volume de données ingérées (Go) est facturé sur la base des octets reçus depuis la source (compressés ou non compressés).
+</Accordion>
+
+<Accordion title="Quels sont les tarifs publics de ClickPipes ?">
+  * Compute: $0.20 par unité et par heure ($0.05 par réplique et par heure)
+  * Ingested data: $0.04 par Go
+</Accordion>
+
+<Accordion title="À quoi cela ressemble-t-il dans un exemple concret ?">
+  Par exemple, l&#39;ingestion de 1 To de données sur 24 heures via le connecteur Kafka avec une seule réplique (0.25 unité de calcul) coûte :
+
+  $$
+  (0.25 \times 0.20 \times 24) + (0.04 \times 1000) = $41.2
+  $$
+
+  <br />
+
+  Pour les connecteurs de stockage objet (S3 et GCS),
+  seul le coût de calcul ClickPipes s&#39;applique puisque le pod ClickPipes ne traite pas les données
+  mais orchestre uniquement le transfert, qui est assuré par le service ClickHouse sous-jacent :
+
+  $$
+  0.25 \times 0.20 \times 24 = $1.2
+  $$
+</Accordion>
+
+<Accordion title="Comment la tarification de ClickPipes se compare-t-elle au marché ?">
+  La philosophie de la tarification de ClickPipes est
+  de couvrir les coûts d&#39;exploitation de la plateforme tout en offrant un moyen simple et fiable d&#39;acheminer les données vers ClickHouse Cloud.
+  Sous cet angle, notre analyse du marché a montré que notre positionnement est compétitif.
+</Accordion>

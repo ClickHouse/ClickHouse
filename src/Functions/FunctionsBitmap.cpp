@@ -25,15 +25,7 @@ REGISTER_FUNCTION(Bitmap)
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapBuild = {20, 1};
     FunctionDocumentation::Category category_bitmapBuild = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapBuild = {
-        description_bitmapBuild,
-        syntax_bitmapBuild,
-        arguments_bitmapBuild,
-        returned_value_bitmapBuild,
-        examples_bitmapBuild,
-        introduced_in_bitmapBuild,
-        category_bitmapBuild
-    };
+    FunctionDocumentation documentation_bitmapBuild = {description_bitmapBuild, syntax_bitmapBuild, arguments_bitmapBuild, {}, returned_value_bitmapBuild, examples_bitmapBuild, introduced_in_bitmapBuild, category_bitmapBuild};
 
     factory.registerFunction<FunctionBitmapBuild>(documentation_bitmapBuild);
 
@@ -53,15 +45,7 @@ REGISTER_FUNCTION(Bitmap)
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapToArray = {20, 1};
     FunctionDocumentation::Category category_bitmapToArray = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapToArray = {
-        description_bitmapToArray,
-        syntax_bitmapToArray,
-        arguments_bitmapToArray,
-        returned_value_bitmapToArray,
-        examples_bitmapToArray,
-        introduced_in_bitmapToArray,
-        category_bitmapToArray
-    };
+    FunctionDocumentation documentation_bitmapToArray = {description_bitmapToArray, syntax_bitmapToArray, arguments_bitmapToArray, {}, returned_value_bitmapToArray, examples_bitmapToArray, introduced_in_bitmapToArray, category_bitmapToArray};
 
     factory.registerFunction<FunctionBitmapToArray>(documentation_bitmapToArray);
 
@@ -83,15 +67,7 @@ REGISTER_FUNCTION(Bitmap)
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapSubsetInRange = {20, 1};
     FunctionDocumentation::Category category_bitmapSubsetInRange = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapSubsetInRange = {
-        description_bitmapSubsetInRange,
-        syntax_bitmapSubsetInRange,
-        arguments_bitmapSubsetInRange,
-        returned_value_bitmapSubsetInRange,
-        examples_bitmapSubsetInRange,
-        introduced_in_bitmapSubsetInRange,
-        category_bitmapSubsetInRange
-    };
+    FunctionDocumentation documentation_bitmapSubsetInRange = {description_bitmapSubsetInRange, syntax_bitmapSubsetInRange, arguments_bitmapSubsetInRange, {}, returned_value_bitmapSubsetInRange, examples_bitmapSubsetInRange, introduced_in_bitmapSubsetInRange, category_bitmapSubsetInRange};
 
     factory.registerFunction<FunctionBitmapSubsetInRange>(documentation_bitmapSubsetInRange);
 
@@ -113,15 +89,7 @@ REGISTER_FUNCTION(Bitmap)
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapSubsetLimit = {20, 1};
     FunctionDocumentation::Category category_bitmapSubsetLimit = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapSubsetLimit = {
-        description_bitmapSubsetLimit,
-        syntax_bitmapSubsetLimit,
-        arguments_bitmapSubsetLimit,
-        returned_value_bitmapSubsetLimit,
-        examples_bitmapSubsetLimit,
-        introduced_in_bitmapSubsetLimit,
-        category_bitmapSubsetLimit
-    };
+    FunctionDocumentation documentation_bitmapSubsetLimit = {description_bitmapSubsetLimit, syntax_bitmapSubsetLimit, arguments_bitmapSubsetLimit, {}, returned_value_bitmapSubsetLimit, examples_bitmapSubsetLimit, introduced_in_bitmapSubsetLimit, category_bitmapSubsetLimit};
 
     factory.registerFunction<FunctionBitmapSubsetLimit>(documentation_bitmapSubsetLimit);
 
@@ -143,15 +111,7 @@ REGISTER_FUNCTION(Bitmap)
     };
     FunctionDocumentation::IntroducedIn introduced_in_subBitmap = {21, 9};
     FunctionDocumentation::Category category_subBitmap = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_subBitmap = {
-        description_subBitmap,
-        syntax_subBitmap,
-        arguments_subBitmap,
-        returned_value_subBitmap,
-        examples_subBitmap,
-        introduced_in_subBitmap,
-        category_subBitmap
-    };
+    FunctionDocumentation documentation_subBitmap = {description_subBitmap, syntax_subBitmap, arguments_subBitmap, {}, returned_value_subBitmap, examples_subBitmap, introduced_in_subBitmap, category_subBitmap};
 
     factory.registerFunction<FunctionBitmapSubsetOffsetLimit>(documentation_subBitmap);
 
@@ -177,16 +137,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapTransform = {20, 1};
     FunctionDocumentation::Category category_bitmapTransform = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapTransform =
-    {
-        description_bitmapTransform,
-        syntax_bitmapTransform,
-        arguments_bitmapTransform,
-        returned_value_bitmapTransform,
-        examples_bitmapTransform,
-        introduced_in_bitmapTransform,
-        category_bitmapTransform
-    };
+    FunctionDocumentation documentation_bitmapTransform = {description_bitmapTransform, syntax_bitmapTransform, arguments_bitmapTransform, {}, returned_value_bitmapTransform, examples_bitmapTransform, introduced_in_bitmapTransform, category_bitmapTransform};
 
     factory.registerFunction<FunctionBitmapTransform>(documentation_bitmapTransform);
 
@@ -206,15 +157,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapCardinality = {20, 1};
     FunctionDocumentation::Category category_bitmapCardinality = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapCardinality = {
-        description_bitmapCardinality,
-        syntax_bitmapCardinality,
-        arguments_bitmapCardinality,
-        returned_value_bitmapCardinality,
-        examples_bitmapCardinality,
-        introduced_in_bitmapCardinality,
-        category_bitmapCardinality
-    };
+    FunctionDocumentation documentation_bitmapCardinality = {description_bitmapCardinality, syntax_bitmapCardinality, arguments_bitmapCardinality, {}, returned_value_bitmapCardinality, examples_bitmapCardinality, introduced_in_bitmapCardinality, category_bitmapCardinality};
 
     factory.registerFunction<FunctionBitmapSelfCardinality>(documentation_bitmapCardinality);
 
@@ -234,15 +177,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapMin = {20, 1};
     FunctionDocumentation::Category category_bitmapMin = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapMin = {
-        description_bitmapMin,
-        syntax_bitmapMin,
-        arguments_bitmapMin,
-        returned_value_bitmapMin,
-        examples_bitmapMin,
-        introduced_in_bitmapMin,
-        category_bitmapMin
-    };
+    FunctionDocumentation documentation_bitmapMin = {description_bitmapMin, syntax_bitmapMin, arguments_bitmapMin, {}, returned_value_bitmapMin, examples_bitmapMin, introduced_in_bitmapMin, category_bitmapMin};
 
     factory.registerFunction<FunctionBitmapMin>(documentation_bitmapMin);
 
@@ -262,15 +197,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapMax = {20, 1};
     FunctionDocumentation::Category category_bitmapMax = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapMax = {
-        description_bitmapMax,
-        syntax_bitmapMax,
-        arguments_bitmapMax,
-        returned_value_bitmapMax,
-        examples_bitmapMax,
-        introduced_in_bitmapMax,
-        category_bitmapMax
-    };
+    FunctionDocumentation documentation_bitmapMax = {description_bitmapMax, syntax_bitmapMax, arguments_bitmapMax, {}, returned_value_bitmapMax, examples_bitmapMax, introduced_in_bitmapMax, category_bitmapMax};
 
     factory.registerFunction<FunctionBitmapMax>(documentation_bitmapMax);
 
@@ -291,15 +218,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapAndCardinality = {20, 1};
     FunctionDocumentation::Category category_bitmapAndCardinality = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapAndCardinality = {
-        description_bitmapAndCardinality,
-        syntax_bitmapAndCardinality,
-        arguments_bitmapAndCardinality,
-        returned_value_bitmapAndCardinality,
-        examples_bitmapAndCardinality,
-        introduced_in_bitmapAndCardinality,
-        category_bitmapAndCardinality
-    };
+    FunctionDocumentation documentation_bitmapAndCardinality = {description_bitmapAndCardinality, syntax_bitmapAndCardinality, arguments_bitmapAndCardinality, {}, returned_value_bitmapAndCardinality, examples_bitmapAndCardinality, introduced_in_bitmapAndCardinality, category_bitmapAndCardinality};
 
     factory.registerFunction<FunctionBitmapAndCardinality>(documentation_bitmapAndCardinality);
 
@@ -320,15 +239,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapOrCardinality = {20, 1};
     FunctionDocumentation::Category category_bitmapOrCardinality = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapOrCardinality = {
-        description_bitmapOrCardinality,
-        syntax_bitmapOrCardinality,
-        arguments_bitmapOrCardinality,
-        returned_value_bitmapOrCardinality,
-        examples_bitmapOrCardinality,
-        introduced_in_bitmapOrCardinality,
-        category_bitmapOrCardinality
-    };
+    FunctionDocumentation documentation_bitmapOrCardinality = {description_bitmapOrCardinality, syntax_bitmapOrCardinality, arguments_bitmapOrCardinality, {}, returned_value_bitmapOrCardinality, examples_bitmapOrCardinality, introduced_in_bitmapOrCardinality, category_bitmapOrCardinality};
 
     factory.registerFunction<FunctionBitmapOrCardinality>(documentation_bitmapOrCardinality);
 
@@ -349,15 +260,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapXorCardinality = {20, 1};
     FunctionDocumentation::Category category_bitmapXorCardinality = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapXorCardinality = {
-        description_bitmapXorCardinality,
-        syntax_bitmapXorCardinality,
-        arguments_bitmapXorCardinality,
-        returned_value_bitmapXorCardinality,
-        examples_bitmapXorCardinality,
-        introduced_in_bitmapXorCardinality,
-        category_bitmapXorCardinality
-    };
+    FunctionDocumentation documentation_bitmapXorCardinality = {description_bitmapXorCardinality, syntax_bitmapXorCardinality, arguments_bitmapXorCardinality, {}, returned_value_bitmapXorCardinality, examples_bitmapXorCardinality, introduced_in_bitmapXorCardinality, category_bitmapXorCardinality};
 
     factory.registerFunction<FunctionBitmapXorCardinality>(documentation_bitmapXorCardinality);
 
@@ -378,19 +281,11 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapAndnotCardinality = {20, 1};
     FunctionDocumentation::Category category_bitmapAndnotCardinality = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapAndnotCardinality = {
-        description_bitmapAndnotCardinality,
-        syntax_bitmapAndnotCardinality,
-        arguments_bitmapAndnotCardinality,
-        returned_value_bitmapAndnotCardinality,
-        examples_bitmapAndnotCardinality,
-        introduced_in_bitmapAndnotCardinality,
-        category_bitmapAndnotCardinality
-    };
+    FunctionDocumentation documentation_bitmapAndnotCardinality = {description_bitmapAndnotCardinality, syntax_bitmapAndnotCardinality, arguments_bitmapAndnotCardinality, {}, returned_value_bitmapAndnotCardinality, examples_bitmapAndnotCardinality, introduced_in_bitmapAndnotCardinality, category_bitmapAndnotCardinality};
 
     factory.registerFunction<FunctionBitmapAndnotCardinality>(documentation_bitmapAndnotCardinality);
 
-    // Documentation for bitmapAnd
+    /// Documentation for bitmapAnd
     FunctionDocumentation::Description description_bitmapAnd = "Computes the logical conjunction (AND) of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapAnd = "bitmapAnd(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapAnd = {
@@ -407,15 +302,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapAnd = {20, 1};
     FunctionDocumentation::Category category_bitmapAnd = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapAnd = {
-        description_bitmapAnd,
-        syntax_bitmapAnd,
-        arguments_bitmapAnd,
-        returned_value_bitmapAnd,
-        examples_bitmapAnd,
-        introduced_in_bitmapAnd,
-        category_bitmapAnd
-    };
+    FunctionDocumentation documentation_bitmapAnd = {description_bitmapAnd, syntax_bitmapAnd, arguments_bitmapAnd, {}, returned_value_bitmapAnd, examples_bitmapAnd, introduced_in_bitmapAnd, category_bitmapAnd};
 
     factory.registerFunction<FunctionBitmapAnd>(documentation_bitmapAnd);
 
@@ -436,15 +323,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapOr = {20, 1};
     FunctionDocumentation::Category category_bitmapOr = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapOr = {
-        description_bitmapOr,
-        syntax_bitmapOr,
-        arguments_bitmapOr,
-        returned_value_bitmapOr,
-        examples_bitmapOr,
-        introduced_in_bitmapOr,
-        category_bitmapOr
-    };
+    FunctionDocumentation documentation_bitmapOr = {description_bitmapOr, syntax_bitmapOr, arguments_bitmapOr, {}, returned_value_bitmapOr, examples_bitmapOr, introduced_in_bitmapOr, category_bitmapOr};
 
     factory.registerFunction<FunctionBitmapOr>(documentation_bitmapOr);
 
@@ -465,15 +344,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapXor = {20, 1};
     FunctionDocumentation::Category category_bitmapXor = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapXor = {
-        description_bitmapXor,
-        syntax_bitmapXor,
-        arguments_bitmapXor,
-        returned_value_bitmapXor,
-        examples_bitmapXor,
-        introduced_in_bitmapXor,
-        category_bitmapXor
-    };
+    FunctionDocumentation documentation_bitmapXor = {description_bitmapXor, syntax_bitmapXor, arguments_bitmapXor, {}, returned_value_bitmapXor, examples_bitmapXor, introduced_in_bitmapXor, category_bitmapXor};
 
     factory.registerFunction<FunctionBitmapXor>(documentation_bitmapXor);
 
@@ -494,15 +365,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapAndnot = {20, 1};
     FunctionDocumentation::Category category_bitmapAndnot = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapAndnot = {
-        description_bitmapAndnot,
-        syntax_bitmapAndnot,
-        arguments_bitmapAndnot,
-        returned_value_bitmapAndnot,
-        examples_bitmapAndnot,
-        introduced_in_bitmapAndnot,
-        category_bitmapAndnot
-    };
+    FunctionDocumentation documentation_bitmapAndnot = {description_bitmapAndnot, syntax_bitmapAndnot, arguments_bitmapAndnot, {}, returned_value_bitmapAndnot, examples_bitmapAndnot, introduced_in_bitmapAndnot, category_bitmapAndnot};
 
     factory.registerFunction<FunctionBitmapAndnot>(documentation_bitmapAndnot);
 
@@ -523,15 +386,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapHasAll = {20, 1};
     FunctionDocumentation::Category category_bitmapHasAll = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapHasAll = {
-        description_bitmapHasAll,
-        syntax_bitmapHasAll,
-        arguments_bitmapHasAll,
-        returned_value_bitmapHasAll,
-        examples_bitmapHasAll,
-        introduced_in_bitmapHasAll,
-        category_bitmapHasAll
-    };
+    FunctionDocumentation documentation_bitmapHasAll = {description_bitmapHasAll, syntax_bitmapHasAll, arguments_bitmapHasAll, {}, returned_value_bitmapHasAll, examples_bitmapHasAll, introduced_in_bitmapHasAll, category_bitmapHasAll};
 
     factory.registerFunction<FunctionBitmapHasAll>(documentation_bitmapHasAll);
 
@@ -552,15 +407,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapHasAny = {20, 1};
     FunctionDocumentation::Category category_bitmapHasAny = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapHasAny = {
-        description_bitmapHasAny,
-        syntax_bitmapHasAny,
-        arguments_bitmapHasAny,
-        returned_value_bitmapHasAny,
-        examples_bitmapHasAny,
-        introduced_in_bitmapHasAny,
-        category_bitmapHasAny
-    };
+    FunctionDocumentation documentation_bitmapHasAny = {description_bitmapHasAny, syntax_bitmapHasAny, arguments_bitmapHasAny, {}, returned_value_bitmapHasAny, examples_bitmapHasAny, introduced_in_bitmapHasAny, category_bitmapHasAny};
 
     factory.registerFunction<FunctionBitmapHasAny>(documentation_bitmapHasAny);
 
@@ -581,15 +428,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapContains = {20, 1};
     FunctionDocumentation::Category category_bitmapContains = FunctionDocumentation::Category::Bitmap;
-    FunctionDocumentation documentation_bitmapContains = {
-        description_bitmapContains,
-        syntax_bitmapContains,
-        arguments_bitmapContains,
-        returned_value_bitmapContains,
-        examples_bitmapContains,
-        introduced_in_bitmapContains,
-        category_bitmapContains
-    };
+    FunctionDocumentation documentation_bitmapContains = {description_bitmapContains, syntax_bitmapContains, arguments_bitmapContains, {}, returned_value_bitmapContains, examples_bitmapContains, introduced_in_bitmapContains, category_bitmapContains};
 
     factory.registerFunction<FunctionBitmapContains>(documentation_bitmapContains);
 }

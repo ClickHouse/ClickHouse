@@ -1,0 +1,53 @@
+---
+slug: /cloud/managed-postgres/backup-and-restore
+sidebarTitle: 'Backup e restauração'
+title: 'Backup e restauração'
+description: 'Entenda as estratégias de backup e a recuperação pontual do ClickHouse Managed Postgres'
+keywords: ['backup', 'restauração', 'recuperação pontual', 'pitr', 'recuperação de desastres', 'backup do Postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
+
+O Managed Postgres garante a segurança e a disponibilidade dos seus dados por meio de backups automatizados e recuperação em um ponto no tempo. Você pode ver o histórico de backups e iniciar restaurações na visualização **Backups** da sua instância.
+
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt="Visualização Backups mostrando o histórico de backups e opções de recuperação em um ponto no tempo" size="lg" border />
+
+<div id="backups">
+  ## Backups
+</div>
+
+<div id="backup-frequency">
+  ### Frequência de backup
+</div>
+
+O Managed Postgres faz backups completos diários do seu banco de dados. Além dos backups completos, os arquivos de Write-Ahead Log (WAL) são arquivados a cada 60 segundos ou quando 16 MB de dados de WAL se acumulam, o que ocorrer primeiro. Essa combinação de backups completos com o arquivamento contínuo de WAL permite a recuperação em um ponto no tempo para qualquer momento dentro da janela de retenção.
+
+<div id="retention-period">
+  ### Período de retenção
+</div>
+
+Os backups são mantidos por 7 dias, o que oferece uma janela adequada para recuperação em caso de perda ou corrupção de dados. Se precisar de um período de retenção de backups maior, entre em contato com o [suporte](https://clickhouse.com/support/program).
+
+<div id="storage-and-durability">
+  ### Armazenamento e durabilidade
+</div>
+
+Os backups são replicados em vários servidores usando codificação por apagamento, o que garante que continuem acessíveis mesmo que alguns servidores de armazenamento fiquem indisponíveis. O armazenamento de backups é isolado no nível do bucket — cada instância do Managed Postgres tem seu próprio storage bucket dedicado, e as credenciais são restritas para permitir acesso apenas aos backups dessa instância.
+
+<div id="point-in-time-recovery">
+  ## Recuperação em um ponto no tempo
+</div>
+
+A recuperação em um ponto no tempo permite restaurar seu banco de dados para qualquer momento específico dentro da janela de retenção de backups. Isso é útil para recuperar-se de exclusão acidental de dados, corrupção ou outros problemas em que seja necessário reverter para um estado conhecido e íntegro.
+
+Para executar uma recuperação em um ponto no tempo:
+
+1. Acesse a aba **Backups** da sua instância do Managed Postgres.
+2. Na seção **Point in time recovery**, selecione a data e a hora de destino (em UTC) para as quais deseja restaurar.
+3. Clique em **Restore to point in time**.
+
+A operação de restauração cria uma nova instância do Managed Postgres com o estado do seu banco de dados exatamente como estava no momento selecionado. Sua instância original permanece inalterada, permitindo que você verifique os dados restaurados antes de decidir qual instância manter.

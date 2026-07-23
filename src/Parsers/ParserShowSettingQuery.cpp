@@ -18,7 +18,7 @@ bool ParserShowSettingQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!ParserIdentifier().parse(pos, setting_name_identifier, expected))
         return false;
 
-    node = std::make_shared<ASTShowSettingQuery>(getIdentifierName(setting_name_identifier));
+    node = make_intrusive<ASTShowSettingQuery>(getIdentifierName(setting_name_identifier));
 
     return true;
 }

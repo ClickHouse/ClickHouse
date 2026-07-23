@@ -26,6 +26,16 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
         partition->format(ostr, settings, state, frame);
     }
 
+    if (dry_run)
+    {
+        ostr << " DRY RUN";
+        if (parts_list)
+        {
+            ostr << " PARTS ";
+            parts_list->format(ostr, settings, state, frame);
+        }
+    }
+
     if (final)
         ostr << " FINAL";
 
@@ -34,6 +44,9 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (cleanup)
         ostr << " CLEANUP";
+
+    if (manifest)
+        ostr << " MANIFEST";
 
     if (deduplicate_by_columns)
     {

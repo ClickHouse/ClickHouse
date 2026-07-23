@@ -88,6 +88,7 @@ SELECT
    ) as e
 FROM ts_data;
 
+SET automatic_parallel_replicas_mode = 0;
 WITH
     100 as begin,
     200 as end,

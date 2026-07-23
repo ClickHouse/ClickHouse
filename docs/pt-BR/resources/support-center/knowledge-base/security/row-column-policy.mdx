@@ -1,0 +1,21 @@
+---
+date: 2023-08-13
+title: "O ClickHouse oferece suporte à segurança em nível de linha e de coluna?"
+description: "Saiba mais sobre as restrições de acesso em nível de linha e de coluna no ClickHouse e no ClickHouse Cloud e como implementar Controle de Acesso Baseado em Funções (RBAC) com políticas."
+tags: ['Segurança e Autenticação']
+keywords: ['Nível de linha', 'Nível de coluna', 'Segurança']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
+  ## ClickHouse e ClickHouse Cloud oferecem suporte a restrições de acesso em nível de linha e de coluna
+</div>
+
+O ClickHouse e o ClickHouse Cloud oferecem suporte a restrições de acesso em nível de linha e de coluna para usuários com acesso somente leitura, necessárias para implementar um modelo de Controle de Acesso Baseado em Funções (RBAC).
+
+As [Políticas de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management) podem ser usadas para especificar quais linhas serão retornadas a um usuário com acesso somente leitura quando ele consultar uma tabela. O ClickHouse Cloud vem configurado para habilitar esse fluxo de trabalho orientado por SQL por padrão. Para usar esse fluxo de trabalho, [CREATE](/pt-BR/reference/statements/create/user) um usuário, [GRANT](/pt-BR/reference/statements/grant) privilégios ao usuário em uma tabela e, em seguida, defina a [ROW POLICY](/pt-BR/concepts/features/security/access-rights#row-policy-management) apropriada. Quando o usuário executa um `SELECT * FROM table`, apenas as linhas permitidas pela política serão exibidas.
+
+As restrições em nível de coluna podem ser especificadas diretamente com a [instrução GRANT](/pt-BR/reference/statements/grant) para habilitar acesso em nível de tabela para usuários e funções. Os usuários *só podem* incluir, em uma consulta, colunas às quais tenham acesso. Selecionar colunas restritas de uma tabela à qual o usuário não tem acesso a todas as colunas especificadas, como na consulta `SELECT * FROM table`, retornará um erro informando que o usuário não tem permissões suficientes.

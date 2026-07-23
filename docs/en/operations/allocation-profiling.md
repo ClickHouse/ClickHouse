@@ -11,9 +11,14 @@ import TabItem from '@theme/TabItem';
 
 # Allocation profiling
 
-ClickHouse uses [jemalloc](https://github.com/jemalloc/jemalloc) as its global allocator. Jemalloc comes with some tools for allocation sampling and profiling.  
-To make allocation profiling more convenient, ClickHouse and Keeper allow you to control sampling using configs, query settings,`SYSTEM` commands and four letter word (4LW) commands in Keeper.   
-Additionally, samples can be collected into `system.trace_log` table under `JemallocSample` type.
+ClickHouse uses [jemalloc](https://github.com/jemalloc/jemalloc) as its global allocator. Jemalloc comes with tools for allocation sampling and profiling.
+
+ClickHouse and Keeper allow you to control sampling using configs, query settings, `SYSTEM` commands and four letter word (4LW) commands in Keeper. There are several ways to inspect the results:
+
+- Collect samples into `system.trace_log` under the `JemallocSample` type for per-query analysis.
+- View live memory statistics and fetch heap profiles through the built-in [jemalloc web UI](#jemalloc-web-ui) (26.2+).
+- Query the current heap profile directly from SQL using [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql) (26.2+).
+- Flush heap profiles to disk and analyze them with [`jeprof`](#analyzing-heap-profile-files-with-jeprof).
 
 :::note
 
@@ -24,7 +29,7 @@ For older versions, please check [allocation profiling for versions before 25.9]
 
 ## Sampling allocations {#sampling-allocations}
 
-If you want to sample and profile allocations in `jemalloc`, you need to start ClickHouse/Keeper with config `jemalloc_enable_global_profiler` enabled.
+To sample and profile allocations, start ClickHouse/Keeper with the `jemalloc_enable_global_profiler` config enabled:
 
 ```xml
 <clickhouse>
@@ -34,7 +39,7 @@ If you want to sample and profile allocations in `jemalloc`, you need to start C
 
 `jemalloc` will sample allocations and store the information internally.
 
-You can also enable allocations per query by using `jemalloc_enable_profiler` setting.
+You can also enable sampling per query using the `jemalloc_enable_profiler` setting.
 
 :::warning Warning
 Because ClickHouse is an allocation-heavy application, jemalloc sampling may incur performance overhead.
@@ -42,8 +47,8 @@ Because ClickHouse is an allocation-heavy application, jemalloc sampling may inc
 
 ## Storing jemalloc samples in `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
 
-You can store all the jemalloc samples in `system.trace_log` under `JemallocSample` type.
-To enable it globally you can use config `jemalloc_collect_global_profile_samples_in_trace_log`.
+You can store jemalloc samples in `system.trace_log` under the `JemallocSample` type.
+To enable it globally, use the `jemalloc_collect_global_profile_samples_in_trace_log` config:
 
 ```xml
 <clickhouse>
@@ -55,11 +60,11 @@ To enable it globally you can use config `jemalloc_collect_global_profile_sample
 Because ClickHouse is an allocation-heavy application, collecting all samples in system.trace_log may incur high load.
 :::
 
-You can also enable it per query by using `jemalloc_collect_profile_samples_in_trace_log` setting.
+You can also enable it per query using the `jemalloc_collect_profile_samples_in_trace_log` setting.
 
-### Example of analyzing memory usage of a query using `system.trace_log` {#example-analyzing-memory-usage-trace-log}
+### Example: analyzing memory usage of a query {#example-analyzing-memory-usage-trace-log}
 
-First, we need to run the query with enabled jemalloc profiler and collect the samples for it into `system.trace_log`:
+First, run a query with the jemalloc profiler enabled and collect the samples into `system.trace_log`:
 
 ```sql
 SELECT *
@@ -78,16 +83,18 @@ Peak memory usage: 12.65 MiB.
 ```
 
 :::note
-If ClickHouse was started with `jemalloc_enable_global_profiler`, you don't have to enable `jemalloc_enable_profiler`.   
+If ClickHouse was started with `jemalloc_enable_global_profiler`, you don't have to enable `jemalloc_enable_profiler`.
 Same is true for `jemalloc_collect_global_profile_samples_in_trace_log` and `jemalloc_collect_profile_samples_in_trace_log`.
 :::
 
-We will flush the `system.trace_log`:
+Flush the `system.trace_log`:
 
 ```sql
 SYSTEM FLUSH LOGS trace_log
 ```
-and query it to get memory usage of the query we run for each time point:
+
+Then query it to get cumulative memory usage over time:
+
 ```sql
 WITH per_bucket AS
 (
@@ -110,7 +117,7 @@ FROM per_bucket
 ORDER BY bucket_time
 ```
 
-We can also find the time where the memory usage was the highest:
+Find the time where memory usage was the highest:
 
 ```sql
 SELECT
@@ -140,7 +147,7 @@ FROM
 )
 ```
 
-We can use that result to see from where did we have the most active allocations at that time point:
+Using that result, see which allocation stacks were most active at the peak:
 
 ```sql
 SELECT
@@ -173,16 +180,134 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-## Flushing heap profiles {#flushing-heap-profiles}
+## Jemalloc web UI {#jemalloc-web-ui}
 
-By default, the heap profile file will be generated in `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` where `_pid_` is the PID of ClickHouse and `_seqnum_` is the global sequence number for the current heap profile.  
-For Keeper, the default file is `/tmp/jemalloc_keeper._pid_._seqnum_.heap`, and follows the same rules.
+:::note
+This section is applicable for versions 26.2+.
+:::
 
-You can tell `jemalloc` to flush the current profile by running:
+ClickHouse provides a built-in web UI for viewing jemalloc memory statistics at the `/jemalloc` HTTP endpoint.
+It displays live memory metrics with charts, including allocated, active, resident, and mapped memory, as well as per-arena and per-bin statistics.
+You can also fetch global and per-query heap profiles directly from the UI.
 
 <Tabs groupId="binary">
 <TabItem value="clickhouse" label="ClickHouse">
-    
+
+```text
+http://localhost:8123/jemalloc
+```
+
+The server UI includes all tabs: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, and Raw Output.
+
+</TabItem>
+<TabItem value="keeper" label="Keeper">
+
+```text
+http://localhost:9182/jemalloc
+```
+
+The Keeper UI is available on the HTTP control port. This port is **disabled by default** and must be explicitly enabled by setting `keeper_server.http_control.port` in the Keeper configuration:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <http_control>
+            <port>9182</port>
+        </http_control>
+    </keeper_server>
+</clickhouse>
+```
+
+Once enabled, the UI provides the same visualizations as the server — Summary, Allocations, Arenas, Operations, Global Profiler, and Raw Output — except for the Query Profiler tab which requires SQL and `system.trace_log`.
+
+:::warning Security
+The Keeper HTTP control port does not have application-level authentication. Unlike the ClickHouse Server jemalloc UI — where all data queries go through the SQL HTTP handler and require user/password credentials — the Keeper REST API endpoints are unauthenticated. This is consistent with other Keeper HTTP control endpoints (commands, storage, dashboard).
+
+Restrict access to this port using network-level controls: bind Keeper to localhost, use firewall rules, or place it behind a reverse proxy with authentication. When no `listen_host` is configured, Keeper defaults to listening on localhost only.
+:::
+
+Keeper also exposes REST API endpoints for programmatic access:
+
+- `GET /jemalloc/stats` — raw `malloc_stats_print` output
+- `GET /jemalloc/status` — profiling state as JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
+- `GET /jemalloc/profile?format={collapsed|raw}` — flushes a heap profile with server-side symbolization, returns collapsed stacks suitable for flame graph rendering (default) or the raw jemalloc dump
+
+</TabItem>
+</Tabs>
+
+## Fetching heap profiles from SQL {#fetching-heap-profiles-from-sql}
+
+:::note
+This section is applicable for versions 26.2+.
+:::
+
+The `system.jemalloc_profile_text` system table lets you fetch and view the current jemalloc heap profile directly from SQL, without needing external tools or flushing to disk first.
+
+The table has a single column:
+
+| Column | Type   | Description                                      |
+|--------|--------|--------------------------------------------------|
+| `line` | String | Line from the symbolized jemalloc heap profile.  |
+
+You can query the table directly — there is no need to flush a heap profile beforehand:
+
+```sql
+SELECT * FROM system.jemalloc_profile_text
+```
+
+### Output format {#output-format}
+
+The output format is controlled by the `jemalloc_profile_text_output_format` setting, which supports three values:
+
+- `raw` — raw heap profile as produced by jemalloc.
+- `symbolized` — jeprof-compatible format with embedded function symbols. Since symbols are already embedded, `jeprof` can analyze the output without requiring the ClickHouse binary.
+- `collapsed` (default) — FlameGraph-compatible collapsed stacks, one stack per line with the byte count.
+
+For example, to get the raw profile:
+
+```sql
+SELECT * FROM system.jemalloc_profile_text
+SETTINGS jemalloc_profile_text_output_format = 'raw'
+```
+
+To get symbolized output:
+
+```sql
+SELECT * FROM system.jemalloc_profile_text
+SETTINGS jemalloc_profile_text_output_format = 'symbolized'
+```
+
+### Additional settings {#fetching-heap-profiles-settings}
+
+- `jemalloc_profile_text_symbolize_with_inline` (Bool, default: `true`) — Whether to include inline frames when symbolizing. Disabling this speeds up symbolization significantly but loses precision as inlined function calls will not appear in the stacks. Only affects `symbolized` and `collapsed` formats.
+- `jemalloc_profile_text_collapsed_use_count` (Bool, default: `false`) — When using the `collapsed` format, aggregate by allocation count instead of bytes.
+
+### Example: generating a flame graph from SQL {#example-flamegraph-from-sql}
+
+Since the default output format is `collapsed`, you can pipe the output directly to FlameGraph:
+
+```sh
+clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text" | flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+To generate a flame graph by allocation count instead of bytes:
+
+```sh
+clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
+```
+
+## Flushing heap profiles to disk {#flushing-heap-profiles}
+
+If you need to save heap profiles as files for offline analysis with `jeprof`, you can flush them to disk.
+
+By default, the heap profile file will be generated in `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap` where `_pid_` is the PID of ClickHouse and `_seqnum_` is the global sequence number for the current heap profile.
+For Keeper, the default file is `/tmp/jemalloc_keeper._pid_._seqnum_.heap`, and follows the same rules.
+
+To flush the current profile:
+
+<Tabs groupId="binary">
+<TabItem value="clickhouse" label="ClickHouse">
+
 ```sql
 SYSTEM JEMALLOC FLUSH PROFILE
 ```
@@ -191,7 +316,7 @@ It will return the location of the flushed profile.
 
 </TabItem>
 <TabItem value="keeper" label="Keeper">
-    
+
 ```sh
 echo jmfp | nc localhost 9181
 ```
@@ -199,7 +324,7 @@ echo jmfp | nc localhost 9181
 </TabItem>
 </Tabs>
 
-A different location can be defined by appending the `MALLOC_CONF` environment variable with the `prof_prefix` option.  
+A different location can be defined by appending the `MALLOC_CONF` environment variable with the `prof_prefix` option.
 For example, if you want to generate profiles in the `/data` folder where the filename prefix will be `my_current_profile`, you can run ClickHouse/Keeper with the following environment variable:
 
 ```sh
@@ -208,16 +333,49 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 The generated file will be appended to the prefix PID and sequence number.
 
-## Analyzing heap profiles {#analyzing-heap-profiles}
+## Analyzing heap profile files with `jeprof` {#analyzing-heap-profile-files-with-jeprof}
 
-After heap profiles have been generated, they need to be analyzed.  
-For that, `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) can be used. It can be installed in multiple ways:
+After flushing heap profiles to disk, they can be analyzed using `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). It can be installed in multiple ways:
 - Using the system's package manager
 - Cloning the [jemalloc repo](https://github.com/jemalloc/jemalloc) and running `autogen.sh` from the root folder. This will provide you with the `jeprof` script inside the `bin` folder
 
+There are many different output formats available. Run `jeprof --help` for the full list of options.
+
+### Symbolized heap profiles {#symbolized-heap-profiles}
+
+Starting from version 26.1+, ClickHouse automatically generates symbolized heap profiles when you flush using `SYSTEM JEMALLOC FLUSH PROFILE`.
+The symbolized profile (with `.symbolized` extension) contains embedded function symbols and can be analyzed by `jeprof` without requiring the ClickHouse binary.
+
+For example, when you run:
+
+```sql
+SYSTEM JEMALLOC FLUSH PROFILE
+```
+
+ClickHouse will return the path to the symbolized profile (e.g., `/tmp/jemalloc_clickhouse.12345.0.heap.symbolized`).
+
+You can then analyze it directly with `jeprof`:
+
+```sh
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --output_format [ > output_file]
+```
+
 :::note
-`jeprof` uses `addr2line` to generate stacktraces which can be really slow.  
-If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.   
+
+**No binary required**: When using symbolized profiles (`.symbolized` files), you don't need to provide the ClickHouse binary path to `jeprof`. This makes it much easier to analyze profiles on different machines or after the binary has been updated.
+
+:::
+
+If you have an older non-symbolized heap profile and still have access to the ClickHouse binary, you can use the traditional approach:
+
+```sh
+jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
+```
+
+:::note
+
+For non-symbolized profiles, `jeprof` uses `addr2line` to generate stacktraces which can be really slow.
+If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.
 
 ```bash
 git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
@@ -226,37 +384,46 @@ cargo build --features bin --release
 cp ./target/release/addr2line path/to/current/addr2line
 ```
 
-Alternatively, `llvm-addr2line` works equally well.
+Alternatively, `llvm-addr2line` works equally well (But note, that `llvm-objdump` is not compatible with `jeprof`)
+
+And later use it like this `jeprof --tools addr2line:/usr/bin/llvm-addr2line,nm:/usr/bin/llvm-nm,objdump:/usr/bin/objdump,c++filt:/usr/bin/llvm-cxxfilt`
 
 :::
 
-There are many different formats to generate from the heap profile using `jeprof`.
-It is recommended to run `jeprof --help` for information on the usage and the various options the tool provides. 
-
-In general, the `jeprof` command is used as:
+When comparing two profiles, you can use the `--base` argument:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
-```
-
-If you want to compare which allocations happened between two profiles you can set the `base` argument:
-
-```sh
-jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
+jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
 ### Examples {#examples}
 
-- if you want to generate a text file with each procedure written per line:
+Using symbolized profiles (recommended):
+
+- Generate a text file with each procedure written per line:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --text > result.txt
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --text > result.txt
 ```
 
-- if you want to generate a PDF file with a call-graph:
+- Generate a PDF file with a call-graph:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --pdf > result.pdf
+```
+
+Using non-symbolized profiles (requires binary):
+
+- Generate a text file with each procedure written per line:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result.txt
+```
+
+- Generate a PDF file with a call-graph:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
 ### Generating a flame graph {#generating-flame-graph}
@@ -266,7 +433,13 @@ jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
 You need to use the `--collapsed` argument:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --collapsed > result.collapsed
+```
+
+Or with a non-symbolized profile:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --collapsed > result.collapsed
 ```
 
 After that, you can use many different tools to visualize collapsed stacks.
@@ -282,8 +455,8 @@ Another interesting tool is [speedscope](https://www.speedscope.app/) that allow
 ## Additional options for the profiler {#additional-options-for-profiler}
 
 `jemalloc` has many different options available, which are related to the profiler. They can be controlled by modifying the `MALLOC_CONF` environment variable.
-For example, the interval between allocation samples can be controlled with `lg_prof_sample`.  
-If you want to dump the heap profile every N bytes you can enable it using `lg_prof_interval`.  
+For example, the interval between allocation samples can be controlled with `lg_prof_sample`.
+If you want to dump the heap profile every N bytes you can enable it using `lg_prof_interval`.
 
 It is recommended to check `jemalloc`s [reference page](https://jemalloc.net/jemalloc.3.html) for a complete list of options.
 
@@ -311,6 +484,14 @@ FORMAT Vertical
 Contains information about memory allocations done via the jemalloc allocator in different size classes (bins) aggregated from all arenas.
 
 [Reference](/operations/system-tables/jemalloc_bins)
+
+### System table `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
+
+Returns the full output of `malloc_stats_print()` as a single string. Equivalent to the `SYSTEM JEMALLOC STATS` command.
+
+```sql
+SELECT * FROM system.jemalloc_stats
+```
 
 ### Prometheus {#prometheus}
 

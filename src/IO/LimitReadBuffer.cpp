@@ -1,8 +1,6 @@
-#include <limits>
 #include <IO/LimitReadBuffer.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -74,6 +72,19 @@ LimitReadBuffer::~LimitReadBuffer()
     /// Update underlying buffer's position in case when limit wasn't reached.
     if (!working_buffer.empty())
         in->position() = position();
+}
+
+bool LimitReadBuffer::poll(size_t timeout_microseconds)
+{
+    if (hasPendingData())
+        return true;
+
+    in->position() = position();
+
+    if (bytes >= getEffectiveBufferSize())
+        return true;
+
+    return in->poll(timeout_microseconds);
 }
 
 size_t LimitReadBuffer::getEffectiveBufferSize() const

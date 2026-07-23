@@ -28,14 +28,14 @@ String QuotaTypeInfo::valueToString(QuotaValue value) const
 {
     if (!(value % output_denominator))
         return std::to_string(value / output_denominator);
-    return toString(static_cast<double>(value) / output_denominator);
+    return toString(static_cast<double>(value) / static_cast<double>(output_denominator));
 }
 
 QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
 {
     if (output_denominator == 1)
         return static_cast<QuotaValue>(parse<UInt64>(str));
-    return static_cast<QuotaValue>(parse<Float64>(str) * output_denominator);
+    return static_cast<QuotaValue>(parse<Float64>(str) * static_cast<Float64>(output_denominator));
 }
 
 String QuotaTypeInfo::valueToStringWithName(QuotaValue value) const
@@ -179,6 +179,16 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
             );
             return info;
         }
+        case QuotaType::QUERIES_PER_NORMALIZED_HASH:
+        {
+            static const auto info = make_info(
+                "QUERIES_PER_NORMALIZED_HASH",
+                "The current maximum number of executions of any single normalized query within the current period of time.",
+                "The maximum number of executions of any single normalized query allowed within the specified period of time.",
+                1
+            );
+            return info;
+        }
         case QuotaType::MAX: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota type: {}", static_cast<int>(type));
@@ -251,6 +261,11 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         case QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS:
         {
             static const auto info = make_info("CLIENT_KEY_OR_IP_ADDRESS");
+            return info;
+        }
+        case QuotaKeyType::NORMALIZED_QUERY_HASH:
+        {
+            static const auto info = make_info("NORMALIZED_QUERY_HASH");
             return info;
         }
         case QuotaKeyType::MAX: break;

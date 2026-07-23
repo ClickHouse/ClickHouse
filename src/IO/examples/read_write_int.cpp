@@ -7,9 +7,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleReadWriteInt(int, char **)
 {
     try
     {

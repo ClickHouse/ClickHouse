@@ -21,8 +21,8 @@ Returns the atan2 as the angle in the Euclidean plane, given in radians, between
 )";
     FunctionDocumentation::Syntax syntax = "atan2(y, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"y", "y-coordinate of the point through which the ray passes.", {"(U)Int*", "Float*", "Decimal*"}},
-        {"x", "x-coordinate of the point through which the ray passes.", {"(U)Int*", "Float*", "Decimal*"}}
+        {"y", "y-coordinate of the point through which the ray passes.", {"(U)Int*", "Float*", "BFloat16", "Decimal*"}},
+        {"x", "x-coordinate of the point through which the ray passes.", {"(U)Int*", "Float*", "BFloat16", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the angle `θ` such that `-π < θ ≤ π`, in radians", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -30,7 +30,7 @@ Returns the atan2 as the angle in the Euclidean plane, given in radians, between
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAtan2>(documentation, FunctionFactory::Case::Insensitive);
 }

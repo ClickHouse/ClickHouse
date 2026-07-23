@@ -1,6 +1,9 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -20,8 +23,15 @@
 namespace DB
 {
 StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
+    auto creation_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Explicit", static_cast<Int8>(0)},
+            {"Implicit", static_cast<Int8>(1)},
+        });
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
         {
@@ -31,15 +41,25 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "type", std::make_shared<DataTypeString>(), "Index type."},
             { "type_full", std::make_shared<DataTypeString>(), "Index type expression from create statement."},
             { "expr", std::make_shared<DataTypeString>(), "Expression for the index calculation."},
+            { "creation", creation_datatype, "Whether the index was created implicitly (via add_minmax_index_for_numeric_columns or similar)"},
             { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
-            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
+            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
         }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-class DataSkippingIndicesSource : public ISource
+VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+class DataSkippingIndicesSource final : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -77,7 +97,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx).toString();
+                database_name = databases->getDataAt(database_idx);
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (database)
@@ -102,7 +122,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
@@ -145,6 +165,11 @@ protected:
                         else
                             res_columns[res_index++]->insertDefault();
                     }
+
+                    /// 'creation' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(index.is_implicitly_created);
+
                     // 'granularity' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
@@ -156,7 +181,6 @@ protected:
                         res_columns[res_index++]->insert(secondary_index_size.data_compressed);
 
                     // 'uncompressed bytes' column
-
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
 
@@ -227,13 +251,13 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 }
 
-void StorageSystemDataSkippingIndices::read(
+void StorageSystemDataSkippingIndices::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -268,12 +292,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
             continue;
         if (database->isExternal())
             continue;
-
-        /// Lazy database can contain only very primitive tables,
-        /// it cannot contain tables with data skipping indices.
-        /// Skip it to avoid unnecessary tables loading in the Lazy database.
-        if (database->getEngineName() != "Lazy")
-            column->insert(database_name);
+        column->insert(database_name);
     }
 
     /// Condition on "database" in a query acts like an index.
@@ -287,3 +306,6 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataSkippingIndices) }

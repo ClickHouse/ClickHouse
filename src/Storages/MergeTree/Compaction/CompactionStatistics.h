@@ -20,16 +20,16 @@ UInt64 estimateAtLeastAvailableSpace(const PartsRange & range);
 /** Get maximum total size of parts to do merge, at current moment of time.
   * It depends on number of free threads in background_pool and amount of free space in disk.
   */
-UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data);
+UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data);
 
 /** For explicitly passed size of pool and number of used tasks.
   * This method could be used to calculate threshold depending on number of tasks in replication queue.
   */
-UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count);
+UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count);
 
 /** Same as above but with settings specification.
   */
-UInt64 getMaxSourcePartsSizeForMerge(
+UInt64 getMaxSourcePartsBytesForMerge(
     size_t max_count,
     size_t scheduled_tasks_count,
     size_t max_unreserved_free_space,
@@ -40,7 +40,17 @@ UInt64 getMaxSourcePartsSizeForMerge(
 /** Get maximum total size of parts to do mutation, at current moment of time.
   * It depends only on amount of free space in disk.
   */
-UInt64 getMaxSourcePartSizeForMutation(const MergeTreeData & data, String * out_log_comment = nullptr);
+UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment = nullptr);
+
+/** Returns maximal allowed number of rows in part for the storage.
+  * If storage has text or vector similarity indexes, the number of rows in part cannot exceed 2^32.
+  */
+UInt64 getMaxResultPartRowsCount(const MergeTreeData & data);
+
+/** Returns upper bound on number of rows in result part after merge.
+  * Actual rows count may be less than this value for special MergeTree storages.
+ */
+UInt64 estimateResultPartRowsCount(const PartsRange & parts);
 
 };
 

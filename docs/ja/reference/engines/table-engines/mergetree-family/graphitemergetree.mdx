@@ -1,0 +1,289 @@
+---
+description: 'Graphite データの間引きと集約/平均化（ロールアップ）向けに設計されています。'
+sidebarTitle: 'GraphiteMergeTree'
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'GraphiteMergeTree テーブルエンジン'
+doc_type: 'guide'
+---
+
+このエンジンは、[Graphite](http://graphite.readthedocs.io/en/latest/index.html) データの間引きと集約/平均化 (ロールアップ) 向けに設計されています。ClickHouse を Graphite のデータストアとして使用したい開発者にとって有用です。
+
+ロールアップが不要であれば、Graphite データの保存には任意の ClickHouse テーブルエンジンを使用できますが、ロールアップが必要な場合は `GraphiteMergeTree` を使用してください。このエンジンにより、ストレージ使用量を削減し、Graphite からのクエリ効率を向上させることができます。
+
+このエンジンは [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) の特性を継承します。
+
+<div id="creating-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    Path String,
+    Time DateTime,
+    Value Float64,
+    Version <Numeric_type>
+    ...
+) ENGINE = GraphiteMergeTree(config_section)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+詳細については、[CREATE TABLE](/ja/reference/statements/create/table)クエリの説明を参照してください。
+
+Graphite データ用のテーブルには、次のデータに対応する以下のカラムが必要です。
+
+* メトリック名 (Graphite sensor) 。データ型: `String`。
+
+* メトリックの計測時刻。データ型: `DateTime`。
+
+* メトリックの値。データ型: `Float64`。
+
+* メトリックのバージョン。データ型: 任意の数値型 (ClickHouse は、バージョンが最も高い行を保持し、バージョンが同じ場合は最後に書き込まれた行を保持します。その他の行はデータパーツのマージ時に削除されます) 。
+
+これらのカラム名はロールアップ設定で指定する必要があります。
+
+**GraphiteMergeTree のパラメータ**
+
+* `config_section` — ロールアップルールが設定されている設定ファイル内のセクション名。
+
+**クエリ句**
+
+`GraphiteMergeTree` テーブルを作成する際は、`MergeTree` テーブルを作成する場合と同じ[句](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)が必要です。
+
+<details markdown="1">
+  <summary>非推奨のテーブル作成方法</summary>
+
+  <Note>
+    新しいプロジェクトではこの方法を使用しないでください。可能であれば、既存のプロジェクトも上記で説明した方法に切り替えてください。
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      EventDate Date,
+      Path String,
+      Time DateTime,
+      Value Float64,
+      Version <Numeric_type>
+      ...
+  ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
+  ```
+
+  `config_section` を除くすべてのパラメータは、`MergeTree` と同じ意味です。
+
+  * `config_section` — ロールアップルールが設定されている設定ファイル内のセクション名。
+</details>
+
+<div id="rollup-configuration">
+  ## ロールアップ設定
+</div>
+
+ロールアップの設定は、サーバー設定の [graphite&#95;rollup](/ja/reference/settings/server-settings/settings#graphite) パラメータで定義します。パラメータ名は任意に指定できます。複数の設定を作成して、異なるテーブルで使い分けることもできます。
+
+ロールアップ設定の構造:
+
+必須カラム
+パターン
+
+<div id="required-columns">
+  ### 必須カラム
+</div>
+
+<div id="path_column_name">
+  #### `path_column_name`
+</div>
+
+`path_column_name` — メトリック名 (Graphite sensor) を格納するカラム名です。デフォルト値: `Path`。
+
+<div id="time_column_name">
+  #### `time_column_name`
+</div>
+
+`time_column_name` — メトリックの計測時刻を格納するカラム名です。デフォルト値: `Time`。
+
+<div id="value_column_name">
+  #### `value_column_name`
+</div>
+
+`value_column_name` — `time_column_name` で指定した時点におけるメトリックの値を格納するカラム名です。デフォルト値: `Value`。
+
+<div id="version_column_name">
+  #### `version_column_name`
+</div>
+
+`version_column_name` — メトリックのバージョンを格納するカラム名です。デフォルト値: `Timestamp`。
+
+<div id="patterns">
+  ### パターン
+</div>
+
+`patterns` セクションの構成:
+
+```text
+pattern
+    rule_type
+    regexp
+    function
+pattern
+    rule_type
+    regexp
+    age + precision
+    ...
+pattern
+    rule_type
+    regexp
+    function
+    age + precision
+    ...
+pattern
+    ...
+default
+    function
+    age + precision
+    ...
+```
+
+<Warning>
+  パターンは厳密に次の順序で並べる必要があります。
+
+  1. `function` も `retention` もないパターン。
+  2. `function` と `retention` の両方を持つパターン。
+  3. `default` パターン。
+</Warning>
+
+行を処理する際、ClickHouse は `pattern` セクション内のルールを確認します。各 `pattern` セクション (`default` を含む) には、aggregation 用の `function` parameter、`retention` parameters、またはその両方を含めることができます。メトリック名が `regexp` に一致した場合は `pattern` セクションのルール (複数可) が適用され、一致しない場合は `default` セクションのルールが使用されます。
+
+`pattern` セクションと `default` セクションのフィールド:
+
+* `rule_type` - ルールの種類。特定のメトリックにのみ適用されます。engine はこれを使用して、プレーンメトリックとタグ付きメトリックを区別します。省略可能な parameter。デフォルト値: `all`。
+  パフォーマンスが重要でない場合や、プレーンメトリックのように 1 種類のメトリックしか使用しない場合は不要です。デフォルトでは、作成されるルールセットは 1 種類だけです。一方、特殊な type がいずれか定義されている場合は、2 つの異なるセットが作成されます。1 つはプレーンメトリック用 (root.branch.leaf)、もう 1 つはタグ付きメトリック用 (root.branch.leaf;tag1=value1) です。
+  デフォルトルールは最終的に両方のセットに含まれます。
+  有効な値:
+  * `all` (デフォルト) - `rule_type` を省略した場合に使用される汎用ルール。
+  * `plain` - プレーンメトリック用のルール。`regexp` フィールドは regular expression として処理されます。
+  * `tagged` - タグ付きメトリック用のルール (メトリックは DB 内で `someName?tag1=value1&tag2=value2&tag3=value3` のフォーマットで保存されます) 。regular expression はタグ名でソートされている必要があり、存在する場合は最初のタグが `__name__` でなければなりません。`regexp` フィールドは regular expression として処理されます。
+  * `tag_list` - タグ付きメトリック用のルールで、graphite フォーマットの `someName;tag1=value1;tag2=value2`、`someName`、または `tag1=value1;tag2=value2` のように、メトリックを簡単に記述するためのシンプルな DSL です。`regexp` フィールドは `tagged` ルールに変換されます。タグ名によるソートは不要で、自動的に行われます。タグの値 (名前ではなく) は regular expression として指定できます。たとえば `env=(dev|staging)` です。
+* `regexp` – メトリック名の pattern (regular expression または DSL) 。
+* `age` – データの最小経過時間 (秒) 。
+* `precision`– データの経過時間を秒単位でどの程度の精度で定義するか。86400 (1 日の秒数) の約数である必要があります。
+* `function` – age が範囲 `[age, age + precision]` に入るデータに適用する集約関数の名前。使用できる関数: min / max / any / avg。平均値は、平均の平均のように不正確に計算されます。
+
+<div id="configuration-example">
+  ### ルールタイプを使用しない設定例
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<div id="configuration-typed-example">
+  ### ルールタイプを含む設定例
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <rule_type>plain</rule_type>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp>^((.*)|.)min\?</regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp><![CDATA[^someName\?(.*&)*tag1=value1(&|$)]]></regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tag_list</rule_type>
+        <regexp>someName;tag2=value2</regexp>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<Note>
+  データのロールアップは、マージ時に実行されます。通常、古いパーティションではマージは開始されないため、ロールアップを行うには [optimize](/ja/reference/statements/optimize) を使用して、予定外のマージをトリガーする必要があります。あるいは、[graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) などの追加ツールを使用してください。
+</Note>

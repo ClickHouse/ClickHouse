@@ -3,7 +3,7 @@
     <fill_query>INSERT INTO simple_mergetree SELECT number, today() + intDiv(number, 10000000) FROM numbers_mt(100000000)</fill_query>
     <fill_query>OPTIMIZE TABLE simple_mergetree FINAL</fill_query>
 
-    <query short="1">SELECT count() FROM simple_mergetree</query>
+    <query>SELECT count() FROM simple_mergetree</query>
 
     <drop_query>DROP TABLE IF EXISTS simple_mergetree</drop_query>
 </test>

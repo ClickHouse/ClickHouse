@@ -15,6 +15,7 @@ class DistributedQueryStatusSource : public ISource
 {
 public:
     DistributedQueryStatusSource(
+        const String & zookeeper_name_,
         const String & zk_node_path,
         const String & zk_replicas_path,
         SharedHeader block,
@@ -37,7 +38,10 @@ protected:
     virtual NameSet getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperPtr & zookeeper);
 
     Strings getNewAndUpdate(const Strings & current_finished_hosts);
-    ExecutionStatus getExecutionStatus(const fs::path & status_path);
+    /// When node_exists is provided it reports whether the status node was present. An absent node yields the same
+    /// (-1, "Cannot obtain error message") sentinel as a present-but-unreadable one, so callers that must tell the
+    /// two apart (see ReplicatedDatabaseQueryStatusSource::checkStatus) pass node_exists.
+    ExecutionStatus getExecutionStatus(const fs::path & status_path, bool * node_exists = nullptr);
 
     ZooKeeperRetriesInfo getRetriesInfo() const;
     static std::pair<String, UInt16> parseHostAndPort(const String & host_id);
@@ -55,6 +59,7 @@ protected:
         UNFINISHED = 3,
     };
 
+    String zookeeper_name;
     String node_path;
     String replicas_path;
     ContextPtr context;

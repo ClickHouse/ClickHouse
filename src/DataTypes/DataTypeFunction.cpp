@@ -36,10 +36,16 @@ bool DataTypeFunction::equals(const IDataType & rhs) const
 
 void DataTypeFunction::updateHashImpl(SipHash & hash) const
 {
+    /// Argument types and return type can be nullptr when the lambda is not yet resolved.
     hash.update(argument_types.size());
     for (const auto & arg_type : argument_types)
-        arg_type->updateHash(hash);
+    {
+        hash.update(arg_type != nullptr);
+        if (arg_type)
+            arg_type->updateHash(hash);
+    }
 
+    hash.update(return_type != nullptr);
     if (return_type)
         return_type->updateHash(hash);
 }

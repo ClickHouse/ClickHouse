@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
@@ -110,11 +111,16 @@ void BackupWriterFile::removeFile(const String & file_name)
 
 void BackupWriterFile::removeEmptyDirectories()
 {
+    if (root_path.empty())
+        return;
+
     removeEmptyDirectoriesImpl(root_path);
 }
 
 void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
+    checkStackSize();
+
     if (!fs::is_directory(current_dir))
         return;
 
@@ -124,7 +130,6 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         return;
     }
 
-    /// Backups are not too deep, so recursion is good enough here.
     for (const auto & it : std::filesystem::directory_iterator{current_dir})
         removeEmptyDirectoriesImpl(it.path());
 
@@ -132,8 +137,8 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         (void)fs::remove(current_dir);
 }
 
-void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterFile::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
     bool has_throttling = static_cast<bool>(read_settings.local_throttler);

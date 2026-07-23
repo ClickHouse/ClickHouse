@@ -1,0 +1,45 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/local-file
+title: 'ローカルファイルの Dictionary ソース'
+sidebarTitle: 'ローカルファイル'
+description: 'ClickHouse でローカルファイルを Dictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+ローカルファイルソースは、ローカルファイルシステム上のファイルから辞書データを読み込みます。これは、TSV、CSV、またはその他の[対応フォーマット](/ja/reference/formats/index)のフラットファイルとして保存できる、小規模で静的なルックアップテーブルに適しています。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+設定フィールド:
+
+| Setting  | Description                                                                 |
+| -------- | --------------------------------------------------------------------------- |
+| `path`   | ファイルの絶対パス。                                                                  |
+| `format` | ファイルのフォーマット。[Formats](/ja/reference/formats/index) に記載されているすべてのフォーマットに対応しています。 |
+
+ソース `FILE` を持つ辞書を DDL コマンド (`CREATE DICTIONARY ...`) で作成する場合、DB ユーザーが ClickHouse ノード上の任意のファイルにアクセスできないようにするため、ソースファイルは `user_files` ディレクトリに配置する必要があります。
+
+**関連項目**
+
+* [Dictionary function](/ja/reference/functions/table-functions/dictionary)

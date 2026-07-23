@@ -10,7 +10,6 @@
 #pragma clang diagnostic ignored "-Wnewline-eof"
 #include <ada/idna/to_ascii.h>
 #include <ada/idna/to_unicode.h>
-#include <ada/idna/unicode_transcoding.h>
 #pragma clang diagnostic pop
 
 namespace DB
@@ -166,7 +165,7 @@ No percent decoding or trimming of tabs, spaces or control characters is perform
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_encode = {description_encode, syntax_encode, arguments_encode, returned_value_encode, examples_encode, introduced_in, category};
+    FunctionDocumentation documentation_encode = {description_encode, syntax_encode, arguments_encode, {}, returned_value_encode, examples_encode, introduced_in, category};
 
     FunctionDocumentation::Description description_try_encode = R"(
 Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
@@ -188,7 +187,7 @@ In case of an error it returns an empty string instead of throwing an exception.
         )"
     }
     };
-    FunctionDocumentation documentation_try_encode = {description_try_encode, syntax_try_encode, arguments_try_encode, returned_value_try_encode, examples_try_encode, introduced_in, category};
+    FunctionDocumentation documentation_try_encode = {description_try_encode, syntax_try_encode, arguments_try_encode, {}, returned_value_try_encode, examples_try_encode, introduced_in, category};
 
     FunctionDocumentation::Description description_decode = R"(
 Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
@@ -211,7 +210,7 @@ Note that repeated application of [`idnaEncode()`](#idnaEncode) and [`idnaDecode
         )"
     }
     };
-    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, returned_value_decode, examples_decode, introduced_in, category};
+    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, {}, returned_value_decode, examples_decode, introduced_in, category};
 
     factory.registerFunction<FunctionIdnaEncode>(documentation_encode);
     factory.registerFunction<FunctionTryIdnaEncode>(documentation_try_encode);

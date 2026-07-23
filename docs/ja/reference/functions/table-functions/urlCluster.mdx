@@ -1,0 +1,77 @@
+---
+description: '指定した
+  クラスター内の複数のノードで、URL 上のファイルを並列に処理できます。'
+sidebarTitle: 'urlCluster'
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
+doc_type: 'reference'
+---
+
+指定したクラスター内の複数のノードで、URL 上のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードへの接続を確立し、URL のファイルパス内のアスタリスクを展開して、各ファイルを動的に振り分けます。ワーカーノードでは、次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+urlCluster(cluster_name, URL, format, structure)
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| 引数             | 説明                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| `cluster_name` | リモートおよびローカルのサーバーへのアドレス集合と接続パラメーターの構築に使用されるクラスター名。                                                  |
+| `URL`          | `GET` リクエストを受け付け可能な HTTP または HTTPS のサーバーアドレス。型: [String](/ja/reference/data-types/string)。            |
+| `format`       | データの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                 |
+| `structure`    | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。 |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定されたフォーマットと構造を持ち、指定した`URL`のデータを含むテーブル。
+
+<div id="examples">
+  ## 例
+</div>
+
+`String` および [UInt32](/ja/reference/data-types/int-uint) 型のカラムを含むテーブルの先頭 3 行を、[CSV](/ja/reference/formats/CSV/CSV) フォーマットで応答する HTTP サーバーから取得する例です。
+
+1. 標準の Python 3 ツールを使って基本的な HTTP サーバーを作成し、起動します。
+
+```python
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```sql
+SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
+```
+
+<div id="globs-in-url">
+  ## URL 内のグロブ
+</div>
+
+`{ }` 内のパターンは、分片の集合を生成したり、フェイルオーバー用アドレスを指定したりするために使用されます。サポートされているパターンの種類と例については、[remote](/ja/reference/functions/table-functions/remote#globs-in-addresses) 関数の説明を参照してください。
+パターン内の文字 `|` は、フェイルオーバー用アドレスを指定するために使用されます。これらのアドレスは、パターンに記載された順序どおりに順次試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings#glob_expansion_max_elements) 設定によって制限されます。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [HDFS エンジン](/ja/reference/engines/table-engines/integrations/hdfs)
+* [URL テーブル関数](/ja/reference/engines/table-engines/special/url)

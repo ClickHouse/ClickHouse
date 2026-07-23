@@ -34,7 +34,7 @@ class DateTime64StringWriteTest : public DateTime64StringsTest {};
 TEST_P(DateTime64StringParseTest, readDateTime64Text)
 {
     const auto & param = GetParam();
-    ReadBufferFromMemory read_buffer(param.string.data(), param.string.size());
+    ReadBufferFromMemory read_buffer(param.string);
 
     DateTime64 actual{};
     EXPECT_TRUE(tryReadDateTime64Text(actual, param.scale, read_buffer, param.timezone));
@@ -45,7 +45,7 @@ TEST_P(DateTime64StringParseTest, readDateTime64Text)
 TEST_P(DateTime64StringParseTest, parseDateTime64BestEffort)
 {
     const auto & param = GetParam();
-    ReadBufferFromMemory read_buffer(param.string.data(), param.string.size());
+    ReadBufferFromMemory read_buffer(param.string);
 
     DateTime64 actual;
     EXPECT_TRUE(tryParseDateTime64BestEffort(actual, param.scale, read_buffer, param.timezone, DateLUT::instance("UTC")));
@@ -63,7 +63,7 @@ TEST_P(DateTime64StringWriteTest, WriteText)
     EXPECT_NO_THROW(writeDateTimeText(param.dt64, param.scale, write_buffer, param.timezone));
     write_buffer.finalize();
 
-    EXPECT_STREQ(param.string.data(), actual_string.data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    EXPECT_STREQ(param.string.data(), actual_string.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 TEST_P(DateTime64StringParseBestEffortTest, parse)

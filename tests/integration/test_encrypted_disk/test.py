@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml", "configs/allow_backup_path.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_encrypted_disk:size=100M"],
     external_dirs=["/backups/"],
     with_minio=True,
     stay_alive=True,
@@ -553,7 +553,7 @@ def test_backup_restore(
             found_encrypted_in_backup = file.read().startswith(b"ENC")
             assert found_encrypted_in_backup == expect_encrypted_in_backup
 
-    node.query(f"DROP TABLE encrypted_test SYNC")
+    node.query("DROP TABLE encrypted_test SYNC")
 
     if storage_policy_changed:
         node.query(

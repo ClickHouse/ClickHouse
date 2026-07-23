@@ -1,0 +1,175 @@
+---
+description: 'ClickHouse の浮動小数点データ型に関するドキュメント: Float32,
+  Float64, および BFloat16'
+sidebarTitle: 'Float32 | Float64 | BFloat16'
+slug: /sql-reference/data-types/float
+title: 'Float32 | Float64 | BFloat16 型'
+doc_type: 'reference'
+---
+
+<Note>
+  正確な計算が必要な場合、特に高い精度が求められる金融データや業務データを扱う場合は、代わりに [Decimal](/ja/reference/data-types/decimal) の使用を検討してください。
+
+  以下に示すように、[浮動小数点数](https://en.wikipedia.org/wiki/IEEE_754) では誤差が生じることがあります。
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS float_vs_decimal
+  (
+     my_float Float64,
+     my_decimal Decimal64(3)
+  )
+  ENGINE=MergeTree
+  ORDER BY tuple();
+
+  # 小数点以下 2 桁のランダムな数値を 1 000 000 個生成し、float と decimal として保存する
+  INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000;
+  ```
+
+  ```sql
+  SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
+
+  ┌──────sum(my_float)─┬─sum(my_decimal)─┐
+  │ 499693.60500000004 │      499693.605 │
+  └────────────────────┴─────────────────┘
+
+  SELECT sumKahan(my_float), sumKahan(my_decimal) FROM float_vs_decimal;
+
+  ┌─sumKahan(my_float)─┬─sumKahan(my_decimal)─┐
+  │         499693.605 │           499693.605 │
+  └────────────────────┴──────────────────────┘
+  ```
+</Note>
+
+ClickHouse と C における対応する型を以下に示します。
+
+* `Float32` — `float`.
+* `Float64` — `double`.
+
+ClickHouse の浮動小数点型には、次の別名があります。
+
+* `Float32` — `FLOAT`, `REAL`, `SINGLE`.
+* `Float64` — `DOUBLE`, `DOUBLE PRECISION`.
+
+テーブルの作成時には、浮動小数点数の数値パラメータを指定できます (例: `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`) が、ClickHouse はそれらを無視します。
+
+<div id="using-floating-point-numbers">
+  ## 浮動小数点数の使用
+</div>
+
+* 浮動小数点数を用いた計算では、丸め誤差が生じることがあります。
+
+{/* */}
+
+```sql
+SELECT 1 - 0.9
+
+┌───────minus(1, 0.9)─┐
+│ 0.09999999999999998 │
+└─────────────────────┘
+```
+
+* 計算結果は、計算方法 (コンピューターシステムのプロセッサの種類やアーキテクチャ) によって異なります。
+* 浮動小数点計算では、無限大 (`Inf`) や「非数」(`NaN`) のような値になることがあります。計算結果を処理する際は、この点を考慮する必要があります。
+* テキストから浮動小数点数をパースする場合、結果がマシンで表現可能な最も近い数値にならないことがあります。
+
+<div id="nan-and-inf">
+  ## NaN と Inf
+</div>
+
+ClickHouse では、標準SQLとは異なり、次のカテゴリの浮動小数点数をサポートしています。
+
+* `Inf` – 無限大。
+
+{/* */}
+
+```sql
+SELECT 0.5 / 0
+
+┌─divide(0.5, 0)─┐
+│            inf │
+└────────────────┘
+```
+
+* `-Inf` — 負の無限大。
+
+{/* */}
+
+```sql
+SELECT -0.5 / 0
+
+┌─divide(-0.5, 0)─┐
+│            -inf │
+└─────────────────┘
+```
+
+* `NaN` — 非数。
+
+{/* */}
+
+```sql
+SELECT 0 / 0
+
+┌─divide(0, 0)─┐
+│          nan │
+└──────────────┘
+```
+
+`NaN` のソート規則については、[ORDER BY 句](/ja/reference/statements/select/order-by)のセクションを参照してください。
+
+<div id="nan-values-in-set-semantics">
+  ## 集合セマンティクスにおける NaN 値
+</div>
+
+IEEE 754 標準では、スカラー比較 `NaN = NaN` が `false` を返すように `NaN` が定義されています。
+ClickHouse も `=` 演算子ではこの規則に従います。
+
+ただし、`NaN` は単一の値ではなく、指数がすべて 1 で、
+仮数が 0 でない任意のビットパターンを指します。異なる操作や CPU アーキテクチャでは、
+符号ビットや仮数ペイロードが異なる `NaN`
+値が生成されることがあります。たとえば、次のとおりです。
+
+* `0./0.` は、ほとんどの x86 プラットフォームで符号ビットが 1 の `NaN` を生成します。
+* リテラル `nan` は、符号ビットが 0 の `NaN` を生成します。
+* [PR #98230](https://github.com/ClickHouse/ClickHouse/pull/98230) 以降、AArch64 NEON パスの
+  `log` は、負の入力に対して glibc のスカラー `log` とは符号ビットが異なる `NaN` を返します。
+
+ClickHouse のハッシュテーブルではキーがバイト単位で比較されるため、異なる `NaN` ビットパターンは
+異なるバケットにハッシュされ、`DISTINCT`、`GROUP BY`、`uniqExact`、`countDistinct`、
+および `Float` キーに対する等値 `JOIN` など、集合セマンティクスに基づく操作では
+それぞれ別の値として扱われます。
+
+```sql
+SELECT countDistinct(arrayJoin([0./0., nan, log(-1.)]));
+-- May return 2 or 3 depending on architecture and build, even though all three inputs are NaN.
+```
+
+これは IEEE 754 に準拠しています (すべての `NaN` は、自身を含む他のどの値とも等しくありません)
+が、意外に感じられるかもしれません。集合のセマンティクスに基づく操作で、すべての `NaN` 値を等しいものとして扱う必要がある場合は、
+クエリ内で正規化してください:
+
+```sql
+-- Replace every NaN with a single canonical NaN value
+SELECT countDistinct(if(isNaN(x), CAST('nan' AS Float64), x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 1.
+
+-- Or exclude NaN values from the set entirely
+SELECT countDistinct(if(isNaN(x), NULL, x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 0.
+```
+
+同じアプローチは、`DISTINCT`、`GROUP BY`、`JOIN` のキーにも適用できます。
+
+<div id="bfloat16">
+  ## BFloat16
+</div>
+
+`BFloat16` は、8 ビットの指数と符号、および 7 ビットの仮数を持つ 16 ビット浮動小数点データ型です。
+機械学習や AI アプリケーションで役立ちます。
+
+ClickHouse は `Float32` と `BFloat16` 間の変換をサポートしており、[`toFloat32()`](/ja/reference/functions/regular-functions/type-conversion-functions#toFloat32) または [`toBFloat16`](/ja/reference/functions/regular-functions/type-conversion-functions#toBFloat16) 関数を使用して変換できます。
+
+<Note>
+  他のほとんどの操作はサポートされていません。
+</Note>

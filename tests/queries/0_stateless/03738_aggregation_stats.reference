@@ -1,0 +1,28 @@
+====== Aggregation by 1 column ======
+  JoinLogical
+  Join: t1[5] ⋈ tt2[10]
+  ResultRows: 5
+      ReadFromMergeTree (default.t1)
+      Aggregating
+          ReadFromMergeTree (default.t2)
+===== Aggregation by 2 columns and NDV1*NDV2 < total rows ======
+  JoinLogical
+  Join: t1[5] ⋈ tt2[30]
+  ResultRows: 15
+      ReadFromMergeTree (default.t1)
+      Aggregating
+          ReadFromMergeTree (default.t2)
+===== Aggregation by 2 columns and NDV1*NDV2 > total rows ======
+  JoinLogical
+  Join: t1[5] ⋈ tt2[100]
+  ResultRows: 50
+      ReadFromMergeTree (default.t1)
+      Aggregating
+          ReadFromMergeTree (default.t2)
+====== Aggregation by 0 columns =====
+  JoinLogical
+  Join: t1[5] ⋈ tt2[1]
+  ResultRows: 1
+      ReadFromMergeTree (default.t1)
+      Aggregating
+          ReadFromMergeTree (default.t2)

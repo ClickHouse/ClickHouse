@@ -1,0 +1,21 @@
+Expression ((Project names + Projection))
+Header: accountId Int64
+        country String
+  Expression ((WHERE + Change column names to column identifiers))
+  Header: __table1.account_id Int64
+          __table1.country String
+    ReadFromMergeTree (default.test)
+    Header: account_id Int64
+            day DateTime
+            source_type String
+            country String
+-----
+Expression ((Project names + Projection))
+Header: accountId Int64
+        country String
+  Expression ((WHERE + Change column names to column identifiers))
+  Header: __table1.account_id Int64
+          __table1.country String
+    ReadFromMergeTree (default.test)
+    Header: account_id Int64
+            country String

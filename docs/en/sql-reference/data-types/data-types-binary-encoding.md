@@ -7,8 +7,6 @@ title: 'Data types binary encoding specification'
 doc_type: 'reference'
 ---
 
-# Data types binary encoding specification
-
 This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes) and [Native](/interfaces/formats/Native) under corresponding settings.
 
 The table below describes how each data type is represented in binary format. Each data type encoding consist of 1 byte that indicates the type and some optional additional information.
@@ -69,8 +67,11 @@ The table below describes how each data type is represented in binary format. Ea
 | `Time`                                                                                                    | `0x32`                                                                                                                                                                                                                                                                                                                                                                     |
 | `Time64(P)`                                                                                               | `0x34<uint8_precision>`                                                                                                                                                                                                                                                                                                                                                    |
 | `QBit(T, N)`                                                                                              | `0x36<element_type_encoding><var_uint_dimension>`                                                                                                                                                                                                                                                                                                                          |
+| `QBit(T, N, stride)`                                                                                      | `0x37<element_type_encoding><var_uint_dimension><var_uint_stride>`                                                                                                                                                                                                                                                                                                         |
 
 For type `JSON` byte `uint8_serialization_version` indicates the version of the serialization. Right now the version is always 0 but can change in future if new arguments will be introduced for `JSON` type.
+
+For type `QBit` the `0x37` encoding is used only when `stride` differs from the dimension `N`. When `stride == N` (including when the third argument is written explicitly, as in `QBit(Float32, 4, 4)`) the type is canonicalized to the two-argument `QBit(T, N)` form and encoded as `0x36` above, so its binary encoding stays byte-identical to a non-strided `QBit`.
 
 ### Interval kind binary encoding {#interval-kind-binary-encoding}
 
@@ -102,8 +103,8 @@ The encoding of a parameter consists of 1 byte indicating the type of the parame
 | `Int64`                  | `0x02<var_int_value>`                                                                                                          |
 | `UInt128`                | `0x03<uint128_little_endian_value>`                                                                                            |
 | `Int128`                 | `0x04<int128_little_endian_value>`                                                                                             |
-| `UInt128`                | `0x05<uint128_little_endian_value>`                                                                                            |
-| `Int128`                 | `0x06<int128_little_endian_value>`                                                                                             |
+| `UInt256`                | `0x05<uint256_little_endian_value>`                                                                                            |
+| `Int256`                 | `0x06<int256_little_endian_value>`                                                                                             |
 | `Float64`                | `0x07<float64_little_endian_value>`                                                                                            |
 | `Decimal32`              | `0x08<var_uint_scale><int32_little_endian_value>`                                                                              |
 | `Decimal64`              | `0x09<var_uint_scale><int64_little_endian_value>`                                                                              |

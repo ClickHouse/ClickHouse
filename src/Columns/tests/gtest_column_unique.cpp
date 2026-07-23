@@ -6,16 +6,17 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <gtest/gtest.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <vector>
 using namespace DB;
 
 TEST(ColumnUnique, InsertRange)
 {
-    std::unordered_map<String, size_t> ref_map;
+    UnorderedMapWithMemoryTracking<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
     auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
     auto column_string = ColumnString::create();
@@ -23,7 +24,7 @@ TEST(ColumnUnique, InsertRange)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);
@@ -48,13 +49,13 @@ TEST(ColumnUnique, InsertRange)
 
     for (size_t i = 0; i < mod_to; ++i)
     {
-        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1).toString());
+        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1));
     }
 }
 
 TEST(ColumnUnique, InsertRangeWithOverflow)
 {
-    std::unordered_map<String, size_t> ref_map;
+    UnorderedMapWithMemoryTracking<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
     auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
     auto column_string = ColumnString::create();
@@ -62,7 +63,7 @@ TEST(ColumnUnique, InsertRangeWithOverflow)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);
@@ -93,12 +94,12 @@ TEST(ColumnUnique, InsertRangeWithOverflow)
 
     for (size_t i = 0; i < max_val; ++i)
     {
-        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1).toString());
+        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1));
     }
 
     for (size_t i = 0; i < mod_to - max_val; ++i)
     {
-        ASSERT_EQ(std::to_string(max_val + i), add_keys->getDataAt(i).toString());
+        ASSERT_EQ(std::to_string(max_val + i), add_keys->getDataAt(i));
     }
 }
 
@@ -117,10 +118,10 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         const char * pos = nullptr;
         for (size_t i = 0; i < num_values; ++i)
         {
-            auto ref = column_unique_pattern->serializeValueIntoArena(idx->getUInt(i), arena, pos);
-            const char * new_pos;
-            column_unique->uniqueDeserializeAndInsertFromArena(ref.data, new_pos);
-            ASSERT_EQ(new_pos - ref.data, ref.size) << "Deserialized data has different sizes at position " << i;
+            auto ref = column_unique_pattern->serializeValueIntoArena(idx->getUInt(i), arena, pos, nullptr);
+            ReadBufferFromString in(ref);
+            column_unique->uniqueDeserializeAndInsertFromArena(in, nullptr);
+            ASSERT_TRUE(in.eof()) << "Deserialized data has different sizes at position " << i;
 
             ASSERT_EQ(column_unique_pattern->getNestedNotNullableColumn()->getDataAt(idx->getUInt(i)),
                       column_unique->getNestedNotNullableColumn()->getDataAt(idx->getUInt(i)))
@@ -140,8 +141,8 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         const char * pos_lc = nullptr;
         for (size_t i = 0; i < num_values; ++i)
         {
-            auto ref_string = column.serializeValueIntoArena(i, arena_string, pos_string);
-            auto ref_lc = column_unique->serializeValueIntoArena(idx->getUInt(i), arena_lc, pos_lc);
+            auto ref_string = column.serializeValueIntoArena(i, arena_string, pos_string, nullptr);
+            auto ref_lc = column_unique->serializeValueIntoArena(idx->getUInt(i), arena_lc, pos_lc, nullptr);
             ASSERT_EQ(ref_string, ref_lc) << "Serialized data is different from pattern at position " << i;
         }
     }
@@ -155,7 +156,7 @@ TEST(ColumnUnique, DeserializeFromArenaString)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);
@@ -174,7 +175,7 @@ TEST(ColumnUnique, DeserializeFromArenaNullableString)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);

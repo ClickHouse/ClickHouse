@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'نظرة عامة'
+slug: /integrations/azure-data-factory/overview
+description: 'إدخال بيانات Azure إلى ClickHouse - نظرة عامة'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data']
+title: 'إدخال بيانات Azure إلى ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+توفّر Microsoft Azure مجموعة واسعة من الأدوات لتخزين
+البيانات وتحويلها وتحليلها. ومع ذلك، في كثير من الحالات، يمكن أن يوفّر ClickHouse
+أداءً أفضل بكثير في الاستعلامات منخفضة زمن الانتقال ومعالجة مجموعات البيانات الضخمة. بالإضافة
+إلى ذلك، يمكن أن تسهم ميزة التخزين العمودي والضغط في ClickHouse بشكل كبير في خفض
+تكلفة الاستعلام عن كميات كبيرة من البيانات التحليلية مقارنةً بقواعد بيانات Azure
+المخصّصة للأغراض العامة.
+
+في هذا القسم من الوثائق، سنستعرض طريقتين لاستيعاب البيانات من Microsoft Azure
+إلى ClickHouse:
+
+| Method                                                                                                                             | Description                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [باستخدام دالة الجدول `azureBlobStorage`](/ar/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage) | يتضمن ذلك استخدام [دالة الجدول `azureBlobStorage` في ClickHouse](/ar/reference/functions/table-functions/azureBlobStorage) لنقل البيانات مباشرةً من Azure Blob Storage.                           |
+| [باستخدام واجهة ClickHouse HTTP](/ar/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface)            | يستخدم [واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http) كمصدر بيانات داخل Azure Data Factory، ما يتيح لك نسخ البيانات أو استخدامها في أنشطة تدفق البيانات ضمن مسارات المعالجة لديك. |

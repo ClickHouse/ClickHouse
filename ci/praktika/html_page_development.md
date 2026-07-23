@@ -73,7 +73,7 @@ Run the following from the repository root.
 - Can be accessed by replacing `json.html` with `json_test.html` in any CI report URL.
 
 ```bash
-python -m ci.praktika html --test
+python -m ci.praktika infrastructure --deploy --only html --test
 ```
 
 ## Production
@@ -81,7 +81,7 @@ python -m ci.praktika html --test
 - Will be immediately applied for all CI reports.
 
 ```bash
-python -m ci.praktika html
+python -m ci.praktika infrastructure --deploy --only html
 ```
 
 ### Troubleshooting

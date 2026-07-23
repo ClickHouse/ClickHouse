@@ -1,0 +1,457 @@
+---
+sidebarTitle: 'OpenAPI'
+description: 'Referência para gerenciar o ClickPipes programaticamente por meio da OpenAPI do ClickHouse Cloud.'
+slug: /integrations/clickpipes/programmatic-access/openapi
+title: 'Referência da OpenAPI do ClickPipes'
+doc_type: 'reference'
+keywords: ['clickpipes', 'openapi', 'api', 'programático', 'rest', 'curl']
+---
+
+Todos os tipos de ClickPipes podem ser criados, atualizados e excluídos programaticamente usando a [OpenAPI do ClickHouse Cloud](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). Esta página aborda a autenticação e os endpoints disponíveis do ClickPipes, com exemplos de requisições `curl` para cada tipo de ClickPipe.
+
+<div id="authentication">
+  ## Autenticação
+</div>
+
+A API do ClickHouse Cloud usa autenticação Basic por HTTP. Você precisa de uma API key (ID da key + segredo da key) com permissões no serviço de destino. Consulte [Gerenciando API keys](/pt-BR/products/cloud/features/admin-features/api/openapi) para obter instruções sobre como criar uma.
+
+Configure as seguintes variáveis de ambiente antes de executar qualquer um dos exemplos abaixo:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+export ORG_ID=<your_organization_id>
+export SERVICE_ID=<your_service_id>
+```
+
+<div id="base-url">
+  ## URL base
+</div>
+
+```bash
+https://api.clickhouse.cloud/v1
+```
+
+<div id="endpoints">
+  ## Endpoints
+</div>
+
+Todos os endpoints do ClickPipes são vinculados a um serviço do ClickHouse Cloud:
+
+| Método   | Caminho                                                                                  | Descrição                                       |
+| -------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Listar todos os ClickPipes                      |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Criar um ClickPipe                              |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Obter um ClickPipe                              |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Atualizar um ClickPipe                          |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Excluir um ClickPipe                            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Obter as configurações do ClickPipe             |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Atualizar as configurações do ClickPipe         |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | Atualizar a escala do ClickPipe                 |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | Atualizar o estado do ClickPipe (iniciar/parar) |
+
+Para ClickPipes de CDC (Postgres, MySQL, MongoDB), há endpoints adicionais no nível da organização para a escala da infraestrutura compartilhada de CDC:
+
+| Método  | Caminho                                                 | Descrição                                |
+| ------- | ------------------------------------------------------- | ---------------------------------------- |
+| `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | Obter a escala dos ClickPipes de CDC     |
+| `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | Atualizar a escala dos ClickPipes de CDC |
+
+Para ver os schemas completos de solicitação e resposta de cada endpoint, consulte a [Swagger UI](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+<div id="list-clickpipes">
+  ### Listar ClickPipes
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="get-clickpipe">
+  ### Obter um ClickPipe
+</div>
+
+```bash
+CLICKPIPE_ID=<your_clickpipe_id>
+
+curl -u "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
+```
+
+<div id="stop-start-clickpipe">
+  ### Parar ou iniciar um ClickPipe
+</div>
+
+```bash
+# Parar
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  -d '{"action": "stop"}' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
+
+# Iniciar
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  -d '{"action": "start"}' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
+```
+
+<div id="delete-clickpipe">
+  ### Excluir um ClickPipe
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X DELETE \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
+```
+
+<div id="creating-clickpipes">
+  ## Criando ClickPipes
+</div>
+
+O corpo da solicitação `POST /clickpipes` varia conforme o tipo de origem. Os exemplos abaixo mostram a estrutura de cada tipo de ClickPipe suportado. Para consultar os esquemas JSON oficiais, consulte a [Swagger UI](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+
+<div id="create-kafka">
+  ### Kafka
+</div>
+
+As seguintes fontes compatíveis com Kafka são suportadas: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Kafka ClickPipe",
+    "source": {
+      "kafka": {
+        "type": "confluent",
+        "format": "JSONEachRow",
+        "brokers": "broker.example.com:9092",
+        "topics": "my_topic",
+        "consumerGroup": "clickpipes-consumer-group",
+        "authentication": "PLAIN",
+        "credentials": {
+          "username": "my_user",
+          "password": "my_password"
+        }
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" },
+        { "name": "timestamp", "type": "DateTime" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-kinesis">
+  ### Amazon Kinesis
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Kinesis ClickPipe",
+    "source": {
+      "kinesis": {
+        "format": "JSONEachRow",
+        "streamName": "my-stream",
+        "region": "us-east-1",
+        "iteratorType": "TRIM_HORIZON",
+        "authentication": "IAM_USER",
+        "accessKey": {
+          "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+          "secretKey": "<secret_key>"
+        }
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-s3">
+  ### Amazon S3
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My S3 ClickPipe",
+    "source": {
+      "objectStorage": {
+        "type": "s3",
+        "url": "https://my-bucket.s3.amazonaws.com/data/*.json",
+        "format": "JSONEachRow",
+        "authentication": "IAM_USER",
+        "accessKey": {
+          "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+          "secretKey": "<secret_key>"
+        }
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-gcs">
+  ### Google Cloud Storage
+</div>
+
+`serviceAccountKey` deve ser o conteúdo codificado em base64 de um arquivo de chave JSON de uma conta de serviço do GCP.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My GCS ClickPipe",
+    "source": {
+      "objectStorage": {
+        "type": "gcs",
+        "url": "gs://my-bucket/data/*.json",
+        "format": "JSONEachRow",
+        "authentication": "SERVICE_ACCOUNT",
+        "serviceAccountKey": "<base64_encoded_service_account_json>"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-abs">
+  ### Azure Blob Storage
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Azure Blob ClickPipe",
+    "source": {
+      "objectStorage": {
+        "type": "azureblobstorage",
+        "azureContainerName": "my-container",
+        "path": "data/*.json",
+        "format": "JSONEachRow",
+        "authentication": "CONNECTION_STRING",
+        "connectionString": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-postgres">
+  ### Postgres CDC
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Postgres CDC ClickPipe",
+    "source": {
+      "postgres": {
+        "host": "postgres.example.com",
+        "port": 5432,
+        "database": "mydb",
+        "credentials": {
+          "username": "postgres_user",
+          "password": "<password>"
+        },
+        "settings": {
+          "replicationMode": "cdc"
+        },
+        "tableMappings": [
+          {
+            "sourceSchemaName": "public",
+            "sourceTable": "users",
+            "targetTable": "public_users"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-mysql">
+  ### CDC do MySQL
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My MySQL CDC ClickPipe",
+    "source": {
+      "mysql": {
+        "host": "mysql.example.com",
+        "port": 3306,
+        "credentials": {
+          "username": "mysql_user",
+          "password": "<password>"
+        },
+        "settings": {
+          "replicationMode": "cdc"
+        },
+        "tableMappings": [
+          {
+            "sourceSchemaName": "mydb",
+            "sourceTable": "orders",
+            "targetTable": "mydb_orders"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-mongodb">
+  ### CDC do MongoDB
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My MongoDB CDC ClickPipe",
+    "source": {
+      "mongodb": {
+        "uri": "mongodb+srv://cluster0.example.mongodb.net",
+        "readPreference": "secondaryPreferred",
+        "credentials": {
+          "username": "mongo_user",
+          "password": "<password>"
+        },
+        "settings": {
+          "replicationMode": "cdc"
+        },
+        "tableMappings": [
+          {
+            "sourceDatabaseName": "mydb",
+            "sourceCollection": "users",
+            "targetTable": "mydb_users"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-bigquery">
+  ### BigQuery
+</div>
+
+`serviceAccountFile` deve ser o conteúdo em base64 de um arquivo de chave JSON de uma conta de serviço do GCP.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My BigQuery ClickPipe",
+    "source": {
+      "bigquery": {
+        "snapshotStagingPath": "gs://my-staging-bucket/staging/",
+        "credentials": {
+          "serviceAccountFile": "<base64_encoded_service_account_json>"
+        },
+        "settings": {
+          "replicationMode": "snapshot"
+        },
+        "tableMappings": [
+          {
+            "sourceDatasetName": "my_dataset",
+            "sourceTable": "my_table",
+            "targetTable": "my_bigquery_table"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```

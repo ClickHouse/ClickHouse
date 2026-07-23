@@ -47,6 +47,7 @@ RestoreCoordinationOnCluster::~RestoreCoordinationOnCluster() = default;
 
 void RestoreCoordinationOnCluster::startup()
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::startup");
     stage_sync.startup();
     createRootNodes();
 }
@@ -84,6 +85,7 @@ bool RestoreCoordinationOnCluster::isRestoreQuerySentToOtherHosts() const
 
 Strings RestoreCoordinationOnCluster::setStage(const String & new_stage, const String & message, bool sync)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::setStage");
     stage_sync.setStage(new_stage, message);
     if (sync)
         return stage_sync.waitHostsReachStage(all_hosts_without_initiator, new_stage);
@@ -92,6 +94,7 @@ Strings RestoreCoordinationOnCluster::setStage(const String & new_stage, const S
 
 void RestoreCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::setError");
     stage_sync.setError(exception, throw_if_error);
 }
 
@@ -216,6 +219,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataIntoReplicatedTable(const
 
 bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String & access_storage_zk_path)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedAccessStorage");
     bool result = false;
     auto holder = with_retries.createRetriesControlHolder("acquireReplicatedAccessStorage");
     holder.retries_ctl.retryLoop(
@@ -242,6 +246,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String &
 
 bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedSQLObjects");
     bool result = false;
     auto holder = with_retries.createRetriesControlHolder("acquireReplicatedSQLObjects");
     holder.retries_ctl.retryLoop(
@@ -307,6 +312,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
 
 void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_query)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::generateUUIDForTable");
     String query_str = create_query.formatWithSecretsOneLine();
     CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
     String new_uuids_str = new_uuids.toString();

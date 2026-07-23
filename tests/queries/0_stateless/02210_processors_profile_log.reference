@@ -1,7 +1,6 @@
 (Expression)
 ExpressionTransform
-  (ReadFromStorage)
-  SourceFromSingleChunk 0 → 1
+  (ReadFromSystemOne)
 0
 ExpressionTransform	1	1	1	1	1
 LazyOutputFormat	1	1	1	0	0

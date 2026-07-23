@@ -29,6 +29,7 @@ The following actions are supported:
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 - [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
+- [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - Adds new values to Enum.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 These actions are described in detail below.
 
@@ -141,8 +142,12 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 ## MODIFY COLUMN {#modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
-ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name
+    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
+ALTER COLUMN [IF EXISTS] name
+    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
 This query changes the `name` column properties:
@@ -156,6 +161,8 @@ This query changes the `name` column properties:
 - TTL
 
 - Column-level Settings
+
+- Enum Values for Enum/Enum8/Enum16 types
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
@@ -275,6 +282,24 @@ Reset column setting `max_compress_block_size` to it's default value:
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
+
+Adds new values to a column of type `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` or `Nullable(Enum16)`
+
+Syntax:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName' [= number], ...);
+```
+
+**Example**
+
+Add two values to column `enum_column_name`:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
+```
+
 ## MATERIALIZE COLUMN {#materialize-column}
 
 Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data). Note that materializing a column in the sort key is an invalid operation because it could break the sort order.
@@ -336,6 +361,8 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ## Limitations {#limitations}
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
+
+Renaming columns with dots in their names is partially supported. Dots are reserved for [Nested](/sql-reference/data-types/nested-data-structures/nested) sub-column access, so the prefix (parent name) must remain the same. Only the suffix (sub-column name) can be changed. For example, `a.b` can be renamed to `a.c`, but renaming `a.b` to `b.d` is not allowed because it changes the Nested parent prefix.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 

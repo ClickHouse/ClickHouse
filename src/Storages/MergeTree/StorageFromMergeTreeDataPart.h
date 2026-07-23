@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -27,8 +28,8 @@ public:
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
     {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
-        setVirtuals(*storage.getVirtualsPtr());
+        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        setInMemoryMetadata(*storage_metadata_snapshot);
     }
 
     /// Used in queries with projection.
@@ -37,13 +38,11 @@ public:
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
-        setVirtuals(*storage.getVirtualsPtr());
+        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        setInMemoryMetadata(*storage_metadata_snapshot);
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -57,8 +56,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -74,7 +72,7 @@ public:
 
     bool materializeTTLRecalculateOnly() const;
 
-    bool hasLightweightDeletedMask() const override
+    bool hasLightweightDeletedMask() const
     {
         return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }
@@ -94,7 +92,8 @@ private:
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {
         auto table_id = part_->storage.getStorageID();
-        return StorageID(table_id.database_name, table_id.table_name + " (part " + part_->name + ")");
+        table_id.uuid = UUIDHelpers::generateV4();
+        return table_id;
     }
 };
 

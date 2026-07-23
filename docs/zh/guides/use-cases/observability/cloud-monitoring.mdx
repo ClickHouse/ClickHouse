@@ -1,0 +1,93 @@
+---
+slug: /use-cases/observability/cloud-monitoring
+title: 'ClickHouse Cloud 监控'
+sidebarTitle: 'ClickHouse Cloud 监控'
+description: 'ClickHouse Cloud 监控指南'
+doc_type: 'guide'
+keywords: ['可观测性', '监控', '云', '指标', '系统健康状态']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ObservabilityIntegrations from '/snippets/zh/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/zh/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/zh/_community_monitoring.mdx';
+
+本指南为正在评估 ClickHouse Cloud 的企业团队提供有关生产环境部署中监控与可观测性能力的全面信息。Enterprise 客户经常会询问开箱即用的监控功能、与现有可观测性技术栈 (包括 Datadog 和 AWS CloudWatch 等工具) 的集成方式，以及 ClickHouse 的监控能力与自托管部署相比有何不同。
+
+<div id="advanced-observability">
+  ## 高级可观测性仪表板
+</div>
+
+ClickHouse Cloud 通过 Monitoring 部分中内置的仪表板界面提供全面的监控能力。这些仪表板可实时展示系统和性能指标，无需额外配置，是 ClickHouse Cloud 中进行生产环境实时监控的主要工具。
+
+* **高级仪表板**：这是可通过 Monitoring → Advanced dashboard 访问的主仪表板界面，可实时查看查询速率、资源使用情况、系统健康状态和存储性能。此仪表板无需单独身份验证，不会阻止实例进入空闲状态，也不会给生产系统带来额外的查询负载。每个可视化均由可自定义的 SQL 查询提供支持，开箱即用的图表按 ClickHouse 特定指标、系统健康指标和 Cloud 特定指标分组。你还可以直接在 SQL 控制台中创建自定义查询，以扩展监控能力。
+
+<Note>
+  访问这些指标不会向底层服务发起查询，也不会唤醒空闲服务。
+</Note>
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="高级仪表板" />
+
+如果希望扩展这些可视化，可以使用 ClickHouse Cloud 的仪表盘功能，直接查询系统表。
+
+* **原生高级仪表板**：这是另一种可选的仪表板界面，可通过 Monitoring 部分中的“You can still access the native advanced dashboard”进入。它会在单独的标签页中打开，需要进行身份验证，并提供另一套用于监控系统和服务健康状态的 UI。该仪表板支持更高级的分析，你可以修改底层 SQL 查询。
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="高级仪表板" />
+
+这两个仪表板都能在不依赖外部工具的情况下立即提供服务健康状态和性能的可见性，这也是它们区别于 ClickStack 这类更侧重调试的外部工具之处。
+
+有关仪表板功能详情和可用指标，请参阅[高级仪表板文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
+
+<div id="query-insights">
+  ## Query insights 与资源监控
+</div>
+
+ClickHouse Cloud 提供了额外的监控能力：
+
+* Query Insights：用于分析查询性能并排查问题的内置界面
+* Resource Utilization Dashboard：跟踪内存、CPU 分配和数据传输模式。CPU 使用率和内存使用量图表显示特定时间段内的最大利用率指标。CPU 使用率图表显示的是系统级 CPU 利用率指标 (而非 ClickHouse CPU 利用率指标) 。
+
+有关详细功能，请参阅 [query insights](/zh/products/cloud/features/sql-console-features/query-insights) 和 [resource utilization](/zh/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) 文档。
+
+<div id="prometheus">
+  ## 兼容 Prometheus 的指标端点
+</div>
+
+ClickHouse Cloud 提供 Prometheus 端点。这让您能够保留现有工作流程、利用团队已有的经验，并将 ClickHouse 指标集成到企业级监控平台中，包括 Grafana、Datadog 以及其他兼容 Prometheus 的工具。
+
+组织级端点会汇总所有服务的指标，而按服务划分的端点则可提供更细粒度的监控。主要特性包括：
+
+* 过滤指标选项：可选参数 `filtered_metrics=true` 可将 1000+ 个可用指标的载荷缩减为 125 个“关键”指标，从而优化成本，并让监控重点更清晰
+* 缓存指标提供：使用每分钟刷新的 materialized view，以尽量降低生产系统上的查询负载
+
+<Note>
+  这种方式兼容服务的空闲行为，因此在服务未主动处理查询时可进一步优化成本。此 API 端点依赖 ClickHouse Cloud API 凭证。有关完整的端点配置详情，请参阅云端 [Prometheus 文档](/zh/products/cloud/features/monitoring/prometheus)。
+</Note>
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### ClickStack 部署选项
+</div>
+
+* **ClickHouse Cloud 中的 HyperDX** (私有预览) ：可在任何 ClickHouse Cloud 服务上运行 HyperDX。
+* [Helm](/zh/clickstack/deployment/helm)：推荐用于基于 Kubernetes 的调试环境。支持与 ClickHouse Cloud 集成，并允许通过 `values.yaml` 进行环境特定的配置、资源限制和扩缩容。
+* [Docker Compose](/zh/clickstack/deployment/docker-compose)：分别部署各个组件 (ClickHouse、HyperDX、OTel collector、MongoDB) 。与 ClickHouse Cloud 集成时，你可以修改 compose 文件，移除任何未使用的组件，尤其是 ClickHouse 和 OpenTelemetry Collector。
+* [仅 HyperDX](/zh/clickstack/deployment/hyperdx-only)：独立的 HyperDX 容器。
+
+有关完整的部署选项和架构详情，请参阅 [ClickStack 文档](/zh/clickstack/overview) 和 [数据摄取指南](/zh/clickstack/ingesting-data/overview)。
+
+<Note>
+  你还可以通过 OpenTelemetry Collector 从 ClickHouse Cloud 的 Prometheus 端点收集指标，并将其转发到单独的 ClickStack 部署中进行可视化。
+</Note>
+
+<DirectIntegrations />
+
+<CommunityMonitoring />
+
+<div id="system-impact">
+  ## 系统影响考量
+</div>
+
+上述所有方法都会结合采用以下方式：依赖 Prometheus 端点、由 ClickHouse Cloud 托管，或直接查询系统表。
+其中最后一种方式依赖于直接查询生产环境中的 ClickHouse 服务。这会给被观测系统增加查询负载，并使 ClickHouse Cloud 实例无法进入空闲状态，从而影响成本优化。此外，如果生产系统发生故障，由于两者相互耦合，监控也可能受到影响。这种方法非常适合做深度内部信息分析和调试，但不太适合实时生产监控。在评估直接集成 Grafana 与下一节讨论的外部工具集成方案时，请权衡细致的系统分析能力与运维开销之间的取舍。

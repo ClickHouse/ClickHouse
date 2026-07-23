@@ -1,10 +1,11 @@
 #include <Parsers/ASTCollation.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
     ASTPtr ASTCollation::clone() const
     {
-        auto res = std::make_shared<ASTCollation>(*this);
+        auto res = make_intrusive<ASTCollation>(*this);
         res->collation = collation->clone();
         return res;
     }

@@ -1,0 +1,155 @@
+---
+description: 'ClickHouse 中 Time64 数据类型的文档，该类型用于以子秒级精度存储
+  时刻范围'
+slug: /sql-reference/data-types/time64
+sidebarTitle: 'Time64'
+title: 'Time64'
+doc_type: 'reference'
+---
+
+数据类型 `Time64` 表示带小数秒的时刻。
+它不包含任何日历日期部分 (日、月、年) 。
+`precision` 参数定义小数位数，因此也决定了时间粒度。
+
+时间粒度 (precision) ：10<sup>-precision</sup> 秒。有效范围：0..9。常见取值为 3 (毫秒) 、6 (微秒) 和 9 (纳秒) 。
+
+**语法：**
+
+```sql
+Time64(precision)
+```
+
+在内部，`Time64` 将小数秒存储为有符号的 64 位十进制数 (Decimal64) 。
+tick 分辨率由 `precision` 参数决定。
+不支持时区：如果为 `Time64` 指定时区，将抛出错误。
+
+与 `DateTime64` 不同，`Time64` 不存储日期部分。
+另请参见 [`Time`](/zh/reference/data-types/time)。
+
+文本表示范围：当 `precision = 3` 时，为 [-999:59:59.000, 999:59:59.999]。一般情况下，最小值为 `-999:59:59`，最大值为 `999:59:59`，小数部分最多可有 `precision` 位 (当 `precision = 9` 时，最小值为 `-999:59:59.999999999`) 。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+**表示**。
+使用带符号的 `Decimal64` 值表示，按 `precision` 个小数位计数秒的小数部分。
+
+**归一化**。
+将字符串解析为 `Time64` 时，时间各组件会被归一化，但不会校验其有效性。
+例如，`25:70:70` 会被解释为 `26:11:10`。
+
+**负值**。
+支持并保留前导负号。
+负值通常来自对 `Time64` 值进行算术运算。
+对于 `Time64`，无论是文本输入 (例如 `'-01:02:03.123'`) 还是数值输入 (例如 `-3723.123`) ，都会保留负值。
+
+**饱和处理**。
+在转换为各组件或序列化为文本时，时刻部分会被限制在 [-999:59:59.xxx, 999:59:59.xxx] 范围内。
+存储的数值可能超出此范围；但提取任何组件 (小时、分钟、秒) 以及转换为文本表示时，都会使用限制后的值。
+
+**时区**。
+`Time64` 不支持时区。
+创建 `Time64` 类型或值时，如果指定时区，会抛出错误。
+同样，尝试对 `Time64` 列应用或更改时区也不受支持，并会导致错误。
+
+<div id="examples">
+  ## 示例
+</div>
+
+1. 创建一个带有 `Time64` 类型列的表，并向其中插入数据：
+
+```sql
+CREATE TABLE tab64
+(
+    `event_id` UInt8,
+    `time` Time64(3)
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- 解析 Time64
+-- - 从字符串，
+-- - 从自 00:00:00 起的秒数（小数部分由精度决定）。
+INSERT INTO tab64 VALUES (1, '14:30:25'), (2, 52225.123), (3, '14:30:25');
+
+SELECT * FROM tab64 ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        2 │ 14:30:25.123 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+2. 过滤 `Time64` 值
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        2 │ 14:30:25.123 │
+   └──────────┴──────────────┘
+```
+
+注意：`toTime64` 会根据指定的精度，将数值字面量按带小数部分的秒数进行解析，因此请明确写出所需的小数位数。
+
+3. 检查结果类型：
+
+```sql
+SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
+```
+
+```text
+   ┌────────column─┬─type──────┐
+1. │ 14:30:25.250 │ Time64(3) │
+   └───────────────┴───────────┘
+```
+
+<div id="addition-with-date">
+  ## 与 Date 相加
+</div>
+
+可以将 [Time64](/zh/reference/data-types/time64) 值与 [Date](/zh/reference/data-types/date) 或 [Date32](/zh/reference/data-types/date32) 值相加，得到一个与 `Time64` 具有相同标度的 [DateTime64](/zh/reference/data-types/datetime64)：
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
+1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+   └────────────────────────────┴────────────────┘
+```
+
+有关所有支持的组合及结果类型的详细信息，请参阅[日期和时间加法](/zh/reference/operators/index#date-time-addition)。
+
+**另请参阅**
+
+* [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
+* [处理日期和时间的函数](/zh/reference/functions/regular-functions/date-time-functions)
+* [`date_time_input_format` 设置](/zh/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 设置](/zh/reference/settings/formats#date_time_output_format)
+* [`timezone` server configuration parameter](/zh/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 设置](/zh/reference/settings/session-settings#session_timezone)
+* [处理日期和时间的运算符](/zh/reference/operators/index#operators-for-working-with-dates-and-times)
+* [`Date` 数据类型](/zh/reference/data-types/date)
+* [`Time` 数据类型](/zh/reference/data-types/time)
+* [`DateTime` 数据类型](/zh/reference/data-types/datetime)

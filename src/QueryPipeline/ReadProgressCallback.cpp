@@ -1,4 +1,5 @@
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 
@@ -51,31 +52,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
             return false;
     }
 
-    size_t rows_approx = 0;
-    if ((rows_approx = total_rows_approx.exchange(0)) != 0)
-    {
-        Progress total_rows_progress = {0, 0, rows_approx};
-
-        if (progress_callback)
-            progress_callback(total_rows_progress);
-
-        if (process_list_elem)
-            process_list_elem->updateProgressIn(total_rows_progress);
-    }
-
-    size_t bytes = 0;
-    if ((bytes = total_bytes.exchange(0)) != 0)
-    {
-        Progress total_bytes_progress = {0, 0, 0, bytes};
-
-        if (progress_callback)
-            progress_callback(total_bytes_progress);
-
-        if (process_list_elem)
-            process_list_elem->updateProgressIn(total_bytes_progress);
-    }
-
-    Progress value {read_rows, read_bytes};
+    Progress value {read_rows, read_bytes, total_rows_approx.exchange(0), total_bytes.exchange(0)};
 
     if (progress_callback)
         progress_callback(value);
@@ -131,7 +108,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
             limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_stopwatch.elapsedMicroseconds(), limits.local_limits.timeout_overflow_mode);
 
         if (quota)
-            quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
+            quota->usedForQuery(normalized_query_hash, {{QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes}});
     }
 
     if (update_profile_events)

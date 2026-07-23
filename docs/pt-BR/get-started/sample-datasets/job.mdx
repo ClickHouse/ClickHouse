@@ -1,0 +1,130 @@
+---
+description: 'O conjunto de dados e as consultas do Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['example dataset', 'job', 'join order benchmark', 'benchmark', 'performance testing', 'query optimizer', 'join ordering']
+---
+
+O Join Order Benchmark (JOB) coloca o otimizador de consultas sob pressão com 113 consultas analíticas sobre um conjunto de dados real e altamente correlacionado (um snapshot do IMDb). Desde sua introdução, o benchmark JOB tornou-se o padrão de fato para avaliar o desempenho de otimizadores de consultas de bancos de dados relacionais, incluindo estimativa de cardinalidade e otimização da ordem de JOIN. Diferentemente de benchmarks sintéticos que assumem dados uniformes e independentes, o JOB usa dados reais com distribuição desigual e correlações, o que o torna um teste desafiador para a ordenação de JOINs e a estimativa de cardinalidade.
+
+O conjunto de dados contém cerca de 74 milhões de linhas distribuídas em 21 tabelas e ocupa aproximadamente 1,15 GiB comprimido no ClickHouse.
+
+As 113 consultas estão organizadas em 33 famílias (`1`–`33`). As consultas dentro de uma família (`a`, `b`, `c`, ...) compartilham o mesmo grafo de JOIN, mas diferem nos predicados de seleção.
+
+**Referências**
+
+* [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis et al., VLDB 2015)
+* Repositório [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark)
+
+<div id="creating-tables">
+  ## Criando as tabelas
+</div>
+
+O dataset JOB é um snapshot do IMDb com 21 tabelas. As definições das tabelas estão disponíveis em [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) no repositório do ClickHouse.
+
+Cada tabela usa o motor [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), ordenado pela coluna da chave primária `id`, seguindo o schema original do PostgreSQL, em que toda tabela declara `id integer NOT NULL PRIMARY KEY`. Colunas anuláveis do PostgreSQL são mapeadas para tipos `Nullable(...)`.
+
+Crie as tabelas:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## Carregando os dados
+</div>
+
+Os dados vêm do snapshot original do IMDb usado pelo JOB, distribuído como um arquivo CSV por tabela (`aka_name.csv`, `title.csv`, ...).
+Esses arquivos CSV usam a semântica de `COPY` do PostgreSQL com `ESCAPE '\'`: uma barra invertida escapa o caractere de aspas apenas dentro de um campo entre aspas, enquanto, fora das aspas, a barra invertida é um caractere literal.
+O ClickHouse espera CSV no formato RFC 4180 (aspas duplicadas, sem escape com barra invertida), portanto os arquivos precisam ser recodificados primeiro.
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) faz essa recodificação.
+Ele lê o CSV original em stdin e grava o CSV padrão em stdout, duplicando aspas internas e preservando campos vazios sem aspas (que o ClickHouse mapeia para `NULL` em colunas `Nullable`).
+
+Para criar as tabelas a partir dos arquivos CSV originais:
+
+* Crie as tabelas (veja acima).
+* Baixe o conjunto de dados do IMDb como um arquivo `imdb.tgz`, seguindo as instruções no repositório Join Order Benchmark.
+* Converta e importe os dados:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+Depois que as tabelas estiverem preenchidas, elas poderão ser exportadas para Parquet para uma reimportação mais rápida posteriormente, por exemplo:
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+Tamanhos detalhados das tabelas:
+
+| Tabela                 | tamanho (em linhas) | tamanho (comprimido no ClickHouse) |
+| ---------------------- | ------------------- | ---------------------------------- |
+| aka&#95;name           | 901,343             | 31.86 MiB                          |
+| aka&#95;title          | 361,472             | 14.32 MiB                          |
+| cast&#95;info          | 36,244,344          | 296.25 MiB                         |
+| char&#95;name          | 3,140,339           | 107.95 MiB                         |
+| comp&#95;cast&#95;type | 4                   | 132.00 B                           |
+| company&#95;name       | 234,997             | 8.38 MiB                           |
+| company&#95;type       | 4                   | 162.00 B                           |
+| complete&#95;cast      | 135,086             | 748.80 KiB                         |
+| info&#95;type          | 113                 | 1.25 KiB                           |
+| keyword                | 134,170             | 1.88 MiB                           |
+| kind&#95;type          | 7                   | 177.00 B                           |
+| link&#95;type          | 18                  | 284.00 B                           |
+| movie&#95;companies    | 2,609,129           | 21.20 MiB                          |
+| movie&#95;info         | 14,835,720          | 300.46 MiB                         |
+| movie&#95;info&#95;idx | 1,380,035           | 8.01 MiB                           |
+| movie&#95;keyword      | 4,523,930           | 21.06 MiB                          |
+| movie&#95;link         | 29,997              | 178.21 KiB                         |
+| name                   | 4,167,491           | 131.16 MiB                         |
+| person&#95;info        | 2,963,664           | 154.12 MiB                         |
+| role&#95;type          | 12                  | 246.00 B                           |
+| title                  | 2,528,312           | 78.04 MiB                          |
+| **Total**              | **74,190,187**      | **1.15 GiB**                       |
+
+(Os tamanhos comprimidos no ClickHouse são obtidos de `system.tables.total_bytes` e se baseiam nas definições das tabelas acima.)
+
+<div id="queries">
+  ## Consultas
+</div>
+
+As 113 consultas JOB podem ser encontradas [aqui](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries), no repositório do ClickHouse.
+As configurações usadas para executá-las estão em [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+Consulte o [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) para ver problemas conhecidos e observações sobre consultas específicas.
+
+As consultas fazem referência às tabelas pelo nome, portanto execute-as no banco de dados `job` (por exemplo, com `clickhouse client --database job`).
+
+Uma consulta de exemplo (`1a`):
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

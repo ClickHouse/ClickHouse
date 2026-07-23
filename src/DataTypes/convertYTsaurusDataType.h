@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <base/types.h>
 #include <Core/MultiEnum.h>
 #include <DataTypes/IDataType.h>
@@ -20,4 +21,7 @@ DataTypePtr convertYTTuple(const Poco::JSON::Object::Ptr & json);
 DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr & json);
 DataTypePtr convertYTDict(const Poco::JSON::Object::Ptr & json);
 DataTypePtr convertYTTagged(const Poco::JSON::Object::Ptr & json);
+
+bool isYTSaurusTypesCompatible(std::shared_ptr<const IDataType> ch_type, std::shared_ptr<const IDataType> yt_type, bool allow_nullable);
+
 }

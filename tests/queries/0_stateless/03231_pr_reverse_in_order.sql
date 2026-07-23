@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS checks SYNC;
 
 CREATE TABLE checks
@@ -35,6 +36,8 @@ FROM
     SETTINGS query_plan_read_in_order = 1, optimize_read_in_order = 1, max_parallel_replicas = 1
 )
 WHERE explain LIKE '%InReverseOrder%';
+
+SET automatic_parallel_replicas_mode = 0;
 
 SELECT check_start_time, check_name, test_name, test_status, check_status
 FROM checks

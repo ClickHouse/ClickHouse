@@ -1,0 +1,77 @@
+---
+sidebarTitle: 'Типовые запросы для управления доступом'
+title: 'Типовые запросы для управления доступом'
+slug: /cloud/security/common-access-management-queries
+description: 'В этой статье рассматриваются основы создания SQL-пользователей и ролей, а также назначения этих привилегий и разрешений базам данных, таблицам, строкам и столбцам.'
+keywords: ['ClickHouse Cloud', 'управление доступом']
+doc_type: 'guide'
+---
+
+import CommonUserRolesContent from '/snippets/ru/_users-and-roles-common.mdx';
+
+<Tip>
+  **Самоуправляемый**
+
+  Если вы работаете с самоуправляемым ClickHouse, см. [пользователи и роли SQL](/ru/concepts/features/security/access-rights).
+</Tip>
+
+В этой статье рассказывается об основах создания пользователей и ролей SQL, а также назначения им привилегий и разрешений для баз данных, таблиц, строк и столбцов.
+
+<div id="admin-user">
+  ## Пользователь с ролью Admin
+</div>
+
+В сервисах ClickHouse Cloud есть пользователь `default` с правами администратора, который создается при создании сервиса. Пароль задается при создании сервиса, и его могут сбросить пользователи ClickHouse Cloud с ролью **Admin**.
+
+Когда вы добавляете дополнительных SQL-пользователей для своего сервиса ClickHouse Cloud, им потребуются SQL-имя пользователя и пароль. Если вы хотите предоставить им административные привилегии, назначьте новым пользователям роль `default_role`. Например, добавим пользователя `clickhouse_admin`:
+
+```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'P!@ssword42!';
+```
+
+```sql
+GRANT default_role TO clickhouse_admin;
+```
+
+<Note>
+  При использовании SQL Console ваши SQL-команды будут выполняться не от имени пользователя `default`. Вместо этого они будут выполняться от имени пользователя `sql-console:${cloud_login_email}`, где `cloud_login_email` — это адрес электронной почты пользователя, который в данный момент выполняет запрос.
+
+  Эти автоматически созданные пользователи SQL Console имеют роль `default`.
+</Note>
+
+<div id="passwordless-authentication">
+  ## Аутентификация без пароля
+</div>
+
+Для SQL Console доступны две роли: `sql_console_admin` с теми же разрешениями, что и у `default_role`, и `sql_console_read_only` с разрешениями только для чтения.
+
+Пользователям с ролью Admin по умолчанию назначается роль `sql_console_admin`, поэтому для них ничего не меняется. Однако роль `sql_console_read_only` позволяет предоставить пользователям без роли Admin доступ только для чтения или полный доступ к любому экземпляру. Этот доступ должен настроить пользователь с ролью Admin. Роли можно изменить с помощью команд `GRANT` или `REVOKE`, чтобы точнее соответствовать требованиям конкретного экземпляра, и все внесённые в них изменения будут сохранены.
+
+<div id="granular-access-control">
+  ### Тонкая настройка управления доступом
+</div>
+
+Этот механизм управления доступом также можно настроить вручную с точностью до отдельного пользователя. Перед тем как назначать пользователям новые роли `sql_console_*`, следует создать роли базы данных для отдельных пользователей SQL Console по шаблону `sql-console-role:<email>`. Например:
+
+```sql
+CREATE ROLE OR REPLACE sql-console-role:<email>;
+GRANT <some grants> TO sql-console-role:<email>;
+```
+
+Если обнаружена подходящая роль, она будет назначена пользователю вместо шаблонных ролей. Это позволяет настраивать более сложные схемы управления доступом, например создавать роли `sql_console_sa_role` и `sql_console_pm_role` и назначать их конкретным пользователям. Например:
+
+```sql
+CREATE ROLE OR REPLACE sql_console_sa_role;
+GRANT <whatever level of access> TO sql_console_sa_role;
+CREATE ROLE OR REPLACE sql_console_pm_role;
+GRANT <whatever level of access> TO sql_console_pm_role;
+CREATE ROLE OR REPLACE `sql-console-role:christoph@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:jake@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:zach@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:christoph@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:jake@clickhouse.com`;
+GRANT sql_console_pm_role to `sql-console-role:zach@clickhouse.com`;
+```
+
+<CommonUserRolesContent />

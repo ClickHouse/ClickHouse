@@ -34,7 +34,7 @@ The hash function is relatively fast but not cryptographic hash function.
     };
     FunctionDocumentation::IntroducedIn intHash32_introduced_in = {1, 1};
     FunctionDocumentation::Category intHash32_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation intHash32_documentation = {intHash32_description, intHash32_syntax, intHash32_arguments, intHash32_returned_value, intHash32_examples, intHash32_introduced_in, intHash32_category};
+    FunctionDocumentation intHash32_documentation = {intHash32_description, intHash32_syntax, intHash32_arguments, {}, intHash32_returned_value, intHash32_examples, intHash32_introduced_in, intHash32_category};
     factory.registerFunction<FunctionIntHash32>(intHash32_documentation);
 
     FunctionDocumentation::Description intHash64_description = R"(
@@ -60,7 +60,7 @@ The hash function is relatively fast (even faster than [`intHash32`](#intHash32)
     };
     FunctionDocumentation::IntroducedIn intHash64_introduced_in = {1, 1};
     FunctionDocumentation::Category intHash64_category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation intHash64_documentation = {intHash64_description, intHash64_syntax, intHash64_arguments, intHash64_returned_value, intHash64_examples, intHash64_introduced_in, intHash64_category};
+    FunctionDocumentation intHash64_documentation = {intHash64_description, intHash64_syntax, intHash64_arguments, {}, intHash64_returned_value, intHash64_examples, intHash64_introduced_in, intHash64_category};
     factory.registerFunction<FunctionIntHash64>(intHash64_documentation);
 }
 }

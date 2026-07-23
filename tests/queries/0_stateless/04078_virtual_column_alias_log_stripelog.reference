@@ -1,0 +1,33 @@
+-- Test that alias columns work correctly together with virtual columns.
+-- { echoOn }
+
+DROP TABLE IF EXISTS t_log_alias;
+CREATE TABLE t_log_alias (key Int, value Int, doubled ALIAS value * 2) ENGINE = Log;
+INSERT INTO t_log_alias VALUES (1, 10), (2, 20);
+SELECT _table, key, doubled FROM t_log_alias ORDER BY key;
+t_log_alias	1	20
+t_log_alias	2	40
+SELECT _table, doubled FROM t_log_alias ORDER BY doubled;
+t_log_alias	20
+t_log_alias	40
+DROP TABLE t_log_alias;
+DROP TABLE IF EXISTS t_tinylog_alias;
+CREATE TABLE t_tinylog_alias (key Int, value Int, doubled ALIAS value * 2) ENGINE = TinyLog;
+INSERT INTO t_tinylog_alias VALUES (1, 10), (2, 20);
+SELECT _table, key, doubled FROM t_tinylog_alias ORDER BY key;
+t_tinylog_alias	1	20
+t_tinylog_alias	2	40
+SELECT _table, doubled FROM t_tinylog_alias ORDER BY doubled;
+t_tinylog_alias	20
+t_tinylog_alias	40
+DROP TABLE t_tinylog_alias;
+DROP TABLE IF EXISTS t_stripelog_alias;
+CREATE TABLE t_stripelog_alias (key Int, value Int, doubled ALIAS value * 2) ENGINE = StripeLog;
+INSERT INTO t_stripelog_alias VALUES (3, 30), (4, 40);
+SELECT _table, key, doubled FROM t_stripelog_alias ORDER BY key;
+t_stripelog_alias	3	60
+t_stripelog_alias	4	80
+SELECT _table, doubled FROM t_stripelog_alias ORDER BY doubled;
+t_stripelog_alias	60
+t_stripelog_alias	80
+DROP TABLE t_stripelog_alias;

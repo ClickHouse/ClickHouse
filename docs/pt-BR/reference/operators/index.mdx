@@ -1,0 +1,693 @@
+---
+description: 'Documentação sobre Operadores'
+sidebarTitle: 'Operadores'
+slug: /sql-reference/operators/
+title: 'Operadores'
+doc_type: 'reference'
+---
+
+O ClickHouse transforma os operadores nas funções correspondentes durante a etapa de análise sintática da consulta, de acordo com sua prioridade, precedência e associatividade.
+
+<div id="access-operators">
+  ## Operadores de acesso
+</div>
+
+`a[N]` – Acesso a um elemento de um Array. A função `arrayElement(a, N)`.
+
+`a.N` – Acesso a um elemento de uma tupla. A função `tupleElement(a, N)`.
+
+<div id="numeric-negation-operator">
+  ## Operador de negação numérica
+</div>
+
+`-a` – A função `negate(a)`.
+
+Para a negação de tuplas: [tupleNegate](/pt-BR/reference/functions/regular-functions/tuple-functions#tupleNegate).
+
+<div id="multiplication-and-division-operators">
+  ## Operadores de Multiplicação e Divisão
+</div>
+
+`a * b` – A função `multiply(a, b)`.
+
+Para multiplicar tupla por um número: [tupleMultiplyByNumber](/pt-BR/reference/functions/regular-functions/tuple-functions#tupleMultiplyByNumber); para produto escalar: [dotProduct](/pt-BR/reference/functions/regular-functions/array-functions#arrayDotProduct).
+
+`a / b` – A função `divide(a, b)`.
+
+Para dividir tupla por um número: [tupleDivideByNumber](/pt-BR/reference/functions/regular-functions/tuple-functions#tupleDivideByNumber).
+
+`a % b` – A função `modulo(a, b)`.
+
+<div id="addition-and-subtraction-operators">
+  ## Operadores de adição e subtração
+</div>
+
+`a + b` – A função `plus(a, b)`.
+
+Para adição de tuplas: [tuplePlus](/pt-BR/reference/functions/regular-functions/tuple-functions#tuplePlus).
+
+`a - b` – A função `minus(a, b)`.
+
+Para subtração de tuplas: [tupleMinus](/pt-BR/reference/functions/regular-functions/tuple-functions#tupleMinus).
+
+<div id="comparison-operators">
+  ## Operadores de comparação
+</div>
+
+<div id="equals-function">
+  ### função equals
+</div>
+
+`a = b` – A função `equals(a, b)`.
+
+`a == b` – A função `equals(a, b)`.
+
+<div id="notequals-function">
+  ### função notEquals
+</div>
+
+`a != b` – A função `notEquals(a, b)`.
+
+`a <> b` – A função `notEquals(a, b)`.
+
+<div id="lessorequals-function">
+  ### função lessOrEquals
+</div>
+
+`a <= b` – a função `lessOrEquals(a, b)`.
+
+<div id="greaterorequals-function">
+  ### função greaterOrEquals
+</div>
+
+`a >= b` – A função `greaterOrEquals(a, b)`.
+
+<div id="less-function">
+  ### função less
+</div>
+
+`a < b` – A função `less(a, b)`.
+
+<div id="greater-function">
+  ### função greater
+</div>
+
+`a > b` – A função `greater(a, b)`.
+
+<div id="like-function">
+  ### função like
+</div>
+
+`a LIKE b` – a função `like(a, b)`.
+
+<div id="notlike-function">
+  ### Função notLike
+</div>
+
+`a NOT LIKE b` – a função `notLike(a, b)`.
+
+<div id="ilike-function">
+  ### função ilike
+</div>
+
+`a ILIKE b` – a função `ilike(a, b)`.
+
+<div id="between-function">
+  ### Função BETWEEN
+</div>
+
+`a BETWEEN b AND c` – Equivale a `a >= b AND a <= c`.
+
+`a NOT BETWEEN b AND c` – Equivale a `a < b OR a > c`.
+
+<div id="is-not-distinct-from">
+  ### operador `is not distinct from` (`<=>`)
+</div>
+
+<Note>
+  A partir da versão 25.10, você pode usar `<=>` da mesma forma que qualquer outro operador.
+  Antes da versão 25.10, ele só podia ser usado em expressões JOIN, por exemplo:
+
+  ```sql
+  CREATE TABLE a (x String) ENGINE = Memory;
+  INSERT INTO a VALUES ('ClickHouse');
+
+  SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
+
+  ┌─x──────────┬─a2.x───────┐
+  │ ClickHouse │ ClickHouse │
+  └────────────┴────────────┘
+  ```
+</Note>
+
+O operador `<=>` é o operador de igualdade compatível com `NULL`, equivalente a `IS NOT DISTINCT FROM`.
+Ele funciona como o operador de igualdade comum (`=`), mas trata valores `NULL` como comparáveis.
+Dois valores `NULL` são considerados iguais, e um `NULL` comparado com qualquer valor não `NULL` retorna 0 (falso), em vez de `NULL`.
+
+```sql
+SELECT
+  'ClickHouse' <=> NULL,
+  NULL <=> NULL
+```
+
+```response
+┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+<div id="operators-for-working-with-strings">
+  ## Operadores para trabalhar com strings
+</div>
+
+<div id="overlay">
+  ### OVERLAY
+</div>
+
+* `OVERLAY(string PLACING replacement FROM offset)` - A função `overlay(string, replacement, offset)`.
+* `OVERLAY(string PLACING replacement FROM offset FOR length)` - A função `overlay(string, replacement, offset, length)`.
+* `OVERLAYUTF8(string PLACING replacement FROM offset)` - A função `overlayUTF8(string, replacement, offset)`.
+* `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - A função `overlayUTF8(string, replacement, offset, length)`.
+
+<div id="operators-for-working-with-data-sets">
+  ## Operadores para trabalhar com conjuntos de dados
+</div>
+
+Consulte os [operadores IN](/pt-BR/reference/statements/in) e o operador [EXISTS](/pt-BR/reference/operators/exists).
+
+<div id="in-function">
+  ### função in
+</div>
+
+`a IN ...` – a função `in(a, b)`.
+
+<div id="notin-function">
+  ### função notIn
+</div>
+
+`a NOT IN ...` – a função `notIn(a, b)`.
+
+<div id="globalin-function">
+  ### função globalIn
+</div>
+
+`a GLOBAL IN ...` – a função `globalIn(a, b)`.
+
+<div id="globalnotin-function">
+  ### função globalNotIn
+</div>
+
+`a GLOBAL NOT IN ...` – A função `globalNotIn(a, b)`.
+
+<div id="in-subquery-function">
+  ### função in de subconsulta
+</div>
+
+`a = ANY (subquery)` – A função `in(a, subquery)`.
+
+<div id="notin-subquery-function">
+  ### notIn subconsulta function
+</div>
+
+`a != ANY (subquery)` – O mesmo que `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+<div id="in-subquery-function-1">
+  ### função in subconsulta
+</div>
+
+`a = ALL (subquery)` – O mesmo que `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+<div id="notin-subquery-function-1">
+  ### função de subconsulta `notIn`
+</div>
+
+`a != ALL (subquery)` – A função `notIn(a, subquery)`.
+
+**Exemplos**
+
+Consulta com ALL:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+Consulta com ANY:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+<div id="some-all-on-arrays">
+  ### `SOME` / `ALL` em arrays
+</div>
+
+Além da forma de subconsulta descrita acima, o lado direito de `SOME` / `ALL` pode ser uma expressão de array (um literal de array, uma coluna do tipo array ou qualquer expressão que retorne um array). Esta é a sintaxe de quantificador de array no estilo do PostgreSQL. Ela é reconhecida durante o parse e reescrita como funções de array, portanto não é necessária nenhuma reescrita manual:
+
+| Sintaxe                                                     | Reescrito como                     |
+| ----------------------------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                                          | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                                          | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (qualquer outro operador de comparação) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (qualquer outro operador de comparação)  | `arrayAll(x -> expr OP x, arr)`    |
+
+`SOME` é o quantificador existencial (o sinônimo em SQL de `ANY`). `=` e `<>` recebem tratamento especial e são reescritos como `has` / `NOT has` porque têm uma implementação otimizada; a forma geral recorre às funções de ordem superior `arrayExists` / `arrayAll`.
+
+A forma com array é reconhecida apenas para os operadores de comparação `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, e `>=`. Outros operadores que aceitam um array à direita — por exemplo, `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP` e `IN` — **não** são reescritos como quantificadores de array e mantêm seu significado normal. Por exemplo, `'abc' LIKE SOME(['a%', 'b%'])` não é a sintaxe de quantificador de array; use `arrayExists` / `arrayAll` diretamente nesses casos.
+
+<Info>
+  **`ANY` não tem suporte na forma com array**
+
+  Somente `SOME` e `ALL` aceitam um array no lado direito. `ANY` foi excluído porque `any` também é uma função de agregação, então uma expressão no formato `expr = any(x)` mantém o significado de chamada de função. Use `SOME` para o quantificador de array.
+</Info>
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+<Info>
+  **O tratamento de `NULL` difere da forma com subconsulta**
+
+  Como a forma de array é reescrita no parser (onde configurações de consulta como `transform_null_in` não estão disponíveis, e uma coluna de array por linha não pode usar o caminho `IN` null-safe do analyzer), ela usa a semântica de dois valores de `has` (para `=` / `<>`) e `arrayExists` / `arrayAll` (que convertem um resultado desconhecido de comparação com `NULL` em `0`). Isso pode diferir da forma com subconsulta, cujo tratamento de `NULL` é reduzido por meio de `IN` / `NOT IN` e depende de `transform_null_in`:
+
+  ```sql
+  SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+  SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+  SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+  SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+  ```
+</Info>
+
+<div id="operators-for-working-with-dates-and-times">
+  ## Operadores para trabalhar com datas e horas
+</div>
+
+<div id="extract">
+  ### EXTRACT
+</div>
+
+```sql
+EXTRACT(part FROM date);
+```
+
+Extrai partes de uma determinada data. Por exemplo, você pode obter o mês de uma data ou os segundos de um horário.
+
+O parâmetro `part` especifica qual parte da data deve ser recuperada. Os seguintes valores estão disponíveis:
+
+* `NANOSECOND` — O nanossegundo. Valores possíveis: 0–999999999.
+* `MICROSECOND` — O microssegundo. Valores possíveis: 0–999999.
+* `MILLISECOND` — O milissegundo. Valores possíveis: 0–999.
+* `SECOND` — O segundo. Valores possíveis: 0–59.
+* `MINUTE` — O minuto. Valores possíveis: 0–59.
+* `HOUR` — A hora. Valores possíveis: 0–23.
+* `DAY` — O dia do mês. Valores possíveis: 1–31.
+* `WEEK` — O número da semana ISO 8601. Valores possíveis: 1–53.
+* `MONTH` — O número do mês. Valores possíveis: 1–12.
+* `QUARTER` — O trimestre. Valores possíveis: 1–4.
+* `YEAR` — O ano.
+* `EPOCH` — O Unix timestamp (segundos desde 1970-01-01 00:00:00 UTC). Observação: para `DateTime64`, a parte fracionária dos segundos é truncada.
+* `DOW` — O dia da semana (compatível com PostgreSQL). 0 = domingo, 6 = sábado.
+* `DOY` — O dia do ano. Valores possíveis: 1–366.
+* `ISODOW` — O dia ISO da semana. 1 = segunda-feira, 7 = domingo.
+* `ISOYEAR` — O ano de numeração de semanas ISO 8601.
+* `CENTURY` — O século. Por exemplo, o ano de 2024 está no século 21.
+* `DECADE` — A década (ano dividido por 10). Por exemplo, o ano de 2024 tem década 202.
+* `MILLENNIUM` — O milênio. Por exemplo, o ano de 2024 está no 3º milênio.
+* `TIMEZONE_HOUR` — A parte da hora com sinal do deslocamento UTC do fuso horário do operando. Por exemplo, `+5:30` retorna `5`, `-3:30` retorna `-3`.
+* `TIMEZONE_MINUTE` — A parte dos minutos com sinal do deslocamento UTC do fuso horário do operando. Por exemplo, `+5:30` retorna `30`, `-3:30` retorna `-30`.
+
+O parâmetro `part` não diferencia maiúsculas de minúsculas.
+
+O parâmetro `date` especifica o valor a ser processado. Os tipos [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64) e [Interval](/pt-BR/reference/data-types/special-data-types/interval) são suportados. Quando `date` é um `Interval`, o `part` solicitado deve corresponder ao tipo armazenado no intervalo (por exemplo, `EXTRACT(DAY FROM INTERVAL 5 DAY)` é permitido; `EXTRACT(HOUR FROM INTERVAL 5 DAY)` é rejeitado, porque os intervalos do ClickHouse são de tipo único). O resultado para um operando `Interval` é `Int64`.
+
+Exemplos:
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
+SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
+SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
+```
+
+No exemplo a seguir, criamos uma tabela e inserimos nela um valor do tipo `DateTime`.
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+) ENGINE = MergeTree
+ORDER BY ();
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+Você pode ver mais exemplos nos [testes](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
+
+<div id="interval">
+  ### INTERVAL
+</div>
+
+Cria um valor do tipo [Interval](/pt-BR/reference/data-types/special-data-types/interval) que deve ser usado em operações aritméticas com valores do tipo [Date](/pt-BR/reference/data-types/date) e [DateTime](/pt-BR/reference/data-types/datetime).
+
+Tipos de intervalos:
+
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+Você também pode usar um literal de string ao definir um valor `INTERVAL`. Por exemplo, `INTERVAL 1 HOUR` é idêntico a `INTERVAL '1 hour'` ou `INTERVAL '1' hour`.
+
+<Tip>
+  Intervalos de tipos diferentes não podem ser combinados. Não é possível usar expressões como `INTERVAL 4 DAY 1 HOUR`. Especifique intervalos em unidades menores ou iguais à menor unidade do intervalo, por exemplo, `INTERVAL 25 HOUR`. Você pode usar operações consecutivas, como no exemplo abaixo.
+</Tip>
+
+Exemplos:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  A sintaxe `INTERVAL` ou a função `addDays` devem ser sempre preferidas. A simples adição ou subtração (com sintaxe como `now() + ...`) não leva em conta as configurações de horário. Por exemplo, o horário de verão.
+</Note>
+
+Exemplos:
+
+```sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+```text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+```
+
+**Veja também**
+
+* tipo de dado [Interval](/pt-BR/reference/data-types/special-data-types/interval)
+* [toInterval](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) funções de conversão de tipo
+
+<div id="date-time-addition">
+  ### Adição de data e hora
+</div>
+
+Um valor [Date](/pt-BR/reference/data-types/date) ou [Date32](/pt-BR/reference/data-types/date32) pode ser somado a um valor [Time](/pt-BR/reference/data-types/time) ou [Time64](/pt-BR/reference/data-types/time64) usando o operador `+`. O resultado é um [DateTime](/pt-BR/reference/data-types/datetime) ou [DateTime64](/pt-BR/reference/data-types/datetime64) que representa a data no horário informado. A operação é comutativa.
+
+O tipo do resultado depende dos tipos dos operandos:
+
+| Operando esquerdo | Operando direito | Tipo do resultado |
+| ----------------- | ---------------- | ----------------- |
+| `Date`            | `Time`           | `DateTime`        |
+| `Date`            | `Time64(s)`      | `DateTime64(s)`   |
+| `Date32`          | `Time`           | `DateTime64(0)`   |
+| `Date32`          | `Time64(s)`      | `DateTime64(s)`   |
+
+<Note>
+  O resultado usa o [fuso horário da sessão](/pt-BR/reference/settings/session-settings#session_timezone) (ou o fuso horário padrão do servidor, se nenhum fuso horário da sessão estiver definido). A configuração [`date_time_overflow_behavior`](/pt-BR/reference/settings/formats#date_time_overflow_behavior) controla o que acontece quando o resultado fica fora do intervalo representável.
+</Note>
+
+Exemplos:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
+
+<div id="logical-and-operator">
+  ## Operador lógico AND
+</div>
+
+Sintaxe `SELECT a AND b` — calcula a conjunção lógica entre `a` e `b` usando a função [and](/pt-BR/reference/functions/regular-functions/logical-functions#and).
+
+<div id="logical-or-operator">
+  ## Operador lógico OR
+</div>
+
+Sintaxe `SELECT a OR b` — calcula a disjunção lógica entre `a` e `b` usando a função [or](/pt-BR/reference/functions/regular-functions/logical-functions#or).
+
+<div id="logical-negation-operator">
+  ## Operador de negação lógica
+</div>
+
+Sintaxe `SELECT NOT a` — calcula a negação lógica de `a` usando a função [not](/pt-BR/reference/functions/regular-functions/logical-functions#not).
+
+<div id="conditional-operator">
+  ## Operador condicional
+</div>
+
+`a ? b : c` – A função `if(a, b, c)`.
+
+Observação:
+
+O operador condicional calcula os valores de b e c, verifica se a condição a é satisfeita e, em seguida, retorna o valor correspondente. Se `b` ou `C` for a função [arrayJoin()](/pt-BR/reference/functions/regular-functions/array-join), cada linha será replicada independentemente da condição &quot;a&quot;.
+
+<div id="conditional-expression">
+  ## Expressão condicional
+</div>
+
+```sql
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    [ELSE c]
+END
+```
+
+Se `x` for especificado, será usada a função `transform(x, [a, ...], [b, ...], c)`. Caso contrário, `multiIf(a, b, ..., c)`.
+
+Se não houver a cláusula `ELSE c` na expressão, o valor padrão será `NULL`.
+
+A função `transform` não funciona com `NULL`.
+
+<div id="concatenation-operator">
+  ## Operador de concatenação
+</div>
+
+`s1 || s2` – A função `concat(s1, s2) function.`
+
+<div id="lambda-creation-operator">
+  ## Operador de criação de lambda
+</div>
+
+`x -> expr` – a função `lambda(x, expr)`.
+
+Os operadores a seguir não têm prioridade, pois são parênteses:
+
+<div id="array-creation-operator">
+  ## Operador de criação de Array
+</div>
+
+`[x1, ...]` – A `função array(x1, ...).`
+
+<div id="tuple-creation-operator">
+  ## Operador de criação de tupla
+</div>
+
+`(x1, x2, ...)` – A `função tuple(x2, x2, ...).`
+
+<div id="associativity">
+  ## Associatividade
+</div>
+
+Todos os operadores binários têm associatividade à esquerda. Por exemplo, `1 + 2 + 3` é transformado em `plus(plus(1, 2), 3)`.
+Às vezes, isso não funciona como você espera. Por exemplo, `SELECT 4 > 2 > 3` resultará em 0.
+
+Para maior eficiência, as funções `and` e `or` aceitam qualquer número de argumentos. As cadeias correspondentes de operadores `AND` e `OR` são transformadas em uma única chamada dessas funções.
+
+<div id="checking-for-null">
+  ## Verificando `NULL`
+</div>
+
+O ClickHouse oferece suporte aos operadores `IS NULL` e `IS NOT NULL`.
+
+<div id="is_null">
+  ### IS NULL
+</div>
+
+* Para valores do tipo [Nullable](/pt-BR/reference/data-types/nullable), o operador `IS NULL` retorna:
+  * `1`, se o valor for `NULL`.
+  * `0`, caso contrário.
+* Para outros valores, o operador `IS NULL` sempre retorna `0`.
+
+Pode ser otimizado habilitando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NULL FROM table` é transformada em `SELECT n.null FROM TABLE`.
+
+{/* */}
+
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+
+```text
+┌─plus(x, 100)─┐
+│          101 │
+└──────────────┘
+```
+
+<div id="is_not_null">
+  ### IS NOT NULL
+</div>
+
+* Para valores do tipo [Nullable](/pt-BR/reference/data-types/nullable), o operador `IS NOT NULL` retorna:
+  * `0`, se o valor for `NULL`.
+  * `1`, caso contrário.
+* Para outros valores, o operador `IS NOT NULL` sempre retorna `1`.
+
+{/* */}
+
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+
+```text
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+Pode ser otimizado ativando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NOT NULL FROM table` é transformada em `SELECT NOT n.null FROM TABLE`.
+
+<div id="checking-boolean-values">
+  ## Verificando valores booleanos
+</div>
+
+O ClickHouse oferece suporte aos operadores `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE` e `IS NOT UNKNOWN`.
+Eles são usados com expressões [Bool](/pt-BR/reference/data-types/boolean) e `Nullable(Bool)`.
+
+* `expr IS TRUE` retorna `1` somente se `expr` for `true`.
+* `expr IS FALSE` retorna `1` somente se `expr` for `false`.
+* `expr IS UNKNOWN` retorna `1` somente se `expr` for `NULL`.
+* `expr IS NOT TRUE` retorna `1` se `expr` for `false` ou `NULL`.
+* `expr IS NOT FALSE` retorna `1` se `expr` for `true` ou `NULL`.
+* `expr IS NOT UNKNOWN` retorna `1` se `expr` não for `NULL`.
+
+Para expressões booleanas, `IS UNKNOWN` equivale a `IS NULL`, e `IS NOT UNKNOWN` equivale a `IS NOT NULL`.
+
+{/* */}
+
+```sql
+CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
+INSERT INTO t_bool VALUES (true), (false), (NULL);
+
+SELECT
+    x,
+    x IS TRUE,
+    x IS FALSE,
+    x IS UNKNOWN,
+    x IS NOT TRUE,
+    x IS NOT FALSE,
+    x IS NOT UNKNOWN
+FROM t_bool;
+```

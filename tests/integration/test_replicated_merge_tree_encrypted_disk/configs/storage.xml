@@ -3,7 +3,7 @@
         <disks>
             <disk_local>
                 <type>local</type>
-                <path>/disk/</path>
+                <path>/test_replicated_mt_encrypted_disk/</path>
             </disk_local>
             <disk_encrypted>
                 <type>encrypted</type>

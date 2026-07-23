@@ -252,7 +252,7 @@ void ORCBlockOutputFormat::writeStrings(
     string_orc_column.length.resize(string_column.size());
     for (size_t i = 0; i != string_column.size(); ++i)
     {
-        const std::string_view & string = string_column.getDataAt(i).toView();
+        const std::string_view string = string_column.getDataAt(i);
         string_orc_column.data[i] = (null_bytemap && (*null_bytemap)[i]) ? nullptr : const_cast<char *>(string.data());
         string_orc_column.length[i] = string.size();
     }
@@ -382,7 +382,7 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::Float32:
         {
-            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return value; });
+            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return static_cast<double>(value); });
             break;
         }
         case TypeIndex::Float64:
@@ -452,7 +452,7 @@ void ORCBlockOutputFormat::writeColumn(
                     column,
                     type,
                     null_bytemap,
-                    [](Int128 value){ return orc::Int128(value >> 64, (value << 64) >> 64); });
+                    [](Int128 value){ return orc::Int128(static_cast<Int64>(value >> 64), static_cast<UInt64>((value << 64) >> 64)); });
             break;
         }
         case TypeIndex::Decimal256:
@@ -494,7 +494,27 @@ void ORCBlockOutputFormat::writeColumn(
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             auto nested_types = assert_cast<const DataTypeTuple *>(type.get())->getElements();
             for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
-                writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], nullptr);
+            {
+                if (null_bytemap && nested_types[i]->isNullable())
+                {
+                    /// When both the struct and the element are nullable, we need to merge the two null bitmaps:
+                    /// a child value is null if either the struct row is null OR the element itself is null.
+                    const auto & nullable_col = assert_cast<const ColumnNullable &>(tuple_column.getColumn(i));
+                    const auto & element_null_map = nullable_col.getNullMapData();
+                    PaddedPODArray<UInt8> merged_null_map(element_null_map.size());
+                    for (size_t j = 0; j < element_null_map.size(); ++j)
+                        merged_null_map[j] = element_null_map[j] | (*null_bytemap)[j];
+
+                    auto nested_type = removeNullable(nested_types[i]);
+                    writeColumn(*struct_orc_column.fields[i], nullable_col.getNestedColumn(), nested_type, &merged_null_map);
+                }
+                else
+                {
+                    /// Propagate the struct-level null_bytemap to children so the ORC library correctly handles
+                    /// null struct rows (child values at null positions must also be marked null).
+                    writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], null_bytemap);
+                }
+            }
             break;
         }
         case TypeIndex::Map:
@@ -578,6 +598,7 @@ void ORCBlockOutputFormat::prepareWriter()
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
+void registerOutputFormatORC(FormatFactory & factory);
 void registerOutputFormatORC(FormatFactory & factory)
 {
     factory.registerOutputFormat("ORC", [](
@@ -601,6 +622,7 @@ void registerOutputFormatORC(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerOutputFormatORC(FormatFactory &);
     void registerOutputFormatORC(FormatFactory &)
     {
     }

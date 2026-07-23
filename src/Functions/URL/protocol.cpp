@@ -37,7 +37,7 @@ SELECT protocol('https://clickhouse.com/');
     };
     FunctionDocumentation::IntroducedIn introduced_in_protocol = {1, 1};
     FunctionDocumentation::Category category_protocol = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_protocol = {description_protocol, syntax_protocol, arguments_protocol, returned_value_protocol, examples_protocol, introduced_in_protocol, category_protocol};
+    FunctionDocumentation documentation_protocol = {description_protocol, syntax_protocol, arguments_protocol, {}, returned_value_protocol, examples_protocol, introduced_in_protocol, category_protocol};
 
     factory.registerFunction<FunctionProtocol>(documentation_protocol);
 }

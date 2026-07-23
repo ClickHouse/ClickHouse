@@ -1,0 +1,135 @@
+---
+description: '使用给定的 `format` 和 `结构` 从 `URL` 创建表'
+sidebarTitle: 'url'
+slug: /sql-reference/table-functions/url
+title: 'url'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="url-table-function">
+  # url 表函数
+</div>
+
+`url` 函数使用给定的 `format` 和 `结构` 从 `URL` 创建表。
+
+`url` 函数可用于对 [URL](/zh/reference/engines/table-engines/special/url) 表中的数据执行 `SELECT` 和 `INSERT` 查询。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+url(URL [,format] [,structure] [,headers])
+```
+
+<div id="parameters">
+  ## 参数
+</div>
+
+| Parameter   | 描述                                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `URL`       | 用单引号括起的 HTTP 或 HTTPS 服务器地址，可接受 `GET` 或 `POST` 请求 (分别对应 `SELECT` 或 `INSERT` 查询) 。类型：[String](/zh/reference/data-types/string)。 |
+| `format`    | 数据的[格式](/zh/reference/formats/index)。类型：[String](/zh/reference/data-types/string)。                                               |
+| `structure` | 采用 `'UserID UInt64, Name String'` 格式的结构，用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                               |
+| `headers`   | 采用 `'headers('key1'='value1', 'key2'='value2')'` 格式的请求头。你可以为 HTTP 调用设置请求头。                                                 |
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个采用指定格式和结构、包含已定义 `URL` 中数据的表。
+
+<div id="examples">
+  ## 示例
+</div>
+
+从以 [CSV](/zh/reference/formats/CSV/CSV) 格式响应的 HTTP 服务器获取一个表的前 3 行，该表包含 `String` 和 [UInt32](/zh/reference/data-types/int-uint) 类型的列。
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+将 `URL` 中的数据插入到表中：
+
+```sql
+CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
+SELECT * FROM test_table;
+```
+
+<div id="globs-in-url">
+  ## URL 中的通配符
+</div>
+
+`{ }` 中的模式用于生成一组分片，或指定故障转移地址。支持的模式类型及示例，请参见 [remote](/zh/reference/functions/table-functions/remote#globs-in-addresses) 函数说明。
+模式中的 `|` 字符用于指定故障转移地址。系统会按模式中列出的顺序依次遍历这些地址。生成的地址数量受 [glob&#95;expansion&#95;max&#95;elements](/zh/reference/settings/session-settings#glob_expansion_max_elements) 设置限制。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — `URL` 的路径。类型：`LowCardinality(String)`。
+* `_file` — `URL` 的资源名。类型：`LowCardinality(String)`。
+* `_size` — 资源大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_headers` - HTTP 响应头。类型：`Map(LowCardinality(String), LowCardinality(String))`。
+
+<div id="hive-style-partitioning">
+  ## use_hive_partitioning 设置
+</div>
+
+当 `use_hive_partitioning` 设置为 1 时，ClickHouse 会检测路径中 Hive 风格的分区 (`/name=value/`) ，并允许在查询中将分区列作为虚拟列使用。这些虚拟列的名称将与分区路径中的名称相同。
+
+**示例**
+
+使用通过 Hive 风格分区生成的虚拟列
+
+```sql
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="resolving-relative-urls">
+  ## 解析相对 URL
+</div>
+
+[url&#95;base](/zh/reference/settings/session-settings#url_base) 设置允许向 `url` 函数传入相对 URL。设置了 `url_base` 后，如果函数参数是相对引用，则会按照 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 基于 base URL 对其进行解析。
+
+解析规则如下：
+
+* **相对路径** (例如 `data.csv`) ：与 base URL 的路径合并——base 路径中最后一个 `/` 之后的所有内容都会被替换。末尾斜杠很关键：`https://example.com/dir/` + `data.csv` 会得到 `https://example.com/dir/data.csv`，而 `https://example.com/dir` + `data.csv` 会得到 `https://example.com/data.csv`。点分段 (`./` 和 `../`) 会被归一化。
+* **相对主机** (例如 `/test/data.csv`) ：使用 base URL 的 scheme 和主机进行解析。
+* **相对 scheme** (例如 `//other.com/test/data.csv`) ：使用 base URL 的 scheme 进行解析。
+* **仅查询字符串** (例如 `?x=1`) ：附加到完整的 base 路径，并替换现有的查询字符串或片段。
+* **仅片段** (例如 `#frag`) ：附加到 base URL，保留查询字符串，并替换现有片段。
+* **空值**：返回不带片段的 base URL。
+* **绝对 URL**：保持原样传递；`url_base` 会被忽略。
+
+**示例**
+
+```sql
+SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/';
+SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
+```
+
+<div id="storage-settings">
+  ## 存储设置
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings#engine_url_skip_empty_files) - 允许在读取时跳过空文件。默认情况下禁用。
+* [enable&#95;url&#95;encoding](/zh/reference/settings/session-settings#enable_url_encoding) - 允许启用/禁用 URI 中路径的解码/编码。默认情况下启用。
+* [url&#95;base](/zh/reference/settings/session-settings#url_base) - 用于解析传递给 `url` 函数的相对 URL 的基础 URL。
+
+<div id="permissions">
+  ## 权限
+</div>
+
+`url` 函数需要具备 `CREATE TEMPORARY TABLE` 权限。因此，对于设置了 [readonly](/zh/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1 的用户，该函数无法使用。至少需要 readonly = 2。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)

@@ -1,0 +1,82 @@
+---
+sidebarTitle: 'Dot'
+slug: /integrations/dot
+keywords: ['clickhouse', 'dot', 'ia', 'chatbot', 'mysql', 'intégrer', 'ui', 'assistant virtuel']
+description: "Chatbot IA | Dot est un assistant virtuel intelligent dédié aux données qui répond aux questions sur les données métier, retrouve des définitions et des ressources de données pertinentes, et peut même aider à la modélisation des données, propulsé par ClickHouse."
+title: 'Dot'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Dot](https://www.getdot.ai/) est votre **analyste de données IA**.
+Il se connecte directement à ClickHouse pour vous permettre de poser des questions sur vos données en langage naturel, d’explorer les données, de tester des hypothèses et de comprendre le pourquoi — directement dans Slack, Microsoft Teams, ChatGPT ou l’interface Web native.
+
+<div id="pre-requisites">
+  ## Prérequis
+</div>
+
+* Une base de données ClickHouse, autohébergée ou sur [ClickHouse Cloud](https://clickhouse.com/cloud)
+* Un compte [Dot](https://www.getdot.ai/)  
+
+<div id="connecting-dot-to-clickhouse">
+  ## Connecter Dot à ClickHouse
+</div>
+
+<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Configuration de la connexion ClickHouse dans Dot (mode clair)" border />
+
+<br />
+
+1. Dans l’UI de Dot, accédez à **Settings → Connections**.
+2. Cliquez sur **Add new connection** et sélectionnez **ClickHouse**.
+3. Renseignez vos informations de connexion :
+   * **Host** : nom d’hôte du serveur ClickHouse ou endpoint ClickHouse Cloud
+   * **Port** : `8443` (HTTPS ClickHouse Cloud) ou `8123` (HTTP auto-hébergé)
+   * **Username / Password** : utilisateur disposant d’un accès en lecture
+   * **Database** : définissez éventuellement un schéma par défaut
+4. Cliquez sur **Connect**.
+
+<Image img="/images/integrations/data-visualization/dot_02.webp" alt="Connexion à ClickHouse" size="sm" />
+
+Dot utilise le **query-pushdown** : ClickHouse effectue les calculs intensifs à grande échelle, tandis que Dot garantit des résultats exacts et fiables.
+
+<div id="highlights">
+  ## Points forts
+</div>
+
+Dot rend les données accessibles grâce à la conversation :
+
+* **Posez des questions en langage naturel** : obtenez des réponses sans écrire de SQL.
+* **Analyse des causes** : posez des questions complémentaires pour comprendre les tendances et les anomalies.
+* **Fonctionne là où vous travaillez** : dans Slack, Microsoft Teams, ChatGPT ou l’application Web.
+* **Résultats fiables** : Dot valide les requêtes par rapport à vos schémas et définitions afin de minimiser les erreurs.
+* **Évolutif** : basé sur le query-pushdown, il associe l’intelligence de Dot à la rapidité de ClickHouse.
+
+<div id="security">
+  ## Sécurité et gouvernance
+</div>
+
+Dot est prêt pour les environnements d’entreprise :
+
+* **Permissions et rôles** : hérite des contrôles d’accès des utilisateurs ClickHouse
+* **Sécurité au niveau des lignes** : prise en charge si elle est configurée dans ClickHouse
+* **TLS / SSL** : activé par défaut pour ClickHouse Cloud ; configuration manuelle pour les déploiements auto-hébergés
+* **Gouvernance et validation** : l’espace d’entraînement et de validation aide à prévenir les hallucinations
+* **Conformité** : certifié SOC 2 Type I
+
+<div id="additional-resources">
+  ## Ressources supplémentaires
+</div>
+
+* Site de Dot : [https://www.getdot.ai/](https://www.getdot.ai/)
+* Documentation : [https://docs.getdot.ai/](https://docs.getdot.ai/)
+* Application Dot : [https://app.getdot.ai/](https://app.getdot.ai/)
+
+Vous pouvez désormais utiliser **ClickHouse + Dot** pour analyser vos données en langage naturel, en combinant l’assistant IA de Dot avec le moteur d’analytics rapide et évolutif de ClickHouse.

@@ -1,0 +1,275 @@
+---
+sidebarTitle: '概述'
+description: '将您的对象存储无缝接入 ClickHouse Cloud。'
+slug: /integrations/clickpipes/object-storage/s3/overview
+title: '将 Amazon S3 集成到 ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+S3 ClickPipe 提供了一种全托管且具备高韧性的方式，可将 Amazon S3 和兼容 S3 的对象存储中的数据摄取到 ClickHouse Cloud。它同时支持 **一次性** 和 **持续摄取**，并具备精确一次语义。
+
+S3 ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
+
+<div id="supported-data-sources">
+  ## 支持的数据源
+</div>
+
+| 名称                                     | 徽标                                                                                          | 详情                                                                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Amazon S3**                          | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 标志" width="32" />   | 默认情况下，持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行，但也可配置为[按任意顺序摄取文件](#continuous-ingestion-any-order)。 |
+| **Cloudflare R2** <br /> *兼容 S3*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 标志" width="32" />   | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                                  |
+| **DigitalOcean Spaces** <br /> *兼容 S3* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 标志" width="32" /> | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                                  |
+| **OVH Object Storage** <br /> *兼容 S3*  | <img src="/images/integrations/logos/ovh.webp" alt="云存储标志" width="32" />                     | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                                  |
+
+<Tip>
+  由于不同对象存储服务提供商的 URL 格式和 API 实现存在差异，并非所有兼容 S3 的服务都能直接开箱即用。如果你在使用上方未列出的服务时遇到问题，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
+</Tip>
+
+<div id="supported-formats">
+  ## 支持的格式
+</div>
+
+* [JSON](/zh/reference/formats/JSON/JSON)
+* [CSV](/zh/reference/formats/CSV/CSV)
+* [TSV](/zh/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/zh/reference/formats/Parquet/Parquet)
+* [Avro](/zh/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## 特性
+</div>
+
+<div id="one-time-ingestion">
+  ### 一次性摄取
+</div>
+
+默认情况下，S3 ClickPipe 会将指定 存储桶 中所有匹配某个 模式 的文件以单个批次操作加载到 ClickHouse 目标表中。摄取任务完成后，ClickPipe 会自动停止。这种一次性摄取模式提供精确一次语义，确保每个文件都能被可靠地处理且不会重复处理。
+
+<div id="continuous-ingestion">
+  ### 持续摄取
+</div>
+
+启用持续摄取后，ClickPipes 会从指定路径持续摄取数据。默认情况下，S3 ClickPipe 依靠文件的隐式[词典序](#continuous-ingestion-lexicographical-order)来确定摄取顺序。也可以将其配置为通过连接到存储桶的 [Amazon SQS](https://aws.amazon.com/sqs/) 队列，按[任意顺序](#continuous-ingestion-any-order)摄取文件。
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### 词典序
+</div>
+
+默认情况下，S3 ClickPipe 假定文件会按词典序添加到存储桶中，并依赖这种隐含顺序依次摄取文件。这意味着任何新文件**必须**在词典序上大于上一个已摄取的文件。例如，名为 `file1`、`file2` 和 `file3` 的文件会被依次摄取；但如果有一个新的 `file 0` 添加到存储桶中，它将被**忽略**，因为该文件名在词典序上并不大于上一个已摄取的文件。
+
+在此模式下，S3 ClickPipe 会对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认为 30 秒) 。**无法**从某个特定文件或时间点开始摄取——ClickPipes 始终会加载指定路径中的所有文件。
+
+<div id="continuous-ingestion-any-order">
+  #### 任意顺序
+</div>
+
+<Tip>
+  如需分步说明，请参阅[为持续摄取配置无序模式](/zh/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)。
+</Tip>
+
+可以通过设置一个连接到存储桶的 [Amazon SQS](https://aws.amazon.com/sqs/) 队列，并可选使用 [Amazon EventBridge](https://aws.amazon.com/eventbridge/) 作为事件路由器，来配置 S3 ClickPipe，以摄取没有隐含顺序的文件。这样一来，ClickPipes 就可以监听对象创建事件，并摄取任何新文件，而不受文件命名约定的限制。
+
+<Note>
+  无序模式**仅**支持 Amazon S3，**不**支持公共存储桶或兼容 S3 的服务。它要求设置一个连接到存储桶的 [Amazon SQS](https://aws.amazon.com/sqs/) 队列，并可选使用 [Amazon EventBridge](https://aws.amazon.com/eventbridge/) 作为事件路由器。
+</Note>
+
+在此模式下，S3 ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后监听队列中与指定路径匹配的 `ObjectCreated:*` 事件。对于之前已处理过的文件、不匹配该路径的文件，或其他类型事件的消息，都会被**忽略**。
+
+<Note>
+  为事件设置前缀/后缀是可选的。如果设置了，请确保它与为 ClickPipe 配置的路径一致。S3 不允许为相同事件类型配置多个相互重叠的通知规则。
+</Note>
+
+当达到 `max insert bytes` 或 `max file count` 中配置的阈值时，或者经过一个可配置的时间间隔后 (默认 30 秒) ，系统就会开始摄取文件。**无法**从某个特定文件或某个时间点开始摄取——ClickPipes 始终会加载所选路径中的所有文件。如果配置了 DLQ，失败的消息会被重新入队并重新处理，最多重试到 DLQ `maxReceiveCount` 参数中配置的次数。
+
+<Tip>
+  我们强烈建议为 SQS 队列配置 **Dead-Letter-Queue (DLQ)**，这样更方便调试和重试失败的消息。
+</Tip>
+
+<div id="eb-to-sqs">
+  ##### EventBridge 到 SQS
+</div>
+
+也可以通过 [Amazon EventBridge](https://aws.amazon.com/eventbridge/) 将 S3 事件通知发送到 SQS。对于大多数使用场景，推荐采用这种方法，因为 EventBridge 支持更丰富的事件过滤、将事件分发到多个目标，而且不受 S3“每个前缀下每种事件类型只能有一条通知规则”这一限制。有关分步说明，请参见[为持续摄取配置 无序模式](/zh/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)。
+
+<div id="sns-to-sqs">
+  ##### SNS 到 SQS
+</div>
+
+也可以通过 SNS topic 将 S3 事件通知发送到 SQS。在直接使用 S3 → SQS 集成受到某些限制时，可以采用这种方式。在这种情况下，你需要启用 [raw message delivery](https://docs.aws.amazon.com/sns/latest/dg/sns-large-payload-raw-message-delivery.html) 选项。
+
+<div id="file-pattern-matching">
+  ### 文件模式匹配
+</div>
+
+对象存储 ClickPipes 遵循 POSIX 文件模式匹配标准。所有模式均**区分大小写**，并会匹配 存储桶 名称之后的**完整路径**。为获得更佳性能，请尽可能使用最具体的模式 (例如，使用 `data-2024-*.csv`，而不是 `*.csv`) 。
+
+<div id="supported-patterns">
+  #### 支持的模式
+</div>
+
+| 模式             | 描述                                    | 示例                  | 匹配项                                                               |
+| -------------- | ------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`            | 精确匹配**一个**字符 (不含 `/`)                 | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`            | 匹配**零个或多个**字符 (不含 `/`)                | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> 递归 | 匹配**零个或多个**字符 (包含 `/`) 。支持**递归遍历目录**。 | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**示例：**
+
+* `https://bucket.s3.amazonaws.com/folder/*.csv`
+* `https://bucket.s3.amazonaws.com/logs/**/data.json`
+* `https://bucket.s3.amazonaws.com/file-?.parquet`
+* `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### 不支持的模式
+</div>
+
+| 模式          | 描述     | 示例                     | 替代方案                            |
+| ----------- | ------ | ---------------------- | ------------------------------- |
+| `{abc,def}` | 大括号展开。 | `{logs,data}/file.csv` | 为每个路径分别创建单独的 ClickPipes。        |
+| `{N..M}`    | 数字范围展开 | `file-{1..100}.csv`    | 使用 `file-*.csv` 或 `file-?.csv`。 |
+
+**示例：**
+
+* `https://bucket.s3.amazonaws.com/{documents-01,documents-02}.json`
+* `https://bucket.s3.amazonaws.com/file-{1..100}.csv`
+* `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### 精确一次语义
+</div>
+
+在摄取大型数据集时，可能会发生各种故障，从而导致部分插入或数据重复。对象存储 ClickPipes 能够在插入失败时保持稳健，并提供精确一次语义。这是通过使用临时“暂存”表实现的。数据会先插入暂存表。如果这次插入出现问题，可以清空暂存表，并从干净状态重新尝试插入。只有当插入完整且成功完成后，暂存表中的分区才会被移动到目标表。若要进一步了解这一策略，请参阅[这篇博文](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)。
+
+<div id="virtual-columns">
+  ### 虚拟列
+</div>
+
+要跟踪哪些文件已被摄取，请将 `_file` 虚拟列添加到列映射列表中。`_file` 虚拟列包含源对象的文件名，可用于查询哪些文件已被处理。
+
+<div id="access-control">
+  ## 访问控制
+</div>
+
+<div id="permissions">
+  ### 权限
+</div>
+
+S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html) 存储桶。
+
+<div id="s3-bucket">
+  #### S3 存储桶
+</div>
+
+存储桶策略中必须允许以下操作：
+
+* [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+* [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)
+
+<div id="sqs-queue">
+  #### SQS 队列
+</div>
+
+使用[无序模式](#continuous-ingestion-any-order)时，SQS 必须在队列策略中允许以下操作：
+
+* [`sqs:ReceiveMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ReceiveMessage.html)
+* [`sqs:DeleteMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html)
+* [`sqs:GetQueueAttributes`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_GetQueueAttributes.html)
+* [`sqs:ListQueues`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ListQueues.html)
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+<div id="iam-credentials">
+  #### IAM 凭证
+</div>
+
+要使用[访问密钥](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)进行身份验证，请在设置 ClickPipe 连接时，在 **Authentication method** 下选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 ID (例如 `AKIAIOSFODNN7EXAMPLE`) 和秘密访问密钥 (例如 `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) 。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="S3 ClickPipes 的 IAM 凭证" size="lg" border />
+
+<div id="iam-role">
+  #### IAM role
+</div>
+
+如需使用[基于角色的访问](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)进行身份验证，请在设置 ClickPipe 连接 时，在 **Authentication method** 下选择 `IAM role`。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="S3 ClickPipes 的 IAM 身份验证" size="lg" border />
+
+请按照[本指南](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)创建具有 S3 访问所需信任策略的[role](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)。然后，在 `IAM role ARN` 中填入 IAM role ARN。
+
+<div id="network-access">
+  ### 网络访问
+</div>
+
+S3 ClickPipes 在元数据发现和数据摄取时分别使用两条不同的网络路径：ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外增加一层网络安全保护 (例如出于合规原因) ，**则必须同时为这两条路径配置网络访问**。
+
+* 对于**基于 IP 的访问控制**，S3 存储桶策略必须允许 [此处](/zh/integrations/clickpipes/home#list-of-static-ips) 列出的 ClickPipes 服务所在区域的静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
+
+  ```bash
+  # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+* 对于**基于 VPC 端点的访问控制**，S3 存储桶必须与 ClickHouse Cloud 服务位于同一区域，并将 `GetObject` 操作限制为仅允许来自 ClickHouse Cloud 服务的 VPC Endpoint ID。要获取你的 ClickHouse Cloud 区域的 VPC 端点，请打开终端并运行：
+
+  ```bash
+  # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+  ```
+
+<div id="advanced-settings">
+  ## 高级设置
+</div>
+
+ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的需求。如果您的使用场景需要进一步微调，可以调整以下设置：
+
+| 设置                                   | 默认值     | 说明                                                                                                                |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB    | 单个插入批次中处理的字节数。                                                                                                    |
+| `Max file count`                     | 100     | 单个插入批次中处理的最大文件数。                                                                                                  |
+| `Max threads`                        | auto(3) | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                               |
+| `Max insert threads`                 | 1       | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings#max_insert_threads)。                                      |
+| `Min insert block size bytes`        | 1GB     | 可插入表中的[块最小字节数](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                                 |
+| `Max download threads`               | 4       | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                                           |
+| `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                    |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)的方式推送到已附加的视图。                         |
+| `Use cluster function`               | true    | 是否在多个节点之间并行处理文件。                                                                                                  |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 高级设置" size="lg" border />
+
+<div id="scaling">
+  ### 扩缩容
+</div>
+
+对象存储 ClickPipes 的扩缩容依据 [已配置的垂直自动扩缩容设置](/zh/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling) 所确定的 ClickHouse 服务最小规格。ClickPipe 的大小在创建管道时确定，之后对 ClickHouse 服务设置所做的更改不会影响 ClickPipe 的大小。
+
+如需提高大型摄取作业的吞吐量，我们建议先对 ClickHouse 服务进行扩缩容，再创建 ClickPipe。
+
+<div id="known-limitations">
+  ## 已知限制
+</div>
+
+<div id="file-size">
+  ### 文件大小
+</div>
+
+ClickPipes 只会尝试摄取大小**不超过 10GB**的对象。如果文件超过 10GB，系统会将一条错误记录追加到 ClickPipes 的专用错误表中。
+
+<div id="compatibility">
+  ### 兼容性
+</div>
+
+尽管兼容 S3，但某些服务使用不同的 URL 结构，导致 S3 ClickPipe 可能无法解析 (例如 Backblaze B2) ；或者它们需要与提供商专用的队列服务集成，才能实现持续的无序摄取。如果你在使用某个未列在[支持的数据源](#supported-data-sources)中的服务时遇到问题，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="view-support">
+  ### 视图支持
+</div>
+
+目标表上的 materialized view 同样受支持。ClickPipes 不仅会为目标表创建暂存表，也会为任何依赖的 materialized view 创建暂存表。
+
+我们不会为非物化视图创建暂存表。这意味着，如果你的目标表有一个或多个下游 materialized view，这些 materialized view 应避免通过目标表上的视图来查询数据。否则，你可能会发现 materialized view 中会缺少数据。

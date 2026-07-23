@@ -1,0 +1,447 @@
+---
+description: 'O motor Hive permite executar consultas `SELECT` em tabelas Hive no
+  HDFS.'
+sidebarTitle: 'Hive'
+slug: /engines/table-engines/integrations/hive
+title: 'Motor de tabela Hive'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+O motor Hive permite executar consultas `SELECT` em tabelas Hive no HDFS. Atualmente, ele oferece suporte aos seguintes formatos de entrada:
+
+* Text: oferece suporte apenas a tipos de coluna escalares simples, exceto `binary`
+
+* ORC: oferece suporte a tipos de coluna escalares simples, exceto `char`; oferece suporte apenas a tipos complexos como `array`
+
+* Parquet: oferece suporte a todos os tipos de coluna escalares simples; oferece suporte apenas a tipos complexos como `array`
+
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
+    ...
+) ENGINE = Hive('thrift://host:port', 'database', 'table')
+PARTITION BY expr
+```
+
+Veja uma descrição detalhada da consulta [CREATE TABLE](/pt-BR/reference/statements/create/table).
+
+A estrutura da tabela pode ser diferente da estrutura da tabela Hive original:
+
+* Os nomes das colunas devem ser os mesmos da tabela Hive original, mas você pode usar apenas algumas delas, em qualquer ordem; também pode usar colunas com alias calculadas a partir de outras colunas.
+* Os tipos das colunas devem ser os mesmos da tabela Hive original.
+* A expressão de particionamento deve ser compatível com a da tabela Hive original, e as colunas usadas nessa expressão devem estar na estrutura da tabela.
+
+**Parâmetros do motor**
+
+* `thrift://host:port` — endereço do Hive Metastore
+
+* `database` — nome do banco de dados remoto.
+
+* `table` — nome da tabela remota.
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+<div id="how-to-use-local-cache-for-hdfs-filesystem">
+  ### Como usar cache local para o sistema de arquivos HDFS
+</div>
+
+Recomendamos fortemente que você habilite o cache local para sistemas de arquivos remotos. O benchmark mostra que, com cache, ele é quase 2x mais rápido.
+
+Antes de usar o cache, adicione-o ao `config.xml`
+
+```xml
+<local_cache_for_remote_fs>
+    <enable>true</enable>
+    <root_dir>local_cache</root_dir>
+    <limit_size>559096952</limit_size>
+    <bytes_read_before_flush>1048576</bytes_read_before_flush>
+</local_cache_for_remote_fs>
+```
+
+* enable: O ClickHouse manterá um cache local para o sistema de arquivos remoto (HDFS) após a inicialização se true.
+* root&#95;dir: Obrigatório. O diretório raiz para armazenar os arquivos de cache local do sistema de arquivos remoto.
+* limit&#95;size: Obrigatório. O tamanho máximo (em bytes) dos arquivos de cache local.
+* bytes&#95;read&#95;before&#95;flush: Controla a quantidade de bytes antes do flush para o sistema de arquivos local ao baixar um arquivo do sistema de arquivos remoto. O valor padrão é 1 MB.
+
+<div id="query-hive-table-with-orc-input-format">
+  ### Consultar tabela do Hive com formato de entrada ORC
+</div>
+
+<div id="create-table-in-hive">
+  #### Criar tabela no Hive
+</div>
+
+```text
+hive > CREATE TABLE `test`.`test_orc`(
+  `f_tinyint` tinyint,
+  `f_smallint` smallint,
+  `f_int` int,
+  `f_integer` int,
+  `f_bigint` bigint,
+  `f_float` float,
+  `f_double` double,
+  `f_decimal` decimal(10,0),
+  `f_timestamp` timestamp,
+  `f_date` date,
+  `f_string` string,
+  `f_varchar` varchar(100),
+  `f_bool` boolean,
+  `f_binary` binary,
+  `f_array_int` array<int>,
+  `f_array_string` array<string>,
+  `f_array_float` array<float>,
+  `f_array_array_int` array<array<int>>,
+  `f_array_array_string` array<array<string>>,
+  `f_array_array_float` array<array<float>>)
+PARTITIONED BY (
+  `day` string)
+ROW FORMAT SERDE
+  'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+STORED AS INPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION
+  'hdfs://testcluster/data/hive/test.db/test_orc'
+
+OK
+Time taken: 0.51 seconds
+
+hive > insert into test.test_orc partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
+OK
+Time taken: 36.025 seconds
+
+hive > select * from test.test_orc;
+OK
+1    2    3    4    5    6.11    7.22    8    2021-11-05 12:38:16.314    2021-11-05    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+Time taken: 0.295 seconds, Fetched: 1 row(s)
+```
+
+<div id="create-table-in-clickhouse">
+  #### Criar tabela no ClickHouse
+</div>
+
+Tabela no ClickHouse que recupera dados da tabela do Hive criada acima:
+
+```sql
+CREATE TABLE test.test_orc
+(
+    `f_tinyint` Int8,
+    `f_smallint` Int16,
+    `f_int` Int32,
+    `f_integer` Int32,
+    `f_bigint` Int64,
+    `f_float` Float32,
+    `f_double` Float64,
+    `f_decimal` Float64,
+    `f_timestamp` DateTime,
+    `f_date` Date,
+    `f_string` String,
+    `f_varchar` String,
+    `f_bool` Bool,
+    `f_binary` String,
+    `f_array_int` Array(Int32),
+    `f_array_string` Array(String),
+    `f_array_float` Array(Float32),
+    `f_array_array_int` Array(Array(Int32)),
+    `f_array_array_string` Array(Array(String)),
+    `f_array_array_float` Array(Array(Float32)),
+    `day` String
+)
+ENGINE = Hive('thrift://202.168.117.26:9083', 'test', 'test_orc')
+PARTITION BY day
+
+```
+
+```sql
+SELECT * FROM test.test_orc settings input_format_orc_allow_missing_columns = 1\G
+```
+
+```text
+SELECT *
+FROM test.test_orc
+SETTINGS input_format_orc_allow_missing_columns = 1
+
+Query id: c3eaffdc-78ab-43cd-96a4-4acc5b480658
+
+Row 1:
+──────
+f_tinyint:            1
+f_smallint:           2
+f_int:                3
+f_integer:            4
+f_bigint:             5
+f_float:              6.11
+f_double:             7.22
+f_decimal:            8
+f_timestamp:          2021-12-04 04:00:44
+f_date:               2021-12-03
+f_string:             hello world
+f_varchar:            hello world
+f_bool:               true
+f_binary:             hello world
+f_array_int:          [1,2,3]
+f_array_string:       ['hello world','hello world']
+f_array_float:        [1.1,1.2]
+f_array_array_int:    [[1,2],[3,4]]
+f_array_array_string: [['a','b'],['c','d']]
+f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
+day:                  2021-09-18
+
+1 rows in set. Elapsed: 0.078 sec.
+```
+
+<div id="query-hive-table-with-parquet-input-format">
+  ### Consultar uma tabela do Hive usando o formato de entrada Parquet
+</div>
+
+<div id="create-table-in-hive">
+  #### Criar tabela no Hive
+</div>
+
+```text
+hive >
+CREATE TABLE `test`.`test_parquet`(
+  `f_tinyint` tinyint,
+  `f_smallint` smallint,
+  `f_int` int,
+  `f_integer` int,
+  `f_bigint` bigint,
+  `f_float` float,
+  `f_double` double,
+  `f_decimal` decimal(10,0),
+  `f_timestamp` timestamp,
+  `f_date` date,
+  `f_string` string,
+  `f_varchar` varchar(100),
+  `f_char` char(100),
+  `f_bool` boolean,
+  `f_binary` binary,
+  `f_array_int` array<int>,
+  `f_array_string` array<string>,
+  `f_array_float` array<float>,
+  `f_array_array_int` array<array<int>>,
+  `f_array_array_string` array<array<string>>,
+  `f_array_array_float` array<array<float>>)
+PARTITIONED BY (
+  `day` string)
+ROW FORMAT SERDE
+  'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
+STORED AS INPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat'
+OUTPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'
+LOCATION
+  'hdfs://testcluster/data/hive/test.db/test_parquet'
+OK
+Time taken: 0.51 seconds
+
+hive >  insert into test.test_parquet partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
+OK
+Time taken: 36.025 seconds
+
+hive > select * from test.test_parquet;
+OK
+1    2    3    4    5    6.11    7.22    8    2021-12-14 17:54:56.743    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+Time taken: 0.766 seconds, Fetched: 1 row(s)
+```
+
+<div id="create-table-in-clickhouse">
+  #### Criar tabela no ClickHouse
+</div>
+
+Tabela no ClickHouse que recupera dados da tabela do Hive criada acima:
+
+```sql
+CREATE TABLE test.test_parquet
+(
+    `f_tinyint` Int8,
+    `f_smallint` Int16,
+    `f_int` Int32,
+    `f_integer` Int32,
+    `f_bigint` Int64,
+    `f_float` Float32,
+    `f_double` Float64,
+    `f_decimal` Float64,
+    `f_timestamp` DateTime,
+    `f_date` Date,
+    `f_string` String,
+    `f_varchar` String,
+    `f_char` String,
+    `f_bool` Bool,
+    `f_binary` String,
+    `f_array_int` Array(Int32),
+    `f_array_string` Array(String),
+    `f_array_float` Array(Float32),
+    `f_array_array_int` Array(Array(Int32)),
+    `f_array_array_string` Array(Array(String)),
+    `f_array_array_float` Array(Array(Float32)),
+    `day` String
+)
+ENGINE = Hive('thrift://localhost:9083', 'test', 'test_parquet')
+PARTITION BY day
+```
+
+```sql
+SELECT * FROM test.test_parquet settings input_format_parquet_allow_missing_columns = 1\G
+```
+
+```text
+SELECT *
+FROM test_parquet
+SETTINGS input_format_parquet_allow_missing_columns = 1
+
+Query id: 4e35cf02-c7b2-430d-9b81-16f438e5fca9
+
+Row 1:
+──────
+f_tinyint:            1
+f_smallint:           2
+f_int:                3
+f_integer:            4
+f_bigint:             5
+f_float:              6.11
+f_double:             7.22
+f_decimal:            8
+f_timestamp:          2021-12-14 17:54:56
+f_date:               2021-12-14
+f_string:             hello world
+f_varchar:            hello world
+f_char:               hello world
+f_bool:               true
+f_binary:             hello world
+f_array_int:          [1,2,3]
+f_array_string:       ['hello world','hello world']
+f_array_float:        [1.1,1.2]
+f_array_array_int:    [[1,2],[3,4]]
+f_array_array_string: [['a','b'],['c','d']]
+f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
+day:                  2021-09-18
+
+1 rows in set. Elapsed: 0.357 sec.
+```
+
+<div id="query-hive-table-with-text-input-format">
+  ### Consultar tabela do Hive usando o formato de entrada Text
+</div>
+
+<div id="create-table-in-hive">
+  #### Criar tabela no Hive
+</div>
+
+```text
+hive >
+CREATE TABLE `test`.`test_text`(
+  `f_tinyint` tinyint,
+  `f_smallint` smallint,
+  `f_int` int,
+  `f_integer` int,
+  `f_bigint` bigint,
+  `f_float` float,
+  `f_double` double,
+  `f_decimal` decimal(10,0),
+  `f_timestamp` timestamp,
+  `f_date` date,
+  `f_string` string,
+  `f_varchar` varchar(100),
+  `f_char` char(100),
+  `f_bool` boolean,
+  `f_binary` binary,
+  `f_array_int` array<int>,
+  `f_array_string` array<string>,
+  `f_array_float` array<float>,
+  `f_array_array_int` array<array<int>>,
+  `f_array_array_string` array<array<string>>,
+  `f_array_array_float` array<array<float>>)
+PARTITIONED BY (
+  `day` string)
+ROW FORMAT SERDE
+  'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
+STORED AS INPUTFORMAT
+  'org.apache.hadoop.mapred.TextInputFormat'
+OUTPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION
+  'hdfs://testcluster/data/hive/test.db/test_text'
+Time taken: 0.1 seconds, Fetched: 34 row(s)
+
+hive >  insert into test.test_text partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
+OK
+Time taken: 36.025 seconds
+
+hive > select * from test.test_text;
+OK
+1    2    3    4    5    6.11    7.22    8    2021-12-14 18:11:17.239    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+Time taken: 0.624 seconds, Fetched: 1 row(s)
+```
+
+<div id="create-table-in-clickhouse">
+  #### Criar tabela no ClickHouse
+</div>
+
+Tabela no ClickHouse que recupera dados da tabela do Hive criada acima:
+
+```sql
+CREATE TABLE test.test_text
+(
+    `f_tinyint` Int8,
+    `f_smallint` Int16,
+    `f_int` Int32,
+    `f_integer` Int32,
+    `f_bigint` Int64,
+    `f_float` Float32,
+    `f_double` Float64,
+    `f_decimal` Float64,
+    `f_timestamp` DateTime,
+    `f_date` Date,
+    `f_string` String,
+    `f_varchar` String,
+    `f_char` String,
+    `f_bool` Bool,
+    `day` String
+)
+ENGINE = Hive('thrift://localhost:9083', 'test', 'test_text')
+PARTITION BY day
+```
+
+```sql
+SELECT * FROM test.test_text settings input_format_skip_unknown_fields = 1, input_format_with_names_use_header = 1, date_time_input_format = 'best_effort'\G
+```
+
+```text
+SELECT *
+FROM test.test_text
+SETTINGS input_format_skip_unknown_fields = 1, input_format_with_names_use_header = 1, date_time_input_format = 'best_effort'
+
+Query id: 55b79d35-56de-45b9-8be6-57282fbf1f44
+
+Row 1:
+──────
+f_tinyint:   1
+f_smallint:  2
+f_int:       3
+f_integer:   4
+f_bigint:    5
+f_float:     6.11
+f_double:    7.22
+f_decimal:   8
+f_timestamp: 2021-12-14 18:11:17
+f_date:      2021-12-14
+f_string:    hello world
+f_varchar:   hello world
+f_char:      hello world
+f_bool:      true
+day:         2021-09-18
+```

@@ -1,0 +1,15 @@
+---
+title: 2 接続
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step2.webp" alt="接続の詳細を入力" size="lg" border />
+
+* **認証方法**: S3 ClickPipe は、[IAM credentials](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) および [IAM role-based authentication](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`) をサポートしています。認証と権限の詳細については、[リファレンスドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)を参照してください。
+
+  * **S3 ファイルパス**: S3 ClickPipe では、[virtual-hosted-style URI](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access) 形式の URI を想定しています。
+
+    ```bash
+    https://bucket-name.s3.region-code.amazonaws.com/key-name
+    ```
+
+    POSIX ワイルドカードを使って、複数のファイルやプレフィックスに一致させることができます。サポートされているパターンの詳細については、[リファレンスドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching)を参照してください。

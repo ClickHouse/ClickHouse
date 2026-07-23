@@ -63,7 +63,7 @@ void RegionsNames::reload()
         const size_t max_size = 15000000;
 
         Chars new_chars;
-        StringRefs new_names_refs(initial_size, StringRef("", 0));
+        StringViews new_names_refs(initial_size);
 
         /// Allocate a continuous slice of memory, which is enough to store all names.
         new_chars.reserve(names_source->estimateTotalSize());
@@ -90,9 +90,9 @@ void RegionsNames::reload()
             }
 
             while (name_entry.id >= new_names_refs.size())
-                new_names_refs.resize(new_names_refs.size() * 2, StringRef("", 0));
+                new_names_refs.resize(new_names_refs.size() * 2);
 
-            new_names_refs[name_entry.id] = StringRef(new_chars.data() + old_size, name_entry.name.length());
+            new_names_refs[name_entry.id] = std::string_view(new_chars.data() + old_size, name_entry.name.length());
         }
 
         chars[language_id].swap(new_chars);
@@ -100,7 +100,7 @@ void RegionsNames::reload()
     }
 
     for (size_t language_id = 0; language_id < total_languages; ++language_id)
-        names_refs[language_id].resize(max_region_id + 1, StringRef("", 0));
+        names_refs[language_id].resize(max_region_id + 1);
 }
 
 }

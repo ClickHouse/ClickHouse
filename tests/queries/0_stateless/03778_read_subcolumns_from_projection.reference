@@ -1,0 +1,15 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression
+      ReadFromMergeTree (sorted_by_company_name)
+      Indexes:
+        PrimaryKey
+          Keys:
+            x
+          Condition: (x in [\'x_1\', \'x_1\'])
+          Parts: 1/1
+          Granules: 2/5
+          Search Algorithm: binary search
+        Ranges: 1
+1
+x_1	y_1	z_1

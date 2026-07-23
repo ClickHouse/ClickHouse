@@ -1,7 +1,6 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -10,47 +9,44 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
-namespace
-{
-
-enum class FilterResult
-{
-    UNKNOWN,
-    TRUE,
-    FALSE,
-};
-
-FilterResult getFilterResult(const ColumnWithTypeAndName & column)
-{
-    if (!column.column)
-        return FilterResult::UNKNOWN;
-
-    if (!column.type->canBeUsedInBooleanContext())
-        return FilterResult::UNKNOWN;
-
-    return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
-}
-
+/// This function is exposed for testing purposes
 FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const ActionsDAG & filter_dag, const String & filter_column_name)
 {
+    /// If either DAG contains IN subquery sets that are not yet built we cannot evaluate the filter result
+    if (dagContainsNonReadySet(filter_dag) || dagContainsNonReadySet(pre_actions_dag))
+        return FilterResult::UNKNOWN;
+
+    /// Bail out for functions that are not deterministic in the scope of a single query for the
+    /// same reason as in `filterResultForNotMatchedRows`: a single plan-time evaluation of `rand`,
+    /// `nowInBlock`, `rowNumberInAllBlocks`, `blockNumber`, etc. cannot stand in for the runtime
+    /// per-row behaviour, and acting on it would silently change the result of the JOIN. Functions
+    /// like `now` / `today` / `currentUser` ARE deterministic within a single query and do NOT
+    /// trip the guard.
+    if (dagContainsNonDeterministicFunction(filter_dag) || dagContainsNonDeterministicFunction(pre_actions_dag))
+        return FilterResult::UNKNOWN;
+
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
+
+    const auto * filter_node = combined_dag.tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return FilterResult::UNKNOWN;
 
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             combined_dag_input,
-            { combined_dag.tryFindInOutputs(filter_column_name) },
+            { filter_node },
             /*input_rows_count=*/1,
-            /*throw_on_error=*/false,
-            /*skip_materialize=*/true);
+            { .skip_materialize = true });
     }
-    catch (...)
+    catch (const Exception &)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
         return FilterResult::UNKNOWN;
@@ -59,46 +55,8 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     return getFilterResult(filter_output[0]);
 }
 
-FilterResult filterResultForNotMatchedRows(const ActionsDAG & filter_dag, const String & filter_column_name, const Block & input_stream_header)
+namespace
 {
-    ActionsDAG::IntermediateExecutionResult filter_input;
-
-    /// Create constant columns with default values for inputs of the filter DAG
-    for (const auto * input : filter_dag.getInputs())
-    {
-        if (!input_stream_header.has(input->result_name))
-            continue;
-
-        if (input->column)
-        {
-            auto constant_column_with_type_and_name = ColumnWithTypeAndName{input->column, input->result_type, input->result_name};
-            filter_input.emplace(input, std::move(constant_column_with_type_and_name));
-            continue;
-        }
-
-        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
-        auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
-        filter_input.emplace(input, std::move(constant_column_with_type_and_name));
-    }
-
-    ColumnsWithTypeAndName filter_output;
-    try
-    {
-        filter_output = ActionsDAG::evaluatePartialResult(
-            filter_input,
-            { filter_dag.tryFindInOutputs(filter_column_name) },
-            /*input_rows_count=*/1,
-            /*throw_on_error=*/false,
-            /*skip_materialize=*/true);
-    }
-    catch (...)
-    {
-        /// If we cannot evaluate the filter expression, return UNKNOWN
-        return FilterResult::UNKNOWN;
-    }
-
-    return getFilterResult(filter_output[0]);
-}
 
 /// Check if filter has a form like "column" or "NOT column", where column is an input
 bool isSimpleFilter(const ActionsDAG::Node * filter_node, bool must_negate)
@@ -173,7 +131,16 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     QueryPlan::Node * child_node = parent_node->children.front();
     auto & child = child_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
-    if (!join)
+    if (!join || child_node->children.size() != 2)
+        return 0;
+
+    /// The Join engine requires its declared join kind and strictness to remain unchanged.
+    auto isStorageJoin = [](auto & step)
+    {
+        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
+        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
+    };
+    if (isStorageJoin(child_node->children.back()->step))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
@@ -204,9 +171,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             if (result_for_matched_rows == FilterResult::FALSE)
             {
@@ -217,9 +183,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             return 0;
         }
@@ -237,9 +202,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             if (result_for_matched_rows == FilterResult::FALSE)
             {
@@ -250,9 +214,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             return 0;
         }

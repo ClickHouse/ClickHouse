@@ -1,0 +1,201 @@
+---
+description: 'Необязательная структура данных, предварительно подготовленная для использования в операциях JOIN.'
+sidebarTitle: 'Join'
+slug: /engines/table-engines/special/join
+title: 'Движок таблицы Join'
+doc_type: 'reference'
+---
+
+Необязательная структура данных, предварительно подготовленная для использования в операциях [JOIN](/ru/reference/statements/select/join).
+
+<Note>
+  В ClickHouse Cloud, если ваш сервис был создан с версией ниже 25.4, вам потребуется установить совместимость не ниже 25.4 с помощью `SET compatibility=25.4`.
+</Note>
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+См. подробное описание запроса [CREATE TABLE](/ru/reference/statements/create/table).
+
+<div id="engine-parameters">
+  ## Параметры движка
+</div>
+
+<div id="join_strictness">
+  ### `join_strictness`
+</div>
+
+`join_strictness` – [режим строгости JOIN](/ru/reference/statements/select/join#supported-types-of-join).
+
+<div id="join_type">
+  ### `join_type`
+</div>
+
+`join_type` — [тип JOIN](/ru/reference/statements/select/join#supported-types-of-join).
+
+<div id="key-columns">
+  ### Столбцы ключа
+</div>
+
+`k1[, k2, ...]` — столбцы ключа из предложения `USING`, по которым выполняется операция `JOIN`.
+
+Укажите параметры `join_strictness` и `join_type` без кавычек, например: `Join(ANY, LEFT, col1)`. Они должны соответствовать операции `JOIN`, для которой будет использоваться таблица. Если параметры не совпадают, ClickHouse не сгенерирует исключение и может вернуть некорректные данные.
+
+<div id="specifics-and-recommendations">
+  ## Особенности и рекомендации
+</div>
+
+<div id="data-storage">
+  ### Хранение данных
+</div>
+
+Данные таблицы `Join` всегда хранятся в оперативной памяти. При вставке строк в таблицу ClickHouse записывает блоки данных в каталог на диске, чтобы их можно было восстановить после перезапуска сервера.
+
+Если сервер перезапустился некорректно, блок данных на диске может быть утерян или повреждён. В этом случае может потребоваться вручную удалить файл с повреждёнными данными.
+
+<div id="selecting-and-inserting-data">
+  ### Выборка и вставка данных
+</div>
+
+Вы можете использовать запросы `INSERT`, чтобы добавлять данные в таблицы движка `Join`. Если таблица была создана со строгостью `ANY`, данные для повторяющихся ключей игнорируются. При строгости `ALL` добавляются все строки.
+
+Основные сценарии использования таблиц движка `Join` следующие:
+
+* Размещать таблицу в правой части выражения `JOIN`.
+* Вызывать функцию [joinGet](/ru/reference/functions/regular-functions/other-functions#joinGet), которая позволяет извлекать данные из таблицы так же, как из словаря.
+
+<div id="deleting-data">
+  ### Удаление данных
+</div>
+
+Запросы `ALTER DELETE` для таблиц движка `Join` реализованы как [мутации](/ru/reference/statements/alter/index#mutations). Мутация `DELETE` считывает отфильтрованные данные и перезаписывает данные в памяти и на диске.
+
+<div id="join-limitations-and-settings">
+  ### Ограничения и настройки
+</div>
+
+При создании таблицы применяются следующие настройки:
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+[join&#95;use&#95;nulls](/ru/reference/settings/session-settings#join_use_nulls)
+
+<div id="max_rows_in_join">
+  #### `max_rows_in_join`
+</div>
+
+[max&#95;rows&#95;in&#95;join](/ru/reference/settings/session-settings#max_rows_in_join)
+
+<div id="max_bytes_in_join">
+  #### `max_bytes_in_join`
+</div>
+
+[max&#95;bytes&#95;in&#95;join](/ru/reference/settings/session-settings#max_bytes_in_join)
+
+<div id="join_overflow_mode">
+  #### `join_overflow_mode`
+</div>
+
+[join&#95;overflow&#95;mode](/ru/reference/settings/session-settings#join_overflow_mode)
+
+<div id="join_any_take_last_row">
+  #### `join_any_take_last_row`
+</div>
+
+[join&#95;any&#95;take&#95;last&#95;row](/ru/reference/settings/session-settings#join_any_take_last_row)
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+<div id="persistent">
+  #### Persistent
+</div>
+
+Отключает постоянное хранение данных для движков таблиц Join и [Set](/ru/reference/engines/table-engines/special/set).
+
+Снижает накладные расходы на I/O. Подходит для сценариев, где важна производительность и не требуется постоянное хранение данных.
+
+Возможные значения:
+
+* 1 — Включено.
+* 0 — Отключено.
+
+Значение по умолчанию: `1`.
+
+Таблицы движка `Join` нельзя использовать в операциях `GLOBAL JOIN`.
+
+Движок `Join` позволяет указать настройку [join&#95;use&#95;nulls](/ru/reference/settings/session-settings#join_use_nulls) в операторе `CREATE TABLE`. В запросе [SELECT](/ru/reference/statements/select/index) должно использоваться то же значение `join_use_nulls`.
+
+<div id="example">
+  ## Примеры использования
+</div>
+
+Создание левой таблицы:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+Создание правой таблицы `Join`:
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+JOIN таблиц:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+В качестве альтернативы вы можете получить данные из таблицы `Join`, указав значение ключа для JOIN:
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+Удаление строки из таблицы `Join`:
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```

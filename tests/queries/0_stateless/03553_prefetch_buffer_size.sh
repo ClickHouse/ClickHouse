@@ -36,5 +36,5 @@ SELECT * FROM test_2 FORMAT Null SETTINGS filesystem_cache_prefer_bigger_buffer_
 SELECT * FROM test_3 FORMAT Null SETTINGS filesystem_cache_prefer_bigger_buffer_size = 0, prefetch_buffer_size = 1_000_000;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT formatQuerySingleLine(query), ProfileEvents['RemoteFSPrefetchedBytes'], ProfileEvents['RemoteFSPrefetchedReads'] FROM system.query_log WHERE current_database = currentDatabase() AND type != 'QueryStart' AND query_kind = 'Select' ORDER BY event_time_microseconds;
+SELECT formatQuerySingleLine(query), ProfileEvents['RemoteFSPrefetchedBytes'], ProfileEvents['RemoteFSPrefetchedReads'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type != 'QueryStart' AND query_kind = 'Select' ORDER BY event_time_microseconds;
 "

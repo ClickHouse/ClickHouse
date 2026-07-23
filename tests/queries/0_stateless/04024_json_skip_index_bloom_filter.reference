@@ -1,0 +1,136 @@
+bloom_filter equals
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter non-existing path
+Skip
+Parts: 0/2
+Granules: 0/4
+bloom_filter typed subcolumn
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter CAST
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter CAST default value unsafe
+bloom_filter typed subcolumn zero safe
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter reversed equals
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter reversed CAST
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter IN typed
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter IN CAST
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter IN CAST default in set unsafe
+bloom_filter IN Nullable default in set safe
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter IS NOT NULL Dynamic
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter IS NOT NULL typed
+Skip
+Parts: 1/2
+Granules: 1/4
+bloom_filter IS NOT NULL nonexistent
+Skip
+Parts: 0/2
+Granules: 0/4
+bloom_filter IS NOT NULL CAST unsafe
+CAST String empty unsafe
+CAST String non-empty safe
+Skip
+Parts: 1/2
+Granules: 1/4
+CAST Nullable safe
+Skip
+Parts: 1/2
+Granules: 1/4
+CAST Float64 default unsafe
+CAST Float64 non-default safe
+Skip
+Parts: 1/2
+Granules: 1/4
+Array subcolumn empty unsafe
+Array subcolumn non-empty safe
+Skip
+Parts: 1/2
+Granules: 1/4
+sub-object ^ access not used
+AND both paths
+Skip
+Parts: 1/2
+Granules: 1/4
+AND one non-existing
+Skip
+Parts: 0/2
+Granules: 0/4
+OR different paths
+Skip
+Parts: 2/2
+Granules: 3/4
+dotted column name
+Skip
+Parts: 1/2
+Granules: 1/4
+Tuple(JSON) subcolumn
+Skip
+Parts: 1/2
+Granules: 1/4
+result: equals
+1
+result: typed subcolumn
+1
+result: CAST
+1
+result: IN
+1
+result: non-existing
+result: reversed
+1
+result: CAST default returns all rows with path absent
+2
+3
+4
+result: NOT IN CAST
+2
+3
+4
+result: AND same row
+1
+result: OR across parts
+1
+3
+result: AND nonexistent
+result: typed AND CAST
+1
+result: CAST OR CAST
+1
+2
+result: typed AND Dynamic
+2
+result: triple OR
+1
+2
+3
+result: IS NOT NULL
+1
+result: IS NOT NULL nonexistent
+result: IS NOT NULL AND equals
+1

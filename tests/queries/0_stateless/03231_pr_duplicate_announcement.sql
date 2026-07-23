@@ -15,6 +15,7 @@ CREATE TABLE test_table_for_in
 
 INSERT INTO test_table_for_in VALUES (0), (1);
 
+SET automatic_parallel_replicas_mode = 0;
 SET allow_experimental_parallel_reading_from_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
 SELECT id, value FROM test_table WHERE id IN (SELECT id FROM test_table_for_in UNION DISTINCT SELECT id FROM test_table_for_in);

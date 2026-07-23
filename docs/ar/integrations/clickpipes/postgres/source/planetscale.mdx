@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'PlanetScale for Postgres'
+description: 'إعداد PlanetScale for Postgres كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/planetscale
+title: 'دليل إعداد PlanetScale for Postgres كمصدر'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'إدخال البيانات', 'مزامنة في الوقت الفعلي']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Info>
+  ‏PlanetScale for Postgres متاح حاليًا في [مرحلة الوصول المبكر](https://planetscale.com/postgres).
+</Info>
+
+<div id="supported-postgres-versions">
+  ## إصدارات Postgres المدعومة
+</div>
+
+يدعم ClickPipes الإصدار 12 من Postgres وما بعده.
+
+<div id="enable-logical-replication">
+  ## فعِّل النسخ المنطقي
+</div>
+
+1. لتمكين النسخ المتماثل على مثيل Postgres لديك، نحتاج إلى التأكد من تعيين الإعدادات التالية:
+
+   ```sql
+   wal_level = logical
+   ```
+
+   للتحقق من ذلك، يمكنك تشغيل أمر SQL التالي:
+
+   ```sql
+   SHOW wal_level;
+   ```
+
+   يجب أن تكون القيمة الناتجة `logical` افتراضيًا. إذا لم تكن كذلك، فيُرجى تسجيل الدخول إلى وحدة تحكم PlanetScale والانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log` لتغييرها.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="ضبط wal_level في وحدة تحكم PlanetScale" size="md" border />
+
+<Warning>
+  سيؤدي تغيير هذا الإعداد في وحدة تحكم PlanetScale إلى إعادة التشغيل.
+</Warning>
+
+2. بالإضافة إلى ذلك، يُوصى بزيادة الإعداد `max_slot_wal_keep_size` من قيمته الافتراضية البالغة 4GB. ويتم ذلك أيضًا عبر وحدة تحكم PlanetScale بالانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log`. للمساعدة في تحديد القيمة الجديدة، يُرجى الاطلاع [هنا](/ar/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="ضبط max_slot_wal_keep_size في وحدة تحكم PlanetScale" size="md" border />
+
+<div id="creating-a-user-with-permissions-and-publication">
+  ## إنشاء مستخدم مع أذونات وpublication
+</div>
+
+اتصل بمثيل PlanetScale Postgres الخاص بك باستخدام المستخدم الافتراضي `postgres.<...>`، ثم شغّل الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة حق الوصول للقراءة فقط على مستوى الـ schema. يوضّح المثال التالي الأذونات الخاصة بـ schema ‏`public`. كرر هذه الأوامر لكل schema يحتوي على جداول تريد تكرارها:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد تكرارها. نوصي بشدة بقصر الـ publication على الجداول التي تحتاجها فقط لتجنّب أي حمل إضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لكل جدول مُدرج في الـ publication إما **primary key** معرّف، *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء publication لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء publication لكل الجداول ضمن schema محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+سيحتوي الـ publication باسم `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفق النسخ المتماثل.
+
+<div id="caveats">
+  ## محاذير
+</div>
+
+1. للاتصال بـ PlanetScale Postgres، يجب إلحاق الفرع الحالي باسم المستخدم الذي أُنشئ أعلاه. على سبيل المثال، إذا كان اسم المستخدم الذي أنشأته هو `clickpipes_user`، فيجب أن يكون اسم المستخدم الفعلي المُستخدَم أثناء إنشاء ClickPipe هو `clickpipes_user`.`branch`، حيث يشير `branch` إلى &quot;id&quot; الخاص بـ [الفرع](https://planetscale.com/docs/postgres/branching) الحالي في PlanetScale Postgres. ولمعرفة ذلك بسرعة، يمكنك الرجوع إلى اسم المستخدم الخاص بالمستخدم `postgres` الذي استخدمته سابقًا لإنشاء هذا المستخدم؛ فالجزء الذي يلي النقطة هو معرّف الفرع.
+2. لا تستخدم منفذ `PSBouncer` (حاليًا `6432`) لأنابيب CDC التي تتصل بـ PlanetScale Postgres؛ إذ يجب استخدام المنفذ العادي `5432`. ويمكن استخدام أيٍّ من المنفذين للأنابيب المخصّصة للتحميل الأولي فقط.
+3. يُرجى التأكد من أنك تتصل فقط بـ المثيل الأساسي، إذ إن [الاتصال بالمثيلات المتماثلة](https://planetscale.com/docs/postgres/scaling/replicas#how-to-query-postgres-replicas) غير مدعوم حاليًا.
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) وبدء إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

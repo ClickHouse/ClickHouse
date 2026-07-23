@@ -31,7 +31,7 @@ ascending order. If the array is not sorted, results are undefined.
     FunctionDocumentation::Examples example = {{"Basic example", "SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionIndexOfAssumeSorted>(documentation);
 }

@@ -1,0 +1,91 @@
+---
+sidebarTitle: '共享与访问'
+slug: /cloud/features/ai-ml/agents/sharing-and-access
+title: '共享与访问控制'
+description: 'ClickHouse 智能体的权限模型与访问控制'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '共享', '访问控制', '权限', 'RBAC']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse 智能体采用分层权限模型：角色决定用户总体上可以使用哪些功能，资源级访问列表决定谁可以使用特定智能体或其他资源，而管理权限则决定谁可以管理所有内容。
+
+<div id="roles">
+  ## 角色
+</div>
+
+角色是一组分配给一个或多个用户的功能权限。默认角色如下：
+
+* **User** - 可以运行智能体并聊天。是否可以构建智能体、创建技能、共享资源等，取决于其角色中各项功能的开关设置。
+* **Admin** - 拥有 User 的全部权限，此外还具备组织级控制能力：管理用户、配置市场、授予权限。
+
+Admin 可以创建自定义角色，并为其设置专属开关，以实现更细粒度的控制。
+
+<div id="resource-sharing">
+  ## 资源共享
+</div>
+
+智能体、提示词和技能各自都有一个访问列表。每个主体有三个访问级别：
+
+* **查看者** - 可以使用该资源，但不能修改。
+* **编辑者** - 可以更改资源的配置 (指令、已附加的工具、模型等) 。
+* **所有者** - 拥有编辑者的全部权限，此外还能删除资源或更改其共享设置。
+
+创建资源时，你默认就是其所有者。任何未明确共享的内容都仅你可见。
+
+<div id="principals">
+  ## 主体
+</div>
+
+你可以向以下对象授予访问权限：
+
+* **单个用户** - 一次授予一个用户。
+* **群组** - 团队或组织单元。如果用户之后加入或离开该群组，其访问权限会自动更新。
+* **整个组织** - 组织中的所有人都可以看到该资源。前提是角色级别的开关允许这样做。
+
+面向整个组织的可见性会让资源能够在[市场](/zh/products/cloud/features/ai-ml/agents/marketplace)中被发现。
+
+<div id="share-an-agent">
+  ## 共享智能体
+</div>
+
+点击智能体构建器底部的**共享**图标。图标上的角标会显示当前有权访问的用户或组数量。
+
+<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="智能体构建器面板底部，已高亮显示共享图标，角标显示已有一个共享主体" size="sm" />
+
+此时会打开**共享**对话框。按姓名或电子邮件地址搜索用户或组，选择访问级别 (**查看者**、**编辑者**或**所有者**) ，然后点击**保存更改**。若要向整个组织共享，请启用 **Share with everyone in ClickHouse** 切换开关。
+
+<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="共享对话框，包含“用户和组权限”部分、一个搜索输入框、一个具有所有者角色的现有用户、一个“Share with everyone in ClickHouse”切换开关，以及“取消”和“保存更改”按钮" size="md" />
+
+接收者在下次刷新时，就会在可用智能体列表中看到该智能体。要撤销访问权限，请在同一对话框中删除对应的行。接收者会立即失去访问权限；他们当前进行中的会话可以完成，但无法再发起新会话。
+
+<div id="default-agent">
+  ## 默认智能体
+</div>
+
+您可以将某个智能体设为默认。除非您另行选择，否则新对话都会默认使用该智能体打开。Admin 还可以为尚未自行设置默认智能体的用户设置组织范围的默认值。
+
+<div id="admin-operations">
+  ## Admin 操作
+</div>
+
+仅 Admin 可执行的操作包括：
+
+* 创建和编辑角色。
+* 配置市场分类并维护精选智能体。
+* 在组织级别启用或禁用功能 (Memory、网页搜索、Code interpreter、市场等) 。
+* 向其他用户授予 Admin 权限。
+
+在 ClickHouse Cloud 中，管理面板仅对组织 Admin 开放。如果你看不到它，请联系你的组织 Admin 或 ClickHouse Cloud 支持团队申请访问权限。
+
+<div id="gotchas">
+  ## 注意事项
+</div>
+
+* **删除某个智能体会导致所有共享失效。** 接收者将失去访问权限；他们与该智能体保存的对话仍可查看，但无法继续。
+* **编辑已共享的智能体会影响所有使用它的人。** 如果你需要在不影响他人的情况下进行试验，请使用副本。
+* **撤销某个用户的角色不会删除其创建的资源。** 他们的智能体、提示词和技能仍会保留在其访问列表中；在完全停用其账户前，请先转移所有权。

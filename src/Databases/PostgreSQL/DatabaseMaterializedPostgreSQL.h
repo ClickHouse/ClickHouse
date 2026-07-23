@@ -13,6 +13,8 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseAtomic.h>
 
+#include <atomic>
+
 
 namespace DB
 {
@@ -46,6 +48,11 @@ public:
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    /// Fail closed for BACKUP DATABASE / BACKUP TABLE if a configured table has no nested ReplacingMergeTree yet,
+    /// instead of silently omitting it from the backup (the base implementation only enumerates nested tables).
+    std::vector<std::pair<ASTPtr, StoragePtr>>
+    getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
@@ -93,7 +100,7 @@ private:
     mutable std::mutex handler_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;
-    bool shutdown_called = false;
+    std::atomic<bool> shutdown_called = false;
 
     LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };

@@ -3,6 +3,7 @@
 SET send_logs_level = 'fatal';
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_00597;
 DROP TABLE IF EXISTS test_view_00597;

@@ -15,6 +15,8 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+#include <Common/NaNUtils.h>
+#include <Common/findExtreme.h>
 
 namespace DB
 {
@@ -149,6 +151,69 @@ struct ArrayAggregateImpl
         return result;
     }
 
+    /// Vectorized fast path for plain numeric arrays: reduce each array slice with findExtremeMin/Max
+    /// (branchless SIMD horizontal min/max) instead of a per-element compareAt.
+    /// The result is bitwise-identical to the generic path: the extreme value is unique up to representation,
+    /// and the only value classes with multiple representations (NaN payloads and 0.0/-0.0) are fixed up below
+    /// to return the first occurrence, which is what compareAt-based selection returns.
+    template <typename Element>
+    requires(has_find_extreme_implementation<Element>)
+    static bool executeMinOrMaxNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    {
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        if (!column)
+            return false;
+
+        const Element * data = column->getData().data();
+        auto res_column = ColumnVector<Element>::create(offsets.size());
+        typename ColumnVector<Element>::Container & res = res_column->getData();
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            const size_t end_of_array = offsets[i];
+
+            /// Array is empty
+            if (pos == end_of_array)
+            {
+                res[i] = Element{};
+                continue;
+            }
+
+            std::optional<Element> result;
+            if constexpr (aggregate_operation == AggregateOperation::min)
+                result = findExtremeMin(data, pos, end_of_array);
+            else
+                result = findExtremeMax(data, pos, end_of_array);
+            chassert(result.has_value());
+
+            if constexpr (is_floating_point<Element>)
+            {
+                /// findExtreme* returns NaN only if all elements are NaN; the generic path returns the first of them.
+                if (isNaN(*result))
+                    result = data[pos];
+                /// A zero result may be either 0.0 or -0.0 depending on reduction order; take the first zero in the array.
+                else if (*result == Element{})
+                {
+                    for (size_t j = pos; j < end_of_array; ++j)
+                    {
+                        if (data[j] == Element{})
+                        {
+                            result = data[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            res[i] = *result;
+            pos = end_of_array;
+        }
+
+        res_ptr = std::move(res_column);
+        return true;
+    }
+
     template <AggregateOperation op = aggregate_operation>
     requires(op == AggregateOperation::min || op == AggregateOperation::max)
     static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
@@ -161,6 +226,18 @@ struct ArrayAggregateImpl
             res_ptr = std::move(res_column);
             return;
         }
+
+        if (executeMinOrMaxNumeric<UInt8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Float32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr))
+            return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
         static constexpr int nan_null_direction_hint = aggregate_operation == AggregateOperation::min ? 1 : -1;
@@ -227,7 +304,7 @@ struct ArrayAggregateImpl
             if (!column_const)
                 return false;
 
-            const AggregationType x = column_const->template getValue<Element>(); // NOLINT
+            const AggregationType x = static_cast<AggregationType>(column_const->template getValue<Element>()); // NOLINT
             const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
 
             typename ColVecResultType::MutablePtr res_column;
@@ -255,7 +332,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        res[i] = x;
+                        res[i] = static_cast<ResultType>(x);
                     }
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
@@ -288,7 +365,7 @@ struct ArrayAggregateImpl
                         for (size_t array_index = 1; array_index < array_size; ++array_index)
                             product = product * x;
 
-                        res[i] = product;
+                        res[i] = static_cast<ResultType>(product);
                     }
                 }
 
@@ -320,12 +397,12 @@ struct ArrayAggregateImpl
                 if constexpr (is_decimal<AggregationType>)
                     res[i] = aggregate_value.value;
                 else
-                    res[i] = aggregate_value;
+                    res[i] = static_cast<ResultType>(aggregate_value);
                 continue;
             }
 
             size_t count = 1;
-            aggregate_value = data[pos]; // NOLINT
+            aggregate_value = static_cast<AggregationType>(data[pos]); // NOLINT
             ++pos;
 
             for (; pos < offsets[i]; ++pos)
@@ -335,7 +412,7 @@ struct ArrayAggregateImpl
                 if constexpr (aggregate_operation == AggregateOperation::sum ||
                             aggregate_operation == AggregateOperation::average)
                 {
-                    aggregate_value += element;
+                    aggregate_value += static_cast<AggregationType>(element);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
@@ -350,7 +427,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        aggregate_value *= element;
+                        aggregate_value *= static_cast<AggregationType>(element);
                     }
                 }
 
@@ -366,7 +443,7 @@ struct ArrayAggregateImpl
                 }
                 else
                 {
-                    res[i] = static_cast<ResultType>(aggregate_value) / count;
+                    res[i] = static_cast<ResultType>(aggregate_value) / static_cast<ResultType>(count);
                 }
             }
             else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
@@ -381,7 +458,7 @@ struct ArrayAggregateImpl
             }
             else
             {
-                res[i] = aggregate_value;
+                res[i] = static_cast<ResultType>(aggregate_value);
             }
         }
 
@@ -413,6 +490,7 @@ struct ArrayAggregateImpl
                 executeType<Int64>(mapped, offsets, res) ||
                 executeType<Int128>(mapped, offsets, res) ||
                 executeType<Int256>(mapped, offsets, res) ||
+                executeType<BFloat16>(mapped, offsets, res) ||
                 executeType<Float32>(mapped, offsets, res) ||
                 executeType<Float64>(mapped, offsets, res) ||
                 executeType<Decimal32>(mapped, offsets, res) ||
@@ -464,7 +542,7 @@ If a lambda function `func` is specified, returns the minimum element of the lam
     };
     FunctionDocumentation::IntroducedIn introduced_in_min = {21, 1};
     FunctionDocumentation::Category category_min = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, returned_value_min, examples_min, introduced_in_min, category_min};
+    FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, {}, returned_value_min, examples_min, introduced_in_min, category_min};
 
     factory.registerFunction<FunctionArrayMin>(documentation_min);
 
@@ -486,7 +564,7 @@ If a lambda function `func` is specified, returns the maximum element of the lam
     };
     FunctionDocumentation::IntroducedIn introduced_in_max = {21, 1};
     FunctionDocumentation::Category category_max = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, returned_value_max, examples_max, introduced_in_max, category_max};
+    FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, {}, returned_value_max, examples_max, introduced_in_max, category_max};
 
     factory.registerFunction<FunctionArrayMax>(documentation_max);
 
@@ -495,7 +573,7 @@ Returns the sum of elements in the source array.
 
 If a lambda function `func` is specified, returns the sum of elements of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_sum = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Syntax syntax_sum = "arraySum([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_sum = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
@@ -508,7 +586,7 @@ If a lambda function `func` is specified, returns the sum of elements of the lam
     };
     FunctionDocumentation::IntroducedIn introduced_in_sum = {21, 1};
     FunctionDocumentation::Category category_sum = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
+    FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, {}, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
 
     factory.registerFunction<FunctionArraySum>(documentation_sum);
 
@@ -530,7 +608,7 @@ If a lambda function `func` is specified, returns the average of elements of the
     };
     FunctionDocumentation::IntroducedIn introduced_in_avg = {21, 1};
     FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
+    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, {}, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
 
     factory.registerFunction<FunctionArrayAverage>(documentation_avg);
 
@@ -552,7 +630,7 @@ If a lambda function `func` is specified, returns the product of elements of the
     };
     FunctionDocumentation::IntroducedIn introduced_in_prod = {21, 1};
     FunctionDocumentation::Category category_prod = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_prod = {description_prod, syntax_prod, arguments_prod, returned_value_prod, examples_prod, introduced_in_prod, category_prod};
+    FunctionDocumentation documentation_prod = {description_prod, syntax_prod, arguments_prod, {}, returned_value_prod, examples_prod, introduced_in_prod, category_prod};
 
     factory.registerFunction<FunctionArrayProduct>(documentation_prod);
 }

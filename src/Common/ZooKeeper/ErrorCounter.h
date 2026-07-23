@@ -1,6 +1,7 @@
 #pragma once
 
-#include <mutex>
+#include <atomic>
+#include <array>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -13,14 +14,28 @@ namespace Coordination
 class ErrorCounter
 {
 private:
-    mutable std::mutex mutex;
-    std::unordered_map<Coordination::Error, UInt32> errors TSA_GUARDED_BY(mutex);
+    static constexpr int32_t MIN_ERROR_VALUE = static_cast<int32_t>(Error::MIN);
+    static constexpr int32_t MAX_ERROR_VALUE = static_cast<int32_t>(Error::MAX);
+
+    static constexpr size_t ARRAY_SIZE = MAX_ERROR_VALUE - MIN_ERROR_VALUE + 1;
+    std::array<std::atomic<uint32_t>, ARRAY_SIZE> error_counts{};
+
+    static size_t errorToIndex(Coordination::Error error)
+    {
+        const int32_t code = static_cast<int32_t>(error);
+        chassert(code >= MIN_ERROR_VALUE && code <= MAX_ERROR_VALUE);
+        return static_cast<size_t>(code - MIN_ERROR_VALUE);
+    }
+
+    static Coordination::Error indexToError(size_t index)
+    {
+        return static_cast<Coordination::Error>(static_cast<int32_t>(index) + MIN_ERROR_VALUE);
+    }
 
 public:
     void increment(Coordination::Error error)
     {
-        std::lock_guard lock(mutex);
-        ++errors[error];
+        error_counts[errorToIndex(error)].fetch_add(1, std::memory_order_relaxed);
     }
 
     void dumpToMapColumn(DB::ColumnMap * column) const
@@ -30,15 +45,18 @@ public:
         auto & key_column = tuple_column.getColumn(0);
         auto & value_column = tuple_column.getColumn(1);
 
-        std::lock_guard lock(mutex);
-
-        for (const auto & [error, count] : errors)
+        size_t count = 0;
+        for (size_t i = 0; i < ARRAY_SIZE; ++i)
         {
-            key_column.insert(error);
-            value_column.insert(count);
+            if (const uint32_t value = error_counts[i].load(std::memory_order_relaxed))
+            {
+                key_column.insert(indexToError(i));
+                value_column.insert(value);
+                ++count;
+            }
         }
 
-        offsets.push_back(offsets.back() + errors.size());
+        offsets.push_back(offsets.back() + count);
     }
 };
 

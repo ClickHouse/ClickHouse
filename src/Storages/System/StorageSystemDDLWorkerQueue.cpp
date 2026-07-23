@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/DDLTask.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -152,7 +153,7 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         {
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(toString(change.value));
+            pair.push_back(fieldToString(change.value));
             settings_map.push_back(std::move(pair));
         }
     }
@@ -236,9 +237,10 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto& ddl_worker = context->getDDLWorker();
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemDDLWorkerQueue::fillData");
+    auto & ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
-    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getZooKeeperFromContext();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 
@@ -390,3 +392,6 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }

@@ -60,7 +60,7 @@ private:
     const double period;
     const double max_interval;
     const size_t heating;
-    double start; // Instant in past without events before it; when measurement started or reset
+    double start{}; // Instant in past without events before it; when measurement started or reset
     ExponentiallySmoothedAverage duration; // Current duration of a period
     ExponentiallySmoothedAverage events; // Estimated number of events in last `duration` seconds
     size_t data_points = 0;

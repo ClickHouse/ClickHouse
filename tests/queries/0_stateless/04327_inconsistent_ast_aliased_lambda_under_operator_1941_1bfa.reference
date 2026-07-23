@@ -1,0 +1,15 @@
+SELECT 1, (((p0, p1) -> p0 AS a7).4)[3] FROM t
+SELECT z, ((((p0, p1) -> p0 AS a7).4)[3])[3] FROM t
+SELECT a, b, (x -> x AS l).1 FROM t
+SELECT 1, 2, (p -> p AS f)[1] FROM t
+SELECT m[1], ((x -> x AS g).3)[2] FROM t
+SELECT (x -> x AS l).1, a FROM t
+SELECT 1, (x -> x) FROM t
+SELECT f(a, ((x, y) -> x)) FROM t
+SELECT arrayFilter((x, y) -> x, [1], [2])
+1	20
+1	[5]
+SELECT 1, -((x -> x AS q).1) FROM t
+SELECT 1, NOT ((x -> x AS q).1) FROM t
+SELECT 1, ((x -> x AS q).1) + 2 FROM t
+SELECT 1, arrayMap(x -> arrayMap(y -> y AS inner, [x]), [1, 2]) FROM t

@@ -1,0 +1,103 @@
+---
+alias: ['TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
+description: 'Documentação sobre o formato TabSeparatedRawWithNamesAndTypes'
+input_format: true
+keywords: ['TabSeparatedRawWithNamesAndTypes', 'TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/TabSeparatedRawWithNamesAndTypes
+title: 'TabSeparatedRawWithNamesAndTypes'
+doc_type: 'referência'
+---
+
+| Entrada | Saída | Alias                                             |
+| ------- | ----- | ------------------------------------------------- |
+| ✔       | ✔     | `TSVRawWithNamesAndTypes`, `RawWithNamesAndTypes` |
+
+<div id="description">
+  ## Descrição
+</div>
+
+Difere do formato [`TabSeparatedWithNamesAndTypes`](/pt-BR/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes),
+pois as linhas são escritas sem caracteres de escape.
+
+<Note>
+  Ao fazer o parsing com esse formato, tabulações ou quebras de linha não são permitidas em nenhum campo.
+</Note>
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="inserting-data">
+  ### Inserindo dados
+</div>
+
+Use o arquivo TSV a seguir, chamado `football.tsv`:
+
+```tsv
+date    season  home_team       away_team       home_team_goals away_team_goals
+Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+Insira os dados:
+
+```sql
+INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedRawWithNamesAndTypes;
+```
+
+<div id="reading-data">
+  ### Leitura de dados
+</div>
+
+Leia os dados usando o formato `TabSeparatedRawWithNamesAndTypes`:
+
+```sql
+SELECT *
+FROM football
+FORMAT TabSeparatedRawWithNamesAndTypes
+```
+
+A saída estará em formato delimitado por tabulações, com duas linhas de cabeçalho com os nomes e os tipos das colunas:
+
+```tsv
+date    season  home_team       away_team       home_team_goals away_team_goals
+Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>

@@ -62,4 +62,25 @@
     <quotas>
         <default />
     </quotas>
+
+    <user_directories>
+        <users_xml>
+            <path>config.xml</path>
+        </users_xml>
+        <local_directory>
+            <path>access/</path>
+        </local_directory>
+    </user_directories>
+
+    <access_control_improvements>
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+        <table_engines_require_grant>true</table_engines_require_grant>
+        <enable_read_write_grants>true</enable_read_write_grants>
+        <enable_user_name_access_type>true</enable_user_name_access_type>
+        <throw_on_invalid_replicated_access_entities>true</throw_on_invalid_replicated_access_entities>
+    </access_control_improvements>
 </clickhouse>

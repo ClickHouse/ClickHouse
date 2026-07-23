@@ -1,0 +1,86 @@
+---
+description: 'El motor permite importar y exportar datos en SQLite y admite consultas
+  a tablas de SQLite directamente desde ClickHouse.'
+sidebarTitle: 'SQLite'
+slug: /engines/table-engines/integrations/sqlite
+title: 'Motor de tabla de SQLite'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+El motor permite importar y exportar datos a SQLite y admite consultas directas a tablas de SQLite desde ClickHouse.
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
+```
+
+**Parámetros del motor**
+
+* `db_path` — Ruta del archivo SQLite que contiene una base de datos.
+* `table` — Nombre de una tabla en la base de datos SQLite.
+
+<div id="data-types-support">
+  ## Compatibilidad con tipos de datos
+</div>
+
+Cuando se especifican explícitamente los tipos de columna de ClickHouse en la definición de la tabla, los siguientes tipos de ClickHouse se pueden interpretar a partir de columnas TEXT de SQLite:
+
+* [Date](/es/reference/data-types/date), [Date32](/es/reference/data-types/date32)
+* [DateTime](/es/reference/data-types/datetime), [DateTime64](/es/reference/data-types/datetime64)
+* [UUID](/es/reference/data-types/uuid)
+* [Enum8, Enum16](/es/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/es/reference/data-types/decimal)
+* [FixedString](/es/reference/data-types/fixedstring)
+* Todos los tipos enteros ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/es/reference/data-types/int-uint))
+* [Float32, Float64](/es/reference/data-types/float)
+
+Consulte [motor de base de datos SQLite](/es/reference/engines/database-engines/sqlite#data_types-support) para ver la correspondencia de tipos predeterminada.
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+Muestra una consulta para crear la tabla en SQLite:
+
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
+```
+
+```text
+CREATE TABLE SQLite.table2
+(
+    `col1` Nullable(Int32),
+    `col2` Nullable(String)
+)
+ENGINE = SQLite('sqlite.db','table2');
+```
+
+Devuelve los datos de la tabla:
+
+```sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
+
+**Véase también**
+
+* [SQLite](/es/reference/engines/database-engines/sqlite) motor
+* [sqlite](/es/reference/functions/table-functions/sqlite) función de tabla

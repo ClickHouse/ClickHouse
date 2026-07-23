@@ -1,0 +1,95 @@
+---
+title: Como usar o comando EXCHANGE para trocar tabelas
+description: "Como usar o comando EXCHANGE para trocar tabelas"
+date: 2024-11-21
+tags: ['Gerenciamento de dados']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como uso o comando [`EXCHANGE`](/pt-BR/reference/statements/exchange) para trocar os nomes de tabelas?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+O comando `EXCHANGE` é útil quando você precisa substituir uma tabela atual por outra tabela temporária em que possivelmente as chaves primárias ou outras configurações foram atualizadas.
+Isso acontece de forma atômica, ao contrário do comando `RENAME`.
+Ele também é útil quando você tem visões materializadas disparadas por uma tabela de origem e quer evitar recriar a visão.
+
+Abaixo está um exemplo simples de como isso funciona e como testar:
+
+* Criar banco de dados de exemplo
+
+```sql
+create database db1;
+```
+
+* Crie uma tabela de exemplo
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Inserir uma linha de exemplo
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* Crie uma tabela temporária de exemplo que será usada na troca
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Insira uma linha de exemplo na tabela temporária
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* Execute o comando `EXCHANGE` para trocar as tabelas
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* Verifique se as tabelas agora foram trocadas e mostre que as linhas também foram trocadas
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 row in set. Elapsed: 0.002 sec. 
+```

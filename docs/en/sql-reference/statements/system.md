@@ -13,15 +13,14 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
-Reload all [Internal dictionaries](../../sql-reference/dictionaries/index.md).
+Reload all [Internal dictionaries](./create/dictionary/overview.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
 ## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
 
-Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
-Always returns `Ok.` regardless of the result of the dictionary update.
+The `SYSTEM RELOAD DICTIONARIES` query reloads dictionaries with a status of `LOADED` (see the `status` column of [`system.dictionaries`](/operations/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/sql-reference/functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
 
 **Syntax**
 
@@ -42,6 +41,29 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 
 ```sql
 SELECT name, status FROM system.dictionaries;
+```
+
+## SYSTEM UNLOAD DICTIONARY {#unload-dictionary}
+
+Unloads a dictionary `dictionary_name` to release its memory, if the dictionary status is `LOADED`.
+The dictionary is lazy-reloaded when necessary again.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+The status of the dictionary can be checked by querying the `system.dictionaries` table.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+## SYSTEM UNLOAD DICTIONARIES {#unload-dictionaries}
+
+The `SYSTEM UNLOAD DICTIONARIES` query unloads all dictionaries with a `LOADED` status (see the `status` column of [`system.dictionaries`](/operations/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
 ```
 
 ## SYSTEM RELOAD MODELS {#reload-models}
@@ -88,27 +110,121 @@ Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchro
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
-## SYSTEM DROP DNS CACHE {#drop-dns-cache}
+## SYSTEM CLEAR|DROP DNS CACHE {#drop-dns-cache}
 
 Clears ClickHouse's internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see `disable_internal_dns_cache`, `dns_cache_max_entries`, `dns_cache_update_period` parameters.
 
-## SYSTEM DROP MARK CACHE {#drop-mark-cache}
+## SYSTEM CLEAR|DROP MARK CACHE {#drop-mark-cache}
 
 Clears the mark cache.
 
-## SYSTEM DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
+## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
+
+Clears the primary index cache, which holds the primary keys of [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) tables in memory.
+Its size is configured with the server-level setting [`primary_index_cache_size`](../../operations/server-configuration-parameters/settings.md#primary_index_cache_size).
+
+## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
 
-## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
+## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
 
-Clears the text index dictionary cache.
+Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
 
-## SYSTEM DROP TEXT INDEX HEADER CACHE {#drop-text-index-header-cache}
+## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
-Clears the text index header cache.
+Clears the parquet metadata cache.
+
+## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+
+Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
+## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
+
+Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
+
+## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
+
+Clears the text index's tokens, header and postings caches.
+
+If you like to drop one of these caches individually, you can run
+
+- `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, or
+- `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+## SYSTEM CLEAR|DROP INDEX MARK CACHE {#drop-index-mark-cache}
+
+Clears the cache of marks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE {#drop-index-uncompressed-cache}
+
+Clears the cache of uncompressed blocks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP MMAP CACHE {#drop-mmap-cache}
+
+Clears the cache of memory-mapped files.
+
+## SYSTEM CLEAR|DROP PAGE CACHE {#drop-page-cache}
+
+Clears the userspace page cache, ClickHouse's own in-memory cache of data read from the underlying storage.
+
+## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
+
+Clears the vector similarity index cache.
+
+## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
+
+Clears the cache of HTTP connection pools used for outgoing connections.
+
+## SYSTEM CLEAR|DROP S3 CLIENT CACHE {#drop-s3-client-cache}
+
+Clears the cache of S3 clients.
+
+## SYSTEM PREWARM MARK CACHE {#prewarm-mark-cache}
+
+Loads the marks of a table into the [mark cache](#drop-mark-cache). Secondary-index marks are also loaded into the [index mark cache](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM PREWARM PRIMARY INDEX CACHE {#prewarm-primary-index-cache}
+
+Loads the primary indexes of a `MergeTree` table into the [primary index cache](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM CLEAR|DROP DISK METADATA CACHE {#drop-disk-metadata-cache}
+
+Clears the metadata cache of the specified disk.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
+
+Reconciles ClickHouse's in-memory state of the filesystem cache with the cache files actually present on disk, and returns the `cache_name`, `path` and downloaded `size` of each cached file segment. An optional cache name limits the operation to a single cache.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+## SYSTEM CLEAR|DROP DISTRIBUTED CACHE {#drop-distributed-cache}
+
+:::note
+`SYSTEM CLEAR|DROP DISTRIBUTED CACHE` is available only in ClickHouse Cloud.
+:::
+
+Drops the distributed cache. Use `CONNECTIONS` to drop only the cached connections to the distributed cache servers, or pass a server identifier to target a single server.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -140,32 +256,36 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica path from ZooKeeper when there's no database to run `DROP DATABASE`. Please note that it does not remove `ReplicatedMergeTree` replicas (so you may need `SYSTEM DROP REPLICA` as well). Shard and replica names are the names that were specified in `Replicated` engine arguments when creating the database. Also, these names can be obtained from `database_shard_name` and `database_replica_name` columns in `system.clusters`. If the `FROM SHARD` clause is missing, then `replica_name` must be a full replica name in `shard_name|replica_name` format.
 
-## SYSTEM DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
+## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
 
 Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
 Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
 
-## SYSTEM DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
+## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
 Clears the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](../../operations/settings/settings.md#compile_expressions).
 
-## SYSTEM DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
+## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
 
-## SYSTEM DROP QUERY CACHE {#drop-query-cache}
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
+
+## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
 ```sql
-SYSTEM DROP QUERY CACHE;
-SYSTEM DROP QUERY CACHE TAG '<tag>'
+SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 ````
 
 Clears the [query cache](../../operations/query-cache.md).
 If a tag is specified, only query cache entries with the specified tag are deleted.
 
-## SYSTEM DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
+## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
 Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
@@ -175,7 +295,7 @@ Supported targets:
 Note: If no target is specified, both caches are cleared.
 
 ```sql
-SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
+SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
 ```
 
 ## SYSTEM FLUSH LOGS {#flush-logs}
@@ -218,6 +338,88 @@ Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$
 ## SYSTEM KILL {#kill}
 
 Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
+
+## SYSTEM INSTRUMENT {#instrument}
+
+Manages instrumentation points using LLVM's XRay feature which is available when ClickHouse is built using `ENABLE_XRAY=1`.
+This enables to debug and profile in production without modifying the source code and with minimal overhead.
+When no instrumentation point is added, the performance penalty is negligible because it only adds an extra jump to a nearby
+address at the prolog and epilog of those functions that are longer than 200 instructions.
+
+### SYSTEM INSTRUMENT ADD {#instrument-add}
+
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table. More than one handler can be added for the same function, and they will be executed in the same order the instrumentation is added.
+The functions to be instrumented can be collected from [`system.symbols`](../../operations/system-tables/symbols.md) system table.
+
+There are three different kind of handlers to add to functions:
+
+**Syntax**
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
+```
+
+where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
+
+#### LOG {#instrument-add-log}
+
+Prints the text provided as an argument and the stack trace either on `ENTRY` or `EXIT` of the function.
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
+```
+
+#### SLEEP {#instrument-add-sleep}
+
+Sleeps for a number of fix amount of seconds either on `ENTRY` or `EXIT`:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5
+```
+
+or for a uniformly distributed random amount of seconds providing min and max separated by a whitespace:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
+```
+
+#### PROFILE {#instrument-add-profile}
+
+Measures the time spent between `ENTRY` and `EXIT` of a function.
+The result of the profiling is stored in [`system.trace_log`](../../operations/system-tables/trace_log.md) and can be converted
+to [Chrome Event Trace Format](../../operations/system-tables/trace_log.md#chrome-event-trace-format).
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
+```
+
+### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
+
+Removes either a single instrumentation point with:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+all of them using the `ALL` keyword:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+a set of IDs from a subquery:
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
+```
+
+or all instrumentation points that match a given function_name:
+
+```sql
+SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
+```
+
+The instrumentation point information can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
@@ -312,6 +514,8 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
@@ -320,6 +524,8 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 ```
 
 ### SYSTEM START TTL MERGES {#start-ttl-merges}
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
@@ -346,7 +552,7 @@ Returns `Ok.` even if table does not exist. Returns error when database does not
 SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM SYSTEM UNFREEZE {#query_language-system-unfreeze}
+### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
 Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 
@@ -502,7 +708,7 @@ SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
 **Example**
 
 ```sql
-CREATE DATABASE repl_db 
+CREATE DATABASE repl_db
 ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
 
 CREATE TABLE repl_db.test_table (n UInt32)
@@ -553,12 +759,12 @@ SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
 
-### SYSTEM DROP FILESYSTEM CACHE {#drop-filesystem-cache}
+### SYSTEM CLEAR|DROP FILESYSTEM CACHE {#drop-filesystem-cache}
 
 Allows to drop filesystem cache.
 
 ```sql
-SYSTEM DROP FILESYSTEM CACHE [ON CLUSTER cluster_name]
+SYSTEM CLEAR FILESYSTEM CACHE [ON CLUSTER cluster_name]
 ```
 
 ### SYSTEM SYNC FILE CACHE {#sync-file-cache}
@@ -597,29 +803,22 @@ SYSTEM UNLOAD PRIMARY KEY [db.]name
 SYSTEM UNLOAD PRIMARY KEY
 ```
 
-## Managing Refreshable Materialized Views {#refreshable-materialized-views}
+## Managing Refreshable Materialized Views {#managing-refreshable-materialized-views}
 
 Commands to control background tasks performed by [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view)
 
 Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
-
-### SYSTEM REFRESH VIEW {#refresh-view}
-
-Trigger an immediate out-of-schedule refresh of a given view.
-
-```sql
-SYSTEM REFRESH VIEW [db.]name
-```
-
-### SYSTEM WAIT VIEW {#wait-view}
-
-Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
 ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
 
 If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
+
+:::note
+The stopped state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM STOP VIEW` only affects the current replica. Use `SYSTEM STOP REPLICATED VIEW` to stop refreshes on all replicas.
+:::
 
 ```sql
 SYSTEM STOP VIEW [db.]name
@@ -632,13 +831,52 @@ SYSTEM STOP VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
-If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
 ```
 ```sql
 SYSTEM START VIEWS
+```
+
+### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
+
+Disable periodic refreshing of the given view or all refreshable views.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+
+Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
+
+:::note
+The paused state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM PAUSE VIEW` only affects the current replica.
+:::
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+```sql
+SYSTEM PAUSE VIEWS
+```
+
+### SYSTEM REFRESH VIEW {#refresh-view}
+
+Trigger an immediate out-of-schedule refresh of a given view.
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+### SYSTEM WAIT VIEW {#wait-view}
+
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+
+Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
 ```
 
 ### SYSTEM CANCEL VIEW {#cancel-view}
@@ -649,14 +887,78 @@ If there's a refresh in progress for the given view on the current replica, inte
 SYSTEM CANCEL VIEW [db.]name
 ```
 
-### SYSTEM WAIT VIEW {#system-wait-view}
+## Managing Background Activity {#managing-background-activity}
 
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+Engine-agnostic commands to control the background activity of a single table, or of every such table on the server at once. They cover:
 
-Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+- [Refreshable materialized views](../../sql-reference/statements/create/view.md#refreshable-materialized-view) (the periodic refresh), and
+- the streaming table engines that continuously consume from an external source: [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md), [NATS](../../engines/table-engines/integrations/nats.md), [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md).
 
-If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
+For a refreshable materialized view each verb is an alias of the corresponding `SYSTEM ... VIEW` command from [Managing Refreshable Materialized Views](#managing-refreshable-materialized-views), so `SYSTEM STOP [db.]name` behaves exactly like `SYSTEM STOP VIEW [db.]name`, and so on.
+
+The per-table and wildcard forms differ in how they treat tables without a background activity. The per-table form (`SYSTEM STOP [db.]table`) throws an error if the named table is neither a streaming engine nor a refreshable materialized view. The wildcard form silently skips such tables, so it is always safe to run.
+
+`STOP` and `CANCEL` interrupt consumption as soon as possible. For [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md) and [NATS](../../engines/table-engines/integrations/nats.md) they stop reading from the source but do not interrupt an insert that has already started: a block already being written into the materialized views still finishes and commits. [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) read and insert in a single pipeline. With deduplication enabled (default) the insert is cancelled too and the files are reprocessed later. With deduplication disabled the in-flight batch finishes and commits instead (like the engines above) to avoid duplicating rows. Data that was read but not yet committed is consumed again later, so nothing is lost, except for core NATS (without JetStream), which cannot redeliver and drops it.
+
+`PAUSE` does not interrupt a running insert, so it normally does not lose anything. Core NATS is the exception: pausing stops consuming and drops the messages it had already received but not yet inserted, and core NATS cannot redeliver them.
+
+:::note
+None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
+:::
+
+### SYSTEM STOP {#stop-background}
+
+Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
 
 ```sql
-SYSTEM WAIT VIEW [db.]name
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+### SYSTEM START {#start-background}
+
+Resume activity, undoing a previous `SYSTEM STOP` or `SYSTEM PAUSE`. No activity is interrupted.
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+### SYSTEM PAUSE {#pause-background}
+
+Prevent further background activity, but let whatever is running right now finish first.
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+### SYSTEM CANCEL {#cancel-background}
+
+Interrupt the activity running right now only, without blocking future activity — the table keeps refreshing or consuming on its schedule. Does nothing if no activity is in progress.
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+### SYSTEM REFRESH {#refresh-background}
+
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+### Privileges {#background-privileges}
+
+Each command requires the privilege of the targeted engine: `SYSTEM VIEWS` for a refreshable materialized view and `SYSTEM STREAMING ENGINES` for a streaming table. Both are children of `SYSTEM BACKGROUND`, so granting `SYSTEM BACKGROUND` allows controlling the background activity of every such table. The `ALL BACKGROUND` forms apply only to the tables the user is allowed to control and silently skip the rest.
+
+## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
+
+Blocks until the given file has been processed or permanently failed by the given [S3Queue](../../engines/table-engines/integrations/s3queue.md) or [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) table. Returns immediately if the file was already processed. Raises an error if the file has permanently failed (all retries exhausted).
+
+```sql
+SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```

@@ -167,6 +167,8 @@ else
     }
 fi
 
+trap cleanup EXIT
+
 mkdir -p $WORKDIR
 cd $WORKDIR
 
@@ -192,7 +194,7 @@ fi
 #
 if [ -n "$USE_CLICKHOUSE" ]; then
     cat <<EOF >>CMakeLists.txt
-add_executable($EXECUTABLE $SOURCE_FILE)
+clickhouse_add_executable($EXECUTABLE $SOURCE_FILE)
 EOF
 fi
 
@@ -255,12 +257,12 @@ else
       }
       gettimeofday(&end, nullptr);
       SYNC(); // sync with all threads after test
-      double interval = (end.tv_sec - beg.tv_sec)*1e6 + (end.tv_usec - beg.tv_usec);
-      LOG(RESULT("Test #" << test, interval / max_steps, max_steps / interval));
+      double interval = static_cast<double>(end.tv_sec - beg.tv_sec)*1e6 + static_cast<double>(end.tv_usec - beg.tv_usec);
+      LOG(RESULT("Test #" << test, interval / static_cast<double>(max_steps), static_cast<double>(max_steps) / interval));
       total += interval;
     }
     SYNC(); // sync for avg printing
-    LOG(RESULT(AVERAGE, total / max_tests / max_steps, max_steps / (total / max_tests)));
+    LOG(RESULT(AVERAGE, total / static_cast<double>(max_tests) / static_cast<double>(max_steps), static_cast<double>(max_steps) / (total / static_cast<double>(max_tests))));
     SYNC(); // sync for avg printing
 EOF
 fi
@@ -294,14 +296,14 @@ if [ $THREADS -gt 1 ] && [ $BENCHMARK_STEPS -ne 0 ]; then
     SYNC(); // sync with all threads before test
     SYNC(); // sync with all threads after test
     gettimeofday(&main_end, nullptr);
-    double interval = (main_end.tv_sec - main_beg.tv_sec)*1e6 + (main_end.tv_usec - main_beg.tv_usec);
-    double per_step = interval / (max_steps * $THREADS);
-    double mps = max_steps * $THREADS / interval;
+    double interval = static_cast<double>(main_end.tv_sec - main_beg.tv_sec)*1e6 + static_cast<double>(main_end.tv_usec - main_beg.tv_usec);
+    double per_step = interval / (static_cast<double>(max_steps) * $THREADS);
+    double mps = static_cast<double>(max_steps) * $THREADS / interval;
     LOG_MAIN(RESULT("Test #" << test, per_step, mps));
     main_total += interval;
   }
-  double avg = main_total / (max_tests * max_steps * $THREADS);
-  double mps = max_tests * max_steps * $THREADS / main_total;
+  double avg = main_total / (static_cast<double>(max_tests) * static_cast<double>(max_steps) * $THREADS);
+  double mps = static_cast<double>(max_tests) * static_cast<double>(max_steps) * $THREADS / main_total;
   SYNC(); // sync for avg printing
   SYNC(); // sync for avg printing
   LOG_MAIN(RESULT("MainAvg", avg, mps));
@@ -338,15 +340,12 @@ EOF
 if [ -n "$USE_CMAKE" ]; then
     if ! (cmake . && make); then
         cat -n $SOURCE_FILE
-        cleanup
         exit 1
     fi
 elif [ -n "$USE_CLICKHOUSE" ]; then
-    if ! (cd $BUILD_ROOT && ninja $EXECUTABLE) >stdout.log 2>stderr.log; then
-        cat stdout.log
-        cat stderr.log >&2
+    if ! (cd $BUILD_ROOT && ninja -j $(nproc) $EXECUTABLE) >stdout.log 2>stderr.log; then
+        grep -hE 'error:|warning:|FAILED:' stdout.log stderr.log >&2
         cat -n $SOURCE_FILE
-        cleanup
         exit 1
     fi
 else
@@ -354,7 +353,6 @@ else
     $CXX $CXX_OPTS -I$CALL_DIR -o $EXECUTABLE $SOURCE_FILE || RET=$?
     if [ $RET -ne 0 ]; then
         cat -n $SOURCE_FILE
-	cleanup
         exit $RET
     fi
 fi
@@ -377,8 +375,6 @@ else
 fi
 
 #
-# Cleanup
+# Cleanup is handled by trap EXIT
 #
-cleanup
-echo "Exit code: $RET"
 exit $RET

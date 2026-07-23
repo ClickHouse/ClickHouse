@@ -58,6 +58,12 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+// On illumos, <curses.h> defines ERR as a macro (error return value).
+// Undef it to allow use of ERR as an enum value below.
+#ifdef ERR
+#  undef ERR
+#endif
+
 enum ProgressOption
 {
     DEFAULT,
@@ -114,6 +120,7 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
+    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -136,6 +143,12 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
+    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
+    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
+    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
+    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
+    std::optional<Settings> settingsWithoutCompatibilityDerived() const;
+
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -147,6 +160,15 @@ protected:
     virtual void setupSignalHandler() = 0;
 
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
+    /// Echo the query before execution, honoring the echo, echo-formatted and highlight settings.
+    void echoQuery(std::string_view full_query, const ASTPtr & parsed_query);
+
+    /// Resolve echo, echo-formatted, echo-query-id and highlight settings from the configuration,
+    /// using interactive-mode-aware defaults. Must be called after is_interactive is determined.
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing; other clients do not,
+    /// so the implication is opt-in via `verbose_implies_echo`.
+    void setupEchoAndHighlightSettings(bool verbose_implies_echo = false);
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
@@ -211,6 +233,11 @@ protected:
 
     static fs::path getHistoryFilePath();
 private:
+    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
+    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
+    /// output path, so it neither prints anything nor disturbs the visible query state.
+    Block fetchDocumentation(const String & query, const String & word);
+
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
@@ -257,6 +284,13 @@ private:
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
+    virtual bool supportsLocalMetaCommands() const { return false; }
+
+    /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
+    /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
+    /// matches exactly, lists similar names and entities whose documentation mentions the word.
+    /// Always returns true: the input was consumed as a meta-command.
+    bool processHelpCommand(const String & word);
 
 protected:
 
@@ -309,19 +343,30 @@ protected:
     ContextMutablePtr global_context;
     ContextMutablePtr client_context;
 
+    /// The client local time zone, captured on the first connect() before it may switch the
+    /// process default to the server time zone. Used to seed `session_timezone` per query when
+    /// `use_client_time_zone` is set, so server-side literal parsing matches the client side.
+    String client_local_timezone;
+
     String default_database;
     String query_id;
-    Int32 suggestion_limit;
+    Int32 suggestion_limit{};
     bool enable_highlight = true;
     bool multiline = false;
+    bool rainbow_parentheses = true;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
 
-    bool echo_queries = false; /// Print queries before execution in batch mode.
+    bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
+    bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
+    bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
+    String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
+    bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
@@ -337,7 +382,7 @@ protected:
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
-    uint64_t terminal_width = 0;
+    uint16_t terminal_width = 0;
 
     String pager;
 
@@ -349,7 +394,10 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    std::optional<size_t> insert_format_max_block_size_from_config; /// Max block size when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_bytes_from_config; /// Max block size in bytes when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_rows_from_config; /// Min block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_bytes_from_config; /// Min block size in bytes when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -370,6 +418,9 @@ protected:
     std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Wrapper for hooking into the flush event.
+    std::unique_ptr<WriteBuffer> std_out_wrapper;
+
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
     std::shared_ptr<IOutputFormat> output_format;
@@ -387,7 +438,7 @@ protected:
 
     fs::path home_path;
     fs::path history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
+    UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
     String server_version;
@@ -398,6 +449,9 @@ protected:
     SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
+    /// Progress received before the output format was created (e.g. from scalar subqueries during analysis).
+    /// Replayed into output_format once it's available.
+    Progress pending_progress;
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
@@ -405,7 +459,10 @@ protected:
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
-    size_t processed_rows = 0; /// How many rows have been read or written.
+    /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
+    /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
+    size_t processed_rows_from_blocks = 0;
+    size_t processed_rows_from_progress = 0;
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -419,6 +476,7 @@ protected:
     bool have_error = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
+    std::list<ExternalTable> external_scalars; /// External scalars info.
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
@@ -455,8 +513,8 @@ protected:
         Block last_block;
     } profile_events;
 
-    QueryProcessingStage::Enum query_processing_stage;
-    ClientInfo::QueryKind query_kind;
+    QueryProcessingStage::Enum query_processing_stage{};
+    ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort
     {

@@ -1,0 +1,307 @@
+---
+slug: /use-cases/observability/clickstack/integrations/postgresql-metrics
+title: 'Supervision des métriques PostgreSQL avec ClickStack'
+sidebarTitle: 'Métriques PostgreSQL'
+description: 'Supervision des métriques PostgreSQL avec ClickStack'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', 'métriques', 'OTEL', 'ClickStack', 'supervision de base de données']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **En bref**
+
+  Surveillez les métriques de performance de PostgreSQL dans ClickStack à l’aide du receiver PostgreSQL d’OTel. Inclut un jeu de données de démonstration et un tableau de bord préconfiguré.
+</Info>
+
+<div id="existing-postgres">
+  ## Intégration avec une instance PostgreSQL existante
+</div>
+
+Cette section explique comment configurer votre instance PostgreSQL existante pour envoyer des métriques à ClickStack en configurant le ClickStack OTel collector avec le PostgreSQL receiver.
+
+Si vous souhaitez tester l’intégration des métriques PostgreSQL avant de configurer votre propre environnement, vous pouvez utiliser notre jeu de données de démonstration préconfiguré dans la [section suivante](#demo-dataset).
+
+<div id="prerequisites">
+  ##### Prérequis
+</div>
+
+* Instance ClickStack opérationnelle
+* Installation PostgreSQL existante (version 9.6 ou ultérieure)
+* Accès réseau de ClickStack à PostgreSQL (port par défaut : 5432)
+* Utilisateur de monitoring PostgreSQL disposant des autorisations appropriées
+
+<Steps>
+  <Step>
+    #### Assurez-vous que l’utilisateur de monitoring dispose des autorisations requises
+
+    Le PostgreSQL receiver nécessite un utilisateur ayant un accès en lecture aux vues de statistiques. Accordez le rôle `pg_monitor` à votre utilisateur de monitoring :
+
+    ```sql
+    GRANT pg_monitor TO your_monitoring_user;
+    ```
+  </Step>
+
+  <Step>
+    #### Créez une configuration personnalisée pour l’OTel collector
+
+    ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement.
+
+    Créez `postgres-metrics.yaml` :
+
+    ```yaml
+    receivers:
+      postgresql:
+        endpoint: postgres-host:5432
+        transport: tcp
+        username: otel_monitor
+        password: ${env:POSTGRES_PASSWORD}
+        databases:
+          - postgres
+          - your_application_db # Remplacez par les noms réels de vos bases de données
+        collection_interval: 30s
+        tls:
+          insecure: true
+
+    processors:
+      resourcedetection:
+        detectors: [env, system, docker]
+        timeout: 5s
+      batch:
+        timeout: 10s
+        send_batch_size: 10000
+
+    exporters:
+      clickhouse:
+        endpoint: tcp://localhost:9000
+        database: default
+        ttl: 96h
+
+    service:
+      pipelines:
+        metrics/postgres:
+          receivers: [postgresql]
+          processors: [resourcedetection, batch]
+          exporters: [clickhouse]
+    ```
+
+    <Note>
+      Le paramètre `tls: insecure: true` désactive la vérification SSL pour les environnements de développement et de test. Pour PostgreSQL en production avec SSL activé, supprimez cette ligne ou configurez les certificats appropriés.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Déployez ClickStack avec une configuration personnalisée
+
+    Montez votre configuration personnalisée :
+
+    ```bash
+    docker run -d \
+      --name clickstack-postgres \
+      -p 8123:8123 -p 9000:9000 -p 4317:4317 -p 4318:4318 \
+      -e HYPERDX_API_KEY=your-api-key \
+      -e CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      -e POSTGRES_PASSWORD=secure_password_here \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/postgres-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      clickhouse/clickstack:latest
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifiez la collecte des métriques
+
+    Une fois la configuration en place, connectez-vous à HyperDX et vérifiez que les métriques remontent correctement :
+
+    1. Accédez à Metrics Explorer
+    2. Recherchez les métriques commençant par postgresql (par ex. : postgresql.backends, postgresql.commits)
+    3. Vous devriez voir apparaître des points de données à l’intervalle de collecte configuré
+
+    Une fois les métriques disponibles, passez à la section [Tableaux de bord et visualisation](#dashboards) pour importer le tableau de bord préconfiguré.
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
+
+Pour les utilisateurs qui souhaitent tester l’intégration des métriques PostgreSQL avant de configurer leurs systèmes de production, nous fournissons un jeu de données pré-généré avec des schémas réalistes de métriques PostgreSQL.
+
+<Info>
+  **Métriques au niveau de la base de données uniquement**
+
+  Ce jeu de données de démonstration inclut uniquement des métriques au niveau de la base de données afin de garder les données d’exemple légères. Les métriques de table et d’index sont collectées automatiquement lors de la surveillance d’une base de données PostgreSQL réelle.
+</Info>
+
+<Steps>
+  <Step>
+    #### Télécharger l’échantillon de métriques
+
+    Téléchargez les fichiers de métriques pré-générés (24 heures de métriques PostgreSQL avec des schémas réalistes) :
+
+    ```bash
+    # Télécharger les métriques gauge (connexions, taille de la base de données)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgres-metrics-gauge.csv
+
+    # Télécharger les métriques de somme (commits, rollbacks, opérations)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgres-metrics-sum.csv
+    ```
+
+    Le jeu de données inclut des schémas réalistes :
+
+    * **Pic de connexions le matin (08:00)** - Afflux de connexions
+    * **Problème de performances du cache (11:00)** - Pic de Blocks&#95;read
+    * **Bug applicatif (14:00-14:30)** - Le taux de rollback grimpe à 15 %
+    * **Incidents de deadlock (14:15, 16:30)** - Deadlocks rares
+  </Step>
+
+  <Step>
+    #### Démarrer ClickStack
+
+    Démarrez une instance ClickStack :
+
+    ```bash
+    docker run -d --name clickstack-postgres-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    Attendez environ 30 secondes pour que ClickStack démarre complètement.
+  </Step>
+
+  <Step>
+    #### Charger les métriques dans ClickStack
+
+    Chargez les métriques directement dans ClickHouse :
+
+    ```bash
+    # Charger les métriques gauge
+    cat postgres-metrics-gauge.csv | docker exec -i clickstack-postgres-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
+
+    # Charger les métriques de somme
+    cat postgres-metrics-sum.csv | docker exec -i clickstack-postgres-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifier les métriques dans HyperDX
+
+    Une fois chargées, le moyen le plus rapide de voir vos métriques est d’utiliser le tableau de bord préconfiguré.
+
+    Passez à la section [Tableaux de bord et visualisation](#dashboards) pour importer le tableau de bord et afficher de nombreuses métriques PostgreSQL à la fois.
+
+    <Info>
+      **Affichage du fuseau horaire**
+
+      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. Définissez votre intervalle de temps sur **2025-11-09 00:00:00 - 2025-11-12 00:00:00** afin de vous assurer de voir les métriques de démonstration où que vous soyez. Une fois les métriques visibles, vous pouvez réduire l’intervalle à une période de 24 heures pour obtenir des visualisations plus claires.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Tableaux de bord et visualisations
+</div>
+
+Pour vous aider à démarrer la surveillance de PostgreSQL avec ClickStack, nous fournissons les visualisations essentielles des métriques PostgreSQL.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  </Step>
+
+  <Step>
+    #### Importer le tableau de bord préconfiguré
+
+    1. Ouvrez HyperDX et accédez à la section Dashboards
+    2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, sous les points de suspension
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
+
+    3. Téléversez le fichier `postgres-metrics-dashboard.json`, puis cliquez sur **Finish Import**
+
+    <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="Boîte de dialogue de finalisation de l’importation" />
+  </Step>
+
+  <Step>
+    #### Afficher le tableau de bord
+
+    Le tableau de bord sera créé avec toutes les visualisations déjà configurées :
+
+    <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="Tableau de bord des métriques PostgreSQL" />
+
+    <Note>
+      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Le tableau de bord importé n’aura pas d’intervalle de temps défini par défaut.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### La config personnalisée ne se charge pas
+</div>
+
+Vérifiez que la variable d&#39;environnement est définie :
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+Vérifiez que le fichier de configuration personnalisé est monté :
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+```
+
+<div id="no-metrics">
+  ### Aucune métrique n’apparaît dans HyperDX
+</div>
+
+Vérifiez que PostgreSQL est accessible :
+
+```bash
+docker exec <clickstack-container> psql -h postgres-host -U otel_monitor -d postgres -c "SELECT 1"
+```
+
+Consultez les logs de l’OTel collector :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i postgres
+```
+
+<div id="auth-errors">
+  ### Erreurs d’authentification
+</div>
+
+Vérifiez que le mot de passe est correctement configuré :
+
+```bash
+docker exec <clickstack-container> printenv POSTGRES_PASSWORD
+```
+
+Testez directement les identifiants :
+
+```bash
+psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
+```
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* Configurez des [alertes](/fr/clickstack/features/alerts) pour les seuils critiques (limites de connexion, taux élevés de rollback, faibles taux de réussite du cache)
+* Activez la surveillance des requêtes avec l’extension `pg_stat_statements`
+* Surveillez plusieurs instances PostgreSQL en dupliquant la configuration du receiver avec différents endpoints et noms de service
+
+<div id="going-to-production">
+  ## Passage en production
+</div>
+
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour un déploiement rapide. Pour les déploiements en production, nous vous recommandons de déployer votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

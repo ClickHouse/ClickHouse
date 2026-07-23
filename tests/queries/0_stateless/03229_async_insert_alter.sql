@@ -1,5 +1,10 @@
--- Tags: no-parallel, no-async-insert
--- no-parallel because the test uses FLUSH ASYNC INSERT QUEUE
+-- Tags: no-async-insert
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- This test verifies the async-insert path via `system.asynchronous_insert_log` `data_kind`.
+-- With `send_table_structure_on_insert_with_inline_data=0` the client takes the inline-data
+-- path which bypasses async insert (`is_async_insert_with_inlined_data` becomes false in
+-- `ClientBase::processSingleQuery`), and the log entries change from `Preprocessed` to
+-- `Parsed`. Pin the legacy path so the test exercises what it was written for.
 
 SET wait_for_async_insert = 0;
 SET async_insert_busy_timeout_max_ms = 300000;
@@ -16,7 +21,7 @@ INSERT INTO t_async_insert_alter VALUES (42, 24);
 
 ALTER TABLE t_async_insert_alter ADD COLUMN value2 Int64;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
 
@@ -26,7 +31,7 @@ INSERT INTO t_async_insert_alter VALUES (43, 34, 55);
 
 ALTER TABLE t_async_insert_alter MODIFY COLUMN value2 String;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
 
@@ -36,10 +41,10 @@ INSERT INTO t_async_insert_alter VALUES ('100', '200', '300');
 
 ALTER TABLE t_async_insert_alter DROP COLUMN value2;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
 SYSTEM FLUSH LOGS asynchronous_insert_log;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
-SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;
+SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;
 
 DROP TABLE t_async_insert_alter;

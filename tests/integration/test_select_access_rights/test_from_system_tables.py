@@ -1,9 +1,7 @@
-import os
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -140,9 +138,7 @@ def test_information_schema():
         == "1\n"
     )
 
-    expected_error = (
-        "necessary to have the grant SELECT(table_name) ON information_schema.tables"
-    )
+    expected_error = "necessary to have the grant SELECT ON information_schema.tables"
     assert expected_error in node.query_and_get_error(
         "SELECT count() FROM information_schema.tables WHERE table_name='table1'",
         user="another",
@@ -162,9 +158,7 @@ def test_information_schema():
     )
 
     node.query("GRANT SELECT ON information_schema.* TO sqluser")
-    expected_error = (
-        "necessary to have the grant SELECT(database, `table`) ON system.parts"
-    )
+    expected_error = "necessary to have the grant SELECT ON system.parts"
     assert expected_error in node.query_and_get_error(
         "SELECT count() FROM information_schema.tables WHERE table_name='table1'",
         user="sqluser",

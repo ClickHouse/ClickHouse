@@ -2,14 +2,12 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 class ASTStorage;
 struct MemorySettingsImpl;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class SettingsChanges;
 

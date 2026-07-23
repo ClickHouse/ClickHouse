@@ -62,7 +62,7 @@ public:
         }
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
         if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
             throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", socket.peerAddress().toString());

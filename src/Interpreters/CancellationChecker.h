@@ -42,8 +42,9 @@ private:
     std::mutex m;
     std::condition_variable cond_var;
 
-    // Function to execute when a task's endTime is reached
-    bool removeQueryFromSet(QueryStatusPtr query);
+    /// The deadline (ms since steady_clock epoch) the worker's wait is currently armed for;
+    /// 0 while the worker is not parked on a deadline. Lets tests synchronize with the wait state.
+    UInt64 armed_deadline = 0;
 
     static void cancelTask(CancellationChecker::QueryToTrack task);
 
@@ -59,13 +60,16 @@ public:
 
     void terminateThread();
 
-    // Method to add a new task to the multiset
-    void appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
+    // Method to add a new task to the multiset. Returns true if the task was added.
+    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
 
     // Used when some task is done
     void appendDoneTasks(const QueryStatusPtr & query);
 
     // Worker thread function
     void workerFunction();
+
+    // The deadline the worker is currently sleeping toward, 0 when it is not. For tests.
+    UInt64 getArmedDeadline();
 };
 }

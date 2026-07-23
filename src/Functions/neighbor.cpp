@@ -35,7 +35,7 @@ namespace
 // | c1 | c2 |
 // | 10 | 20 |
 // | 20 | 0  |
-class FunctionNeighbor : public IFunction
+class FunctionNeighbor final : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
@@ -238,6 +238,7 @@ The function can be enabled by setting `allow_deprecated_error_prone_window_func
         {
             "Usage example",
             R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
             )",
             R"(
@@ -258,6 +259,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
         {
             "With default value",
             R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
             )",
             R"(
@@ -278,7 +280,7 @@ SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNeighbor>(documentation);
 }

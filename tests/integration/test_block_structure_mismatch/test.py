@@ -49,6 +49,8 @@ CREATE TABLE dist_test (
 
 
 def test(started_cluster):
+    node1.query("TRUNCATE TABLE local_test")
+    node2.query("TRUNCATE TABLE local_test")
     node1.query(
         "INSERT INTO local_test (t, shard, col1, col2) VALUES (1000, 0, 'x', 'y')"
     )

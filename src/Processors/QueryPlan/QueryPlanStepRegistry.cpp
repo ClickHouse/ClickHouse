@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
 namespace DB
@@ -45,17 +46,32 @@ void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
-void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
+void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry);
+void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
+void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
+void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
+void registerShuffleSendStep(QueryPlanStepRegistry & registry);
+void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
+void registerGatherSendStep(QueryPlanStepRegistry & registry);
+void registerGatherReceiveStep(QueryPlanStepRegistry & registry);
+void registerBroadcastSendStep(QueryPlanStepRegistry & registry);
+void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry);
+void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
+void registerObjectFilterStep(QueryPlanStepRegistry & registry);
+
+
+void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
+
 
 void QueryPlanStepRegistry::registerPlanSteps()
 {
@@ -70,7 +86,10 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerArrayJoinStep(registry);
     registerLimitByStep(registry);
     registerLimitStep(registry);
+    registerFractionalLimitStep(registry);
+    registerFractionalOffsetStep(registry);
     registerNegativeLimitStep(registry);
+    registerNegativeLimitByStep(registry);
     registerOffsetStep(registry);
     registerNegativeOffsetStep(registry);
     registerFilterStep(registry);
@@ -78,9 +97,21 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerExtremesStep(registry);
     registerJoinStep(registry);
 
+    registerShuffleSendStep(registry);
+    registerShuffleReceiveStep(registry);
+    registerGatherSendStep(registry);
+    registerGatherReceiveStep(registry);
+    registerBroadcastSendStep(registry);
+    registerBroadcastReceiveStep(registry);
+    registerReadFromMergeTreeStep(registry);
+
     registerReadFromTableStep(registry);
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
+    registerObjectFilterStep(registry);
+
+
+    registerReadFromStorageStep(registry);
 }
 
 }

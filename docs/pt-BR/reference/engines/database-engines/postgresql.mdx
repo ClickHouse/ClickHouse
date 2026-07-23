@@ -1,0 +1,156 @@
+---
+description: 'Permite conectar-se a bancos de dados em um servidor PostgreSQL remoto.'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/database-engines/postgresql
+title: 'PostgreSQL'
+doc_type: 'guide'
+---
+
+Permite conectar-se a bancos de dados em um servidor [PostgreSQL](https://www.postgresql.org) remoto. Suporta operações de leitura e escrita (consultas `SELECT` e `INSERT`) para troca de dados entre o ClickHouse e o PostgreSQL.
+
+Fornece acesso em tempo real à lista e à estrutura das tabelas no PostgreSQL remoto por meio das consultas `SHOW TABLES` e `DESCRIBE TABLE`.
+
+Suporta alterações na estrutura da tabela (`ALTER TABLE ... ADD|DROP COLUMN`). Se o parâmetro `use_table_cache` (consulte Parâmetros do mecanismo abaixo) estiver definido como `1`, a estrutura da tabela será armazenada em cache e não será verificada em busca de alterações, mas poderá ser atualizada com as consultas `DETACH` e `ATTACH`.
+
+<div id="creating-a-database">
+  ## Criar um banco de dados
+</div>
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**Parâmetros do mecanismo**
+
+* `host:port` — Endereço do servidor PostgreSQL.
+* `database` — Nome do banco de dados remoto.
+* `user` — Usuário do PostgreSQL.
+* `password` — Senha do usuário.
+* `schema` — Esquema do PostgreSQL.
+* `use_table_cache` — Define se a estrutura da tabela do banco de dados é armazenada em cache ou não. Opcional. Valor padrão: `0`.
+
+<div id="data_types-support">
+  ## Suporte a tipos de dados
+</div>
+
+| PostgreSQL       | ClickHouse                                                    |
+| ---------------- | ------------------------------------------------------------- |
+| DATE             | [Date](/pt-BR/reference/data-types/date)                            |
+| TIMESTAMP        | [DateTime](/pt-BR/reference/data-types/datetime)                    |
+| REAL             | [Float32](/pt-BR/reference/data-types/float)                        |
+| DOUBLE           | [Float64](/pt-BR/reference/data-types/float)                        |
+| DECIMAL, NUMERIC | [Decimal](/pt-BR/reference/data-types/decimal) (veja a nota abaixo) |
+| SMALLINT         | [Int16](/pt-BR/reference/data-types/int-uint)                       |
+| INTEGER          | [Int32](/pt-BR/reference/data-types/int-uint)                       |
+| BIGINT           | [Int64](/pt-BR/reference/data-types/int-uint)                       |
+| SERIAL           | [UInt32](/pt-BR/reference/data-types/int-uint)                      |
+| BIGSERIAL        | [UInt64](/pt-BR/reference/data-types/int-uint)                      |
+| TEXT, CHAR       | [String](/pt-BR/reference/data-types/string)                        |
+| INTEGER          | Nullable([Int32](/pt-BR/reference/data-types/int-uint))             |
+| ARRAY            | [Array](/pt-BR/reference/data-types/array)                          |
+
+<Note>
+  `numeric(p, 0)` no PostgreSQL, com precisão `p` maior que 76 (o máximo suportado por `Decimal256`) — por exemplo, `numeric(78, 0)`, comumente usado para armazenar inteiros de 256 bits — é mapeado para [`Int256`](/pt-BR/reference/data-types/int-uint) em vez de `Decimal`. Valores que não cabem no intervalo de `Int256` são rejeitados com um erro.
+</Note>
+
+<div id="examples-of-use">
+  ## Exemplos de uso
+</div>
+
+Banco de dados no ClickHouse, trocando dados com o servidor PostgreSQL:
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+Lendo dados da tabela do PostgreSQL:
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+Gravando dados na tabela do PostgreSQL:
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+Considere que a estrutura da tabela foi alterada no PostgreSQL:
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+Como o parâmetro `use_table_cache` foi definido como `1` quando o banco de dados foi criado, a estrutura da tabela no ClickHouse ficou armazenada em cache e, por isso, não foi modificada:
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+Depois de desanexar a tabela e anexá-la novamente, a estrutura foi atualizada:
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [ClickHouse e PostgreSQL — uma combinação perfeita no mundo dos dados — parte 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* Blog: [ClickHouse e PostgreSQL — uma combinação perfeita no mundo dos dados — parte 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

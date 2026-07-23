@@ -1,6 +1,5 @@
 import pytest
 import logging
-import pyspark
 
 
 from helpers.cluster import ClickHouseCluster
@@ -30,6 +29,7 @@ def started_cluster_iceberg_no_spark():
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
+            with_iceberg_catalog=True,
         )
         cluster.add_instance(
             "node2",

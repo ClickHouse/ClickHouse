@@ -1,0 +1,15 @@
+q1	1
+q1	2
+q1	3
+q1	4
+q2	1
+q2	2
+q2	3
+q2	4
+Row 1:
+──────
+query:                             SYSTEM FLUSH ASYNC INSERT QUEUE table2;
+query_kind:                        System
+quorum_parts:                      2
+quorum_wait_microseconds_non_zero: 1
+quorum_failed_inserts:             0

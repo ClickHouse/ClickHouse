@@ -1,0 +1,43 @@
+---
+title: GCS 인증 및 버킷
+---
+
+<Accordion title="GCS 버킷 및 HMAC 키 생성">
+  ### ch_bucket_us_east1
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="US East 1에서 GCS 버킷 생성" border />
+
+  ### ch_bucket_us_east4
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="US East 4에서 GCS 버킷 생성" border />
+
+  ### 액세스 키 생성
+
+  ### 서비스 계정 HMAC 키 및 시크릿 생성
+
+  **Cloud Storage &gt; 설정 &gt; Interoperability**를 열고 기존 **Access key**를 선택하거나 **CREATE A KEY FOR A SERVICE ACCOUNT**를 선택합니다. 이 가이드에서는 새 서비스 계정용 새 키를 생성하는 절차를 설명합니다.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="GCS에서 서비스 계정 HMAC 키 생성" border />
+
+  ### 새 서비스 계정 추가
+
+  기존 서비스 계정이 없는 프로젝트라면 **CREATE NEW ACCOUNT**를 선택합니다.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="GCS에서 새 서비스 계정 추가" border />
+
+  서비스 계정 생성은 3단계로 이루어집니다. 첫 번째 단계에서는 계정에 의미 있는 이름, ID 및 설명을 지정합니다.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="GCS에서 새 서비스 계정 이름과 ID 지정" border />
+
+  Interoperability 설정 대화상자에서는 IAM role인 **Storage Object Admin** 역할을 권장합니다. 두 번째 단계에서 해당 역할을 선택합니다.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="GCS에서 IAM role Storage Object Admin 선택" border />
+
+  세 번째 단계는 선택 사항이며, 이 가이드에서는 사용하지 않습니다. 정책에 따라 사용자에게 이러한 권한을 부여할 수 있습니다.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="GCS에서 새 서비스 계정의 추가 설정 구성" border />
+
+  서비스 계정 HMAC 키가 표시됩니다. 이 정보는 ClickHouse 구성에서 사용되므로 저장해 두십시오.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="GCS용으로 생성된 HMAC 키 확인" border />
+</Accordion>

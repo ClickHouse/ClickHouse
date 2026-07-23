@@ -24,7 +24,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTAuthenticationData>(*this);
+        auto clone = make_intrusive<ASTAuthenticationData>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -41,6 +41,7 @@ public:
 
     bool contains_password = false;
     bool contains_hash = false;
+    bool jwt_use_authenticator = false;
     ASTPtr valid_until;
 
 protected:

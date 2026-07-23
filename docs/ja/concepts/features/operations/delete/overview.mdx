@@ -1,0 +1,82 @@
+---
+slug: /deletes/overview
+title: '削除の概要'
+description: 'ClickHouseでデータを削除する方法'
+keywords: ['削除', 'truncate', 'drop', 'lightweight delete']
+doc_type: 'guide'
+---
+
+ClickHouseでデータを削除する方法はいくつかあり、それぞれに利点とパフォーマンス特性があります。データモデルと削除予定のデータ量に応じて、適切な方法を選択してください。
+
+| 方法                                                                       | 構文                           | 使用する場面                                                                                     |
+| ------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| [論理削除](/ja/concepts/features/operations/delete/lightweight-delete)          | `DELETE FROM [table]`        | 少量のデータを削除する場合に使用します。行は以降のすべてのSELECTクエリから直ちに除外されますが、最初は内部的に削除済みとしてマークされるだけで、ディスクからは削除されません。 |
+| [削除ミューテーション](/ja/reference/statements/alter/delete)                         | `ALTER TABLE [table] DELETE` | データを直ちにディスクから削除する必要がある場合 (たとえばコンプライアンス要件への対応時) に使用します。SELECTのパフォーマンスに悪影響を与えます。             |
+| [テーブルをTRUNCATEする](/ja/reference/statements/truncate)                          | `TRUNCATE TABLE [db.table]`  | テーブル内のすべてのデータを効率的に削除します。                                                                   |
+| [パーティションの削除](/ja/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | パーティション内のすべてのデータを効率的に削除します。                                                                |
+
+以下に、ClickHouseでデータを削除するさまざまな方法の概要を示します。
+
+<div id="lightweight-deletes">
+  ## 論理削除
+</div>
+
+論理削除では、行は直ちに削除済みとしてマークされ、以降のすべての `SELECT` クエリで自動的に除外されます。これらの削除済み行はその後、通常のマージサイクルの中で削除されるため、I/O の負荷を抑えられます。そのため、一定期間は、データが実際にストレージから削除されず、削除済みとしてマークされているだけの場合があります。データが確実に削除される必要がある場合は、上記の ミューテーション コマンドを検討してください。
+
+```sql
+-- delete all data from 2018 with a lightweight delete. Not recommended.
+DELETE FROM posts WHERE toYear(CreationDate) = 2018
+```
+
+大量のデータを論理削除の `DELETE` ステートメントで削除すると、`SELECT` クエリのパフォーマンスにも悪影響を与える可能性があります。また、このコマンドはプロジェクションを持つテーブルとは互換性がありません。
+
+この操作では、削除された行を[マークする](/ja/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse) (`_row_exists` カラムを追加する) ためにミューテーションが使用されるため、一定の I/O が発生する点に注意してください。
+
+一般に、削除されたデータがディスク上に残っていても許容できる場合 (たとえば、コンプライアンス要件に関わらないケース) は、ミューテーションよりも論理削除を優先すべきです。ただし、すべてのデータを削除する必要がある場合は、この方法も避けるべきです。
+
+[論理削除](/ja/concepts/features/operations/delete/lightweight-delete)の詳細をご覧ください。
+
+<div id="delete-mutations">
+  ## 削除ミューテーション
+</div>
+
+削除ミューテーションは、たとえば `ALTER TABLE ... DELETE` コマンドを使用して発行できます。
+
+```sql
+-- ミューテーションを使用して2018年のデータをすべて削除する。非推奨。
+ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
+```
+
+これらは、同期的に (non-replicated の場合はデフォルト) または非同期的に ([mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定で決まります) 実行できます。これらは非常に I/O 負荷が高く、`WHERE` 式に一致するすべてのパーツを書き換えます。この処理にはアトミック性がありません。変異後のパーツは準備ができ次第すぐに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでに変異済みのパーツのデータと、まだ変異されていないパーツのデータの両方が見えることになります。ユーザーは [system.mutations](/ja/reference/system-tables/mutations#monitoring-mutations) テーブルで進行状況を追跡できます。これらは I/O 負荷の高い操作であり、クラスターの `SELECT` パフォーマンスに影響する可能性があるため、使用は最小限にとどめるべきです。
+
+[削除ミューテーション](/ja/reference/statements/alter/delete) の詳細を参照してください。
+
+<div id="truncate-table">
+  ## テーブルをTRUNCATEする
+</div>
+
+テーブル内のすべてのデータを削除する必要がある場合は、以下に示す `TRUNCATE TABLE` コマンドを使用します。これは軽量な処理です。
+
+```sql
+TRUNCATE TABLE posts
+```
+
+[TRUNCATE TABLE](/ja/reference/statements/truncate) の詳細については、こちらをご覧ください。
+
+<div id="drop-partition">
+  ## パーティションの削除
+</div>
+
+データにカスタムのパーティションキーを指定している場合は、パーティションを効率的に削除できます。カーディナリティの高いパーティション化は避けてください。
+
+```sql
+ALTER TABLE posts (DROP PARTITION '2008')
+```
+
+[DROP PARTITION](/ja/reference/statements/alter/partition) の詳細については、こちらをご覧ください。
+
+<div id="more-resources">
+  ## 関連リソース
+</div>
+
+* [ClickHouse における更新および削除の処理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

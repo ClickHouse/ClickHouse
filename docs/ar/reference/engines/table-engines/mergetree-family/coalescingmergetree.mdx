@@ -1,0 +1,184 @@
+---
+description: 'يرث CoalescingMergeTree من محرك MergeTree. وتكمن ميزته الأساسية
+  في قدرته على تخزين آخر قيمة غير NULL لكل عمود تلقائيًا أثناء عمليات دمج الأجزاء.'
+sidebarTitle: 'CoalescingMergeTree'
+slug: /engines/table-engines/mergetree-family/coalescingmergetree
+title: 'محرك جدول CoalescingMergeTree'
+keywords: ['CoalescingMergeTree']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+<Info>
+  **متاح ابتداءً من الإصدار 25.6**
+
+  محرك الجداول هذا متاح ابتداءً من الإصدار 25.6 فأحدث، وذلك في كلٍّ من OSS وCloud.
+</Info>
+
+يرث هذا المحرك من [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). ويكمن الفرق الأساسي في كيفية دمج أجزاء البيانات: ففي جداول `CoalescingMergeTree`، يستبدل ClickHouse جميع الصفوف التي لها المفتاح الأساسي نفسه (أو بصورة أدق، [مفتاح الفرز](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسه) بصف واحد يحتوي على أحدث القيم غير NULL لكل عمود.
+
+يتيح ذلك تنفيذ عمليات upsert على مستوى الأعمدة، ما يعني أنه يمكنك تحديث أعمدة محددة فقط بدلًا من تحديث الصفوف بالكامل.
+
+`CoalescingMergeTree` مخصص للاستخدام مع أنواع Nullable في الأعمدة غير المفتاحية. وإذا لم تكن الأعمدة Nullable، فسيكون السلوك مماثلًا لما هو عليه في [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = CoalescingMergeTree([columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+للاطلاع على وصف معلمات الطلب، راجع [وصف الطلب](/ar/reference/statements/create/table).
+
+<div id="parameters-of-coalescingmergetree">
+  ### معاملات CoalescingMergeTree
+</div>
+
+<div id="columns">
+  #### الأعمدة
+</div>
+
+`columns` - اختياري. قيمة من نوع tuple تحتوي على أسماء الأعمدة التي ستُدمَج قيمها. يجب ألا تكون الأعمدة المحددة ضمن partition أو مفتاح الفرز. إذا لم يتم تحديد `columns`، فسيقوم ClickHouse بدمج القيم في جميع الأعمدة غير الموجودة في مفتاح الفرز.
+
+<div id="query-clauses">
+  ### بنود الاستعلام
+</div>
+
+عند إنشاء جدول `CoalescingMergeTree`، تكون [البنود](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسها مطلوبة، كما هو الحال عند إنشاء جدول `MergeTree`.
+
+<details markdown="1">
+  <summary>الطريقة المهجورة لإنشاء جدول</summary>
+
+  <Note>
+    لا تستخدم هذه الطريقة في المشاريع الجديدة، وإذا أمكن، فحوِّل المشاريع القديمة إلى الطريقة الموضحة أعلاه.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] CoalescingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+  ```
+
+  جميع المعلَمات باستثناء `columns` لها المعنى نفسه كما في `MergeTree`.
+
+  * `columns` — `Tuple` بأسماء الأعمدة التي ستُجمع قيمها. هذه معلَمة اختيارية. للاطلاع على الوصف، راجع النص أعلاه.
+</details>
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+انظر إلى الجدول التالي:
+
+```sql
+CREATE TABLE test_table
+(
+    key UInt64,
+    value_int Nullable(UInt32),
+    value_string Nullable(String),
+    value_date Nullable(Date)
+)
+ENGINE = CoalescingMergeTree()
+ORDER BY key
+```
+
+أدرج البيانات فيه:
+
+```sql
+INSERT INTO test_table VALUES(1, NULL, NULL, '2025-01-01'), (2, 10, 'test', NULL);
+INSERT INTO test_table VALUES(1, 42, 'win', '2025-02-01');
+INSERT INTO test_table(key, value_date) VALUES(2, '2025-02-01');
+```
+
+ستكون النتيجة كما يلي:
+
+```sql
+SELECT * FROM test_table ORDER BY key;
+```
+
+```text
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   1 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-01-01 │
+│   2 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-02-01 │
+│   2 │        10 │ test         │       ᴺᵁᴸᴸ │
+└─────┴───────────┴──────────────┴────────────┘
+```
+
+الاستعلام المُوصى به للحصول على النتيجة الصحيحة والنهائية:
+
+```sql
+SELECT * FROM test_table FINAL ORDER BY key;
+```
+
+```text
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   2 │        10 │ test         │ 2025-02-01 │
+└─────┴───────────┴──────────────┴────────────┘
+```
+
+يؤدي استخدام المُعدِّل `FINAL` إلى إجبار ClickHouse على تطبيق منطق الدمج وقت الاستعلام، مما يضمن حصولك على قيمة &quot;الأحدث&quot; الصحيحة والموحَّدة لكل عمود. وهذه هي الطريقة الأكثر أمانًا ودقة عند الاستعلام من جدول CoalescingMergeTree.
+
+<Note>
+  قد يُرجع النهج الذي يستخدم `GROUP BY` نتائج غير صحيحة إذا لم تكن الأجزاء الأساسية قد دُمجت بالكامل.
+
+  ```sql
+  SELECT key, last_value(value_int), last_value(value_string), last_value(value_date)  FROM test_table GROUP BY key; -- غير موصى به.
+  ```
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## تجميع عناصر Tuple
+</div>
+
+عند تمكين الإعداد `allow_tuple_element_aggregation`، تُسطَّح أعمدة `Tuple` بشكل متكرر بحيث يشارك كل عنصر نهائي في الدمج بصورة مستقلة. يتيح لك ذلك تخزين عدة حقول في عمود `Tuple` واحد مع دمجها عنصرًا بعنصر أثناء عمليات الدمج، بحيث يحتفظ كل عمود فرعي `Nullable` بأحدث قيمة غير `NULL` بصورة مستقلة.
+
+تنطبق القواعد نفسها على الأعمدة الفرعية المسطحة كما تنطبق على الأعمدة العادية:
+
+* تُستبعد من الدمج الأعمدة الفرعية التي تنتمي إلى `Tuple` موجود في مفتاح الفرز أو مفتاح التقسيم.
+* إذا تم تحديد `columns`، فلن تُدمج إلا الأعمدة الفرعية التابعة لأعمدة `Tuple` المُدرجة.
+
+<Note>
+  هذا الإعداد غير قابل للتغيير ويجب تحديده عند إنشاء الجدول.
+</Note>
+
+```sql
+CREATE TABLE coalescing_tuples
+(
+    key UInt64,
+    data Tuple(
+        value_a Nullable(UInt64),
+        value_b Nullable(String),
+        nested Tuple(
+            value_c Nullable(UInt64)
+        )
+    )
+) ENGINE = CoalescingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO coalescing_tuples VALUES (1, (100, NULL, (NULL)));
+INSERT INTO coalescing_tuples VALUES (1, (NULL, 'hello', (42)));
+
+SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tuples FINAL;
+```
+
+```text
+┌─key─┬─data.value_a─┬─data.value_b─┬─data.nested.value_c─┐
+│   1 │          100 │ hello        │                  42 │
+└─────┴──────────────┴──────────────┴─────────────────────┘
+```

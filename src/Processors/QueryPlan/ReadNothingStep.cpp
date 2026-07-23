@@ -10,6 +10,11 @@ ReadNothingStep::ReadNothingStep(SharedHeader output_header_)
 {
 }
 
+QueryPlanStepPtr ReadNothingStep::clone() const
+{
+    return std::make_unique<ReadNothingStep>(getOutputHeader());
+}
+
 void ReadNothingStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));

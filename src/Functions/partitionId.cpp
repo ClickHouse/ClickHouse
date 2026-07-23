@@ -18,7 +18,7 @@ namespace ErrorCodes
 /** partitionId(x, y, ...) is a function that computes partition ids of arguments.
   * The function is slow and should not be called for large amount of rows.
   */
-class FunctionPartitionId : public IFunction
+class FunctionPartitionId final : public IFunction
 {
 public:
     static constexpr auto name = "partitionId";
@@ -110,7 +110,7 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPartitionId>(documentation);
     factory.registerAlias("partitionID", "partitionId");

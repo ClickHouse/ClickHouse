@@ -1,0 +1,5 @@
+part_log: rebuild merges
+all_1_2_1	1	0
+all_3_4_1	1	0
+part_log: projection merges
+all_1_4_2	0	1

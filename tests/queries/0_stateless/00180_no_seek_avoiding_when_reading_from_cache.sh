@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-parallel, no-random-settings, long
+# Tags: stateful, no-flaky-check, no-parallel, no-random-settings, long, no-asan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE hits_s3_sampled AS test.hits_s3"
 $CLICKHOUSE_CLIENT -q "INSERT INTO hits_s3_sampled SELECT * FROM test.hits_s3 SAMPLE 0.01"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE hits_s3_sampled FINAL"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM DROP FILESYSTEM CACHE"
+$CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FILESYSTEM CACHE"
 
 # Warm up the cache
 $CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT -q "
   -- CachedReadBufferReadFromSourceBytes = 0: sanity check to ensure we read only from cache
   SELECT ProfileEvents['AsynchronousReaderIgnoredBytes'], ProfileEvents['CachedReadBufferReadFromSourceBytes']
   FROM system.query_log
-  WHERE query_id = '$query_id' AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()
+  WHERE query_id = '$query_id' AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS hits_s3_sampled"

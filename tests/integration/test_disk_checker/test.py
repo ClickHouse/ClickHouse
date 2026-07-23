@@ -62,7 +62,7 @@ def test_disk_readonly_status(started_cluster):
                 node.exec_in_container(["mount", "-o", "remount,ro,bind", disk_path])
                 mount_read_only_succeded = True
                 break;
-            except Exception as err:
+            except Exception:
                 time.sleep(0.42);
         assert mount_read_only_succeded;
 

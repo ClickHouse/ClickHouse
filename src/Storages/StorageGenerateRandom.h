@@ -1,19 +1,21 @@
 #pragma once
 
 #include <optional>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <pcg_random.hpp>
 
 
 namespace DB
 {
 
+/// If `fuzzy` is true, tries to generate more "interesting" values. E.g. small numbers are more
+/// likely, and strings sometimes are in datetime format.
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, ContextPtr context);
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy = false);
 
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom final : public IStorage
+class StorageGenerateRandom final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageGenerateRandom(
@@ -25,6 +27,10 @@ public:
         const std::optional<UInt64> & random_seed);
 
     std::string getName() const override { return "GenerateRandom"; }
+
+    static VirtualColumnsDescription createVirtuals();
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

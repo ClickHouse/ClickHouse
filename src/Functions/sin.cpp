@@ -20,6 +20,7 @@ REGISTER_FUNCTION(Sin)
             .arguments = {{"x", "The number whose sine will be returned.", {"(U)Int*", "Float*", "Decimal*"}}},
             .returned_value = {"Returns the sine of x."},
             .examples = {{.name = "simple", .query = "SELECT sin(1.23)", .result = "0.9424888019316975"}},
+            .introduced_in = {1, 1},
             .category = FunctionDocumentation::Category::Mathematical},
         FunctionFactory::Case::Insensitive);
 }

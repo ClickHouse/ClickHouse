@@ -54,6 +54,7 @@ public:
 
     /// Returns the number of matched rules.
     size_t wipeSensitiveData(std::string & data) const;
+    size_t wipeSensitiveDataThrow(std::string & data) const;
 
     /// setInstance is not thread-safe and should be called once in single-thread mode.
     /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
@@ -77,6 +78,6 @@ public:
 
 /// Wipes sensitive data and cuts to a specified maximum length in one function call.
 /// If the maximum length is zero then the function doesn't cut to the maximum length.
-std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length);
+std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length, bool wipe_sensitive);
 
 }

@@ -14,6 +14,7 @@ enum class AccessEntityType : uint8_t
     SETTINGS_PROFILE,
     ROW_POLICY,
     QUOTA,
+    MASKING_POLICY,
 
     MAX,
 };

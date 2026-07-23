@@ -86,6 +86,7 @@ private:
     const RestoreAccessCreationMode creation_mode;
     const bool skip_unresolved_dependencies;
     const bool update_dependents;
+    const bool restore_with_current_grants;
     const LoggerPtr log;
 
     /// Whether loadFromBackup() finished.

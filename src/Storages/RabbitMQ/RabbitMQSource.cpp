@@ -1,15 +1,16 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
-#include <Columns/IColumn.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <base/sleep.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -23,7 +24,7 @@ static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_sna
     auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
 
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     for (const auto & column_name : column_names)
     {
@@ -55,7 +56,8 @@ RabbitMQSource::RabbitMQSource(
     StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    std::optional<UInt64> cancel_epoch_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -67,7 +69,8 @@ RabbitMQSource::RabbitMQSource(
         handle_error_mode_,
         nack_broken_messages_,
         ack_in_suffix_,
-        log_)
+        log_,
+        cancel_epoch_)
 {
 }
 
@@ -82,7 +85,8 @@ RabbitMQSource::RabbitMQSource(
     StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -94,6 +98,7 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
     , log(log_)
     , max_execution_time_ms(max_execution_time_)
 {
@@ -134,8 +139,16 @@ Chunk RabbitMQSource::generate()
     auto chunk = generateImpl();
     if (!chunk && ack_in_suffix)
     {
-        LOG_TEST(log, "Will send ack on select");
-        sendAck();
+        if (consumption_aborted)
+        {
+            LOG_TEST(log, "Will requeue messages on aborted select");
+            sendNack(/*requeue=*/true);
+        }
+        else
+        {
+            LOG_TEST(log, "Will send ack on select");
+            sendAck();
+        }
     }
 
     return chunk;
@@ -214,9 +227,17 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
+    bool aborted = false;
+
     /// Channel id will not change during read.
     while (true)
     {
+        if (storage.isConsumeCancelRequested(cancel_epoch))
+        {
+            aborted = true;
+            break;
+        }
+
         exception_message.reset();
         size_t new_rows = 0;
         is_dead_letter = false;
@@ -226,7 +247,22 @@ Chunk RabbitMQSource::generateImpl()
             /// A buffer containing a single RabbitMQ message.
             if (auto buf = consumer->consume())
             {
-                new_rows = executor.execute(*buf);
+                try
+                {
+                    new_rows = executor.execute(*buf);
+                }
+                catch (...)
+                {
+                    /// The message was already dequeued by `consume`. Record its
+                    /// delivery tag so that `nackMessages` in `streamToViews`
+                    /// can properly reject it. Without this, the tag is lost and
+                    /// the message stays unacked in RabbitMQ forever.
+                    /// See https://github.com/ClickHouse/ClickHouse/issues/73541
+                    const auto & message = consumer->currentMessage();
+                    commit_info.channel_id = message.channel_id;
+                    commit_info.delivery_tag = std::max(commit_info.delivery_tag, message.delivery_tag);
+                    throw;
+                }
             }
         }
 
@@ -266,47 +302,50 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
+                virtual_columns[6]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
-                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
-                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[7]->insertData(message.message);
+                        virtual_columns[8]->insertData(*exception_message);
                     }
                     else
                     {
-                        virtual_columns[6]->insertDefault();
                         virtual_columns[7]->insertDefault();
+                        virtual_columns[8]->insertDefault();
                     }
                 }
             }
 
             if (is_dead_letter)
             {
-                assert(exception_message);
+                chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
-                dead_letter_queue->add(
-                    DeadLetterQueueElement{
-                        .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
-                        .event_time = timeInSeconds(time_now),
-                        .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database = storage_id.database_name,
-                        .table = storage_id.table_name,
-                        .raw_message = message.message,
-                        .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::RabbitMQDetails{
-                            .exchange_name = exchange_name,
-                            .message_id = message.message_id,
-                            .timestamp = message.timestamp,
-                            .redelivered = message.redelivered,
-                            .delivery_tag = message.delivery_tag,
-                            .channel_id = message.channel_id
-                        }
-
-                    });
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+                else
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = message.message,
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::RabbitMQDetails{
+                                .exchange_name = exchange_name,
+                                .message_id = message.message_id,
+                                .timestamp = message.timestamp,
+                                .redelivered = message.redelivered,
+                                .delivery_tag = message.delivery_tag,
+                                .channel_id = message.channel_id
+                            }
+                        });
             }
 
             total_rows += new_rows;
@@ -332,11 +371,19 @@ Chunk RabbitMQSource::generateImpl()
         }
         if (new_rows == 0)
         {
+            auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
             if (remaining_execution_time)
-                consumer->waitForMessages(remaining_execution_time);
+                consumer->waitForMessages(remaining_execution_time, is_cancelled);
             else
-                consumer->waitForMessages();
+                consumer->waitForMessages(std::nullopt, is_cancelled);
         }
+    }
+
+    if (aborted || storage.isConsumeCancelRequested(cancel_epoch))
+    {
+        consumption_aborted = true;
+        LOG_TRACE(log, "Consumption interrupted: discarding in-flight block of {} rows", total_rows);
+        return {};
     }
 
     LOG_TEST(
@@ -363,9 +410,9 @@ bool RabbitMQSource::sendAck()
     return consumer && consumer->ackMessages(commit_info);
 }
 
-bool RabbitMQSource::sendNack()
+bool RabbitMQSource::sendNack(bool requeue)
 {
-    return consumer && consumer->nackMessages(commit_info);
+    return consumer && consumer->nackMessages(commit_info, requeue);
 }
 
 }

@@ -1,0 +1,26 @@
+---
+sidebarTitle: 'Java runner'
+slug: /integrations/google-dataflow/java-runner
+description: 'يمكنك إدخال البيانات إلى ClickHouse باستخدام Google Dataflow مشغّل Java'
+title: 'Dataflow Java runner'
+doc_type: 'guide'
+keywords: ['Dataflow Java runner', 'Google Dataflow ClickHouse', 'Apache Beam Java ClickHouse', 'ClickHouseIO connector']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+يتيح لك مشغّل Java تشغيل مسارات Apache Beam مخصّصة على خدمة Dataflow من Google Cloud. يوفّر هذا النهج أقصى قدر من المرونة، وهو ملائم جدًا لسير عمل ETL المتقدّمة.
+
+<div id="how-it-works">
+  ## آلية العمل
+</div>
+
+1. **تنفيذ خط المعالجة**
+   لاستخدام مشغّل Java، تحتاج إلى تنفيذ خط Apache Beam الخاص بك باستخدام `ClickHouseIO`، وهو الموصل الرسمي لدينا لـ Apache Beam. للاطلاع على أمثلة التعليمات البرمجية وإرشادات استخدام `ClickHouseIO`، يُرجى زيارة [ClickHouse Apache Beam](/ar/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+
+2. **النشر**
+   بعد تنفيذ خط المعالجة وتهيئته، يمكنك نشره على Dataflow باستخدام أدوات النشر من Google Cloud. تجد تعليمات النشر التفصيلية في [وثائق Google Cloud Dataflow - Java Pipeline](https://cloud.google.com/dataflow/docs/quickstarts/create-pipeline-java).
+
+**ملاحظة**: يفترض هذا النهج الإلمام بإطار عمل Beam وخبرة في البرمجة. إذا كنت تفضل حلاً من دون برمجة، ففكّر في استخدام [القوالب الجاهزة مسبقًا من ClickHouse](/ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates).

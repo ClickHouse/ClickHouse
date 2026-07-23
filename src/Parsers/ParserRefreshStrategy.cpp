@@ -25,13 +25,13 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_depends_on{Keyword::DEPENDS_ON};
     ParserKeyword s_settings{Keyword::SETTINGS};
 
-    auto refresh = std::make_shared<ASTRefreshStrategy>();
+    auto refresh = make_intrusive<ASTRefreshStrategy>();
 
     if (s_after.ignore(pos, expected))
     {
         refresh->schedule_kind = RefreshScheduleKind::AFTER;
         ASTPtr period;
-        if (!ParserTimeInterval{}.parse(pos, period, expected))
+        if (!ParserTimeInterval{ParserTimeInterval::Options {.allow_zero = true}}.parse(pos, period, expected))
             return false;
 
         refresh->set(refresh->period, period);
@@ -57,8 +57,6 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             refresh->set(refresh->offset, periodic_offset);
         }
     }
-    if (refresh->schedule_kind == RefreshScheduleKind::UNKNOWN)
-        return false;
 
     if (s_randomize_for.ignore(pos, expected))
     {
@@ -71,10 +69,6 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (s_depends_on.ignore(pos, expected))
     {
-        if (refresh->schedule_kind == RefreshScheduleKind::AFTER)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "DEPENDS ON is allowed only for REFRESH EVERY, not REFRESH AFTER");
-
         ASTPtr dependencies;
 
         auto list_parser = ParserList{
@@ -85,6 +79,16 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!list_parser.parse(pos, dependencies, expected))
             return false;
         refresh->set(refresh->dependencies, dependencies);
+    }
+
+    /// Require `REFRESH AFTER` or `REFRESH EVERY` or `REFRESH DEPENDS ON`.
+    if (refresh->schedule_kind == RefreshScheduleKind::UNKNOWN)
+    {
+        if (!refresh->dependencies)
+            return false;
+
+        /// `REFRESH DEPENDS ON` is a shorthand for `REFRESH AFTER 0 SECOND DEPENDS ON`.
+        refresh->schedule_kind = RefreshScheduleKind::AFTER;
     }
 
     // Refresh SETTINGS

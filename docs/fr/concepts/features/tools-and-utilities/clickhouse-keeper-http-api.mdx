@@ -1,0 +1,118 @@
+---
+description: 'Documentation de l’API HTTP de ClickHouse Keeper et du tableau de bord web intégré'
+sidebarTitle: 'API HTTP Keeper'
+slug: /operations/utilities/clickhouse-keeper-http-api
+title: 'API HTTP et tableau de bord de Keeper'
+doc_type: 'reference'
+---
+
+ClickHouse Keeper fournit une API HTTP et un tableau de bord web intégré pour la surveillance, les contrôles d’état et la gestion du stockage.
+Cette interface permet aux opérateurs d’inspecter l’état du cluster, d’exécuter des commandes et de gérer le stockage de Keeper depuis un navigateur web ou via des clients HTTP.
+
+<div id="configuration">
+  ## Configuration
+</div>
+
+Pour activer l’API HTTP, ajoutez la section `http_control` à la configuration `keeper_server` :
+
+```xml
+<keeper_server>
+    <!-- Other keeper_server configuration -->
+
+    <http_control>
+        <port>9182</port>
+        <!-- <secure_port>9443</secure_port> -->
+    </http_control>
+</keeper_server>
+```
+
+<div id="configuration-options">
+  ### Options de configuration
+</div>
+
+| Paramètre                                 | Par défaut | Description                                                               |
+| ----------------------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `http_control.port`                       | -          | Port HTTP du tableau de bord et de l’API                                  |
+| `http_control.secure_port`                | -          | Port HTTPS (nécessite une configuration SSL)                              |
+| `http_control.readiness.endpoint`         | `/ready`   | Chemin personnalisé de la sonde de disponibilité                          |
+| `http_control.storage.session_timeout_ms` | `30000`    | Délai d’expiration de la session pour les opérations de l’API de stockage |
+
+<div id="endpoints">
+  ## Endpoints
+</div>
+
+<div id="dashboard">
+  ### Tableau de bord
+</div>
+
+* **Chemin**: `/dashboard`
+* **Méthode**: GET
+* **Description**: Expose un tableau de bord web intégré pour surveiller et gérer Keeper
+
+Le tableau de bord comprend :
+
+* Visualisation en temps réel de l&#39;état du cluster
+* Surveillance des nœuds (rôle, latence, connexions)
+* Explorateur de stockage
+* Interface d&#39;exécution des commandes
+
+<div id="readiness-probe">
+  ### Sonde de disponibilité
+</div>
+
+* **Chemin** : `/ready` (configurable)
+* **Méthode** : GET
+* **Description** : endpoint de contrôle de l’état de santé
+
+Réponse en cas de succès (HTTP 200) :
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "role": "leader",
+    "hasLeader": true
+  }
+}
+```
+
+<div id="commands-api">
+  ### API des commandes
+</div>
+
+* **Chemin**: `/api/v1/commands/{command}`
+* **Méthodes**: GET, POST
+* **Description**: Exécute des commandes Four-Letter Word ou des commandes de la CLI ClickHouse Keeper Client
+
+Paramètres de requête :
+
+* `command` - La commande à exécuter
+* `cwd` - Répertoire de travail courant pour les commandes basées sur un chemin (par défaut : `/`)
+
+Exemples :
+
+```bash
+# Four-Letter Word command
+curl http://localhost:9182/api/v1/commands/stat
+
+# ZooKeeper CLI command
+curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+```
+
+<div id="storage-api">
+  ### API de stockage
+</div>
+
+* **Chemin de base**: `/api/v1/storage`
+* **Description**: API REST pour les opérations de stockage de Keeper
+
+L&#39;API de stockage suit les conventions REST, où les méthodes HTTP indiquent le type d&#39;opération :
+
+| Opération                | chemin                                 | Méthode | Code d&#39;état | Description                       |
+| ------------------------ | -------------------------------------- | ------- | --------------- | --------------------------------- |
+| Récupérer                | `/api/v1/storage/{path}`               | GET     | 200             | Récupérer les données du nœud     |
+| Lister                   | `/api/v1/storage/{path}?children=true` | GET     | 200             | Lister les nœuds enfants          |
+| Vérifier l&#39;existence | `/api/v1/storage/{path}`               | HEAD    | 200             | Vérifier si le nœud existe        |
+| Créer                    | `/api/v1/storage/{path}`               | POST    | 201             | Créer un nouveau nœud             |
+| Mettre à jour            | `/api/v1/storage/{path}?version={v}`   | PUT     | 200             | Mettre à jour les données du nœud |
+| Supprimer                | `/api/v1/storage/{path}?version={v}`   | DELETE  | 204             | Supprimer le nœud                 |

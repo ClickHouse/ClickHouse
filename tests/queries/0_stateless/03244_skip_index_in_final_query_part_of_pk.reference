@@ -1,0 +1,3 @@
+Expand should be done because of column v skip index
+PrimaryKeyExpand
+Expand should not be done because id2 is part of skip index

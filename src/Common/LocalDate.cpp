@@ -52,7 +52,7 @@ LocalDate::LocalDate(ExtendedDayNum day_num, const DateLUTImpl & time_zone)
 
 DayNum LocalDate::getDayNum(const DateLUTImpl & lut) const
 {
-    return DayNum(lut.makeDayNum(m_year, m_month, m_day).toUnderType());
+    return DayNum(static_cast<UInt16>(lut.makeDayNum(m_year, m_month, m_day).toUnderType()));
 }
 
 ExtendedDayNum LocalDate::getExtenedDayNum(const DateLUTImpl & lut) const

@@ -35,7 +35,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
     };
     FunctionDocumentation::IntroducedIn introduced_in = {18, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToISOYear>(documentation);
 }

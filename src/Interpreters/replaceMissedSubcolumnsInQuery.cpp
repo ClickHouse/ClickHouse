@@ -14,7 +14,7 @@ bool replaceMissedSubcolumnsInFunction(ASTPtr & ast, const String & column_name)
     {
         if (column_name == identifier->getColumnName())
         {
-            ast = std::make_shared<ASTLiteral>(Field());
+            ast = make_intrusive<ASTLiteral>(Field());
             return true;
         }
     }
@@ -49,7 +49,7 @@ void replaceMissedSubcolumnsInQuery(ASTPtr & ast, const String & column_name)
     {
         if (column_name == identifier->getColumnName())
         {
-            auto literal = std::make_shared<ASTLiteral>(Field());
+            auto literal = make_intrusive<ASTLiteral>(Field());
             literal->setAlias(identifier->getAliasOrColumnName());
             ast = literal;
         }

@@ -1,0 +1,363 @@
+---
+slug: /use-cases/observability/clickstack/managed-getting-started
+title: '托管 ClickStack 快速开始'
+description: '为托管 ClickStack 部署 OpenTelemetry Collector，并对应用进行端到端插桩'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'collector', '插桩', '托管', '可观测性', 'gateway', 'node.js', 'sdk']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import GatherCredentials from '/snippets/zh/clickstack/_gather_credentials.mdx';
+import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.mdx';
+
+本指南将带你从一个空白的托管 ClickStack 服务开始，一路完成从真实应用接入日志、指标、链路追踪和会话回放。你将为自己的服务部署一个新的 OpenTelemetry collector (如果你已经有，也可以改造现有的) ，在不修改业务逻辑的前提下为一个示例 Node.js 应用接入遥测，然后在 ClickStack UI 中查看这些遥测数据。
+
+<Note>
+  如果你要新建一个 collector，或使用自己的 collector，它应以 **gateway** 模式运行：提供一个统一的 OTLP 端点，供应用、SDKs 和 agent collector 向其发送数据。gateway 会将事件按批次汇总，应用你配置的处理流程，然后通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将它们写入 ClickHouse。
+</Note>
+
+我们将接入遥测的应用是 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)，这是一个 Node.js 应用，会查询托管在公网 ClickHouse 演示环境中的 HackerNews 数据集。每个图表、表格和搜索框背后都对应一条真实的 ClickHouse 查询，因此每次交互都会生成一条 trace，其中主 span 是 backend 发往 ClickHouse 的 HTTPS 调用。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* [ClickHouse Cloud](https://console.clickhouse.cloud) 中的**托管 ClickStack 服务**。
+* 运行样本应用程序需要 **Node 18+ 和 npm**。
+* 如果你还没有 collector，且想按下文的新 collector 路径操作，则需要 **Docker**。
+
+<Steps>
+  <Step>
+    ## 准备好您的凭据
+
+    <GatherCredentials />
+  </Step>
+
+  <Step>
+    ## 创建摄取用户
+
+    <CreateIngestionUser />
+  </Step>
+
+  <Step>
+    ## 部署 collector
+
+    请根据您的实际情况选择对应选项。
+
+    <Info>
+      **现有 collector**
+
+      如果你使用的是现有的 OpenTelemetry collector，我们假定它已配置为 **gateway** 角色。我们不建议使用此流程来重新配置 **agent** 角色的 collector。
+    </Info>
+
+    <Tabs>
+      <Tab title="我还没有 collector">
+        部署**ClickStack 版 OpenTelemetry collector**，它已预先针对托管 ClickStack 完成配置。在下面的示例中，为简化起见，我们在本地运行 collector。
+
+        <Note>
+          在生产环境中，通常会将 collector 部署在 Kubernetes 集群中，或部署在你的 OpenTelemetry SDK、agent 及其他 collector 可访问的虚拟机上。这样可以集中收集整个环境中的遥测数据，并将其转发到 ClickStack。
+        </Note>
+
+        选择一个共享密钥，用于验证向 collector 发送数据的客户端，然后将其与你的连接信息以及为 `hyperdx_ingest` 用户选择的密码一并导出：
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=hyperdx_ingest
+        export CLICKHOUSE_PASSWORD=ClickH0u3eRocks123!
+        export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+        ```
+
+        启动 ClickStack OTel collector：
+
+        ```shell
+        docker run -d \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        collector 现已通过 `4317` 端口暴露 OTLP gRPC，并通过 `4318` 端口暴露 OTLP HTTP。应用程序、SDKs 和 agent collector 应将数据发送到这些端口，并在请求头中包含 `authorization: $OTLP_AUTH_TOKEN`。请记下 OTLP 端点和 `OTLP_AUTH_TOKEN`，后续步骤中需要将应用程序指向它们。
+
+        <Info>
+          **生产部署**
+
+          在生产环境中，我们建议为 OTLP 端点启用 TLS。请参阅[保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+        </Info>
+      </Tab>
+
+      <Tab title="我已有一个采集器">
+        将你现有的 collector 配置扩展为通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将数据写入托管 ClickStack。
+
+        <Info>
+          **需要 ClickHouse exporter**
+
+          如果你使用自己的发行版，请确保其中包含 ClickHouse exporter。上游的 [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib) 已内置该 exporter。
+        </Info>
+
+        下面是一个示例配置，它使用 ClickHouse exporter，并包含 ClickStack UI 所需的 receivers、处理器和管道。它与 ClickStack 发行版的行为保持一致，包括会话回放 (`rrweb`) 路由路径。请将 `<clickhouse_cloud_endpoint>` 和 `<your_password_here>` 替换为上文创建的 `hyperdx_ingest` USER 的凭据：
+
+        ```yaml
+        receivers:
+          otlp/hyperdx:
+            protocols:
+              grpc:
+                include_metadata: true
+                endpoint: "0.0.0.0:4317"
+              http:
+                cors:
+                  allowed_origins: ["*"]
+                  allowed_headers: ["*"]
+                include_metadata: true
+                endpoint: "0.0.0.0:4318"
+
+        processors:
+          batch:
+          memory_limiter:
+            # 80% of maximum memory up to 2G, adjust for low memory environments
+            limit_mib: 1500
+            # 25% of limit up to 2G, adjust for low memory environments
+            spike_limit_mib: 512
+            check_interval: 5s
+
+        connectors:
+          routing/logs:
+            default_pipelines: [logs/out-default]
+            error_mode: ignore
+            table:
+              - context: log
+                statement: route() where IsMatch(attributes["rr-web.event"], ".*")
+                pipelines: [logs/out-rrweb]
+
+        exporters:
+          clickhouse:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+          clickhouse/rrweb:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            logs_table_name: hyperdx_sessions
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            metrics:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/in:
+              receivers: [otlp/hyperdx]
+              exporters: [routing/logs]
+            logs/out-default:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/out-rrweb:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse/rrweb]
+        ```
+
+        有几点需要注意：
+
+        * `otlp/hyperdx` receiver 同时监听 gRPC (`4317`) 和 HTTP (`4318`)；应用程序和 agent 应连接到 collector 主机上的这些端口。
+        * `clickhouse` exporter 会将日志、链路追踪和指标写入 `otel` 数据库，以符合 ClickStack UI 预期的布局。`clickhouse/rrweb` exporter 则负责处理由 `routing/logs` connector 路由到 `otel.hyperdx_sessions` 的 Session Replay 事件。
+        * OTLP receivers 的身份验证由你现有的配置负责。如果你需要强制使用摄取令牌，请通过 collector 的 [extensions](https://opentelemetry.io/docs/collector/configuration/#extensions) (例如 `bearertokenauth`) 或通过由 TLS 保护的反向代理进行配置。
+
+        使用新配置重新加载 collector。请记下 OTLP 端点以及你的配置所需的身份验证请求头，后续步骤中需要让应用程序指向它们。
+
+        有关面向托管 ClickStack 配置 OpenTelemetry collectors 的更多详细信息，请参阅[使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ## 克隆并运行应用程序
+
+    克隆代码仓库，安装依赖项，并创建 `.env` 文件：
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    ClickHouse 数据源默认指向公网只读演示集群，因此应用无需进一步配置即可运行。启动应用：
+
+    ```bash
+    ./run.sh
+    ```
+
+    打开 [http://localhost:5001](http://localhost:5001)。你会看到年份选择器、汇总统计信息、活动图表、热门用户表和域名表，以及一个搜索框。可以随意点击体验：切换年份，点开具体故事查看详情。
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 应用" />
+
+    此时，应用程序已经在运行，但尚未接入埋点。ClickStack 中还没有任何数据：它正在等待遥测数据。这就是“before”状态。
+  </Step>
+
+  <Step>
+    ## 将应用程序连接到您的采集器
+
+    应用程序需要以下两个值，才能连接到您在上面部署的采集器：
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`：您的采集器对外暴露的 OTLP 端点 (OTLP over HTTPS 通常使用端口 `4318`) 。
+    * `OTEL_EXPORTER_OTLP_HEADERS`：携带您的摄取令牌的授权请求头，格式为 `authorization=<ingestion_token>`。请使用您在上面为采集器设置的 `OTLP_AUTH_TOKEN`，或者使用您现有采集器要求的其他授权请求头。
+
+    将 `.env.example` 复制为 `.env`，然后打开该文件并设置以下变量：
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<ingestion_token>
+    ```
+
+    SDK 使用 `OTEL_EXPORTER_OTLP_HEADERS` 为三种信号设置授权请求头：链路追踪、指标和日志。如果你的 collector 在本地运行且不要求身份验证，可以将该值留空 (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) ，但该变量必须存在；如果未设置或值完全为空，SDK 将完全跳过初始化。最后，如果在不使用 TLS 的情况下运行 collector，请确保使用正确的 HTTP protocol (例如：`http://localhost:4318`) 。
+  </Step>
+
+  <Step>
+    ## 为应用添加埋点
+
+    埋点分为三个部分：安装 SDKs、切换启动命令，以及启用浏览器 SDK。这些操作都不会改变应用程序的业务逻辑。
+
+    ### 安装 SDKs
+
+    同时安装后端和浏览器端的 OpenTelemetry SDKs：
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### 使用 opentelemetry-instrument 命令行客户端
+
+    应用程序通过 `run.sh` 启动，该脚本底部有两行 `exec`：一行生效，另一行被注释掉。切换生效的那一行，让 Node 通过 `opentelemetry-instrument` 进行封装：
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    这就是后端的全部改动。自动插桩会在进程启动时由 `opentelemetry-instrument` 加载。
+
+    ### 启用浏览器 SDK
+
+    要捕获分布式链路追踪 (从浏览器到后端) 和会话回放，请在 `src/web/telemetry.ts` 中启用浏览器 SDK。取消对 import 和 `HyperDX.init({...})` 代码块的注释：
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    无需额外修改 `.env`。`__OTLP_ENDPOINT__` 和 `__OTLP_AUTH_TOKEN__` 是由 `vite.config.ts` 注入的编译时常量：端点来自 `OTEL_EXPORTER_OTLP_ENDPOINT`，令牌则从 `OTEL_EXPORTER_OTLP_HEADERS` 中解析出来，使用的与后端是同一组值。
+
+    <Warning>
+      摄取令牌会被直接打包进公开下发到浏览器的资源中，任何查看 Network 选项卡的人都能读取到它。
+    </Warning>
+  </Step>
+
+  <Step>
+    ## 生成流量
+
+    重启应用程序，使新的启动命令和刚构建好的浏览器打包产物生效：
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    重新加载浏览器选项卡，让 Vite 提供更新后的打包产物；然后多刷新几次应用，切换年份，并点开故事以产生流量。每次交互都会通过你的 collector 将日志、指标、链路追踪和 session replay 事件发送到 ClickStack。
+  </Step>
+
+  <Step>
+    ## 启动 ClickStack 并探索你的遥测数据
+
+    在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的服务，从左侧菜单选择 **ClickStack**，然后点击 **开始摄取**。
+
+    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="启动 ClickStack" border />
+
+    下一步可以跳过，因为你已经配置好了 collector。点击 **启动 ClickStack** 继续。
+
+    ClickStack 会在新选项卡中打开，你应会被自动带到 **Getting Started** 页面。如果没有，请从左侧菜单选择 **Getting Started**，然后依次点击 **开始摄取** 和 **下一步**。
+
+    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack 开始摄取" border />
+
+    ClickStack 应该会自动检测你的表和遥测数据，让你可以继续。选择 **开始探索**，开始查看你的数据。
+
+    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack 开始探索" border />
+
+    现在来查看应用程序正在生成的数据：
+
+    1. 前往 **搜索**，将时间范围过滤为最近 5 分钟。你会看到 `hn-analyzer-api` 的日志持续流入。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 日志" />
+
+    2. 点开某个请求，沿着 trace 逐级查看。你会看到 Express handler span、一个指向 ClickHouse cluster 且包含真实网络耗时的子 HTTP span，以及同一 trace 上已关联的 `console.log` 记录。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 链路追踪" />
+
+    3. 打开 **Session Replay**，回放浏览器会话视频，并可拖动时间轴查看；它会与 trace 时间线保持同步。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 会话" />
+
+    日志、指标、链路追踪和会话回放都会汇集到同一个 UI 中，使用相同的查询语言，并自动完成关联。
+
+    如果没有显示任何内容：
+
+    * 确认在 `OTEL_EXPORTER_OTLP_HEADERS` 中设置的认证请求头值与 collector 预期的值一致。
+    * 查看 collector 的日志，检查是否存在导出错误。
+    * 验证 collector 上配置的 ClickHouse 端点同时包含协议和端口 (`https://...:8443`) 。
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群收集日志、基础设施指标和 Kubernetes 事件。
+* [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。
+* [调优托管 ClickStack](/zh/clickstack/managed-onboarding/tuning-clickstack-schema)：优化 schema，以提升查询性能和存储效率。
+* [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)：为 OTLP 端点启用 TLS，并使用最小权限的摄取用户。
+* [进入生产环境](/zh/clickstack/managing/production)：查看生产环境部署建议。

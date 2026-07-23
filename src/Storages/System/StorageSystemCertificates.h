@@ -10,8 +10,7 @@ class Context;
 class Cluster;
 
 /** Implements system table 'certificates'
-  *  that allows to obtain information about available certificates
-  *  and their sources.
+  *  that shows CA certificates used to verify peers in SSL/TLS connections.
   */
 class StorageSystemCertificates final : public IStorageSystemOneBlock
 {

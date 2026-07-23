@@ -1,0 +1,819 @@
+---
+slug: /architecture/replication
+sidebarTitle: 'Replicação'
+title: 'Replicação de dados'
+description: 'Página que descreve uma arquitetura de exemplo com cinco servidores configurados. Dois são usados para hospedar cópias dos dados, e os demais, para coordenar a replicação dos dados'
+doc_type: 'guide'
+keywords: ['replicação', 'alta disponibilidade', 'configuração de cluster', 'redundância de dados', 'tolerância a falhas']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import ConfigExplanation from '/snippets/pt-BR/_config_explanation.mdx';
+import ListenHost from '/snippets/pt-BR/_listen_host.mdx';
+import ServerParameterTable from '/snippets/pt-BR/_server_parameter_table.mdx';
+import KeeperConfig from '/snippets/pt-BR/_keeper_config.mdx';
+import KeeperConfigExplanation from '/snippets/pt-BR/_keeper_explanation.mdx';
+import VerifyKeeperStatus from '/snippets/pt-BR/_verify_keeper_using_mntr.mdx';
+import DedicatedKeeperServers from '/snippets/pt-BR/_dedicated_keeper_servers.mdx';
+import ExampleFiles from '/snippets/pt-BR/_working_example.mdx';
+import CloudTip from '/snippets/pt-BR/_cloud_tip.mdx';
+
+> Neste exemplo, você aprenderá a configurar um cluster ClickHouse simples com
+> replicação de dados. Há cinco servidores configurados. Dois são usados para hospedar
+> cópias dos dados. Os outros três servidores são usados para coordenar a replicação
+> dos dados.
+
+A arquitetura do cluster que você vai configurar é mostrada abaixo:
+
+<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="Diagrama de arquitetura para 1 shard e 2 réplicas com ReplicatedMergeTree" />
+
+<DedicatedKeeperServers />
+
+<div id="pre-requisites">
+  ## Pré-requisitos
+</div>
+
+* Você já configurou um [servidor ClickHouse local](/pt-BR/get-started/setup/install)
+* Você está familiarizado com conceitos básicos de configuração do ClickHouse, como [arquivos de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files)
+* Você tem o Docker instalado na sua máquina
+
+<Steps>
+  <Step>
+    ## Configurar a estrutura de diretórios e o ambiente de teste
+
+    <ExampleFiles />
+
+    Neste tutorial, você usará o [Docker compose](https://docs.docker.com/compose/) para
+    configurar o cluster do ClickHouse. Esta configuração pode ser adaptada para funcionar
+    em máquinas locais separadas, máquinas virtuais ou instâncias de nuvem também.
+
+    Execute os seguintes comandos para configurar a estrutura de diretórios deste exemplo:
+
+    ```bash
+    mkdir cluster_1S_2R
+    cd cluster_1S_2R
+
+    # Criar diretórios do clickhouse-keeper
+    for i in {01..03}; do
+      mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
+    done
+
+    # Criar diretórios do clickhouse-server
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
+    done
+    ```
+
+    Adicione o seguinte arquivo `docker-compose.yml` ao diretório `cluster_1S_2R`:
+
+    ```yaml title="docker-compose.yml"
+    version: '3.8'
+    services:
+      clickhouse-01:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-01
+        hostname: clickhouse-01
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8123:8123"
+          - "127.0.0.1:9000:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-02:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-02
+        hostname: clickhouse-02
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8124:8123"
+          - "127.0.0.1:9001:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-01
+        hostname: clickhouse-keeper-01
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9181:9181"
+      clickhouse-keeper-02:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-02
+        hostname: clickhouse-keeper-02
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9182:9181"
+      clickhouse-keeper-03:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-03
+        hostname: clickhouse-keeper-03
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9183:9181"
+    ```
+
+    Crie os seguintes subdiretórios e arquivos:
+
+    ```bash
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d/config.xml
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d/users.xml
+    done
+    ```
+
+    <ConfigExplanation />
+  </Step>
+
+  <Step>
+    ## Configurar nós do ClickHouse
+
+    ### Configuração do servidor
+
+    Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas destacadas
+    abaixo precisam ser ajustadas de acordo com cada nó:
+
+    ```xml highlight={9,53-57}
+    <clickhouse replace="true">
+        <logger>
+            <level>debug</level>
+            <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+            <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+            <size>1000M</size>
+            <count>3</count>
+        </logger>
+        <display_name>cluster_1S_2R node 1</display_name>
+        <listen_host>0.0.0.0</listen_host>
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+        <user_directories>
+            <users_xml>
+                <path>users.xml</path>
+            </users_xml>
+            <local_directory>
+                <path>/var/lib/clickhouse/access/</path>
+            </local_directory>
+        </user_directories>
+        <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+        </distributed_ddl>
+        <remote_servers>
+            <cluster_1S_2R>
+                <shard>
+                    <internal_replication>true</internal_replication>
+                    <replica>
+                        <host>clickhouse-01</host>
+                        <port>9000</port>
+                    </replica>
+                    <replica>
+                        <host>clickhouse-02</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+            </cluster_1S_2R>
+        </remote_servers>
+        <zookeeper>
+            <node>
+                <host>clickhouse-keeper-01</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-02</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-03</host>
+                <port>9181</port>
+            </node>
+        </zookeeper>
+        <macros>
+            <shard>01</shard>
+            <replica>01</replica>
+            <cluster>cluster_1S_2R</cluster>
+        </macros>
+    </clickhouse>
+    ```
+
+    | Diretório                                                 | File                                                                                                                                                                             |
+    | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
+
+    Cada seção do arquivo de configuração acima é explicada em mais detalhes a seguir.
+
+    #### Rede e logging
+
+    <ListenHost />
+
+    O logging é definido no bloco `<logger>`. Esta configuração de exemplo fornece
+    um log de depuração que será rotacionado a cada 1000M, até três vezes:
+
+    ```xml
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    ```
+
+    Para obter mais informações sobre configuração de logging, consulte os comentários incluídos no
+    [arquivo de configuração](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) padrão do ClickHouse.
+
+    #### Configuração do cluster
+
+    A configuração do cluster é definida no bloco `<remote_servers>`.
+    Aqui é definido o nome do cluster `cluster_1S_2R`.
+
+    O bloco `<cluster_1S_2R></cluster_1S_2R>` define o layout do cluster,
+    utilizando as configurações `<shard></shard>` e `<replica></replica>`, e serve como
+    um template para consultas de DDL distribuído, que são queries executadas em todo o
+    cluster por meio da cláusula `ON CLUSTER`. Por padrão, as consultas de DDL distribuído
+    são permitidas, mas também podem ser desativadas com a configuração `allow_distributed_ddl_queries`.
+
+    `internal_replication` está definido como true para que os dados sejam gravados em apenas uma das réplicas.
+
+    ```xml
+    <remote_servers>
+        <!-- nome do cluster (não deve conter pontos) -->
+        <cluster_1S_2R>
+            <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
+            <shard>
+                <!-- Opcional. Define se os dados devem ser gravados em apenas uma das réplicas. Padrão: false (gravar dados em todas as réplicas). -->
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse-01</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse-02</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+    ```
+
+    <ServerParameterTable />
+
+    #### Configuração do Keeper
+
+    A seção `<ZooKeeper>` informa ao ClickHouse onde o ClickHouse Keeper (ou ZooKeeper) está em execução.
+    Como estamos usando um cluster do ClickHouse Keeper, cada `<node>` do cluster precisa ser especificado,
+    junto com seu hostname e número de porta, usando as tags `<host>` e `<port>`, respectivamente.
+
+    A configuração do ClickHouse Keeper é explicada na próxima etapa do tutorial.
+
+    ```xml
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper-01</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-02</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-03</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    ```
+
+    <Note>
+      Embora seja possível executar o ClickHouse Keeper no mesmo servidor que o ClickHouse Server,
+      em ambientes de produção, recomendamos fortemente que o ClickHouse Keeper seja executado em servidores dedicados.
+    </Note>
+
+    #### Configuração de macros
+
+    Além disso, a seção `<macros>` é usada para definir substituições de parâmetros para
+    tabelas replicadas. Elas são listadas em `system.macros` e permitem o uso de substituições
+    como `{shard}` e `{replica}` em queries.
+
+    ```xml
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+        <cluster>cluster_1S_2R</cluster>
+    </macros>
+    ```
+
+    <Note>
+      Eles serão definidos de maneira específica, dependendo da configuração do cluster.
+    </Note>
+
+    ### Configuração de usuário
+
+    Agora modifique cada arquivo de configuração vazio `users.xml` localizado em
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` com o seguinte conteúdo:
+
+    ```xml title="/users.d/users.xml"
+    <?xml version="1.0"?>
+    <clickhouse replace="true">
+        <profiles>
+            <default>
+                <max_memory_usage>10000000000</max_memory_usage>
+                <use_uncompressed_cache>0</use_uncompressed_cache>
+                <load_balancing>in_order</load_balancing>
+                <log_queries>1</log_queries>
+            </default>
+        </profiles>
+        <users>
+            <default>
+                <access_management>1</access_management>
+                <profile>default</profile>
+                <networks>
+                    <ip>::/0</ip>
+                </networks>
+                <quota>default</quota>
+                <access_management>1</access_management>
+                <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
+                <show_named_collections_secrets>1</show_named_collections_secrets>
+            </default>
+        </users>
+        <quotas>
+            <default>
+                <interval>
+                    <duration>3600</duration>
+                    <queries>0</queries>
+                    <errors>0</errors>
+                    <result_rows>0</result_rows>
+                    <read_rows>0</read_rows>
+                    <execution_time>0</execution_time>
+                </interval>
+            </default>
+        </quotas>
+    </clickhouse>
+    ```
+
+    | Diretório                                                | File                                                                                                                                                                          |
+    | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
+
+    Neste exemplo, o usuário padrão é configurado sem senha para simplificar.
+    Na prática, isso não é recomendado.
+
+    <Note>
+      Neste exemplo, cada arquivo `users.xml` é idêntico em todos os nós do cluster.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Configurar o ClickHouse Keeper
+
+    ### Configuração do ClickHouse Keeper
+
+    <KeeperConfig />
+
+    | Diretório                                               | Arquivo                                                                                                                                                                                      |
+    | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml) |
+
+    <KeeperConfigExplanation />
+
+    <CloudTip />
+  </Step>
+
+  <Step>
+    ## Teste a configuração
+
+    Certifique-se de que o Docker esteja em execução na sua máquina.
+    Inicie o cluster usando o comando `docker-compose up` na raiz do diretório `cluster_1S_2R`:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+    Você deverá ver o Docker começar a baixar as imagens do ClickHouse e do Keeper,
+    e depois iniciar os contêineres:
+
+    ```bash
+    [+] Running 6/6
+     ✔ Network cluster_1s_2r_default   Created
+     ✔ Container clickhouse-keeper-03  Started
+     ✔ Container clickhouse-keeper-02  Started
+     ✔ Container clickhouse-keeper-01  Started
+     ✔ Container clickhouse-01         Started
+     ✔ Container clickhouse-02         Started
+    ```
+
+    Para verificar se o cluster está em execução, conecte-se a `clickhouse-01` ou `clickhouse-02` e execute a
+    consulta a seguir. O comando para se conectar ao primeiro nó é mostrado abaixo:
+
+    ```bash
+    # Conecte-se a qualquer nó
+    docker exec -it clickhouse-01 clickhouse-client
+    ```
+
+    Se a operação for bem-sucedida, você verá o prompt do cliente ClickHouse:
+
+    ```response
+    cluster_1S_2R node 1 :)
+    ```
+
+    Execute a seguinte consulta para verificar quais topologias de cluster estão definidas em quais
+    hosts:
+
+    ```sql title="Query"
+    SELECT 
+        cluster,
+        shard_num,
+        replica_num,
+        host_name,
+        port
+    FROM system.clusters;
+    ```
+
+    ```response title="Response"
+       ┌─cluster───────┬─shard_num─┬─replica_num─┬─host_name─────┬─port─┐
+    1. │ cluster_1S_2R │         1 │           1 │ clickhouse-01 │ 9000 │
+    2. │ cluster_1S_2R │         1 │           2 │ clickhouse-02 │ 9000 │
+    3. │ default       │         1 │           1 │ localhost     │ 9000 │
+       └───────────────┴───────────┴─────────────┴───────────────┴──────┘
+    ```
+
+    Execute a consulta a seguir para verificar o status do cluster do ClickHouse Keeper:
+
+    ```sql title="Query"
+    SELECT *
+    FROM system.zookeeper
+    WHERE path IN ('/', '/clickhouse')
+    ```
+
+    ```response title="Response"
+       ┌─name───────┬─value─┬─path────────┐
+    1. │ sessions   │       │ /clickhouse │
+    2. │ task_queue │       │ /clickhouse │
+    3. │ keeper     │       │ /           │
+    4. │ clickhouse │       │ /           │
+       └────────────┴───────┴─────────────┘
+    ```
+
+    <VerifyKeeperStatus />
+
+    Com isso, você configurou com sucesso um cluster do ClickHouse com um único shard e duas réplicas.
+    Na próxima etapa, você criará uma tabela no cluster.
+  </Step>
+
+  <Step>
+    ## Criar um banco de dados
+
+    Agora que você verificou que o cluster foi configurado corretamente e está em execução,
+    você recriará a mesma tabela usada no tutorial do conjunto de dados de exemplo
+    [UK property prices](/pt-BR/get-started/sample-datasets/uk-price-paid). Esse conjunto de dados
+    contém cerca de 30 milhões de linhas com preços pagos por imóveis na Inglaterra e no
+    País de Gales desde 1995.
+
+    Conecte-se ao cliente de cada host executando cada um dos comandos a seguir em abas ou janelas
+    separadas do terminal:
+
+    ```bash
+    docker exec -it clickhouse-01 clickhouse-client
+    docker exec -it clickhouse-02 clickhouse-client
+    ```
+
+    Você pode executar a consulta abaixo no clickhouse-client de cada host para confirmar que
+    ainda não há bancos de dados criados, além dos bancos de dados padrão:
+
+    ```sql title="Query"
+    SHOW DATABASES;
+    ```
+
+    ```response title="Response"
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+       └────────────────────┘
+    ```
+
+    No cliente `clickhouse-01`, execute a seguinte **consulta** DDL **distribuída** usando a
+    cláusula `ON CLUSTER` para criar um novo banco de dados chamado `uk`:
+
+    ```sql highlight={2}
+    CREATE DATABASE IF NOT EXISTS uk 
+    ON CLUSTER cluster_1S_2R;
+    ```
+
+    Você pode executar novamente a mesma consulta de antes no cliente de cada host
+    para confirmar que o banco de dados foi criado em todo o cluster, mesmo tendo executado
+    a consulta apenas em `clickhouse-01`:
+
+    ```sql
+    SHOW DATABASES;
+    ```
+
+    ```response highlight={6}
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+    5. │ uk                 │
+       └────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ## Crie uma tabela no cluster
+
+    Agora que o banco de dados foi criado, crie uma tabela no cluster.
+    Execute a seguinte consulta em qualquer um dos hosts clientes:
+
+    ```sql highlight={2,19}
+    CREATE TABLE IF NOT EXISTS uk.uk_price_paid_local
+    ON CLUSTER cluster_1S_2R
+    (
+        price UInt32,
+        date Date,
+        postcode1 LowCardinality(String),
+        postcode2 LowCardinality(String),
+        type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+        is_new UInt8,
+        duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+        addr1 String,
+        addr2 String,
+        street LowCardinality(String),
+        locality LowCardinality(String),
+        town LowCardinality(String),
+        district LowCardinality(String),
+        county LowCardinality(String)
+    )
+    ENGINE = ReplicatedMergeTree
+    ORDER BY (postcode1, postcode2, addr1, addr2);
+    ```
+
+    Observe que ela é idêntica à consulta usada na instrução `CREATE` original do
+    tutorial do conjunto de dados de exemplo [UK property prices](/pt-BR/get-started/sample-datasets/uk-price-paid),
+    exceto pela cláusula `ON CLUSTER` e pelo uso do motor `ReplicatedMergeTree`.
+
+    A cláusula `ON CLUSTER` foi projetada para a execução distribuída de consultas DDL (Data Definition Language),
+    como `CREATE`, `DROP`, `ALTER` e `RENAME`, garantindo que essas
+    alterações de esquema sejam aplicadas em todos os nós do cluster.
+
+    O motor [`ReplicatedMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/replication#converting-from-mergetree-to-replicatedmergetree)
+    funciona exatamente como o motor de tabela `MergeTree`, mas também replica os dados.
+
+    Você pode executar a consulta abaixo a partir do cliente `clickhouse-01` ou `clickhouse-02`
+    para confirmar que a tabela foi criada em todo o cluster:
+
+    ```sql title="Query"
+    SHOW TABLES IN uk;
+    ```
+
+    ```response title="Response"
+       ┌─name────────────────┐
+    1. │ uk_price_paid.      │
+       └─────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ## Inserir dados
+
+    Como o conjunto de dados é grande e leva alguns minutos para ser completamente ingerido, vamos
+    inserir apenas um pequeno subconjunto inicialmente.
+
+    Insira um subconjunto menor dos dados usando a consulta abaixo a partir do `clickhouse-01`:
+
+    ```sql
+    INSERT INTO uk.uk_price_paid_local
+    SELECT
+        toUInt32(price_string) AS price,
+        parseDateTimeBestEffortUS(time) AS date,
+        splitByChar(' ', postcode)[1] AS postcode1,
+        splitByChar(' ', postcode)[2] AS postcode2,
+        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+        b = 'Y' AS is_new,
+        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+        addr1,
+        addr2,
+        street,
+        locality,
+        town,
+        district,
+        county
+    FROM url(
+        'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+        'CSV',
+        'uuid_string String,
+        price_string String,
+        time String,
+        postcode String,
+        a String,
+        b String,
+        c String,
+        addr1 String,
+        addr2 String,
+        street String,
+        locality String,
+        town String,
+        district String,
+        county String,
+        d String,
+        e String'
+    ) LIMIT 10000
+    SETTINGS max_http_get_redirects=10;
+    ```
+
+    Observe que os dados estão completamente replicados em cada host:
+
+    ```sql
+    -- clickhouse-01
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+
+    --   ┌─count()─┐
+    -- 1.│   10000 │
+    --   └─────────┘
+
+    -- clickhouse-02
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+
+    --   ┌─count()─┐
+    -- 1.│   10000 │
+    --   └─────────┘
+    ```
+
+    Para demonstrar o que acontece quando um dos hosts falha, crie um banco de dados de teste simples
+    e uma tabela de teste em qualquer um dos hosts:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test ON CLUSTER cluster_1S_2R;
+    CREATE TABLE test.test_table ON CLUSTER cluster_1S_2R
+    (
+        `id` UInt64,
+        `name` String
+    )
+    ENGINE = ReplicatedMergeTree
+    ORDER BY id;
+    ```
+
+    Assim como na tabela `uk_price_paid`, podemos inserir dados a partir de qualquer host:
+
+    ```sql
+    INSERT INTO test.test_table (id, name) VALUES (1, 'Clicky McClickface');
+    ```
+
+    Mas o que acontece se um dos hosts estiver fora do ar? Para simular isso, pare
+    `clickhouse-01` executando:
+
+    ```bash
+    docker stop clickhouse-01
+    ```
+
+    Verifique se o host está inativo executando:
+
+    ```bash
+    docker-compose ps
+    ```
+
+    ```response title="Response"
+    NAME                   IMAGE                                        COMMAND            SERVICE                CREATED          STATUS          PORTS
+    clickhouse-02          clickhouse/clickhouse-server:latest          "/entrypoint.sh"   clickhouse-02          X minutes ago    Up X minutes    127.0.0.1:8124->8123/tcp, 127.0.0.1:9001->9000/tcp
+    clickhouse-keeper-01   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-01   X minutes ago    Up X minutes    127.0.0.1:9181->9181/tcp
+    clickhouse-keeper-02   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-02   X minutes ago    Up X minutes    127.0.0.1:9182->9181/tcp
+    clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
+    ```
+
+    Com o `clickhouse-01` agora inativo, insira outra linha de dados na tabela de teste
+    e consulte a tabela:
+
+    ```sql
+    INSERT INTO test.test_table (id, name) VALUES (2, 'Alexey Milovidov');
+    SELECT * FROM test.test_table;
+    ```
+
+    ```response title="Response"
+    ┌─id─┬─name───────────────┐
+    1. │  1 │ Clicky McClickface │
+    2. │  2 │ Alexey Milovidov   │
+       └────┴────────────────────┘
+    ```
+
+    Agora reinicie o `clickhouse-01` com o seguinte comando (você pode executar `docker-compose ps` novamente depois para confirmar):
+
+    ```sql
+    docker start clickhouse-01
+    ```
+
+    Consulte a tabela de teste novamente em `clickhouse-01` após executar `docker exec -it clickhouse-01 clickhouse-client`:
+
+    ```sql title="Query"
+    SELECT * FROM test.test_table
+    ```
+
+    ```response title="Response"
+    ┌─id─┬─name───────────────┐
+    1. │  1 │ Clicky McClickface │
+    2. │  2 │ Alexey Milovidov   │
+       └────┴────────────────────┘
+    ```
+
+    Se neste momento você quiser ingerir o conjunto de dados completo de preços de imóveis do Reino Unido para explorar, execute as seguintes consultas:
+
+    ```sql
+    TRUNCATE TABLE uk.uk_price_paid_local ON CLUSTER cluster_1S_2R;
+    INSERT INTO uk.uk_price_paid_local
+    SELECT
+        toUInt32(price_string) AS price,
+        parseDateTimeBestEffortUS(time) AS date,
+        splitByChar(' ', postcode)[1] AS postcode1,
+        splitByChar(' ', postcode)[2] AS postcode2,
+        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+        b = 'Y' AS is_new,
+        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+        addr1,
+        addr2,
+        street,
+        locality,
+        town,
+        district,
+        county
+    FROM url(
+        'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+        'CSV',
+        'uuid_string String,
+        price_string String,
+        time String,
+        postcode String,
+        a String,
+        b String,
+        c String,
+        addr1 String,
+        addr2 String,
+        street String,
+        locality String,
+        town String,
+        district String,
+        county String,
+        d String,
+        e String'
+        ) SETTINGS max_http_get_redirects=10;
+    ```
+
+    Consulte a tabela a partir de `clickhouse-02` ou `clickhouse-01`:
+
+    ```sql title="Query"
+    SELECT count(*) FROM uk.uk_price_paid_local;
+    ```
+
+    ```response title="Response"
+    ┌──count()─┐
+    1. │ 30212555 │ -- 30,21 milhões
+       └──────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="conclusion">
+  ## Conclusão
+</div>
+
+A vantagem desta topologia de cluster é que, com duas réplicas,
+seus dados ficam em dois hosts separados. Se um host falhar, a outra réplica
+continua atendendo as consultas sem nenhuma perda. Isso elimina pontos únicos de
+falha no nível de armazenamento.
+
+Quando um host fica indisponível, a réplica restante ainda consegue:
+
+* Atender consultas de leitura sem interrupção
+* Aceitar novas gravações (dependendo das suas configurações de consistência)
+* Manter a disponibilidade do serviço para as aplicações
+
+Quando o host que falhou volta a ficar online, ele consegue:
+
+* Sincronizar automaticamente os dados ausentes a partir da réplica íntegra
+* Retomar as operações normais sem intervenção manual
+* Restaurar rapidamente a redundância total
+
+No próximo exemplo, veremos como configurar um cluster com dois shards, mas
+apenas uma réplica.

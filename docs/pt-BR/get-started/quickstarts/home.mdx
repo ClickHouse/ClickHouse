@@ -1,0 +1,31 @@
+---
+sidebarTitle: 'Guias de início rápido'
+title: 'Explorar guias de início rápido'
+description: 'Explore guias de início rápido para começar a usar o ClickHouse'
+keywords: ['guias de início rápido', 'explorar', 'primeiros passos', 'tutoriais']
+mode: 'custom'
+---
+
+import { QuickStartsGrid } from '/snippets/pt-BR/components/QuickStartsGrid/QuickStartsGrid.jsx'
+import { quickStartsData } from '/snippets/pt-BR/components/QuickStartsGrid/quickstarts-data.jsx'
+
+{/* Guias de início rápido em destaque - cada um tem um ID de quickstart e uma imagem de banner (o título já está na imagem) */}
+
+export const featuredQuickstarts = [
+  { id: 'create-your-first-service-on-cloud' },
+  { id: 'insert-data-using-clickhouse-client' },
+  { id: 'obtain-your-cloud-connection-details' }
+];
+
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="Imagem de fundo decorativa." />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="Imagem de fundo decorativa." />
+  </div>
+
+  {/* Renderiza o componente QuickStartsGrid */}
+
+  <QuickStartsGrid quickStartsData={quickStartsData} featured={featuredQuickstarts} />
+</div>

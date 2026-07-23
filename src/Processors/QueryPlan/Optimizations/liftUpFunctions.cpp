@@ -66,10 +66,41 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression().splitActionsBySortingDescription(sort_columns);
+
+    /// Check that all sorting columns are present in the expression's outputs.
+    /// They may be missing if the plan was transformed by another optimization
+    /// (e.g. `convertJoinToIn` can introduce qualified column names like `ty.c0`
+    /// that are not in the expression DAG).
+    const auto & expression = expression_step->getExpression();
+    {
+        NameSet output_names;
+        for (const auto * output : expression.getOutputs())
+            output_names.insert(output->result_name);
+        for (const auto & sort_column : sort_columns)
+            if (!output_names.contains(sort_column))
+                return 0;
+    }
+
+    auto [needed_for_sorting, unneeded_for_sorting, _] = expression.splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
     if (unneeded_for_sorting.trivial())
+        return 0;
+
+    /// `arrayJoin` can change the number of rows produced by an expression.
+    /// Lifting it above the `SortingStep` is unsound when the sort has a
+    /// `LIMIT` pushed down to it: the `LIMIT` would truncate input rows
+    /// before `arrayJoin` expansion, silently dropping rows that should
+    /// have been produced. See #82279.
+    ///
+    /// When the sort has no `LIMIT`, the lift is still required for
+    /// correctness in queries that `ORDER BY` a column whose value comes
+    /// from `arrayJoin` (the planner emits a `SortDescription` that omits
+    /// such columns because they are not yet materialized below the sort;
+    /// the lift makes the sort run on the un-expanded rows and lets
+    /// `arrayJoin` produce its per-group rows in array-element order
+    /// above the sort).
+    if (sorting_step->getLimit() != 0 && unneeded_for_sorting.hasArrayJoin())
         return 0;
 
     if (!areNodesConvertableToBlock(needed_for_sorting.getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting.getInputs()))

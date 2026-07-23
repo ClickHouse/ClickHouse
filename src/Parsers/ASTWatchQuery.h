@@ -30,7 +30,7 @@ public:
 
     ASTPtr clone() const override
     {
-        std::shared_ptr<ASTWatchQuery> res = std::make_shared<ASTWatchQuery>(*this);
+        boost::intrusive_ptr<ASTWatchQuery> res = make_intrusive<ASTWatchQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);

@@ -6,6 +6,7 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -17,7 +18,7 @@
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/DeltaMetadataLog.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -31,14 +32,14 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Interpreters/PredicateStatisticsLog.h>
+#include <Common/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
 
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
@@ -79,9 +80,9 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
 
 
     /// Queue resize can allocate memory
-    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    /// - MemoryTrackerUntrackedAllocationsBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
     /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
@@ -167,10 +168,18 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered before we wait the result
     notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 
-    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
-    {
-        return (flushed_index >= expected_flushed_index) || is_shutdown;
-    });
+    // prepared_tables starts from -1, so we need to wait for prepared_tables >= 0 when expected_flushed_index == 0 to make sure the table is created
+    // In theory it should be possible to wait only for prepared_tables, but:
+    // 1. It reflects the logic more precisely
+    // 2. One extra comparison shouldn't matter here
+    auto result = confirm_event.wait_for(
+        lock,
+        std::chrono::seconds(timeout_seconds),
+        [&]
+        {
+            return (flushed_index >= expected_flushed_index && (!should_prepare_tables_anyway || prepared_tables >= expected_flushed_index))
+                || is_shutdown;
+        });
 
     if (!result)
     {
@@ -204,7 +213,7 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     PopResult result;
     size_t prev_ignored_logs = 0;
@@ -220,6 +229,19 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (is_shutdown)
             return PopResult{.is_shutdown = true};
 
+        /// Allocate the next batch's buffer outside the lock so a large reallocation
+        /// does not block producers, then hand it over with a cheap swap below.
+        if (!queue.empty())
+        {
+            const auto next_capacity = std::max(settings.reserved_size_rows, queue.size());
+            lock.unlock();
+            result.logs.reserve(next_capacity);
+            lock.lock();
+
+            if (is_shutdown)
+                return PopResult{.is_shutdown = true};
+        }
+
         const auto queue_size = queue.size();
         queue_front_index += queue_size;
         prev_ignored_logs = ignored_logs;
@@ -229,10 +251,6 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (!queue.empty())
             result.logs.swap(queue);
         result.create_table_force = requested_prepare_tables > prepared_tables;
-
-        /// Preallocate same amount of memory for the next batch to minimize reallocations.
-        if (queue_size > queue.capacity())
-            queue.reserve(std::max(settings.reserved_size_rows, queue_size));
     }
 
     if (prev_ignored_logs)

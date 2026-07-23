@@ -143,7 +143,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `ALLOW SQL SECURITY NONE`
     - `ALTER QUOTA`
     - `ALTER ROLE`
-    - `ALTER ROW POLICY` 
+    - `ALTER ROW POLICY`
     - `ALTER SETTINGS PROFILE`
     - `ALTER USER`
     - `CREATE QUOTA`
@@ -174,10 +174,11 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER DROP COLUMN`
         - `ALTER MATERIALIZE COLUMN`
         - `ALTER MODIFY COLUMN`
-        - `ALTER RENAME COLUMN` 
+        - `ALTER RENAME COLUMN`
       - `ALTER CONSTRAINT`
         - `ALTER ADD CONSTRAINT`
-        - `ALTER DROP CONSTRAINT` 
+        - `ALTER DROP CONSTRAINT`
+        - `ALTER MODIFY CONSTRAINT`
       - `ALTER DELETE`
       - `ALTER FETCH PARTITION`
       - `ALTER FREEZE PARTITION`
@@ -187,7 +188,7 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER DROP INDEX`
         - `ALTER MATERIALIZE INDEX`
         - `ALTER ORDER BY`
-        - `ALTER SAMPLE BY` 
+        - `ALTER SAMPLE BY`
       - `ALTER MATERIALIZE TTL`
       - `ALTER MODIFY COMMENT`
       - `ALTER MOVE PARTITION`
@@ -197,9 +198,10 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER ADD STATISTICS`
         - `ALTER DROP STATISTICS`
         - `ALTER MATERIALIZE STATISTICS`
-        - `ALTER MODIFY STATISTICS` 
+        - `ALTER MODIFY STATISTICS`
       - `ALTER TTL`
-      - `ALTER UPDATE` 
+      - `ALTER UPDATE`
+      - `ALTER TABLE EXECUTE`
     - `ALTER VIEW`
       - `ALTER VIEW MODIFY QUERY`
       - `ALTER VIEW REFRESH`
@@ -224,7 +226,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `DROP FUNCTION`
     - `DROP RESOURCE`
     - `DROP TABLE`
-    - `DROP VIEW` 
+    - `DROP VIEW`
     - `DROP WORKLOAD`
   - [`INSERT`](#insert)
   - [`INTROSPECTION`](#introspection)
@@ -246,7 +248,7 @@ The hierarchy of privileges in ClickHouse is shown below:
   - [`SELECT`](#select)
   - [`SET DEFINER`](/sql-reference/statements/create/view#sql_security)
   - [`SHOW`](#show)
-    - `SHOW COLUMNS` 
+    - `SHOW COLUMNS`
     - `SHOW DATABASES`
     - `SHOW DICTIONARIES`
     - `SHOW TABLES`
@@ -270,6 +272,9 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SQLITE`
     - `URL`
   - [`SYSTEM`](#system)
+    - `SYSTEM BACKGROUND`
+      - `SYSTEM STREAMING ENGINES`
+      - `SYSTEM VIEWS`
     - `SYSTEM CLEANUP`
     - `SYSTEM DROP CACHE`
       - `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -304,6 +309,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REDUCE BLOCKING PARTS`
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
+    - `SYSTEM RESET DDL WORKER`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -328,18 +334,17 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM TTL MERGES`
     - `SYSTEM UNFREEZE`
     - `SYSTEM UNLOAD PRIMARY KEY`
-    - `SYSTEM VIEWS`
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
   - [`TRUNCATE`](#truncate)
-  - `UNDROP TABLE` 
+  - `UNDROP TABLE`
 - [`NONE`](#none)
 
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 Privileges are applied at different levels. Knowing of a level suggests syntax available for privilege.
 
@@ -432,12 +437,14 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
   - `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
   - `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
+  - `ALTER MODIFY CONSTRAINT`. Level: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   - `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   - `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
   - `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
   - `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
+  - `ALTER EXECUTE`. Level: `TABLE`. Aliases: `ALTER TABLE EXECUTE`
   - `ALTER VIEW`. Level: `GROUP`
   - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
@@ -446,7 +453,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 **Notes**
 
@@ -457,7 +464,7 @@ Examples of how this hierarchy is treated:
 
 ### BACKUP {#backup}
 
-Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](../../operations/backup.md).
+Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](/operations/backup/overview).
 
 ### CREATE {#create}
 
@@ -583,12 +590,12 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
 - `SYSTEM`. Level: `GROUP`
   - `SYSTEM SHUTDOWN`. Level: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
   - `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
-    - `SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
-    - `SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
-    - `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+    - `SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR DNS CACHE`, `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+    - `SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR MARK CACHE`, `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+    - `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   - `SYSTEM RELOAD`. Level: `GROUP`
     - `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
-    - `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    - `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
   - `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   - `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -600,9 +607,14 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
   - `SYSTEM REPLICATION QUEUES`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   - `SYSTEM SYNC REPLICA`. Level: `TABLE`. Aliases: `SYNC REPLICA`
   - `SYSTEM RESTART REPLICA`. Level: `TABLE`. Aliases: `RESTART REPLICA`
+  - `SYSTEM BACKGROUND`. Level: `GROUP`
+    - `SYSTEM STREAMING ENGINES`. Level: `TABLE`
+    - `SYSTEM VIEWS`. Level: `VIEW`. Aliases: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   - `SYSTEM FLUSH`. Level: `GROUP`
     - `SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
     - `SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
+
+The `SYSTEM UNLOAD DICTIONARY` and `SYSTEM UNLOAD DICTIONARIES` commands reuse the `SYSTEM RELOAD DICTIONARY` privilege, so a user with `SYSTEM RELOAD DICTIONARY` can also unload dictionaries.
 
 The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `SYSTEM RELOAD DICTIONARY ON *.*` privilege.
 
@@ -721,9 +733,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 ### dictGet {#dictget}
 
-- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) functions.
+Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictGet), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dictHas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy), [dictGetRoot](../../sql-reference/functions/ext-dict-functions.md#dictGetRoot), [dictGetChildren](../../sql-reference/functions/ext-dict-functions.md#dictGetChildren), [dictGetDescendants](../../sql-reference/functions/ext-dict-functions.md#dictGetDescendants), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictIsIn) functions.
 
 Privilege level: `DICTIONARY`.
 
@@ -767,6 +779,18 @@ Allows using a specified table engine when creating a table. Applies to [table e
 
 - `GRANT TABLE ENGINE ON * TO john`
 - `GRANT TABLE ENGINE ON TinyLog TO john`
+
+:::note
+By default, for backward compatibility reasons, creating a table with a specific table engine ignores grants,
+however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
+in config.xml.
+:::
+
+Some table engines with external sources may require `READ`/`WRITE` permissions on the corresponding source. See [Sources](#sources).
+
+For example, for the AzureBlobStorage table engine, following grant may be required.
+
+- `GRANT READ, WRITE ON AZURE TO john`
 
 ### ALL {#all}
 

@@ -35,6 +35,213 @@ namespace
     {
         ZipArchiveWriter::checkEncryptionIsEnabled();
     }
+
+    /// Provides a set of functions allowing the minizip library to read its input
+    /// from a SeekableReadBuffer instead of an ordinary file in the local filesystem.
+    ///
+    /// C++ exceptions must not propagate through the minizip C library (undefined behavior).
+    /// All callbacks catch exceptions and store them for later re-throwing in C++ code.
+    ///
+    /// Exception capture happens at two levels:
+    ///  - in `StreamFromReadBuffer::stored_exception` — used during normal operation,
+    ///    rethrown by `rethrowIfNeeded()`.
+    ///  - in the shared `Opaque::stored_exception` accessible via every callback — used when
+    ///    `unzOpen2_64()` fails: minizip's internal cleanup then invokes `closeFileFunc()`
+    ///    which deletes the stream, leaving the in-stream exception unreachable. Storing a
+    ///    copy in `Opaque` keeps the original error available so we can surface it instead
+    ///    of the generic "Couldn't open zip archive" or "Code = -100" messages.
+    ///
+    /// `Opaque` is heap-allocated (via `std::shared_ptr`) and pinned for the entire lifetime
+    /// of the `unzFile` handle. Minizip stores the `opaque` pointer internally during
+    /// `unzOpen2_64` and dereferences it from every later callback (`readFileFunc`,
+    /// `seekFunc`, `tellFunc`); a stack-local `Opaque` would dangle after `open()` returns
+    /// successfully, so the owning shared pointer is propagated through `OpenResult` and
+    /// stored in `RawHandleWithStream::opaque`.
+    class StreamFromReadBuffer
+    {
+    public:
+        struct Opaque
+        {
+            std::unique_ptr<SeekableReadBuffer> read_buffer;
+            UInt64 total_size = 0;
+            StreamFromReadBuffer * created_stream = nullptr;
+            std::exception_ptr stored_exception;
+        };
+
+        struct OpenResult
+        {
+            RawHandle handle = nullptr;
+            StreamFromReadBuffer * stream = nullptr;
+            std::exception_ptr stored_exception;
+            std::shared_ptr<Opaque> opaque;
+        };
+
+        static OpenResult open(std::unique_ptr<SeekableReadBuffer> archive_read_buffer, UInt64 archive_size)
+        {
+            auto opaque = std::make_shared<Opaque>();
+            opaque->read_buffer = std::move(archive_read_buffer);
+            opaque->total_size = archive_size;
+
+            zlib_filefunc64_def func_def;
+            func_def.zopen64_file = &StreamFromReadBuffer::openFileFunc;
+            func_def.zclose_file = &StreamFromReadBuffer::closeFileFunc;
+            func_def.zread_file = &StreamFromReadBuffer::readFileFunc;
+            func_def.zwrite_file = &StreamFromReadBuffer::writeFileFunc;
+            func_def.zseek64_file = &StreamFromReadBuffer::seekFunc;
+            func_def.ztell64_file = &StreamFromReadBuffer::tellFunc;
+            func_def.zerror_file = &StreamFromReadBuffer::testErrorFunc;
+            func_def.opaque = opaque.get();
+
+            RawHandle handle = unzOpen2_64(/* path= */ nullptr, &func_def);
+
+            /// If `unzOpen2_64` failed, minizip already called `closeFileFunc()`, so
+            /// `opaque->created_stream` now points to freed memory. Do NOT propagate it.
+            if (!handle)
+                return {nullptr, nullptr, std::move(opaque->stored_exception), nullptr};
+
+            return {handle, opaque->created_stream, nullptr, opaque};
+        }
+
+        /// Re-throws a stored exception from a callback, if any.
+        void rethrowIfNeeded() const
+        {
+            if (stored_exception)
+            {
+                auto ex = stored_exception;
+                stored_exception = nullptr;
+                std::rethrow_exception(ex);
+            }
+        }
+
+    private:
+        static void storeException(StreamFromReadBuffer & strm, void * opaque)
+        {
+            auto ex = std::current_exception();
+            if (!strm.stored_exception)
+                strm.stored_exception = ex;
+            /// Also save it in the shared `Opaque` so we can recover the original
+            /// exception even when minizip destroys the stream during a failed open.
+            if (opaque)
+            {
+                auto & opq = *reinterpret_cast<Opaque *>(opaque);
+                if (!opq.stored_exception)
+                    opq.stored_exception = ex;
+            }
+        }
+
+        std::unique_ptr<SeekableReadBuffer> read_buffer;
+        UInt64 start_offset = 0;
+        UInt64 total_size = 0;
+        bool at_end = false;
+        mutable std::exception_ptr stored_exception;
+
+        static void * openFileFunc(void * opaque, const void *, int)
+        {
+            auto & opq = *reinterpret_cast<Opaque *>(opaque);
+            auto * stream = new StreamFromReadBuffer(std::move(opq.read_buffer), opq.total_size);
+            opq.created_stream = stream;
+            return stream;
+        }
+
+        StreamFromReadBuffer(std::unique_ptr<SeekableReadBuffer> read_buffer_, UInt64 total_size_)
+            : read_buffer(std::move(read_buffer_)), start_offset(read_buffer->getPosition()), total_size(total_size_) {}
+
+        static int closeFileFunc(void *, void * stream)
+        {
+            delete reinterpret_cast<StreamFromReadBuffer *>(stream);
+            return ZIP_OK;
+        }
+
+        static StreamFromReadBuffer & get(void * ptr)
+        {
+            return *reinterpret_cast<StreamFromReadBuffer *>(ptr);
+        }
+
+    public:
+        /// True if the underlying archive read buffer was canceled by a prior mid-stream
+        /// read failure. Such a stream must not be reused (see releaseRawHandle).
+        bool isReadBufferCanceled() const { return read_buffer && read_buffer->isCanceled(); }
+
+    private:
+
+        static int testErrorFunc(void *, void * stream)
+        {
+            auto & strm = get(stream);
+            return strm.stored_exception ? ZIP_ERRNO : ZIP_OK;
+        }
+
+        static unsigned long readFileFunc(void * opaque, void * stream, void * buf, unsigned long size) // NOLINT(google-runtime-int)
+        {
+            auto & strm = get(stream);
+            if (strm.stored_exception)
+                return 0;
+            try
+            {
+                if (strm.at_end)
+                    return 0;
+                return strm.read_buffer->read(reinterpret_cast<char *>(buf), size);
+            }
+            catch (...)
+            {
+                storeException(strm, opaque);
+                return 0;
+            }
+        }
+
+        static ZPOS64_T tellFunc(void * opaque, void * stream)
+        {
+            auto & strm = get(stream);
+            if (strm.stored_exception)
+                return static_cast<ZPOS64_T>(-1);
+            try
+            {
+                if (strm.at_end)
+                    return strm.total_size;
+                return strm.read_buffer->getPosition() - strm.start_offset;
+            }
+            catch (...)
+            {
+                storeException(strm, opaque);
+                return static_cast<ZPOS64_T>(-1);
+            }
+        }
+
+        static long seekFunc(void * opaque, void * stream, ZPOS64_T offset, int origin) // NOLINT(google-runtime-int)
+        {
+            auto & strm = get(stream);
+            if (strm.stored_exception)
+                return -1;
+            try
+            {
+                if (origin == SEEK_END)
+                {
+                    /// Our implementations of SeekableReadBuffer don't support SEEK_END,
+                    /// but the minizip library needs it, so we have to simulate it here.
+                    strm.at_end = true;
+                    return ZIP_OK;
+                }
+                strm.at_end = false;
+                if (origin == SEEK_SET)
+                    offset += strm.start_offset;
+                strm.read_buffer->seek(offset, origin);
+                return ZIP_OK;
+            }
+            catch (...)
+            {
+                storeException(strm, opaque);
+                return -1;
+            }
+        }
+
+        static unsigned long writeFileFunc(void *, void * stream, const void *, unsigned long) // NOLINT(google-runtime-int)
+        {
+            auto & strm = get(stream);
+            if (!strm.stored_exception)
+                strm.stored_exception = std::make_exception_ptr(
+                    Exception(ErrorCodes::LOGICAL_ERROR, "StreamFromReadBuffer::writeFile must not be called"));
+            return 0;
+        }
+    };
 }
 
 
@@ -44,7 +251,15 @@ class ZipArchiveReader::HandleHolder
 public:
     HandleHolder() = default;
 
-    explicit HandleHolder(const std::shared_ptr<ZipArchiveReader> & reader_) : reader(reader_), raw_handle(reader->acquireRawHandle()) { }
+    explicit HandleHolder(const std::shared_ptr<ZipArchiveReader> & reader_) : reader(reader_)
+    {
+        auto handle_info = reader->acquireRawHandle();
+        raw_handle = handle_info.handle;
+        stream = reinterpret_cast<StreamFromReadBuffer *>(handle_info.stream);
+        /// Pin the heap-allocated `StreamFromReadBuffer::Opaque` while the handle is checked
+        /// out — minizip dereferences the stored opaque pointer from every later callback.
+        opaque = std::move(handle_info.opaque);
+    }
 
     ~HandleHolder()
     {
@@ -58,7 +273,7 @@ public:
             {
                 tryLogCurrentException("ZipArchiveReader");
             }
-            reader->releaseRawHandle(raw_handle);
+            reader->releaseRawHandle({raw_handle, stream, std::move(opaque)});
         }
     }
 
@@ -71,6 +286,8 @@ public:
     {
         reader = std::exchange(src.reader, nullptr);
         raw_handle = std::exchange(src.raw_handle, nullptr);
+        stream = std::exchange(src.stream, nullptr);
+        opaque = std::exchange(src.opaque, nullptr);
         file_name = std::exchange(src.file_name, {});
         file_info = std::exchange(src.file_info, {});
         return *this;
@@ -84,6 +301,7 @@ public:
         resetFileInfo();
         bool case_sensitive = true;
         int err = unzLocateFile(raw_handle, file_name_.c_str(), reinterpret_cast<unzFileNameComparer>(static_cast<size_t>(case_sensitive)));
+        rethrowStreamException();
         if (err == UNZ_END_OF_LIST_OF_FILE)
             return false;
         file_name = file_name_;
@@ -93,6 +311,7 @@ public:
     bool locateFile(NameFilter filter)
     {
         int err = unzGoToFirstFile(raw_handle);
+        rethrowStreamException();
         if (err == UNZ_END_OF_LIST_OF_FILE)
             return false;
 
@@ -105,6 +324,7 @@ public:
                 return true;
 
             err = unzGoToNextFile(raw_handle);
+            rethrowStreamException();
         } while (err != UNZ_END_OF_LIST_OF_FILE);
 
         return false;
@@ -115,6 +335,7 @@ public:
         resetFileInfo();
         bool case_sensitive = true;
         int err = unzLocateFile(raw_handle, file_name_.c_str(), reinterpret_cast<unzFileNameComparer>(static_cast<size_t>(case_sensitive)));
+        rethrowStreamException();
         if (err == UNZ_END_OF_LIST_OF_FILE)
             return false;
         checkResult(err);
@@ -126,6 +347,7 @@ public:
     {
         resetFileInfo();
         int err = unzGoToFirstFile(raw_handle);
+        rethrowStreamException();
         if (err == UNZ_END_OF_LIST_OF_FILE)
             return false;
         checkResult(err);
@@ -136,6 +358,7 @@ public:
     {
         resetFileInfo();
         int err = unzGoToNextFile(raw_handle);
+        rethrowStreamException();
         if (err == UNZ_END_OF_LIST_OF_FILE)
             return false;
         checkResult(err);
@@ -156,11 +379,12 @@ public:
         return *file_info;
     }
 
-    std::vector<std::string> getAllFiles(NameFilter filter)
+    Strings getAllFiles(NameFilter filter)
     {
-        std::vector<std::string> files;
+        Strings files;
         resetFileInfo();
         int err = unzGoToFirstFile(raw_handle);
+        rethrowStreamException();
         if (err == UNZ_END_OF_LIST_OF_FILE)
             return files;
 
@@ -172,6 +396,7 @@ public:
             if (!filter || filter(getFileName()))
                 files.push_back(*file_name);
             err = unzGoToNextFile(raw_handle);
+            rethrowStreamException();
         } while (err != UNZ_END_OF_LIST_OF_FILE);
 
         return files;
@@ -180,13 +405,33 @@ public:
     void closeFile()
     {
         int err = unzCloseCurrentFile(raw_handle);
+        rethrowStreamException();
         /// If err == UNZ_PARAMERROR the file is already closed.
         if (err != UNZ_PARAMERROR)
             checkResult(err);
     }
 
-    void checkResult(int code) const { reader->checkResult(code); }
-    [[noreturn]] void showError(const String & message) const { reader->showError(message); }
+    /// Re-throw a stored callback exception first so the user sees the real cause
+    /// of the failure (e.g. a network error or `CANNOT_SEEK_THROUGH_FILE`) instead
+    /// of the cryptic minizip error code formatted by `ZipArchiveReader::checkResult`.
+    void checkResult(int code) const
+    {
+        rethrowStreamException();
+        reader->checkResult(code);
+    }
+
+    [[noreturn]] void showError(const String & message) const
+    {
+        rethrowStreamException();
+        reader->showError(message);
+    }
+
+    /// Re-throws a stored exception from the stream's C callback, if any.
+    void rethrowStreamException() const
+    {
+        if (stream)
+            stream->rethrowIfNeeded();
+    }
 
 private:
     void retrieveFileInfo() const
@@ -203,7 +448,7 @@ private:
             file_info.emplace();
             file_info->uncompressed_size = finfo.uncompressed_size;
             file_info->compressed_size = finfo.compressed_size;
-            file_info->compression_method = finfo.compression_method;
+            file_info->compression_method = static_cast<int>(finfo.compression_method);
             file_info->is_encrypted = (finfo.flag & MZ_ZIP_FLAG_ENCRYPTED);
         }
         if (!file_name)
@@ -222,6 +467,11 @@ private:
 
     std::shared_ptr<ZipArchiveReader> reader;
     RawHandle raw_handle = nullptr;
+    StreamFromReadBuffer * stream = nullptr;
+    /// Pins the heap-allocated `StreamFromReadBuffer::Opaque` for the whole time this handle
+    /// is checked out. Moved back into the free-handle slot in `~HandleHolder` so the cache
+    /// retains ownership across acquire/release cycles.
+    std::shared_ptr<void> opaque;
     mutable std::optional<String> file_name;
     mutable std::optional<FileInfoImpl> file_info;
 };
@@ -250,6 +500,7 @@ public:
 
         RawHandle raw_handle = handle.getRawHandle();
         int err = unzOpenCurrentFilePassword(raw_handle, password_cstr);
+        handle.rethrowStreamException();
         if (err == MZ_PASSWORD_ERROR)
             showError("Wrong password");
         checkResult(err);
@@ -258,7 +509,7 @@ public:
     off_t seek(off_t off, int whence) override
     {
         off_t current_pos = getPosition();
-        off_t new_pos;
+        off_t new_pos = 0;
         if (whence == SEEK_SET)
             new_pos = off;
         else if (whence == SEEK_CUR)
@@ -302,7 +553,9 @@ public:
         if (file_info.compression_method != MZ_COMPRESS_METHOD_STORE)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek in compressed archive is not supported.");
 
-        checkResult(unzSeek64(raw_handle, off, whence));
+        int err = unzSeek64(raw_handle, off, whence);
+        handle.rethrowStreamException();
+        checkResult(err);
         return unzTell64(raw_handle);
     }
 
@@ -334,6 +587,7 @@ private:
     {
         RawHandle raw_handle = handle.getRawHandle();
         auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+        handle.rethrowStreamException();
 
         if (bytes_read < 0)
             checkResult(bytes_read);
@@ -370,111 +624,6 @@ private:
 };
 
 
-namespace
-{
-    /// Provides a set of functions allowing the minizip library to read its input
-    /// from a SeekableReadBuffer instead of an ordinary file in the local filesystem.
-    class StreamFromReadBuffer
-    {
-    public:
-        static RawHandle open(std::unique_ptr<SeekableReadBuffer> archive_read_buffer, UInt64 archive_size)
-        {
-            StreamFromReadBuffer::Opaque opaque{std::move(archive_read_buffer), archive_size};
-
-            zlib_filefunc64_def func_def;
-            func_def.zopen64_file = &StreamFromReadBuffer::openFileFunc;
-            func_def.zclose_file = &StreamFromReadBuffer::closeFileFunc;
-            func_def.zread_file = &StreamFromReadBuffer::readFileFunc;
-            func_def.zwrite_file = &StreamFromReadBuffer::writeFileFunc;
-            func_def.zseek64_file = &StreamFromReadBuffer::seekFunc;
-            func_def.ztell64_file = &StreamFromReadBuffer::tellFunc;
-            func_def.zerror_file = &StreamFromReadBuffer::testErrorFunc;
-            func_def.opaque = &opaque;
-
-            return unzOpen2_64(/* path= */ nullptr,
-                               &func_def);
-        }
-
-    private:
-        std::unique_ptr<SeekableReadBuffer> read_buffer;
-        UInt64 start_offset = 0;
-        UInt64 total_size = 0;
-        bool at_end = false;
-
-        struct Opaque
-        {
-            std::unique_ptr<SeekableReadBuffer> read_buffer;
-            UInt64 total_size = 0;
-        };
-
-        static void * openFileFunc(void * opaque, const void *, int)
-        {
-            auto & opq = *reinterpret_cast<Opaque *>(opaque);
-            return new StreamFromReadBuffer(std::move(opq.read_buffer), opq.total_size);
-        }
-
-        StreamFromReadBuffer(std::unique_ptr<SeekableReadBuffer> read_buffer_, UInt64 total_size_)
-            : read_buffer(std::move(read_buffer_)), start_offset(read_buffer->getPosition()), total_size(total_size_) {}
-
-        static int closeFileFunc(void *, void * stream)
-        {
-            delete reinterpret_cast<StreamFromReadBuffer *>(stream);
-            return ZIP_OK;
-        }
-
-        static StreamFromReadBuffer & get(void * ptr)
-        {
-            return *reinterpret_cast<StreamFromReadBuffer *>(ptr);
-        }
-
-        static int testErrorFunc(void *, void *)
-        {
-            return ZIP_OK;
-        }
-
-        static unsigned long readFileFunc(void *, void * stream, void * buf, unsigned long size) // NOLINT(google-runtime-int)
-        {
-            auto & strm = get(stream);
-            if (strm.at_end)
-                return 0;
-            auto read_bytes = strm.read_buffer->read(reinterpret_cast<char *>(buf), size);
-            return read_bytes;
-        }
-
-        static ZPOS64_T tellFunc(void *, void * stream)
-        {
-            auto & strm = get(stream);
-            if (strm.at_end)
-                return strm.total_size;
-            auto pos = strm.read_buffer->getPosition() - strm.start_offset;
-            return pos;
-        }
-
-        static long seekFunc(void *, void * stream, ZPOS64_T offset, int origin) // NOLINT(google-runtime-int)
-        {
-            auto & strm = get(stream);
-            if (origin == SEEK_END)
-            {
-                /// Our implementations of SeekableReadBuffer don't support SEEK_END,
-                /// but the minizip library needs it, so we have to simulate it here.
-                strm.at_end = true;
-                return ZIP_OK;
-            }
-            strm.at_end = false;
-            if (origin == SEEK_SET)
-                offset += strm.start_offset;
-            strm.read_buffer->seek(offset, origin);
-            return ZIP_OK;
-        }
-
-        static unsigned long writeFileFunc(void *, void *, const void *, unsigned long) // NOLINT(google-runtime-int)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "StreamFromReadBuffer::writeFile must not be called");
-        }
-    };
-}
-
-
 ZipArchiveReader::ZipArchiveReader(const String & path_to_archive_)
     : path_to_archive(path_to_archive_)
 {
@@ -498,11 +647,11 @@ void ZipArchiveReader::init()
 ZipArchiveReader::~ZipArchiveReader()
 {
     /// Close all `free_handles`.
-    for (RawHandle free_handle : free_handles)
+    for (auto & free_handle : free_handles)
     {
         try
         {
-            checkResult(unzClose(free_handle));
+            checkResult(unzClose(free_handle.handle));
         }
         catch (...)
         {
@@ -595,12 +744,12 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::vector<std::string> ZipArchiveReader::getAllFiles()
+Strings ZipArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-std::vector<std::string> ZipArchiveReader::getAllFiles(NameFilter filter)
+Strings ZipArchiveReader::getAllFiles(NameFilter filter)
 {
     auto handle = acquireHandle();
     return handle.getAllFiles(filter);
@@ -617,36 +766,88 @@ ZipArchiveReader::HandleHolder ZipArchiveReader::acquireHandle()
     return HandleHolder{std::static_pointer_cast<ZipArchiveReader>(shared_from_this())};
 }
 
-ZipArchiveReader::RawHandle ZipArchiveReader::acquireRawHandle()
+ZipArchiveReader::RawHandleWithStream ZipArchiveReader::acquireRawHandle()
 {
     std::lock_guard lock{mutex};
 
     if (!free_handles.empty())
     {
-        RawHandle free_handle = free_handles.back();
+        auto handle_info = free_handles.back();
         free_handles.pop_back();
-        return free_handle;
+        return handle_info;
     }
 
-    RawHandle new_handle = nullptr;
+    RawHandleWithStream result;
+    std::exception_ptr stored_exception;
     if (archive_read_function)
-        new_handle = StreamFromReadBuffer::open(archive_read_function(), archive_size);
+    {
+        auto open_result = StreamFromReadBuffer::open(archive_read_function(), archive_size);
+        result.handle = open_result.handle;
+        result.stream = open_result.stream;
+        /// The heap-allocated `Opaque` must outlive the `unzFile` handle: minizip stores
+        /// `&opaque` internally during `unzOpen2_64` and dereferences it from every later
+        /// stream callback. Pinning it via the shared pointer keeps the post-open callbacks
+        /// from touching freed memory; the storage is released only when `unzClose()` runs
+        /// in the destructor of `ZipArchiveReader`.
+        result.opaque = std::move(open_result.opaque);
+        stored_exception = std::move(open_result.stored_exception);
+    }
     else
-        new_handle = unzOpen64(path_to_archive.c_str());
+    {
+        result.handle = unzOpen64(path_to_archive.c_str());
+    }
 
-    if (!new_handle)
+    if (!result.handle)
+    {
+        /// If a callback threw while reading the underlying buffer (e.g. an S3 seek
+        /// error during EOCD lookup), surface that original exception instead of the
+        /// generic `Couldn't open zip archive` message. Otherwise minizip's internal
+        /// error code (frequently `MZ_END_OF_LIST`) bubbles up as the unhelpful
+        /// `Code = -100` reported in issue #104681.
+        if (stored_exception)
+        {
+            try
+            {
+                std::rethrow_exception(stored_exception);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while opening zip archive {}", quoteString(path_to_archive));
+                throw;
+            }
+        }
         throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open zip archive {}", quoteString(path_to_archive));
+    }
 
-    return new_handle;
+    return result;
 }
 
-void ZipArchiveReader::releaseRawHandle(RawHandle handle_)
+void ZipArchiveReader::releaseRawHandle(RawHandleWithStream handle_info)
 {
-    if (!handle_)
+    if (!handle_info.handle)
         return;
 
+    /// If a prior read failed mid-stream, ReadBuffer::next() called cancel() on the underlying
+    /// archive buffer and rethrew. The `canceled` flag is terminal: a subsequent read on that
+    /// buffer trips chassert(!isCanceled()) in ReadBuffer::next() (LOGICAL_ERROR in debug builds).
+    /// Both the minizip stream and the buffer are in an undefined state, so this handle must not
+    /// be pooled for reuse. Close it; the next acquireRawHandle() opens a fresh one.
+    auto * stream = reinterpret_cast<StreamFromReadBuffer *>(handle_info.stream);
+    if (stream && stream->isReadBufferCanceled())
+    {
+        try
+        {
+            checkResult(unzClose(handle_info.handle));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ZipArchiveReader");
+        }
+        return;
+    }
+
     std::lock_guard lock{mutex};
-    free_handles.push_back(handle_);
+    free_handles.push_back(handle_info);
 }
 
 void ZipArchiveReader::checkResult(int code) const

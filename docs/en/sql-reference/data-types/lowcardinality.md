@@ -7,8 +7,6 @@ title: 'LowCardinality(T)'
 doc_type: 'reference'
 ---
 
-# LowCardinality(T)
-
 Changes the internal representation of other data types to be dictionary-encoded.
 
 ## Syntax {#syntax}
@@ -55,7 +53,7 @@ Settings:
 
 Functions:
 
-- [toLowCardinality](../../sql-reference/functions/type-conversion-functions.md#tolowcardinality)
+- [toLowCardinality](../../sql-reference/functions/type-conversion-functions.md#toLowCardinality)
 
 ## Related content {#related-content}
 

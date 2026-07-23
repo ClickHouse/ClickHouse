@@ -1,0 +1,637 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+# ─── Network latency — workload coverage (pair 1:1 with core_no_faults) ──────
+# All 10 scenarios apply netem 10ms + 5ms jitter to every node.  netem is
+# applied without restarting nodes so quorum is never lost and bench metrics
+# are fully verifiable.  FaultRunner fires ~4 × 30s rounds of netem across the
+# 120s window.  Compare each scenario against its paired no-fault baseline.
+- id: prod-mix-fault
+  name: 'Prod mix [fault: netem]'
+  description: Full request mix with netem 10ms + 5ms jitter on all nodes. Pair with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+  - type: count_paths
+    prefixes:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+- id: read-fault
+  name: 'Read-only [fault: netem]'
+  description: get 90%, list 10% with netem 10ms on all nodes. Pair with read-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/read_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: write-fault
+  name: 'Write-only [fault: netem]'
+  description: create 60%, set 40% with netem 10ms on all nodes. Pair with write-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/write_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: read-multi-fault
+  name: 'MultiRead [fault: netem]'
+  description: Batched get/list with netem 10ms on all nodes. Pair with read-multi-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/read_multi_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+  opts:
+    feature_flags:
+      multi_read: 1
+- id: write-multi-fault
+  name: 'Multi-op batches [fault: netem]'
+  description: Batch multi with netem 10ms on all nodes. Pair with write-multi-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/write_multi_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: list-heavy-fault
+  name: 'List-heavy [fault: netem]'
+  description: list 75%, get 25% with netem 10ms on all nodes. Pair with list-heavy-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/list_heavy_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: churn-fault
+  name: 'Churn [fault: netem]'
+  description: create/remove churn with netem 10ms on all nodes. Pair with churn-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/churn_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: large-payload-fault
+  name: 'Large payload [fault: netem]'
+  description: 1–4 KB values with netem 10ms on all nodes. Pair with large-payload-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/large_payload.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: single-hot-get-fault
+  name: 'Single hot path [fault: netem]'
+  description: 100% get on one path with netem 10ms on all nodes. Pair with single-hot-get-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/single_hot_get.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: multi-large-fault
+  name: 'Multi-large batches [fault: netem]'
+  description: 10–30 ops/batch with netem 10ms on all nodes. Pair with multi-large-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/multi_large_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 10
+    jitter_ms: 5
+    loss_pct: 0
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+# ─── Specialized network conditions (compare with prod-mix-no-fault) ──────────
+# These six scenarios vary the fault topology rather than the workload.
+# All use prod_mix workload so Grafana comparisons against prod-mix-no-fault
+# are apples-to-apples.  Each tests a distinct real-world fault shape:
+#
+# latency-multi-region-fault: uses kind: parallel so leader (10ms) and
+#   followers (80ms) netem are active simultaneously — not alternating rounds.
+#   This is the only way to model asymmetric geo-distributed latency correctly.
+#
+# latency-wan-fault: packet loss (2%) combined with jitter.  No p99 gate
+#   because TCP retransmits make tail latency unbounded under loss.
+#
+# latency-jitter-fault: high jitter (15ms) tests Raft timeout stability.
+#   180s gives FaultRunner more rounds to stress the timing variance.
+#
+# latency-slow-follower-fault: netem on ALL followers, leader stays fast.
+#   Followers' egress is delayed so Raft AppendEntries acks arrive at the
+#   leader 80ms late.  Leader must wait for quorum before committing writes,
+#   so write p99 rises while reads from the leader are unaffected.
+#   Distinct from multi-region: the leader-to-client path is clean here.
+#
+# latency-single-follower-fault: netem on ONE follower (first_follower) only.
+#   The other follower stays clean.  Models a single node in a distant DC while
+#   the rest of the cluster is local.  Quorum (leader + one fast follower) is
+#   maintained throughout, so this is the most targeted and verifiable disk/net
+#   fault shape: one node degrades, cluster continues, bench measures the effect.
+#   Compare with latency-slow-follower-fault which affects all followers.
+#
+# latency-wan-client-fault: netem on leader only (50ms).  The client ↔ leader
+#   link is the WAN path; inter-node Raft traffic between leader and followers
+#   is completely unaffected.  Tests how client-perceived latency rises when the
+#   leader is geographically distant from the client, while Raft replication
+#   remains local and fast.  Compare with latency-slow-follower-fault (where
+#   Raft acks are slow but the client path is fast).
+- id: latency-multi-region-fault
+  name: 'Latency — multi-region [fault: netem]'
+  description: Leader 10ms, followers 80ms simultaneously. Models geo-distributed deployment. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: parallel
+    steps:
+    - kind: netem
+      'on': leader
+      delay_ms: 10
+      jitter_ms: 5
+      target_parallel: true
+    - kind: netem
+      'on': followers
+      delay_ms: 80
+      jitter_ms: 20
+      target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.05
+  - type: log_sanity_ok
+  - type: print_summary
+- id: latency-wan-fault
+  name: 'Latency — WAN [fault: netem]'
+  description: 25ms delay, 7ms jitter, 2% packet loss on all nodes. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 25
+    jitter_ms: 7
+    loss_pct: 2
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.05
+  - type: log_sanity_ok
+  - type: print_summary
+- id: latency-jitter-fault
+  name: 'Latency — jitter [fault: netem]'
+  description: 20ms delay, 15ms jitter on all nodes, 180s. Tests Raft timeout stability. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 180
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': all
+    delay_ms: 20
+    jitter_ms: 15
+    duration_s: 180
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.05
+  - type: log_sanity_ok
+  - type: print_summary
+- id: latency-slow-follower-fault
+  name: 'Latency — slow followers [fault: netem]'
+  description: All followers 80ms, leader fast. Slow Raft acks raise write p99; reads from leader unaffected. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': followers
+    delay_ms: 80
+    jitter_ms: 20
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.05
+  - type: log_sanity_ok
+  - type: print_summary
+- id: latency-single-follower-fault
+  name: 'Latency — single follower [fault: netem]'
+  description: One follower 80ms, leader and other follower stay clean. Quorum maintained. Models one node in a distant DC. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': first_follower
+    delay_ms: 80
+    jitter_ms: 20
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.05
+  - type: log_sanity_ok
+  - type: print_summary
+- id: latency-wan-client-fault
+  name: 'Latency — WAN client path [fault: netem]'
+  description: Leader 50ms, followers clean. Client-to-leader link is WAN; Raft inter-node traffic unaffected. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: netem
+    'on': leader
+    delay_ms: 50
+    jitter_ms: 10
+    duration_s: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.05
+  - type: log_sanity_ok
+  - type: print_summary
+
+# ─── CPU pressure ─────────────────────────────────────────────────────────────
+# cpu_hog spins a shell busy-loop for the fault duration — no restart, quorum
+# is always maintained.  Targeting the leader stresses the Raft commit path;
+# targeting all nodes stresses quorum-wide log application.
+- id: prod-mix-cpu-leader-fault
+  name: 'Prod mix [fault: cpu_hog leader]'
+  description: Prod mix with CPU saturation on the leader. Leader processes all Raft writes; starvation raises commit latency. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: cpu_hog
+    'on': leader
+    seconds: 120
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: write-multi-cpu-all-fault
+  name: 'MultiWrite [fault: cpu_hog all]'
+  description: Batched writes with CPU saturation on all nodes. Every node must process Raft log entries; all-node starvation stresses quorum throughput. Compare with write-multi-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/write_multi_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/write-multi
+  faults:
+  - kind: cpu_hog
+    'on': all
+    seconds: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: log_sanity_ok
+  - type: print_summary
+
+# ─── Memory pressure ──────────────────────────────────────────────────────────
+# mem_hog allocates a fixed byte array in Python for the fault duration — no
+# restart, quorum is always maintained.  Large-payload workload is most
+# sensitive since each znode requires memory to buffer and serialize.
+- id: large-payload-mem-fault
+  name: 'Large payload [fault: mem_hog all]'
+  description: Large znode writes (32 KB) with 512 MB memory pressure on all nodes. Stresses serialization and network buffers. Compare with large-payload-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/large_payload.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/large
+  faults:
+  - kind: mem_hog
+    'on': all
+    mb: 512
+    seconds: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: prod-mix-mem-fault
+  name: 'Prod mix [fault: mem_hog all]'
+  description: Prod mix with 256 MB memory pressure on all nodes. Tests graceful degradation under general memory contention. Compare with prod-mix-no-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults:
+  - kind: mem_hog
+    'on': all
+    mb: 256
+    seconds: 120
+    target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: log_sanity_ok
+  - type: print_summary
+
+# ─── Disk latency ─────────────────────────────────────────────────────────────
+# dm_delay redirects the coordination directory onto a devicemapper delay table.
+# IMPORTANT: setup and teardown each require a SIGKILL + restart of the target
+# node (~60-120 s each), so the total disruption window is 120-240 s.  A 300 s
+# scenario duration leaves ~60-180 s with the fault genuinely active.
+# Bench errors during the restart windows are expected; max_ratio is relaxed.
+# Target: leader only to preserve quorum throughout.
+- id: write-disk-latency-fault
+  name: 'Write [fault: dm_delay leader]'
+  description: Write workload with 3 ms disk I/O delay on the leader via devicemapper. Every committed write requires an fsync on the coordination log; this directly taxes the disk path. Expect errors during the ~120-240 s restart windows. Compare with write-no-fault.
+  topology: 3
+  duration: 300
+  workload:
+    config: workloads/write_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/write
+  faults:
+  - kind: dm_delay
+    'on': leader
+    ms: 3
+    duration_s: 300
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.4
+  - type: log_sanity_ok
+  - type: print_summary

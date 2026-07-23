@@ -21,28 +21,28 @@ namespace Poco {
 const int DigestBuf::BUFFER_SIZE = 256;
 
 
-DigestBuf::DigestBuf(DigestEngine& eng): 
-	BufferedStreamBuf(BUFFER_SIZE, std::ios::out), 
-	_eng(eng), 
+DigestBuf::DigestBuf(DigestEngine& eng):
+	BufferedStreamBuf(BUFFER_SIZE, std::ios::out),
+	_eng(eng),
 	_pIstr(0),
-	_pOstr(0) 
-{
-}
-
-
-DigestBuf::DigestBuf(DigestEngine& eng, std::istream& istr): 
-	BufferedStreamBuf(BUFFER_SIZE, std::ios::in), 
-	_eng(eng), 
-	_pIstr(&istr), 
 	_pOstr(0)
 {
 }
 
 
-DigestBuf::DigestBuf(DigestEngine& eng, std::ostream& ostr): 
-	BufferedStreamBuf(BUFFER_SIZE, std::ios::out), 
-	_eng(eng), 
-	_pIstr(0), 
+DigestBuf::DigestBuf(DigestEngine& eng, std::istream& istr):
+	BufferedStreamBuf(BUFFER_SIZE, std::ios::in),
+	_eng(eng),
+	_pIstr(&istr),
+	_pOstr(0)
+{
+}
+
+
+DigestBuf::DigestBuf(DigestEngine& eng, std::ostream& ostr):
+	BufferedStreamBuf(BUFFER_SIZE, std::ios::out),
+	_eng(eng),
+	_pIstr(0),
 	_pOstr(&ostr)
 {
 }
@@ -110,10 +110,11 @@ DigestBuf* DigestIOS::rdbuf()
 }
 
 
-DigestInputStream::DigestInputStream(DigestEngine& eng, std::istream& istr): 
-	DigestIOS(eng, istr), 
+DigestInputStream::DigestInputStream(DigestEngine& eng, std::istream& istr):
+	DigestIOS(eng, istr),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -122,15 +123,16 @@ DigestInputStream::~DigestInputStream()
 }
 
 
-DigestOutputStream::DigestOutputStream(DigestEngine& eng): 
-	DigestIOS(eng), 
+DigestOutputStream::DigestOutputStream(DigestEngine& eng):
+	DigestIOS(eng),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
-DigestOutputStream::DigestOutputStream(DigestEngine& eng, std::ostream& ostr): 
-	DigestIOS(eng, ostr), 
+DigestOutputStream::DigestOutputStream(DigestEngine& eng, std::ostream& ostr):
+	DigestIOS(eng, ostr),
 	std::ostream(&_buf)
 {
 }

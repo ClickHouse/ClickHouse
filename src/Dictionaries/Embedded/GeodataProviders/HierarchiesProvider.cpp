@@ -50,9 +50,9 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
     }
 }
 
-std::vector<std::string> RegionsHierarchiesDataProvider::listCustomHierarchies() const
+VectorWithMemoryTracking<std::string> RegionsHierarchiesDataProvider::listCustomHierarchies() const
 {
-    std::vector<std::string> names;
+    VectorWithMemoryTracking<std::string> names;
     names.reserve(hierarchy_files.size());
     for (const auto & it : hierarchy_files)
         names.push_back(it.first);

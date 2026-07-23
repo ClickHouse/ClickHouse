@@ -43,5 +43,5 @@ SELECT
     ProfileEvents['MergeTreeDataWriterProjectionsCalculationMicroseconds'] > 0,
     ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query_id='$query_id' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id='$query_id' AND type = 'QueryFinish';
 """

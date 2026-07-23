@@ -76,7 +76,7 @@ for enable_analyzer in 0 1; do
                 ProfileEvents['SelectQueriesWithSubqueries'] SelectQueriesWithSubqueries,
                 ProfileEvents['QueriesWithSubqueries'] QueriesWithSubqueries
             FROM system.query_log
-            WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '$qid'
+            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '$qid'
             FORMAT TSVWithNames;
         "
     done

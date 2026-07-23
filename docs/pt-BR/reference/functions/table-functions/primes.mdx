@@ -1,0 +1,137 @@
+---
+slug: /sql-reference/table-functions/primes
+sidebarTitle: 'primes'
+title: 'primes'
+description: 'Retorna uma tabela com uma única coluna `prime` que contém números primos.'
+doc_type: 'reference'
+---
+
+* `primes()` – Retorna uma tabela infinita com uma única coluna `prime` (UInt64) que contém números primos em ordem crescente, a partir de 2. Use `LIMIT` (e, opcionalmente, `OFFSET`) para limitar o número de linhas.
+
+* `primes(N)` – Retorna uma tabela com uma única coluna `prime` (UInt64) que contém os primeiros `N` números primos, a partir de 2.
+
+* `primes(N, M)` – Retorna uma tabela com uma única coluna `prime` (UInt64) que contém `M` números primos a partir do `N`-ésimo número primo (indexação baseada em 0).
+
+* `primes(N, M, S)` – Retorna uma tabela com uma única coluna `prime` (UInt64) que contém `M` números primos a partir do `N`-ésimo número primo (indexação baseada em 0), com passo `S` no índice dos primos. Os primos retornados correspondem aos índices `N, N + S, N + 2S, ..., N + (M - 1)S`. `S` deve ser `>= 1`.
+
+Isso é semelhante à tabela de sistema [`system.primes`](/pt-BR/reference/system-tables/primes).
+
+As consultas a seguir são equivalentes:
+
+```sql
+SELECT * FROM primes(10);
+SELECT * FROM primes(0, 10);
+SELECT * FROM primes() LIMIT 10;
+SELECT * FROM system.primes LIMIT 10;
+SELECT * FROM system.primes WHERE prime IN (2, 3, 5, 7, 11, 13, 17, 19, 23, 29);
+```
+
+As consultas a seguir também são equivalentes:
+
+```sql
+SELECT * FROM primes(10, 10);
+SELECT * FROM primes() LIMIT 10 OFFSET 10;
+SELECT * FROM system.primes LIMIT 10 OFFSET 10;
+```
+
+<div id="examples">
+  ### Exemplos
+</div>
+
+Os 10 primeiros primos.
+
+```sql
+SELECT * FROM primes(10);
+```
+
+```response
+  ┌─prime─┐
+  │     2 │
+  │     3 │
+  │     5 │
+  │     7 │
+  │    11 │
+  │    13 │
+  │    17 │
+  │    19 │
+  │    23 │
+  │    29 │
+  └───────┘
+```
+
+O primeiro número primo maior que 1e15.
+
+```sql
+SELECT prime FROM primes() WHERE prime > 1e15 LIMIT 1;
+```
+
+```response
+  ┌────────────prime─┐
+  │ 1000000000000037 │ -- 1.00 quadrillion
+  └──────────────────┘
+```
+
+Resolva uma restrição modular com números primos em um intervalo muito grande: encontre o primeiro primo `p >= 10^15` tal que `p` módulo `65537` seja `1`.
+
+```sql
+SELECT prime
+FROM primes()
+WHERE prime >= 1e15
+  AND prime % 65537 = 1
+LIMIT 1;
+```
+
+```response
+ ┌────────────prime─┐
+ │ 1000000001218399 │ -- 1.00 quadrillion
+ └──────────────────┘
+```
+
+Os 7 primeiros primos de Mersenne.
+
+```sql
+SELECT prime
+FROM primes()
+WHERE bitAnd(prime, prime + 1) = 0
+LIMIT 7;
+```
+
+```response
+  ┌──prime─┐
+  │      3 │
+  │      7 │
+  │     31 │
+  │    127 │
+  │   8191 │
+  │ 131071 │
+  │ 524287 │
+  └────────┘
+```
+
+<div id="notes">
+  ### Observações
+</div>
+
+* As formas mais rápidas são as consultas simples de intervalo e as consultas com filtro por ponto que usam o passo padrão (`1`), por exemplo, `primes(N)` ou `primes() LIMIT N`. Essas formas usam um gerador de primos otimizado para calcular números primos muito grandes com eficiência.
+* Para fontes não limitadas (`primes()` / `system.primes`), filtros de valor simples, como `prime BETWEEN ...`, `prime IN (...)` ou `prime = ...`, podem ser aplicados durante a geração para restringir os intervalos de valores pesquisados. Por exemplo, a consulta a seguir é executada quase instantaneamente:
+
+```sql
+SELECT sum(prime)
+FROM primes()
+WHERE prime BETWEEN 1e6 AND 1e6 + 100
+   OR prime BETWEEN 1e12 AND 1e12 + 100
+   OR prime BETWEEN 1e15 AND 1e15 + 100
+   OR prime IN (9999999967, 9999999971, 9999999973)
+   OR prime = 1000000000000037;
+```
+
+```response
+  ┌───────sum(prime)─┐
+  │ 2004010006000641 │ -- 2.00 quadrilhões
+  └──────────────────┘
+
+1 row in set. Elapsed: 0.090 sec. 
+```
+
+* Esta otimização de intervalo de valores não se aplica a funções de tabela limitadas (`primes(N)`, `primes(offset, count[, step])`) com `WHERE`, porque essas variantes definem uma tabela finita pelo índice do número primo, e o filtro precisa ser avaliado após a geração dessa tabela para preservar a semântica.
+* Usar um offset diferente de zero e/ou um passo maior que 1 (`primes(offset, count)` / `primes(offset, count, step)`) pode ser mais lento, porque talvez seja necessário gerar e ignorar internamente números primos adicionais. Se você não precisar de offset nem de passo, omita-os.

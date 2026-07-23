@@ -1,0 +1,151 @@
+---
+description: 'Documentação do tipo de dado Time no ClickHouse, que armazena
+  horários com precisão de segundos'
+slug: /sql-reference/data-types/time
+sidebarTitle: 'Time'
+title: 'Time'
+doc_type: 'reference'
+---
+
+O tipo de dado `Time` representa um horário com componentes de hora, minuto e segundo.
+Ele é independente de qualquer data do calendário e é adequado para valores que não exigem componentes de dia, mês e ano.
+
+Sintaxe:
+
+```sql
+Time
+```
+
+Faixa de representação em texto: [-999:59:59, 999:59:59].
+
+Resolução: 1 segundo.
+
+<div id="implementation-details">
+  ## Detalhes de implementação
+</div>
+
+**Representação e desempenho**.
+O tipo de dado `Time` armazena internamente um inteiro com sinal de 32 bits que codifica os segundos.
+Valores do tipo `Time` e `DateTime` têm o mesmo tamanho em bytes e, portanto, desempenho comparável.
+
+**Normalização**.
+Ao converter strings para `Time`, os componentes do horário são normalizados, mas não validados.
+Por exemplo, `25:70:70` é interpretado como `26:11:10`.
+
+**Valores negativos**.
+Sinais de menos à esquerda são aceitos e preservados.
+Valores negativos normalmente surgem de operações aritméticas com valores `Time`.
+Para o tipo `Time`, entradas negativas são preservadas tanto em entradas de texto (por exemplo, `'-01:02:03'`) quanto em entradas numéricas (por exemplo, `-3723`).
+
+**Saturação**.
+O componente de hora do dia é limitado ao intervalo [-999:59:59, 999:59:59].
+Valores com horas acima de 999 (ou abaixo de -999) são representados em texto e convertidos de volta como `999:59:59` (ou `-999:59:59`).
+
+**Fusos horários**.
+`Time` não oferece suporte a fusos horários, ou seja, valores `Time` são interpretados sem contexto regional.
+Especificar um fuso horário para `Time` como parâmetro de tipo ou durante a criação do valor resulta em erro.
+Da mesma forma, tentativas de aplicar ou alterar o fuso horário em colunas `Time` não têm suporte e resultam em erro.
+Valores `Time` não são reinterpretados silenciosamente em fusos horários diferentes.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+**1.** Criando uma tabela com uma coluna do tipo `Time` e inserindo dados nela:
+
+```sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Time
+-- - de string,
+-- - de inteiro interpretado como número de segundos desde 00:00:00.
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**2.** Filtragem por valores de `Time`
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT * FROM tab WHERE time = toTime('14:30:25')
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+Os valores da coluna `Time` podem ser filtrados usando um valor textual no predicado `WHERE`. Ele será convertido para `Time` automaticamente:
+
+```sql
+SELECT * FROM tab WHERE time = '14:30:25'
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**3.** Inspecione o tipo resultante:
+
+```sql
+SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+```
+
+```text
+   ┌────column─┬─type─┐
+1. │ 14:30:25 │ Time │
+   └───────────┴──────┘
+```
+
+<div id="addition-with-date">
+  ## Adição com Date
+</div>
+
+Um valor [Time](/pt-BR/reference/data-types/time) pode ser adicionado a um valor [Date](/pt-BR/reference/data-types/date) ou [Date32](/pt-BR/reference/data-types/date32) para gerar um [DateTime](/pt-BR/reference/data-types/datetime) ou [DateTime64](/pt-BR/reference/data-types/datetime64):
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+Consulte [Adição de data e hora](/pt-BR/reference/operators/index#date-time-addition) para ver detalhes sobre todas as combinações com suporte e os tipos de resultado.
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [Funções de conversão de tipos](/pt-BR/reference/functions/regular-functions/type-conversion-functions)
+* [Funções para trabalhar com datas e horas](/pt-BR/reference/functions/regular-functions/date-time-functions)
+* [Funções para trabalhar com arrays](/pt-BR/reference/functions/regular-functions/array-functions)
+* [A configuração `date_time_input_format`](/pt-BR/reference/settings/formats#date_time_input_format)
+* [A configuração `date_time_output_format`](/pt-BR/reference/settings/formats#date_time_output_format)
+* [O parâmetro de configuração do servidor `timezone`](/pt-BR/reference/settings/server-settings/settings#timezone)
+* [A configuração `session_timezone`](/pt-BR/reference/settings/session-settings#session_timezone)
+* [O tipo de dado `DateTime`](/pt-BR/reference/data-types/datetime)
+* [O tipo de dado `Date`](/pt-BR/reference/data-types/date)

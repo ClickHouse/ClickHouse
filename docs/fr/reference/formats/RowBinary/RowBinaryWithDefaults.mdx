@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'Documentation du format RowBinaryWithDefaults'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: 'référence'
+---
+
+import RowBinaryFormatSettings from '/snippets/fr/common-row-binary-format-settings.mdx';
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✗      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Similaire au format [`RowBinary`](/fr/reference/formats/RowBinary/RowBinary), mais avec un octet supplémentaire avant chaque colonne, indiquant s’il faut utiliser la valeur par défaut.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Exemples :
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* Pour la colonne `x`, il n’y a qu’un seul octet, `01`, qui indique qu’il faut utiliser la valeur par défaut, et aucune autre donnée n’est fournie après cet octet.
+* Pour la colonne `y`, les données commencent par l’octet `00`, qui indique que la colonne contient une valeur réelle devant être lue dans les données suivantes `01000000`.
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+<RowBinaryFormatSettings />

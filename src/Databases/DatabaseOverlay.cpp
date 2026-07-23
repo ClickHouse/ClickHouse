@@ -2,11 +2,13 @@
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/IStorage_fwd.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -98,7 +100,7 @@ void DatabaseOverlay::attachTable(
             db->attachTable(context_, table_name, table, relative_table_path);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -183,10 +185,10 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
  * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
  * To use DatabaseOverlay, it must be constructed programmatically in code
  */
-ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
+ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
-    auto query = std::make_shared<ASTCreateQuery>();
-    query->setDatabase(getDatabaseName());
+    auto query = make_intrusive<ASTCreateQuery>();
+    query->setDatabase(database_name);
     return query;
 }
 
@@ -368,7 +370,7 @@ void DatabaseOverlay::loadTableFromMetadata(
             db->loadTableFromMetadata(local_context, file_path, name, ast, mode);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -400,7 +402,7 @@ LoadTaskPtr DatabaseOverlay::loadTableFromMetadataAsync(
         {
             return db->loadTableFromMetadataAsync(async_loader, load_after, local_context, file_path, name, ast, mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -429,7 +431,7 @@ LoadTaskPtr DatabaseOverlay::startupTableAsync(
         {
             return db->startupTableAsync(async_loader, startup_after, name, mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -456,7 +458,7 @@ LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
         {
             return db->startupDatabaseAsync(async_loader, startup_after, mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -480,7 +482,7 @@ void DatabaseOverlay::waitTableStarted(const String & name) const
             db->waitTableStarted(name);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -505,7 +507,7 @@ void DatabaseOverlay::waitDatabaseStarted() const
             db->waitDatabaseStarted();
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -529,7 +531,7 @@ void DatabaseOverlay::stopLoading()
             db->stopLoading();
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }

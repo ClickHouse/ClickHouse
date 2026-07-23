@@ -1,0 +1,43 @@
+<test>
+    <!-- Benchmark for implicit minmax skip index computation during INSERT.
+         Uses CODEC(NONE), single insert thread, no deduplication, no squashing,
+         and no sparse serialization to reduce noise from unrelated work. -->
+
+    <create_query>
+        CREATE TABLE minmax_insert
+        (
+            u8_1  UInt8,  u8_2  UInt8,  u8_3  UInt8,  u8_4  UInt8,  u8_5  UInt8,
+            u16_1 UInt16, u16_2 UInt16, u16_3 UInt16, u16_4 UInt16, u16_5 UInt16,
+            u32_1 UInt32, u32_2 UInt32, u32_3 UInt32, u32_4 UInt32, u32_5 UInt32,
+            u64_1 UInt64, u64_2 UInt64, u64_3 UInt64, u64_4 UInt64, u64_5 UInt64,
+            i8_1  Int8,   i8_2  Int8,   i8_3  Int8,   i8_4  Int8,   i8_5  Int8,
+            i16_1 Int16,  i16_2 Int16,  i16_3 Int16,  i16_4 Int16,  i16_5 Int16,
+            i32_1 Int32,  i32_2 Int32,  i32_3 Int32,  i32_4 Int32,  i32_5 Int32,
+            i64_1 Int64,  i64_2 Int64,  i64_3 Int64,  i64_4 Int64,  i64_5 Int64,
+            f32_1 Float32, f32_2 Float32, f32_3 Float32, f32_4 Float32, f32_5 Float32,
+            f64_1 Float64, f64_2 Float64, f64_3 Float64, f64_4 Float64, f64_5 Float64
+        )
+        ENGINE = MergeTree ORDER BY ()
+        SETTINGS add_minmax_index_for_numeric_columns = 1, default_compression_codec = 'NONE', non_replicated_deduplication_window = 0, ratio_of_defaults_for_sparse_serialization = 1.0, parts_to_delay_insert = 50000, parts_to_throw_insert = 50000
+    </create_query>
+    <create_query>SYSTEM STOP MERGES minmax_insert</create_query>
+
+    <query>
+        INSERT INTO minmax_insert
+        SELECT
+            toUInt8(number), toUInt8(number), toUInt8(number), toUInt8(number), toUInt8(number),
+            toUInt16(number), toUInt16(number), toUInt16(number), toUInt16(number), toUInt16(number),
+            toUInt32(number), toUInt32(number), toUInt32(number), toUInt32(number), toUInt32(number),
+            number, number, number, number, number,
+            toInt8(number), toInt8(number), toInt8(number), toInt8(number), toInt8(number),
+            toInt16(number), toInt16(number), toInt16(number), toInt16(number), toInt16(number),
+            toInt32(number), toInt32(number), toInt32(number), toInt32(number), toInt32(number),
+            toInt64(number), toInt64(number), toInt64(number), toInt64(number), toInt64(number),
+            toFloat32(number), toFloat32(number), toFloat32(number), toFloat32(number), toFloat32(number),
+            toFloat64(number), toFloat64(number), toFloat64(number), toFloat64(number), toFloat64(number)
+        FROM numbers(1000000)
+        SETTINGS insert_deduplicate = 0, max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS minmax_insert</drop_query>
+</test>

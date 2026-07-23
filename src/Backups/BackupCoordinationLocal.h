@@ -7,6 +7,7 @@
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
+#include <Backups/BackupSettings.h>
 #include <base/defines.h>
 #include <cstddef>
 #include <mutex>
@@ -23,7 +24,7 @@ class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
     explicit BackupCoordinationLocal(
-        bool is_plain_backup_,
+        const BackupSettings & backup_settings_,
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_);
 
@@ -61,8 +62,8 @@ public:
     String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
 
     void addFileInfos(BackupFileInfos && file_infos) override;
-    BackupFileInfos getFileInfos() const override;
-    BackupFileInfos getFileInfosForAllHosts() const override;
+    const BackupFileInfos & getFileInfos() const override;
+    void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const override;
     bool startWritingFile(size_t data_file_index) override;
 
     ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;

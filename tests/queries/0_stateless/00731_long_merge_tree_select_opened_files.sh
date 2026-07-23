@@ -31,6 +31,6 @@ $CLICKHOUSE_CLIENT $settings -q "$touching_many_parts_query" &> /dev/null
 
 $CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS query_log"
 
-$CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] as opened_files FROM system.query_log WHERE query = '$touching_many_parts_query' AND current_database = currentDatabase() AND event_date >= yesterday() ORDER BY event_time DESC, opened_files DESC LIMIT 1;"
+$CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] as opened_files FROM system.query_log WHERE query = '$touching_many_parts_query' AND current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 ORDER BY event_time DESC, opened_files DESC LIMIT 1;"
 
 $CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS merge_tree_table;"
