@@ -350,10 +350,16 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
 /// (`UInt64`/`String`, or the `UInt32` alternative) would reject a valid TTL such as
 /// `DELETE WHERE isNotNull(finalizeAggregation(CAST(state, 'Dynamic')))`. So each probe records the
 /// function's *actual* output columns, and a parent consuming a computed carrier is validated against
-/// those instead of the static enumeration. This propagation applies only to nodes whose arguments carry
-/// suspect payloads themselves: a carrier computed purely from non-suspect inputs (e.g.
-/// `JSONExtract(s, 'Dynamic')`) can produce payloads that depend on the data rather than on the input
-/// types, which a single synthetic execution cannot reveal, so it keeps the fail-closed static enumeration.
+/// those instead of the static enumeration. This propagation applies only when the probes cover the node's
+/// whole runtime domain, which requires two conditions:
+/// - at least one argument carries suspect payloads itself: a carrier computed purely from non-suspect
+///   inputs (e.g. `JSONExtract(s, 'Dynamic')`) can produce payloads that depend on the data rather than
+///   on the input types, which a single synthetic execution cannot reveal;
+/// - every non-suspect argument is a constant, so its probe value is exactly its execution-time value.
+///   A non-constant non-suspect argument can *select* which payload the result carries - e.g. in
+///   `if(cond, CAST(state, 'Dynamic'), CAST(0, 'Dynamic'))` the probes run with the default `cond = 0`
+///   and only ever record the second branch, hiding the aggregate-state payload of the first one.
+/// When either condition fails, the node keeps the fail-closed static enumeration of its result type.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     /// Per-node "candidate" materializations: the single-row columns whose payloads the node can produce
@@ -396,6 +402,7 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             std::vector<size_t> suspect_indexes;
             std::vector<const std::vector<ColumnPtr> *> suspect_columns;
             bool has_dynamic_suspect = false;
+            bool non_suspect_args_are_constant = true;
             arguments.reserve(node->children.size());
             for (size_t i = 0; i < node->children.size(); ++i)
             {
@@ -419,7 +426,11 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
 
                 const auto & child_candidates = candidates_of(child);
                 if (child_candidates.empty())
+                {
+                    if (!child->column)
+                        non_suspect_args_are_constant = false;
                     continue;
+                }
                 suspect_indexes.push_back(i);
                 suspect_columns.push_back(&child_candidates);
                 if (hasDynamicType(child->result_type))
@@ -493,10 +504,14 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                         probe_arguments[suspect_indexes[s]].column = (*suspect_columns[s])[selection[s]];
                     ColumnPtr probe_result = probe(probe_arguments, has_dynamic_suspect ? dynamic_hint : aggregate_state_hint);
 
-                    /// The probe outputs are exactly the payloads this node can produce from its suspect
-                    /// inputs - propagate them so a parent consuming this computed carrier is validated
-                    /// against the real domain, not the static enumeration of its result type.
-                    if (result_in_scope)
+                    /// When every non-suspect argument is a constant, the probe outputs are exactly the
+                    /// payloads this node can produce from its suspect inputs - propagate them so a parent
+                    /// consuming this computed carrier is validated against the real domain, not the
+                    /// static enumeration of its result type. A non-constant non-suspect argument breaks
+                    /// this: it is probed with a synthetic default value, but at execution time it can
+                    /// select a payload the probes never produced (e.g. the condition of `if`), so such
+                    /// nodes fall back to the static enumeration below instead.
+                    if (result_in_scope && non_suspect_args_are_constant)
                         candidates.push_back(probe_result->convertToFullColumnIfConst());
 
                     /// Advance the mixed-radix counter over the candidates of each suspect argument.
@@ -509,6 +524,12 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                     if (s == selection.size())
                         break;
                 }
+
+                /// The probes above validated this node, but their outputs under-approximate its runtime
+                /// domain when a non-constant non-suspect argument can select the payload - fail closed
+                /// with the static enumeration for the parents in that case.
+                if (result_in_scope && !non_suspect_args_are_constant)
+                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
             }
         }
         else
