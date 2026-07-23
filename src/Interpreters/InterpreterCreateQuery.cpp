@@ -796,11 +796,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
+        {
+            /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input (a short
+            /// `ATTACH TABLE t` reading stored metadata is marked with `attach_short_syntax`), so its
+            /// projections must pass the same allow-list and sanity checks as `CREATE` instead of the
+            /// metadata-load sanitization.
+            const auto projection_mode = (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax)
+                ? LoadingStrictnessLevel::CREATE
+                : mode;
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), mode);
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), projection_mode);
                 properties.projections.add(std::move(projection));
             }
+        }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }

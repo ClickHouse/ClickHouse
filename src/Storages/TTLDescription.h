@@ -99,7 +99,10 @@ struct TTLDescription
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
-    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious);
+    /// `allow_experimental_codecs` exempts a `RECOMPRESS` codec from the experimental-codec gate; callers
+    /// derive it from the genuine metadata load, the `allow_suspicious_ttl_expressions` escape hatch, or the
+    /// `allow_experimental_codecs` setting.
+    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious, bool allow_experimental_codecs);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -136,10 +139,10 @@ struct TTLTableDescription
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
     static TTLTableDescription getTTLForTableFromAST(
-        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious);
+        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious, bool allow_experimental_codecs);
 
     /// Parse description from string
-    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious);
+    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious, bool allow_experimental_codecs);
 };
 
 }

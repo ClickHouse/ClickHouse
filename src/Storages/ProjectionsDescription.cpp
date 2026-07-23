@@ -276,7 +276,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (mode > LoadingStrictnessLevel::CREATE)
     {
-        /// On the metadata-load path (ATTACH / SECONDARY_CREATE / RESTORE) the projection settings
+        /// On the metadata-load path (short-syntax ATTACH / SECONDARY_CREATE / RESTORE — callers pass
+        /// CREATE for a full-definition ATTACH, which is fresh user input) the projection settings
         /// allow-list and `sanityCheck` below are skipped, so a projection can carry untyped
         /// compression-codec settings (e.g. `WITH SETTINGS (marks_compression_codec = 'PCO')`) that
         /// CREATE would reject. Left untouched they would only fail later, when the first projection

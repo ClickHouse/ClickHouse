@@ -810,18 +810,28 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        /// `is_metadata_load` marks a genuine metadata load (`ATTACH` / `RESTORE` / replicated internal create); it
-        /// gates the recompression-codec normalization. `allow_suspicious_ttl` additionally relaxes the TTL checks
-        /// when the user opts in with `allow_suspicious_ttl_expressions`, but that setting must not by itself be
-        /// treated as a metadata load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec instead of
-        /// having it silently normalized. See `TTLDescription::getTTLFromAST`.
-        bool is_metadata_load = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode;
+        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like user
+        /// input that runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata
+        /// stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are marked
+        /// with `attach_short_syntax` (see `createTableFromAST`).
+        const bool is_full_definition_attach
+            = args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax;
+
+        /// `is_metadata_load` marks a genuine metadata load (short-syntax `ATTACH` / `RESTORE` / replicated
+        /// internal create — but not a full-definition `ATTACH`, which is fresh user input); it gates the
+        /// recompression-codec normalization and exempts the codec from the `allow_experimental_codecs`
+        /// check. `allow_suspicious_ttl` additionally relaxes the TTL checks when the user opts in with
+        /// `allow_suspicious_ttl_expressions`, but that setting must not by itself be treated as a metadata
+        /// load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec instead of having it
+        /// silently normalized. See `TTLDescription::getTTLFromAST`.
+        bool is_metadata_load = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode && !is_full_definition_attach;
         bool allow_suspicious_ttl = is_metadata_load || local_settings[Setting::allow_suspicious_ttl_expressions];
+        bool allow_experimental_ttl_codecs = allow_suspicious_ttl || local_settings[Setting::allow_experimental_codecs];
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl, allow_experimental_ttl_codecs);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -862,8 +872,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
         /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
         /// documented to skip all sanity checks and is left alone.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE || is_full_definition_attach;
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE && !local_settings[Setting::allow_experimental_codecs])
         {
             const auto is_stored_in_definition = [&](std::string_view name)
@@ -976,7 +985,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    /// A full-definition `ATTACH` is CREATE-like user input, so its projections must pass the
+                    /// same allow-list and sanity checks as `CREATE` instead of the metadata-load sanitization.
+                    const auto projection_mode = is_full_definition_attach ? LoadingStrictnessLevel::CREATE : args.mode;
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, projection_mode);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -995,7 +1007,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl, allow_experimental_ttl_codecs);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
