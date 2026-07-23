@@ -145,6 +145,15 @@ echo "$page" | grep -q -F 'residual_dispatch_failed = true;' && echo 'residual p
 # continue past.
 echo "$page" | grep -q -F 'truncated: ends_mid_line' && echo 'ndjson reader fails closed mid-line: OK'
 echo "$page" | grep -q -F 'if (res.saw_exception || res.truncated) {' && echo 'ndjson truncation stops the run: OK'
+# A truncated framed stream's synthesized carrier is appended to the snapshot itself, not only
+# captured for the oversized-compaction path: a sub-cap failure snapshot is saved as `reply`
+# verbatim (`compactFailureSnapshot` never runs for it) and the framed restore replays the stream
+# text alone, so without the carrier a reload/tab switch would show only the partial output and
+# lose the truncation error. Present in all three truncation sites - the event-stream residual and
+# both NDJSON truncation branches (non-200 and 200 OK; the third `exception_carrier` append is the
+# transport catch) - matching the transport-catch handling.
+echo "$page" | grep -q -F "+ exception_block + '\\n\\n');" && echo 'event-stream truncation carrier saved in snapshot: OK'
+[ "$(echo "$page" | grep -c -F ") + exception_carrier + '\\n');")" -ge 3 ] && echo 'ndjson truncation carrier saved in snapshot: OK'
 # A "Run all" whose total per-statement snapshot exceeds the size budget keeps a COMPACT failure
 # snapshot for each failed statement (dropping only oversized SUCCESSFUL payloads), so a large
 # statement that failed still restores its error instead of the whole run reopening blank.

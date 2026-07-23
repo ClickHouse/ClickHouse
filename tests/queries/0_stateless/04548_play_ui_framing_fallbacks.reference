@@ -18,6 +18,8 @@ truncated stream fails closed: OK
 residual parse failure maps to truncation: OK
 ndjson reader fails closed mid-line: OK
 ndjson truncation stops the run: OK
+event-stream truncation carrier saved in snapshot: OK
+ndjson truncation carrier saved in snapshot: OK
 multi keeps compact failed snapshots: OK
 log queue bounded: OK
 metric history bounded: OK

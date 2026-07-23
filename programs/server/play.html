@@ -7513,6 +7513,13 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
             const message = 'The response stream was truncated before it completed.';
             targetResultEl.renderError(message);
             exception_block = 'event: exception\ndata: ' + JSON.stringify({ exception: message });
+            /// Append the synthesized carrier to the snapshot too (as its own well-formed block;
+            /// the preceding partial block is skipped by the replayer's per-block try/catch), the
+            /// same way the transport catch in `postImpl` does: a sub-cap failure snapshot is saved
+            /// as `reply` verbatim - `compactFailureSnapshot` never runs for it - and the restore
+            /// paths replay the stream text alone, so without the carrier a reload/tab switch would
+            /// show only the partial output and lose this truncation error.
+            reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n\n') ? '' : '\n\n') + exception_block + '\n\n');
         }
         truncated = true;
     }
@@ -8131,6 +8138,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 exception_carrier = user_framing
                     ? JSON.stringify({ packet: 'exception', exception: message })
                     : JSON.stringify({ exception: message });
+                /// Keep the carrier in the snapshot as well (a terminated line of its own, like the
+                /// transport catch does): a sub-cap failure is saved as `reply` verbatim and the
+                /// `ndjson_packets` restore replays it raw, so without this line a reload would
+                /// show only the partial output and lose the truncation error.
+                reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n') ? '' : '\n') + exception_carrier + '\n');
             }
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok) {
@@ -8359,6 +8371,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                         exception_carrier = user_framing
                             ? JSON.stringify({ packet: 'exception', exception: message })
                             : JSON.stringify({ exception: message });
+                        /// Keep the carrier in the snapshot as well (a terminated line of its own,
+                        /// like the transport catch does): a sub-cap failure is saved as `reply`
+                        /// verbatim and the `ndjson_packets` restore replays it raw, so without
+                        /// this line a reload would show only the partial output and lose the
+                        /// truncation error.
+                        reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n') ? '' : '\n') + exception_carrier + '\n');
                     }
                     return { format, exception_tag, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
                 }
