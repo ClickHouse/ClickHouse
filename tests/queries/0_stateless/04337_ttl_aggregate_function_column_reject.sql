@@ -908,3 +908,72 @@ TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(arr, 0));
 DROP TABLE test_ttl_agg_array_state_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- A carrier *computed* from an AggregateFunction state has a narrower runtime domain than its static
+-- type: `CAST(state, 'Dynamic')` or `CAST(state, 'Variant(AggregateFunction(max, UInt32), UInt32)')`
+-- only ever produces the aggregate-state payload, so a state-aware consumer over it is valid. The probe
+-- must validate it against the child's actual output, not fabricate the impossible sibling payloads.
+CREATE TABLE test_ttl_agg_computed_dynamic_accept
+(
+    key UInt64,
+    state AggregateFunction(max, UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(CAST(state, 'Dynamic')));
+
+DROP TABLE test_ttl_agg_computed_dynamic_accept;
+
+CREATE TABLE test_ttl_agg_computed_variant_accept
+(
+    key UInt64,
+    state AggregateFunction(max, UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(CAST(state, 'Variant(AggregateFunction(max, UInt32), UInt32)')));
+
+DROP TABLE test_ttl_agg_computed_variant_accept;
+
+-- The computed carrier still holds the state: a consumer that cannot handle it stays rejected.
+CREATE TABLE test_ttl_agg_computed_carrier_reject
+(
+    key UInt64,
+    state AggregateFunction(max, UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(CAST(state, 'Dynamic')); -- { serverError BAD_TTL_EXPRESSION }
+
+-- A carrier computed purely from non-suspect inputs keeps the fail-closed static enumeration (its
+-- runtime payloads can be data-dependent): here the runtime payload is always `UInt32`, which
+-- `finalizeAggregation` cannot consume, so the rejection is also the correct outcome.
+CREATE TABLE test_ttl_agg_untainted_carrier_reject
+(
+    key UInt64,
+    num UInt32,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(CAST(num, 'Variant(AggregateFunction(max, UInt32), UInt32)'))); -- { serverError BAD_TTL_EXPRESSION }
+
+-- The escape hatch also covers consumers of computed carriers.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_computed_carrier_suspicious
+(
+    key UInt64,
+    state AggregateFunction(max, UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(CAST(state, 'Dynamic'));
+
+DROP TABLE test_ttl_agg_computed_carrier_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
