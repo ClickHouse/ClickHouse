@@ -38,7 +38,7 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     FROM 04614_t
     WHERE v > 999999
     FORMAT Null
-    SETTINGS use_query_condition_cache = 1, max_block_size=100000, max_threads=1, max_rows_to_read=0
+    SETTINGS use_query_condition_cache = 1, use_statistics_for_part_pruning = 0, max_block_size=100000, max_threads=1, max_rows_to_read=0
 " >"$output_file" 2>&1 &
 
 # Wait for the failpoint to be hit (query is now blocked in doTransform after expression execution)
@@ -65,7 +65,7 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM 04614_t
     WHERE v > 999999
     FORMAT Null
-    SETTINGS use_query_condition_cache = 1, max_block_size=100000, max_threads=1, max_rows_to_read=0
+    SETTINGS use_query_condition_cache = 1, use_statistics_for_part_pruning = 0, max_block_size=100000, max_threads=1, max_rows_to_read=0
 "
 
 # Cache should have grown after successful query

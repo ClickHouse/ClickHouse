@@ -4,6 +4,7 @@
 # inside a single long-running function (UserDefinedWebAssembly).
 # Uses infinite_loop_04613 from faulty.wasm (unique name for isolation from 03207_wasm_fault.sh) with unlimited fuel, then KILL QUERY.
 # Asserts QUERY_WAS_CANCELLED — if the test hangs, cancellation is broken.
+# no-parallel: wasm_invoke_pause is a global PAUSEABLE failpoint, unrelated queries could consume it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +14,8 @@ query_id="kill_query_filter_wasm_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_filter_wasm_${CLICKHOUSE_DATABASE}.out"
 
 # EXIT trap covers failed reruns that crashed before explicit cleanup.
-trap '${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613" 2>/dev/null;
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_invoke_pause" 2>/dev/null;
+      ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613" 2>/dev/null;
       ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '\''faulty_04613'\''" 2>/dev/null' EXIT
 
 # Use module/function names unique to 04613 for isolation from 03207_wasm_fault.sh.
@@ -30,6 +32,9 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "
     CREATE OR REPLACE FUNCTION infinite_loop_04613 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_04613' :: 'infinite_loop' ARGUMENTS (UInt32) RETURNS UInt32;
 "
 
+# Enable failpoint before starting the query
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT wasm_invoke_pause"
+
 # Start a query that uses infinite_loop in WHERE with unlimited fuel
 # (so it keeps running until cancelled via cancelExecution)
 # No max_execution_time: if KILL doesn't work the test hangs (fails loudly).
@@ -41,27 +46,15 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --qu
     SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000, max_rows_to_read = 0
 " >"$output_file" 2>&1 &
 
-# Wait for the query to start executing the WASM function (fails loudly on timeout)
-wait_for_query_to_start "$query_id" 30
+# Wait for the failpoint to be hit — proves the WASM function is about to execute
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT wasm_invoke_pause PAUSE"
 
-# Phase 2: wait until the first infinite_loop_04613 call enters the WASM runtime
-# (WasmTotalExecuteMicroseconds increments only when UDF bytecode runs).
-# This proves cancelExecution will hit a running function, not a future one.
-for _ in $(seq 1 100); do
-    wasm_us=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['WasmTotalExecuteMicroseconds'] FROM system.processes WHERE query_id = '${query_id}'")
-    [[ "$wasm_us" != "" && "$wasm_us" != "0" ]] && break
-    sleep 0.1
-done
-
-# Fail if the UDF never started — passing via the generic cancellation path is not acceptable
-if [[ "$wasm_us" == "" || "$wasm_us" == "0" ]]; then
-    echo "FAIL: WASM UDF did not start executing within 10 seconds"
-    exit 1
-fi
-
-# Kill the query (ASYNC) - this triggers onCancel -> cancelExecution on the WASM function
+# Kill the query (ASYNC) — this triggers onCancel -> cancelExecution on the WASM function
 # cancelExecution calls interrupt_source.request_stop(), which the WasmEdge runtime checks
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+
+# Disable failpoint — unblocks the WASM invocation, which then sees cancellation
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_invoke_pause"
 
 wait
 
