@@ -9,6 +9,7 @@
 
 #include <map>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -29,18 +30,17 @@ public:
     /// Whether this subscription backs a bounded stream (read the first snapshot, then finish).
     bool isBounded() const { return bounded; }
 
-    /// Mark the start of an enrichment round: the safe segment stops being determined while the round
-    /// advances safe_block_numbers, and onEnrichmentRound republishes it once pending is known.
+    /// Mark the start of a round: clears "determined" while the map is advanced (onEnrichmentRound republishes it).
     void beginEnrichmentRound();
 
-    /// Record an enrichment round; `pending` means a block is still in flight in some partition's
-    /// gap, so the safe segment is not fully determined. A resolved round (`pending == false`) also
-    /// wakes a bounded source so it can finish even when nothing was advanced (e.g. an empty table).
+    /// Record a round; `pending` = a block still in flight (not determined), and a resolved round wakes a bounded source.
     void onEnrichmentRound(bool pending);
 
-    /// Whether the safe segment is fully determined: an enrichment round has completed and left no
-    /// partition blocked by an in-flight block in the gap. A bounded stream may finish once this holds.
+    /// Whether the safe segment is fully determined (a round completed with no partition still blocked).
     bool safeSegmentDetermined() const;
+
+    /// Atomically returns the safe-block-number map iff the segment is determined, else nullopt.
+    std::optional<std::map<String, Int64>> snapshotIfDetermined() const;
 
     /// Read end of the wakeup pipe;
     int fd() const { return wake.fd(); }
@@ -55,8 +55,7 @@ private:
     mutable std::mutex mutex;
     std::map<String, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
     bool is_disabled TSA_GUARDED_BY(mutex) = false;
-    /// Set by the latest enrichment round: true once the safe segment is fully determined
-    /// (a round completed with no partition still blocked by an in-flight block in the gap).
+    /// True once the latest round fully determined the safe segment (no partition still blocked).
     bool safe_segment_determined TSA_GUARDED_BY(mutex) = false;
 
     WakeupFd wake;

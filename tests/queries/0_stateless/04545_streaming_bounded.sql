@@ -1,7 +1,5 @@
 -- Tags: no-parallel-replicas
--- Bounded streaming reads the first snapshot (everything committed so far) and then
--- finishes, instead of subscribing for updates like a plain STREAM query. Because it
--- terminates, it can be exercised with a plain synchronous query.
+-- Bounded streaming reads the first snapshot (everything committed so far) and finishes, so it runs synchronously.
 
 SET enable_analyzer = 1; -- streaming queries require the analyzer (CI randomizes this setting)
 SET enable_streaming_queries = 1;
@@ -24,8 +22,7 @@ SELECT 'empty', count() FROM t_streaming_bounded STREAM BOUNDED;
 INSERT INTO t_streaming_bounded SELECT number, number * 10 FROM numbers(5);
 INSERT INTO t_streaming_bounded SELECT number, number * 10 FROM numbers(5, 5);
 
--- Bounded stream reads everything committed so far, then terminates. Aggregates are
--- order-independent, so this does not rely on within-snapshot row order.
+-- Reads everything committed so far, then terminates; aggregates are order-independent (no reliance on row order).
 SELECT 'all', count(), sum(k), sum(v) FROM t_streaming_bounded STREAM BOUNDED;
 
 DROP TABLE t_streaming_bounded;

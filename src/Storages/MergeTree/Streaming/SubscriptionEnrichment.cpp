@@ -49,9 +49,7 @@ EnrichmentResult enrichSubscription(
             /// Ask the promoter whether anything in that gap (cursor, part.min_block) is still in flight.
             if (!promoter.canPromote(cursor, part.min_block))
             {
-                /// A block is still in flight in the gap (being committed, or not yet fetched): this
-                /// partition's data becomes readable once it closes, so the safe segment is not
-                /// determined yet.
+                /// A block is still in flight in the gap (being committed, or not yet fetched), so it is not determined.
                 result.pending = true;
                 break;
             }

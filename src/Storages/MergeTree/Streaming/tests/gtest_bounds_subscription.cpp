@@ -80,8 +80,7 @@ TEST(MergeTreeBoundsSubscription, BoundedAdvanceDoesNotWakeFd)
 {
     MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
 
-    /// A bounded subscription must not wake on a per-partition advance; it is woken only by
-    /// onEnrichmentRound once the round's state is published, avoiding a partial mid-round read.
+    /// A bounded subscription must not wake on a per-partition advance (only onEnrichmentRound wakes it).
     sub.advance("p1", 1);
 
     pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
@@ -125,14 +124,33 @@ TEST(MergeTreeBoundsSubscription, BeginRoundClearsDetermined)
     sub.onEnrichmentRound(/*pending=*/false);
     ASSERT_TRUE(sub.safeSegmentDetermined());
 
-    /// While the next round is advancing the map, the segment is no longer determined, so a stale
-    /// wake can't drive a partial read.
+    /// While the next round advances the map, the segment is no longer determined, blocking a stale partial read.
     sub.beginEnrichmentRound();
     ASSERT_FALSE(sub.safeSegmentDetermined());
 
     /// The round republishes it once pending is known.
     sub.onEnrichmentRound(/*pending=*/false);
     ASSERT_TRUE(sub.safeSegmentDetermined());
+}
+
+TEST(MergeTreeBoundsSubscription, SnapshotIfDeterminedIsAtomic)
+{
+    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+
+    /// Mid-round: one partition advanced but the round isn't published, so the partial map must not be exposed.
+    sub.beginEnrichmentRound();
+    sub.advance("a", 5);
+    ASSERT_FALSE(sub.snapshotIfDetermined().has_value());
+
+    /// After the round publishes a resolved result, the full map is exposed atomically (never a partial one).
+    sub.advance("b", 3);
+    sub.onEnrichmentRound(/*pending=*/false);
+
+    auto view = sub.snapshotIfDetermined();
+    ASSERT_TRUE(view.has_value());
+    ASSERT_EQ(view->size(), 2u);
+    ASSERT_EQ(view->at("a"), 5);
+    ASSERT_EQ(view->at("b"), 3);
 }
 
 TEST(MergeTreeBoundsSubscription, BoundedEnrichmentRoundWakesFd)
@@ -144,8 +162,7 @@ TEST(MergeTreeBoundsSubscription, BoundedEnrichmentRoundWakesFd)
     pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
 
-    /// An enrichment round that advanced nothing must still wake a bounded subscription,
-    /// so the source can finish (e.g. over an empty table).
+    /// An enrichment round that advanced nothing must still wake a bounded subscription (e.g. empty table).
     sub.onEnrichmentRound(/*pending=*/false);
     ASSERT_TRUE(sub.safeSegmentDetermined());
 
@@ -179,8 +196,7 @@ TEST(MergeTreeBoundsSubscription, PendingRoundDoesNotResolve)
 {
     MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
 
-    /// A round that left a partition blocked must not mark the snapshot resolved - the bounded
-    /// source must keep waiting rather than finish on an empty snapshot.
+    /// A round that left a partition blocked must not resolve the snapshot; the bounded source keeps waiting.
     sub.onEnrichmentRound(/*pending=*/true);
     ASSERT_FALSE(sub.safeSegmentDetermined());
 
@@ -204,8 +220,7 @@ TEST(SubscriptionEnrichment, PendingWhenPromotionBlocked)
 {
     MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
 
-    /// Partition "p" has a visible part [5, 5], but a committing block at 2 sits in the gap
-    /// below it, so promotion is blocked and the safe segment is not yet determined.
+    /// Part [5, 5] is visible but a committing block at 2 sits in the gap below it, so promotion is blocked.
     LocalPartsByPartition local_parts;
     local_parts["p"].emplace_back("p", 5, 5, 0);
 
@@ -243,8 +258,7 @@ TEST(SubscriptionEnrichment, PartialRoundIsPending)
 {
     MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
 
-    /// "b" is contiguous (readable), but "a" has a block in flight in its gap. The round advances
-    /// "b" yet stays pending, so a bounded source must not finish until "a" resolves too.
+    /// "b" is readable but "a" has an in-flight block in its gap, so the round advances "b" yet stays pending.
     LocalPartsByPartition local_parts;
     local_parts["a"].emplace_back("a", 5, 5, 0);
     local_parts["b"].emplace_back("b", 0, 3, 0);

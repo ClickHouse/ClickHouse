@@ -357,8 +357,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
-    /// A bounded stream reads only the first snapshot and then stops, instead of
-    /// subscribing for further updates.
+    /// A bounded stream reads only the first snapshot and then stops, instead of subscribing for updates.
     if (subscription->isBounded() && first_snapshot_processed)
     {
         /// Tear down the spent snapshot sub-pipeline before finishing.
@@ -369,23 +368,28 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
-    /// A bounded stream waits until the safe segment is fully determined before reading, so a
-    /// single snapshot covers all assigned partitions instead of dropping a still-blocked one.
-    if (subscription->isBounded() && !subscription->safeSegmentDetermined())
-        return Status::Async;
+    /// A bounded stream waits (atomically) for a determined snapshot, then reads all partitions or finishes if empty.
+    if (subscription->isBounded())
+    {
+        auto determined = subscription->snapshotIfDetermined();
+        if (!determined)
+            return Status::Async;
+
+        if (canConstructReadingPipeline(*determined, last_emitted_positions))
+            return Status::Ready;
+
+        if (!current_sub_pipeline.empty())
+            return Status::UpdatePipeline;
+
+        output.finish();
+        return Status::Finished;
+    }
 
     if (canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
         return Status::Ready;
 
     if (!current_sub_pipeline.empty())
         return Status::UpdatePipeline;
-
-    /// The safe segment is determined (gated above) but empty, so a bounded stream is done.
-    if (subscription->isBounded())
-    {
-        output.finish();
-        return Status::Finished;
-    }
 
     return Status::Async;
 }
@@ -426,16 +430,23 @@ void MergeTreeCommitOrderSequentialSource::work()
     chassert(!pending_snapshot.has_value());
 
     subscription->drain();
-    auto safe_block_numbers = subscription->snapshot();
 
     if (subscription->isDisabled())
         return;
 
-    /// A stale wakeup from a resolved round can reach work() after a newer round made the safe
-    /// segment pending again; mirror the prepare() gate so a bounded stream never builds a partial
-    /// snapshot. prepare() then re-parks it on Async until the segment is determined again.
-    if (subscription->isBounded() && !subscription->safeSegmentDetermined())
-        return;
+    /// For a bounded stream, read the map and "determined" flag atomically so a stale wake can't build a partial snapshot.
+    std::map<String, Int64> safe_block_numbers;
+    if (subscription->isBounded())
+    {
+        auto determined = subscription->snapshotIfDetermined();
+        if (!determined)
+            return;
+        safe_block_numbers = std::move(*determined);
+    }
+    else
+    {
+        safe_block_numbers = subscription->snapshot();
+    }
 
     if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
         return;

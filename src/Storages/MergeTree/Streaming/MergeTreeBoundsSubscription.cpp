@@ -25,8 +25,7 @@ void MergeTreeBoundsSubscription::advance(const String & partition_id, Int64 new
         }
     }
 
-    /// Bounded streams are woken only by onEnrichmentRound, after the round's `pending` state is
-    /// published; a per-advance wakeup could let the source read a partial mid-round snapshot.
+    /// Bounded streams are woken only by onEnrichmentRound (not per-advance), to avoid a partial mid-round read.
     if (!bounded)
         wake.notify();
 }
@@ -58,9 +57,7 @@ void MergeTreeBoundsSubscription::beginEnrichmentRound()
     std::lock_guard guard(mutex);
     if (is_disabled)
         return;
-    /// While a round advances safe_block_numbers the safe segment is not determined; onEnrichmentRound
-    /// republishes it once pending is known. This keeps a bounded reader from snapshotting a
-    /// partially-advanced map with a stale "determined" flag.
+    /// Not determined while the round advances the map; onEnrichmentRound republishes it once pending is known.
     safe_segment_determined = false;
 }
 
@@ -73,8 +70,7 @@ void MergeTreeBoundsSubscription::onEnrichmentRound(bool pending)
         safe_segment_determined = !pending;
     }
 
-    /// Wake a bounded source only on a resolved round, so it can finish an empty snapshot. While a
-    /// partition is still blocked there is nothing to do; `advance` wakes it when the gap closes.
+    /// Wake a bounded source only on a resolved round; while a partition is blocked there is nothing to do.
     if (bounded && !pending)
         wake.notify();
 }
@@ -83,6 +79,14 @@ bool MergeTreeBoundsSubscription::safeSegmentDetermined() const
 {
     std::lock_guard guard(mutex);
     return safe_segment_determined;
+}
+
+std::optional<std::map<String, Int64>> MergeTreeBoundsSubscription::snapshotIfDetermined() const
+{
+    std::lock_guard guard(mutex);
+    if (!safe_segment_determined)
+        return std::nullopt;
+    return safe_block_numbers;
 }
 
 }

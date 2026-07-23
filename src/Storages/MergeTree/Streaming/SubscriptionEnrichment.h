@@ -19,9 +19,7 @@ struct EnrichmentResult
 {
     /// At least one partition's `safe_block_number` was advanced.
     bool enriched = false;
-    /// At least one partition is blocked because a block is still in flight in its gap (being
-    /// committed, or not yet fetched). The safe segment is not fully determined, so a bounded stream
-    /// must keep waiting rather than finish on an empty snapshot.
+    /// A partition is blocked by an in-flight block in its gap, so a bounded stream must keep waiting.
     bool pending = false;
 };
 
