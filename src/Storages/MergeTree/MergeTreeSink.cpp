@@ -5,6 +5,7 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
@@ -121,7 +122,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         /// Preserve the pre-loop interrupt point that used to be the first checkTimeLimit()
         /// inside the partition loop: a killed or timed-out insert should be noticed before
         /// the full O(N) prewarm hash pass, not after it.
-        if (process_list_element)
+        if (auto process_list_element = context->getProcessListElement())
             process_list_element->checkTimeLimit();
 
         /// Warm the data hashes once here: the per-partition infos produced by filterToPartition
