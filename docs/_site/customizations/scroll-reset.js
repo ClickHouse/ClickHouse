@@ -18,6 +18,7 @@
   // links (/page#anchor) scroll to the anchor once the new page has rendered
   // it, since the banner bug breaks that scroll too.
   var lastPath = window.location.pathname;
+  var lastActiveSidebarItemId = null;
   var lastSidebarScrollTop = null;
   var sidebarScrollPositions = Object.create(null);
   var sidebarRestore = null;
@@ -50,9 +51,10 @@
   // Mintlify centers the element marked as the active sidebar item after a
   // navigation. For leaf pages that element is one row, but for a group
   // landing page it is the <li> containing the complete expanded subtree.
-  // Centering that tall element moves its own heading out of view. Preserve
-  // the sidebar position across those navigations so moving from a nested
-  // page to a group landing page does not make the navigation jump.
+  // Centering that tall element moves its own heading out of view. When the
+  // source page is inside the destination group, preserve the sidebar
+  // position so moving to the group's landing page does not make the
+  // navigation jump. Entries from elsewhere retain Mintlify's positioning.
   //
   // The router applies the incorrect `scrollTop` in two consecutive renders,
   // so keep restoring for a few frames. Checking the active item's direct
@@ -68,8 +70,18 @@
     var activeItem = document.querySelector('#sidebar [data-active-nav-item="true"]');
     var activeGroup = activeItem && activeItem.querySelector(':scope > button[aria-expanded]');
     var viewport = getSidebarViewport();
-    if (activeGroup && viewport) {
-      viewport.scrollTop = sidebarRestore.scrollTop;
+    if (activeGroup) {
+      var activeGroupId = activeItem.id;
+      var sourceInsideActiveGroup = activeGroupId
+        && sidebarRestore.sourceItemId
+        && sidebarRestore.sourceItemId.indexOf(activeGroupId + '/') === 0;
+      if (!sidebarRestore.restoreStored && !sourceInsideActiveGroup) {
+        sidebarRestore = null;
+        return;
+      }
+      if (viewport) {
+        viewport.scrollTop = sidebarRestore.scrollTop;
+      }
     }
 
     sidebarRestore.framesLeft -= 1;
@@ -82,11 +94,17 @@
     var path = window.location.pathname;
     if (path !== lastPath) {
       var sidebarScrollTop = lastSidebarScrollTop;
-      if (traversed && Object.prototype.hasOwnProperty.call(sidebarScrollPositions, path)) {
+      var restoreStored = traversed && Object.prototype.hasOwnProperty.call(sidebarScrollPositions, path);
+      if (restoreStored) {
         sidebarScrollTop = sidebarScrollPositions[path];
       }
       if (sidebarScrollTop !== null) {
-        sidebarRestore = { scrollTop: sidebarScrollTop, framesLeft: 8 };
+        sidebarRestore = {
+          scrollTop: sidebarScrollTop,
+          sourceItemId: lastActiveSidebarItemId,
+          restoreStored: restoreStored,
+          framesLeft: 8
+        };
       }
 
       lastPath = path;
@@ -106,6 +124,10 @@
         lastSidebarScrollTop = viewport.scrollTop;
         sidebarScrollPositions[path] = lastSidebarScrollTop;
       }
+    }
+    var activeItem = document.querySelector('#sidebar [data-active-nav-item="true"]');
+    if (activeItem && activeItem.id) {
+      lastActiveSidebarItemId = activeItem.id;
     }
 
     window.requestAnimationFrame(watch);
