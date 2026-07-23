@@ -189,6 +189,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -1039,9 +1040,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            NameSet interpolate_column_names;
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+
+                if (!interpolate_column_names.insert(interpolate_node_typed.getExpressionName()).second)
+                    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Duplicate INTERPOLATE column '{}'", interpolate_node_typed.getExpressionName());
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
