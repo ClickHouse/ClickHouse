@@ -118,6 +118,13 @@ void TableMetadata::setLocation(const std::string & location_)
         /// Some catalogs (notably AWS S3 Tables) return the table's data location as just
         /// `<scheme>://<bucket>` because the table data lives at the root of a dedicated bucket.
         /// Treat the whole input as `location_without_path` and leave `path` empty.
+        /// This bucket-only form is only expected for S3, so reject any other scheme
+        /// instead of silently accepting a malformed location.
+        if (parseStorageTypeFromString(storage_type_str) != StorageType::S3)
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Location without a path is only supported for the s3 scheme: {}", location_);
+
         pos_to_path = location_.size();
         location_without_path = location_;
         path.clear();
