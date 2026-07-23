@@ -28,6 +28,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
+
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -652,16 +654,20 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
                 configuration.host = configuration.addresses.front().first;
                 configuration.port = configuration.addresses.front().second;
             }
-            else if (args.mode <= LoadingStrictnessLevel::CREATE)
+            else if (!isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
                                 configuration.addresses.size());
             }
-            /// On ATTACH a legacy multi-address definition keeps its historical behavior: it could
-            /// be created before this validation existed (replication starts asynchronously, so the
-            /// broken connection string never aborted the CREATE), and the table must keep loading
-            /// with replication failing and retrying in the background rather than abort startup.
+            /// When replaying previously persisted metadata (server startup, and DETACH / ATTACH
+            /// with the short syntax, which re-reads the stored definition) a legacy multi-address
+            /// definition keeps its historical behavior: it could be created before this validation
+            /// existed (replication starts asynchronously, so the broken connection string never
+            /// aborted the CREATE), and the table must keep loading with replication failing and
+            /// retrying in the background rather than abort startup. A user ATTACH with a full
+            /// table definition is a fresh definition, not a replay, and stays fail-closed
+            /// (the same distinction `StorageDistributed` draws for its skipping-indices check).
         }
 
         auto connection_info = postgres::formatConnectionString(

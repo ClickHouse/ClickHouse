@@ -2,6 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
+from helpers.database_disk import replace_text_in_metadata
 from helpers.postgres_utility import get_postgres_conn
 from helpers.test_tools import assert_eq_with_retry
 
@@ -22,17 +23,12 @@ BLOCKED_HOST = "blocked-postgres-host"
 PG_HOST = "postgres1"
 
 
-def _rewrite_database_metadata(sed_expression, database_name):
-    # Rewrite the persisted definition of a database while the server is down. The `.sql` file
-    # is located with `find` because its directory depends on the server configuration: with a
-    # database disk (the "db disk" CI configuration) it is not under `/var/lib/clickhouse/metadata`.
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"metadata_file=$(find /var/lib/clickhouse -name '{database_name}.sql' | head -n 1) && [ -n \"$metadata_file\" ] && sed -i '{sed_expression}' \"$metadata_file\"",
-        ]
-    )
+def _rewrite_database_metadata(old_value, new_value, database_name):
+    # Rewrite the persisted definition of a database while the server is down. The definition
+    # lives at `metadata/<name>.sql` on the database disk, which is a remote object storage in
+    # the "db disk" CI configuration, so it must be edited through the `clickhouse disks` CLI
+    # (`replace_text_in_metadata`) rather than by touching `/var/lib/clickhouse` directly.
+    replace_text_in_metadata(node, f"metadata/{database_name}.sql", old_value, new_value)
 
 
 @pytest.fixture(scope="module")
@@ -245,6 +241,24 @@ def test_user_attach_respects_remote_host_filter(started_cluster):
     assert "UNACCEPTABLE_URL" in error
 
 
+def test_user_attach_table_respects_multi_address_validation(started_cluster):
+    # A user `ATTACH TABLE` with a full table definition is a fresh, user-supplied definition,
+    # not a metadata replay -- exempting it from the multi-address `addresses_expr` rejection
+    # would let a broken definition (whose replication connection string degenerates to `:0`)
+    # be attached and persisted, because replication only starts asynchronously and never
+    # aborts the ATTACH. Only replaying previously persisted metadata (server startup,
+    # short-syntax re-attach) keeps the legacy leniency.
+    node.query("DROP TABLE IF EXISTS mpg_attach_multi_tbl SYNC")
+    error = node.query_and_get_error(
+        """
+        ATTACH TABLE mpg_attach_multi_tbl UUID '00001111-2222-3333-4444-555566667778' (id Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(mpg_nc_multiple, table='test_table')
+        ORDER BY id
+        """,
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
 def test_startup_metadata_replay_skips_remote_host_filter(started_cluster):
     # Server startup rebuilds every database from persisted metadata with an internal ATTACH
     # query, and `loadMetadata` aborts on the first exception, so a database created before the
@@ -256,8 +270,12 @@ def test_startup_metadata_replay_skips_remote_host_filter(started_cluster):
     node.query(f"CREATE DATABASE pg_db_persisted ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
 
     node.stop_clickhouse()
-    _rewrite_database_metadata(f"s/{PG_HOST}:5432/{BLOCKED_HOST}:5432/", "pg_db_persisted")
-    node.start_clickhouse()
+    try:
+        _rewrite_database_metadata(f"{PG_HOST}:5432", f"{BLOCKED_HOST}:5432", "pg_db_persisted")
+    finally:
+        # Bring the server back even if the rewrite failed, so a failure here does not
+        # cascade into every later test in the module.
+        node.start_clickhouse()
 
     assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
     node.query("DROP DATABASE pg_db_persisted")
@@ -283,8 +301,12 @@ def test_startup_metadata_replay_skips_multi_address_validation(started_cluster)
     assert_eq_with_retry(node, "SELECT count() FROM mpg_db_persisted.test_table", "10", retry_count=120)
 
     node.stop_clickhouse()
-    _rewrite_database_metadata("s/mpg_nc_allowed/mpg_nc_multiple/", "mpg_db_persisted")
-    node.start_clickhouse()
+    try:
+        _rewrite_database_metadata("mpg_nc_allowed", "mpg_nc_multiple", "mpg_db_persisted")
+    finally:
+        # Bring the server back even if the rewrite failed, so a failure here does not
+        # cascade into every later test in the module.
+        node.start_clickhouse()
 
     # The database loads; background replication keeps failing and retrying against the broken
     # connection string, exactly as it did before the validation existed.
