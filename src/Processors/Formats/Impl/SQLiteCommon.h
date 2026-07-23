@@ -243,24 +243,30 @@ inline void bindSQLiteValue(
 
 /// The ClickHouse-side half of the pushdown-safety check (see `isPushdownSafeColumn` below): whether a
 /// `WHERE` predicate on a column of this ClickHouse type may be pushed down to SQLite without the risk of
-/// false negatives. This mirrors the dispatch of `bindSQLiteValue` above: types bound as SQLite INTEGER or
-/// REAL compare numerically on both sides, and `String` is stored as its exact bytes and compares byte-wise
-/// in both systems. Every other type - `UInt64`, `Int128`/`UInt128`/`Int256`/`UInt256`, `Decimal`, dates and
-/// times, `FixedString` (whose stored text keeps the padding bytes), `Enum`, `UUID`, ... - is stored as its
-/// ClickHouse text serialization, so a pushed-down comparison can go wrong on the SQLite side: SQLite orders
-/// every TEXT value after every numeric value and otherwise compares TEXT byte-wise, so a predicate such as
-/// `x > 2` on a text-stored number treats `'10'` as smaller than `'2'` and `x = 5` never matches the cell
-/// `'5'`. Rows wrongly dropped by SQLite cannot be recovered by the local re-filtering, so such columns must
-/// be filtered by ClickHouse only.
+/// false negatives. Eligibility requires the read accessor to be *exact over the whole remote domain*: the
+/// local re-filtering only sees the rows SQLite returns, so whenever the read path coerces a remote value
+/// (`SQLiteStatementReader::insertValue`), a predicate that matches the coerced local value can be false
+/// against the remote one and SQLite drops the row for good. Only three ClickHouse types have an exact
+/// accessor over some SQLite storage class:
+///   - `Int64` reads through `sqlite3_column_int64`, which is lossless over the whole signed 64-bit range
+///     of a SQLite INTEGER cell;
+///   - `Float64` reads through `sqlite3_column_double`, which is lossless over a REAL cell (both are IEEE
+///     754 doubles);
+///   - `String` reads the exact bytes of a TEXT cell.
+/// Every other type coerces or re-encodes on at least one side. The narrower integers truncate (`UInt8`
+/// over an INTEGER cell holding `300` reads locally as `44`, so `x = 44` matches locally while the
+/// pushed-down `x = 44` is false remotely), `Float32` rounds a REAL cell to single precision, and the
+/// text-stored types - `UInt64`, `Int128`/`UInt128`/`Int256`/`UInt256`, `Decimal`, dates and times,
+/// `FixedString` (whose stored text keeps the padding bytes), `Enum`, `UUID`, ... - compare by value in
+/// ClickHouse while SQLite orders every TEXT value after every numeric value and otherwise compares TEXT
+/// byte-wise (`x > 2` on a text-stored number treats `'10'` as smaller than `'2'`). Such columns must be
+/// filtered by ClickHouse only.
 inline bool isPushdownSafeType(const DataTypePtr & type)
 {
     auto nested_type = removeLowCardinalityAndNullable(type);
     WhichDataType which(nested_type);
 
-    if (which.isNativeInt() || which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isFloat())
-        return true;
-
-    return which.isString();
+    return which.isInt64() || which.isFloat64() || which.isString();
 }
 
 /// Whether the SQLite table `table_name` in the main schema is declared STRICT
@@ -298,9 +304,20 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 /// the TEXT cell `'abc'`, which ClickHouse reads through `sqlite3_column_int64` as `0` while the pushed-down
 /// `x = 0` compares against the TEXT storage class on the SQLite side and drops the row. The gate therefore
 /// requires the table to be STRICT (`isStrictTable` above), which pins the storage class of every cell to
-/// the declared column type, and then matches the declared type against the ClickHouse one:
-///   - a numeric ClickHouse type requires a declared INT, INTEGER or REAL column, whose cells are guaranteed
-///     numeric and compare numerically on both sides;
+/// the declared column type, and then requires the exact representation-preserving pairing of the declared
+/// type with the ClickHouse one (`isPushdownSafeType` above explains why only exact pairs qualify - a
+/// coercing read accessor makes SQLite and ClickHouse evaluate the same predicate against different
+/// values):
+///   - `Int64` requires a declared INT or INTEGER column: every cell is a signed 64-bit integer, which the
+///     read path returns losslessly, and both sides compare it numerically. A REAL column is not eligible -
+///     `sqlite3_column_int64` truncates the cell `1.9` to `1`, so `x = 1` matches locally but the
+///     pushed-down `x = 1` is false remotely;
+///   - `Float64` requires a declared REAL column: every cell is an IEEE 754 double, returned losslessly. An
+///     INTEGER column is not eligible - `sqlite3_column_double` rounds cells above 2^53 to the nearest
+///     double, so the pushed-down exact integer comparison disagrees with the local one;
+///   - narrower ClickHouse integers and `Float32` are never eligible (already rejected by
+///     `isPushdownSafeType`): their read accessors truncate remote INTEGER/REAL cells outside the local
+///     type's domain;
 ///   - `String` requires a declared TEXT column (cells guaranteed TEXT, compared byte-wise against a text
 ///     literal) with the byte-wise BINARY collation - a non-BINARY collation such as NOCASE or RTRIM orders
 ///     differently from ClickHouse (`'a' > 'B'` is true byte-wise but false under NOCASE). A BLOB-declared
@@ -341,7 +358,13 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     if (which.isString())
         return declared == "TEXT" && collation && Poco::toUpper(String(collation)) == "BINARY";
 
-    return declared == "INT" || declared == "INTEGER" || declared == "REAL";
+    if (which.isInt64())
+        return declared == "INT" || declared == "INTEGER";
+
+    if (which.isFloat64())
+        return declared == "REAL";
+
+    return false;
 }
 
 }
