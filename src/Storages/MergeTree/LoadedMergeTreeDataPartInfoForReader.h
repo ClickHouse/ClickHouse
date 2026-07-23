@@ -87,7 +87,7 @@ public:
 
     void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
     {
-        if (read_columns.contains("_distance"))
+        if (read_columns.contains("_distance") || read_hints_.use_vector_search_result_filter)
             read_hints = read_hints_;
     }
 

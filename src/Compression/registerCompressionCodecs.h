@@ -21,6 +21,7 @@ void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
 void registerCodecALP(CompressionCodecFactory & factory);
 void registerCodecQuantized(CompressionCodecFactory & factory);
+void registerCodecZXC(CompressionCodecFactory & factory);
 void registerCodecSZ3(CompressionCodecFactory & factory);
 
 CompressionCodecPtr getCompressionCodecLZ4(int level);
