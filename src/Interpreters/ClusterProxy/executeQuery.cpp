@@ -1375,20 +1375,26 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
     return {};
 }
 
-/// Remove only 'max_execution_time' and 'timeout_overflow_mode' from a query-text SETTINGS clause that is about to
-/// be sent to a remote replica. 'updateContextForParallelReplicas' substitutes 'max_execution_time_leaf' /
-/// 'timeout_overflow_mode_leaf' into 'max_execution_time' / 'timeout_overflow_mode' in the context that travels
-/// with the sub-query; a query text carrying the original (outer) values would re-apply them on top of the context
-/// on the remote replica and defeat the leaf timeout. Every other query-level setting is intentionally left in the
-/// query text: the remote replica relies on them (e.g. 'max_block_size'), and - unlike the SELECT path, where
-/// 'rewriteSelectQuery' strips the whole clause - the INSERT SELECT sub-query does not re-ship every setting via
-/// the context, so stripping the whole clause would drop such settings on the remote replica.
-/// 'removeSettingsFromQuery' removes every occurrence (not just the first) and detaches a SETTINGS clause that
-/// becomes empty, so the query text never re-serializes to a bare 'SETTINGS' keyword that fails to re-parse.
+/// Remove only 'max_execution_time' and 'timeout_overflow_mode' from the top-level query-text SETTINGS clauses of
+/// a query that is about to be sent to a remote replica. 'updateContextForParallelReplicas' substitutes
+/// 'max_execution_time_leaf' / 'timeout_overflow_mode_leaf' into 'max_execution_time' / 'timeout_overflow_mode' in
+/// the context that travels with the sub-query; a query text carrying the original (outer) values in its top-level
+/// SETTINGS would re-apply them on top of the context on the remote replica and defeat the leaf timeout. Every
+/// other query-level setting is intentionally left in the query text: the remote replica relies on them
+/// (e.g. 'max_block_size'), and - unlike the SELECT path, where 'rewriteSelectQuery' strips the whole clause - the
+/// INSERT SELECT sub-query does not re-ship every setting via the context, so stripping the whole clause would
+/// drop such settings on the remote replica.
+/// Only the top-level carriers are stripped ('removeSettingsFromQueryTopLevel'): a SETTINGS clause the user wrote
+/// inside a nested subquery (the documented leaf-node pattern 'view(SELECT ... SETTINGS max_execution_time = 10)')
+/// does not override the shipped context and must keep its user-authored timeout on the remote replica.
+/// Every occurrence is removed (not just the first), and a SETTINGS clause that becomes empty is detached, so the
+/// query text never re-serializes to a bare 'SETTINGS' keyword that fails to re-parse.
+/// The caller gates this on 'max_execution_time_leaf > 0' - without a leaf timeout the context carries the
+/// original values and the query text must stay untouched.
 static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
 {
     static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
-    removeSettingsFromQuery(ast, leaf_timeout_settings);
+    removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
 }
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
@@ -1447,18 +1453,18 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         const auto & query_tree = analyzer.getQueryTree();
         auto select_ast = query_tree->toAST();
 
-        /// Drop 'max_execution_time' / 'timeout_overflow_mode' from the query text so that the leaf values shipped
-        /// with 'new_context' are authoritative on the remote replica; otherwise the original outer values in the
-        /// query text would override them. Other settings are left in the query text so the remote replica still
-        /// receives them (see 'removeLeafOverriddenTimeoutSettings').
-        removeLeafOverriddenTimeoutSettings(select_ast);
-
         auto new_query_ast = query_ast.clone();
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
         insert_ast->select = std::move(select_ast);
 
-        /// The same for settings placed on the INSERT itself ('INSERT INTO ... SETTINGS ... SELECT ...').
-        removeLeafOverriddenTimeoutSettings(new_query_ast);
+        /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
+        /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf
+        /// values shipped with 'new_context' are authoritative on the remote replica; otherwise the original outer
+        /// values in the query text would override them. Other settings, SETTINGS clauses in nested subqueries,
+        /// and the whole query text when no leaf timeout is set are left intact so the remote replica still
+        /// receives them (see 'removeLeafOverriddenTimeoutSettings').
+        if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+            removeLeafOverriddenTimeoutSettings(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(

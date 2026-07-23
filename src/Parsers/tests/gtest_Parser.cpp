@@ -1022,3 +1022,67 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
         EXPECT_EQ(String::npos, formatted.find("min_insert_block_size_rows")) << "kept a block-forming setting: " << formatted;
     }
 }
+
+/// `removeSettingsFromQueryTopLevel` strips only the top-level SETTINGS carriers of the query itself
+/// and must not descend into subqueries or table expressions. Parallel-replica INSERT SELECT uses it to
+/// drop the outer `max_execution_time` / `timeout_overflow_mode` (which would override the leaf values
+/// shipped with the context) while preserving a user-authored timeout inside a nested subquery - the
+/// documented leaf-node pattern for `max_execution_time_leaf`.
+TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
+{
+    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
+
+    /// {query, expected number of surviving `max_execution_time` occurrences (all in nested positions)}.
+    const std::vector<std::pair<String, size_t>> queries = {
+        /// Top-level SELECT clause is stripped (and pruned when it becomes empty).
+        {"SELECT sum(number) FROM numbers(100) SETTINGS max_execution_time = 100", 0},
+        /// Repeated occurrences are all stripped, not just the first.
+        {"SELECT 1 SETTINGS max_execution_time = 100, max_execution_time = 100, timeout_overflow_mode = 'break'", 0},
+        /// Both the INSERT clause and the top-level SELECT clause are stripped.
+        {"INSERT INTO t SETTINGS max_execution_time = 100 SELECT number FROM numbers(100) SETTINGS max_execution_time = 100", 0},
+        /// Every first-order SELECT of a UNION tree is stripped.
+        {"SELECT 1 SETTINGS max_execution_time = 100 UNION ALL SELECT 2 SETTINGS max_execution_time = 100", 0},
+        /// A nested subquery keeps its user-authored timeout; only the top-level clause is stripped.
+        {"SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1) SETTINGS max_execution_time = 100", 1},
+        /// The same holds under an INSERT SELECT (the parallel-replica shape this variant exists for).
+        {"INSERT INTO t SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1) "
+         "SETTINGS max_execution_time = 100, timeout_overflow_mode = 'break'", 1},
+        /// A subquery timeout survives even with no top-level clause at all.
+        {"INSERT INTO t SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1)", 1},
+    };
+
+    for (const auto & [query, expected_nested_survivors] : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
+
+        EXPECT_EQ(expected_nested_survivors, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "timeout_overflow_mode")) << "query: " << query;
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        /// The serialized query must re-parse (no bare `SETTINGS` keyword after pruning).
+        const String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// Other settings in a stripped top-level clause survive, and the clause is kept.
+    {
+        const String query = "INSERT INTO t SELECT 1 SETTINGS max_execution_time = 100, max_block_size = 1";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
+
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
+        /// ParserInsertQuery parks the trailing SETTINGS on both the INSERT clause and the SELECT,
+        /// so the unrelated setting survives in two carriers (and the timeout is stripped from both).
+        EXPECT_EQ(2u, countSettingOccurrences(ast, "max_block_size")) << "dropped an unrelated setting: " << query;
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
+    }
+}

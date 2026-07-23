@@ -4,7 +4,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 
@@ -156,6 +158,74 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                     }
             }
         });
+}
+
+void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::string_view> setting_names)
+{
+    if (!ast)
+        return;
+
+    auto is_stripped = [&](std::string_view name)
+    {
+        for (const auto & stripped : setting_names)
+            if (stripped == name)
+                return true;
+        return false;
+    };
+
+    /// Walk only the first-order structure of the query - the INSERT clause, the union tree of the
+    /// top-level SELECT, and each first-order SELECT's own SETTINGS clause. Unlike removeSettingsFromQuery,
+    /// this never descends into `children` generically, so SETTINGS clauses inside table expressions,
+    /// subqueries and table functions stay untouched.
+
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->settings_ast)
+            if (auto * set_query = insert_query->settings_ast->as<ASTSetQuery>())
+            {
+                stripNamesFromSetQuery(*set_query, is_stripped);
+                if (isEmptySetQuery(*set_query))
+                    insert_query->reset(insert_query->settings_ast);
+            }
+        removeSettingsFromQueryTopLevel(insert_query->select, setting_names);
+        return;
+    }
+
+    if (auto * select_with_union = ast->as<ASTSelectWithUnionQuery>())
+    {
+        /// The trailing query clause (`... INTO OUTFILE ... SETTINGS`) lives on the ASTQueryWithOutput base.
+        if (select_with_union->settings_ast)
+            if (auto * set_query = select_with_union->settings_ast->as<ASTSetQuery>())
+            {
+                stripNamesFromSetQuery(*set_query, is_stripped);
+                if (isEmptySetQuery(*set_query))
+                    select_with_union->reset(select_with_union->settings_ast);
+            }
+        if (select_with_union->list_of_selects)
+            for (const auto & child : select_with_union->list_of_selects->children)
+                removeSettingsFromQueryTopLevel(child, setting_names);
+        return;
+    }
+
+    /// ASTSelectIntersectExceptQuery derives from ASTSelectQuery but is only a container for its operand
+    /// selects; `as<>` is exact-type, so it needs its own branch before the plain-SELECT one.
+    if (const auto * intersect_except = ast->as<ASTSelectIntersectExceptQuery>())
+    {
+        for (const auto & child : intersect_except->getListOfSelects())
+            removeSettingsFromQueryTopLevel(child, setting_names);
+        return;
+    }
+
+    if (auto * select_query = ast->as<ASTSelectQuery>())
+    {
+        if (auto settings = select_query->settings())
+            if (auto * set_query = settings->as<ASTSetQuery>())
+            {
+                stripNamesFromSetQuery(*set_query, is_stripped);
+                if (isEmptySetQuery(*set_query))
+                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
+    }
 }
 
 }

@@ -77,5 +77,19 @@ INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) 
 -- leave a second copy behind on the remote replica: every occurrence is stripped, not just the first.
 INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
 
+-- The stripping must be limited to the top-level SETTINGS of the query text. A timeout the user wrote inside a
+-- nested subquery (the documented leaf-node pattern of 'max_execution_time_leaf') must survive on the remote
+-- replicas. An IN-subquery is used because a FROM-subquery would disqualify the INSERT SELECT from the
+-- parallel-replica path altogether ('isInsertSelectTrivialEnoughForDistributedExecution'); the IN column is not
+-- part of the primary key, so the set is built only on the remote replicas (not during initiator planning). The
+-- 100 second leaf timeout shipped in the context cannot fire, so only the one second timeout inside the subquery
+-- can abort the query - and it must do so on a remote replica.
+INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, max_execution_time_leaf = 100; -- { serverError TIMEOUT_EXCEEDED }
+
+-- When 'max_execution_time_leaf' is not set, the query text must not be rewritten at all: the nested subquery
+-- keeps its user-authored timeout on the remote replicas. The local pipeline is disabled so that the set is built
+-- (and the timeout can fire) only on the remote replicas.
+INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_insert_select_local_pipeline = 0; -- { serverError TIMEOUT_EXCEEDED }
+
 DROP TABLE test_max_execution_time_leaf_insert SYNC;
 DROP TABLE test_max_execution_time_leaf SYNC;
