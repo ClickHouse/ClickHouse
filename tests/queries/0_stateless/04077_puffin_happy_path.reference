@@ -31,3 +31,4 @@ deletion-vector-v1	-1	-1	4	44		['cardinality','referenced-data-file']	['2','/dat
 /data/table/part-00000.parquet
 /data/table/part-00000.parquet
 /data/table/part-00000.parquet
+/data/table/part-00000.parquet

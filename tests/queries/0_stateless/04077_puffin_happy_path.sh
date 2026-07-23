@@ -49,6 +49,11 @@ $CLICKHOUSE_LOCAL -q "
 SELECT referenced_data_file
 FROM file('$DATA/cardinality_exceeds_materialization_limit.puffin', Puffin)
 "
+# Corrupt payload is still readable when deleted_rows is not projected (payload checks are skipped).
+$CLICKHOUSE_LOCAL -q "
+SELECT referenced_data_file
+FROM file('$DATA/dv_envelope_crc_mismatch.puffin', Puffin)
+"
 $CLICKHOUSE_LOCAL -q "
 SELECT referenced_data_file
 FROM file('$DATA/dense_range_100k.puffin', Puffin)
