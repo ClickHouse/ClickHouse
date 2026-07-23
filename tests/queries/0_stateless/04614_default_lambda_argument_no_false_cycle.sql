@@ -32,3 +32,24 @@ ALTER TABLE t_default_lambda_arg MODIFY COLUMN d Array(UInt64) DEFAULT arrayMap(
 ALTER TABLE t_default_lambda_arg MODIFY COLUMN x UInt64 DEFAULT length(d); -- { serverError CYCLIC_ALIASES }
 
 DROP TABLE t_default_lambda_arg;
+
+-- The lambda argument must also be masked when cycle detection traverses *into* the
+-- default of another column: here the new default of `x` depends on `d`, and the body
+-- of `d` uses a lambda argument named `x` — there is no cycle `x -> d -> x`.
+
+DROP TABLE IF EXISTS t_default_lambda_arg2;
+
+CREATE TABLE t_default_lambda_arg2
+(
+    a UInt64,
+    x UInt64 DEFAULT a + 1,
+    d Array(UInt64) DEFAULT arrayMap(x -> x + 1, [a])
+)
+ENGINE = MergeTree ORDER BY a;
+
+ALTER TABLE t_default_lambda_arg2 MODIFY COLUMN x UInt64 DEFAULT length(d) + 30;
+
+INSERT INTO t_default_lambda_arg2 (a) VALUES (30);
+SELECT a, x, d FROM t_default_lambda_arg2 ORDER BY a;
+
+DROP TABLE t_default_lambda_arg2;
