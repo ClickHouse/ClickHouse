@@ -531,6 +531,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto make_map_function = [&](auto tokens)
         {
+            /// Empty needles produce no tokens that can be searched for --> fall back to brute force scan.
+            /// See function "equals" for a longer explanation.
+            if (tokens.empty())
+                return false;
+
             out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
@@ -656,6 +661,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field);
+
+        /// Empty needles produce no tokens that can be searched for, fall back to brute force scan.
+        /// See function "equals" for a longer explanation.
+        if (tokens.empty())
+            return false;
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
