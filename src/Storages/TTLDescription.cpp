@@ -96,25 +96,38 @@ constexpr size_t max_probe_combinations = 256;
 [[noreturn]] void throwTooManyProbeCombinations(std::string_view expression_kind)
 {
     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-        "TTL {}expression uses a function over Variant/Dynamic arguments with too many combinations "
-        "of AggregateFunction alternatives to validate ({} probes at most are allowed). "
+        "TTL {}expression uses a function over arguments with too many combinations "
+        "of AggregateFunction payloads to validate ({} probes at most are allowed). "
         "Use typed subcolumns instead, or set `allow_suspicious_ttl_expressions` to allow it",
         expression_kind, max_probe_combinations);
 }
 
 /// Build the list of single-row "suspect" materializations of `type` for the DDL-time TTL probe. Each
-/// returned column is one combination of payloads stored inside the `Variant`/`Dynamic` carriers found in
-/// the type; the consumer must survive every one of them. An empty list means the type contains no carrier
-/// in scope of the check, so the default value is representative and no extra probes are needed.
+/// returned column is one combination of payloads stored inside the suspect types found in `type` - a
+/// direct `AggregateFunction` state, or a `Variant`/`Dynamic` carrier that may hold one; the consumer must
+/// survive every one of them. An empty list means the type contains nothing in scope of the check, so the
+/// default value is representative and no extra probes are needed.
 ///
-/// The carriers do not have to be the argument's top-level type: a consumer over `Array(Dynamic)` or
-/// `Tuple(UInt32, Variant(...))` builds fine (the container's default value is empty/NULL, so the nested
-/// consumer never runs) yet still rebuilds its inner functions per stored payload during TTL execution.
-/// So the materialization recurses through `Array`/`Tuple`/`Map`/`Nullable` (and `Variant` alternatives),
-/// wrapping each nested payload back into a single-row container column.
+/// The suspect payload does not have to be the argument's top-level type: a consumer over
+/// `Array(AggregateFunction(...))`, `Array(Dynamic)` or `Tuple(UInt32, Variant(...))` builds fine (the
+/// container's default value is empty/NULL, so the nested consumer never runs) yet still fails on the
+/// nested payloads during TTL execution. So the materialization recurses through
+/// `Array`/`Tuple`/`Map`/`Nullable` (and `Variant` alternatives), wrapping each nested payload back into a
+/// single-row container column.
 std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, std::string_view expression_kind)
 {
     WhichDataType which(type);
+
+    if (which.isAggregateFunction())
+    {
+        /// A direct AggregateFunction payload. For a top-level argument the default-value probe already
+        /// covers it, but when the state is nested inside a container whose default value is empty
+        /// (`Array`, `Map`) the element-level consumer never sees it: e.g. the `equals` built inside
+        /// `arrayRemove(arr, 0)` for `arr Array(AggregateFunction(max, UInt64))` only runs on the
+        /// elements of a non-empty row. Materialize one default state so the container branches below
+        /// wrap it into a single-row non-empty column.
+        return {type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()};
+    }
 
     if (which.isDynamic())
     {
@@ -321,13 +334,14 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
 /// away from breaking every merge of the table, so rejecting it at CREATE is the safer default; the
 /// `allow_suspicious_ttl_expressions` setting and ATTACH remain available as escape hatches.
 ///
-/// Both carriers can also sit *inside* a container argument - `Array(Dynamic)`, `Tuple(Dynamic)`,
-/// `Map(String, Dynamic)`, `Nullable(Tuple(..., Dynamic))`, or a `Variant` nested in any of them. The
-/// container's default value is empty
-/// (or NULL), so a consumer that processes the elements (e.g. the `equals` built inside `arrayRemove`)
-/// never sees a payload during a default-value probe, yet still rebuilds per stored payload during TTL
-/// execution. The suspect materializations therefore recurse through the container types and wrap each
-/// nested payload back into a single-row container column.
+/// A suspect payload can also sit *inside* a container argument - a direct state in
+/// `Array(AggregateFunction(...))` or `Map(String, AggregateFunction(...))`, or a carrier in
+/// `Array(Dynamic)`, `Tuple(Dynamic)`, `Map(String, Dynamic)`, `Nullable(Tuple(..., Dynamic))`, or a
+/// `Variant` nested in any of them. The container's default value is empty (or NULL), so a consumer that
+/// processes the elements (e.g. the `equals` built inside `arrayRemove`) never sees a payload during a
+/// default-value probe, yet still fails on the stored payloads during TTL execution. The suspect
+/// materializations therefore recurse through the container types and wrap each nested payload back into a
+/// single-row container column.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     for (const auto & node : actions_dag.getNodes())
@@ -406,12 +420,14 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             probe(arguments, aggregate_state_hint);
         }
 
-        /// A state hidden inside a `Variant` or `Dynamic` argument is not covered by the default values:
-        /// the default row of both carriers is NULL, so their function adaptors short-circuit and the
-        /// consumer never sees the state. Collect a per-argument list of "suspect" materializations - for a
-        /// `Variant` a single-row column per alternative, for a `Dynamic` a single-row column per
-        /// representative payload, recursing through `Array`/`Tuple`/`Map` wrappers (the stored types of a
-        /// `Dynamic` cannot be enumerated at DDL time; see `collectSuspectMaterializations`).
+        /// A state hidden inside a container or carrier argument is not covered by the default values:
+        /// the default row of an `Array`/`Map` is empty and of a `Variant`/`Dynamic` is NULL, so the
+        /// element consumer (or the carrier's function adaptor) short-circuits and never sees the state.
+        /// Collect a per-argument list of "suspect" materializations - for a `Variant` a single-row column
+        /// per alternative, for a `Dynamic` a single-row column per representative payload, for a direct
+        /// `AggregateFunction` a single-row default state, recursing through `Array`/`Tuple`/`Map`/`Nullable`
+        /// wrappers (the stored types of a `Dynamic` cannot be enumerated at DDL time; see
+        /// `collectSuspectMaterializations`).
         ///
         /// All suspect arguments must then be materialized in the same probe: substituting them one at a
         /// time would leave the other carriers at their all-NULL defaults, letting the adaptor short-circuit
