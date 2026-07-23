@@ -208,7 +208,18 @@ public:
 
     void injectFault() const;
 
-    void setSampleProbability(double value) { sample_probability.store(value, std::memory_order_relaxed); }
+    void setSampleProbability(double value)
+    {
+#if defined(OS_DARWIN)
+        /// Memory-profiler stack sampling is temporarily disabled on macOS: capturing a StackTrace via
+        /// backtrace() for an allocation that happens on a boost::context fiber stack faults in
+        /// __thread_stack_pcs and crashes the server (https://github.com/ClickHouse/ClickHouse/issues/111579).
+        /// Re-enable once the macOS stack unwind is made safe on fiber stacks.
+        (void)value;
+#else
+        sample_probability.store(value, std::memory_order_relaxed);
+#endif
+    }
 
     struct SampleConfig
     {
@@ -256,8 +267,14 @@ public:
 
     void setProfilerStep(Int64 value)
     {
+#if defined(OS_DARWIN)
+        /// See setSampleProbability: memory-profiler stack capture is disabled on macOS because
+        /// backtrace() faults on fiber stacks (https://github.com/ClickHouse/ClickHouse/issues/111579).
+        (void)value;
+#else
         profiler_step.store(value, std::memory_order_relaxed);
         setOrRaiseProfilerLimit(value);
+#endif
     }
 
     /// next should be changed only once: from nullptr to some value.
