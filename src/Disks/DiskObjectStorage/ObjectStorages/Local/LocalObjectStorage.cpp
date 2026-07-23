@@ -58,18 +58,20 @@ String resolvePathRelativelyToBase(const String & path, const String & base_path
 {
     auto norm_base = fs::weakly_canonical(fs::path(base_path).lexically_normal());
 
-    if (!fileOrSymlinkPathStartsWith(path, norm_base.string()) || !pathStartsWith(path, norm_base.string()))
-    {
-        auto path_canonical = fs::weakly_canonical(fs::path(path).lexically_normal());
-        throw Exception(
-            ErrorCodes::PATH_ACCESS_DENIED,
-            "Path `{}` which was canonicalized to `{}` is outside the table path directory : `{}`",
-            path,
-            path_canonical.string(),
-            norm_base.string());
-    }
+    if (fileOrSymlinkPathStartsWith(path, norm_base.string()) && pathStartsWith(path, norm_base.string()))
+        return path;
 
-    return path;
+    auto combined = (norm_base / path).lexically_normal().string();
+    if (fileOrSymlinkPathStartsWith(combined, norm_base.string()) && pathStartsWith(combined, norm_base.string()))
+        return combined;
+
+    auto path_canonical = fs::weakly_canonical(fs::path(path).lexically_normal());
+    throw Exception(
+        ErrorCodes::PATH_ACCESS_DENIED,
+        "Path `{}` which was canonicalized to `{}` is outside the table path directory : `{}`",
+        path,
+        path_canonical.string(),
+        norm_base.string());
 }
 
 String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path) const
