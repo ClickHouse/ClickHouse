@@ -1064,8 +1064,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                     }
                     if (rg.nextSmallNumber() < 4)
                         res += ", enable_distributed_cache = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
-                    if (fc.allow_transactions && rg.nextSmallNumber() < 4)
-                        res += ", use_fake_transaction = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
                     if (rg.nextSmallNumber() < 4)
                         res += ", read_only = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
                     if (rg.nextSmallNumber() < 4)
