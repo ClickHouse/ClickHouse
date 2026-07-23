@@ -61,7 +61,7 @@ Choose a destination database and select which tables to replicate:
 
 - **Destination database**: Select an existing ClickHouse database or create a new one
 - **Prefix default destination table names with schema name**: Adds the Postgres schema as a prefix to avoid naming conflicts
-- **Preserve NULL values from source**: Maintains NULL values instead of converting to defaults
+- **Preserve NULL values from source**: Maintains NULL values instead of converting to type defaults. This setting applies to all tables in the pipe and cannot be changed after the pipe is created.
 - **Remove deleted rows during merges**: For [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, physically removes deleted rows during background merges
 
 Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.
