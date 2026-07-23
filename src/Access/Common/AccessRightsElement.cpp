@@ -368,7 +368,10 @@ void AccessRightsElement::makeBackwardCompatible()
 
     if (!is_enabled_read_write_grants)
     {
-        if (access_flags == AccessType::READ || access_flags == AccessType::WRITE || access_flags == (AccessType::READ | AccessType::WRITE))
+        /// Only collapse bidirectional READ|WRITE to the deprecated form.
+        /// Collapsing a unidirectional READ or WRITE would cause replaceDeprecated() to
+        /// widen it back to READ|WRITE on the next deserialization, losing the granularity.
+        if (access_flags == (AccessType::READ | AccessType::WRITE))
         {
             if (anyParameter())
             {
@@ -500,3 +503,4 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
 }
 
 }
+
