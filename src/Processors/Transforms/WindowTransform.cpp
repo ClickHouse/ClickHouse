@@ -4071,7 +4071,10 @@ The window-function form is not affected by this setting.
     FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
         {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {"Returns the exponentially weighted average relative to the greatest time value.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {
+        "The aggregate form returns the exponentially weighted average relative to the greatest time argument. "
+        "The window form returns the average relative to the time argument of the last row in the current frame.",
+        {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedAvg_examples = {
     {
         "Window function usage with visual representation",
