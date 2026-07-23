@@ -1323,10 +1323,10 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    /// When the source drives the event loop itself (a blocked REFRESH cycle), do not also start the
-    /// background looping task: it would keep spinning uv_run after the cycle and, with a single
-    /// message-broker worker, monopolize it so no later REFRESH or START cycle can run.
-    if (!drive_loop_on_worker && !connection->getHandler().loopRunning())
+    /// Pump deliveries via the background looping task. On the self-driving path the source also
+    /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
+    /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
+    if (!connection->getHandler().loopRunning())
         startLoop();
 
     bool write_failed = false;
