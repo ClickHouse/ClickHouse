@@ -22,11 +22,9 @@ static void rememberVirtualRowBoundary(const SortCursorImpl & cursor, Columns & 
     if (cursor.rows == 0)
         return;
 
-    /// A virtual row announces the boundary of the source's next output: remember the covered
-    /// prefix of its sort key (the columns beyond it hold meaningless defaults).
-    size_t num_covered = std::min(cursor.sort_columns.size(), cursor.sort_prefix_limit);
-    for (size_t i = 0; i < num_covered; ++i)
-        virtual_row_boundary.push_back(cursor.sort_columns[i]->cut(cursor.getRow(), 1));
+    /// A virtual row announces the boundary of the source's next output: remember its sort key.
+    for (const auto * sort_column : cursor.sort_columns)
+        virtual_row_boundary.push_back(sort_column->cut(cursor.getRow(), 1));
 }
 
 static void checkVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary, const SortDescription & description, size_t source_num)
@@ -107,13 +105,13 @@ void MergingSortedAlgorithm::addInput()
 {
     current_inputs.emplace_back();
     cursors.emplace_back();
+    pending_virtual_row_boundaries.emplace_back();
     virtual_row_boundary.emplace_back();
 }
 
-/// A virtual row bounds its source only on the sort columns present in its pk block (a prefix
-/// of the sort description); its remaining columns are meaningless defaults. Limit the cursor
-/// comparisons to the covered prefix.
-void MergingSortedAlgorithm::limitVirtualRowToCoveredSortPrefix(SortCursorImpl & cursor, const Block & pk_block) const
+/// The number of leading sort description columns present in the (converted) pk block of a
+/// virtual row: the row bounds its source only on them, the rest hold meaningless defaults.
+size_t MergingSortedAlgorithm::coveredSortPrefixSize(const Block & pk_block) const
 {
     size_t num_covered = 0;
     for (const auto & column_description : description)
@@ -122,13 +120,66 @@ void MergingSortedAlgorithm::limitVirtualRowToCoveredSortPrefix(SortCursorImpl &
             break;
         ++num_covered;
     }
+    return num_covered;
+}
 
-    if (num_covered == 0 && !description.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Virtual row does not cover the first sort column '{}'", description.front().column_name);
+void MergingSortedAlgorithm::setPendingVirtualRow(size_t source_num, const Chunk & chunk, size_t num_covered)
+{
+    Columns boundary;
+    boundary.reserve(num_covered);
+    for (size_t i = 0; i < num_covered; ++i)
+        boundary.push_back(chunk.getColumns()[header->getPositionByName(description[i].column_name)]);
 
-    if (num_covered < description.size())
-        cursor.sort_prefix_limit = num_covered;
+    pending_virtual_row_boundaries[source_num] = std::move(boundary);
+    ++num_pending_virtual_rows;
+}
+
+/// The first source whose pending virtual row does not allow emitting the given row: the row is
+/// not strictly below the announced boundary on its covered prefix, so the source may still
+/// produce rows that must go first, and its real data has to be read before emitting.
+std::optional<size_t> MergingSortedAlgorithm::sourceBlockedByPendingVirtualRow(const SortCursorImpl & cursor, size_t row) const
+{
+    for (size_t source_num = 0; source_num < pending_virtual_row_boundaries.size(); ++source_num)
+    {
+        const auto & boundary = pending_virtual_row_boundaries[source_num];
+        if (!boundary)
+            continue;
+
+        bool row_below_boundary = false;
+        for (size_t i = 0; i < boundary->size(); ++i)
+        {
+            int cmp = description[i].direction * (*boundary)[i]->compareAt(0, row, *cursor.sort_columns[i], description[i].nulls_direction);
+            if (cmp != 0)
+            {
+                row_below_boundary = cmp > 0;
+                break;
+            }
+        }
+
+        /// A tie on the whole covered prefix also blocks: the source may hold equal rows.
+        if (!row_below_boundary)
+            return source_num;
+    }
+
+    return std::nullopt;
+}
+
+IMergingAlgorithm::Status MergingSortedAlgorithm::fetchPendingVirtualRowSource(size_t source_num)
+{
+    /// Clear the boundary before requesting: if the source turns out to be exhausted, no new
+    /// chunk arrives and the merge must not keep waiting on it.
+    pending_virtual_row_boundaries[source_num].reset();
+    --num_pending_virtual_rows;
+    return Status(source_num);
+}
+
+IMergingAlgorithm::Status MergingSortedAlgorithm::fetchAnyPendingVirtualRowSource()
+{
+    for (size_t source_num = 0; source_num < pending_virtual_row_boundaries.size(); ++source_num)
+        if (pending_virtual_row_boundaries[source_num])
+            return fetchPendingVirtualRowSource(source_num);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending virtual row source to fetch");
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -148,6 +199,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
     current_inputs = std::move(inputs);
+    pending_virtual_row_boundaries.assign(current_inputs.size(), {});
+    num_pending_virtual_rows = 0;
     virtual_row_boundary.assign(current_inputs.size(), {});
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
@@ -156,9 +209,22 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         if (!chunk)
             continue;
 
-        cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
         if (virtual_row_blocks[source_num].columns())
-            limitVirtualRowToCoveredSortPrefix(cursors[source_num], virtual_row_blocks[source_num]);
+        {
+            size_t num_covered = coveredSortPrefixSize(virtual_row_blocks[source_num]);
+            if (num_covered < description.size())
+            {
+                /// The virtual row is not comparable on the full sort description: keep the
+                /// source out of the queue and gate emission on the covered boundary instead.
+                /// The cursor is still initialized (it holds the sort description `consume`
+                /// needs to reset it later), but with zero rows so it does not enter the queue.
+                setPendingVirtualRow(source_num, chunk, num_covered);
+                cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), 0, description, source_num);
+                continue;
+            }
+        }
+
+        cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
     }
 
 #ifndef NDEBUG
@@ -189,6 +255,13 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    /// A pending boundary of this source is obsolete now that its next chunk arrived.
+    if (pending_virtual_row_boundaries[source_num])
+    {
+        pending_virtual_row_boundaries[source_num].reset();
+        --num_pending_virtual_rows;
+    }
+
     bool is_virtual_row = isVirtualRow(input.chunk);
     Block virtual_row_block;
     if (is_virtual_row)
@@ -200,9 +273,20 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
-    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
+
     if (virtual_row_block.columns())
-        limitVirtualRowToCoveredSortPrefix(cursors[source_num], virtual_row_block);
+    {
+        size_t num_covered = coveredSortPrefixSize(virtual_row_block);
+        if (num_covered < description.size())
+        {
+            /// The virtual row is not comparable on the full sort description: keep the source
+            /// out of the queue and gate emission on the covered boundary instead.
+            setPendingVirtualRow(source_num, current_inputs[source_num].chunk, num_covered);
+            return;
+        }
+    }
+
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 
 #ifndef NDEBUG
     if (is_virtual_row && !has_collation)
@@ -371,6 +455,12 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         auto current = queue.current();
 
+        if (num_pending_virtual_rows > 0)
+        {
+            if (auto blocked_by = sourceBlockedByPendingVirtualRow(*current.impl, current.impl->getRow()))
+                return fetchPendingVirtualRowSource(*blocked_by);
+        }
+
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {
             /// Get the next block from the corresponding source, if there is one.
@@ -380,6 +470,8 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         if (current.impl->isFirst()
             && !current_inputs[current.impl->order].skip_last_row /// Ignore optimization if last row should be skipped.
+            /// The whole chunk must pass the pending virtual row boundaries, not only the current row.
+            && (num_pending_virtual_rows == 0 || !sourceBlockedByPendingVirtualRow(*current.impl, current.impl->rows - 1))
             && (queue.size() == 1
                 || (queue.size() >= 2 && current.totallyLessOrEquals(queue.nextChild()))))
         {
@@ -436,6 +528,10 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
         }
     }
 
+    /// The queue is drained, but some sources still have only announced boundaries: read them.
+    if (num_pending_virtual_rows > 0)
+        return fetchAnyPendingVirtualRowSource();
+
     return Status(merged_data.pull(), true);
 }
 
@@ -451,6 +547,18 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
 
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
+
+        if (num_pending_virtual_rows > 0)
+        {
+            if (auto blocked_by = sourceBlockedByPendingVirtualRow(*current.impl, current.impl->getRow()))
+                return fetchPendingVirtualRowSource(*blocked_by);
+
+            /// The first row of the batch passes; near a boundary fall back to row-by-row so
+            /// that every emitted row is checked.
+            if (initial_batch_size > 1
+                && sourceBlockedByPendingVirtualRow(*current.impl, current.impl->getRow() + initial_batch_size - 1))
+                initial_batch_size = 1;
+        }
 
         bool batch_skip_last_row = false;
         if (current.impl->isLast(initial_batch_size) && current_inputs[current.impl->order].skip_last_row)
@@ -519,7 +627,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         insertRows(*current.impl, insert_rows_size);
 
         if (limit_reached)
-            break;
+            return Status(merged_data.pull(), true);
 
         if (!current->isLast(updated_batch_size))
         {
@@ -532,6 +640,10 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             return Status(current.impl->order);
         }
     }
+
+    /// The queue is drained, but some sources still have only announced boundaries: read them.
+    if (num_pending_virtual_rows > 0)
+        return fetchAnyPendingVirtualRowSource();
 
     return Status(merged_data.pull(), true);
 }
