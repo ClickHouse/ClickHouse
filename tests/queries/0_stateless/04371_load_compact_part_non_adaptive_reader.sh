@@ -28,10 +28,11 @@ SETTINGS table_disk = true,
 "
 
 # Same backing path, readonly, and non-adaptive granularity (index_granularity_bytes = 0) so that
-# canUsePolymorphicParts() is false for this table.
+# canUsePolymorphicParts() is false for this table. Keep min_*_for_wide_part = 0: on a non-adaptive
+# table a nonzero threshold logs a "settings will be ignored" warning at CREATE that trips the empty-stderr check.
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE reader (s String) ORDER BY ()
-SETTINGS table_disk = true, index_granularity_bytes = 0,
+SETTINGS table_disk = true, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
   disk = disk(
       readonly = true,
       name = poly_load_reader_${CLICKHOUSE_DATABASE},
