@@ -2680,6 +2680,17 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
         if (!state.column)
             state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
     }
+    else if (!state.column && defer_prewhere_execution)
+    {
+        /// The column is a `PREWHERE` output that is part of the delivered block (e.g. the filter
+        /// column when `remove_prewhere_column` is false), but `PREWHERE` execution is deferred to
+        /// `ParquetV3BlockInputFormat::applyDeferredPrewhere`. It recomputes the expression from
+        /// the delivered input columns and takes its outputs by name in preference to this
+        /// placeholder (`ExpressionActions::execute` puts expression outputs before carried-through
+        /// inputs), so the placeholder values are never observable.
+        const auto & col = extended_sample_block.getByPosition(idx_in_output_block);
+        state.column = col.type->createColumn()->cloneResized(row_subgroup.filter.rows_pass);
+    }
     chassert(state.column);
     chassert(state.column->size() == row_subgroup.filter.rows_pass);
     return state.column;
