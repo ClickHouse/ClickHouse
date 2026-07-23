@@ -40,12 +40,18 @@ SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 -- Assert the wide-typed comparison is routed through the exact-count projection (the abort path); count alone passes even if it is silently declined.
 SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = 0) WHERE explain ILIKE '%_exact_count_projection%';
+-- Assert the wide-typed comparison forces generic-exclusion index search: the fix demotes the leading key from POINT to RANGE. This distinguishes fixed from reverted code even in release, where the debug abort is compiled out.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = 0) WHERE explain ILIKE '%generic exclusion search%';
 SELECT count() FROM t WHERE team_id = 1 AND k = 0;
 SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = 0;
 SELECT count() FROM t WHERE team_id = toInt256(1) AND k = 0;
 SELECT count() FROM t WHERE team_id = toUInt128(1) AND k = 0;
 SELECT count() FROM t WHERE team_id = toInt128(1) AND k = 0;
 SELECT count() FROM t WHERE team_id IN (toUInt256(1)) AND k = 0;
+-- A wider-typed cast applied to the key inside IN (not a bare key) populates the set-index function chain,
+-- so this exercises the changed non-empty mapping.functions branch; it must also route through generic exclusion.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t WHERE toUInt256(team_id) IN (toUInt256(1)) AND k = 0) WHERE explain ILIKE '%generic exclusion search%';
+SELECT count() FROM t WHERE toUInt256(team_id) IN (toUInt256(1)) AND k = 0;
 SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = toUInt256(0);
 SELECT count() FROM t WHERE team_id = toUInt256(1) AND k = 0 SETTINGS force_primary_key = 1;
 "
@@ -78,11 +84,27 @@ SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 -- Assert the wide-typed comparison is routed through the exact-count projection (the abort path); count alone passes even if it is silently declined.
 SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%_exact_count_projection%';
+-- Assert generic-exclusion index search (leading key demoted POINT -> RANGE by the fix); distinguishes fixed from reverted code in release too.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%generic exclusion search%';
 SELECT count() FROM pk WHERE (x = 3) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toInt256(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toUInt128(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z) SETTINGS optimize_use_implicit_projections = 0;
+"
+
+# A native exact-point atom and a widened-cast atom on the same key column (x = 3 AND x = toUInt256(3)).
+# enable_analyzer = 0 keeps both atoms in the key condition (the new analyzer folds them into one); the
+# column is then pinned POINT by the native equality while the redundant cast atom stays in the rpn. This
+# must still yield an exact, consistent range: expect the native count (3), the exact-count path live, no abort.
+${CLICKHOUSE_LOCAL} --path="${DB_DIR2}" --multiquery --query "
+SET enable_analyzer = 0;
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%_exact_count_projection%';
+SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z);
+SELECT count() FROM pk WHERE (x = 3) AND (x = toInt256(3)) AND (y = 55) AND (5786 >= z);
+SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt128(3)) AND (y = 55) AND (5786 >= z);
 "
 
 rm -rf "${DB_DIR2}"
