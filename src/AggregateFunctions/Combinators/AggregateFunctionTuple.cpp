@@ -40,23 +40,14 @@ DataTypePtr AggregateFunctionTuple::deriveResultType(
     return std::make_shared<DataTypeTuple>(result_types);
 }
 
-/// Derive the base function name (the part before the `Tuple` suffix) from the resolved nested
-/// functions rather than the pre-resolution name string passed by the factory. The factory resolves
-/// each nested function honoring the query's `NullsAction`, so `anyLast(x) RESPECT NULLS` yields a
-/// nested `anyLast_respect_nulls` while the plain form yields `anyLast`. These two have different
-/// state representations, so the composed `-Tuple` name must differ too; otherwise both tuple states
-/// serialize to the same `DataTypeAggregateFunction` type name, and reconstructing a function from
-/// that name (over the distributed wire, on disk, or when merging totals) resolves the wrong variant
-/// and reinterprets the state bytes. Every single-nested combinator (`-Array`, `-If`, `-OrNull`)
-/// already composes its name from `nested_func->getName()` for the same reason.
-///
-/// Only-null elements collapse to a placeholder from the `nothing*` family, possibly wrapped in
-/// further combinators (`nothingNullArray`, `nothingNullArrayIf`, ...). The placeholder base carries
-/// no nulls-action variant, so it contributes no naming information and must be ignored regardless of
-/// how it is wrapped; matching only the three bare `nothing*` names would let a composite placeholder
-/// win and reintroduce the same non-injective name. Detect placeholder-ness structurally via
-/// isOnlyNullPlaceholder (which unwraps the combinator chain) and pick the first real element; fall
-/// back to the pre-resolution name only when every element is a placeholder.
+/// The composed `-Tuple` name must be injective w.r.t. the nested state representation, so derive the
+/// base name from a resolved nested function (whose name already reflects the NullsAction, like every
+/// single-nested combinator) rather than the pre-resolution string. Skip only-null placeholder
+/// elements: their base carries no nulls-action variant, so taking their name would reintroduce a
+/// non-injective type name. Placeholder-ness is structural (isOnlyNullPlaceholder unwraps combinators
+/// and, for a nested -Tuple, holds only when all its elements are placeholders). The all-placeholder
+/// fallback returns the pre-resolution name; that state is empty, so it is harmless (an own-type
+/// round-trip is rejected cleanly, never misread).
 static String deriveNestedFuncName(
     const String & nested_name, const VectorWithMemoryTracking<AggregateFunctionPtr> & nested_functions)
 {
