@@ -41,7 +41,8 @@ Chunk ReadSource::generate()
 
     if (scan.need_only_count && scan.projection.empty())
     {
-        if (const auto rows = dataset->totalRows(scan.snapshot))
+        const auto rows = scan.predicate ? dataset->countRows(scan.snapshot, scan.predicate) : dataset->totalRows(scan.snapshot);
+        if (rows)
         {
             is_finished = true;
             return Chunk(Columns{}, *rows);

@@ -45,6 +45,13 @@ public:
         const DataLakeTableStateSnapshot & state, ContextPtr local_context) const override;
     bool shouldReloadSchemaForConsistency(ContextPtr) const override { return true; }
 
+    ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements) override;
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,

@@ -478,6 +478,56 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_count_rows(
+    dataset: *mut ch_lance_dataset,
+    snapshot_id: u64,
+    predicate: *const c_char,
+    rows: *mut u64,
+    has_value: *mut bool,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if dataset.is_null() || rows.is_null() || has_value.is_null() {
+        set_error(error, "Lance dataset, rows, or has_value pointer is null");
+        return false;
+    }
+
+    let predicate = match cstr_to_string(predicate) {
+        Ok(predicate) => predicate,
+        Err(message) => {
+            set_error(error, &message);
+            return false;
+        }
+    };
+
+    let dataset = &mut *dataset;
+    let count_result = dataset.runtime.block_on(async {
+        let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
+            dataset.dataset.clone()
+        } else {
+            dataset.dataset.checkout_version(snapshot_id).await?
+        };
+        if predicate.is_empty() {
+            dataset.count_rows(None).await
+        } else {
+            dataset.count_rows(Some(predicate)).await
+        }
+    });
+
+    match count_result {
+        Ok(count) => {
+            *rows = count as u64;
+            *has_value = true;
+            true
+        }
+        Err(err) => {
+            set_error(error, &err.to_string());
+            false
+        }
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_total_bytes(
     _dataset: *mut ch_lance_dataset,
     _bytes: *mut u64,
@@ -485,6 +535,9 @@ pub unsafe extern "C" fn ch_lance_total_bytes(
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
+    // Lance 2.0.1 does not expose a stable current-snapshot physical byte size
+    // through this API. Do not guess from storage listings because that would
+    // mix versions and hide object-store errors.
     if !has_value.is_null() {
         *has_value = false;
     }
@@ -623,7 +676,10 @@ mod tests {
     use super::*;
     use arrow_array::ffi::from_ffi;
     use arrow_array::ffi::FFI_ArrowArray;
-    use arrow_array::{make_array, Int32Array, RecordBatch, RecordBatchIterator};
+    use arrow_array::{
+        make_array, Date32Array, Float64Array, Int32Array, RecordBatch, RecordBatchIterator,
+        StringArray, TimestampMillisecondArray,
+    };
     use arrow_schema::{DataType, Field, Schema};
     use std::ptr::addr_of_mut;
     use std::sync::Arc;
@@ -665,6 +721,108 @@ mod tests {
             .block_on(Dataset::write(reader, dir.path().to_str().unwrap(), None))
             .unwrap();
         dir
+    }
+
+    fn make_pushdown_batch() -> RecordBatch {
+        RecordBatch::try_from_iter(vec![
+            (
+                "id",
+                Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])) as arrow_array::ArrayRef,
+            ),
+            (
+                "name",
+                Arc::new(StringArray::from(vec!["a", "quote'd", "x", "b", "x"]))
+                    as arrow_array::ArrayRef,
+            ),
+            (
+                "score",
+                Arc::new(Float64Array::from(vec![
+                    Some(1.0),
+                    None,
+                    Some(3.0),
+                    Some(4.0),
+                    None,
+                ])) as arrow_array::ArrayRef,
+            ),
+            (
+                "event_date",
+                Arc::new(Date32Array::from(vec![19723, 19724, 19725, 19726, 19727]))
+                    as arrow_array::ArrayRef,
+            ),
+            (
+                "event_time",
+                Arc::new(TimestampMillisecondArray::from(vec![
+                    1_704_067_200_000,
+                    1_704_164_645_123,
+                    1_704_240_000_000,
+                    1_704_326_400_000,
+                    1_704_412_800_000,
+                ])) as arrow_array::ArrayRef,
+            ),
+        ])
+        .unwrap()
+    }
+
+    fn write_pushdown_dataset() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let batch = make_pushdown_batch();
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(reader, dir.path().to_str().unwrap(), None))
+            .unwrap();
+        dir
+    }
+
+    fn scan_row_count(
+        dataset: *mut ch_lance_dataset,
+        snapshot_id: u64,
+        projection: &[CString],
+        predicate: &CString,
+        error: *mut ch_lance_error,
+    ) -> usize {
+        let projection_ptrs = projection
+            .iter()
+            .map(|value| value.as_ptr())
+            .collect::<Vec<_>>();
+        let scan_options = ch_lance_scan_options {
+            snapshot_id,
+            projection: ch_lance_string_list {
+                values: projection_ptrs.as_ptr(),
+                size: projection_ptrs.len(),
+            },
+            predicate: predicate.as_ptr(),
+            need_only_count: false,
+            max_block_size: 1024,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
+        assert!(!scan.is_null());
+
+        let mut rows = 0;
+        loop {
+            let mut array = FFI_ArrowArray::empty();
+            let mut schema = FFI_ArrowSchema::empty();
+            let mut has_batch = false;
+            assert!(unsafe {
+                ch_lance_next_batch(
+                    scan,
+                    addr_of_mut!(array),
+                    addr_of_mut!(schema),
+                    addr_of_mut!(has_batch),
+                    error,
+                )
+            });
+            if !has_batch {
+                break;
+            }
+            let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
+            rows += StructArray::from(make_array(struct_data).to_data()).len();
+        }
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+        rows
     }
 
     #[test]
@@ -812,6 +970,165 @@ mod tests {
 
         unsafe {
             ch_lance_free_dataset(latest_dataset);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_scan_accepts_pushdown_predicates() {
+        let dir = write_pushdown_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let projection = [CString::new("id").unwrap()];
+        for (predicate, expected_rows) in [
+            ("id = 1 OR id = 3", 2),
+            ("id IN (1, 3, 5)", 3),
+            ("score IS NULL", 2),
+            ("event_date = DATE '2024-01-02'", 1),
+            ("event_time >= TIMESTAMP '2024-01-02 03:04:05.123'", 4),
+        ] {
+            let predicate = CString::new(predicate).unwrap();
+            assert_eq!(
+                scan_row_count(
+                    dataset,
+                    snapshot.snapshot_id,
+                    &projection,
+                    &predicate,
+                    addr_of_mut!(error),
+                ),
+                expected_rows
+            );
+        }
+
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_count_rows_uses_predicate_and_snapshot() {
+        let dir = write_pushdown_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let predicate = CString::new("id = 1 OR id = 3").unwrap();
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(unsafe {
+            ch_lance_count_rows(
+                dataset,
+                snapshot.snapshot_id,
+                predicate.as_ptr(),
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 2);
+
+        let append_batch = RecordBatch::try_from_iter(vec![
+            (
+                "id",
+                Arc::new(Int32Array::from(vec![1])) as arrow_array::ArrayRef,
+            ),
+            (
+                "name",
+                Arc::new(StringArray::from(vec!["new"])) as arrow_array::ArrayRef,
+            ),
+            (
+                "score",
+                Arc::new(Float64Array::from(vec![Some(9.0)])) as arrow_array::ArrayRef,
+            ),
+            (
+                "event_date",
+                Arc::new(Date32Array::from(vec![19728])) as arrow_array::ArrayRef,
+            ),
+            (
+                "event_time",
+                Arc::new(TimestampMillisecondArray::from(vec![1_704_499_200_000]))
+                    as arrow_array::ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let schema = append_batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(append_batch)].into_iter(), schema);
+        Runtime::new().unwrap().block_on(async {
+            let mut dataset = Dataset::open(dir.path().to_str().unwrap()).await.unwrap();
+            dataset.append(reader, None).await.unwrap();
+        });
+
+        rows = 0;
+        has_value = false;
+        assert!(unsafe {
+            ch_lance_count_rows(
+                dataset,
+                snapshot.snapshot_id,
+                predicate.as_ptr(),
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 2);
+
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_total_bytes_reports_unavailable() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut bytes = 123;
+        let mut has_value = true;
+        assert!(unsafe {
+            ch_lance_total_bytes(
+                dataset,
+                addr_of_mut!(bytes),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(!has_value);
+
+        unsafe {
             ch_lance_free_dataset(dataset);
         }
     }

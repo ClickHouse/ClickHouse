@@ -3,26 +3,34 @@
 #if USE_LANCE
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/Exception.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
+#include <Storages/StorageSnapshot.h>
 #if USE_AWS_S3
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <fmt/ranges.h>
+
+#include <unordered_map>
 
 namespace DB
 {
@@ -43,7 +51,7 @@ extern const S3AuthSettingsBool no_sign_request;
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 }
@@ -131,6 +139,69 @@ String quoteLanceIdentifier(const String & name)
     return result;
 }
 
+String quoteLanceStringLiteral(const String & value)
+{
+    String result;
+    result.reserve(value.size() + 2);
+    result.push_back('\'');
+    for (char c : value)
+    {
+        if (c == '\'')
+            result += "''";
+        else
+            result.push_back(c);
+    }
+    result.push_back('\'');
+    return result;
+}
+
+std::optional<String> fieldToLanceLiteral(const Field & field, const DataTypePtr & data_type)
+{
+    if (field.isNull())
+        return std::nullopt;
+
+    const auto type = removeNullable(data_type);
+    const WhichDataType which(type);
+
+    if (which.isStringOrFixedString())
+        return quoteLanceStringLiteral(field.safeGet<String>());
+
+    if (which.isDate())
+    {
+        WriteBufferFromOwnString out;
+        writeDateText(DayNum(static_cast<UInt16>(field.safeGet<UInt64>())), out);
+        return fmt::format("DATE '{}'", out.str());
+    }
+
+    if (which.isDate32())
+    {
+        WriteBufferFromOwnString out;
+        writeDateText(ExtendedDayNum(static_cast<Int32>(field.safeGet<Int64>())), out);
+        return fmt::format("DATE '{}'", out.str());
+    }
+
+    if (which.isDateTime())
+    {
+        WriteBufferFromOwnString out;
+        const auto & time_zone = assert_cast<const DataTypeDateTime &>(*type).getTimeZone();
+        writeDateTimeText(static_cast<time_t>(field.safeGet<UInt64>()), out, time_zone);
+        return fmt::format("TIMESTAMP '{}'", out.str());
+    }
+
+    if (which.isDateTime64())
+    {
+        WriteBufferFromOwnString out;
+        const auto & date_time_type = assert_cast<const DataTypeDateTime64 &>(*type);
+        writeDateTimeText(field.safeGet<DateTime64>(), date_time_type.getScale(), out, date_time_type.getTimeZone());
+        return fmt::format("TIMESTAMP '{}'", out.str());
+    }
+
+    if (which.isNativeNumber())
+        return applyVisitor(FieldVisitorToString(), field);
+
+    return std::nullopt;
+}
+
 std::optional<String> constantNodeToLanceLiteral(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::COLUMN || !node.column || node.column->empty())
@@ -139,21 +210,7 @@ std::optional<String> constantNodeToLanceLiteral(const ActionsDAG::Node & node)
     if (node.column->isNullAt(0))
         return std::nullopt;
 
-    const auto type = removeNullable(node.result_type);
-    const WhichDataType which(type);
-    const auto field = (*node.column)[0];
-
-    if (which.isStringOrFixedString())
-    {
-        WriteBufferFromOwnString out;
-        writeQuotedString(field.safeGet<String>(), out);
-        return out.str();
-    }
-
-    if (which.isNativeNumber() || which.isDateOrDate32OrDateTimeOrDateTime64())
-        return applyVisitor(FieldVisitorToString(), field);
-
-    return std::nullopt;
+    return fieldToLanceLiteral((*node.column)[0], node.result_type);
 }
 
 std::optional<String> inputNodeToLanceIdentifier(const ActionsDAG::Node & node)
@@ -197,29 +254,44 @@ std::optional<String> comparisonFunctionToLanceOperator(const String & function_
     return std::nullopt;
 }
 
-std::optional<String> extractLancePredicate(const ActionsDAG::Node & node)
-{
-    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return extractLancePredicate(*node.children.front());
+std::optional<String> extractLancePredicate(const ActionsDAG::Node & node, const ContextPtr & context);
 
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+std::optional<String> tryBuildBooleanPredicate(const ActionsDAG::Node & node, const String & joiner, const ContextPtr & context)
+{
+    if (node.children.empty())
         return std::nullopt;
 
-    const auto function_name = node.function_base->getName();
-    if (function_name == "and")
+    std::vector<String> predicates;
+    predicates.reserve(node.children.size());
+    for (const auto * child : node.children)
     {
-        std::vector<String> predicates;
-        predicates.reserve(node.children.size());
-        for (const auto * child : node.children)
-        {
-            if (auto predicate = extractLancePredicate(*child))
-                predicates.push_back(fmt::format("({})", *predicate));
-            else
-                return std::nullopt;
-        }
-        return fmt::format("{}", fmt::join(predicates, " AND "));
+        if (auto predicate = extractLancePredicate(*child, context))
+            predicates.push_back(fmt::format("({})", *predicate));
+        else
+            return std::nullopt;
     }
+    return fmt::format("{}", fmt::join(predicates, joiner));
+}
 
+std::optional<String> tryBuildNullCheckPredicate(const ActionsDAG::Node & node, const String & function_name)
+{
+    if (node.children.size() != 1)
+        return std::nullopt;
+
+    auto identifier = inputNodeToLanceIdentifier(*node.children[0]);
+    if (!identifier)
+        return std::nullopt;
+
+    if (function_name == "isNull")
+        return fmt::format("{} IS NULL", *identifier);
+    if (function_name == "isNotNull")
+        return fmt::format("{} IS NOT NULL", *identifier);
+
+    return std::nullopt;
+}
+
+std::optional<String> tryBuildComparisonPredicate(const ActionsDAG::Node & node, const String & function_name)
+{
     if (node.children.size() != 2)
         return std::nullopt;
 
@@ -246,6 +318,78 @@ std::optional<String> extractLancePredicate(const ActionsDAG::Node & node)
     return std::nullopt;
 }
 
+std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const ContextPtr & context)
+{
+    if (!context || node.children.size() != 2)
+        return std::nullopt;
+
+    auto identifier = inputNodeToLanceIdentifier(*node.children[0]);
+    if (!identifier || !node.children[1]->column)
+        return std::nullopt;
+
+    const IColumn * column = node.children[1]->column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        column = &column_const->getDataColumn();
+
+    const auto * column_set = typeid_cast<const ColumnSet *>(column);
+    if (!column_set)
+        return std::nullopt;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return std::nullopt;
+
+    auto set = future_set->buildOrderedSetInplace(context);
+    if (!set || !set->hasExplicitSetElements())
+        return std::nullopt;
+
+    set->checkColumnsNumber(1);
+    const auto type = set->getElementsTypes()[0];
+    const auto elements = set->getSetElements()[0];
+
+    std::vector<String> literals;
+    literals.reserve(elements->size());
+    for (size_t i = 0; i < elements->size(); ++i)
+    {
+        if (elements->isNullAt(i))
+            continue;
+
+        if (auto literal = fieldToLanceLiteral((*elements)[i], type))
+            literals.push_back(*literal);
+        else
+            return std::nullopt;
+    }
+
+    if (literals.empty())
+        return std::nullopt;
+
+    return fmt::format("{} IN ({})", *identifier, fmt::join(literals, ", "));
+}
+
+std::optional<String> extractLancePredicate(const ActionsDAG::Node & node, const ContextPtr & context)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return extractLancePredicate(*node.children.front(), context);
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return std::nullopt;
+
+    const auto function_name = node.function_base->getName();
+    if (function_name == "and")
+        return tryBuildBooleanPredicate(node, " AND ", context);
+
+    if (function_name == "or")
+        return tryBuildBooleanPredicate(node, " OR ", context);
+
+    if (function_name == "isNull" || function_name == "isNotNull")
+        return tryBuildNullCheckPredicate(node, function_name);
+
+    if (function_name == "in")
+        return tryBuildInPredicate(node, context);
+
+    return tryBuildComparisonPredicate(node, function_name);
+}
+
 std::optional<String> extractLancePredicate(const FormatFilterInfoPtr & format_filter_info)
 {
     if (!format_filter_info || !format_filter_info->filter_actions_dag)
@@ -255,7 +399,55 @@ std::optional<String> extractLancePredicate(const FormatFilterInfoPtr & format_f
     if (outputs.size() != 1)
         return std::nullopt;
 
-    return extractLancePredicate(*outputs.front());
+    return extractLancePredicate(*outputs.front(), format_filter_info->context.lock());
+}
+
+std::pair<Names, NamesAndTypesList> splitVirtualColumns(
+    const Names & columns,
+    const VirtualColumnsDescription & virtual_columns_description)
+{
+    Names physical_columns;
+    NamesAndTypesList virtual_columns;
+
+    for (const auto & column_name : columns)
+    {
+        if (auto virtual_column = virtual_columns_description.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+            virtual_columns.emplace_back(std::move(*virtual_column));
+        else
+            physical_columns.push_back(column_name);
+    }
+
+    return {physical_columns, virtual_columns};
+}
+
+void validateExplicitLanceSchema(const NamesAndTypesList & explicit_schema, const NamesAndTypesList & inferred_schema)
+{
+    std::unordered_map<String, DataTypePtr> inferred_columns;
+    inferred_columns.reserve(inferred_schema.size());
+    for (const auto & column : inferred_schema)
+        inferred_columns.emplace(column.name, column.type);
+
+    for (const auto & column : explicit_schema)
+    {
+        const auto it = inferred_columns.find(column.name);
+        if (it == inferred_columns.end())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Explicit schema for Lance dataset contains column `{}` which does not exist in the dataset",
+                column.name);
+        }
+
+        if (!column.type->equals(*it->second))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Explicit schema for Lance dataset has incompatible type for column `{}`: expected `{}`, got `{}`",
+                column.name,
+                it->second->getName(),
+                column.type->getName());
+        }
+    }
 }
 
 }
@@ -275,16 +467,20 @@ DataLakeMetadataPtr LanceMetadata::create(
 
 void LanceMetadata::createInitial(
     const ObjectStoragePtr &,
-    const StorageObjectStorageConfigurationWeakPtr &,
-    const ContextPtr &,
-    const std::optional<ColumnsDescription> &,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const std::optional<ColumnsDescription> & columns,
     ASTPtr,
     ASTPtr,
     bool,
     std::shared_ptr<DataLake::ICatalog>,
     const StorageID &)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Creating Lance datasets from ClickHouse is not implemented yet");
+    if (!columns.has_value())
+        return;
+
+    LanceMetadata metadata(configuration);
+    validateExplicitLanceSchema(columns->getAllPhysical(), metadata.getTableSchema(local_context));
 }
 
 bool LanceMetadata::operator==(const IDataLakeMetadata & other) const
@@ -314,6 +510,35 @@ std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFrom
     result->setColumns(ColumnsDescription{Lance::Dataset::open(getDatasetOptions()).tableSchema(lance_state, local_context)});
     result->setDataLakeTableState(state);
     return result;
+}
+
+ReadFromFormatInfo LanceMetadata::prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr &,
+    bool,
+    bool)
+{
+    ReadFromFormatInfo info;
+    Names physical_columns;
+    std::tie(physical_columns, info.requested_virtual_columns)
+        = splitVirtualColumns(requested_columns, storage_snapshot->metadata->virtuals);
+
+    /// `Lance::ReadSource` reads the dataset itself and emits only physical columns.
+    /// `StorageObjectStorageSource` appends requested file-like virtual columns after
+    /// the custom source has produced a chunk, so the source header must describe the
+    /// final physical-plus-virtual chunk while `requested_columns` stays physical-only.
+    info.source_header = storage_snapshot->getSampleBlockForColumns(physical_columns);
+    info.format_header = info.source_header;
+    for (const auto & column : info.requested_virtual_columns)
+        info.source_header.insert({column.type->createColumn(), column.type, column.name});
+
+    info.requested_columns = storage_snapshot->getColumnsByNames(
+        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
+        physical_columns);
+    info.columns_description = ColumnsDescription{info.requested_columns};
+
+    return info;
 }
 
 ObjectIterator LanceMetadata::iterate(
@@ -353,8 +578,19 @@ std::optional<Pipe> LanceMetadata::read(
         .max_block_size = max_block_size,
         .need_only_count = need_only_count,
     };
+
+    ColumnsWithTypeAndName physical_columns;
+    physical_columns.reserve(read_from_format_info.requested_columns.size());
+    for (const auto & column : read_from_format_info.requested_columns)
+        physical_columns.emplace_back(column.type->createColumn(), column.type, column.name);
+
+    /// `read_from_format_info.source_header` is the final header expected from
+    /// `StorageObjectStorageSource` after virtual columns are appended. `Lance::ReadSource`
+    /// itself must emit only physical Lance columns; otherwise virtual-only reads such as
+    /// `_data_lake_snapshot_version` make the custom source produce an empty chunk for a
+    /// non-empty header.
     auto source = std::make_shared<Lance::ReadSource>(
-        read_from_format_info.source_header,
+        Block(std::move(physical_columns)),
         std::move(object_info),
         getDatasetOptions(),
         std::move(scan));
