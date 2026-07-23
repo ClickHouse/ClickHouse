@@ -96,7 +96,8 @@ void addFoundRowAll(
     AddedColumns & added,
     IColumn::Offset & current_offset,
     KnownRowsHolder<flag_per_row> & known_rows [[maybe_unused]],
-    JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]])
+    JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]],
+    bool is_last_disjunct [[maybe_unused]])
 {
     if constexpr (add_missing)
         added.applyLazyDefaults();
@@ -111,7 +112,8 @@ void addFoundRowAll(
             {
                 added.appendFromBlock(ref_word, false);
                 ++current_offset;
-                new_known_rows.push_back(ref_word);
+                if (!is_last_disjunct)
+                    new_known_rows.push_back(ref_word);
 
                 if (used_flags)
                 {
@@ -121,7 +123,8 @@ void addFoundRowAll(
             }
         }
 
-        known_rows.add(std::cbegin(new_known_rows), std::cend(new_known_rows));
+        if (!is_last_disjunct)
+            known_rows.add(std::cbegin(new_known_rows), std::cend(new_known_rows));
     }
     else if constexpr (AddedColumns::isLazy())
     {
