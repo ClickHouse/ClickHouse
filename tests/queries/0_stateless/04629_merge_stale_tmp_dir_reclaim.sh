@@ -30,11 +30,15 @@ function run_case()
 {
     local table=$1
 
+    # Stop merges so the two inserts deterministically leave two parts for the OPTIMIZE to merge.
+    # The stop is table-scoped, so it dies with the table and needs no extra cleanup.
+    $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES $table"
     $CLICKHOUSE_CLIENT --query "INSERT INTO $table SELECT number FROM numbers(50)"
     $CLICKHOUSE_CLIENT --query "INSERT INTO $table SELECT number + 50 FROM numbers(50)"
 
     $CLICKHOUSE_CLIENT --send_logs_level=error --multiquery --query "
     SYSTEM ENABLE FAILPOINT $FP;
+    SYSTEM START MERGES $table;
     OPTIMIZE TABLE $table FINAL SETTINGS optimize_throw_if_noop = 1;
     SYSTEM DISABLE FAILPOINT $FP;
     "
