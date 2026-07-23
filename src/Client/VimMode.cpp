@@ -606,21 +606,6 @@ void ReplxxLineReader::setupVimKeybindings()
             },
             i);
         rx.bind_key(
-            Replxx::KEY::control('N'),
-            [this](char32_t code)
-            {
-                resetVim();
-                rx.set_editing_mode(MODE_NORMAL);
-                Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::HISTORY_NEXT, code);
-                auto state = rx.get_state();
-                int pos = state.cursor_position();
-                std::string text = state.text();
-                resetVim(&pos, &text);
-                rx.set_state(Replxx::State(text.c_str(), pos));
-                return ret;
-            },
-            i);
-        rx.bind_key(
             Replxx::KEY::control('C'),
             [this](char32_t code)
             {
