@@ -143,6 +143,13 @@ void ASTUserNamesWithHost::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     children = r.readChildren();
 
+    /// `ParserUserNamesWithHost` requires at least one user name, and `formatImpl` asserts a
+    /// non-empty list, so an empty/absent 'children' array is a parser-impossible shape.
+    if (children.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`UserNamesWithHost` AST requires at least one child during AST JSON deserialization");
+
     for (const auto & child : children)
         if (!child->as<ASTUserNameWithHost>())
             throw Exception(

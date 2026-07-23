@@ -4,6 +4,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
 #include <base/EnumReflection.h>
@@ -466,7 +467,13 @@ namespace
                 auto p_obj = arr->getObject(i);
                 if (!p_obj)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'partitions' array at element index {} during AST JSON deserialization", i, element_index);
-                partitions.push_back(IAST::createFromJSON(*p_obj));
+                auto partition_ast = IAST::createFromJSON(*p_obj);
+                /// `parsePartitions` builds every entry with `ParserPartition`, and MergeTree backup/restore
+                /// downcasts each entry via `as<ASTPartition &>()` in `getPartitionIDsFromQuery`, so any other
+                /// node type must be rejected at the JSON boundary instead of that internal cast.
+                if (!partition_ast->as<ASTPartition>())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected node type at index {} in 'partitions' array at element index {} during AST JSON deserialization", i, element_index);
+                partitions.push_back(std::move(partition_ast));
             }
             e.partitions = std::move(partitions);
         }
