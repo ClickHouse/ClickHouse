@@ -605,6 +605,16 @@ test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
   || { echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"; false; }
 ```
 
+`--binary` prints the binary and package URLs (one per line: the `clickhouse` executable,
+`.deb`, `.rpm`) for the exact build that produced the report — useful when you need to reproduce
+a failure locally against the same binary:
+
+```bash
+node .claude/tools/fetch_ci_report.js "<report-url>" --binary 2>/dev/null
+# grab just the executable (no dots in name):
+node .claude/tools/fetch_ci_report.js "<report-url>" --binary 2>/dev/null | grep -v '\.'
+```
+
 For other artifacts, list available URLs with `--links` and try to find the logs and artifacts
 helping to narrow the issue down. The files alongside this skill describe the layout and
 signal-bearing members for each job family:

@@ -382,12 +382,18 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to artifact/log links; exclude json.html navigation links and raw binaries
+  // Filter to artifact/log links and the ClickHouse binary; exclude json.html navigation links.
   return links.filter(link => {
     const h = link.href;
+    const name = h.split('/').pop();
     // Exclude CI navigation/report links
     if (h.includes('json.html')) return false;
-    // Include all log and archive formats
+    // ClickHouse binary: starts with 'clickhouse' and has no dots (no file extension).
+    // Matches 'clickhouse', 'clickhouse-stripped', etc. but not log/config files.
+    if (name.startsWith('clickhouse') && !name.includes('.')) return true;
+    // Installable packages
+    if (name.endsWith('.deb') || name.endsWith('.rpm')) return true;
+    // Log and archive formats
     if (h.includes('.log') || h.includes('.log.zst')) return true;
     if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
     if (h.includes('.zst')) return true;
@@ -776,6 +782,22 @@ async function fetchReport(inputUrl, options = {}) {
       return { testResults, artifactLinks, jsonData };
     }
 
+    // When --binary is requested, print only the binary URL to stdout and exit.
+    if (options.binary) {
+      const binaryLinks = artifactLinks.filter(l => {
+        const name = l.href.split('/').pop();
+        return (name.startsWith('clickhouse') && !name.includes('.')) ||
+               name.endsWith('.deb') || name.endsWith('.rpm');
+      });
+      if (binaryLinks.length > 0) {
+        for (const l of binaryLinks) process.stdout.write(l.href + '\n');
+      } else {
+        process.stderr.write('No clickhouse binary or packages found in artifact links\n');
+        process.exit(1);
+      }
+      return { testResults, artifactLinks, jsonData };
+    }
+
     // Print results for standalone report
     console.log('=== Test Results ===\n');
 
@@ -882,6 +904,7 @@ Options:
   --failed         Show failed test names in PR summary
   --all            Show all test results (not just summary)
   --links          Show artifact links
+  --binary         Print the clickhouse binary URL to stdout (only); suitable for shell capture
   --cidb           Show CIDB links for failed tests
   --download-logs [path]  Download logs to path (default: /tmp/ci_logs.tar.{gz,zst})
   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
@@ -893,6 +916,7 @@ Examples:
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&sha=abc123&name_0=Integration%20tests"
   node fetch_ci_report.js "<url>" --test peak_memory --links
+  node fetch_ci_report.js "<url>" --binary
   node fetch_ci_report.js "<url>" --failed --download-logs
 `);
     process.exit(0);
@@ -904,6 +928,7 @@ Examples:
     failedOnly: false,
     showAll: false,
     showLinks: false,
+    binary: false,
     showCidb: false,
     downloadLogs: false,
     reportIndex: null,
@@ -923,6 +948,9 @@ Examples:
         break;
       case '--links':
         options.showLinks = true;
+        break;
+      case '--binary':
+        options.binary = true;
         break;
       case '--cidb':
         options.showCidb = true;
@@ -952,6 +980,11 @@ Examples:
         break;
       }
     }
+  }
+
+  // When --binary is set, all diagnostic output goes to stderr so stdout is clean for capture.
+  if (options.binary) {
+    console.log = (...args) => process.stderr.write(args.map(String).join(' ') + '\n');
   }
 
   await fetchReport(url, options);
