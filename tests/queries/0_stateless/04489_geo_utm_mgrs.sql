@@ -16,12 +16,23 @@ SELECT '-- geoToUTM: forced zone';
 WITH geoToUTM(2.294497, 48.858222, 32) AS t SELECT round(t.1, 3), round(t.2, 3), t.3, t.4; -- project into a neighbouring zone
 
 SELECT '-- UTMToGeo: inverse conversion round-trips back to the input (within 1e-6 degrees)';
-WITH (2.294497, 48.858222) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4 >= 'N') AS g
+WITH (2.294497, 48.858222) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4) AS g
     SELECT abs(g.1 - p.1) < 1e-6 AND abs(g.2 - p.2) < 1e-6;
-WITH (55.2744, 25.1972) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4 >= 'N') AS g
+WITH (55.2744, 25.1972) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4) AS g
     SELECT abs(g.1 - p.1) < 1e-6 AND abs(g.2 - p.2) < 1e-6;
-WITH (151.2093, -33.8688) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4 >= 'N') AS g
+WITH (151.2093, -33.8688) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4) AS g
     SELECT abs(g.1 - p.1) < 1e-6 AND abs(g.2 - p.2) < 1e-6;
+
+SELECT '-- UTMToGeo: MGRS band letter as 4th argument';
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'U').latitude > 0;   -- band U is northern
+SELECT UTMToGeo(334368.634, 6250948.345, 56, 'H').latitude < 0;   -- band H is southern (Sydney)
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'u').latitude > 0;   -- lowercase accepted
+SELECT UTMToGeo(166021.443, 0., 31, 'N').latitude >= 0;           -- band N is the first northern band
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'I'); -- { serverError BAD_ARGUMENTS }
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'O'); -- { serverError BAD_ARGUMENTS }
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'A'); -- { serverError BAD_ARGUMENTS }
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'Y'); -- { serverError BAD_ARGUMENTS }
+SELECT UTMToGeo(448251.598, 5411935.126, 31, 'UU'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- geoToMGRS: encoding at several precisions';
 SELECT geoToMGRS(2.294497, 48.858222);       -- default precision (1 m)
