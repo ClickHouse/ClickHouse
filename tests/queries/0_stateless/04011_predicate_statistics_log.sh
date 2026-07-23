@@ -18,9 +18,11 @@ Q3="${TABLE}_q3"
 Q4="${TABLE}_q4"
 Q5="${TABLE}_q5"
 Q6="${TABLE}_q6"
+Q7="${TABLE}_q7"
 
-# Under parallel replicas the reads run on remote sub-queries, so predicate_statistics_log rows land
-# under the sub-query ids rather than the client query_id. Match all of them through initial_query_id.
+# Under parallel replicas the reads run on remote sub-queries, so `system.predicate_statistics_log`
+# rows are keyed by the sub-query `query_id` rather than the client one. Match them all through
+# `initial_query_id`.
 qids() { echo "query_id IN (SELECT query_id FROM system.query_log WHERE initial_query_id = '$1' AND event_date >= yesterday() AND type = 'QueryFinish')"; }
 
 $CLICKHOUSE_CLIENT -m --query "
@@ -73,6 +75,11 @@ $CLICKHOUSE_CLIENT --query_id="$Q5" --query "SET predicate_statistics_sample_rat
 
 # Q6: conjunction split across multiple prewhere steps — total_selectivity is consistent and low
 $CLICKHOUSE_CLIENT --query_id="$Q6" --query "$ENABLE_STATS_MULTI_STEP; SELECT * FROM $TABLE WHERE status = 'active' AND category = 'cat_a' FORMAT Null"
+
+# Q7: force real remote parallel-replica reads so the initial_query_id mapping is always exercised,
+# independent of the randomized parallel_replicas_local_plan. Rows land under the remote sub-query ids.
+ENABLE_STATS_PR="$ENABLE_STATS, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0, parallel_replicas_min_number_of_rows_per_replica = 0, parallel_replicas_only_with_analyzer = 0"
+$CLICKHOUSE_CLIENT --query_id="$Q7" --query "$ENABLE_STATS_PR; SELECT * FROM $TABLE WHERE status = 'active' FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS predicate_statistics_log, query_log"
 
@@ -150,6 +157,20 @@ $CLICKHOUSE_CLIENT --query "
 SELECT count() = 0 AS ok
 FROM system.predicate_statistics_log
 WHERE table = '$TABLE' AND passed_rows > input_rows;
+"
+
+# Q7: remote parallel-replica reads were actually used, and their predicate statistics are captured
+# and reachable through initial_query_id (guards against silently dropping parallel-replica coverage).
+echo '--- q7 parallel-replica reads logged ---'
+$CLICKHOUSE_CLIENT -m --query "
+SELECT
+    (SELECT sum(ProfileEvents['ParallelReplicasUsedCount']) > 0
+     FROM system.query_log
+     WHERE initial_query_id = '$Q7' AND event_date >= yesterday() AND type = 'QueryFinish') AS used_parallel_replicas,
+    sum(passed_rows) > 0 AS has_passed,
+    round(sum(passed_rows) / sum(input_rows), 1) AS sel
+FROM system.predicate_statistics_log
+WHERE table = '$TABLE' AND $(qids "$Q7") AND predicate_expression != '';
 "
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE $TABLE"
