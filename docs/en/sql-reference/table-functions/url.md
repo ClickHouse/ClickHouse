@@ -137,6 +137,7 @@ The resolution rules are:
 - **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
 - **Empty**: returns the base URL without fragment.
 - **Absolute URL**: passed through unchanged; `url_base` is ignored.
+- **Scheme-only base** (e.g. `file://`): a path-relative URL is appended to the base directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the [user_files](/operations/server-configuration-parameters/settings#user_files_path) directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case.
 
 **Example**
 

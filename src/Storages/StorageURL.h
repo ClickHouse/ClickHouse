@@ -403,7 +403,8 @@ public:
     /// - `?query` → replaces base query/fragment, preserves base path
     /// - `#frag` → replaces base fragment, preserves base path and query
     /// The resolution is done by string manipulation to allow malformed URLs.
-    static String resolveURLBase(const String & url, const String & base);
+    /// `base_setting_name` is the name of the setting the base came from, used in error messages.
+    static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
 
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.

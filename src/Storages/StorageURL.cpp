@@ -1838,7 +1838,7 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
-String StorageURL::resolveURLBase(const String & url, const String & base)
+String StorageURL::resolveURLBase(const String & url, const String & base, const String & base_setting_name)
 {
     if (base.empty())
         return url;
@@ -1878,7 +1878,7 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
 
     auto scheme_end = base.find("://");
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url_base` setting must contain a scheme (e.g. https://), got: {}", base);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -1917,6 +1917,16 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
         auto base_without_fragment = (existing_fragment == String::npos) ? base : base.substr(0, existing_fragment);
         return base_without_fragment + url;
     }
+
+    /// An authority-less base like `file://` resolves a path-relative reference by simple
+    /// concatenation: `file://` + `data.csv` = `file://data.csv`, which the `file://` scheme
+    /// treats as a path relative to the user_files directory (the current directory in
+    /// clickhouse-local). Dot segments are kept as-is (`file://` + `../a.csv` = `file://../a.csv`),
+    /// the target engine resolves them against its own base directory. Strict RFC 3986 merging
+    /// would produce `file:///data.csv` -- an absolute path -- making relative references
+    /// useless with such a base.
+    if (authority_start == base_before_query.size())
+        return base_before_query + url;
 
     /// Path-relative URL: merge with the base path per RFC 3986.
     /// Replace everything after the last '/' in the path portion of the base URL,
