@@ -175,6 +175,42 @@ def main():
         if results[-1].status != Result.Status.OK:
             ok = False
 
+    # --- TEMPORARY DIAGNOSTIC (do not merge) ---
+    # Does the write-scoped release PAT (ROBOT_CLICKHOUSE_COMMIT_TOKEN) bypass the
+    # "Merge only for releases" ruleset on release-pattern branches
+    # (refs/heads/[0-9][0-9].[0-9]*)? The push only needs HEAD, not any history,
+    # so run it here — before the slow `--unshallow` fetch — and stop.
+    # Authenticate with the PAT via the x-access-token URL syntax. The token is a
+    # literal ${ROBOT_CLICKHOUSE_COMMIT_TOKEN} that the shell expands at run time,
+    # so praktika's verbose command logging never prints its value. Clear
+    # actions/checkout's origin extraheader for this one command so the URL
+    # credentials (our PAT), not the checkout GITHUB_TOKEN, authenticate the push.
+    print(
+        "=== ROBOT-TOKEN PUSH TEST (ROBOT_CLICKHOUSE_COMMIT_TOKEN via "
+        "x-access-token): push HEAD -> refs/heads/30.12 ==="
+    )
+    push_ok = Shell.check(
+        "git -c http.https://github.com/.extraheader= push"
+        " https://x-access-token:${ROBOT_CLICKHOUSE_COMMIT_TOKEN}@github.com/"
+        "ClickHouse/ClickHouse.git HEAD:refs/heads/30.12",
+        verbose=True,
+        strict=False,
+    )
+    if push_ok:
+        print(
+            "ROBOT-PUSH RESULT: SUCCEEDED — the ruleset does NOT block "
+            "ROBOT_CLICKHOUSE_COMMIT_TOKEN; the push to 30.12 went through."
+        )
+    else:
+        print(
+            "ROBOT-PUSH RESULT: REJECTED — the ruleset blocks "
+            "ROBOT_CLICKHOUSE_COMMIT_TOKEN too "
+            "(expected GH013: changes must be made through a pull request)."
+        )
+    print("=== stopping after robot-token push test (diagnostic run) ===")
+    return
+    # --- END TEMPORARY DIAGNOSTIC ---
+
     step(
         name="Fetch Full Repository",
         command=[
