@@ -5,6 +5,7 @@
 #include <Backups/BackupImpl.h>
 #include <Core/Settings.h>
 #include <Disks/IDisk.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -157,6 +158,20 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(path))
         {
+            /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
+            /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
+            /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
+            /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
+            if (disk && hasSupportedZipExtension(path.string()))
+            {
+                const auto object_storage_type = disk->getDataSourceDescription().object_storage_type;
+                if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
+                        "which does not support seeking efficiently (zip requires seeking). "
+                        "Use tar.gz or other tar-based formats instead", disk->getName());
+            }
+
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
