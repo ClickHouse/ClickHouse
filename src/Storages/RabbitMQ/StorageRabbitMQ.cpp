@@ -1232,9 +1232,12 @@ void StorageRabbitMQ::threadFunc()
 
     try
     {
-        /// If there is no running select, stop the loop which was
-        /// activated by previous select.
-        if (connection->getHandler().loopRunning())
+        /// If there is no running select, stop the loop which was activated by previous select.
+        /// Also stop it when armed (loop_state == RUN) but not yet spinning while blocked: otherwise
+        /// a queued looping task can take the sole message-broker worker and spin forever, starving
+        /// later REFRESH/START. stopLoopIfNoReaders() keeps the direct-SELECT readers_count guard.
+        auto & handler = connection->getHandler();
+        if (handler.loopRunning() || (handler.getLoopState() == Loop::RUN && stream_control.isBlocked()))
             stopLoopIfNoReaders();
     }
     catch (...)
