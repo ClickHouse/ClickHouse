@@ -38,3 +38,9 @@ SELECT from_utc_timestamp(toDateTime64('1945-09-16 00:59:59.999', 3), 'Europe/Pa
 -- floor second 1945-09-16 00:59:59 UTC, so toTime64 must return 02:59:59.999.
 SELECT toTime64(reinterpret(toDateTime64('1969-04-27 06:59:59.999', 3, 'UTC'), 'DateTime64(3, \'America/New_York\')'), 3);
 SELECT toTime64(reinterpret(toDateTime64('1945-09-16 00:59:59.999', 3, 'UTC'), 'DateTime64(3, \'Europe/Paris\')'), 3);
+-- The split must happen at the source scale: a lower output scale must not truncate the negative
+-- fraction across the second boundary and move the instant onto the next (wrong-offset) second.
+SELECT toTime64(reinterpret(toDateTime64('1969-04-27 06:59:59.999', 3, 'UTC'), 'DateTime64(3, \'America/New_York\')'), 2);
+SELECT toTime64(reinterpret(toDateTime64('1969-04-27 06:59:59.999', 3, 'UTC'), 'DateTime64(3, \'America/New_York\')'), 0);
+SELECT toTime64(reinterpret(toDateTime64('1945-09-16 00:59:59.999', 3, 'UTC'), 'DateTime64(3, \'Europe/Paris\')'), 0);
+SELECT toTime64(reinterpret(toDateTime64('1969-04-27 06:59:59.999', 3, 'UTC'), 'DateTime64(3, \'America/New_York\')'), 6);
