@@ -57,21 +57,19 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 String resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
     auto norm_base = fs::weakly_canonical(fs::path(base_path).lexically_normal());
-    auto combined = (norm_base / path).lexically_normal().string();
 
-    if (!fileOrSymlinkPathStartsWith(combined, norm_base.string()) || !pathStartsWith(combined, norm_base.string()))
+    if (!fileOrSymlinkPathStartsWith(path, norm_base.string()) || !pathStartsWith(path, norm_base.string()))
     {
-        auto combined_canonical = fs::weakly_canonical(combined);
+        auto path_canonical = fs::weakly_canonical(fs::path(path).lexically_normal());
         throw Exception(
             ErrorCodes::PATH_ACCESS_DENIED,
-            "Path `{}` which was resolved to `{}` and canonicalized to `{}` is outside the table path directory : `{}`",
+            "Path `{}` which was canonicalized to `{}` is outside the table path directory : `{}`",
             path,
-            combined,
-            combined_canonical.string(),
+            path_canonical.string(),
             norm_base.string());
     }
 
-    return fs::weakly_canonical(combined).string();
+    return path;
 }
 
 String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path) const
