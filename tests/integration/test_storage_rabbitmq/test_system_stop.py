@@ -782,33 +782,32 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     table = "rabbitmq_starve"
     exchange = "starve_exchange"
 
-    # The one out-of-order REFRESH cycle self-drives the AMQP loop, and each serial source keeps that
-    # up until its own drive budget (flush_interval_ms) elapses. Self-driven delivery on a single
-    # worker is paced (~0.5s per message), so the backlog per consumer must fit comfortably inside one
-    # budget: 2 messages/consumer against a 5000ms budget leaves a wide margin even under a sanitizer
-    # slowdown. A larger backlog would need the source to outrun its budget, which is not what the one
-    # cycle guarantees.
+    # flush_interval_ms=0 means an unlimited cycle: one blocked REFRESH must drain the whole queued
+    # backlog, not cut it off at a fixed wall-clock budget. This is deterministic (no whole-cycle cap
+    # to race) and regresses if the self-driving cycle ever reintroduces a finite whole-cycle deadline
+    # for flush=0 (a paced single-worker drain of a larger backlog would then be truncated mid-cycle).
+    # num_consumers=2 keeps the serial per-source path (each source drives its own backlog).
     setup_consuming_table(
-        table, exchange, node=node, flush_interval_ms=5000, num_consumers=2
+        table, exchange, node=node, flush_interval_ms=0, num_consumers=2
     )
     # Stop before publishing so the backlog is only ever consumed by the self-driving REFRESH cycle,
     # never by normal streaming (which cannot make progress with a single worker anyway).
     node.query(f"SYSTEM STOP test.{table}")
 
-    publish(rabbitmq_cluster, exchange, 0, 4)
+    publish(rabbitmq_cluster, exchange, 0, 20)
     assert_dst_count_stable(table, 0, seconds=2, node=node)
 
     node.query(f"SYSTEM REFRESH test.{table}")
 
     # The single REFRESH must drain the full queued backlog across both consumers.
-    wait_dst_count(table, 4, node=node)
+    wait_dst_count(table, 20, node=node)
     # Still stopped: no further consumption without another command.
-    assert_dst_count_stable(table, 4, seconds=3, node=node)
+    assert_dst_count_stable(table, 20, seconds=3, node=node)
 
     # A second REFRESH must also run: the self-driving cycle must not leave the AMQP looping task
     # holding the sole worker, or no later REFRESH could ever be scheduled again.
-    publish(rabbitmq_cluster, exchange, 4, 4)
-    assert_dst_count_stable(table, 4, seconds=2, node=node)
+    publish(rabbitmq_cluster, exchange, 20, 20)
+    assert_dst_count_stable(table, 20, seconds=2, node=node)
     node.query(f"SYSTEM REFRESH test.{table}")
-    wait_dst_count(table, 8, node=node)
-    assert_dst_count_stable(table, 8, seconds=3, node=node)
+    wait_dst_count(table, 40, node=node)
+    assert_dst_count_stable(table, 40, seconds=3, node=node)

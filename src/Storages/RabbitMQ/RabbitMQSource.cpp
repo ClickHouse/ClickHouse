@@ -155,11 +155,17 @@ bool RabbitMQSource::driveLoopUntilMessage()
 
     auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
     auto & handler = storage.getConnection().getHandler();
+    /// A finite flush interval caps the whole cycle from its entry (drive_stopwatch). An unlimited
+    /// cycle (flush=0) instead bounds only each wait for the next delivery by this per-call idle
+    /// window, so a live backlog drains in full while an empty queue still releases the permit.
+    Stopwatch idle_stopwatch{CLOCK_MONOTONIC_COARSE};
     while (!consumer->hasPendingMessages())
     {
         if (consumer->isConsumerStopped() || is_cancelled())
             return false;
-        const uint64_t elapsed_ms = drive_stopwatch->elapsedMilliseconds();
+        const uint64_t elapsed_ms = max_execution_time_ms
+            ? drive_stopwatch->elapsedMilliseconds()
+            : idle_stopwatch.elapsedMilliseconds();
         if (elapsed_ms >= drive_budget_ms)
             return false;
 
@@ -406,10 +412,10 @@ Chunk RabbitMQSource::generateImpl()
 
         bool is_time_limit_exceeded = false;
         UInt64 remaining_execution_time = 0;
-        /// The self-driving REFRESH path is bounded by its own per-source drive_stopwatch/driveBudgetMs
-        /// (a steady backlog never re-enters driveLoopUntilMessage, so the deadline must be checked here
-        /// too); the normal path uses the shared construction-time total_stopwatch vs the flush interval.
-        const uint64_t budget_ms = drive_loop_on_worker ? driveBudgetMs() : max_execution_time_ms;
+        /// Both paths bound the cycle by the flush interval (max_execution_time_ms; 0 == unlimited,
+        /// drain up to max_block_size). The drive path measures elapsed from cycle entry via the
+        /// per-source drive_stopwatch; the normal path uses the construction-time total_stopwatch.
+        const uint64_t budget_ms = max_execution_time_ms;
         if (budget_ms)
         {
             uint64_t elapsed_time_ms = (drive_loop_on_worker ? *drive_stopwatch : total_stopwatch).elapsedMilliseconds();
