@@ -3632,28 +3632,64 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
 void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
 {
-    added_part_starting_offset = true;
-    added_part_offset = true;
-
-    for (const auto & col_name : all_column_names)
+    /// A read column consumed by a filter is exposed again by adding it back to the filter outputs,
+    /// the same way `PREWHERE` keeps pass-through columns. When the column is the filter column itself
+    /// (e.g. `PREWHERE _part_offset`), it is already among the outputs, so the remove-filter flag is
+    /// cleared instead: after filtering it keeps its original values for the surviving rows.
+    /// Both are required for the data-read pipeline to actually emit it, not only for the plan header.
+    auto reexpose_in_filter = [](ActionsDAG & filter_actions, const String & filter_column_name, bool & remove_filter_column, const String & column_name) -> bool
     {
-        if (col_name == "_part_starting_offset")
-            added_part_starting_offset = false;
-        if (col_name == "_part_offset")
-            added_part_offset = false;
-    }
+        auto & dag_outputs = filter_actions.getOutputs();
+        for (const auto * input : filter_actions.getInputs())
+        {
+            if (input->result_name != column_name)
+                continue;
+
+            if (std::ranges::find(dag_outputs, input) == dag_outputs.end())
+            {
+                dag_outputs.push_back(input);
+                return true;
+            }
+
+            if (filter_column_name == column_name && remove_filter_column)
+            {
+                remove_filter_column = false;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    auto expose_in_output = [&](const String & column_name) -> bool
+    {
+        if (output_header && output_header->has(column_name))
+            return false;
+
+        bool reexposed = false;
+        if (query_info.row_level_filter)
+            reexposed |= reexpose_in_filter(
+                query_info.row_level_filter->actions,
+                query_info.row_level_filter->column_name,
+                query_info.row_level_filter->do_remove_column,
+                column_name);
+        if (query_info.prewhere_info)
+            reexposed |= reexpose_in_filter(
+                query_info.prewhere_info->prewhere_actions,
+                query_info.prewhere_info->prewhere_column_name,
+                query_info.prewhere_info->remove_prewhere_column,
+                column_name);
+
+        if (!reexposed && std::ranges::find(all_column_names, column_name) == all_column_names.end())
+            all_column_names.insert(all_column_names.begin(), column_name);
+
+        return true;
+    };
+
+    added_part_starting_offset = expose_in_output("_part_starting_offset");
+    added_part_offset = expose_in_output("_part_offset");
 
     if (!added_part_starting_offset && !added_part_offset)
         return;
-
-    Names new_column_names;
-    if (added_part_starting_offset)
-        new_column_names.push_back("_part_starting_offset");
-    if (added_part_offset)
-        new_column_names.push_back("_part_offset");
-
-    new_column_names.insert(new_column_names.end(), all_column_names.begin(), all_column_names.end());
-    all_column_names = std::move(new_column_names);
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
