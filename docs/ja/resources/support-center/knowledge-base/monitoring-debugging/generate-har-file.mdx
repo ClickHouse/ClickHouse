@@ -1,0 +1,63 @@
+---
+date: 2025-11-11
+title: サポート用のHARファイルを生成する方法
+tags: ['ツールとユーティリティ']
+keywords: ['HARファイル', 'HTTP Archive']
+description: 'HAR（HTTP Archive）ファイルには、ブラウザーのネットワークアクティビティが記録されます。サポートチームがページの読み込み遅延やリクエストの失敗、その他のネットワークの問題を診断するのに役立ちます。'
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="from-google-chrome">
+  ## Google Chrome から取得する場合
+</div>
+
+1. <kbd>F12</kbd> または <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux)  / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac) を押して、開発ツールを開きます。
+2. 「ネットワーク」タブをクリックします。
+3. ページを再読み込みし、問題を再現します。
+4. 開発ツールでダウンロードボタンをクリックします。
+
+<div id="from-mozilla-firefox">
+  ## Mozilla Firefox の場合
+</div>
+
+1. <kbd>F12</kbd> または <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> (Windows/Linux)  / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd> (Mac) を押して、開発ツールを開きます。
+2. 「ネットワーク」タブをクリックします。
+3. ページを再読み込みして、問題を再現します。
+4. 開発ツールでリクエスト一覧を右クリックし、「Save All As HAR」を選択します。
+
+<div id="from-microsoft-edge">
+  ## Microsoft Edge の場合
+</div>
+
+1. <kbd>F12</kbd> を押すか、<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) /<kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac) を押して、開発ツールを開きます。
+2. 「ネットワーク」タブをクリックします。
+3. ページを再読み込みして、問題を再現します。
+4. 開発ツールのネットワーク一覧内で右クリックし、「Save all as HAR with content」を選択します。
+
+<div id="from-safari">
+  ## Safari で
+</div>
+
+1. 開発ツールを有効にします (まだ有効になっていない場合) :
+   * Safari &gt; 設定 &gt; 詳細 に移動します。
+   * 下部にある「メニューバーに“開発”メニューを表示」をオンにします。
+2. 「開発」&gt;「Webインスペクタを表示」をクリックします。
+3. 「ネットワーク」タブをクリックします。
+4. ページを再読み込みし、問題を再現します。
+5. 開発ツールで「書き出す」ボタンをクリックします。
+
+<div id="sending-har-file">
+  ## .HAR ファイルの送信
+</div>
+
+1. ファイル名を短く、内容がわかりやすいものに変更します (例: login-issue.har) 。
+2. ファイルを圧縮します (任意ですが、推奨します) 。
+3. サポートケースに添付するか、担当のサポート窓口へメールで送信します。
+
+<Note>
+  HAR ファイルには、セッション Cookie やその他の機密データが含まれる場合があります。
+  共有は、許可されたサポート担当者にのみ行ってください。
+</Note>

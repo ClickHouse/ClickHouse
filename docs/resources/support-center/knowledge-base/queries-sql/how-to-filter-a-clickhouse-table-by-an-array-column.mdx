@@ -1,0 +1,107 @@
+---
+title: How to filter a ClickHouse table by an array-column?
+description: "Knowledgebase article on how to filter a ClickHouse table by an array-column."
+date: 2024-12-17
+tags: ['Data Modelling', 'Functions']
+keywords: ['Filter', 'Array-Column']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## Introduction {#introduction}
+Filtering a ClickHouse table by an array-column is a common task and the product offers a lot of [functions](/reference/functions/regular-functions/array-functions) to work with array-columns.
+
+In this article, we're going to focus on filtering a table by an array-column, but the video below covers a lot of other array-related functions:
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/JKHAdCFtYDg?si=OqS3ry1LFrOlF8Iy" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+## Example {#example}
+We'll use an example of a table with two columns `tags_string` and `tags_int` that contain an array of strings and integers respectively.
+
+- Create a sample database and table.
+
+```sql
+CREATE DATABASE db1;
+```
+
+- Create a sample table
+
+```sql
+CREATE TABLE db1.tags_table
+(
+    `id` UInt64,
+    `tags_string` Array(String),
+    `tags_int` Array(UInt64),
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+- Insert some sample data into the table.
+
+```sql
+INSERT INTO db1.tags_table VALUES (1, ['tag1', 'tag2', 'tag3'], [1, 2, 3]), (2, ['tag2', 'tag3', 'tag4'], [2, 3, 4]), (3, ['tag1', 'tag3', 'tag5'], [1, 3, 5]);
+```
+
+Filter the table using the `has(arr, elem)` function to return the rows where the `arr` array contains the `elem` element.
+
+Filter the table to return the rows where the `tags_string` array contains the `tag1` element.
+
+```sql
+SELECT * FROM db1.tags_table WHERE has(tags_string, 'tag1');
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Use the `hasAll(arr, elems)` function to return the rows where all the elements in the `elems` array are present in the `arr` array.
+
+Filter the table to return the rows where all the elements in the `tags_string` array are present in the `['tag1', 'tag2']` array.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAll(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Use the `hasAny(arr, elems)` function to return the rows where at least one element in the `elems` array is present in the `arr` array.
+
+Filter the table to return the rows where at least one element in the `tags_string` array is present in the `['tag1', 'tag2']` array.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAny(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+We can use a lambda function to filter the table using the `arrayExists(lambda, arr)` function. 
+
+Filter the table to return the rows where at least one element in the `tags_int` array is greater than 3.
+
+```sql
+SELECT * FROM db1.tags_table WHERE arrayExists(x -> x > 3, tags_int);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```

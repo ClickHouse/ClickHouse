@@ -1,0 +1,160 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/row-click-drilldowns
+title: 'Detalhamento ao clicar em uma linha da tabela'
+sidebarTitle: 'Detalhamento por clique na linha'
+description: 'Transforme um tile de tabela em um fluxo de inspeção: clique em uma linha para abrir um dashboard focado ou os logs e traces subjacentes, filtrados pela linha clicada'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'drilldown', 'table', 'row click', 'inspection', 'observability']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Um tile de tabela costuma funcionar como um **catálogo**: uma linha por serviço, host, endpoint ou grupo de erro, com algumas colunas que atribuem uma pontuação a cada um. As ações de clique na linha transformam esse catálogo em um fluxo de inspeção. Você percorre o catálogo para encontrar a linha que importa, clica nela, e o ClickStack usa os valores da linha clicada como filtros. O destino então já é aberto com o escopo definido para aquele item, sem precisar recriar manualmente nenhuma consulta.
+
+Um clique pode levar a um de dois lugares:
+
+* **outro dashboard**, para uma visualização focada de um único item, como um dashboard de detalhes por serviço, ou
+* **os eventos subjacentes** em [Busca](/pt-BR/clickstack/features/search), para ver os logs ou traces por trás da linha.
+
+Ambos os casos de uso abaixo partem do mesmo catálogo (um inventário de serviços) e, a partir dele, aprofundam a análise em cada destino. As ações de clique na linha se aplicam apenas a tiles de tabela. Elas são diferentes do [drilldown para busca](/pt-BR/clickstack/features/dashboards/overview#drilldown-to-search) de um gráfico, que abre um menu de contexto quando você clica em um ponto de um gráfico de linha ou de barras.
+
+<div id="inspect-in-dashboard">
+  ## Inspecione um serviço no seu próprio dashboard
+</div>
+
+Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot;qual serviço está com problemas?&quot;. Clicar em uma linha pode abrir um dashboard específico do serviço que responde à pergunta &quot;o que está acontecendo dentro dele?&quot;, restrito ao serviço em que você clicou. O padrão abaixo combina uma tabela de inventário de serviços com um dashboard `Service Detail`.
+
+<Steps>
+  <Step>
+    ### Crie o dashboard de detalhes
+
+    Crie um dashboard chamado `Service Detail` e adicione um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) com a expressão `ServiceName` na sua source de traces. O filtro no nível do dashboard redefine o escopo de cada tile para um único serviço, para que os próprios tiles não fixem um serviço nas consultas. Adicione as visualizações por serviço que você quiser: indicadores RED principais (requisições, erros, duração P95), um gráfico de percentis de latência (P50, P95, P99), taxa de requisições ao longo do tempo e um detalhamento por endpoint agrupado por `SpanName`.
+
+    Salve esse dashboard primeiro para poder selecioná-lo como destino na próxima etapa.
+  </Step>
+
+  <Step>
+    ### Crie o inventário de serviços
+
+    Em um dashboard de visão geral, adicione um tile de **Table** na sua source de traces agrupado por `ServiceName`. Dê a ele as colunas RED que avaliam cada serviço, cada uma como uma série com alias:
+
+    * `Requests`: contagem de spans (taxa).
+    * `Errors`: contagem de spans com status de erro.
+    * `P95 Duration`: o percentil 95 de `Duration`. Defina o formato numérico da coluna como duração para que ela seja exibida como `288ms`, e não como nanossegundos brutos.
+
+    Ordene por `Requests` em ordem decrescente para que os serviços com mais tráfego apareçam no topo. Esta tabela é o catálogo: uma linha por serviço, avaliado por RED.
+
+    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="Tabela de inventário de serviços com colunas RED (Requests, Errors, P95 Duration) para cada serviço, ordenada por volume de requisições, acima de uma tendência de requisições ao longo do tempo" size="lg" />
+
+    <Tip>
+      **Coloque a coluna de agrupamento primeiro**
+
+      Por padrão, uma tabela renderiza sua coluna de agrupamento (aqui `ServiceName`) à direita, depois da série. Um catálogo fica melhor quando a identidade de cada linha aparece primeiro. Abra as **Display Settings** do tile e ative **Display Group By Columns on Left** para mover a coluna de agrupamento para o início.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### Configure o clique na linha
+
+    Na tabela de inventário, abra **Row Click Action**, selecione **Dashboard** e escolha `Service Detail` na lista de dashboards. Selecionar o dashboard diretamente o fixa pelo ID. O link continua funcionando se o dashboard for renomeado depois e continua válido após a exportação e importação do dashboard. (Reserve a opção **Template** para escolher um dashboard diferente por linha; veja [Configurar uma ação de clique na linha](#set-up).)
+
+    Como `Service Detail` declara um filtro personalizado `ServiceName`, o painel lateral pré-preenche um filtro vazio para essa expressão. Preencha o template:
+
+    * **Expression**: `ServiceName` (já preenchido)
+    * **Template**: `{{ServiceName}}`
+
+    Clique em **Apply** e salve. O serviço da linha clicada agora é passado para o filtro `ServiceName` do dashboard.
+  </Step>
+
+  <Step>
+    ### Clique em uma linha
+
+    Ao passar o mouse sobre uma linha, aparece um link na borda direita da tabela, com uma dica descrevendo a ação (`Open dashboard "Service Detail"`). Clicar na linha abre o dashboard `Service Detail` com o filtro `Service` definido com o valor clicado, para que cada tile (os indicadores RED principais, os percentis de latência, o detalhamento por endpoint) seja reescopado para aquele único serviço com um único clique.
+
+    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Dashboard Service Detail após um clique em uma linha, com o filtro Service definido para o serviço clicado e os indicadores RED principais, percentis de latência e detalhamento por endpoint todos restritos a ele" size="lg" />
+  </Step>
+</Steps>
+
+<div id="jump-to-traces">
+  ## Ir de um serviço para seus traces
+</div>
+
+Às vezes, você não quer outra visão agregada; quer os eventos brutos. Uma ação de **Busca** envia o clique para a página [Busca](/pt-BR/clickstack/features/search) em vez de um dashboard, abrindo os logs ou traces por trás da linha, já filtrados para ela.
+
+Partindo da mesma tabela de inventário de serviços, direcione o clique da linha para os próprios traces em vez do dashboard de detalhes.
+
+<Steps>
+  <Step>
+    ### Direcione o clique da linha para a Busca
+
+    Na tabela de inventário, abra **Row Click Action** e selecione **Busca**. Escolha sua fonte de traces (apenas fontes de log e trace são listadas). Adicione um filtro:
+
+    * **Expressão**: `ServiceName`
+    * **Template**: `{{ServiceName}}`
+
+    Clique em **Aplicar** e salve.
+  </Step>
+
+  <Step>
+    ### Clique em uma linha
+
+    Ao clicar em uma linha de serviço, a página Busca agora é aberta nessa fonte de traces, filtrada por `ServiceName = <service>`, para que você veja os spans apenas desse serviço no mesmo intervalo de tempo.
+
+    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="Página Busca aberta na fonte de traces após um clique na linha, filtrada para o serviço clicado" size="lg" />
+  </Step>
+</Steps>
+
+A mesma estrutura funciona para qualquer catálogo de itens. Agrupe a tabela por uma operação (`SpanName`) ou por um atributo de endpoint em vez de `ServiceName`, use o filtro dessa coluna como template, e cada clique na linha abrirá os eventos daquela operação ou endpoint. Para um group-by em um atributo de map, veja a observação sobre alias em [Validação e limitações](#validation).
+
+<div id="set-up">
+  ## Configurar uma ação de clique na linha
+</div>
+
+As ações de clique na linha são configuradas no próprio tile de tabela; não há uma página separada para isso. Adicione ou edite um tile e defina seu tipo de visualização como **Table**. Um botão **Row Click Action** aparecerá na barra de ferramentas do editor, ao lado de **Display Settings**. O botão é exibido apenas em tiles de tabela, e seu rótulo reflete a ação atual: `Row Click Action: Default`, `Row Click Action: Busca` ou `Row Click Action: Dashboard`. Clique nele para abrir o painel lateral.
+
+<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Painel lateral de Row Click Action no modo Dashboard, com o dashboard Service Detail selecionado como destino e um filtro ServiceName gerado a partir da linha clicada" size="lg" />
+
+O painel lateral oferece três ações:
+
+* **Default**: o comportamento padrão integrado. Clicar em uma linha abre a página de Busca, filtrada pelos valores das colunas de group-by da linha e pelo intervalo de tempo selecionado. É isso que acontece quando nenhuma ação personalizada é definida.
+* **Busca**: envia o clique para a página de Busca de uma fonte à sua escolha.
+* **Dashboard**: envia o clique para outro dashboard da sua equipe.
+
+Para **Busca** e **Dashboard**, você escolhe para onde o clique vai e define os filtros levados com ele:
+
+* **Destination**: escolha uma fonte ou dashboard específico, ou escolha **Template** e insira um template [Handlebars](https://handlebarsjs.com/) cujo nome corresponda a uma fonte ou dashboard disponível. Escolher um destino específico o fixa por ID. Prefira isso para um único destino fixo: ele continua funcionando após renomeações e após exportar e importar dashboards e, no caso de um dashboard, preenche automaticamente os filtros declarados no destino. Use **Template** quando o destino precisar variar por linha, referenciando uma coluna da linha para defini-lo (por exemplo, `Errors-{{ServiceName}}`).
+* **Filters**: clique em **Add filter** e forneça uma **Expression** (uma coluna ou expressão no destino, por exemplo `ServiceName`) e um **Template** para o valor (por exemplo `{{ServiceName}}`). Os templates referenciam as colunas da linha clicada com `{{columnName}}` (veja a observação abaixo sobre quais colunas estão disponíveis). Cada filtro é renderizado como uma condição `expression IN (value)` no destino, e os filtros que compartilham uma mesma expressão são mesclados. Quando o destino é um dashboard, o painel lateral preenche automaticamente um filtro vazio para cada filtro já declarado nesse dashboard, então você só precisa preencher os templates.
+* **WHERE** (opcional): um template Handlebars renderizado no filtro global do destino, além das condições por filtro acima. Defina a linguagem de consulta dele como SQL ou Lucene para que o destino consiga analisá-lo. Por exemplo, o template SQL `ServiceName = '{{ServiceName}}'` restringe o destino ao serviço da linha clicada.
+
+<Info>
+  **Os templates referenciam as colunas da tabela**
+
+  Um template `{{...}}` é resolvido com base nas próprias colunas do tile de tabela: as colunas de group-by e cada série pelo nome ou alias, exatamente como aparecem na tabela. Ele não enxerga colunas da fonte subjacente que a tabela não seleciona. Para ser transportado no clique, um valor precisa ser uma coluna da tabela; portanto, `{{ServiceName}}` funciona porque `ServiceName` é a coluna de group-by da tabela, e uma coluna com alias é referenciada pelo próprio alias. Referenciar um nome que a tabela não possui faz o clique falhar com `Row has no column '<name>'`.
+</Info>
+
+Clique em **Apply** para validar os templates (o ClickStack informará qualquer um deles com sintaxe inválida) e, em seguida, salve o dashboard para persistir a ação.
+
+<div id="how-it-resolves">
+  ## Como o destino e os filtros são resolvidos
+</div>
+
+Quando um visualizador clica em uma linha, o ClickStack resolve a ação com base nessa linha:
+
+* **Destino.** Ao escolher uma fonte ou dashboard específico, ele é fixado pelo ID. Um destino **Template** é renderizado com base na linha clicada e depois comparado por nome com as fontes ou dashboards da sua equipe. O nome precisa ser único para que a resolução funcione: se duas fontes ou dois dashboards tiverem o mesmo nome renderizado, não será possível resolver o link para apenas um deles. Um nome renderizado vazio, ou um nome sem correspondência, também faz a resolução falhar.
+* **Filtros.** Cada template de filtro é renderizado com base na linha e se torna uma condição `expression IN (value)` no destino. Uma ação `Busca` abre `/search` no escopo da fonte escolhida; uma ação `Dashboard` abre esse dashboard. O intervalo de tempo da linha clicada é preservado em ambos os casos.
+
+<Info>
+  **Destinos de dashboard precisam de um filtro correspondente declarado**
+
+  Um filtro levado para um dashboard só entra em vigor se o dashboard de destino declarar um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) de nível superior cuja expressão corresponda à **Expression** do filtro. Se nenhum filtro declarado corresponder, esse valor será descartado no momento do clique e o destino será aberto sem filtro para essa expressão. É por isso que o modo dashboard preenche previamente os filtros declarados do destino: faça a expressão corresponder, e o menu suspenso do destino será preenchido automaticamente com o valor da linha clicada.
+</Info>
+
+<div id="validation">
+  ## Validação e limitações
+</div>
+
+* **Apenas tiles de tabela.** O botão **Row Click Action** aparece em tiles de tabela, tanto na tabela do chart builder quanto em uma tabela [baseada em SQL](/pt-BR/clickstack/features/dashboards/sql-visualizations). Outros tipos de tile não têm ação de clique na linha.
+* **Os alvos de Busca devem ser fontes de logs ou traces.** Fontes de métricas e de sessão não são oferecidas, pois não podem ser visualizadas na página de Busca.
+* **Os nomes de Template devem ser únicos.** Um alvo de Template é resolvido pelo nome, portanto duas fontes ou dois dashboards com o mesmo nome não podem ser usados como alvo de Template.
+* **Alvos de dashboard precisam de um filtro declarado correspondente** para que um valor repassado tenha efeito (veja a nota acima).
+* **Colunas de group-by com expressão precisam de alias.** Um group-by em uma expressão, como um atributo de map `SpanAttributes['http.route']`, produz uma coluna de resultado cujo nome é a própria expressão, o que é pouco prático para referenciar em um Template. Dê um alias à coluna no chart builder: adicione `AS <alias>` após a expressão no campo **Group By** (por exemplo, `SpanAttributes['http.route'] AS Route`) e depois referencie `{{Route}}` no Template. Séries agregadas recebem um alias do campo **Alias** da mesma forma. Um group-by em uma coluna simples, como `ServiceName`, já tem um nome claro e não precisa de alias.

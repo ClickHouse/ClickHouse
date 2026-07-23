@@ -1,0 +1,257 @@
+---
+alias: []
+description: 'وثائق تنسيق JSONObjectEachRow'
+input_format: true
+keywords: ['JSONObjectEachRow']
+output_format: true
+slug: /interfaces/formats/JSONObjectEachRow
+title: 'JSONObjectEachRow'
+doc_type: 'reference'
+---
+
+| إدخال | إخراج | اسم بديل |
+| ----- | ----- | -------- |
+| ✔     | ✔     |          |
+
+<div id="description">
+  ## الوصف
+</div>
+
+في هذا التنسيق، تُمثَّل جميع البيانات على شكل كائن JSON واحد، ويُمثَّل كل صف كحقل منفصل ضمن هذا الكائن، على غرار تنسيق [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow).
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="basic-example">
+  ### مثال بسيط
+</div>
+
+إذا كانت لدينا بعض بيانات JSON:
+
+```json
+{
+  "row_1": {"num": 42, "str": "hello", "arr":  [0,1]},
+  "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
+  "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
+}
+```
+
+لاستخدام اسم كائن كقيمة لعمود، يمكنك استخدام الإعداد الخاص [`format_json_object_each_row_column_for_object_name`](/ar/reference/settings/formats#format_json_object_each_row_column_for_object_name).
+تُعيَّن قيمة هذا الإعداد إلى اسم عمود، ويُستخدم هذا الاسم كمفتاح JSON للصف في الكائن الناتج.
+
+<div id="output">
+  #### المخرجات
+</div>
+
+لنفترض أن لدينا الجدول `test` ويحتوي على عمودين:
+
+```text
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+لنُخرج الناتج بتنسيق `JSONObjectEachRow` ونستخدم الإعداد `format_json_object_each_row_column_for_object_name`:
+
+```sql title="Query"
+SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```json title="Response"
+{
+    "first_obj": {"number": 1},
+    "second_obj": {"number": 2},
+    "third_obj": {"number": 3}
+}
+```
+
+<div id="input">
+  #### الإدخال
+</div>
+
+لنفترض أننا خزّنا ناتج المثال السابق في ملف باسم `data.json`:
+
+```sql title="Query"
+SELECT * FROM file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') SETTINGS format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```response title="Response"
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+ويعمل أيضًا مع استدلال المخطط:
+
+```sql title="Query"
+DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```response title="Response"
+┌─name────────┬─type────────────┐
+│ object_name │ String          │
+│ number      │ Nullable(Int64) │
+└─────────────┴─────────────────┘
+```
+
+<div id="json-inserting-data">
+  ### إدخال البيانات
+</div>
+
+```sql title="Query"
+INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+يسمح ClickHouse بما يلي:
+
+* أي ترتيب لأزواج المفتاح والقيمة داخل الكائن.
+* حذف بعض القيم.
+
+يتجاهل ClickHouse المسافات بين العناصر والفواصل بعد الكائنات. يمكنك تمرير جميع الكائنات في سطر واحد. ولا يلزم فصلها بأسطر جديدة.
+
+<div id="omitted-values-processing">
+  #### معالجة القيم المحذوفة
+</div>
+
+يستبدل ClickHouse القيم المحذوفة بالقيم الافتراضية لأنواع [البيانات](/ar/reference/data-types/index) المقابلة.
+
+إذا جرى تحديد `DEFAULT expr`، يستخدم ClickHouse قواعد استبدال مختلفة وفقًا للإعداد [input&#95;format&#95;defaults&#95;for&#95;omitted&#95;fields](/ar/reference/settings/formats#input_format_defaults_for_omitted_fields).
+
+تأمل الجدول التالي:
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS example_table
+(
+    x UInt32,
+    a DEFAULT x * 2
+) ENGINE = Memory;
+```
+
+* إذا كانت `input_format_defaults_for_omitted_fields = 0`، فإن القيمة الافتراضية لكلٍّ من `x` و`a` هي `0` (لأنها القيمة الافتراضية لنوع البيانات `UInt32`).
+* إذا كانت `input_format_defaults_for_omitted_fields = 1`، فإن القيمة الافتراضية لـ `x` هي `0`، لكن القيمة الافتراضية لـ `a` هي `x * 2`.
+
+<Note>
+  عند إدراج البيانات باستخدام `input_format_defaults_for_omitted_fields = 1`، يستهلك ClickHouse موارد حوسبة أكبر مقارنةً بالإدراج باستخدام `input_format_defaults_for_omitted_fields = 0`.
+</Note>
+
+<div id="json-selecting-data">
+  ### استعلام البيانات
+</div>
+
+لنأخذ جدول `UserActivity` مثالًا:
+
+```response
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+يُرجع الاستعلام `SELECT * FROM UserActivity FORMAT JSONEachRow` ما يلي:
+
+```response
+{"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
+{"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+على عكس تنسيق [JSON](/ar/reference/formats/JSON/JSON)، لا تُستبدل تسلسلات UTF-8 غير الصالحة. تُفلت القيم بالطريقة نفسها كما في `JSON`.
+
+<Info>
+  يمكن إخراج أي مجموعة من البايتات في السلاسل النصية. استخدم تنسيق [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) إذا كنت متأكدًا من أن البيانات الموجودة في الجدول يمكن تنسيقها بصيغة JSON من دون فقدان أي معلومات.
+</Info>
+
+<div id="jsoneachrow-nested">
+  ### استخدام البُنى Nested
+</div>
+
+إذا كان لديك جدول يحتوي على أعمدة من نوع البيانات [`Nested`](/ar/reference/data-types/nested-data-structures/index)، فيمكنك إدراج بيانات JSON بالبنية نفسها. فعِّل هذه الميزة باستخدام الإعداد [input&#95;format&#95;import&#95;nested&#95;json](/ar/reference/settings/formats#input_format_import_nested_json).
+
+على سبيل المثال، تأمل الجدول التالي:
+
+```sql title="Query"
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+كما ترى في وصف نوع البيانات `Nested`، يتعامل ClickHouse مع كل مكوّن من البنية المتداخلة على أنه عمود منفصل (`n.s` و `n.i` في جدولنا). يمكنك إدراج البيانات بالطريقة التالية:
+
+```sql title="Query"
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+لإدراج البيانات ككائن JSON هرمي، اضبط [`input_format_import_nested_json=1`](/ar/reference/settings/formats#input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+بدون هذا الإعداد، يُطلق ClickHouse استثناءً.
+
+```sql title="Query"
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+
+```response title="Response"
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+
+```sql title="Query"
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+
+```response title="Response"
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+
+```sql title="Query"
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+
+```response title="Response"
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+| الإعداد                                                                                                                                                        | الوصف                                                                                                                                                                        | القيمة الافتراضية | ملاحظات                                                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`input_format_import_nested_json`](/ar/reference/settings/formats#input_format_import_nested_json)                                                               | ربط بيانات JSON المتداخلة بالجداول المتداخلة (يعمل ذلك مع تنسيق JSONEachRow).                                                                                                | `false`           |                                                                                                                                                                               |
+| [`input_format_json_read_bools_as_numbers`](/ar/reference/settings/formats#input_format_json_read_bools_as_numbers)                                               | السماح بقراءة القيم المنطقية كأرقام في تنسيقات إدخال JSON.                                                                                                                   | `true`            |                                                                                                                                                                               |
+| [`input_format_json_read_bools_as_strings`](/ar/reference/settings/formats#input_format_json_read_bools_as_strings)                                               | السماح بتفسير القيم المنطقية على أنها سلاسل نصية في تنسيقات إدخال JSON.                                                                                                      | `true`            |                                                                                                                                                                               |
+| [`input_format_json_read_numbers_as_strings`](/ar/reference/settings/formats#input_format_json_read_numbers_as_strings)                                           | السماح بتفسير الأرقام على أنها سلاسل نصية في تنسيقات إدخال JSON.                                                                                                             | `true`            |                                                                                                                                                                               |
+| [`input_format_json_read_arrays_as_strings`](/ar/reference/settings/formats#input_format_json_read_arrays_as_strings)                                             | السماح بتفسير مصفوفات JSON على أنها سلاسل نصية في تنسيقات إدخال JSON.                                                                                                        | `true`            |                                                                                                                                                                               |
+| [`input_format_json_read_objects_as_strings`](/ar/reference/settings/formats#input_format_json_read_objects_as_strings)                                           | السماح بتفسير كائنات JSON على أنها سلاسل نصية في تنسيقات إدخال JSON.                                                                                                         | `true`            |                                                                                                                                                                               |
+| [`input_format_json_named_tuples_as_objects`](/ar/reference/settings/formats#input_format_json_named_tuples_as_objects)                                           | تحليل أعمدة named tuple على أنها كائنات JSON.                                                                                                                                | `true`            |                                                                                                                                                                               |
+| [`input_format_json_try_infer_numbers_from_strings`](/ar/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)                             | محاولة استنتاج الأرقام من الحقول النصية أثناء استنتاج المخطط.                                                                                                                | `false`           |                                                                                                                                                                               |
+| [`input_format_json_try_infer_named_tuples_from_objects`](/ar/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects)                   | محاولة استنتاج named tuple من كائنات JSON أثناء استنتاج المخطط.                                                                                                              | `true`            |                                                                                                                                                                               |
+| [`input_format_json_infer_incomplete_types_as_strings`](/ar/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)                       | استخدم النوع String للمفاتيح التي لا تحتوي أثناء استدلال المخطط في تنسيقات إدخال JSON إلا على قيم NULL أو كائنات/مصفوفات فارغة.                                              | `true`            |                                                                                                                                                                               |
+| [`input_format_json_defaults_for_missing_elements_in_named_tuple`](/ar/reference/settings/formats#input_format_json_defaults_for_missing_elements_in_named_tuple) | أدرِج القيم الافتراضية للعناصر المفقودة في كائن JSON أثناء تحليل named tuple.                                                                                                | `true`            |                                                                                                                                                                               |
+| [`input_format_json_ignore_unknown_keys_in_named_tuple`](/ar/reference/settings/formats#input_format_json_ignore_unknown_keys_in_named_tuple)                     | تجاهل المفاتيح غير المعروفة في كائن JSON للـ named Tuples.                                                                                                                   | `false`           |                                                                                                                                                                               |
+| [`input_format_json_compact_allow_variable_number_of_columns`](/ar/reference/settings/formats#input_format_json_compact_allow_variable_number_of_columns)         | السماح بعدد متغيّر من الأعمدة في تنسيق JSONCompact/JSONCompactEachRow، مع تجاهل الأعمدة الإضافية واستخدام القيم الافتراضية للأعمدة المفقودة.                                 | `false`           |                                                                                                                                                                               |
+| [`input_format_json_throw_on_bad_escape_sequence`](/ar/reference/settings/formats#input_format_json_throw_on_bad_escape_sequence)                                 | إطلاق استثناء إذا كانت سلسلة JSON تحتوي على تسلسل إفلات غير صالح. وإذا كان هذا الخيار معطّلاً، فستبقى تسلسلات الإفلات غير الصالحة كما هي في البيانات.                        | `true`            |                                                                                                                                                                               |
+| [`input_format_json_empty_as_default`](/ar/reference/settings/formats#input_format_json_empty_as_default)                                                         | اعتبار الحقول الفارغة في إدخال JSON قيماً افتراضية.                                                                                                                          | `false`.          | بالنسبة إلى التعبيرات الافتراضية المعقدة، يجب أيضًا تفعيل [`input_format_defaults_for_omitted_fields`](/ar/reference/settings/formats#input_format_defaults_for_omitted_fields). |
+| [`output_format_json_quote_64bit_integers`](/ar/reference/settings/formats#output_format_json_quote_64bit_integers)                                               | يتحكم في إحاطة الأعداد الصحيحة ذات 64 بت بعلامات اقتباس في تنسيق إخراج JSON.                                                                                                 | `true`            |                                                                                                                                                                               |
+| [`output_format_json_quote_64bit_floats`](/ar/reference/settings/formats#output_format_json_quote_64bit_floats)                                                   | يتحكم في إحاطة الأعداد ذات الفاصلة العائمة 64 بت بعلامات اقتباس في تنسيق إخراج JSON.                                                                                         | `false`           |                                                                                                                                                                               |
+| [`output_format_json_quote_denormals`](/ar/reference/settings/formats#output_format_json_quote_denormals)                                                         | يُمكّن إخراج القيم &#39;+nan&#39; و&#39;-nan&#39; و&#39;+inf&#39; و&#39;-inf&#39; في تنسيق إخراج JSON.                                                                       | `false`           |                                                                                                                                                                               |
+| [`output_format_json_quote_decimals`](/ar/reference/settings/formats#output_format_json_quote_decimals)                                                           | يتحكم في وضع القيم العشرية بين علامتَي اقتباس في تنسيق إخراج JSON.                                                                                                           | `false`           |                                                                                                                                                                               |
+| [`output_format_json_escape_forward_slashes`](/ar/reference/settings/formats#output_format_json_escape_forward_slashes)                                           | يتحكم في تهريب الشرطات المائلة للأمام في مخرجات السلاسل النصية ضمن تنسيق إخراج JSON.                                                                                         | `true`            |                                                                                                                                                                               |
+| [`output_format_json_named_tuples_as_objects`](/ar/reference/settings/formats#output_format_json_named_tuples_as_objects)                                         | يُسلسِل أعمدة named tuple ككائنات JSON.                                                                                                                                      | `true`            |                                                                                                                                                                               |
+| [`output_format_json_array_of_rows`](/ar/reference/settings/formats#output_format_json_array_of_rows)                                                             | يُخرج مصفوفة JSON تضم جميع الصفوف بتنسيق JSONEachRow(Compact).                                                                                                               | `false`           |                                                                                                                                                                               |
+| [`output_format_json_validate_utf8`](/ar/reference/settings/formats#output_format_json_validate_utf8)                                                             | يُمكّن من التحقق من تسلسلات UTF-8 في تنسيقات إخراج JSON (لاحظ أن هذا لا يؤثر في التنسيقات JSON/JSONCompact/JSONColumnsWithMetadata، إذ تتحقق هذه التنسيقات دائمًا من UTF-8). | `false`           |                                                                                                                                                                               |

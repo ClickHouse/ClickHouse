@@ -1,0 +1,835 @@
+---
+description: 'توثيق TABLE'
+keywords: ['الضغط', 'codec', 'المخطط', 'DDL']
+sidebarTitle: 'TABLE'
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
+doc_type: 'مرجع'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+ينشئ جدولًا جديدًا. يمكن أن يأتي هذا الاستعلام بصيغ تركيبية مختلفة بحسب حالة الاستخدام.
+
+افتراضيًا، لا تُنشأ الجداول إلا على الخادم الحالي. وتُنفَّذ استعلامات DDL الموزعة باستخدام عبارة `ON CLUSTER`، وهي [موصوفة بشكل منفصل](/ar/reference/statements/distributed-ddl).
+
+<div id="syntax-forms">
+  ## صيغة بناء الجملة
+</div>
+
+<div id="with-explicit-schema">
+  ### مع تحديد المخطط صراحةً
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
+    ...
+) ENGINE = engine
+  [COMMENT 'comment for table']
+```
+
+ينشئ جدولًا باسم `table_name` في قاعدة البيانات `db` أو في قاعدة البيانات الحالية إذا لم يتم تعيين `db`، بالبنية المحددة بين الأقواس وباستخدام محرّك `engine`.
+تتكون بنية الجدول من قائمة بأوصاف الأعمدة، والفهارس الثانوية، والإسقاطات، والقيود. إذا كان [المفتاح الأساسي](#primary-key) مدعومًا من قِبل المحرّك، فسيُشار إليه على أنه معلمة لمحرّك الجدول.
+
+يكون وصف العمود، في أبسط الحالات، على الشكل `name type`. مثال: `RegionID UInt32`.
+
+يمكن أيضًا تعريف تعبيرات للقيم الافتراضية (انظر أدناه).
+
+عند الحاجة، يمكن تحديد المفتاح الأساسي باستخدام تعبير مفتاح واحد أو أكثر.
+
+يمكن إضافة تعليقات إلى الأعمدة وإلى الجدول.
+
+<div id="with-a-schema-similar-to-other-table">
+  ### مع مخطط جدول موجود
+</div>
+
+يدعم ClickHouse نسخ مخطط جدول موجود وبياناته.
+
+لاستنساخ مخطط جدول موجود:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
+```
+
+ينشئ هذا جدولًا له نفس بنية جدول آخر.
+
+<div id="with-a-schema-and-data-cloned-from-another-table">
+  ### باستخدام مخطط وبيانات جدول موجود
+</div>
+
+لاستنساخ مخطط وبيانات جدول موجود:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
+```
+
+يؤدي هذا إلى إنشاء جدول له نفس المخطط والبيانات لجدول موجود. وبعد إنشاء الجدول الجديد، تُرفق به جميع التقسيمات من `db.table`. وبعبارة أخرى، تُستنسخ بيانات `db.table` إلى `db2.table_clone` عند إنشائه. وهذا الاستعلام مكافئ لما يلي:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+```
+
+بالنسبة إلى كلتا الخاصيتين، يمكنك تحديد محرك مختلف للجدول. وإذا لم يُحدَّد المحرك، فسيُستخدَم المحرك نفسه المستخدَم للجدول الأصلي (`db.table`).
+
+<div id="from-a-table-function">
+  ### من table function
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+```
+
+ينشئ جدولًا يعطي النتيجة نفسها التي تعطيها [دالة الجدول](/ar/reference/functions/table-functions/index) المحددة. كما سيعمل الجدول المُنشأ بالطريقة نفسها التي تعمل بها دالة الجدول المقابلة المحددة.
+
+<div id="from-select-query">
+  ### باستخدام استعلام SELECT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
+```
+
+ينشئ جدولًا ببنية مماثلة لنتيجة استعلام `SELECT`، باستخدام المحرك `engine`، ويملؤه ببيانات من `SELECT`. ويمكنك أيضًا تحديد وصف الأعمدة بشكل صريح.
+
+إذا كان الجدول موجودًا بالفعل وتم تحديد `IF NOT EXISTS`، فلن ينفّذ الاستعلام أي إجراء.
+
+يمكن أن تتضمن العبارة بنودًا أخرى بعد بند `ENGINE`. راجع الوثائق التفصيلية حول كيفية إنشاء الجداول في أوصاف [محركات الجداول](/ar/reference/engines/table-engines/index).
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+```text title="Response"
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
+
+<div id="null-or-not-null-modifiers">
+  ## معدِّلات `NULL` أو `NOT NULL`
+</div>
+
+يسمح المعدِّلان `NULL` و`NOT NULL`، اللذان يأتيان بعد نوع البيانات في تعريف العمود، بجعل النوع [Nullable](/ar/reference/data-types/nullable) أو بعدم جعله كذلك.
+
+إذا لم يكن النوع `Nullable` وتم تحديد `NULL`، فسيُعامل على أنه `Nullable`؛ أما إذا تم تحديد `NOT NULL`، فلن يُعامل كذلك. على سبيل المثال، `INT NULL` تعادل `Nullable(INT)`. وإذا كان النوع `Nullable` وتم تحديد المعدِّلين `NULL` أو `NOT NULL`، فسيتم طرح استثناء.
+
+انظر أيضًا إلى الإعداد [data&#95;type&#95;default&#95;nullable](/ar/reference/settings/session-settings#data_type_default_nullable).
+
+<div id="default_values">
+  ## القيم الافتراضية
+</div>
+
+يمكن أن يحدّد وصف العمود تعبيرًا لقيمة افتراضية بصيغة `DEFAULT expr` أو `MATERIALIZED expr` أو `ALIAS expr`. مثال: `URLDomain String DEFAULT domain(URL)`.
+
+يكون التعبير `expr` اختياريًا. وإذا أُهمل، فيجب تحديد نوع العمود صراحةً، وتكون القيمة الافتراضية `0` للأعمدة الرقمية، و`''` (السلسلة الفارغة) لأعمدة السلاسل النصية، و`[]` (المصفوفة الفارغة) لأعمدة المصفوفات، و`1970-01-01` لأعمدة التاريخ، أو `NULL` للأعمدة Nullable.
+
+يمكن حذف نوع العمود في عمود ذي قيمة افتراضية، وفي هذه الحالة يُستدل عليه من نوع `expr`. على سبيل المثال، سيكون نوع العمود `EventDate DEFAULT toDate(EventTime)` هو التاريخ.
+
+إذا جرى تحديد كلٍّ من نوع بيانات وتعبير قيمة افتراضية، فستُدرج دالة ضمنية لتحويل النوع تقوم بتحويل التعبير إلى النوع المحدد. مثال: `Hits UInt32 DEFAULT 0` تُمثَّل داخليًا على النحو `Hits UInt32 DEFAULT toUInt32(0)`.
+
+يمكن أن يشير تعبير القيمة الافتراضية `expr` إلى أي أعمدة في الجدول وإلى الثوابت. ويتحقق ClickHouse من أن التغييرات في بنية الجدول لا تؤدي إلى ظهور حلقات في حساب التعبير. وبالنسبة إلى INSERT، فإنه يتحقق من أن التعابير قابلة للحل — أي إن جميع الأعمدة التي يمكن حسابها انطلاقًا منها قد تم تمريرها.
+
+<div id="default">
+  ### DEFAULT
+</div>
+
+`DEFAULT expr`
+
+القيمة الافتراضية العادية. إذا لم تُحدَّد قيمة هذا العمود في استعلام INSERT، فستُحتسب من `expr`.
+
+مثال:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime DEFAULT now(),
+    updated_at_date Date DEFAULT toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id) VALUES (1);
+
+SELECT * FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="materialized">
+  ### MATERIALIZED
+</div>
+
+`MATERIALIZED expr`
+
+تعبير MATERIALIZED. تُحتسب قيم هذه الأعمدة تلقائيًا وفقًا لتعبير MATERIALIZED المحدد عند إدراج الصفوف. ولا يمكن تحديد هذه القيم صراحةً أثناء عمليات `INSERT`.
+
+كذلك، لا تُدرج الأعمدة ذات القيم الافتراضية من هذا النوع في نتيجة `SELECT *`. والغرض من ذلك هو الحفاظ على الثابت الذي ينص على أن نتيجة `SELECT *` يمكن دائمًا إدراجها مرة أخرى في الجدول باستخدام `INSERT`. ويمكن تعطيل هذا السلوك باستخدام الإعداد `asterisk_include_materialized_columns`.
+
+مثال:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime MATERIALIZED now(),
+    updated_at_date Date MATERIALIZED toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1);
+
+SELECT * FROM test;
+┌─id─┐
+│  1 │
+└────┘
+
+SELECT id, updated_at, updated_at_date FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="ephemeral">
+  ### EPHEMERAL
+</div>
+
+`EPHEMERAL [expr]`
+
+عمود مؤقت. الأعمدة من هذا النوع لا تُخزَّن في الجدول، ولا يمكن إجراء `SELECT` عليها. والغرض الوحيد من الأعمدة المؤقتة هو إنشاء تعبيرات القيم الافتراضية لأعمدة أخرى بالاعتماد عليها.
+
+أي عملية إدراج لا تُحدَّد فيها الأعمدة صراحةً ستتجاوز الأعمدة من هذا النوع. وذلك للحفاظ على الثابت القائل إن نتيجة `SELECT *` يمكن دائمًا إدراجها مجددًا في الجدول باستخدام `INSERT`.
+
+مثال:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    unhexed String EPHEMERAL,
+    hexed FixedString(4) DEFAULT unhex(unhexed)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+
+SELECT
+    id,
+    hexed,
+    hex(hexed)
+FROM test
+FORMAT Vertical;
+
+Row 1:
+──────
+id:         1
+hexed:      Z��
+hex(hexed): 5A90B714
+```
+
+<div id="alias">
+  ### ALIAS
+</div>
+
+`ALIAS expr`
+
+الأعمدة المحسوبة (مرادف). الأعمدة من هذا النوع لا تُخزَّن في الجدول، ولا يمكن إدراج قيم فيها باستخدام `INSERT`.
+
+عندما تشير استعلامات `SELECT` صراحةً إلى أعمدة من هذا النوع، تُحتسَب القيمة وقت الاستعلام من `expr`. افتراضيًا، يستبعد `SELECT *` أعمدة ALIAS. ويمكن تعطيل هذا السلوك باستخدام الإعداد `asterisk_include_alias_columns`.
+
+عند استخدام استعلام `ALTER` لإضافة أعمدة جديدة، لا تُكتب البيانات القديمة لهذه الأعمدة. وبدلًا من ذلك، عند قراءة البيانات القديمة التي لا تحتوي على قيم للأعمدة الجديدة، تُحتسَب التعبيرات تلقائيًا افتراضيًا. ومع ذلك، إذا كان تقييم هذه التعبيرات يتطلب أعمدة أخرى غير مذكورة في الاستعلام، فستُقرأ هذه الأعمدة أيضًا، ولكن فقط لكتل البيانات التي تحتاج إلى ذلك.
+
+إذا أضفت عمودًا جديدًا إلى جدول ثم غيّرت لاحقًا تعبيره الافتراضي، فستتغيّر القيم المستخدمة للبيانات القديمة (أي البيانات التي لم تُخزَّن قيمها على القرص). لاحظ أنه عند تنفيذ عمليات الدمج في الخلفية، تُكتب بيانات الأعمدة المفقودة في أحد الأجزاء التي يجري دمجها إلى الجزء المدمج.
+
+لا يمكن تعيين قيم افتراضية لعناصر هياكل البيانات المتداخلة.
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    size_bytes Int64,
+    size String ALIAS formatReadableSize(size_bytes)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1, 4678899);
+
+SELECT id, size_bytes, size FROM test;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+```
+
+<div id="primary-key">
+  ## المفتاح الأساسي
+</div>
+
+يمكنك تحديد [مفتاح أساسي](/ar/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) عند إنشاء جدول. ويمكن تحديد المفتاح الأساسي بإحدى طريقتين:
+
+* ضمن قائمة الأعمدة
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...,
+    PRIMARY KEY(expr1[, expr2,...])
+)
+ENGINE = engine;
+```
+
+* خارج قائمة الأعمدة
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
+```
+
+<Tip>
+  لا يمكنك استخدام كلتا الطريقتين في استعلام واحد.
+</Tip>
+
+<div id="constraints">
+  ## القيود
+</div>
+
+يمكن أيضًا تعريف قيود إلى جانب أوصاف الأعمدة:
+
+<div id="constraint">
+  ### CONSTRAINT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    ...
+    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
+    ...
+) ENGINE = engine
+```
+
+يمكن أن يكون `boolean_expr_1` أي تعبير Boolean. إذا كانت هناك قيود معرّفة للـ table، فسيتم التحقق من كل واحد منها لكل صف في استعلام `INSERT`. وإذا لم يُستوفَ أي قيد، فسيرفع server استثناءً يتضمن اسم القيد وتعبير التحقق.
+
+قد تؤثر إضافة عدد كبير من القيود سلبًا في أداء استعلامات `INSERT` الكبيرة.
+
+يمكن فحص القيود الموجودة في جميع الـ tables من خلال table [`system.constraints`](/ar/reference/system-tables/constraints).
+
+<div id="assume">
+  ### ASSUME
+</div>
+
+يُستخدم البند `ASSUME` لتعريف `CONSTRAINT` على جدول يُفترض أنها `true`. ويمكن للمُحسِّن بعد ذلك استخدام هذا القيد لتحسين أداء استعلامات SQL.
+
+خذ هذا المثال الذي يُستخدم فيه `ASSUME CONSTRAINT` عند إنشاء الجدول `users_a`:
+
+```sql
+CREATE TABLE users_a (
+    uid Int16, 
+    name String, 
+    age Int16, 
+    name_len UInt8 MATERIALIZED length(name), 
+    CONSTRAINT c1 ASSUME length(name) = name_len
+) 
+ENGINE=MergeTree 
+ORDER BY (name_len, name);
+```
+
+هنا، يُستخدم `ASSUME CONSTRAINT` للتأكيد على أن الدالة `length(name)` تساوي دائمًا قيمة العمود `name_len`. وهذا يعني أنه كلما استُدعيت `length(name)` في استعلام، يمكن لـ ClickHouse استبدالها بـ `name_len`، ومن المفترض أن يكون ذلك أسرع لأنه يتجنب استدعاء الدالة `length()`.
+
+بعد ذلك، عند تنفيذ الاستعلام `SELECT name FROM users_a WHERE length(name) < 5;`، يمكن لـ ClickHouse تحسينه إلى `SELECT name FROM users_a WHERE name_len < 5`; بفضل `ASSUME CONSTRAINT`. وقد يجعل ذلك تنفيذ الاستعلام أسرع لأنه يتجنب حساب طول `name` لكل صف.
+
+`ASSUME CONSTRAINT` **لا يفرض القيد**، بل يقتصر على إبلاغ المُحسِّن بأن القيد صحيح. وإذا لم يكن القيد صحيحًا بالفعل، فقد تكون نتائج الاستعلامات غير صحيحة. لذلك، ينبغي ألا تستخدم `ASSUME CONSTRAINT` إلا إذا كنت متأكدًا من صحة هذا القيد.
+
+<div id="ttl-expression">
+  ## تعبير TTL
+</div>
+
+يحدّد مدة احتفاظ القيم في التخزين. لا يمكن تحديده إلا للجداول من عائلة MergeTree. للاطلاع على وصف مفصل، راجع [TTL للأعمدة والجداول](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
+
+<div id="column_compression_codec">
+  ## ترميزات ضغط الأعمدة
+</div>
+
+بشكل افتراضي، يستخدم ClickHouse ضغط `lz4` في الإصدار المُدار ذاتيًا، و`zstd` في ClickHouse Cloud.
+
+بالنسبة إلى عائلة المحرك `MergeTree`، يمكنك تغيير طريقة الضغط الافتراضية في قسم [compression](/ar/reference/settings/server-settings/settings#compression) من تهيئة الخادم.
+
+يمكنك أيضًا تحديد طريقة الضغط لكل عمود على حدة في استعلام `CREATE TABLE`.
+
+```sql
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD),
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9)),
+    value Float32 CODEC(Delta, ZSTD)
+)
+ENGINE = <Engine>
+...
+```
+
+يمكن تحديد ترميز ‏`Default` للإشارة إلى الضغط الافتراضي، والذي قد يعتمد على إعدادات مختلفة (وخصائص البيانات) أثناء وقت التشغيل.
+مثال: `value UInt64 CODEC(Default)` — وهو مماثل لعدم تحديد أي ترميز.
+
+يمكنك أيضًا إزالة `CODEC` الحالي من العمود واستخدام الضغط الافتراضي من config.xml:
+
+```sql
+ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
+```
+
+يمكن دمج برامج الترميز في مسار معالجة، على سبيل المثال: `CODEC(Delta, Default)`.
+
+<Tip>
+  لا يمكنك فك ضغط ملفات قاعدة بيانات ClickHouse باستخدام أدوات خارجية مثل `lz4`. وبدلًا من ذلك، استخدم الأداة الخاصة [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
+</Tip>
+
+الضغط مدعوم لمحركات الجداول التالية:
+
+* عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). تدعم برامج ترميز ضغط الأعمدة وإمكانية اختيار طريقة الضغط الافتراضية عبر إعدادات [compression](/ar/reference/settings/server-settings/settings#compression).
+* عائلة [Log](/ar/reference/engines/table-engines/log-family/index). تستخدم طريقة الضغط `lz4` افتراضيًا، وتدعم برامج ترميز ضغط الأعمدة.
+* [Set](/ar/reference/engines/table-engines/special/set). يدعم الضغط الافتراضي فقط.
+* [Join](/ar/reference/engines/table-engines/special/join). يدعم الضغط الافتراضي فقط.
+
+يدعم ClickHouse برامج ترميز للأغراض العامة وبرامج ترميز متخصصة.
+
+<div id="general-purpose-codecs">
+  ### برامج الترميز للأغراض العامة
+</div>
+
+<div id="none">
+  #### NONE
+</div>
+
+`NONE` — بدون ضغط.
+
+<div id="lz4">
+  #### LZ4
+</div>
+
+`LZ4` — [خوارزمية ضغط بيانات](https://github.com/lz4/lz4) بلا فقدان تُستخدم افتراضيًا. تطبّق ضغط LZ4 السريع.
+
+<div id="lz4hc">
+  #### LZ4HC
+</div>
+
+`LZ4HC[(level)]` — خوارزمية LZ4 HC (ضغط عالٍ) بمستوى قابل للضبط. المستوى الافتراضي: 9. يطبّق ضبط `level <= 0` المستوى الافتراضي. المستويات الممكنة: [1, 12]. النطاق الموصى به للمستوى: [4, 9].
+
+<div id="zstd">
+  #### ZSTD
+</div>
+
+`ZSTD[(level)]` — [خوارزمية ضغط ZSTD](https://en.wikipedia.org/wiki/Zstandard) مع `level` قابل للضبط. المستويات الممكنة: [1, 22]. المستوى الافتراضي: 1.
+
+تكون مستويات الضغط العالية مفيدة في السيناريوهات غير المتناظرة، مثل الضغط مرة واحدة وفك الضغط مرارًا. وتعني المستويات الأعلى ضغطًا أفضل وزيادة في استخدام CPU.
+
+<div id="zstd_qat">
+  #### متقادِم: ZSTD_QAT
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="deflate_qpl">
+  #### متقادم: DEFLATE_QPL
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="specialized-codecs">
+  ### برامج الترميز المتخصصة
+</div>
+
+صُممت برامج الترميز هذه لجعل الضغط أكثر فعاليةً من خلال استغلال خصائص معيّنة في البيانات. بعض برامج الترميز هذه لا تضغط البيانات بحد ذاتها، بل تُجري عليها معالجةً مسبقة، بحيث يمكن لمرحلة ضغط ثانية تستخدم برنامج ترميز للأغراض العامة أن تحقق معدل ضغط أعلى.
+
+<div id="delta">
+  #### Delta
+</div>
+
+`Delta(delta_bytes)` — أسلوب ضغط تُستبدل فيه القيم الخام بالفارق بين قيمتين متجاورتين، باستثناء القيمة الأولى التي تبقى دون تغيير. يمثّل `delta_bytes` الحد الأقصى لحجم القيم الخام، والقيمة الافتراضية هي `sizeof(type)`. لم يعد يُنصح بتحديد `delta_bytes` كـ `argument`، وسيُزال الدعم له في إصدار مستقبلي. يُعد Delta ترميزًا لإعداد البيانات، أي لا يمكن استخدامه بصورة مستقلة.
+
+<div id="doubledelta">
+  #### DoubleDelta
+</div>
+
+`DoubleDelta(bytes_size)` — يحسب فروق الفروق (delta of deltas) ويكتبها بصيغة ثنائية مضغوطة. يحمل `bytes_size` معنى مشابهًا لـ `delta_bytes` في ترميز [Delta](#delta). لم يعد يُنصح بتحديد `bytes_size` كوسيط، وستُزال هذه الإمكانية في إصدار مستقبلي. تتحقق أفضل معدلات الضغط مع المتتاليات الرتيبة ذات الخطوة الثابتة، مثل بيانات السلاسل الزمنية. ويمكن استخدامه مع أي نوع رقمي. يطبّق الخوارزمية المستخدمة في Gorilla TSDB، مع توسيعها لدعم الأنواع ذات 64 بت. ويستخدم 1 بت إضافيًا لفروق 32 بت: بادئات من 5 بت بدلًا من بادئات من 4 بت. لمزيد من المعلومات، راجع Compressing Time Stamps في [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). يُعد DoubleDelta ترميزًا لإعداد البيانات، أي لا يمكن استخدامه بصورة مستقلة.
+
+<div id="gcd">
+  #### GCD
+</div>
+
+`GCD()` - - يحسب القاسم المشترك الأكبر (GCD) للقيم في العمود، ثم يقسم كل قيمة على GCD. يمكن استخدامه مع الأعمدة ذات القيم الصحيحة والعشرية وأعمدة التاريخ/الوقت. هذا الترميز مناسب جدًا للأعمدة التي تتغير قيمها (زيادةً أو نقصانًا) بمضاعفات GCD، مثل 24 و28 و16 و24 و8 و24 ‏(GCD = 4). ‏GCD هو ترميز لتهيئة البيانات، أي لا يمكن استخدامه بشكل مستقل.
+
+<div id="gorilla">
+  #### Gorilla
+</div>
+
+`Gorilla(bytes_size)` — يحسب عملية XOR بين قيمة الفاصلة العائمة الحالية والسابقة، ويكتب النتيجة بصيغة ثنائية مدمجة. وكلما كان الفرق بين القيم المتتالية أصغر، أي كلما تغيّرت قيم السلسلة ببطء أكبر، كان معدل الضغط أفضل. يطبّق الخوارزمية المستخدمة في Gorilla TSDB، مع توسيعها لدعم الأنواع ذات 64 بت. قيم `bytes_size` الممكنة هي: 1 و2 و4 و8، وتكون القيمة الافتراضية `sizeof(type)` إذا كانت مساوية لـ 1 أو 2 أو 4 أو 8. وفي جميع الحالات الأخرى، تكون 1. لمزيد من المعلومات، راجع القسم 4.1 من [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+
+<div id="alp">
+  #### ALP
+</div>
+
+<ExperimentalBadge />
+
+`ALP()` — ضغط تكيّفي بلا فقدان لبيانات الفاصلة العائمة، يعتمد على التحجيم العشري. يحاول ALP تمثيل كل قيمة كعدد صحيح مُحجَّم بدقة باستخدام قوى العدد 10، ثم يضغط الأعداد الصحيحة الناتجة باستخدام Frame-of-Reference وbit-packing. وتُخزَّن القيم التي يتعذر تمثيلها بدقة كاستثناءات خام. يعمل بأفضل كفاءة مع الأرقام المشتقة من القيم العشرية (مثل القياسات والعملات). ويدعم `Float32` و`Float64`. لمزيد من التفاصيل، راجع [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+<Note>
+  هذا الترميز تجريبي، ويتطلب `SET allow_experimental_codecs = 1` لاستخدامه.
+</Note>
+
+<div id="fpc">
+  #### FPC
+</div>
+
+`FPC(level, float_size)` - يتنبأ بشكل متكرر بالقيمة التالية ذات الفاصلة العائمة في التسلسل باستخدام الأفضل من بين متنبئين، ثم يُجري XOR بين القيمة الفعلية والقيمة المتنبأ بها، ويضغط النتيجة باستخدام ضغط الأصفار البادئة. وعلى غرار Gorilla، يكون هذا فعالًا عند تخزين سلسلة من القيم ذات الفاصلة العائمة التي تتغير ببطء. بالنسبة إلى القيم ذات 64 بت (`double`)، يكون FPC أسرع من Gorilla، أما بالنسبة إلى القيم ذات 32 بت فقد يختلف الأداء. قيم `level` الممكنة هي: 1-28، والقيمة الافتراضية هي 12.  قيم `float_size` الممكنة هي: 4، 8، والقيمة الافتراضية هي `sizeof(type)` إذا كان النوع Float. وفي جميع الحالات الأخرى، تكون 4. للاطلاع على وصف مفصل للخوارزمية، انظر [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+
+<div id="t64">
+  #### T64
+</div>
+
+`T64` — أسلوب ضغط يقتطع البتات العليا غير المستخدمة من القيم في أنواع البيانات الصحيحة (بما في ذلك `Enum` و`Date` و`DateTime`). في كل خطوة من خوارزميته، يأخذ الترميز block من 64 قيمة، ويضعها في مصفوفة بتات 64x64، ثم يجري لها عملية منقول، ويقتطع البتات غير المستخدمة من القيم، ويُرجع الباقي على شكل sequence. والبتات غير المستخدمة هي البتات التي لا تختلف بين القيمتين العظمى والدنيا في data part بالكامل الذي يُستخدم له الضغط.
+
+يُستخدم ترميزا `DoubleDelta` و`Gorilla` في Gorilla TSDB بوصفهما جزءًا من خوارزمية الضغط الخاصة به. ويكون نهج Gorilla فعّالًا في الحالات التي توجد فيها sequence من القيم التي تتغير ببطء مع timestamps الخاصة بها. وتُضغط timestamps بكفاءة باستخدام ترميز `DoubleDelta`، كما تُضغط القيم بكفاءة باستخدام ترميز `Gorilla`. على سبيل المثال، للحصول على table مخزّن بكفاءة، يمكنك إنشاؤه بالconfiguration التالية:
+
+```sql
+CREATE TABLE codec_example
+(
+    timestamp DateTime CODEC(DoubleDelta),
+    slow_values Float32 CODEC(Gorilla)
+)
+ENGINE = MergeTree()
+```
+
+<div id="encryption-codecs">
+  ### ترميزات التشفير
+</div>
+
+هذه الترميزات لا تضغط البيانات فعليًا، بل تُشفّر البيانات على القرص. ولا تتوفر إلا عند تحديد مفتاح تشفير عبر إعدادات [التشفير](/ar/reference/settings/server-settings/settings#encryption). لاحظ أن التشفير لا يكون مناسبًا إلا في نهاية سلاسل الترميز، لأن البيانات المشفّرة لا يمكن عادةً ضغطها بأي طريقة مجدية.
+
+ترميزات التشفير:
+
+<div id="aes_128_gcm_siv">
+  #### AES_128_GCM_SIV
+</div>
+
+`CODEC('AES-128-GCM-SIV')` — يشفّر البيانات باستخدام AES-128 في وضع GCM-SIV المحدد في [RFC 8452](https://tools.ietf.org/html/rfc8452).
+
+<div id="aes-256-gcm-siv">
+  #### AES-256-GCM-SIV
+</div>
+
+`CODEC('AES-256-GCM-SIV')` — يشفّر البيانات باستخدام AES-256 في وضع GCM-SIV.
+
+تستخدم هذه الترميزات قيمة `nonce` ثابتة، ولذلك يكون التشفير حتميًا. وهذا يجعله متوافقًا مع المحركات التي تدعم إزالة التكرار مثل [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، لكنه ينطوي على نقطة ضعف: فعند تشفير كتلة البيانات نفسها مرتين، سيكون النص المشفّر الناتج متطابقًا تمامًا، ما يتيح لجهة مهاجمة يمكنها قراءة القرص ملاحظة هذا التطابق (مع أنها لا ترى سوى التطابق نفسه من دون الوصول إلى المحتوى).
+
+<Note>
+  معظم المحركات، بما في ذلك عائلة &quot;*MergeTree&quot;، تنشئ ملفات الفهرسة على القرص من دون تطبيق الترميزات. وهذا يعني أن النص الصريح سيظهر على القرص إذا تمت فهرسة عمود مشفّر.
+</Note>
+
+<Note>
+  إذا نفّذت استعلام SELECT يذكر قيمة محددة في عمود مشفّر (مثلًا في عبارة WHERE الخاصة به)، فقد تظهر هذه القيمة في [system.query&#95;log](/ar/reference/system-tables/query_log). وقد ترغب في تعطيل التسجيل.
+</Note>
+
+**مثال**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<Note>
+  إذا لزم تطبيق الضغط، فيجب النصّ عليه صراحةً. وإلا فسيُطبَّق التشفير فقط على البيانات.
+</Note>
+
+**مثال**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<div id="temporary-tables">
+  ## الجداول المؤقتة
+</div>
+
+<Note>
+  يُرجى ملاحظة أن الجداول المؤقتة غير مكرّرة. ونتيجةً لذلك، لا يوجد ما يضمن أن تكون البيانات المُدرجة في جدول مؤقت متاحةً في النُسخ المتماثلة الأخرى. وتكون الجداول المؤقتة مفيدةً أساسًا عند الاستعلام عن مجموعات بيانات خارجية صغيرة أو ربطها خلال جلسة واحدة.
+</Note>
+
+يدعم ClickHouse الجداول المؤقتة التي تتسم بالخصائص التالية:
+
+* تختفي الجداول المؤقتة عند انتهاء الجلسة، بما في ذلك عند فقدان الاتصال.
+* يستخدم الجدول المؤقت محرك الجدول Memory إذا لم يتم تحديد engine، ويمكنه استخدام أي محرك جدول باستثناء Replicated و`KeeperMap`.
+* لا يمكن تحديد DB لجدول مؤقت، إذ يُنشأ خارج databases.
+* يستحيل إنشاء جدول مؤقت باستخدام استعلام DDL موزّع على جميع خوادم العنقود (باستخدام `ON CLUSTER`)، لأن هذا الجدول لا يوجد إلا في الجلسة الحالية.
+* إذا كان لجدول مؤقت الاسم نفسه لجدول آخر، وكان الاستعلام يحدد اسم الجدول من دون تحديد DB، فسيُستخدم الجدول المؤقت.
+* في معالجة الاستعلامات الموزعة، تُمرَّر الجداول المؤقتة ذات المحرك Memory المستخدمة في الاستعلام إلى الخوادم البعيدة.
+
+لإنشاء جدول مؤقت، استخدم الصيغة التالية:
+
+```sql
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) [ENGINE = engine]
+```
+
+في معظم الحالات، لا تُنشأ الجداول المؤقتة يدويًا، وإنما عند استخدام بيانات خارجية في استعلام، أو عند استخدام `(GLOBAL) IN` الموزّع. لمزيد من المعلومات، راجع الأقسام ذات الصلة.
+
+يمكن استخدام جداول ذات [ENGINE = Memory](/ar/reference/engines/table-engines/special/memory) بدلًا من الجداول المؤقتة.
+
+<div id="replace-table">
+  ## REPLACE TABLE
+</div>
+
+تتيح لك عبارة `REPLACE` تحديث جدول [ذرّياً](/ar/concepts/core-concepts/glossary#atomicity).
+
+<Note>
+  هذه العبارة مدعومة لمحركَي قاعدة البيانات [`Atomic`](/ar/reference/engines/database-engines/atomic) و[`Replicated`](/ar/reference/engines/database-engines/replicated)،
+  وهما محركا قاعدة البيانات الافتراضيان في ClickHouse وClickHouse Cloud على التوالي.
+</Note>
+
+عادةً، إذا كنت بحاجة إلى حذف بعض البيانات من جدول،
+فيمكنك إنشاء جدول جديد وملأه بعبارة `SELECT` لا تجلب البيانات غير المرغوب فيها،
+ثم حذف الجدول القديم وإعادة تسمية الجدول الجديد.
+يوضح المثال أدناه هذا الأسلوب:
+
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+
+INSERT INTO myNewTable
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
+DROP TABLE myOldTable;
+
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+بدلًا من الأسلوب أعلاه، يمكن أيضًا استخدام `REPLACE` (إذا كنت تستخدم محركات قواعد البيانات الافتراضية) للحصول على النتيجة نفسها:
+
+```sql
+REPLACE TABLE myOldTable
+ENGINE = MergeTree()
+ORDER BY CounterID 
+AS
+SELECT * FROM myOldTable
+WHERE CounterID <12345;
+```
+
+<div id="syntax">
+  ### الصيغة
+</div>
+
+```sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
+
+<Note>
+  تعمل جميع صيغ بناء الجملة الخاصة بعبارة `CREATE` أيضًا مع هذه العبارة. وسيؤدي استدعاء `REPLACE` على جدول غير موجود إلى حدوث خطأ.
+</Note>
+
+<div id="examples">
+  ### أمثلة:
+</div>
+
+<Tabs>
+  <Tab title="محلي">
+    لنفترض الجدول التالي:
+
+    ```sql
+    CREATE DATABASE base 
+    ENGINE = Atomic;
+
+    CREATE OR REPLACE TABLE base.t1
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s────┐
+    │ 1 │ test │
+    └───┴──────┘
+    ```
+
+    يمكننا استخدام عبارة `REPLACE` لمسح جميع البيانات:
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s──┐
+    │ 2 │ \N │
+    └───┴────┘
+    ```
+
+    أو يمكننا استخدام عبارة `REPLACE` لتغيير بنية الجدول:
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┐
+    │ 3 │
+    └───┘
+    ```
+  </Tab>
+
+  <Tab title="Cloud">
+    لنفترض الجدول التالي في ClickHouse Cloud:
+
+    ```sql
+    CREATE DATABASE base;
+
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    1    test
+    ```
+
+    يمكننا استخدام عبارة `REPLACE` لمسح جميع البيانات:
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64, 
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    2    
+    ```
+
+    أو يمكننا استخدام عبارة `REPLACE` لتغيير بنية الجدول:
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    3
+    ```
+  </Tab>
+</Tabs>
+
+<div id="comment-clause">
+  ## جملة COMMENT
+</div>
+
+يمكنك إضافة تعليق إلى الجدول عند إنشائه.
+
+**الصيغة**
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+
+<Note>
+  يجب تحديد بند `COMMENT` **بعد** أي بنود خاصة بالتخزين، مثل `PARTITION BY` و`ORDER BY` و`SETTINGS` الخاصة بالتخزين.
+
+  بعد بند `COMMENT`، لن تُحلَّل إلا `SETTINGS` الخاصة بالاستعلام (مثل `max_threads` وما إلى ذلك)، وليس الإعدادات المرتبطة بالتخزين.
+
+  وهذا يعني أن الترتيب الصحيح للبنود هو:
+
+  * `ENGINE`
+  * بنود التخزين
+  * `COMMENT`
+  * إعدادات الاستعلام (إن وجدت)
+</Note>
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+```text title="Response"
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
+```
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* مدونة: [تحسين ClickHouse باستخدام المخططات وCodecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* مدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

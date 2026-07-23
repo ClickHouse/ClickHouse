@@ -1,0 +1,97 @@
+---
+sidebarTitle: 'Azure Flexible Server for Postgres'
+description: 'Настройка Azure Flexible Server for Postgres в качестве источника для ClickPipes'
+slug: /integrations/clickpipes/postgres/source/azure-flexible-server-postgres
+title: 'Руководство по настройке источника Azure flexible server for Postgres'
+keywords: ['azure', 'flexible server', 'postgres', 'clickpipes', 'wal level']
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickPipes поддерживает Postgres версии 12 и более поздних версий.
+
+<div id="enable-logical-replication">
+  ## Включите логическую репликацию
+</div>
+
+**Вам не нужно** выполнять приведённые ниже шаги, если для `wal_level` уже установлено значение `logical`. Обычно этот параметр уже настроен, если вы переходите с другого инструмента репликации данных.
+
+1. Нажмите на раздел **Server parameters**
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp" alt="Server Parameters в Azure Flexible Server for Postgres" size="lg" border />
+
+2. Измените значение `wal_level` на `logical`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="Изменение wal_level на logical в Azure Flexible Server for Postgres" size="lg" border />
+
+3. Для применения этого изменения потребуется перезапуск сервера. Перезапустите его, когда появится запрос.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="Перезапуск сервера после изменения wal_level" size="lg" border />
+
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## Создание пользователей ClickPipes и выдача разрешений
+</div>
+
+Подключитесь к вашему Azure Flexible Server Postgres под пользователем admin и выполните приведённые ниже команды:
+
+1. Создайте отдельного пользователя для ClickPipes.
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Выдайте пользователю, созданному на предыдущем шаге, доступ к схеме в режиме только для чтения. В следующем примере показаны разрешения для схемы `public`. Повторите эти команды для каждой схемы, содержащей таблицы, которые вы хотите реплицировать:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Выдайте пользователю права на репликацию:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Создайте [публикацию](https://www.postgresql.org/docs/current/logical-replication-publication.html) с таблицами, которые вы хотите реплицировать. Мы настоятельно рекомендуем включать в публикацию только необходимые таблицы, чтобы избежать лишней нагрузки на производительность.
+
+<Warning>
+  Любая таблица, включённая в публикацию, должна либо иметь определённый **первичный ключ**, *либо* иметь параметр **replica identity** со значением `FULL`. Рекомендации по выбору области охвата см. в разделе [FAQ по Postgres](/ru/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication).
+</Warning>
+
+* Чтобы создать публикацию для конкретных таблиц:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Чтобы создать публикацию для всех таблиц в конкретной схеме:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+Публикация `clickpipes` будет содержать набор событий изменений, сгенерированных указанными таблицами, и позднее будет использоваться для приёма потока репликации.
+
+<div id="add-clickpipes-ips-to-firewall">
+  ## Добавьте IP-адреса ClickPipes в брандмауэр
+</div>
+
+Чтобы добавить [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) в свою сеть, выполните следующие действия.
+
+1. Перейдите на вкладку **Networking** и добавьте [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) в брандмауэр
+   вашего Azure Flexible Server Postgres или jump server/бастиона, если вы используете SSH-туннелирование.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Добавление IP-адресов ClickPipes в брандмауэр Azure Flexible Server for Postgres" size="lg" />
+
+<div id="whats-next">
+  ## Что дальше?
+</div>
+
+Теперь вы можете [создать ClickPipe](/ru/integrations/clickpipes/postgres/index) и начать приём данных из вашего экземпляра Postgres в ClickHouse Cloud.
+Обязательно сохраните сведения о подключении, которые вы использовали при настройке экземпляра Postgres, так как они понадобятся вам при создании ClickPipe.

@@ -1,0 +1,152 @@
+---
+slug: /cloud/managed-postgres/pricing
+sidebarTitle: 'Preços'
+title: 'Preços'
+description: 'Modelo de preços, tiers, tipos de instância e detalhes de preços na versão Beta do Postgres gerenciado pelo ClickHouse'
+keywords: ['preços do postgres', 'custo do managed postgres', 'preços do postgres na beta', 'calculadora de preços do postgres', 'preços de nvme', 'preços por tier do postgres']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
+
+Postgres managed by ClickHouse é baseado em armazenamento NVMe local, o que permite oferecer desempenho pronto para produção e integração nativa com ClickHouse sem a sobrecarga de custos das arquiteturas tradicionais de armazenamento conectado à rede. Esta página aborda o modelo de preços, os tipos de instância disponíveis e a comparação entre os tiers do serviço.
+
+Postgres managed by ClickHouse já está disponível em Beta. O serviço permanece gratuito até o início da medição de uso em 15 de junho de 2026, dando às equipes tempo para dimensionar as instâncias adequadamente antes do início da cobrança.
+
+Durante o período beta, todos os planos incluem um desconto de 50%, refletindo nosso compromisso com nossos primeiros clientes. Os preços começam em aproximadamente **US$ 30/mês** para 1 vCPU, 8 GB de RAM e 59 GB de armazenamento NVMe.
+
+<Tip>
+  **Calculadora de preços**
+
+  Para ver os preços exatos, use a [calculadora de preços](https://clickhouse.com/pricing?service=postgres#pricing-calculator) e encontre a melhor configuração e o melhor preço para sua carga de trabalho.
+</Tip>
+
+<div id="price-performance">
+  ## Relação preço-desempenho
+</div>
+
+Como o serviço é executado em armazenamento NVMe local, muitas cargas de trabalho podem atingir uma relação preço-desempenho significativamente melhor do que em arquiteturas tradicionais de armazenamento conectado à rede. Consulte o [PostgresBench](https://postgresbench.clickhouse.com/) para ver benchmarks comparando provedores alternativos de Postgres com perfis de hardware semelhantes.
+
+Os clientes podem precisar de até 2–4× menos compute para cargas de trabalho comparáveis. Esses possíveis ganhos de eficiência devem ser levados em conta ao comparar preços entre provedores, embora os resultados reais variem conforme a carga de trabalho e devam ser validados nas suas aplicações específicas.
+
+<div id="pricing-model">
+  ## Modelo de preços
+</div>
+
+O serviço é executado em armazenamento NVMe local, portanto o preço se baseia na configuração completa da VM — CPU, memória e armazenamento, em vez de cobranças separadas por computação e disco.
+
+Há mais de 50 configurações disponíveis, que vão de 1 vCPU / 8 GB de RAM / 59 GB de NVMe a 96 vCPUs / 768 GB de RAM / 60 TB de armazenamento NVMe, oferecendo flexibilidade tanto para workloads do Postgres com uso intensivo de computação quanto para workloads com uso intensivo de armazenamento.
+
+<div id="tier-based-pricing">
+  ### Preços por tier
+</div>
+
+Os preços, os recursos e os limites de recursos variam de acordo com o tier da organização — [Basic, Scale ou Enterprise](/pt-BR/products/cloud/features/cloud-tiers). No entanto, todos os tiers incluem os recursos essenciais do serviço, como Postgres pronto para produção em armazenamento NVMe local, CDC nativo para o ClickHouse e a extensão `pg_clickhouse`.
+
+A tabela abaixo resume os recursos, as capacidades e os limites incluídos em cada tier. Para comparar os preços entre os tiers, consulte a [calculadora de preços](https://clickhouse.com/pricing?service=postgres#pricing-calculator).
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0'}}>
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Básico</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Ótimo para testar novas ideias ou projetos iniciais. Armazenamento e memória limitados.</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/pt-BR/products/managed-postgres/scaling">Até 8 GB de RAM para computação</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/scaling">Até 118 GB de armazenamento NVMe local</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/backup-and-restore">Backups com retenção de 1 dia</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/backup-and-restore">PITR e Branches</a></li>
+      <li>Inclui <a href="/pt-BR/products/managed-postgres/high-availability">alta disponibilidade</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/monitoring/query-insights">Query Insights</a> com retenção de 1 dia</li>
+      <li><a href="/pt-BR/products/managed-postgres/extensions">Mais de 90 extensões do Postgres</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/clickhouse-integration">CDC nativo para ClickHouse</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/extensions">extensão <code>pg&#95;clickhouse</code></a></li>
+      <li><a href="/pt-BR/products/managed-postgres/migrations/clickhouse-cloud">Migração de dados totalmente gerenciada</a></li>
+      <li>Suporte especializado com resposta em 1 dia útil</li>
+      <li><a href="/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account">Autenticação de login único (SSO)</a> com login social do Google ou da Microsoft</li>
+      <li><a href="/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">Autenticação multifator</a></li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Scale</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Para ambientes de produção, grandes volumes de dados ou casos de uso profissionais.</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Tudo do Basic, mais</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/pt-BR/products/managed-postgres/scaling">Até 60 TB de armazenamento</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/scaling">Até 96 vCPUs e 768 GB de RAM</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/scaling">Escalonamento automático do armazenamento</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/read-replicas">Réplicas de leitura</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/security">Rede privada</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/backup-and-restore">Backups com retenção de 7 dias</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/monitoring/query-insights">Query Insights</a> com retenção de 7 dias</li>
+      <li>Suporte especializado com tempo de resposta de 1 hora, 24x7, para incidentes de Severidade 1</li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Enterprise</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Para trabalhar com ambientes de produção, grandes volumes de dados em escala ou casos de uso corporativos.</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Tudo no Scale, mais</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li>Suporte Enterprise com tempo de resposta de 30 min para incidentes de Severidade 1</li>
+      <li>Regiões privadas</li>
+      <li>Engenheiro de Suporte principal designado</li>
+      <li><a href="/pt-BR/products/managed-postgres/extensions">Extensões personalizadas</a> (*sujeito à aprovação)</li>
+      <li><a href="/pt-BR/products/managed-postgres/migrations/clickhouse-cloud">Guias de migração consultiva</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/upgrades">Atualizações agendadas</a></li>
+    </ul>
+  </div>
+</div>
+
+<div id="instance-types">
+  ### Tipos de instância
+</div>
+
+As configurações de instância são agrupadas em três categorias para simplificar a seleção da infraestrutura com base nas características da carga de trabalho.
+
+* **Otimizada para memória:** Projetada para cargas de trabalho com uso intensivo de memória, com proporções mais altas de memória por CPU (como 1:8 ou 1:4). Compatível com as famílias `r8gd`, `r6gd`, `m6gd` e `m8gd` baseadas em AWS Graviton. É mais adequada para grandes conjuntos de trabalho, altas taxas de acerto de cache e cargas de trabalho de banco de dados limitadas por memória.
+* **Otimizada para armazenamento:** Projetada para cargas de trabalho que exigem grandes volumes de armazenamento NVMe local sem ampliar a capacidade computacional na mesma proporção. Compatível com as famílias `i8g`, `i8ge`, `i7i` e `i7ie` baseadas em AWS Graviton, com configurações que oferecem até 60 TB de armazenamento NVMe local. É mais adequada para grandes conjuntos de dados, cargas de trabalho de séries temporais, armazenamento de logs e eventos e cargas de trabalho OLTP com uso intensivo de armazenamento.
+* **Otimizada para CPU:** Projetada para cargas de trabalho com uso intensivo de capacidade computacional, com proporções menores de memória por CPU (normalmente em torno de 1:2). Compatível com as famílias `c6gd` e é mais adequada para cargas de trabalho transacionais de alta concorrência e consultas limitadas pela CPU.
+
+<div id="pricing-calculator">
+  ## Calculadora de preços
+</div>
+
+Use a [calculadora de preços](https://clickhouse.com/pricing?service=postgres#pricing-calculator) para estimar os custos de implantação em diferentes perfis e configurações de carga de trabalho. Você pode personalizar:
+
+* tier da organização (Basic, Scale, Enterprise)
+* Região
+* Tipo de configuração (Memory, Storage ou otimizado para CPU)
+* Arquitetura de CPU (ARM ou x86)
+* Dimensionamento de vCPU, memória e armazenamento
+* Configurações de standby / alta disponibilidade (HA)
+
+Isso permite comparar os preços entre mais de 50 combinações de configuração compatíveis e encontrar a melhor opção para sua carga de trabalho.
+
+<div id="beta-pricing-highlights">
+  ## Destaques da precificação Beta
+</div>
+
+Durante o período Beta:
+
+* O serviço é gratuito até o início da medição de uso em **15 de junho de 2026**
+* O CDC nativo via **ClickPipes** está incluído sem custo adicional
+* No momento, não há cobranças por **tráfego de saída de rede** nem por **backups**
+* No momento, todos os planos incluem **preços Beta com 50% de desconto**
+
+<div id="disclaimers">
+  ## Avisos
+</div>
+
+À medida que o produto evolui durante a Beta, os preços e os pacotes podem ser ajustados antes da Disponibilidade Geral (GA). Observe o seguinte:
+
+* A cobrança por tráfego de saída de rede será introduzida após a GA. Espera-se que aplicações colocadas junto ao banco de dados tenham custos mínimos de egresso.
+* Encargos adicionais de backup poderão ser aplicados na GA para períodos de retenção acima de um limite que ainda está sendo definido.
+* Esperamos que o CDC nativo via ClickPipes continue gratuito ou tenha preço mínimo na GA quando Postgres e ClickHouse estiverem na mesma região, em linha com a visão de uma plataforma unificada de OLTP + OLAP.
+* As operações de scaling e manutenção executam brevemente novas instâncias em paralelo com as antigas para manter seu banco de dados online — você poderá ver cobranças sobrepostas para as instâncias antigas e novas enquanto a transição é concluída. A duração dessa janela varia com base no tipo de instância e no volume de armazenamento.
+* O serviço pode recorrer a um tipo de instância comparável de uma geração mais antiga para manter a configuração de alta disponibilidade selecionada, caso a capacidade do tipo de instância selecionado esteja temporariamente restrita em algumas das zonas de disponibilidade. Você será cobrado pela tarifa do tipo de instância de destino.
+* Os preços atuais podem evoluir e estar sujeitos a alterações mais perto da GA, à medida que aprendemos mais sobre padrões reais de uso dos clientes, características das cargas de trabalho e requisitos de infraestrutura durante o período de Beta.

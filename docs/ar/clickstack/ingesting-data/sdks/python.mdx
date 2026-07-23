@@ -1,0 +1,159 @@
+---
+slug: /use-cases/observability/clickstack/sdks/python
+description: 'بايثون لـ ClickStack - حزمة ClickHouse للرصد'
+title: 'بايثون'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'تسجيل السجلات', 'تكامل', 'مراقبة التطبيقات']
+---
+
+تستخدم ClickStack معيار OpenTelemetry لجمع بيانات القياس عن بُعد (السجلات والتتبعات). ويتم إنشاء التتبعات تلقائيًا عبر التضمين التلقائي، لذلك لا حاجة إلى التضمين اليدوي للاستفادة من التتبّع.
+
+يغطي هذا الدليل تكامل ما يلي:
+
+* **السجلات**
+* **المقاييس**
+* **التتبعات**
+
+<div id="getting-started">
+  ## البدء
+</div>
+
+<div id="install-clickstack-otel-instrumentation-package">
+  ### تثبيت حزمة التضمين لـ ClickStack OpenTelemetry
+</div>
+
+استخدم الأمر التالي لتثبيت [حزمة التضمين الخاصة بـ ClickStack OpenTelemetry](https://pypi.org/project/hyperdx-opentelemetry/).
+
+```shell
+pip install hyperdx-opentelemetry
+```
+
+ثبّت مكتبات OpenTelemetry الخاصة بالتتبّع التلقائي للحزم التي يستخدمها تطبيق بايثون. نوصي باستخدام أداة
+`opentelemetry-bootstrap` المرفقة مع OpenTelemetry Python SDK لفحص حزم تطبيقك وإنشاء قائمة بالمكتبات المتاحة.
+
+```shell
+opentelemetry-bootstrap -a install
+```
+
+<div id="configure-environment-variables">
+  ### تكوين متغيرات البيئة
+</div>
+
+بعد ذلك، ستحتاج إلى تكوين متغيرات البيئة التالية في الـ shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+</Tabs>
+
+*يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعرّف على خدمتك في تطبيق HyperDX، ويمكن أن يكون أي اسم تريده.*
+
+<div id="run-the-application-with-otel-python-agent">
+  ### شغّل التطبيق باستخدام وكيل OpenTelemetry لبايثون
+</div>
+
+يمكنك الآن تشغيل التطبيق باستخدام وكيل OpenTelemetry لبايثون (`opentelemetry-instrument`).
+
+```shell
+opentelemetry-instrument python app.py
+```
+
+<div id="using-uvicorn-gunicorn-uwsgi">
+  #### إذا كنت تستخدم `Gunicorn` أو `uWSGI` أو `uvicorn`
+</div>
+
+في هذه الحالة، سيتطلب وكيل OpenTelemetry لبايثون بعض التغييرات الإضافية لكي يعمل.
+
+لتهيئة OpenTelemetry لخوادم التطبيقات التي تستخدم وضع خادم الويب `pre-fork`، تأكد من استدعاء الدالة `configure_opentelemetry` داخل hook ما بعد التفرّع.
+
+<Tabs>
+  <Tab title="Gunicorn">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+
+    def post_fork(server, worker):
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uWSGI">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+    from uwsgidecorators import postfork
+
+    @postfork
+    def init_tracing():
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uvicorn">
+    لا يعمل OpenTelemetry [حاليًا](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/385) مع `uvicorn` عند تشغيله باستخدام
+    الخيار `--reload` أو مع عدة workers (`--workers`). نوصي بتعطيل هذين الخيارين أثناء الاختبار، أو باستخدام Gunicorn.
+  </Tab>
+</Tabs>
+
+<div id="advanced-configuration">
+  ## الإعدادات المتقدمة
+</div>
+
+<div id="network-capture">
+  #### التقاط الشبكة
+</div>
+
+من خلال تمكين ميزات التقاط الشبكة، يصبح بإمكان المطورين تصحيح أخطاء
+رؤوس طلبات HTTP وحمولات المتن بفعالية. ويمكن تحقيق ذلك
+ببساطة عبر ضبط العلامة `HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE` على 1.
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="logs-not-appearing-due-to-log-level">
+  ### عدم ظهور السجلات بسبب مستوى التسجيل
+</div>
+
+يستخدم معالج logging في OpenTelemetry، افتراضيًا، المستوى `logging.NOTSET`، والذي
+يُعيَّن افتراضيًا إلى مستوى WARNING. يمكنك تحديد مستوى logging عند إنشاء
+`logger`:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+<div id="exporting-to-the-console">
+  ### التصدير إلى وحدة التحكم
+</div>
+
+تعرض حزمة OpenTelemetry SDK الخاصة بـ بايثون عادةً الأخطاء في وحدة التحكم عند
+حدوثها. ومع ذلك، إذا لم تواجه أي أخطاء ولكن لاحظت أن بياناتك لا
+تظهر في HyperDX كما هو متوقع، فيمكنك تفعيل وضع Debug.
+عند تفعيل وضع Debug، ستُطبع جميع بيانات القياس عن بُعد في وحدة التحكم،
+مما يتيح لك التحقق مما إذا كان تطبيقك مهيأً بشكل صحيح لإرسال
+البيانات المتوقعة.
+
+```shell
+export DEBUG=true
+```
+
+اطّلع هنا على مزيد من المعلومات حول التضمين في OpenTelemetry لبايثون:
+[https://opentelemetry.io/docs/instrumentation/python/manual/](https://opentelemetry.io/docs/instrumentation/python/manual/)

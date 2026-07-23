@@ -1,0 +1,421 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm
+title: 'Helm'
+description: '使用 Helm 部署 ClickStack：ClickHouse 可观测性堆栈'
+doc_type: 'guide'
+keywords: ['ClickStack Helm 图表', 'Helm ClickHouse 部署', 'HyperDX Helm 安装', 'Kubernetes 可观测性堆栈', 'ClickStack Kubernetes 部署']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+
+<Warning>
+  **图表 版本 2.x**
+
+  本页介绍的是基于子 图表 的 **v2.x** Helm 图表。如果你仍在使用 v1.x 内联模板 图表，请参阅 [v1.x Helm 指南](/zh/clickstack/deployment/helm-v1)。如需迁移步骤，请参阅 [升级指南](/zh/clickstack/deployment/helm-upgrade)。
+</Warning>
+
+ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStack-helm-charts)获取，也是生产环境部署的**推荐**方式。
+
+v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图表 安装 operator 和 CRD，然后安装主 `clickstack` 图表；后者会为 ClickHouse、MongoDB 和 OpenTelemetry Collector 创建由 operator 管理的自定义资源。
+
+默认情况下，Helm 图表会预配所有核心组件，包括：
+
+* **ClickHouse** — 通过 `ClickHouseCluster` 和 `KeeperCluster` 自定义资源，由 [ClickHouse Operator](/zh/products/kubernetes-operator/overview) 管理
+* **HyperDX** — 可观测性 UI 和 API
+* **OpenTelemetry (OTel) collector** — 作为子 图表，通过[官方 OpenTelemetry Collector Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts)部署
+* **MongoDB** — 通过 `MongoDBCommunity` 自定义资源，由 [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) 管理
+
+不过，它也可以轻松自定义，以集成现有的 ClickHouse 部署——例如部署在 **ClickHouse Cloud** 上的实例。
+
+该 图表 支持 Kubernetes 的标准最佳实践，包括：
+
+* 通过 `values.yaml` 进行环境特定配置
+* 资源限制和 pod (容器组) 级别的扩缩容
+* TLS 和入口配置
+* secrets 管理和身份验证设置
+* [附加清单](/zh/clickstack/deployment/helm-additional-manifests)，用于随 图表 一起部署任意 Kubernetes 对象 (NetworkPolicy、HPA、ALB Ingress 等)
+
+<div id="suitable-for">
+  ### 适用场景
+</div>
+
+* 概念验证
+* 生产环境
+
+<div id="deployment-steps">
+  ## 部署步骤
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 前置条件
+
+    * [Helm](https://helm.sh/) v3+
+    * Kubernetes 集群 (推荐使用 v1.20+)
+    * 已配置为与集群交互的 `kubectl`
+  </Step>
+
+  <Step>
+    ### 添加 ClickStack Helm 仓库
+
+    添加 ClickStack Helm 仓库：
+
+    ```shell
+    helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### 安装 Operator
+
+    请先安装 operator chart。这会注册主 chart 所需的 CRD：
+
+    ```shell
+    helm install clickstack-operators clickstack/clickstack-operators
+    ```
+
+    等待 Operator Pod (容器组) 就绪后再继续：
+
+    ```shell
+    kubectl get pods -l app.kubernetes.io/instance=clickstack-operators
+    ```
+  </Step>
+
+  <Step>
+    ### 安装 ClickStack
+
+    operator 运行起来后，安装主 Chart：
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### 验证安装
+
+    请验证安装是否成功：
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=clickstack"
+    ```
+
+    当所有 Pod (容器组) 都处于就绪状态后，请继续。
+  </Step>
+
+  <Step>
+    ### 端口转发
+
+    端口转发可让我们访问并配置 HyperDX。部署到生产环境时，用户应改为通过入口或负载均衡器暴露该服务，以确保合适的网络访问、TLS 终止和可扩展性。端口转发更适合本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
+
+    ```shell
+    kubectl port-forward \
+      pod/$(kubectl get pod -l app.kubernetes.io/name=clickstack -o jsonpath='{.items[0].metadata.name}') \
+      8080:3000
+    ```
+
+    <Tip>
+      **生产环境入口配置**
+
+      对于生产环境部署，建议配置启用 TLS 的入口，而不要使用端口转发。有关详细配置说明，请参阅 [入口配置指南](/zh/clickstack/deployment/helm-configuration#ingress-setup)。
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 进入 UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 以访问 HyperDX UI。
+
+    创建用户，并输入符合要求的用户名和密码。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    点击 `Create` 后，将为通过 Helm 图表部署的 ClickHouse 实例创建数据源。
+
+    <Info>
+      **覆盖默认连接**
+
+      你可以覆盖集成的 ClickHouse 实例的默认连接。详情请参阅[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud)。
+    </Info>
+  </Step>
+
+  <Step>
+    ### 自定义值 (可选)
+
+    您可以使用 `--set` 参数来自定义设置。例如：
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack --set key=value
+    ```
+
+    或者，编辑 `values.yaml`。如需获取默认值：
+
+    ```shell
+    helm show values clickstack/clickstack > values.yaml
+    ```
+
+    配置示例：
+
+    ```yaml
+    hyperdx:
+      frontendUrl: "https://hyperdx.example.com"
+
+      deployment:
+        replicas: 2
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+
+      ingress:
+        enabled: true
+        host: hyperdx.example.com
+        tls:
+          enabled: true
+          tlsSecretName: "hyperdx-tls"
+    ```
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack -f values.yaml
+    ```
+  </Step>
+
+  <Step>
+    ### 使用 secrets (可选)
+
+    v2.x chart 使用一个统一的 secret (`clickstack-secret`) ，其内容从 values 中的 `hyperdx.secrets` 填充。所有敏感环境变量——包括 ClickHouse 密码、MongoDB 密码和 HyperDX API key——都会通过这一个 secret 统一传递。
+
+    如需覆盖 secret 中的值：
+
+    ```yaml
+    hyperdx:
+      secrets:
+        HYPERDX_API_KEY: "your-api-key"
+        CLICKHOUSE_PASSWORD: "your-clickhouse-password"
+        CLICKHOUSE_APP_PASSWORD: "your-app-password"
+        MONGODB_PASSWORD: "your-mongodb-password"
+    ```
+
+    对于外部 Secret 管理 (例如使用 secrets operator) ，您可以引用一个现有的 Kubernetes Secret：
+
+    ```yaml
+    hyperdx:
+      useExistingConfigSecret: true
+      existingConfigSecret: "my-external-secret"
+      existingConfigConnectionsKey: "connections.json"
+      existingConfigSourcesKey: "sources.json"
+    ```
+
+    <Tip>
+      **API 密钥管理**
+
+      有关 API 密钥设置的详细说明 (包括多种配置方法和 pod (容器组) 重启流程) ，请参阅 [API 密钥设置指南](/zh/clickstack/deployment/helm-configuration#api-key-setup)。
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="using-clickhouse-cloud">
+  ## 使用 ClickHouse Cloud
+</div>
+
+如果使用 ClickHouse Cloud，请禁用内置的 ClickHouse 实例，并提供您的 Cloud 访问凭据：
+
+```yaml
+# values-clickhouse-cloud.yaml
+clickhouse:
+  enabled: false
+
+hyperdx:
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-cloud-password"
+    CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
+
+  useExistingConfigSecret: true
+  existingConfigSecret: "clickhouse-cloud-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+
+单独创建用于连接的 Secret：
+
+```bash
+cat <<EOF > connections.json
+[
+  {
+    "name": "ClickHouse Cloud",
+    "host": "https://your-cloud-instance.clickhouse.cloud",
+    "port": 8443,
+    "username": "default",
+    "password": "your-cloud-password"
+  }
+]
+EOF
+
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json
+
+rm connections.json
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
+```
+
+<Tip>
+  **高级外部配置**
+
+  对于采用基于 Secret 的配置、外部 OTel collector 或精简配置的生产部署，请参阅[部署选项指南](/zh/clickstack/deployment/helm-deployment-options)。
+</Tip>
+
+<div id="production-notes">
+  ## 生产环境说明
+</div>
+
+默认情况下，此 图表 会安装 ClickHouse、MongoDB 和 OTel collector。对于生产环境，建议分别管理 ClickHouse 和 OTel collector。
+
+要禁用 ClickHouse 和 OTel collector：
+
+```yaml
+clickhouse:
+  enabled: false
+
+otel-collector:
+  enabled: false
+```
+
+<Tip>
+  **生产环境最佳实践**
+
+  有关生产部署的更多信息，包括高可用配置、资源管理、入口/TLS 设置以及 Cloud 特定配置 (GKE、EKS、AKS) ，请参阅：
+
+  * [配置指南](/zh/clickstack/deployment/helm-configuration) - 入口、TLS 和 secrets 管理
+  * [Cloud 部署](/zh/clickstack/deployment/helm-cloud) - Cloud 特定设置和生产环境核对清单
+</Tip>
+
+<div id="task-configuration">
+  ## 任务配置
+</div>
+
+默认情况下，图表 配置中有一个以 cronjob 形式运行的任务，用于检查是否应触发告警。在 v2.x 中，任务配置已迁移到 `hyperdx.tasks` 下：
+
+| 参数                                    | 说明                                                                                   | 默认值              |
+| ------------------------------------- | ------------------------------------------------------------------------------------ | ---------------- |
+| `hyperdx.tasks.enabled`               | 在集群中启用/禁用 cron 任务。默认情况下，HyperDX 镜像会在进程内运行 cron 任务。如果你希望在集群中使用独立的 cron 任务，请将其设为 true。 | `false`          |
+| `hyperdx.tasks.checkAlerts.schedule`  | check-alerts 任务的 Cron 调度计划                                                           | `*/1 * * * *`    |
+| `hyperdx.tasks.checkAlerts.resources` | check-alerts 任务的资源请求和限制                                                              | 参见 `values.yaml` |
+
+<div id="upgrading-the-chart">
+  ## 升级 Helm 图表
+</div>
+
+要升级到更新的版本：
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+要查看可用的 图表 版本：
+
+```shell
+helm search repo clickstack
+```
+
+<Info>
+  **从 v1.x 升级**
+
+  如果你是从 v1.x 的 inline-template 图表 升级，请参阅[升级指南](/zh/clickstack/deployment/helm-upgrade)了解迁移说明。这是一项破坏性变更，不支持直接执行 `helm upgrade`。
+</Info>
+
+<div id="uninstalling-clickstack">
+  ## 卸载 ClickStack
+</div>
+
+按相反的顺序卸载：
+
+```shell
+helm uninstall my-clickstack            # 先移除应用和自定义资源
+helm uninstall clickstack-operators     # 移除 Operator 和 CRD
+```
+
+**注意：** 由 MongoDB 和 ClickHouse Operator 创建的 PersistentVolumeClaims **不会** 在执行 `helm uninstall` 时被删除。这是刻意为之，旨在防止意外数据丢失。要清理 PVC，请参阅：
+
+* [MongoDB Kubernetes Operator 文档](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="checking-logs">
+  ### 查看日志
+</div>
+
+```shell
+kubectl logs -l app.kubernetes.io/name=clickstack
+```
+
+<div id="debugging-a-failed-install">
+  ### 调试安装失败
+</div>
+
+```shell
+helm install my-clickstack clickstack/clickstack --debug --dry-run
+```
+
+<div id="verifying-deployment">
+  ### 验证部署
+</div>
+
+```shell
+kubectl get pods -l app.kubernetes.io/name=clickstack
+```
+
+<Tip>
+  **更多故障排查资源**
+
+  有关与入口相关的问题、TLS 问题或 Cloud 部署故障排查，请参阅：
+
+  * [入口故障排查](/zh/clickstack/deployment/helm-configuration#troubleshooting-ingress) - 静态资源服务、路径重写、浏览器问题
+  * [Cloud 部署](/zh/clickstack/deployment/helm-cloud#loadbalancer-dns-resolution-issue) - GKE OpAMP 问题和 Cloud 特有问题
+</Tip>
+
+<JSONSupport />
+
+<div id="related-documentation">
+  ## 相关文档
+</div>
+
+<div id="deployment-guides">
+  ### 部署指南
+</div>
+
+* [部署选项](/zh/clickstack/deployment/helm-deployment-options) - 外部 ClickHouse、OTel collector 和最小部署
+* [配置指南](/zh/clickstack/deployment/helm-configuration) - API keys、Secrets 和入口设置
+* [Cloud 部署](/zh/clickstack/deployment/helm-cloud) - GKE、EKS、AKS 配置和生产环境最佳实践
+* [升级指南](/zh/clickstack/deployment/helm-upgrade) - 从 v1.x 迁移到 v2.x
+* [附加清单](/zh/clickstack/deployment/helm-additional-manifests) - 与 图表 一起部署自定义 Kubernetes 对象
+
+<div id="v1x-documentation">
+  ### v1.x 文档
+</div>
+
+* [Helm (v1.x)](/zh/clickstack/deployment/helm-v1) - v1.x 部署指南
+* [配置 (v1.x)](/zh/clickstack/deployment/helm-configuration-v1) - v1.x 配置说明
+* [部署选项 (v1.x)](/zh/clickstack/deployment/helm-deployment-options-v1) - v1.x 部署选项
+* [Cloud 部署 (v1.x)](/zh/clickstack/deployment/helm-cloud-v1) - v1.x Cloud 配置
+
+<div id="additional-resources">
+  ### 更多资源
+</div>
+
+* [ClickStack 入门指南](/zh/clickstack/getting-started/index) - ClickStack 简介
+* [ClickStack Helm 图表仓库](https://github.com/ClickHouse/ClickStack-helm-charts) - 图表源代码和 values 参考
+* [Kubernetes 文档](https://kubernetes.io/docs/) - Kubernetes 参考
+* [Helm 文档](https://helm.sh/docs/) - Helm 参考

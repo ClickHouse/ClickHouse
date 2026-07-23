@@ -20,7 +20,11 @@ SET force_primary_key = 1;
 
 SELECT '-------FORCE PRIMARY KEY-------';
 SELECT * FROM (SELECT * FROM test_00808 LIMIT 1) WHERE id = 1; -- { serverError INDEX_NOT_USED }
-SELECT * FROM (SELECT id FROM test_00808 GROUP BY id LIMIT 1 BY id) WHERE id = 1; -- { serverError INDEX_NOT_USED }
+-- Filter on the LIMIT BY key is pushed below LIMIT BY (and below GROUP BY on the same key),
+-- so it reaches storage and uses the primary key (issue #110112). enable_parallel_replicas=0
+-- because the pushed predicate only becomes the local primary key condition; under parallel
+-- replicas the table is read on remote replicas and force_primary_key would still throw.
+SELECT * FROM (SELECT id FROM test_00808 GROUP BY id LIMIT 1 BY id) WHERE id = 1 SETTINGS enable_parallel_replicas = 0;
 
 SELECT '-------CHECK STATEFUL FUNCTIONS-------';
 SELECT n, z, changed FROM (

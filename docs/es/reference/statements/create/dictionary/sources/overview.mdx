@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources
+title: 'Fuentes del diccionario'
+sidebarTitle: 'Descripción general'
+doc_type: 'reference'
+description: 'Configuración de los tipos de fuentes del diccionario'
+---
+
+import CloudDetails from '/snippets/es/_snippet_dictionary_in_cloud.mdx';
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="dictionary-sources">
+  ## Sintaxis
+</div>
+
+<CloudDetails />
+
+Un diccionario puede conectarse a ClickHouse a partir de muchas fuentes diferentes.
+La fuente se configura en la sección `source` del archivo de configuración y mediante la cláusula `SOURCE` en la sentencia DDL.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (...)
+    ...
+    SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Configuración de la fuente
+    ...
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <clickhouse>
+      <dictionary>
+        ...
+        <source>
+          <source_type>
+            <!-- Configuración de la fuente -->
+          </source_type>
+        </source>
+        ...
+      </dictionary>
+      ...
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="supported-dictionary-sources">
+  ## Fuentes de diccionario compatibles
+</div>
+
+Están disponibles los siguientes tipos de fuente (`SOURCE_TYPE`/`source_type`):
+
+* [Archivo local](/es/reference/statements/create/dictionary/sources/local-file)
+* [Archivo ejecutable](/es/reference/statements/create/dictionary/sources/executable-file)
+* [Grupo de ejecutables](/es/reference/statements/create/dictionary/sources/executable-pool)
+* [HTTP(S)](/es/reference/statements/create/dictionary/sources/http)
+* DBMS
+  * [ODBC](/es/reference/statements/create/dictionary/sources/odbc)
+  * [MySQL](/es/reference/statements/create/dictionary/sources/mysql)
+  * [ClickHouse](/es/reference/statements/create/dictionary/sources/clickhouse)
+  * [MongoDB](/es/reference/statements/create/dictionary/sources/mongodb)
+  * [Redis](/es/reference/statements/create/dictionary/sources/redis)
+  * [Cassandra](/es/reference/statements/create/dictionary/sources/cassandra)
+  * [PostgreSQL](/es/reference/statements/create/dictionary/sources/postgresql)
+  * [YTsaurus](/es/reference/statements/create/dictionary/sources/ytsaurus)
+* [YAMLRegExpTree](/es/reference/statements/create/dictionary/sources/yamlregexptree)
+* [Null](/es/reference/statements/create/dictionary/sources/null)
+
+Para los tipos de fuente [Archivo local](/es/reference/statements/create/dictionary/sources/local-file), [Archivo ejecutable](/es/reference/statements/create/dictionary/sources/executable-file), [HTTP(s)](/es/reference/statements/create/dictionary/sources/http), [ClickHouse](/es/reference/statements/create/dictionary/sources/clickhouse),
+hay ajustes opcionales disponibles:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql highlight={2}
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    SETTINGS(format_csv_allow_single_quotes = 0)
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml highlight={7}
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+      <settings>
+          <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+      </settings>
+    </source>
+    ```
+  </Tab>
+</Tabs>

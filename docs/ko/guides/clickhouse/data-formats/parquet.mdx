@@ -1,0 +1,212 @@
+---
+sidebarTitle: 'Parquet'
+slug: /integrations/data-formats/parquet
+title: 'ClickHouse에서 Parquet 사용하기'
+description: 'ClickHouse에서 Parquet를 사용하는 방법을 설명하는 페이지'
+doc_type: 'guide'
+keywords: ['parquet', '컬럼형 포맷', '데이터 포맷', '압축', 'apache parquet']
+---
+
+Parquet는 데이터를 열 지향 방식으로 저장하는 효율적인 파일 포맷입니다.
+ClickHouse는 Parquet 파일을 읽고 쓸 수 있습니다.
+
+<Tip>
+  쿼리에서 파일 경로를 참조할 때 ClickHouse가 실제로 어느 위치에서 읽기를 시도하는지는 사용 중인 ClickHouse 버전에 따라 달라집니다.
+
+  [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 사용하는 경우, ClickHouse Local을 실행한 위치를 기준으로 한 상대 경로에서 파일을 읽습니다.
+  `clickhouse client`를 통해 ClickHouse 서버 또는 ClickHouse Cloud를 사용하는 경우, 서버의 `/var/lib/clickhouse/user_files/` 디렉터리를 기준으로 한 상대 경로에서 파일을 읽습니다.
+</Tip>
+
+<div id="importing-from-parquet">
+  ## Parquet에서 가져오기
+</div>
+
+데이터를 로드하기 전에 [file()](/ko/reference/functions/regular-functions/files#file) 함수를 사용해 [예시 Parquet 파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.parquet)의 구조를 확인할 수 있습니다:
+
+```sql
+DESCRIBE TABLE file('data.parquet', Parquet);
+```
+
+두 번째 인수로 [Parquet](/ko/reference/formats/Parquet/Parquet)를 사용했으므로 ClickHouse가 파일 포맷을 알 수 있습니다. 그러면 컬럼과 해당 타입이 출력됩니다:
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path │ Nullable(String) │              │                    │         │                  │                │
+│ date │ Nullable(String) │              │                    │         │                  │                │
+│ hits │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+실제로 데이터를 가져오기 전에 강력한 SQL 기능을 활용해 파일을 미리 살펴볼 수도 있습니다:
+
+```sql
+SELECT *
+FROM file('data.parquet', Parquet)
+LIMIT 3;
+```
+
+```response
+┌─path──────────────────────┬─date───────┬─hits─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │  241 │
+│ Aegithina_tiphia          │ 2018-02-01 │   34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │    1 │
+└───────────────────────────┴────────────┴──────┘
+```
+
+<Tip>
+  `file()` 및 `INFILE`/`OUTFILE`에서는 포맷을 명시적으로 설정하지 않아도 됩니다.
+  이 경우 ClickHouse가 파일 확장자를 바탕으로 포맷을 자동으로 감지합니다.
+</Tip>
+
+<div id="importing-to-an-existing-table">
+  ## 기존 테이블로 가져오기
+</div>
+
+Parquet 데이터를 가져올 테이블을 생성하겠습니다:
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `date` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (date, path);
+```
+
+이제 `FROM INFILE` 절을 사용해 데이터를 가져올 수 있습니다:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.parquet' FORMAT Parquet;
+
+SELECT *
+FROM sometable
+LIMIT 5;
+```
+
+```response
+┌─path──────────────────────────┬───────date─┬─hits─┐
+│ 1988_in_philosophy            │ 2015-05-01 │   70 │
+│ 2004_Green_Bay_Packers_season │ 2015-05-01 │  970 │
+│ 24_hours_of_lemans            │ 2015-05-01 │   37 │
+│ 25604_Karlin                  │ 2015-05-01 │   20 │
+│ ASCII_ART                     │ 2015-05-01 │    9 │
+└───────────────────────────────┴────────────┴──────┘
+```
+
+ClickHouse가 Parquet 문자열(`date` 컬럼)을 `Date` 타입으로 자동 변환한 것을 확인하십시오. 이는 ClickHouse가 대상 테이블(target table)의 타입을 기준으로 자동으로 형변환을 수행하기 때문입니다.
+
+<div id="inserting-a-local-file-to-remote-server">
+  ## 로컬 파일을 원격 서버에 삽입하기
+</div>
+
+로컬 Parquet 파일을 원격 ClickHouse 서버에 삽입하려면 아래와 같이 파일 내용을 `clickhouse-client`에 파이프로 전달하면 됩니다:
+
+```sql
+clickhouse client -q "INSERT INTO sometable FORMAT Parquet" < data.parquet
+```
+
+<div id="creating-new-tables-from-parquet-files">
+  ## Parquet 파일에서 새 테이블 만들기
+</div>
+
+ClickHouse는 Parquet 파일의 스키마를 읽을 수 있으므로 테이블을 즉시 생성할 수 있습니다:
+
+```sql
+CREATE TABLE imported_from_parquet
+ENGINE = MergeTree
+ORDER BY tuple() AS
+SELECT *
+FROM file('data.parquet', Parquet)
+```
+
+지정된 Parquet 파일에서 테이블을 자동으로 생성하고 데이터를 채웁니다:
+
+```sql
+DESCRIBE TABLE imported_from_parquet;
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path │ Nullable(String) │              │                    │         │                  │                │
+│ date │ Nullable(String) │              │                    │         │                  │                │
+│ hits │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+기본적으로 ClickHouse는 컬럼 이름, 타입, 값에 엄격합니다. 하지만 가져오는 동안에는 존재하지 않는 컬럼이나 지원되지 않는 값을 건너뛸 수도 있습니다. 이는 [Parquet 설정](/ko/reference/formats/Parquet/Parquet#format-settings)에서 관리할 수 있습니다.
+
+<div id="exporting-to-parquet-format">
+  ## Parquet 포맷으로 내보내기
+</div>
+
+<Tip>
+  ClickHouse Cloud에서 `INTO OUTFILE`을 사용하는 경우, 파일이 저장될 머신에서 `clickhouse client`로 명령을 실행해야 합니다.
+</Tip>
+
+테이블이나 쿼리 결과를 Parquet 파일로 내보내려면 `INTO OUTFILE` 절을 사용할 수 있습니다.
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'export.parquet'
+FORMAT Parquet
+```
+
+그러면 작업 디렉터리에 `export.parquet` 파일이 생성됩니다.
+
+<div id="clickhouse-and-parquet-data-types">
+  ## ClickHouse와 Parquet 데이터 타입
+</div>
+
+ClickHouse와 Parquet의 데이터 타입은 대부분 동일하지만, [약간의 차이](/ko/reference/formats/Parquet/Parquet#data-types-matching-parquet)가 있습니다. 예를 들어 ClickHouse는 `DateTime` 타입을 Parquet의 `int64`로 내보냅니다. 그런 다음 이를 다시 ClickHouse로 가져오면 숫자로 표시됩니다([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)):
+
+```sql
+SELECT * FROM file('time.parquet', Parquet);
+```
+
+```response
+┌─n─┬───────time─┐
+│ 0 │ 1673622611 │
+│ 1 │ 1673622610 │
+│ 2 │ 1673622609 │
+│ 3 │ 1673622608 │
+│ 4 │ 1673622607 │
+└───┴────────────┘
+```
+
+이 경우 [형 변환](/ko/reference/functions/regular-functions/type-conversion-functions)을 사용할 수 있습니다:
+
+```sql
+SELECT
+    n,
+    toDateTime(time)                 <--- int를 time으로 변환
+FROM file('time.parquet', Parquet);
+```
+
+```response
+┌─n─┬────toDateTime(time)─┐
+│ 0 │ 2023-01-13 15:10:11 │
+│ 1 │ 2023-01-13 15:10:10 │
+│ 2 │ 2023-01-13 15:10:09 │
+│ 3 │ 2023-01-13 15:10:08 │
+│ 4 │ 2023-01-13 15:10:07 │
+└───┴─────────────────────┘
+```
+
+<div id="further-reading">
+  ## 추가 읽을거리
+</div>
+
+ClickHouse는 다양한 시나리오와 플랫폼을 지원하기 위해 텍스트와 바이너리를 포함한 여러 포맷을 제공합니다. 다음 문서에서 더 많은 포맷과 활용 방법을 살펴보십시오.
+
+* [CSV 및 TSV 포맷](/ko/guides/clickhouse/data-formats/csv-tsv)
+* [Avro, Arrow 및 ORC](/ko/guides/clickhouse/data-formats/arrow-avro-orc)
+* [JSON 포맷](/ko/guides/clickhouse/data-formats/json/intro)
+* [Regex 및 Template](/ko/guides/clickhouse/data-formats/templates-regex)
+* [네이티브 및 바이너리 포맷](/ko/guides/clickhouse/data-formats/binary)
+* [SQL 포맷](/ko/guides/clickhouse/data-formats/sql)
+
+또한 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)도 확인해 보십시오. ClickHouse 서버 없이 로컬/원격 파일을 대상으로 작업할 수 있는 이식성이 뛰어난 완전한 기능의 도구입니다.

@@ -1,0 +1,148 @@
+---
+slug: /integrations/clickpipes/postgres/auth
+sidebarTitle: 'AWS IAM 数据库身份验证（RDS/Aurora）'
+title: 'AWS IAM 数据库身份验证（RDS/Aurora）'
+description: '本文介绍 ClickPipes 客户如何利用基于角色的访问控制，通过亚马逊 RDS/Aurora 进行身份验证并安全访问其数据库。'
+doc_type: 'guide'
+keywords: ['clickpipes', 'rds', 'security', 'aws', 'private connection']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文介绍 ClickPipes 客户如何利用基于角色的访问控制，通过 Amazon Aurora 和 RDS 进行身份验证，并安全地访问其数据库。
+
+<Warning>
+  对于 AWS RDS Postgres 和 Aurora Postgres，受 AWS IAM DB 身份验证的限制，您只能运行 `Initial Load Only` ClickPipes。
+
+  对于 MySQL 和 MariaDB，则不受此限制影响，您既可以运行 `Initial Load Only` ClickPipes，也可以运行 `CDC` ClickPipes。
+</Warning>
+
+<div id="setup">
+  ## 设置
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### 获取 ClickHouse 服务的 IAM Role ARN
+</div>
+
+1 - 登录到你的 ClickHouse Cloud 账户。
+
+2 - 选择你要为其创建集成的 ClickHouse 服务
+
+3 - 选择 **Settings** 选项卡
+
+4 - 向下滚动到页面底部的 **Network security 信息** 部分
+
+5 - 复制如下所示该服务的 **Service role ID (IAM)** 值。
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="安全 S3 ARN" size="lg" border />
+
+我们将此值称为 `{ClickHouse_IAM_ARN}`。这就是将用于访问你的 RDS/Aurora 实例的 IAM 角色。
+
+<div id="configuring-the-rds-aurora-instance">
+  ### 配置 RDS/Aurora 实例
+</div>
+
+<div id="enabling-iam-db-authentication">
+  #### 启用 IAM DB 身份验证
+</div>
+
+1. 登录 AWS 账户，并进入要配置的 RDS 实例。
+2. 点击 **Modify** 按钮。
+3. 向下滚动到 **Database authentication** 部分。
+4. 启用 **Password and IAM database authentication** 选项。
+5. 点击 **Continue** 按钮。
+6. 确认更改，然后点击 **Apply immediately** 选项。
+
+<div id="obtaining-the-rds-resource-id">
+  #### 获取 RDS/Aurora 资源 ID
+</div>
+
+1. 登录 AWS 账户，然后前往要配置的 RDS 实例或 Aurora 集群。
+2. 点击 **Configuration** 选项卡。
+3. 记下 **Resource ID** 的值。对于 RDS，其格式应类似于 `db-xxxxxxxxxxxxxx`；对于 Aurora 集群，其格式应类似于 `cluster-xxxxxxxxxxxxxx`。我们将此值记为 `{RDS_RESOURCE_ID}`。该资源 ID 将在 IAM 策略中用于授予对 RDS 实例的访问权限。
+
+<div id="setting-up-the-database-user">
+  #### 设置数据库用户
+</div>
+
+<div id="setting-up-the-database-user-postgres">
+  ##### PostgreSQL
+</div>
+
+1. 连接到您的 RDS/Aurora 实例，并使用以下命令创建一个新的数据库用户：
+   ```sql
+   CREATE USER clickpipes_iam_user; 
+   GRANT rds_iam TO clickpipes_iam_user;
+   ```
+2. 按照 [PostgreSQL 数据源设置指南](/zh/integrations/clickpipes/postgres/source/rds) 中的其余步骤，为 ClickPipes 配置您的 RDS 实例。
+
+<div id="setting-up-the-database-user-mysql">
+  ##### MySQL / MariaDB
+</div>
+
+1. 连接到你的 RDS/Aurora 实例，并使用以下命令创建一个新的数据库用户：
+   ```sql
+   CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+   ```
+2. 按照 [MySQL 数据源设置指南](/zh/integrations/clickpipes/mysql/source/rds) 中的其余步骤，为 ClickPipes 配置 RDS/Aurora 实例。
+
+<div id="setting-up-iam-role">
+  ### 配置 IAM 角色
+</div>
+
+<div id="manually-create-iam-role">
+  #### 手动创建 IAM 角色。
+</div>
+
+1 - 在 Web 浏览器中，使用具有创建和管理 IAM 角色 权限的 IAM user 登录您的 AWS 账户。
+
+2 - 打开 IAM Service Console
+
+3 - 使用以下 IAM policy 和 Trust policy 创建一个新的 IAM 角色。
+
+Trust policy (请将 `{ClickHouse_IAM_ARN}` 替换为您的 ClickHouse instance 所属 IAM 角色 的 arn) ：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+```
+
+IAM 策略 (请将 `{RDS_RESOURCE_ID}` 替换为您的 RDS 实例的资源 ID) 。另请务必将 `{RDS_REGION}` 替换为您的 RDS/Aurora 实例所在区域，并将 `{AWS_ACCOUNT}` 替换为您的 AWS 账户 ID：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds-db:connect"
+      ],
+      "Resource": [
+        "arn:aws:rds-db:{RDS_REGION}:{AWS_ACCOUNT}:dbuser:{RDS_RESOURCE_ID}/clickpipes_iam_user"
+      ]
+    }
+  ]
+}
+```
+
+4 - 创建后，复制新的 **IAM Role Arn**。这是 ClickPipes 安全访问你的 AWS 数据库所需的 ARN。我们将其记作 `{RDS_ACCESS_IAM_ROLE_ARN}`。
+
+现在，你可以使用此 IAM 角色 从 ClickPipes 对你的 RDS/Aurora 实例进行身份验证。

@@ -1,0 +1,393 @@
+---
+description: '프로젝션 관리 문서'
+sidebarTitle: 'PROJECTION'
+slug: /sql-reference/statements/alter/projection
+title: '프로젝션'
+doc_type: 'reference'
+---
+
+이 페이지에서는 프로젝션의 개념, 사용 방법, 그리고 프로젝션을 관리하는 다양한 옵션을 설명합니다.
+
+<div id="overview">
+  ## 프로젝션 개요
+</div>
+
+프로젝션은 쿼리 실행을 최적화하는 포맷으로 데이터를 저장하며, 다음과 같은 경우에 유용합니다.
+
+* 프라이머리 키(primary key)에 포함되지 않은 컬럼에서 쿼리를 실행할 때
+* 컬럼을 사전 집계해 계산량과 IO를 모두 줄일 때
+
+테이블에는 하나 이상의 프로젝션을 정의할 수 있으며, 쿼리 분석 과정에서 ClickHouse가 사용자 쿼리를 수정하지 않고 스캔할 데이터가 가장 적은 프로젝션을 선택합니다.
+
+<Info>
+  **디스크 사용량**
+
+  프로젝션은 내부적으로 새로운 숨겨진 테이블을 생성하므로 더 많은 IO와 디스크 공간이 필요합니다.
+  예를 들어 프로젝션에 다른 프라이머리 키가 정의되어 있으면 원본 테이블의 모든 데이터가 복제됩니다.
+</Info>
+
+프로젝션이 내부적으로 어떻게 동작하는지에 관한 더 자세한 기술 내용은 이 [페이지](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)에서 확인할 수 있습니다.
+
+<div id="examples">
+  ## 프로젝션 사용
+</div>
+
+<div id="example-filtering-without-using-primary-keys">
+  ### 프라이머리 키를 사용하지 않고 필터링하는 예시
+</div>
+
+테이블 생성:
+
+```sql
+CREATE TABLE visits_order
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String
+)
+ENGINE = MergeTree()
+PRIMARY KEY user_agent
+```
+
+`ALTER TABLE`을 사용하면 기존 테이블(table)에 Projection을 추가할 수 있습니다:
+
+```sql
+ALTER TABLE visits_order ADD PROJECTION user_name_projection (
+    SELECT *
+    ORDER BY user_name
+)
+
+ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
+```
+
+데이터 삽입:
+
+```sql
+INSERT INTO visits_order SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+프로젝션을 사용하면 원본 테이블에서 `user_name`이 `PRIMARY_KEY`로 정의되지 않았더라도 `user_name`으로 빠르게 필터링할 수 있습니다.
+쿼리 시점에 ClickHouse는 데이터가 `user_name` 순으로 정렬되어 있으므로 프로젝션을 사용하는 편이 처리해야 할 데이터가 더 적다고 판단합니다.
+
+```sql
+SELECT
+    *
+FROM visits_order
+WHERE user_name='test'
+LIMIT 2
+```
+
+쿼리가 해당 프로젝션을 사용하는지 확인하려면 `system.query_log` 테이블을 살펴볼 수 있습니다. `projections` 필드에는 사용된 프로젝션의 이름이 표시되며, 사용되지 않았다면 비어 있습니다:
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="example-pre-aggregation-query">
+  ### 예시 사전 집계 쿼리
+</div>
+
+projection `projection_visits_by_user`가 포함된 테이블을 생성합니다:
+
+```sql
+CREATE TABLE visits
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String,
+   PROJECTION projection_visits_by_user
+   (
+       SELECT
+           user_agent,
+           sum(pages_visited)
+       GROUP BY user_id, user_agent
+   )
+)
+ENGINE = MergeTree()
+ORDER BY user_agent
+```
+
+데이터를 삽입하세요:
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1. * (number / 2),
+   'IOS'
+FROM numbers(100, 500);
+```
+
+`GROUP BY`를 사용해 `user_agent` 필드로 첫 번째 쿼리를 실행합니다.
+사전 집계 조건이 일치하지 않으므로 이 쿼리에서는 정의된 프로젝션을 사용하지 않습니다.
+
+```sql
+SELECT
+    user_agent,
+    count(DISTINCT user_id)
+FROM visits
+GROUP BY user_agent
+```
+
+프로젝션을 활용하려면 사전 집계 결과와 `GROUP BY` 필드의 일부 또는 전체를 선택하는 쿼리를 실행하면 됩니다:
+
+```sql
+SELECT
+    user_agent
+FROM visits
+WHERE user_id > 50 AND user_id < 150
+GROUP BY user_agent
+```
+
+```sql
+SELECT
+    user_agent,
+    sum(pages_visited)
+FROM visits
+GROUP BY user_agent
+```
+
+앞서 언급했듯이 프로젝션이 사용되었는지 확인하려면 `system.query_log` 테이블을 검토할 수 있습니다.
+`projections` 필드는 사용된 프로젝션의 이름을 보여줍니다.
+프로젝션이 사용되지 않은 경우 이 필드는 비어 있습니다:
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="projection-indexes">
+  ### 프로젝션 인덱스 생성 및 사용
+</div>
+
+[프로젝션 인덱스](/ko/reference/engines/table-engines/mergetree-family/mergetree#projection-index) 생성:
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id INDEX user_id TYPE basic
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+<details markdown="1">
+  <summary>명시적인 `_part_offset` 필드를 사용해 프로젝션 생성하기</summary>
+
+  프로젝션 인덱스는 다음 구문으로도 생성할 수 있습니다(권장되지 않음):
+
+  ```sql
+  CREATE TABLE events
+  (
+      `event_time` DateTime,
+      `event_id` UInt64,
+      `user_id` UInt64,
+      `huge_string` String,
+      PROJECTION order_by_user_id
+      (
+          SELECT
+              _part_offset
+          ORDER BY user_id
+      )
+  )
+  ENGINE = MergeTree()
+  ORDER BY (event_id);
+  ```
+</details>
+
+예시 데이터를 몇 개 삽입합니다:
+
+```sql
+INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
+```
+
+`_part_offset` 필드는 머지와 뮤테이션 이후에도 값이 유지되므로 보조 인덱스에 유용합니다. 이를 쿼리에서 활용할 수 있습니다:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE _part_starting_offset + _part_offset IN (
+    SELECT _part_starting_offset + _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+SETTINGS enable_shared_storage_snapshot_in_query = 1
+```
+
+<div id="manipulating-projections">
+  ## 프로젝션 관리
+</div>
+
+다음과 같은 [프로젝션](/ko/reference/engines/table-engines/mergetree-family/mergetree#projections) 작업을 수행할 수 있습니다:
+
+<div id="add-projection">
+  ### ADD PROJECTION
+</div>
+
+아래 SQL 문을 사용하여 테이블 메타데이터에 프로젝션 설명을 추가하십시오:
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+```
+
+<div id="with-settings">
+  #### `WITH SETTINGS` 절
+</div>
+
+`WITH SETTINGS`는 **프로젝션 수준 설정**을 정의하며, 이를 통해 프로젝션이 데이터를 저장하는 방식을 조정할 수 있습니다(예: `index_granularity`, `index_granularity_bytes`).
+이 설정은 **MergeTree 테이블 설정**과 직접 대응되지만, **이 프로젝션에만** 적용됩니다.
+
+예시:
+
+```sql
+ALTER TABLE t
+ADD PROJECTION p (
+    SELECT x ORDER BY x
+) WITH SETTINGS (
+    index_granularity = 4096,
+    index_granularity_bytes = 1048576
+);
+```
+
+프로젝션 설정은 검증 규칙에 따라 프로젝션에 적용되는 유효한 테이블 설정을 재정의합니다(예: 잘못되었거나 호환되지 않는 재정의는 거부됩니다).
+
+<div id="drop-projection">
+  ### DROP PROJECTION
+</div>
+
+아래 SQL 문을 사용하면 테이블 메타데이터에서 프로젝션 설명을 제거하고 디스크에서 프로젝션 파일을 삭제할 수 있습니다.
+이 작업은 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
+```
+
+<div id="materialize-projection">
+  ### MATERIALIZE PROJECTION
+</div>
+
+아래 SQL 문을 사용하여 파티션 `partition_name`의 프로젝션 `name`을 재구성합니다.
+이 작업은 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 수행됩니다.
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+<div id="clear-projection">
+  ### CLEAR PROJECTION
+</div>
+
+설명은 제거하지 않고 디스크에서 프로젝션 파일만 삭제하려면 아래 SQL 문을 사용합니다.
+이는 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+`ADD`, `DROP`, `CLEAR` 명령은 메타데이터만 변경하거나 파일만 제거하므로 경량입니다.
+또한 이러한 명령은 복제되며, ClickHouse Keeper 또는 ZooKeeper를 통해 프로젝션 메타데이터를 동기화합니다.
+
+<Note>
+  프로젝션 조작은 [`*MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하는 테이블([복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 변형 포함)에서만 지원됩니다.
+</Note>
+
+<div id="control-projections-merges">
+  ### 프로젝션 머지 동작 제어
+</div>
+
+쿼리를 실행하면 ClickHouse는 원본 테이블 또는 해당 프로젝션 중 어디에서 읽을지 선택합니다.
+원본 테이블과 프로젝션 중 어느 쪽에서 읽을지는 각 테이블 파트별로 개별적으로 결정됩니다.
+일반적으로 ClickHouse는 가능한 한 적은 양의 데이터만 읽으려고 하며, 예를 들어 파트의 기본 키를 샘플링하는 등 읽기에 가장 적합한 파트를 식별하기 위해 몇 가지 기법을 사용합니다.
+경우에 따라 원본 테이블 파트에 대응하는 프로젝션 파트가 없을 수 있습니다.
+예를 들어 SQL에서 테이블의 프로젝션 생성은 기본적으로 &quot;lazy&quot;하게 동작하므로, 새로 삽입된 데이터에만 영향을 주고 기존 파트는 변경하지 않습니다.
+
+프로젝션 중 하나에는 이미 사전 계산된 집계 값이 들어 있으므로, ClickHouse는 쿼리 런타임에 다시 집계하지 않도록 대응하는 프로젝션 파트에서 읽으려고 합니다. 특정 파트에 대응하는 프로젝션 파트가 없으면 쿼리 실행은 원본 파트로 대체됩니다.
+
+그렇다면 원본 테이블의 행이 단순하지 않은 데이터 파트의 백그라운드 머지로 인해 의미 있는 방식으로 변경되면 어떻게 될까요?
+예를 들어 테이블이 `ReplacingMergeTree` 테이블 엔진을 사용한다고 가정해 보겠습니다.
+머지 중 여러 입력 파트에서 동일한 행이 발견되면 가장 최신 행 버전(가장 최근에 삽입된 파트의 행)만 유지되고, 이전 버전은 모두 삭제됩니다.
+
+마찬가지로 테이블이 `AggregatingMergeTree` 테이블 엔진을 사용하는 경우, 머지 작업은 입력 파트의 동일한 행을(기본 키 값을 기준으로) 하나의 행으로 합쳐 부분 집계 상태를 갱신할 수 있습니다.
+
+ClickHouse v24.8 이전에는 프로젝션 파트가 메인 데이터와 조용히 불일치 상태가 되거나, 테이블에 프로젝션이 있으면 데이터베이스가 자동으로 예외를 발생시켰기 때문에 업데이트 및 삭제와 같은 특정 작업을 아예 실행할 수 없었습니다.
+
+v24.8부터는 새로운 테이블 수준 설정 [`deduplicate_merge_projection_mode`](/ko/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)으로 앞서 설명한 비단순한 백그라운드 머지 작업이 원본 테이블의 파트에서 발생할 때의 동작을 제어할 수 있습니다.
+
+삭제 뮤테이션도 원본 테이블의 파트에서 행을 제거하는 파트 병합 작업의 또 다른 예입니다. v24.7부터는 경량한 삭제에 의해 트리거된 삭제 뮤테이션의 동작을 제어하는 설정 [`lightweight_mutation_projection_mode`](/ko/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)도 제공됩니다.
+
+아래는 `deduplicate_merge_projection_mode`와 `lightweight_mutation_projection_mode`에 사용할 수 있는 값입니다:
+
+* `throw` (기본값): 예외를 발생시켜 프로젝션 파트가 원본 데이터와 불일치 상태가 되는 것을 방지합니다.
+* `drop`: 영향을 받는 프로젝션 테이블 파트가 삭제됩니다. 해당 프로젝션 파트에 대한 쿼리는 원본 테이블 파트로 대체됩니다.
+* `rebuild`: 영향을 받은 프로젝션 파트를 다시 빌드하여 원본 테이블 파트의 데이터와 일관성을 유지합니다.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+프로젝션의 `ORDER BY` 절에서는 `ALIAS` 컬럼을 사용할 수 없습니다. 예시는 다음과 같습니다.
+
+```sql highlight={6}
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+-- UNKNOWN_IDENTIFIER 오류 발생
+```
+
+`ALIAS` 컬럼은 물리적으로 저장되지 않고 쿼리 시점에 즉시 계산되므로, 정렬 표현식을 평가하는 projection part 쓰기 경로에서는 사용할 수 없습니다.
+
+대신 `MATERIALIZED` 컬럼을 사용하거나 표현식을 직접 인라인으로 작성하십시오:
+
+```sql
+-- MATERIALIZED 컬럼 사용
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 MATERIALIZED a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- 인라인 표현식 사용
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    PROJECTION p (SELECT a ORDER BY a + 1)
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [&quot;머지 시 프로젝션 제어&quot; (블로그 게시물)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
+* [&quot;프로젝션&quot; (가이드)](/ko/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)
+* [&quot;materialized view와 프로젝션&quot;](/ko/concepts/features/projections/materialized-views-versus-projections)

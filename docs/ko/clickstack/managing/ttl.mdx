@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/ttl
+title: 'TTL 관리'
+sidebarTitle: 'TTL 관리'
+description: 'ClickStack의 TTL 관리'
+doc_type: 'guide'
+keywords: ['clickstack', 'ttl', '데이터 보존', '수명 주기', '스토리지 관리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
+
+<div id="ttl-clickstack">
+  ## ClickStack의 TTL
+</div>
+
+Time-to-Live(TTL)은 ClickStack에서 효율적인 데이터 보존 및 관리를 위해 중요한 기능이며, 특히 대량의 데이터가 지속적으로 생성되는 환경에서 더욱 그렇습니다. TTL을 사용하면 오래된 데이터를 자동으로 만료 및 삭제할 수 있으므로, 수동 개입 없이도 스토리지를 최적으로 활용하고 성능을 유지할 수 있습니다. 이 기능은 데이터베이스를 가볍게 유지하고 스토리지 비용을 절감하며, 가장 관련성이 높고 최신인 데이터에 집중함으로써 쿼리가 빠르고 효율적으로 유지되도록 하는 데 필수적입니다. 또한 데이터 수명 주기를 체계적으로 관리해 데이터 보존 정책에 대한 컴플라이언스를 지원하므로, 관측성 솔루션 전반의 지속 가능성과 확장성을 높이는 데 도움이 됩니다.
+
+**기본적으로 ClickStack은 데이터를 3일 동안 보존합니다. 이를 변경하려면 [&quot;TTL 수정&quot;](#modifying-ttl)를 참조하십시오.**
+
+ClickHouse에서는 TTL이 테이블 수준에서 제어됩니다. 예를 들어 logs의 기본 스키마는 아래와 같으며, collector가 테이블을 생성할 때 `${TABLES_TTL}`은 구성된 보존 기간(변경하지 않은 경우 3일)으로 대체됩니다.
+
+<OtelLogsSchema />
+
+ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에서 데이터를 논리적으로 분리할 수 있게 합니다. 데이터를 논리적으로 분리하면 각 파티션을 독립적으로 처리할 수 있으며, 예를 들어 TTL 정책에 따라 만료되면 삭제할 수 있습니다.
+
+위 예시에서 볼 수 있듯이 파티셔닝은 테이블을 처음 정의할 때 `PARTITION BY` 절을 통해 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어느 파티션으로 전송될지가 결정됩니다. 이로 인해 데이터는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 이후 각 파티션만 따로 쿼리할 수 있습니다. 위 예시에서는 기본 `otel_logs` 스키마가 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되고, 해당 파티션이 이미 있으면 그 파티션으로 전달됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다). 파티셔닝과 그 밖의 활용 사례에 대한 자세한 내용은 [&quot;Table Partitions&quot;](/ko/concepts/core-concepts/partitions)를 참조하십시오.
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="파티션" size="lg" />
+
+테이블 스키마에는 `TTL toDateTime(Timestamp) + ${TABLES_TTL}`와 설정 `ttl_only_drop_parts = 1`도 포함됩니다. 앞의 절은 데이터가 구성된 TTL(기본적으로 3일)보다 오래되면 삭제되도록 보장합니다. 설정 `ttl_only_drop_parts = 1`은 모든 데이터가 만료된 데이터 파트만 만료 대상으로 처리하도록 합니다(행을 부분적으로 삭제하려고 시도하는 대신). 또한 파티셔닝을 통해 서로 다른 날짜의 데이터가 절대 머지되지 않으므로 데이터를 효율적으로 삭제할 수 있습니다.
+
+<Warning>
+  **`ttl_only_drop_parts`**
+
+  항상 [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings#ttl_only_drop_parts) 설정을 사용할 것을 권장합니다. 이 설정을 활성화하면 ClickHouse는 해당 파트의 모든 행이 만료되었을 때 파트 전체를 삭제합니다. `ttl_only_drop_parts=0`일 때 리소스를 많이 소비하는 뮤테이션으로 TTL이 적용된 행을 부분적으로 정리하는 대신, 파트 전체를 삭제하면 `merge_with_ttl_timeout` 시간을 더 짧게 설정할 수 있고 시스템 성능에 미치는 영향도 줄일 수 있습니다. TTL 만료를 수행하는 것과 동일한 단위(예: 일)로 데이터를 파티셔닝하면 파트에는 자연스럽게 정의된 인터벌의 데이터만 포함됩니다. 그러면 `ttl_only_drop_parts=1`을 효율적으로 적용할 수 있습니다.
+</Warning>
+
+기본적으로 TTL이 만료된 데이터는 ClickHouse가 [데이터 파트를 머지할 때](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 제거됩니다. ClickHouse가 데이터가 만료되었음을 감지하면 예정되지 않은 머지를 수행합니다.
+
+<Info>
+  **TTL 일정**
+
+  위에서 설명했듯이 TTL은 즉시 적용되지 않고 일정에 따라 적용됩니다. MergeTree 테이블 설정 `merge_with_ttl_timeout`은 delete TTL이 적용된 머지를 다시 수행하기 전까지의 최소 지연 시간을 초 단위로 설정합니다. 기본값은 14400초(4시간)입니다. 하지만 이는 최소 지연 시간일 뿐이며 TTL 머지가 실제로 트리거되기까지는 더 오래 걸릴 수 있습니다. 값이 너무 낮으면 예정되지 않은 머지가 많이 수행되어 많은 리소스를 소비할 수 있습니다. TTL 만료는 `ALTER TABLE my_table MATERIALIZE TTL` 명령으로 강제로 수행할 수 있습니다.
+</Info>
+
+<div id="modifying-ttl">
+  ## TTL 수정
+</div>
+
+TTL은 다음 두 가지 방법으로 수정할 수 있습니다:
+
+1. **테이블 스키마를 수정합니다(권장)**. 이 방법을 사용하려면 [clickhouse-client](/ko/concepts/features/interfaces/cli) 또는 [Cloud SQL Console](/ko/products/cloud/features/sql-console-features/sql-console)을 사용해 ClickHouse 인스턴스에 연결해야 합니다. 예를 들어, 다음 DDL을 사용하면 `otel_logs` 테이블의 TTL을 수정할 수 있습니다:
+
+```sql
+ALTER TABLE default.otel_logs
+MODIFY TTL TimestampTime + toIntervalDay(7);
+```
+
+2. **OTel collector를 수정합니다**. ClickStack OpenTelemetry collector는 ClickHouse에 테이블이 없으면 생성합니다. 이는 ClickHouse exporter를 통해 수행되며, 이 exporter에는 기본 TTL 표현식을 제어하는 데 사용하는 `ttl` 매개변수가 있습니다. 예:
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+<div id="column-level-ttl">
+  ### 컬럼 수준 TTL
+</div>
+
+위의 예시에서는 데이터를 테이블 수준에서 만료합니다. 데이터는 컬럼 수준에서도 만료할 수 있습니다. 데이터가 오래될수록 조사에 활용했을 때의 가치가 보관에 따른 리소스 오버헤드를 정당화하지 못하는 컬럼을 삭제하는 데 이를 사용할 수 있습니다. 예를 들어, 삽입 시점에 아직 추출되지 않은 새로운 동적 메타데이터(예: 새로운 Kubernetes 레이블)가 추가될 가능성에 대비해 `Body` 컬럼을 유지할 것을 권장합니다. 예를 들어 1개월 정도 지난 후에는 이러한 추가 메타데이터가 유용하지 않다는 점이 분명해질 수 있으므로 `Body` 컬럼을 계속 유지할 가치도 낮아집니다.
+
+아래에서는 `Body` 컬럼을 30일 후 삭제하는 방법을 보여드립니다.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+ ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  컬럼 수준 TTL을 지정하려면 스키마(schema)를 직접 정의해야 합니다. 이 설정은 OTel collector에서 지정할 수 없습니다.
+</Note>

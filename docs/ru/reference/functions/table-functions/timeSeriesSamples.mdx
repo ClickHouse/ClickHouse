@@ -1,0 +1,32 @@
+---
+description: 'timeSeriesSamples возвращает таблицу samples, используемую таблицей `db_name.time_series_table`,
+  у которой в качестве движка таблицы используется TimeSeries.'
+sidebarTitle: 'timeSeriesSamples'
+slug: /sql-reference/table-functions/timeSeriesSamples
+title: 'timeSeriesSamples'
+doc_type: 'reference'
+---
+
+`timeSeriesSamples(db_name.time_series_table)` - Возвращает таблицу [samples](/ru/reference/engines/table-engines/integrations/time-series#samples-table), используемую таблицей `db_name.time_series_table`, у которой в качестве движка таблицы используется [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series):
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
+```
+
+Функция также работает, если таблица *samples* — внутренняя:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+Следующие запросы равнозначны:
+
+```sql
+SELECT * FROM timeSeriesSamples(db_name.time_series_table);
+SELECT * FROM timeSeriesSamples('db_name.time_series_table');
+SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
+```
+
+<Note>
+  У функции `timeSeriesSamples` есть алиас `timeSeriesData`, сохранённый для обратной совместимости.
+</Note>

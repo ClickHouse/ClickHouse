@@ -1,0 +1,58 @@
+---
+title: 'クエリがメモリ制限を超えました'
+description: 'クエリのメモリ制限超過エラーのトラブルシューティング'
+date: 2025-07-25
+tags: ['Errors and Exceptions']
+keywords: ['OOM', 'memory limit exceeded']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="troubleshooting-out-of-memory-issues">
+  ## クエリがメモリ制限を超えました
+</div>
+
+ClickHouse を使い始めたばかりのユーザーにとっては、まるで魔法のように感じられることがよくあります。どのクエリも非常に高速で、
+最大規模のデータセットや複雑なクエリでも同様です。しかし実際の運用では、
+ClickHouse の限界が試される場面も必ず出てきます。クエリがメモリ制限を超える原因は、
+さまざまです。特に多いのは、大規模な JOIN や、
+カーディナリティの高いフィールドに対する集計です。パフォーマンスが重要で、
+こうしたクエリの実行が必要な場合は、単純にスケールアップすることを推奨することがよくあります。これは
+ClickHouse Cloud であれば自動かつ容易に行われ、クエリの応答性を維持できます。ただし、
+セルフマネージド環境では、これが必ずしも簡単ではなく、
+そもそも最適なパフォーマンスが不要な場合もあることは理解しています。
+そのような場合、ユーザーにはいくつかの選択肢があります。
+
+<div id="aggregations">
+  ### 集計
+</div>
+
+メモリ使用量の多い集計やソートを行う場合、ユーザーはそれぞれ
+[`max_bytes_before_external_group_by`](/ja/reference/settings/session-settings#max_bytes_before_external_group_by)
+および [`max_bytes_before_external_sort`](/ja/reference/settings/session-settings#max_bytes_ratio_before_external_sort) の設定を使用できます。
+前者については、[こちら](/ja/reference/statements/select/group-by#group-by-in-external-memory)で詳しく説明しています。
+
+要するに、これによりメモリの
+しきい値を超えた場合、任意の集計処理でデータをディスクに書き出せるようになります。これはクエリのパフォーマンスに確実に影響しますが、
+クエリが OOM になるのを防ぐのに役立ちます。後者のソート設定は、メモリ使用量の多いソートで生じる同様の
+問題に対処するのに役立ちます。これは、コーディネートノードが
+子分片からソート済みの応答を受け取る分散環境で、特に重要になることがあります。この場合、コーディネート
+サーバーは利用可能なメモリより大きい
+データセットのソートを求められることがあります。[`max_bytes_before_external_sort`](/ja/reference/settings/session-settings#max_bytes_ratio_before_external_sort) を使うことで、
+ソート結果をディスクに書き出せるようになります。この設定は、
+ユーザーが `GROUP BY` の後に `LIMIT` を伴う `ORDER BY` を使用する場合にも有効で、
+特にクエリが分散されている場合に役立ちます。
+
+<div id="joins">
+  ### ジョイン
+</div>
+
+ジョインでは、必要なメモリ使用量を抑えるのに役立つさまざまな `JOIN` アルゴリズムを選択できます。デフォルトではハッシュ結合が使用されます。これは機能面で最も幅広く対応しており、多くの場合で最高のパフォーマンスを発揮します。このアルゴリズムでは、`JOIN` の右側のテーブルをメモリ上のハッシュテーブルに読み込み、それに対して左側のテーブルを評価します。そのため、メモリ使用量を最小限に抑えるには、より小さいテーブルを右側に配置する必要があります。ただし、この方法もメモリ制約が厳しいケースでは限界があります。そのような場合は、[`join_algorithm`](/ja/reference/settings/session-settings#join_algorithm) 設定で `partial_merge` join を有効にできます。これは [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) の派生で、まず右側のテーブルをブロック単位でソートし、それらに対して min-max 索引を作成します。次に、左側のテーブルの一部を結合キーでソートし、右側のテーブルと結合します。min-max 索引は、不要な右側テーブルのブロックをスキップするために使用されます。これはパフォーマンスを犠牲にする代わりに、メモリ消費を抑えられます。さらにこの考え方を推し進めた `full_sorting_merge` アルゴリズムでは、右側が非常に大きくてメモリに収まらず、ルックアップも不可能な場合、たとえば複雑なサブクエリであっても `JOIN` を実行できます。この場合、右側と左側の両方がメモリに収まらなければディスク上でソートされるため、大きなテーブル同士を結合できます。
+
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="結合アルゴリズム" />
+
+ClickHouse は 20.3 以降、`join_algorithm` 設定の auto 値をサポートしています。これにより ClickHouse は適応的なジョイン方式を適用し、メモリ制限に達するまでは hash-join アルゴリズムを優先し、制限を超えた時点で partial&#95;merge アルゴリズムを試行します。最後に、ジョインに関しては、distributed joins の挙動と、そのメモリ消費を最小限に抑える方法を理解しておくことをお勧めします。詳細は [こちら](/ja/reference/statements/in#distributed-subqueries) を参照してください。

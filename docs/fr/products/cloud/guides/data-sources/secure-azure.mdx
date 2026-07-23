@@ -1,0 +1,130 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: 'Accès sécurisé aux données Azure'
+title: 'Connecter ClickHouse Cloud à Azure Blob Storage'
+description: 'Cet article explique comment les clients de ClickHouse Cloud peuvent accéder en toute sécurité à leurs données Azure'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+Ce guide explique comment connecter ClickHouse Cloud à Azure Blob Storage de manière sécurisée pour l’ingestion de données, les tables externes et d’autres scénarios d’intégration.
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+ClickHouse Cloud peut se connecter à Azure Blob Storage à l’aide de plusieurs méthodes d’authentification.
+Ce guide vous aidera à choisir l’approche appropriée et à configurer votre connexion de manière sécurisée.
+
+Cas d’usage pris en charge :
+
+* Lecture de données depuis Azure Blob Storage à l’aide de la [table function azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage)
+* Création de tables externes avec le [table engine AzureBlobStorage](/fr/reference/engines/table-engines/integrations/azureBlobStorage)
+* Ingestion de données via ClickPipes
+* [Stockage des sauvegardes dans Azure Blob Storage](/fr/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **Limitation réseau importante**
+
+  Lorsque votre service ClickHouse Cloud et votre conteneur Azure Blob Storage sont déployés dans la même région Azure, la mise en liste blanche des adresses IP ne fonctionne pas.
+
+  Cela s’explique par le fait qu’Azure achemine le trafic au sein d’une même région via son réseau interne (VNet + Service Endpoints), en contournant l’internet public et les passerelles NAT.
+  Par conséquent, les règles de pare-feu de votre compte de stockage Azure basées sur des adresses IP publiques ne seront pas appliquées.
+
+  La mise en liste blanche des adresses IP fonctionne lorsque :
+
+  * Votre service ClickHouse Cloud se trouve dans une région Azure différente de celle du compte de stockage
+  * Votre service ClickHouse Cloud s’exécute sur AWS/GCP et se connecte à un stockage Azure
+
+  La mise en liste blanche des adresses IP échoue lorsque :
+
+  * Votre service ClickHouse Cloud et le stockage se trouvent dans la même région Azure. Utilisez les [Shared Access Signatures (SAS)](/fr/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication) via une chaîne de connexion au lieu de la mise en liste blanche des adresses IP, ou déployez ABS et ClickHouse dans des régions différentes.
+</Warning>
+
+<div id="network-config">
+  ## Configuration réseau (interrégion uniquement)
+</div>
+
+<Warning>
+  **Interrégion uniquement**
+
+  Cette section s’applique uniquement lorsque votre service ClickHouse Cloud et votre conteneur Azure Blob Storage se trouvent dans des régions Azure différentes, ou lorsque ClickHouse Cloud est sur AWS/GCP.
+  Pour les déploiements dans la même région, utilisez plutôt des jetons SAS.
+</Warning>
+
+<Steps>
+  <Step>
+    ### Trouvez les adresses IP de sortie de votre service ClickHouse Cloud
+
+    Pour configurer des règles de pare-feu basées sur les adresses IP, vous devez autoriser les adresses IP de sortie de votre région ClickHouse Cloud.
+
+    Exécutez la commande suivante pour récupérer la liste des adresses IP de sortie et d’entrée par région.
+    Remplacez `eastus` ci-dessous par votre région afin de filtrer les autres régions :
+
+    ```bash
+    # Pour les régions Azure
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    Vous verrez un résultat similaire à celui-ci :
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      Consultez [Azure regions](/fr/products/cloud/reference/supported-regions#azure-regions) pour obtenir la liste des régions Cloud prises en charge,
+      ainsi que la colonne « Programmatic name » de [Azure regions list](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1)
+      pour savoir quel nom utiliser.
+    </Tip>
+
+    Consultez aussi [« Cloud IP addresses »](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) pour plus de détails.
+  </Step>
+
+  <Step>
+    ### Configurer le pare-feu d’Azure Storage
+
+    Accédez à votre Storage Account dans Azure Portal
+
+    1. Accédez à **Networking** → **Firewalls and virtual networks**
+    2. Sélectionnez **Enabled from selected virtual networks and IP addresses**
+    3. Ajoutez chaque adresse IP de sortie ClickHouse Cloud obtenue à l’étape précédente dans le champ Address range
+
+    <Warning>
+      N’ajoutez pas les adresses IP privées de ClickHouse Cloud (adresses 10.x.x.x)
+    </Warning>
+
+    4. Cliquez sur Save
+
+    Consultez [Configure Azure Storage firewalls docs](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal) pour plus de détails.
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## Configuration de ClickPipes
+</div>
+
+Lorsque vous utilisez [ClickPipes](/fr/integrations/clickpipes/home) avec Azure Blob Storage, vous devez configurer l&#39;authentification dans l&#39;UI ClickPipes.
+Pour en savoir plus, consultez [&quot;Créer votre premier Azure ClickPipe&quot;](/fr/integrations/clickpipes/object-storage/azure-blob-storage/get-started).
+
+<Note>
+  ClickPipes utilise des adresses IP statiques distinctes pour les connexions sortantes.
+  Ces adresses IP doivent être ajoutées à la liste blanche si vous utilisez des règles de pare-feu basées sur les adresses IP.
+
+  Consultez [&quot;Liste des IP statiques&quot;](/fr/integrations/clickpipes/home#list-of-static-ips)
+</Note>
+
+<Tip>
+  La restriction concernant la mise en liste blanche des adresses IP dans une même région, mentionnée au début de ce document, s&#39;applique également à ClickPipes.
+  Si votre service ClickPipes et Azure Blob Storage se trouvent dans la même région, utilisez l&#39;authentification par SAS token plutôt que la mise en liste blanche des adresses IP.
+</Tip>

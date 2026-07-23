@@ -1,0 +1,78 @@
+---
+slug: /cloud/managed-postgres/migrations/overview
+sidebarTitle: '概要'
+title: 'Managed Postgres のデータ移行'
+description: 'ClickHouse Managed Postgres への 4 つの移行方法を比較し、ソースデータベースとダウンタイム要件に適した方法を選択します。'
+keywords: ['managed postgres', '移行', 'postgres 移行', 'ClickPipes', 'peerdb', 'pg_dump', 'pg_restore', '論理レプリケーション']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
+
+Managed Postgres への移行には、4 つの方法があります。どの方法が適しているかは、
+継続的なレプリケーションが必要かどうか、どこから移行するのか、そして切り替え時に
+アプリケーションがどの程度のダウンタイムを許容できるかによって異なります。
+
+| 方法                                                                                         | 継続的なレプリケーション (CDC)  | 実行場所                   | 最適な用途                                             |
+| ------------------------------------------------------------------------------------------ | ------------------- | ---------------------- | ------------------------------------------------- |
+| [ClickPipes](/ja/products/managed-postgres/migrations/clickpipes)                             | はい                  | ClickHouse Cloud コンソール | ほとんどの移行 — 初期ロードと CDC を標準で備えたガイド付きウィザード            |
+| [PeerDB](/ja/products/managed-postgres/migrations/peerdb)                                     | はい                  | セルフホスト (Docker)        | ClickPipes UI では対応していない移行元やワークフロー                 |
+| [pg&#95;dump と pg&#95;restore](/ja/products/managed-postgres/migrations/pg_dump-pg_restore) | いいえ                 | お使いのローカルマシン            | ダウンタイムを許容できる、小規模または静的なデータセットの一回限りの移行              |
+| [論理レプリケーション](/ja/products/managed-postgres/migrations/logical-replication)           | はい                  | 移行元と移行先の Postgres      | ネイティブな Postgres レプリケーションを直接制御したい場合。サードパーティ製ツールは不要 |
+
+<div id="clickpipes">
+  ## ClickPipes
+</div>
+
+[ClickPipes](/ja/products/managed-postgres/migrations/clickpipes) は、ほとんどの移行で推奨される方法です。すべて ClickHouse Cloud コンソール内で完結し、ソースへの接続、スキーマのエクスポートとインポート、さらに CDC の有無を選んで初期ロードを開始するまでを順を追って案内します。事前構築済みのソースコネクタは、Amazon RDS、Aurora、Supabase、Google Cloud SQL、Azure
+Flexible Server、Neon、Crunchy Bridge、TimescaleDB、および汎用的な Postgres
+インスタンスに対応しています。
+
+<div id="peerdb">
+  ## PeerDB
+</div>
+
+[PeerDB](/ja/products/managed-postgres/migrations/peerdb) は、Docker 経由で実行するセルフホストの移行
+ツールです。移行元やワークフローが
+ClickPipes ウィザードに適していない場合に使用します。たとえば、多数のデータベースにまたがって
+ピアの作成をスクリプト化する必要がある場合や、移行を完全に自社ネットワーク内で実行したい場合です。
+PeerDB は、索引、制約、トリガーを自動的には移行しません。データの移行後に、
+それらを移行先で再作成します。
+
+<div id="pg-dump-pg-restore">
+  ## pg_dump と pg_restore
+</div>
+
+[pg&#95;dump and pg&#95;restore](/ja/products/managed-postgres/migrations/pg_dump-pg_restore)
+は移行元のスナップショットを取得し、それを移行先に適用します。継続的な
+レプリケーションは行われないため、ダンプと復元の実行中は移行元への書き込みを
+停止する必要があります。これは、小規模または静的なデータセット、あるいは
+メンテナンスウィンドウを確保できる非本番環境に適した選択肢です。
+
+<div id="logical-replication">
+  ## 論理レプリケーション
+</div>
+
+[論理レプリケーション](/ja/products/managed-postgres/migrations/logical-replication)
+では、Postgresネイティブのパブリケーションとサブスクリプションを使って、移行元から
+移行先へ変更をストリーミングします。`wal_level`、レプリケーションスロット、
+および `REPLICATION` 権限は自分で設定します。途中に
+サードパーティ製ツールが介在することはありません。レプリケーションの
+仕組みを完全に制御したい場合や、環境上の制約で外部の移行ツールを使えない場合は、
+この方法を選んでください。
+
+<div id="after-migration">
+  ## 移行後
+</div>
+
+データの移行が進み始めたら、アプリケーショントラフィックを切り替える前に、[データ検証](/ja/products/managed-postgres/migrations/data-validation)
+を使用して、移行元と移行先で行数と内容が一致していることを確認してください。[移行のよくある質問](/ja/products/managed-postgres/migrations/faq)
+では、よくあるエラーと復旧手順を確認できます。
+
+<div id="supabase">
+  ## Supabase からの移行
+</div>
+
+Supabase から移行する場合は、[Supabase から Managed Postgres への移行ガイド](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) を参照してください。手順を追って移行する方法を確認できます。

@@ -1,0 +1,120 @@
+---
+slug: /use-cases/AI/MCP/claude-desktop
+sidebarTitle: '集成 Claude Desktop'
+title: '在 Claude Desktop 中使用 ClickHouse MCP 服务器'
+description: '本指南介绍如何为 Claude Desktop 设置 ClickHouse MCP 服务器。'
+keywords: ['AI', 'Librechat', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+> 本指南介绍如何使用 uv 为 Claude Desktop 配置 ClickHouse MCP 服务器，
+> 并将其连接到 ClickHouse 示例数据集。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/y9biAm_Fkqw?si=9PP3-1Y1fvX8xy7q" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<Steps>
+  <Step>
+    ## 安装 uv
+
+    要按照本指南进行操作，你需要先安装 [uv](https://docs.astral.sh/uv/)。
+    如果你不想使用 uv，则需要更新 MCP 服务器配置，改用其他包管理器。
+  </Step>
+
+  <Step>
+    ## 下载 Claude Desktop
+
+    你还需要安装 Claude Desktop 应用，可以从 [Claude Desktop 网站](https://claude.ai/desktop) 下载。
+  </Step>
+
+  <Step>
+    ## 配置 ClickHouse MCP 服务器
+
+    安装好 Claude Desktop 后，就可以开始配置 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 了。
+    这可以通过 [Claude Desktop 配置文件](https://claude.ai/docs/configuration) 完成。
+
+    要找到该文件，请先进入设置页面 (Mac 上按 `Cmd+,`) ，然后点击左侧菜单中的 `Developer` 选项卡。
+    随后你会看到如下界面，需要点击 `Edit config` 按钮：
+
+    <Image img="/images/use-cases/AI_ML/MCP/claude-desktop-config.webp" alt="Claude Desktop 配置" size="md" />
+
+    这会打开包含配置文件 (`claude_desktop_config.json`) 的目录。
+    第一次打开该文件时，其中很可能只有以下内容：
+
+    ```json
+    {
+      "mcpServers": {}
+    }
+    ```
+
+    `mcpServers` 字典以 MCP 服务器名称为键，以配置选项字典为值。
+    例如，连接到 ClickHouse Playground 的 ClickHouse MCP 服务器配置如下：
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true",
+            "CLICKHOUSE_VERIFY": "true",
+            "CLICKHOUSE_CONNECT_TIMEOUT": "30",
+            "CLICKHOUSE_SEND_RECEIVE_TIMEOUT": "30"
+          }
+        }
+      }
+    }
+    ```
+
+    更新配置后，你需要重启 Claude Desktop，更改才会生效。
+
+    <Warning>
+      根据你安装 `uv` 的方式不同，重启 Claude Desktop 时可能会看到以下错误：
+
+      ```text
+      MCP mcp-clickhouse: spawn uv ENOENT
+      ```
+
+      如果出现这种情况，你需要将 `command` 更新为 `uv` 的完整路径。例如，如果你是通过 Cargo 安装的，路径可能是 `/Users/<username>/.cargo/bin/uv`
+    </Warning>
+  </Step>
+
+  <Step>
+    ## 使用 ClickHouse MCP 服务器
+
+    重启 Claude Desktop 后，点击 `Search and tools` 图标即可找到 ClickHouse MCP 服务器：
+
+    <Image img="/images/use-cases/AI_ML/MCP/find-mcp-servers.webp" alt="查找 MCP 服务器" size="md" />
+
+    <br />
+
+    然后，你可以选择禁用全部工具或其中部分工具。
+
+    现在，我们已经可以向 Claude 提问，并让它调用 ClickHouse MCP 服务器。
+    例如，我们可以问它 `What's the most interesting dataset in the SQL playground?`。
+
+    Claude 在首次调用 MCP 服务器中的每个工具时，都会要求你确认是否允许使用：
+
+    <Image img="/images/use-cases/AI_ML/MCP/mcp-permission.webp" alt="授予使用 list_databases 工具的权限" size="md" />
+
+    下面是部分对话内容，其中包含一些对 ClickHouse MCP 服务器的工具调用：
+
+    <Image img="/images/use-cases/AI_ML/MCP/claude-conversation.webp" alt="Claude 对话" size="md" />
+  </Step>
+</Steps>

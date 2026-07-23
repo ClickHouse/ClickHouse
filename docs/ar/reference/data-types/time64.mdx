@@ -1,0 +1,155 @@
+---
+description: 'توثيق لنوع البيانات Time64 في ClickHouse، الذي يخزّن
+  الوقت بدقة أقل من الثانية'
+slug: /sql-reference/data-types/time64
+sidebarTitle: 'Time64'
+title: 'Time64'
+doc_type: 'reference'
+---
+
+يمثل نوع البيانات `Time64` وقتًا ضمن اليوم مع كسور من الثانية.
+ولا يتضمن أي مكوّنات لتاريخ تقويمي (اليوم، الشهر، السنة).
+تحدّد المعلمة `precision` عدد الخانات الكسرية، وبالتالي حجم التكة.
+
+حجم التكة (الدقة): 10<sup>-precision</sup> ثانية. النطاق الصالح: 0..9. والخيارات الشائعة هي 3 (مللي ثانية)، و6 (ميكروثانية)، و9 (نانوثانية).
+
+**البنية:**
+
+```sql
+Time64(precision)
+```
+
+داخليًا، يخزّن `Time64` عددًا عشريًا موقّعًا من نوع 64 بت (Decimal64) لكسور الثواني.
+وتُحدَّد دقة التكة بواسطة المعلمة `precision`.
+المناطق الزمنية غير مدعومة: سيؤدي تحديد منطقة زمنية مع `Time64` إلى حدوث خطأ.
+
+وعلى خلاف `DateTime64`، لا يخزّن `Time64` مكوّن التاريخ.
+راجع أيضًا [`Time`](/ar/reference/data-types/time).
+
+نطاق التمثيل النصي: [-999:59:59.000, 999:59:59.999] عند `precision = 3`. وبوجه عام، يكون الحد الأدنى `-999:59:59` والحد الأقصى `999:59:59` مع ما يصل إلى `precision` من الخانات الكسرية (بالنسبة إلى `precision = 9`، يكون الحد الأدنى `-999:59:59.999999999`).
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+**التمثيل**.
+قيمة `Decimal64` موقَّعة تمثّل عدد أجزاء الثانية باستخدام `precision` من الخانات الكسرية.
+
+**التطبيع**.
+عند تحليل السلاسل النصية إلى `Time64`، تُطبَّع مكوّنات الوقت من دون التحقق من صحتها.
+على سبيل المثال، يُفسَّر `25:70:70` على أنه `26:11:10`.
+
+**القيم السالبة**.
+إشارات الطرح البادئة مدعومة ويُحتفَظ بها.
+تنشأ القيم السالبة عادةً من العمليات الحسابية على قيم `Time64`.
+بالنسبة إلى `Time64`، يُحتفَظ بالمدخلات السالبة سواء كانت نصية (مثل `'-01:02:03.123'`) أو رقمية (مثل `-3723.123`).
+
+**التشبيع**.
+يُقيَّد مكوّن الوقت ضمن اليوم بالنطاق [-999:59:59.xxx, 999:59:59.xxx] عند التحويل إلى مكوّنات أو إجراء التسلسل إلى نص.
+قد تتجاوز القيمة الرقمية المخزنة هذا النطاق؛ ومع ذلك، فإن أي استخراج للمكوّنات (الساعات والدقائق والثواني) وأي تمثيل نصي يستخدمان القيمة المشبَّعة.
+
+**المناطق الزمنية**.
+لا يدعم `Time64` المناطق الزمنية.
+يؤدي تحديد منطقة زمنية عند إنشاء نوع `Time64` أو قيمة منه إلى حدوث خطأ.
+وبالمثل، فإن محاولات تطبيق منطقة زمنية على أعمدة `Time64` أو تغييرها غير مدعومة وتؤدي إلى حدوث خطأ.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+1. إنشاء جدول يحتوي على عمود من النوع `Time64` وإدراج البيانات فيه:
+
+```sql
+CREATE TABLE tab64
+(
+    `event_id` UInt8,
+    `time` Time64(3)
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Time64
+-- - from string,
+-- - from a number of seconds since 00:00:00 (fractional part according to precision).
+INSERT INTO tab64 VALUES (1, '14:30:25'), (2, 52225.123), (3, '14:30:25');
+
+SELECT * FROM tab64 ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        2 │ 14:30:25.123 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+2. التصفية حسب قيم `Time64`
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        2 │ 14:30:25.123 │
+   └──────────┴──────────────┘
+```
+
+ملاحظة: يعامل `toTime64` القيم الحرفية العددية على أنها ثوانٍ مع جزء كسري وفقًا للدقة المحددة، لذا حدِّد الخانات الكسرية المقصودة صراحةً.
+
+3. فحص النوع الناتج:
+
+```sql
+SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
+```
+
+```text
+   ┌────────column─┬─type──────┐
+1. │ 14:30:25.250 │ Time64(3) │
+   └───────────────┴───────────┘
+```
+
+<div id="addition-with-date">
+  ## الجمع مع Date
+</div>
+
+يمكن جمع قيمة [Time64](/ar/reference/data-types/time64) مع قيمة [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) للحصول على [DateTime64](/ar/reference/data-types/datetime64) بالمقياس نفسه لـ `Time64`:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
+1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+   └────────────────────────────┴────────────────┘
+```
+
+راجع [إضافة التاريخ والوقت](/ar/reference/operators/index#date-time-addition) لمزيد من التفاصيل حول جميع التركيبات المدعومة وأنواع النتائج.
+
+**انظر أيضًا**
+
+* [دوال تحويل الأنواع](/ar/reference/functions/regular-functions/type-conversion-functions)
+* [دوال للتعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
+* [الإعداد `date_time_input_format`](/ar/reference/settings/formats#date_time_input_format)
+* [الإعداد `date_time_output_format`](/ar/reference/settings/formats#date_time_output_format)
+* [معامل تهيئة الخادم `timezone`](/ar/reference/settings/server-settings/settings#timezone)
+* [الإعداد `session_timezone`](/ar/reference/settings/session-settings#session_timezone)
+* [عوامل التشغيل للتعامل مع التواريخ والأوقات](/ar/reference/operators/index#operators-for-working-with-dates-and-times)
+* [نوع البيانات `Date`](/ar/reference/data-types/date)
+* [نوع البيانات `Time`](/ar/reference/data-types/time)
+* [نوع البيانات `DateTime`](/ar/reference/data-types/datetime)

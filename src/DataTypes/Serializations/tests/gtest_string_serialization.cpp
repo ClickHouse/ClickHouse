@@ -77,6 +77,12 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
 
         run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(result_column, 0, src_column->size(), settings, state, nullptr); });
 
+        /// A `MEMORY_LIMIT_EXCEEDED` thrown while deserializing may leave `result_column` null: the COW-safe
+        /// deserialize path moves the column into a mutable clone and only assigns it back to `result_column`
+        /// on success. That is acceptable — we only require that any column that does survive stays consistent.
+        if (!result_column)
+            continue;
+
         auto & result = assert_cast<ColumnString &>(*result_column->assumeMutable());
         if (!result.empty())
         {

@@ -1,0 +1,211 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/chrome-extension
+title: 'Chrome拡張機能'
+description: 'HyperDX Chrome拡張機能を使用して、任意のWebサイトをインストルメントし、ClickStackのセッションリプレイとRUMを有効にします'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Chrome拡張機能', 'セッションリプレイ', 'Browser SDK', 'RUM', 'オブザーバビリティ', 'HyperDX']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Info>
+  **要点**
+
+  このガイドでは、[HyperDX Chrome拡張機能](https://github.com/kyreddie/hyperdx-chrome-extension)を使用して、任意のWebサイトに ClickStack Browser SDK を注入する方法を説明します。対象アプリケーションのソースコードを変更する必要はありません。拡張機能を一度設定すれば、あとはサイトを閲覧するだけで、ClickStack でセッションリプレイを確認できます。
+
+  所要時間: 10〜15分
+</Info>
+
+<div id="overview">
+  ## 概要
+</div>
+
+[HyperDX Chrome拡張機能](https://github.com/kyreddie/hyperdx-chrome-extension) は、アクセスしたページに [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) SDK を挿入します。コードベースを変更せずに、サイト上でセッションリプレイ、RUM、またはトレース伝播をデバッグしたい場合に便利です。たとえば、サードパーティ製アプリケーション、本番ビルド、または厳格な Content Security Policy (CSP) が設定されたローカル開発サーバーなどで役立ちます。
+
+SDK は拡張機能内にバンドルされているため (約480 KB) 、ページ側で実行時に CDN からスクリプトを読み込む必要はありません。この拡張機能はまず外部の `chrome-extension://` スクリプト挿入を試み、CSP によって拡張機能由来のスクリプトがブロックされた場合は、インライン挿入にフォールバックします。
+
+制御可能なデモアプリケーションをインストルメントする [Session Replay Demo](/ja/clickstack/example-datasets/session-replay) とは異なり、この方法は Chrome で開いた **任意の** URL で機能します。通常のユーザーとしてサイトを操作することで、セッションデータを生成できます。
+
+セッションリプレイの背景や、ClickStack における位置づけについては、[Session Replay](/ja/clickstack/features/session-replay) 機能ページを参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* Google Chrome または Chromium ベースのブラウザー (Edge、Brave など)
+* ClickStack をローカルで実行する場合は、[Docker](https://docs.docker.com/get-docker/) がインストールされていること
+* ポート 4317、4318、8080 が使用可能であること (ローカルの ClickStack 用)
+
+<div id="running-the-demo">
+  ## デモを実行する
+</div>
+
+<Steps>
+  <Step>
+    ### 拡張機能のリポジトリをクローンする
+
+    ```shell
+    git clone https://github.com/kyreddie/hyperdx-chrome-extension
+    cd hyperdx-chrome-extension
+    ```
+  </Step>
+
+  <Step>
+    ### 拡張機能をインストールする
+
+    1. Chrome を開き、`chrome://extensions` にアクセスします。
+    2. **デベロッパー モード** を有効にします (右上) 。
+    3. **パッケージ化されていない拡張機能を読み込む** をクリックします。
+    4. クローンした `hyperdx-chrome-extension` ディレクトリを選択します。
+
+    拡張機能はツールバーに **HyperDX Browser Extension** として表示されます。
+  </Step>
+
+  <Step>
+    ### ClickStack を起動する
+
+    すでに ClickStack または HyperDX のインジェスト エンドポイントがある場合は、[拡張機能を設定する](#configure-extension) に進んでください。
+
+    ローカルの ClickStack 環境では、OpenTelemetry Collector を起動します。`{{CLICKHOUSE_ENDPOINT}}` と `{{CLICKHOUSE_PASSWORD}}` は ClickHouse の接続情報に置き換えてください。
+
+    ```shell
+    export CLICKHOUSE_ENDPOINT={{CLICKHOUSE_ENDPOINT}}
+    export CLICKHOUSE_PASSWORD={{CLICKHOUSE_PASSWORD}}
+
+    docker run \
+      -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+      -e CLICKHOUSE_USER=default \
+      -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-otel-collector:latest
+    ```
+
+    UI が起動していることを確認するには、[http://localhost:8080](http://localhost:8080) で HyperDX を開きます。
+
+    ClickHouse と HyperDX UI を含む完全なローカルデプロイについては、[ClickStack を使い始める](/ja/clickstack/getting-started/oss) を参照してください。
+  </Step>
+
+  <Step>
+    ### API key を取得する
+
+    ローカルの ClickStack では、API key が不要な場合があります。`http://localhost:4318` 上のセルフホスト collector にテレメトリーを送信する場合は、拡張機能のこのフィールドを空のままにしてください。
+
+    ClickStack Cloud または HyperDX Cloud へインジェストする場合は、HyperDX を開いて **Team Settings → API Keys** に移動し、**Ingestion API Key** をコピーします。
+  </Step>
+
+  <Step>
+    ### 拡張機能を設定する
+
+    Chrome のツールバーにある **HyperDX Browser Extension** アイコンをクリックし、各設定を入力します。
+
+    | Field                            | ローカル ClickStack の例                    | 注記                                                           |
+    | -------------------------------- | ------------------------------------- | ------------------------------------------------------------ |
+    | **Enable HyperDX Monitoring**    | On                                    | 挿入全体を切り替えるマスタートグル                                      |
+    | **Service Name**                 | `my-frontend-app`                     | 必須 — ClickStack 上でサービスを識別します                                 |
+    | **API Key**                      | *(空)*                                 | Cloud へのインジェストでは必須。一部のセルフホスト構成では任意                           |
+    | **Collector URL**                | `http://localhost:4318`               | OTLP HTTP エンドポイント。Cloud のデフォルトは `https://in-otel.hyperdx.io` |
+    | **Environment**                  | `development`                         | 任意 — `deployment.environment` resource attribute を設定します      |
+    | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | 任意 — トレースヘッダー伝播用の JavaScript 正規表現パターンをカンマ区切りで指定します           |
+    | **Only inject on matching URLs** | Off                                   | インストルメントするサイトを限定する場合に有効化                                     |
+    | **Capture console logs**         | Off                                   | ブラウザーのコンソール出力を転送する場合に有効化                                     |
+    | **Advanced network capture**     | Off                                   | 詳細なネットワークリクエストをキャプチャする場合に有効化                                 |
+
+    **Save Configuration** をクリックし、インストルメントしたいタブを再読み込みします。
+
+    <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="ローカル ClickStack 設定を表示した HyperDX Chrome拡張機能の設定ポップアップ" size="sm" />
+
+    上のスクリーンショットは、典型的なローカル設定を示しています。監視が有効で、サービス名が設定され、collector は `http://localhost:4318` を指し、トレース伝播は API と localhost の URL に限定されています。
+  </Step>
+
+  <Step>
+    ### サイトを閲覧してセッションを生成する
+
+    Chrome で任意の Web サイトまたはローカルアプリケーションを開きます。たとえば、フロントエンドの開発サーバーなら [http://localhost:3000](http://localhost:3000) です。
+
+    通常どおりにページを操作します。リンクをクリックし、フォームを送信し、エラーをトリガーし、ビュー間を移動します。設定が正しければ、拡張機能はページの読み込みごとに Browser SDK を自動的にインジェクトします。
+  </Step>
+
+  <Step>
+    ### セッションリプレイを表示する
+
+    [http://localhost:8080](http://localhost:8080) の HyperDX に戻り、左側のサイドバーから **Client Sessions** に移動します。
+
+    セッションが継続時間とイベント数とともに一覧表示されるはずです。▶️ ボタンをクリックしてリプレイします。
+
+    タイムラインの詳細レベルを調整するには、**Highlighted** モードと **All Events** モードを切り替えます。
+  </Step>
+</Steps>
+
+<div id="url-filtering">
+  ## URL フィルタリング
+</div>
+
+デフォルトでは、監視が有効になっている間、拡張機能はアクセスしたすべてのページに SDK を挿入します。挿入先を特定のサイトのみに制限するには、**一致する URL にのみ挿入** を有効にし、パターンを 1 行に 1 つずつ (またはカンマ区切りで) 追加します。
+
+| Pattern                    | Matches                        |
+| -------------------------- | ------------------------------ |
+| `http://homedepot.com/*`   | `homedepot.com` で HTTP のみ      |
+| `*://homedepot.com/*`      | `homedepot.com` で HTTP と HTTPS |
+| `*://*.homedepot.com/*`    | `www.homedepot.com` などのサブドメイン  |
+| `https://localhost:3000/*` | ポート 3000 のローカル開発サーバー           |
+
+URL パターンを保存したら、タブを再読み込みしてください。
+
+<div id="verify-injection">
+  ## 挿入を確認する
+</div>
+
+監視対象のページで DevTools を開き (**Console** タブ) 、ページを再読み込みして、以下を確認します。
+
+```text
+[HyperDX Extension] Configuration valid, injecting HyperDX
+[HyperDX Extension] Injected via extension scripts
+[HyperDX Extension] HyperDX initialized
+```
+
+拡張機能からのスクリプトがCSPによってブロックされた場合、拡張機能はフォールバックメッセージをログに出力し、インラインでの挿入に切り替えて再試行します。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<Accordion title="HyperDX にセッションが表示されない">
+  1. ブラウザーのコンソールで `[HyperDX Extension]` のログメッセージやエラーを確認します
+  2. **Enable HyperDX Monitoring** がオンになっていて、**Service Name** が設定されていることを確認します
+  3. ClickStack が実行中で、collector の URL が正しいことを確認します (例: `http://localhost:4318`)
+  4. Client Sessions ビューで時間範囲を調整します (**Last 15 minutes** を試してください)
+  5. ブラウザーを強制再読み込みします: `Cmd+Shift+R` (Mac) または `Ctrl+Shift+R` (Windows/Linux)
+</Accordion>
+
+<Accordion title="chrome-extension://invalid/ エラー">
+  `chrome://extensions` で拡張機能を再読み込みしてから、タブを強制再読み込みします。これは、タブを開いたまま拡張機能が更新または再読み込みされた場合に発生します。
+</Accordion>
+
+<Accordion title="サイトで挿入されない">
+  1. 監視が有効になっていて、サービス名が設定されていることを確認します
+  2. **Only inject on matching URLs** がオンの場合は、現在のページ URL がいずれかのパターンに一致していることを確認します
+  3. 一部のサイトでは、CSP によって拡張機能由来のスクリプトとインラインスクリプトの両方の挿入がブロックされるため、そのページではインジェクトできない場合があります
+  4.
+</Accordion>
+
+<Accordion title="HyperDX: コンソールで apiKey が見つからない">
+  API key フィールドが空の場合は想定どおりの動作です。Cloud エンドポイントを使う場合は HyperDX で発行したインジェスト API key を追加してください。セルフホストの collector が認証なしのローカルトラフィックを受け入れる場合は、無視して構いません。
+</Accordion>
+
+<div id="privacy">
+  ## プライバシー
+</div>
+
+この拡張機能は、アクセスしたページにオブザーバビリティ用のコードを挿入します。使用するのは、デバッグが許可されているサイトに限ってください。APIキーを共有したり、バージョン管理システムにコミットしたりしないでください。
+
+<div id="learn-more">
+  ## 詳細はこちら
+</div>
+
+* [Session Replay](/ja/clickstack/features/session-replay) — 機能概要、SDK オプション、プライバシー制御
+* [Browser SDK リファレンス](/ja/clickstack/ingesting-data/sdks/browser) — すべての SDK オプションと高度な設定
+* [Session Replay Demo](/ja/clickstack/example-datasets/session-replay) — デモアプリケーションをソースコードからインストルメントする
+* [ClickStack はじめに](/ja/clickstack/getting-started/index) — ClickStack をデプロイし、最初のデータを取り込む
+* [GitHub 上の HyperDX Chrome拡張機能](https://github.com/kyreddie/hyperdx-chrome-extension) — ソースコードと issue トラッカー

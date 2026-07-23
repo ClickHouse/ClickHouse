@@ -1,0 +1,158 @@
+---
+sidebarTitle: 'NiFi'
+keywords: ['ClickHouse', 'NiFi', 'ربط', 'تكامل', 'etl', 'تكامل البيانات']
+slug: /integrations/nifi
+description: 'تمرير البيانات المتدفقة إلى ClickHouse باستخدام مسارات بيانات NiFi'
+title: 'ربط Apache NiFi بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> هو برنامج مفتوح المصدر لإدارة سير العمل، صُمم لأتمتة تدفق البيانات بين الأنظمة البرمجية. ويتيح إنشاء مسارات بيانات ETL، ويأتي مزودًا بأكثر من 300 معالج بيانات. يوضح هذا الدليل العملي خطوة بخطوة كيفية توصيل Apache NiFi بـ ClickHouse كمصدر ووجهة، وكيفية تحميل مجموعة بيانات تجريبية.
+
+<Steps>
+  <Step>
+    ## جهّز تفاصيل الاتصال الخاصة بك
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## نزِّل Apache NiFi وشغِّله
+
+    لإعداد جديد، نزِّل الملف التنفيذي من https://nifi.apache.org/download.html ثم ابدأ بتشغيل `./bin/nifi.sh start`
+  </Step>
+
+  <Step>
+    ## تنزيل برنامج تشغيل ClickHouse JDBC
+
+    1. انتقل إلى <a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">صفحة إصدارات برنامج تشغيل ClickHouse JDBC</a> على GitHub وابحث عن أحدث إصدار من JDBC
+    2. ضمن هذا الإصدار، انقر على &quot;Show all xx assets&quot; ثم ابحث عن ملف JAR الذي يحتوي على الكلمة المفتاحية &quot;shaded&quot; أو &quot;all&quot;، مثل `clickhouse-jdbc-0.5.0-all.jar`
+    3. ضع ملف JAR في مجلد يمكن لـ Apache NiFi الوصول إليه، ودوّن المسار المطلق
+  </Step>
+
+  <Step>
+    ## أضِف خدمة وحدة التحكم `DBCPConnectionPool` واضبط خصائصها
+
+    1. لتهيئة خدمة وحدة تحكم في Apache NiFi، انتقل إلى صفحة تهيئة تدفق NiFi بالنقر على زر &quot;الترس&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="صفحة تهيئة تدفق NiFi مع تمييز زر الترس" />
+
+    2. حدِّد علامة تبويب خدمات وحدة التحكم، ثم أضِف خدمة وحدة تحكم جديدة بالنقر على زر `+` في أعلى اليمين
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_02.webp" size="lg" border alt="علامة تبويب خدمات وحدة التحكم مع تمييز زر الإضافة" />
+
+    3. ابحث عن `DBCPConnectionPool` وانقر على زر &quot;إضافة&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_03.webp" size="lg" border alt="مربع حوار اختيار خدمة وحدة التحكم مع تمييز DBCPConnectionPool" />
+
+    4. ستكون `DBCPConnectionPool` المضافة حديثًا في حالة غير صالحة افتراضيًا. انقر على زر &quot;الترس&quot; لبدء التهيئة
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_04.webp" size="lg" border alt="قائمة خدمات وحدة التحكم تعرض DBCPConnectionPool غير صالحة مع تمييز زر الترس" />
+
+    5. ضمن قسم &quot;الخصائص&quot;، أدخل القيم التالية
+
+    | الخاصية                      | القيمة                                                             | ملاحظة                                                    |
+    | ---------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+    | URL اتصال قاعدة البيانات     | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | استبدل HOSTNAME في URL الاتصال بما يناسب                  |
+    | اسم فئة مشغّل قاعدة البيانات | com.clickhouse.jdbc.ClickHouseDriver                               |                                                           |
+    | مواقع مشغّل قاعدة البيانات   | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | المسار المطلق إلى ملف JAR الخاص بـ ClickHouse JDBC driver |
+    | مستخدم قاعدة البيانات        | default                                                            | اسم مستخدم ClickHouse                                     |
+    | كلمة المرور                  | password                                                           | كلمة مرور ClickHouse                                      |
+
+    6. في قسم الإعدادات، غيِّر اسم خدمة وحدة التحكم إلى &quot;ClickHouse JDBC&quot; لتسهيل الرجوع إليها
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_05.webp" size="lg" border alt="مربع حوار تهيئة DBCPConnectionPool مع تعبئة الخصائص" />
+
+    7. فعِّل خدمة وحدة التحكم `DBCPConnectionPool` بالنقر على زر &quot;البرق&quot; ثم زر &quot;تمكين&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_06.webp" size="lg" border alt="قائمة خدمات وحدة التحكم مع تمييز زر البرق" />
+
+       <br />
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_07.webp" size="lg" border alt="مربع حوار تأكيد تمكين خدمة وحدة التحكم" />
+
+    8. تحقّق من علامة تبويب خدمات وحدة التحكم وتأكد من أن خدمة وحدة التحكم مُمكَّنة
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="قائمة خدمات وحدة التحكم تعرض خدمة ClickHouse JDBC مُمكَّنة" />
+  </Step>
+
+  <Step>
+    ## القراءة من جدول باستخدام المعالج `ExecuteSQL`
+
+    1. أضف المعالج ​`​ExecuteSQL`، إلى جانب المعالجات المناسبة السابقة واللاحقة
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="لوحة NiFi تعرض المعالج ExecuteSQL ضمن سير عمل" />
+
+    2. ضمن قسم &quot;Properties&quot; في المعالج ​`​ExecuteSQL`، أدخل القيم التالية
+
+       | Property                            | Value                            | Remark                                       |
+       | ----------------------------------- | -------------------------------- | -------------------------------------------- |
+       | Database Connection Pooling Service | ClickHouse JDBC                  | اختر خدمة وحدة التحكم المُعدّة لـ ClickHouse |
+       | SQL select query                    | SELECT &#42; FROM system.metrics | أدخل الاستعلام هنا                           |
+
+    3. ابدأ المعالج `​​ExecuteSQL`
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_10.webp" size="lg" border alt="إعدادات المعالج ExecuteSQL بعد تعبئة الخصائص" />
+
+    4. للتأكد من أن الاستعلام قد تمت معالجته بنجاح، افحص أحد عناصر `FlowFile` في قائمة انتظار الإخراج
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_11.webp" size="lg" border alt="نافذة قائمة الانتظار تعرض عناصر FlowFile الجاهزة للفحص" />
+
+    5. بدّل العرض إلى &quot;formatted&quot; لعرض نتيجة `FlowFile` الناتج
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="عارض محتوى FlowFile يعرض نتائج الاستعلام في العرض المنسّق" />
+  </Step>
+
+  <Step>
+    ## الكتابة إلى جدول باستخدام المعالجَين `MergeRecord` و`PutDatabaseRecord`
+
+    1. لكتابة عدة صفوف في عملية insert واحدة، نحتاج أولاً إلى دمج عدة سجلات في سجل واحد. يمكن تنفيذ ذلك باستخدام المعالج `MergeRecord`
+
+    2. ضمن قسم &quot;الخصائص&quot; في المعالج `MergeRecord`، أدخل القيم التالية
+
+       | الخاصية                  | القيمة              | ملاحظة                                                                                                  |
+       | ------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
+       | قارئ السجل               | `JSONTreeReader`    | اختر قارئ السجلات المناسب                                                                               |
+       | كاتب السجل               | `JSONReadSetWriter` | اختر كاتب السجلات المناسب                                                                               |
+       | الحد الأدنى لعدد السجلات | 1000                | غيّر هذه القيمة إلى رقم أكبر بحيث يُدمج حد أدنى من الصفوف لتكوين سجل واحد. القيمة الافتراضية هي صف واحد |
+       | الحد الأقصى لعدد السجلات | 10000               | غيّر هذه القيمة إلى رقم أكبر من &quot;الحد الأدنى لعدد السجلات&quot;. القيمة الافتراضية هي 1,000 صف     |
+
+    3. للتأكد من دمج عدة سجلات في سجل واحد، افحص المدخلات والمخرجات الخاصة بالمعالج `MergeRecord`. لاحظ أن المخرجات عبارة عن مصفوفة تضم عدة سجلات إدخال
+
+       الإدخال
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_13.webp" size="sm" border alt="مدخلات المعالج MergeRecord التي تعرض سجلات مفردة" />
+
+       المخرجات
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_14.webp" size="sm" border alt="مخرجات المعالج MergeRecord التي تعرض مصفوفة مدمجة من السجلات" />
+
+    4. ضمن قسم &quot;الخصائص&quot; في المعالج `PutDatabaseRecord`، أدخل القيم التالية
+
+       | الخاصية                           | القيمة           | ملاحظة                                                                                                                                      |
+       | --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+       | قارئ السجل                        | `JSONTreeReader` | اختر قارئ السجلات المناسب                                                                                                                   |
+       | نوع قاعدة البيانات                | Generic          | اتركها كقيمة افتراضية                                                                                                                       |
+       | نوع العبارة                       | INSERT           |                                                                                                                                             |
+       | خدمة تجميع اتصالات قاعدة البيانات | ClickHouse JDBC  | اختر خدمة وحدة التحكم الخاصة بـ ClickHouse                                                                                                  |
+       | اسم الجدول                        | tbl              | أدخل اسم الجدول هنا                                                                                                                         |
+       | ترجمة أسماء الحقول                | false            | اضبطها على &quot;false&quot; بحيث يجب أن تتطابق أسماء الحقول المُدرجة مع اسم العمود                                                         |
+       | الحد الأقصى لحجم الدفعة           | 1000             | الحد الأقصى لعدد الصفوف لكل عملية insert. يجب ألا تكون هذه القيمة أقل من قيمة &quot;الحد الأدنى لعدد السجلات&quot; في المعالج `MergeRecord` |
+
+    5. للتأكد من أن كل عملية insert تحتوي على عدة صفوف، تحقق من أن عدد الصفوف في الجدول يزداد بمقدار لا يقل عن قيمة &quot;الحد الأدنى لعدد السجلات&quot; المحددة في `MergeRecord`.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_15.webp" size="sm" border alt="نتائج الاستعلام التي تعرض عدد الصفوف في الجدول الوجهة" />
+
+    6. تهانينا! لقد حمّلت بياناتك بنجاح إلى ClickHouse باستخدام Apache NiFi!
+  </Step>
+</Steps>

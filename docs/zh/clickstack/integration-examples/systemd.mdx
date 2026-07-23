@@ -1,0 +1,405 @@
+---
+slug: /use-cases/observability/clickstack/integrations/systemd-logs
+title: '使用 ClickStack 监控 Systemd 日志'
+sidebarTitle: 'Systemd/Journald 日志'
+description: '使用 ClickStack 监控 Systemd 和 Journald 日志'
+doc_type: 'guide'
+keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', '系统日志', 'systemctl']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简而言之**
+
+  使用 OpenTelemetry Collector 的 journald receiver 在 ClickStack 中采集并可视化 systemd journal 中的日志。包含演示数据集和预置仪表板。
+</Info>
+
+<div id="existing-systems">
+  ## 与现有系统集成
+</div>
+
+运行启用了 journald receiver 的 OpenTelemetry Collector，收集系统日志，并通过 OTLP 将其发送到 ClickStack，以监控现有 Linux 系统的 journald 日志。
+
+如果您想先测试此集成，而不修改现有设置，请跳转到[演示数据集部分](#demo-dataset)。
+
+<div id="prerequisites">
+  ##### 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例
+* 使用 systemd 的 Linux 系统 (Ubuntu 16.04+、CentOS 7+、Debian 8+)
+* 在受监控系统上安装了 Docker 或 Docker Compose
+
+<Steps>
+  <Step>
+    #### 获取 ClickStack API key
+
+    OpenTelemetry Collector 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要进行身份验证。
+
+    1. 在你的 ClickStack URL 中打开 HyperDX (例如 http://localhost:8080)
+    2. 创建账户，或按需登录
+    3. 进入 **Team Settings → API Keys**
+    4. 复制你的 **摄取 API key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+
+    5. 将其设置为环境变量：
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### 验证 systemd journal 是否正在运行
+
+    请确保你的系统使用的是 systemd，并且存在 journal 日志：
+
+    ```bash
+    # 检查 systemd 版本
+    systemctl --version
+
+    # 查看最近的 journal 条目
+    journalctl -n 20
+
+    # 检查 journal 磁盘占用情况
+    journalctl --disk-usage
+    ```
+
+    如果 journal 仅存储在内存中，请启用持久化存储：
+
+    ```bash
+    sudo mkdir -p /var/log/journal
+    sudo systemd-tmpfiles --create --prefix /var/log/journal
+    sudo systemctl restart systemd-journald
+    ```
+  </Step>
+
+  <Step>
+    #### 创建 OpenTelemetry Collector 配置
+
+    为 OpenTelemetry Collector 创建配置文件：
+
+    ```yaml
+    cat > otel-config.yaml << 'EOF'
+    receivers:
+      journald:
+        directory: /var/log/journal
+        priority: info
+        units:
+          - sshd
+          - nginx
+          - docker
+          - containerd
+          - systemd
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 10000
+      
+      resource:
+        attributes:
+          - key: service.name
+            value: systemd-logs
+            action: insert
+          - key: host.name
+            from_attribute: _HOSTNAME
+            action: upsert
+      
+      attributes:
+        actions:
+          - key: unit
+            from_attribute: _SYSTEMD_UNIT
+            action: upsert
+          - key: priority
+            from_attribute: PRIORITY
+            action: upsert
+
+    exporters:
+      otlphttp:
+        endpoint: ${CLICKSTACK_ENDPOINT}
+        headers:
+          authorization: ${CLICKSTACK_API_KEY}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [journald]
+          processors: [resource, attributes, batch]
+          exporters: [otlphttp]
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 使用 Docker Compose 部署
+
+    <Note>
+      `journald` receiver 需要 `journalctl` binary 才能读取 journal 文件。官方 `otel/opentelemetry-collector-contrib` image 默认不包含 `journalctl`。
+
+      对于容器化部署，你可以直接在宿主机上安装 collector，或者构建包含 systemd utilities 的自定义 image。详情请参阅[故障排查部分](#journalctl-not-found)。
+    </Note>
+
+    以下示例展示了如何将 OTel collector 与 ClickStack 一起部署：
+
+    ```yaml
+    services:
+      clickstack:
+        image: clickhouse/clickstack-all-in-one:latest
+        ports:
+          - "8080:8080"
+          - "4317:4317"
+          - "4318:4318"
+        networks:
+          - monitoring
+      
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:0.115.1
+        depends_on:
+          - clickstack
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+          - CLICKSTACK_ENDPOINT=http://clickstack:4318
+        volumes:
+          - ./otel-config.yaml:/etc/otelcol/config.yaml:ro
+          - /var/log/journal:/var/log/journal:ro
+          - /run/log/journal:/run/log/journal:ro
+          - /etc/machine-id:/etc/machine-id:ro
+        command: ["--config=/etc/otelcol/config.yaml"]
+        networks:
+          - monitoring
+
+    networks:
+      monitoring:
+        driver: bridge
+    ```
+
+    启动服务：
+
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    配置完成后，登录 HyperDX 并确认日志已开始流入：
+
+    1. 进入搜索视图
+    2. 将 source 设置为 Logs
+    3. 按 `service.name:systemd-logs` 进行过滤
+    4. 你应该能看到结构化日志条目，其中包含 `unit`、`priority`、`MESSAGE`、`_HOSTNAME` 等字段
+
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="日志搜索视图" />
+
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="日志视图" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于希望在配置生产系统之前先测试 systemd 日志集成的用户，我们提供了一个预先生成的 systemd 日志样本数据集，其中包含逼真的日志模式。
+
+<Steps>
+  <Step>
+    #### 下载样本数据集
+
+    下载样本日志文件：
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/systemd/systemd-demo.log
+    ```
+  </Step>
+
+  <Step>
+    #### 创建演示 collector 配置
+
+    为演示创建配置文件：
+
+    ```bash
+    cat > systemd-demo.yaml << 'EOF'
+    receivers:
+      filelog:
+        include:
+          - /tmp/systemd-demo/systemd-demo.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          - type: add
+            field: attributes.source
+            value: "systemd-demo"
+
+    service:
+      pipelines:
+        logs/systemd-demo:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 使用演示数据运行 ClickStack
+
+    使用演示日志启动 ClickStack：
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/systemd-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/systemd-demo.log:/tmp/systemd-demo/systemd-demo.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      该演示使用 `filelog` receiver 处理文本日志，而不是使用 `journald`，从而避免容器中需要 `journalctl`。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    ClickStack 运行后：
+
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户
+    2. 进入搜索视图，并将 source 设置为 `Logs`
+    3. 将时间范围设置为 **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
+
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="日志搜索视图" />
+
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="日志视图" />
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**。更宽的时间范围可确保无论你身在何处，都能看到这些演示日志。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
+
+为帮助你快速开始使用 ClickStack 监控 systemd 日志，我们提供了 systemd journal 数据的核心可视化内容。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预置仪表盘
+
+    1. 打开 HyperDX 并进入仪表盘页面
+    2. 点击右上角省略号菜单中的 **导入仪表盘**
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+
+    3. 上传 `systemd-logs-dashboard.json` 文件，然后点击 **完成导入**
+
+    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="完成导入" />
+  </Step>
+
+  <Step>
+    #### 查看仪表盘
+
+    该仪表盘包含以下可视化内容：
+
+    * 日志量随时间变化趋势
+    * 按日志数量排名靠前的 systemd 单元
+    * SSH 身份验证事件
+    * 服务故障
+    * 错误率
+
+    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="仪表盘示例" />
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (可根据你的本地时区调整) 。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="no-logs">
+  ### HyperDX 中没有显示日志
+</div>
+
+检查日志是否已写入 ClickHouse：
+
+```bash
+docker exec clickstack clickhouse-client --query "
+SELECT COUNT(*) as log_count
+FROM otel_logs
+WHERE ServiceName = 'systemd-logs'
+"
+```
+
+如果没有结果，请查看 collector 日志：
+
+```bash
+docker logs otel-collector | grep -i "error\|journald" | tail -20
+```
+
+<div id="journalctl-not-found">
+  ### 找不到 journalctl 错误
+</div>
+
+如果你看到 `exec: "journalctl": executable file not found in $PATH`：
+
+`otel/opentelemetry-collector-contrib` 镜像不包含 `journalctl`。你可以选择：
+
+1. **在主机上安装 collector**：
+
+```bash
+wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.115.0/otelcol-contrib_0.115.0_linux_amd64.tar.gz
+tar -xzf otelcol-contrib_0.115.0_linux_amd64.tar.gz
+sudo mv otelcol-contrib /usr/local/bin/
+otelcol-contrib --config=otel-config.yaml
+```
+
+2. **使用文本导出方式** (如演示所示) ，让 `filelog` receiver 读取 journald 导出的内容
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键系统事件设置[告警](/zh/clickstack/features/alerts) (如服务故障、身份验证失败、OOM kill)
+* 针对特定用例创建更多[仪表盘](/zh/clickstack/features/dashboards/overview) (如 SSH 安全监控、服务健康)
+* 按特定 systemd 单元进行过滤，以减少噪声，并将重点放在重要服务上
+
+<div id="going-to-production">
+  ## 投入生产环境
+</div>
+
+本指南使用独立的 OpenTelemetry Collector 读取 systemd 日志，并将其发送到 ClickStack 的 OTLP 端点，这是推荐的生产环境部署模式。
+
+对于包含多台主机的生产环境，请考虑：
+
+* 在 Kubernetes 中将 collector 部署为 DaemonSet 守护进程集
+* 在每台主机上将 collector 作为 systemd 服务运行
+* 使用 OpenTelemetry Operator 进行自动化部署
+
+有关生产环境的部署模式，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

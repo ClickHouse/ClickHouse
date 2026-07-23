@@ -1,0 +1,299 @@
+---
+description: '一种表引擎，提供类似于 s3 表函数的类表接口，可用于从文件中 SELECT 数据并向文件中 INSERT 数据。处理本地文件时使用 `file`，处理 S3、GCS 或 MinIO 等对象存储中的桶时使用 `s3`。'
+sidebarTitle: 'file'
+slug: /sql-reference/table-functions/file
+title: 'file'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="file-table-function">
+  # file 表函数
+</div>
+
+一种表引擎，提供类似于 [s3](/zh/reference/functions/table-functions/s3) 表函数的类表接口，可用于从文件中 `SELECT` 数据并向文件中 `INSERT` 数据。处理本地文件时使用 `file`，处理 S3、GCS 或 MinIO 等对象存储中的桶时使用 `s3`。
+
+`file` 函数可在 `SELECT` 和 `INSERT` 查询中使用，以从文件读取数据或向文件写入数据。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+file([path_to_archive ::] path [,format] [,structure] [,compression])
+```
+
+对于 `SELECT` 查询，`path` 也可以是返回 `Array(String)` 的表达式：
+
+```sql
+file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| Parameter         | Description                                                                                                                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings#user_files_path) 的文件路径，或在 `SELECT` 查询中使用的路径 `Array(String)`。在只读模式下支持以下 [通配符](#globs-in-path)：`*`、`?`、`{abc,def}` (其中 `'abc'` 和 `'def'` 是字符串) 以及 `{N..M}` (其中 `N` 和 `M` 是数字) 。 |
+| `path_to_archive` | zip/tar/7z 归档文件的相对路径。支持与 `path` 相同的通配符。                                                                                                                                                                                                                  |
+| `format`          | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                       |
+| `structure`       | 表的结构。格式：`'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                   |
+| `compression`     | 在 `SELECT` 查询中使用时，表示现有的压缩类型；在 `INSERT` 查询中使用时，表示所需的压缩类型。支持的压缩类型包括 `gz`、`br`、`xz`、`zst`、`lz4` 和 `bz2`。                                                                                                                                                    |
+
+<Tip>
+  省略 `structure` 参数时，ClickHouse 会根据格式本身推断 schema。
+  不同格式会生成不同的默认列名和类型。
+  如需查看特定格式的 schema，请将 [`DESC`](/zh/reference/statements/describe-table) 与 [`format`](/zh/reference/functions/table-functions/format) 表函数配合使用。
+
+  例如：
+
+  ```sql
+  DESC format(LineAsString, 'Hello\nWorld')
+  ```
+
+  ```response
+  ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+  │ line │ String │              │                    │         │                  │                │
+  └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+  ```
+</Tip>
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+可用于读取或写入文件中数据的表。
+
+<div id="examples-for-writing-to-a-file">
+  ## 写入文件示例
+</div>
+
+<div id="write-to-a-tsv-file">
+  ### 写入 TSV 文件
+</div>
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+因此，数据会被写入 `test.tsv` 文件中：
+
+```bash
+# cat /var/lib/clickhouse/user_files/test.tsv
+1    2    3
+3    2    1
+1    3    2
+```
+
+<div id="partitioned-write-to-multiple-tsv-files">
+  ### 按分区写入多个 TSV 文件
+</div>
+
+如果在向 `file` 类型的表函数插入数据时指定了 `PARTITION BY` 表达式，则会为每个分区分别创建一个文件。将数据拆分到不同文件中有助于提升读取操作的性能。
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test_{_partition_id}.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+PARTITION BY column3
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+因此，数据会写入三个文件：`test_1.tsv`、`test_2.tsv` 和 `test_3.tsv`。
+
+```bash
+# cat /var/lib/clickhouse/user_files/test_1.tsv
+3    2    1
+
+# cat /var/lib/clickhouse/user_files/test_2.tsv
+1    3    2
+
+# cat /var/lib/clickhouse/user_files/test_3.tsv
+1    2    3
+```
+
+<div id="examples-for-reading-from-a-file">
+  ## 从文件中读取的示例
+</div>
+
+<div id="select-from-a-csv-file">
+  ### 从 CSV 文件中执行 SELECT
+</div>
+
+首先，在服务端配置中设置 `user_files_path`，并准备文件 `test.csv`：
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+
+$ cat /var/lib/clickhouse/user_files/test.csv
+    1,2,3
+    3,2,1
+    78,43,45
+```
+
+然后，将 `test.csv` 中的数据读入表中，并选择前两行：
+
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2;
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="inserting-data-from-a-file-into-a-table">
+  ### 将文件中的数据插入到表中
+</div>
+
+```sql
+INSERT INTO FUNCTION
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1);
+```
+
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+从 `archive1.zip` 或/和 `archive2.zip` 中的 `table.csv` 读取数据：
+
+```sql
+SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
+```
+
+<div id="globs-in-path">
+  ## 路径中的通配符
+</div>
+
+路径中可以使用通配符。文件必须匹配整个路径模式，而不只是后缀或前缀。只有一种例外情况：如果路径指向一个现有的
+目录，且未使用通配符，则会在路径后隐式添加一个 `*`，从而
+选中该目录中的所有文件。
+
+* `*` — 表示除 `/` 之外的任意多个字符，也包括空字符串。
+* `?` — 表示任意单个字符。
+* `{some_string,another_string,yet_another_one}` — 替换为字符串 `'some_string'`、`'another_string'`、`'yet_another_one'` 中的任意一个。这些字符串可以包含 `/` 符号。
+* `{N..M}` — 表示任何 `>= N` 且 `<= M` 的数字。
+* `**` - 表示递归匹配文件夹中的所有文件。
+
+带有 `{}` 的构造与 [remote](/zh/reference/functions/table-functions/remote) 和 [hdfs](/zh/reference/functions/table-functions/hdfs) 表函数类似。
+
+<div id="examples">
+  ## 示例
+</div>
+
+**示例**
+
+假设有以下文件，其相对路径如下：
+
+* `some_dir/some_file_1`
+* `some_dir/some_file_2`
+* `some_dir/some_file_3`
+* `another_dir/some_file_1`
+* `another_dir/some_file_2`
+* `another_dir/some_file_3`
+
+查询所有文件中的总行数：
+
+```sql
+SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32');
+```
+
+另一种能达到相同效果的路径表达式：
+
+```sql
+SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
+```
+
+使用隐式 `*` 查询 `some_dir` 中的行总数：
+
+```sql
+SELECT count(*) FROM file('some_dir', 'TSV', 'name String, value UInt32');
+```
+
+<Note>
+  如果文件列表中包含带前导零的数字范围，请为每一位数字分别使用花括号写法，或使用 `?`。
+</Note>
+
+**示例**
+
+查询名为 `file000`、`file001`、...、`file999` 的文件中的总行数：
+
+```sql
+SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
+```
+
+**示例**
+
+递归查询目录 `big_dir/` 中所有文件的总行数：
+
+```sql
+SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
+```
+
+**示例**
+
+递归查询目录 `big_dir/` 下任意文件夹中的所有 `file002` 文件的总行数：
+
+```sql
+SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
+```
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果文件大小未知，则该值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则该值为 `NULL`。
+
+<div id="hive-style-partitioning">
+  ## `use_hive_partitioning` 设置
+</div>
+
+当 `use_hive_partitioning` 设置为 1 时，ClickHouse 会识别路径中的 Hive 风格分区 (`/name=value/`) ，并允许在查询中将分区列作为虚拟列使用。这些虚拟列的名称将与分区路径中的名称相同。
+
+**示例**
+
+使用通过 Hive 风格分区生成的虚拟列
+
+```sql
+SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="settings">
+  ## 设置
+</div>
+
+| 设置项                                                                                                                                         | 说明                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/zh/reference/settings/session-settings#engine_file_empty_if_not_exists)                 | 允许从不存在的文件中读取空数据。默认禁用。                                                                                                  |
+| [engine&#95;file&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings#engine_file_truncate_on_insert)                       | 允许在插入前截断文件。默认禁用。                                                                                                       |
+| [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/zh/reference/settings/session-settings#engine_file_allow_create_multiple_files) | 如果 格式 带有后缀，则允许在每次插入时创建新文件。默认禁用。                                                                                    |
+| [engine&#95;file&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings#engine_file_skip_empty_files)                           | 允许在读取时跳过空文件。默认禁用。                                                                                                      |
+| [storage&#95;file&#95;read&#95;method](/zh/reference/settings/session-settings#engine_file_empty_if_not_exists)                                | 从存储文件读取数据的方法，可选值包括：read、pread、mmap (仅适用于 clickhouse-local) 。默认值：clickhouse-server 为 `pread`，clickhouse-local 为 `mmap`。 |
+
+<div id="related">
+  ## 相关
+</div>
+
+* [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [处理后重命名文件](/zh/reference/settings/session-settings#rename_files_after_processing)

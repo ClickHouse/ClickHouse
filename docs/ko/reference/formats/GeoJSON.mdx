@@ -1,0 +1,219 @@
+---
+alias: []
+description: 'GeoJSON FeatureCollection을 읽어 각 피처에 대해 id, geometry, properties 컬럼이 있는 1개의 행을 생성하는 입력 형식입니다.'
+input_format: true
+output_format: false
+keywords: ['GeoJSON']
+sidebarTitle: 'GeoJSON'
+slug: /interfaces/formats/GeoJSON
+title: 'GeoJSON'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[GeoJSON](https://geojson.org/) `FeatureCollection` 문서를 읽어 각 피처마다 1개의 행을 생성합니다. 각 행은 다음과 같은 고정 스키마를 가집니다.
+
+| Column       | Type             | Description                                                                            |
+| ------------ | ---------------- | -------------------------------------------------------------------------------------- |
+| `id`         | `String`         | 피처의 `id` 멤버(JSON 문자열 또는 숫자)로, 텍스트로 저장됩니다. `id`가 없거나 `null`이면 빈 문자열이 저장됩니다.             |
+| `geometry`   | `Geometry`       | 피처의 geometry로, `Geometry` variant type에 저장됩니다.                                         |
+| `properties` | `Nullable(JSON)` | 피처의 `properties` 객체로, 반정형 `JSON` 컬럼으로 저장됩니다. 명시적인 `"properties": null`은 `NULL`로 유지됩니다. |
+
+각 geometry는 ClickHouse의 `Geometry` 타입(`Variant`)에 저장됩니다. 지원되는 GeoJSON geometry 타입은 `Point`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`입니다. 나머지 두 GeoJSON geometry 타입인 `GeometryCollection`과 `MultiPoint`는 `Geometry` 타입으로 표현할 수 없습니다. 이를 `geometry` 컬럼으로 읽으면 기본적으로 예외가 발생하지만, 대신 `NULL`을 삽입하도록 변경할 수 있습니다. 자세한 내용은 아래의 [지원되지 않는 geometry 타입 처리](#unsupported-geometry)를 참조하십시오. 기본적으로 `geometry` 컬럼이 `NULL`이 되는 경우는 피처의 geometry가 명시적인 JSON `null`일 때뿐입니다. `input_format_geojson_unsupported_geometry_handling = 'null'`에서는 지원되지 않는 geometry 타입인 경우에도 `NULL`이 됩니다.
+
+문서 구조는 검증됩니다. 최상위 `type`은 반드시 `FeatureCollection`이어야 하며, `features`의 모든 요소는 `type`이 `Feature`여야 합니다. 좌표는 GeoJSON shape 불변 조건을 충족해야 합니다. 즉, `LineString`(및 `MultiLineString`의 각 line)은 최소 2개의 position을 가져야 하며, `Polygon` ring(및 `MultiPolygon`의 각 ring)은 닫혀 있어야 하고 최소 4개의 position을 가져야 합니다. 형식이 잘못된 문서는 조용히 로드되지 않고 거부됩니다.
+
+`FeatureCollection` 객체의 다른 key(`name` 또는 `crs` 등)와 각 `Feature` 객체 내부의 다른 key(`bbox` 등)는 무시됩니다.
+
+key 순서는 유연합니다. 최상위 `type`은 `features` 배열 앞이나 뒤에 올 수 있으며, geometry 객체 내부에서는 `coordinates`가 `type` 앞이나 뒤에 올 수 있습니다.
+
+스키마 추론은 위의 고정 스키마를 반환하므로, 테이블 정의 없이도 `DESCRIBE` 및 `SELECT ... FROM format(...)`를 사용할 수 있습니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+다음은 여러 Geometry 타입이 혼합된 GeoJSON 파일 `london.geojson`입니다:
+
+```json
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "1",
+            "geometry": {"type": "Point", "coordinates": [-0.0761, 51.5081]},
+            "properties": {"name": "Tower of London", "feature_type": "landmark", "year_built": 1078}
+        },
+        {
+            "type": "Feature",
+            "id": "2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-0.2500, 51.4700], [-0.1800, 51.4900], [-0.1200, 51.5060], [-0.0700, 51.5050], [0.0000, 51.5100]]
+            },
+            "properties": {"name": "River Thames", "feature_type": "river", "length_km": 346}
+        },
+        {
+            "type": "Feature",
+            "id": "3",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-0.1880, 51.5074], [-0.1533, 51.5074], [-0.1533, 51.5153], [-0.1880, 51.5153], [-0.1880, 51.5074]]]
+            },
+            "properties": {"name": "Hyde Park", "feature_type": "park", "area_km2": 1.42}
+        }
+    ]
+}
+```
+
+파일에 쿼리를 실행해 Geometry 타입을 확인할 수 있습니다.
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+┌─id─┬─name────────────┬─geo_type───┐
+│ 1  │ Tower of London │ Point      │
+│ 2  │ River Thames    │ LineString │
+│ 3  │ Hyde Park       │ Polygon    │
+└────┴─────────────────┴────────────┘
+```
+
+파일 확장자 `.geojson`은 자동으로 감지되므로 포맷 인수는 생략할 수 있습니다:
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson');
+```
+
+각 Geometry 객체의 내부 유형을 확인하려면 `variantType`을 사용할 수 있습니다:
+
+```sql title="Query"
+SELECT properties.name AS name, geometry, variantType(geometry)
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+geometry:              (-0.0761,51.5081)
+variantType(geometry): Point
+
+Row 2:
+──────
+name:                  River Thames
+geometry:              [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+variantType(geometry): LineString
+
+Row 3:
+──────
+name:                  Hyde Park
+geometry:              [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+variantType(geometry): Polygon
+```
+
+그리고 다음과 같이 원본 데이터를 추출할 수 있습니다:
+
+```sql title="Query"
+SELECT properties.name AS name, variantType(geometry), geometry.Point, geometry.LineString, geometry.Polygon
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+variantType(geometry): Point
+geometry.Point:        (-0.0761,51.5081)
+geometry.LineString:   []
+geometry.Polygon:      []
+
+Row 2:
+──────
+name:                  River Thames
+variantType(geometry): LineString
+geometry.Point:        (0,0)
+geometry.LineString:   [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Polygon:      []
+
+Row 3:
+──────
+name:                  Hyde Park
+variantType(geometry): Polygon
+geometry.Point:        (0,0)
+geometry.LineString:   []
+geometry.Polygon:      [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+```
+
+`Geometry` 하위 컬럼에 접근하면 해당 행에 그 타입의 값이 있으면 그 값을 반환하고, 그렇지 않으면 타입의 기본값을 반환합니다. `Point`는 `(0,0)`을, 배열 기반 타입은 `[]`를 반환하므로 어떤 타입이 설정되어 있는지 확인하려면 `variantType(geometry)`를 사용하십시오.
+
+GeoJSON 데이터도 테이블에 수집할 수 있습니다:
+
+```sql title="Query"
+CREATE TABLE london
+(
+    id           String,
+    geometry     Geometry,
+    properties   Nullable(JSON),
+    name         String MATERIALIZED properties.name,
+    feature_type String MATERIALIZED properties.feature_type
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO london
+SELECT id, geometry, properties
+FROM file('london.geojson', GeoJSON);
+```
+
+다음으로 피처 유형별로 쿼리합니다:
+
+```sql title="Query"
+SELECT name, feature_type, variantType(geometry) AS geo_type
+FROM london
+ORDER BY id;
+```
+
+```response title="Response"
+┌─name────────────┬─feature_type─┬─geo_type───┐
+│ Tower of London │ landmark     │ Point      │
+│ River Thames    │ river        │ LineString │
+│ Hyde Park       │ park         │ Polygon    │
+└─────────────────┴──────────────┴────────────┘
+```
+
+GeoJSON 데이터의 스키마도 테이블 정의 없이 추론할 수 있습니다.
+
+```sql title="Query"
+DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
+```
+
+```response title="Response"
+┌─name───────┬─type───────────┐
+│ id         │ String         │
+│ geometry   │ Geometry       │
+│ properties │ Nullable(JSON) │
+└────────────┴────────────────┘
+```
+
+<div id="unsupported-geometry">
+  ## 지원되지 않는 Geometry 타입 처리
+</div>
+
+`GeometryCollection` 및 `MultiPoint`와 같은 일부 유효한 GeoJSON Geometry 타입은 ClickHouse의 `Geometry` 타입으로 표현할 수 없습니다. 이러한 geometry를 `geometry` 컬럼에 저장해야 할 때 어떤 방식으로 처리할지는 `input_format_geojson_unsupported_geometry_handling` 설정으로 제어할 수 있습니다. 가능한 값은 다음과 같습니다:
+
+* `'throw'` — 예외를 발생시킵니다(기본값)
+* `'null'` — `geometry` 컬럼에 `NULL` 값을 삽입하고 파싱을 계속합니다
+
+이 처리는 `geometry` 컬럼을 읽을 때만 적용됩니다. `geometry`가 요청된 출력 컬럼이 아닌 경우(예: `SELECT id FROM ...`)에도 지원되지 않는 geometry의 형식 유효성은 검사되지만, 이 처리 방식이 적용되지는 않습니다. 즉, geometry 값이 구체화되지 않으므로 예외가 발생하지도 않고 `NULL`이 삽입되지도 않습니다.

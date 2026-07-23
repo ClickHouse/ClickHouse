@@ -1,0 +1,80 @@
+---
+description: 'MergeTree 테이블의 특정 프로젝션 내용을 나타냅니다.
+  내부 검사에 사용할 수 있습니다.'
+sidebarTitle: 'mergeTreeProjection'
+slug: /sql-reference/table-functions/mergeTreeProjection
+title: 'mergeTreeProjection'
+doc_type: 'reference'
+---
+
+MergeTree 테이블의 특정 프로젝션 내용을 나타냅니다. 내부 검사에 사용할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+mergeTreeProjection(database, table, projection)
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수           | 설명                      |
+| ------------ | ----------------------- |
+| `database`   | 프로젝션을 읽어올 데이터베이스 이름입니다. |
+| `table`      | 프로젝션을 읽어올 테이블 이름입니다.    |
+| `projection` | 읽어올 프로젝션입니다.            |
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+지정된 프로젝션이 제공하는 컬럼으로 구성된 테이블 객체입니다.
+
+<div id="usage-example">
+  ## 사용 예시
+</div>
+
+```sql
+CREATE TABLE test
+(
+    `user_id` UInt64,
+    `item_id` UInt64,
+    PROJECTION order_by_item_id
+    (
+        SELECT _part_offset
+        ORDER BY item_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY user_id;
+
+INSERT INTO test SELECT number, 100 - number FROM numbers(5);
+```
+
+```sql
+SELECT *, _part_offset FROM mergeTreeProjection(currentDatabase(), test, order_by_item_id);
+```
+
+```text
+   ┌─item_id─┬─_parent_part_offset─┬─_part_offset─┐
+1. │      96 │                   4 │            0 │
+2. │      97 │                   3 │            1 │
+3. │      98 │                   2 │            2 │
+4. │      99 │                   1 │            3 │
+5. │     100 │                   0 │            4 │
+   └─────────┴─────────────────────┴──────────────┘
+```
+
+```sql
+DESCRIBE mergeTreeProjection(currentDatabase(), test, order_by_item_id) SETTINGS describe_compact_output = 1;
+```
+
+```text
+   ┌─name────────────────┬─type───┐
+1. │ item_id             │ UInt64 │
+2. │ _parent_part_offset │ UInt64 │
+   └─────────────────────┴────────┘
+```

@@ -1,0 +1,45 @@
+---
+sidebarTitle: "Intégrer Apache Spark à ClickHouse"
+slug: /integrations/apache-spark
+description: "Introduction à Apache Spark avec ClickHouse"
+keywords: ['ClickHouse', 'Apache Spark', 'migration', 'données']
+title: "Intégrer Apache Spark à ClickHouse"
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Spark](https://spark.apache.org/) est un moteur multilangage permettant d’exécuter des charges de travail d’ingénierie des données, de science des données et de machine learning sur des machines à nœud unique ou des clusters.
+
+Il existe deux principales façons de connecter Apache Spark à ClickHouse :
+
+1. [Spark Connector](/fr/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Le Spark connector implémente `DataSourceV2` et dispose de sa propre gestion du Catalog.
+   À ce jour, il s’agit de la méthode recommandée pour intégrer ClickHouse et Spark.
+2. [Spark JDBC](/fr/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) - Intégrez Spark à ClickHouse
+   à l’aide d’une [source de données JDBC](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html).
+
+<br />
+
+Les deux solutions ont été testées avec succès et sont entièrement compatibles avec diverses API, notamment Java, Scala, PySpark et Spark SQL.
+
+<div id="spark-runtime-environment">
+  ### Environnements d’exécution de Spark
+</div>
+
+<div id="standard-spark-runtime">
+  #### Environnements d’exécution Spark standard
+</div>
+
+Le Spark Connector fonctionne d’emblée dans les environnements qui suivent de près l’environnement d’exécution Apache Spark de référence, comme Amazon EMR ou les déploiements Spark basés sur Kubernetes.
+
+<div id="managed-spark-platforms">
+  #### Plateformes Spark gérées
+</div>
+
+Des plateformes comme [AWS Glue](/fr/integrations/connectors/data-ingestion/AWS/glue) et [Databricks](/fr/integrations/connectors/data-ingestion/apache-spark/databricks) ajoutent des abstractions supplémentaires et des comportements propres à leur environnement.
+Bien que l’intégration de base reste la même, elles peuvent nécessiter une configuration spécifique et des étapes de mise en place dédiées. Consultez les pages de documentation correspondantes pour en savoir plus.

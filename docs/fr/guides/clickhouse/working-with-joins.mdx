@@ -1,0 +1,461 @@
+---
+title: 'Travailler avec les JOIN dans ClickHouse'
+description: 'Guide d''introduction à l''utilisation des JOIN dans ClickHouse'
+keywords: ['JOINs', 'SQL', 'INNER JOIN', 'OUTER JOIN', 'CROSS JOIN', 'SEMI JOIN', 'ANTI JOIN', 'ANY JOIN', 'ASOF JOIN']
+sidebarTitle: 'Travailler avec les JOIN dans ClickHouse'
+slug: /guides/working-with-joins
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse prend entièrement en charge les jointures SQL standard, ce qui permet une analyse efficace des données.
+Dans ce guide, vous découvrirez quelques-uns des types de jointure les plus couramment utilisés et apprendrez à les utiliser à l’aide de diagrammes de Venn et de requêtes d’exemple sur un jeu de données [IMDB](https://en.wikipedia.org/wiki/IMDb) normalisé issu du [dépôt de jeux de données relationnels](https://relational.fit.cvut.cz/dataset/IMDb).
+
+<div id="test-data-and-resources">
+  ## Données de test et ressources
+</div>
+
+Vous trouverez [ici](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/guides) les instructions pour créer et charger les tables.
+Le jeu de données est également disponible dans le [playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) si vous ne souhaitez pas créer et charger
+les tables localement.
+
+Vous utiliserez les quatre tables suivantes du jeu de données d&#39;exemple :
+
+<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="Schéma IMDB" />
+
+Les données de ces quatre tables représentent des films, qui peuvent appartenir à un ou plusieurs genres.
+Les rôles d&#39;un film sont interprétés par des acteurs.
+
+Les flèches du diagramme ci-dessus représentent des [relations entre clés étrangères et clés primaires](https://en.wikipedia.org/wiki/Foreign_key). Par exemple, la colonne `movie_id` d&#39;une ligne de la table `genres` contient la valeur `id` d&#39;une ligne de la table `movies`.
+
+Il existe une [relation de plusieurs à plusieurs](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)) entre les films et les acteurs.
+Cette relation de plusieurs à plusieurs est normalisée en deux [relations de un à plusieurs](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) à l&#39;aide de la table `roles`.
+Chaque ligne de la table `roles` contient les valeurs des colonnes `id` des tables `movies` et `actors`.
+
+<div id="join-types-supported-in-clickhouse">
+  ## Types de jointure pris en charge dans ClickHouse
+</div>
+
+ClickHouse prend en charge les types de jointure suivants :
+
+* [INNER JOIN](#inner-join)
+* [OUTER JOIN](#left--right--full-outer-join)
+* [CROSS JOIN](#cross-join)
+* [SEMI JOIN](#left--right-semi-join)
+* [ANTI JOIN](#left--right-anti-join)
+* [ANY JOIN](#left--right--inner-any-join)
+* [ASOF JOIN](#asof-join)
+
+Dans les sections suivantes, vous rédigerez des requêtes d&#39;exemple pour chacun des types de JOIN ci-dessus.
+
+<div id="inner-join">
+  ## INNER JOIN
+</div>
+
+L’`INNER JOIN` renvoie, pour chaque paire de lignes correspondant aux clés de jointure, les valeurs des colonnes de la ligne de la table de gauche, combinées avec les valeurs des colonnes de la ligne de la table de droite.
+Si une ligne a plus d’une correspondance, toutes les correspondances sont renvoyées (ce qui signifie que le [produit cartésien](https://en.wikipedia.org/wiki/Cartesian_product) est généré pour les lignes dont les clés de jointure correspondent).
+
+<Image img="/images/starter_guides/joins/inner_join.webp" alt="Jointure interne" />
+
+Cette requête trouve les genres de chaque film en joignant la table `movies` à la table `genres` :
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+INNER JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─name───────────────────────────────────┬─genre─────┐
+│ Harry Potter and the Half-Blood Prince │ Action    │
+│ Harry Potter and the Half-Blood Prince │ Adventure │
+│ Harry Potter and the Half-Blood Prince │ Family    │
+│ Harry Potter and the Half-Blood Prince │ Fantasy   │
+│ Harry Potter and the Half-Blood Prince │ Thriller  │
+│ DragonBall Z                           │ Action    │
+│ DragonBall Z                           │ Adventure │
+│ DragonBall Z                           │ Comedy    │
+│ DragonBall Z                           │ Fantasy   │
+│ DragonBall Z                           │ Sci-Fi    │
+└────────────────────────────────────────┴───────────┘
+```
+
+<Note>
+  Le mot-clé `INNER` peut être omis.
+</Note>
+
+Le comportement de l’`INNER JOIN` peut être étendu ou modifié à l’aide de l’un des types de jointure suivants.
+
+<div id="left--right--full-outer-join">
+  ## (LEFT / RIGHT / FULL) OUTER JOIN
+</div>
+
+Le `LEFT OUTER JOIN` se comporte comme `INNER JOIN` ; de plus, pour les lignes de la table de gauche qui n’ont pas de correspondance, ClickHouse renvoie des [valeurs par défaut](/fr/reference/statements/create/table#default_values) pour les colonnes de la table de droite.
+
+Une requête `RIGHT OUTER JOIN` est similaire et renvoie également les valeurs des lignes non correspondantes de la table de droite, avec les valeurs par défaut pour les colonnes de la table de gauche.
+
+Une requête `FULL OUTER JOIN` combine `LEFT` et `RIGHT OUTER JOIN` et renvoie les valeurs des lignes non correspondantes des tables de gauche et de droite, avec les valeurs par défaut pour les colonnes des tables de droite et de gauche, respectivement.
+
+<Image img="/images/starter_guides/joins/outer_join.webp" alt="Jointure externe" />
+
+<Note>
+  ClickHouse peut être [configuré](/fr/reference/settings/session-settings#join_use_nulls) pour renvoyer des [NULL](/fr/reference/syntax#null)s au lieu de valeurs par défaut (cependant, cela est moins recommandé pour des [raisons de performances](/fr/reference/data-types/nullable#storage-features)).
+</Note>
+
+Cette requête trouve tous les films sans genre en recherchant toutes les lignes de la table `movies` qui n’ont pas de correspondance dans la table `genres` et qui reçoivent donc (au moment de l’exécution de la requête) la valeur par défaut 0 pour la colonne `movie_id` :
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT JOIN genres AS g ON m.id = g.movie_id
+WHERE g.movie_id = 0
+ORDER BY
+    m.year DESC,
+    m.name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<Note>
+  Le mot-clé `OUTER` peut être omis.
+</Note>
+
+<div id="cross-join">
+  ## CROSS JOIN
+</div>
+
+Le `CROSS JOIN` produit l’intégralité du produit cartésien des deux tables, sans tenir compte des clés de jointure.
+Chaque ligne de la table de gauche est combinée avec chaque ligne de la table de droite.
+
+<Image img="/images/starter_guides/joins/cross_join.webp" alt="Jointure croisée" />
+
+La requête suivante combine donc chaque ligne de la table `movies` avec chaque ligne de la table `genres` :
+
+```sql
+SELECT
+    m.name,
+    m.id,
+    g.movie_id,
+    g.genre
+FROM movies AS m
+CROSS JOIN genres AS g
+LIMIT 10;
+```
+
+```response
+┌─name─┬─id─┬─movie_id─┬─genre───────┐
+│ #28  │  0 │        1 │ Documentary │
+│ #28  │  0 │        1 │ Short       │
+│ #28  │  0 │        2 │ Comedy      │
+│ #28  │  0 │        2 │ Crime       │
+│ #28  │  0 │        5 │ Western     │
+│ #28  │  0 │        6 │ Comedy      │
+│ #28  │  0 │        6 │ Family      │
+│ #28  │  0 │        8 │ Animation   │
+│ #28  │  0 │        8 │ Comedy      │
+│ #28  │  0 │        8 │ Short       │
+└──────┴────┴──────────┴─────────────┘
+```
+
+Bien que la requête d’exemple précédente n’ait pas eu beaucoup de sens à elle seule, elle peut être étendue avec une clause `WHERE` pour associer les lignes correspondantes et reproduire le comportement de `INNER JOIN` afin de trouver les genres de chaque film :
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+Une syntaxe alternative pour `CROSS JOIN` consiste à spécifier plusieurs tables dans la clause `FROM`, séparées par des virgules.
+
+ClickHouse [réécrit](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/Core/Settings.h#L896) un `CROSS JOIN` en `INNER JOIN` s&#39;il existe des expressions de jointure dans la clause `WHERE` de la requête.
+
+Vous pouvez le vérifier pour la requête d&#39;exemple via [EXPLAIN SYNTAX](/fr/reference/statements/explain#explain-syntax) (qui renvoie la version syntaxiquement optimisée vers laquelle une requête est réécrite avant d&#39;être [exécutée](https://youtu.be/hP6G2Nlz_cA)) :
+
+```sql
+EXPLAIN SYNTAX
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─explain─────────────────────────────────────┐
+│ SELECT                                      │
+│     name AS name,                           │
+│     genre AS genre                          │
+│ FROM movies AS m                            │
+│ ALL INNER JOIN genres AS g ON id = movie_id │
+│ WHERE id = movie_id                         │
+│ ORDER BY                                    │
+│     year DESC,                              │
+│     name ASC,                               │
+│     genre ASC                               │
+│ LIMIT 10                                    │
+└─────────────────────────────────────────────┘
+```
+
+La clause `INNER JOIN` dans la version de requête `CROSS JOIN` optimisée sur le plan syntaxique contient le mot-clé `ALL`, ajouté explicitement afin de préserver la sémantique de produit cartésien de `CROSS JOIN` même lorsqu’elle est réécrite en `INNER JOIN`, pour lequel le produit cartésien peut être [désactivé](/fr/reference/settings/session-settings#join_default_strictness).
+
+```sql
+ALL
+```
+
+Et comme indiqué ci-dessus, le mot-clé `OUTER` peut être omis dans un `RIGHT OUTER JOIN`, et le mot-clé facultatif `ALL` peut être ajouté, vous pouvez écrire `ALL RIGHT JOIN` et cela fonctionnera parfaitement.
+
+<div id="left--right-semi-join">
+  ## (LEFT / RIGHT) SEMI JOIN
+</div>
+
+Une requête `LEFT SEMI JOIN` renvoie les valeurs de colonne de chaque ligne de la table de gauche ayant au moins une correspondance sur la clé de jointure dans la table de droite.
+Seule la première correspondance trouvée est renvoyée (le produit cartésien est désactivé).
+
+Une requête `RIGHT SEMI JOIN` est similaire : elle renvoie les valeurs de toutes les lignes de la table de droite ayant au moins une correspondance dans la table de gauche, mais seule la première correspondance trouvée est renvoyée.
+
+<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+
+Cette requête trouve tous les acteurs et actrices ayant joué dans un film en 2023.
+Notez qu&#39;avec une jointure (`INNER`) classique, un même acteur ou une même actrice apparaîtrait plusieurs fois s&#39;il ou elle avait eu plus d&#39;un rôle en 2023 :
+
+```sql
+SELECT
+    a.first_name,
+    a.last_name
+FROM actors AS a
+LEFT SEMI JOIN roles AS r ON a.id = r.actor_id
+WHERE toYear(created_at) = '2023'
+ORDER BY id ASC
+LIMIT 10;
+```
+
+```response
+┌─first_name─┬─last_name──────────────┐
+│ Michael    │ 'babeepower' Viera     │
+│ Eloy       │ 'Chincheta'            │
+│ Dieguito   │ 'El Cigala'            │
+│ Antonio    │ 'El de Chipiona'       │
+│ José       │ 'El Francés'           │
+│ Félix      │ 'El Gato'              │
+│ Marcial    │ 'El Jalisco'           │
+│ José       │ 'El Morito'            │
+│ Francisco  │ 'El Niño de la Manola' │
+│ Víctor     │ 'El Payaso'            │
+└────────────┴────────────────────────┘
+```
+
+<div id="left--right-anti-join">
+  ## (LEFT / RIGHT) ANTI JOIN
+</div>
+
+Un `LEFT ANTI JOIN` renvoie les valeurs des colonnes de toutes les lignes non correspondantes de la table de gauche.
+
+De même, un `RIGHT ANTI JOIN` renvoie les valeurs des colonnes de toutes les lignes non correspondantes de la table de droite.
+
+<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+
+Une autre formulation de l’exemple de requête de jointure externe précédent consiste à utiliser un anti join pour trouver les films qui n’ont pas de genre dans le jeu de données :
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT ANTI JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    year DESC,
+    name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<div id="left--right--inner-any-join">
+  ## (LEFT / RIGHT / INNER) ANY JOIN
+</div>
+
+Un `LEFT ANY JOIN` combine `LEFT OUTER JOIN` et `LEFT SEMI JOIN`, ce qui signifie que ClickHouse renvoie les valeurs de colonnes pour chaque ligne de la table de gauche, soit associées aux valeurs de colonnes d’une ligne correspondante de la table de droite, soit aux valeurs de colonnes par défaut de la table de droite lorsqu’il n’existe aucune correspondance.
+Si une ligne de la table de gauche a plus d’une correspondance dans la table de droite, ClickHouse renvoie uniquement les valeurs de colonnes combinées de la première correspondance trouvée (le produit cartésien est désactivé).
+
+De même, `RIGHT ANY JOIN` combine `RIGHT OUTER JOIN` et `RIGHT SEMI JOIN`.
+
+Et `INNER ANY JOIN` correspond à `INNER JOIN` avec le produit cartésien désactivé.
+
+<Image img="/images/starter_guides/joins/any_join.webp" alt="Jointure ANY" />
+
+L’exemple suivant illustre `LEFT ANY JOIN` à l’aide d’un exemple abstrait utilisant deux tables temporaires (`left_table` et `right_table`) construites avec la [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/fr/reference/functions/table-functions/index):
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+Il s’agit de la même requête avec un `RIGHT ANY JOIN` :
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+RIGHT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   2 │   2 │
+│   3 │   3 │
+│   3 │   3 │
+│   0 │   4 │
+└─────┴─────┘
+```
+
+Voici la requête utilisant un `INNER ANY JOIN` :
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+INNER ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+<div id="asof-join">
+  ## ASOF JOIN
+</div>
+
+L’`ASOF JOIN` permet des correspondances non exactes.
+Si une ligne de la table de gauche n’a pas de correspondance exacte dans la table de droite, la ligne la plus proche de la table de droite est utilisée à la place.
+
+C’est particulièrement utile pour l’analyse de séries temporelles et peut réduire considérablement la complexité des requêtes.
+
+<Image img="/images/starter_guides/joins/asof_join.webp" alt="Jointure ASOF" />
+
+L’exemple suivant effectue une analyse de séries temporelles sur des données boursières.
+Une table `quotes` contient les cotations de symboles boursiers à des moments précis de la journée.
+Dans les données d’exemple, le prix est mis à jour toutes les 10 secondes.
+Une table `trades` répertorie les transactions par symbole : un certain volume d’un symbole a été acheté à un instant précis :
+
+<Image img="/images/starter_guides/joins/asof_example.webp" alt="Exemple ASOF" />
+
+Pour calculer le coût réel de chaque transaction, nous devons faire correspondre les transactions avec l’heure de cotation la plus proche.
+
+C’est simple et concis avec l’`ASOF JOIN` : vous utilisez la clause `ON` pour spécifier une condition de correspondance exacte, et la clause `AND` pour définir la condition de correspondance la plus proche. Pour un symbole donné (correspondance exacte), vous recherchez dans la table `quotes` la ligne dont l’heure est la plus « proche », à l’instant exact d’une transaction sur ce symbole ou juste avant (correspondance non exacte) :
+
+```sql
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades t
+ASOF LEFT JOIN quotes q ON t.symbol = q.symbol AND t.time >= q.time
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+symbol:             ABC
+volume:             200
+trade_time:         2023-02-22 14:09:05
+closest_quote_time: 2023-02-22 14:09:00
+quote_price:        32.11
+final_price:        6422
+
+Row 2:
+──────
+symbol:             ABC
+volume:             300
+trade_time:         2023-02-22 14:09:28
+closest_quote_time: 2023-02-22 14:09:20
+quote_price:        32.15
+final_price:        9645
+```
+
+<Note>
+  La clause `ON` du `ASOF JOIN` est requise et spécifie une condition de correspondance exacte, en plus de la condition de correspondance non exacte de la clause `AND`.
+</Note>
+
+<div id="summary">
+  ## Résumé
+</div>
+
+Ce guide explique comment ClickHouse prend en charge tous les types standard de JOIN SQL, ainsi que des JOIN spécialisés pour les requêtes analytiques.
+Consultez la documentation de l’instruction [JOIN](/fr/reference/statements/select/join) pour plus de détails sur les JOIN.

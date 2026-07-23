@@ -1,0 +1,118 @@
+---
+alias: []
+description: 'Documentação do formato Values'
+input_format: true
+keywords: ['Values']
+output_format: true
+slug: /interfaces/formats/Values
+title: 'Values'
+doc_type: 'guide'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `Values` imprime cada linha entre colchetes.
+
+* As linhas são separadas por vírgulas, sem vírgula após a última linha.
+* Os valores dentro dos colchetes também são separados por vírgulas.
+* Os números são exibidos em formato decimal, sem aspas.
+* Arrays são exibidos em `[]`.
+* Strings, datas e valores de data e hora são exibidos entre aspas.
+* As regras de escape e parsing são semelhantes às do formato [TabSeparated](/pt-BR/reference/formats/TabSeparated/TabSeparated).
+
+Durante a formatação, espaços extras não são inseridos, mas, durante o parsing, eles são permitidos e ignorados (exceto espaços dentro de valores de array, que não são permitidos).
+[`NULL`](/pt-BR/reference/syntax) é representado como `NULL`.
+
+O conjunto mínimo de caracteres que você precisa escapar ao passar dados no formato `Values`:
+
+* aspas simples
+* barras invertidas
+
+Este é o formato usado em `INSERT INTO t VALUES ...`, mas você também pode usá-lo para formatar resultados de consulta.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="inserting-data">
+  ### Inserindo dados
+</div>
+
+O formato `Values` é o usado por `INSERT`, então qualquer instrução `INSERT ... VALUES`
+já o utiliza. A cláusula `FORMAT Values` pode ser especificada explicitamente, e as
+linhas podem ser fornecidas por um fluxo ou por um arquivo. Cada linha é uma tupla
+entre parênteses, com os valores separados por vírgulas, e as próprias tuplas também
+separadas por vírgulas:
+
+```sql title="Query"
+CREATE TABLE t (id UInt32, name String, values Array(UInt32)) ENGINE = Memory;
+
+INSERT INTO t FORMAT Values (1, 'a', [10, 20]), (2, 'b', [30]);
+
+SELECT * FROM t ORDER BY id;
+```
+
+```response title="Response"
+┌─id─┬─name─┬─values──┐
+│  1 │ a    │ [10,20] │
+│  2 │ b    │ [30]    │
+└────┴──────┴─────────┘
+```
+
+<div id="using-expressions">
+  ### Usando expressões na entrada
+</div>
+
+Ao contrário da maioria dos formatos de entrada, `Values` pode avaliar expressões SQL em cada campo,
+em vez de aceitar apenas literais. Isso é controlado por
+[`input_format_values_interpret_expressions`](#format-settings) (ativado por
+padrão): quando um campo não pode ser lido pelo parser rápido de streaming, o ClickHouse
+recorre ao parser SQL e interpreta o campo como uma expressão.
+
+```sql title="Query"
+CREATE TABLE prices (item String, total UInt32) ENGINE = Memory;
+
+INSERT INTO prices FORMAT Values ('apple', 3 * 4), ('pear', length('hello') + 10);
+
+SELECT * FROM prices ORDER BY total;
+```
+
+```response title="Response"
+┌─item──┬─total─┐
+│ apple │    12 │
+│ pear  │    15 │
+└───────┴───────┘
+```
+
+<div id="selecting-data">
+  ### Seleção de dados
+</div>
+
+O formato `Values` também pode ser usado para formatar resultados de consulta. Números são
+escritos sem aspas, arrays em `[]` e strings e datas entre aspas simples;
+aspas simples e barras invertidas dentro de strings são escapadas com uma barra invertida, e
+[`NULL`](/pt-BR/reference/syntax) é escrito como `NULL`:
+
+```sql title="Query"
+SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
+```
+
+```response title="Response"
+(1,'O\'Reilly',NULL)
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+| Configuração                                                                                                                             | Descrição                                                                                                                                                                                                                          | Padrão |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`input_format_values_interpret_expressions`](/pt-BR/reference/settings/formats#input_format_values_interpret_expressions)                     | se o campo não puder ser analisado pelo parser de streaming, execute o parser SQL e tente interpretá-lo como uma expressão SQL.                                                                                                    | `true` |
+| [`input_format_values_deduce_templates_of_expressions`](/pt-BR/reference/settings/formats#input_format_values_deduce_templates_of_expressions) | se o campo não puder ser analisado pelo parser de streaming, execute o parser SQL, deduza o modelo da expressão SQL, tente analisar todas as linhas usando esse modelo e, em seguida, interprete a expressão para todas as linhas. | `true` |
+| [`input_format_values_accurate_types_of_literals`](/pt-BR/reference/settings/formats#input_format_values_accurate_types_of_literals)           | ao analisar e interpretar expressões usando um modelo, verifique o tipo real do literal para evitar possíveis problemas de overflow e precisão.                                                                                    | `true` |

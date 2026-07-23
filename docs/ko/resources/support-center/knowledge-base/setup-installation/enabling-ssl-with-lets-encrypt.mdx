@@ -1,0 +1,180 @@
+---
+title: 단일 ClickHouse 서버에서 Let's Encrypt로 SSL을 설정하는 방법
+description: 인증서 발급, 구성, 검증을 포함해 Let's Encrypt를 사용하여 단일 ClickHouse 서버에 SSL을 설정하는 방법을 알아봅니다.
+date: 2024-12-11
+tags: ['보안 및 인증']
+keywords: ['SSL', 'Let/`s Encrypt']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="steps-to-follow">
+  ## 따라야 할 단계
+</div>
+
+다음 단계에 따라 무료 자동화 공개 인증 기관(CA)인 [Let&#39;s Encrypt](https://letsencrypt.org/)를 사용해 단일 ClickHouse 서버에서 SSL을 활성화할 수 있습니다. Let&#39;s Encrypt는 누구나 HTTPS로 웹사이트를 쉽게 보호할 수 있도록 설계되었습니다. 인증서 발급과 갱신 과정을 자동화하므로 수동 개입 없이도 웹사이트를 안전하게 유지할 수 있습니다.
+
+<Note>
+  이 가이드에서는 ClickHouse가 표준 패키지 경로에 설치되어 있다고 가정합니다. 모든 예시에서는 도메인 `product-test-server.clickhouse-dev.com`을 사용합니다. 사용 중인 도메인에 맞게 바꾸십시오.
+</Note>
+
+1. 서버를 가리키는 DNS `A` 또는 `AAAA` 레코드가 있는지 확인하십시오. 이는 Linux 도구 `dig`를 사용해 확인할 수 있습니다. 예를 들어 Cloudflare DNS 서버 `1.1.1.1`을 사용할 때 `product-test-server.clickhouse-dev.com`에 대한 응답은 다음과 같습니다.
+
+<br />
+
+```bash
+dig @1.1.1.1 product-test-server.clickhouse-dev.com
+
+; <<>> DiG 9.18.28-0ubuntu0.22.04.1-Ubuntu <<>> @1.1.1.1 product-test-server.clickhouse-dev.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22315
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;product-test-server.clickhouse-dev.com.    IN A
+
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+
+;; Query time: 52 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)
+;; WHEN: Thu Dec 12 09:37:33 UTC 2024
+;; MSG SIZE  rcvd: 83
+```
+
+아래 섹션에서 A 레코드가 존재하는지 확인하세요.
+
+```bash
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+```
+
+2. 서버에서 80번 포트를 여십시오. 이 포트는 certbot과 ACME 프로토콜을 사용한 인증서 자동 갱신에 사용됩니다. AWS에서는 [인스턴스에 연결된 Security Group을 수정하여](https://repost.aws/knowledge-center/connect-http-https-ec2) 이를 수행할 수 있습니다.
+
+<br />
+
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="80번 포트가 열려 있는 AWS Security Group 구성 화면" border />
+
+3. 예를 들어 `apt`를 사용하여 [`certbot`](https://certbot.eff.org/instructions)을 설치하십시오
+
+<br />
+
+```bash
+sudo apt install certbot
+```
+
+4. SSL 인증서를 발급받습니다
+
+<br />
+
+```bash
+sudo certbot certonly
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: Spin up a temporary webserver (standalone)
+2: Place files in webroot directory (webroot)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Please enter the domain name(s) you would like on your certificate (comma and/or
+space separated) (Enter 'c' to cancel): product-test-server.clickhouse-dev.com
+Requesting a certificate for product-test-server.clickhouse-dev.com
+
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/privkey.pem
+This certificate expires on 2025-03-12.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+```
+
+<Note>
+  서버에서 웹 서버가 실행되고 있지 않으므로, (1) Certbot이 독립 실행형 임시 웹 서버를 사용하도록 허용하는 옵션을 사용합니다.
+</Note>
+
+요청되면 서버의 전체 도메인 이름(예: `product-test-server.clickhouse-dev.com`)을 입력하십시오.
+
+<Note>
+  Let&#39;s Encrypt는 특정 유형의 도메인에 대해서는 인증서를 발급하지 않는 정책을 적용합니다. 예를 들어 퍼블릭 클라우드 제공업체가 생성한 도메인(AWS `*.compute.amazonaws.com` 도메인 등)이 이에 해당합니다. 이러한 도메인은 공유 인프라로 간주되며, 보안 및 악용 방지를 위해 차단됩니다.
+</Note>
+
+5. 인증서를 ClickHouse 디렉터리로 복사합니다.
+
+<br />
+
+```bash
+echo '* * * * * root cp -u /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/*.pem /etc/clickhouse-server/ && chown clickhouse:clickhouse /etc/clickhouse-server/*.pem && chmod 400 /etc/clickhouse-server/*.pem' | sudo tee /etc/cron.d/copy-certificates
+```
+
+이 명령은 ClickHouse 서버의 Let&#39;s Encrypt SSL 인증서 관리를 자동화하는 cron 작업을 설정합니다. 이 작업은 root 사용자로 매분 실행되며, 파일이 업데이트된 경우에만 Let&#39;s Encrypt 디렉터리의 .pem 파일을 ClickHouse 서버의 구성 디렉터리로 복사합니다. 복사 후에는 스크립트가 파일 소유자를 clickhouse 사용자 및 그룹으로 변경하여 서버가 필요한 접근 권한을 갖도록 합니다. 또한 엄격한 파일 보안을 유지하기 위해 복사된 파일에 안전한 읽기 전용 권한(`chmod 400`)을 설정합니다. 이를 통해 수동 작업 없이도 ClickHouse 서버가 항상 최신 SSL 인증서에 접근할 수 있어 보안을 유지하고 운영 오버헤드를 최소화할 수 있습니다.
+
+6. `clickhouse-server`에서 이러한 인증서를 사용하도록 구성합니다.
+
+<br />
+
+```bash
+echo "https_port: 8443
+tcp_port_secure: 9440
+openSSL:
+ server:
+ certificateFile: '/etc/clickhouse-server/fullchain.pem'
+ privateKeyFile: '/etc/clickhouse-server/privkey.pem'
+ disableProtocols: 'sslv2,sslv3,tlsv1,tlsv1_1'" | sudo tee /etc/clickhouse-server/config.d/ssl.yaml
+```
+
+7. ClickHouse 서버 다시 시작
+
+<br />
+
+```bash
+sudo clickhouse restart
+```
+
+8. ClickHouse가 SSL을 통해 통신할 수 있는지 검증합니다
+
+<br />
+
+```bash
+curl https://product-test-server.clickhouse-dev.com:8443/
+
+Ok.
+```
+
+마지막 단계가 작동하려면 8443 포트에 접근할 수 있어야 할 수 있습니다. 예를 들어 AWS의 Security Group에 해당 포트를 포함해야 합니다. 또는 ClickHouse에 server에서만 접근하려는 경우 hosts 파일을 다음과 같이 수정하십시오.
+
+```bash
+echo "127.0.0.1 product-test-server.clickhouse-dev.com" | sudo tee -a /etc/hosts
+```
+
+<Warning>
+  와일드카드 주소에서 연결을 허용하는 경우, 다음 조치 중 하나 이상이 적용되었는지 확인하십시오:
+
+  * server는 방화벽으로 보호되며, 신뢰할 수 없는 네트워크에서 접근할 수 없어야 합니다;
+  * 모든 사용자는 네트워크 주소의 부분 집합으로 제한되어야 합니다(users.xml 참조);
+  * 모든 사용자는 강력한 비밀번호를 사용해야 하며, 보안(TLS) interface만 접근 가능해야 하거나 연결은 TLS interface를 통해서만 이루어져야 합니다.
+  * 비밀번호가 없는 사용자는 읽기 전용 접근 권한만 가져야 합니다.
+
+  관련 항목: https://www.shodan.io/search?query=clickhouse
+
+  블로그 [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)는 Public instance를 안전하게 보호하는 방법을 안내하는 참고 자료로 활용할 수 있습니다.
+</Warning>
+
+다음 내용은 ClickHouse가 실행 중인 로컬 머신에서 연결하는 경우에도 동일하게 작동합니다. `product-test-server.clickhouse-dev.com`을 통해 연결하려면 다음에서 9440 포트를 여십시오:
+
+```bash
+clickhouse client --secure --user default --password <password>
+```

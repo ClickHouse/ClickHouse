@@ -1,0 +1,49 @@
+---
+description: 'La función de tabla permite leer datos desde el clúster de YTsaurus.'
+sidebarTitle: 'ytsaurus'
+slug: /sql-reference/table-functions/ytsaurus
+title: 'ytsaurus'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="ytsaurus-table-function">
+  # Función de tabla YTsaurus
+</div>
+
+<ExperimentalBadge />
+
+La función de tabla permite leer datos desde el clúster de YTsaurus.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
+```
+
+<Info>
+  Esta es una característica experimental que puede cambiar de forma incompatible con versiones anteriores en futuras versiones.
+  Habilite el uso de la función de tabla YTsaurus
+  con la opción [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/es/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine).
+  Ejecute el comando `set allow_experimental_ytsaurus_table_function = 1`.
+</Info>
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+* `http_proxy_url` — URL del proxy HTTP de YTsaurus.
+* `cypress_path` — Ruta de Cypress al origen de datos.
+* `oauth_token` — Token de OAuth.
+* `format` — El [formato](/es/reference/formats/index) del origen de datos.
+
+**Valor devuelto**
+
+Una tabla con la estructura especificada para leer datos de la ruta de Cypress especificada en el clúster de YTsaurus.
+
+**Ver también**
+
+* [motor de YTsaurus](/es/reference/engines/table-engines/integrations/ytsaurus)

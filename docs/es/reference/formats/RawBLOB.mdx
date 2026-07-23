@@ -1,0 +1,66 @@
+---
+description: 'Documentación sobre el formato RawBLOB'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+Los formatos `RawBLOB` leen todos los datos de entrada como un único valor. Solo se puede analizar una tabla con un único campo de tipo [`String`](/es/reference/data-types/string) o similar.
+El resultado se genera en un formato binario, sin delimitadores ni caracteres de escape. Si se genera más de un valor, el formato es ambiguo y será imposible volver a leer los datos.
+
+<div id="raw-formats-comparison">
+  ### Comparación de formatos Raw
+</div>
+
+A continuación se comparan los formatos `RawBLOB` y [`TabSeparatedRaw`](/es/reference/formats/TabSeparated/TabSeparatedRaw).
+
+`RawBLOB`:
+
+* los datos se generan en formato binario, sin caracteres de escape;
+* no hay delimitadores entre los valores;
+* no hay salto de línea al final de cada valor.
+
+`TabSeparatedRaw`:
+
+* los datos se generan sin caracteres de escape;
+* las filas contienen valores separados por tabulaciones;
+* hay un salto de línea después del último valor de cada fila.
+
+A continuación se comparan los formatos `RawBLOB` y [RowBinary](/es/reference/formats/RowBinary/RowBinary).
+
+`RawBLOB`:
+
+* los campos String se generan sin prefijo de longitud.
+
+`RowBinary`:
+
+* los campos String se representan como una longitud en formato varint (LEB128 sin signo), seguida de los bytes de la cadena.
+
+Cuando se pasan datos vacíos a la entrada `RawBLOB`, ClickHouse lanza una excepción:
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## Ajustes de formato
+</div>

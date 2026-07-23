@@ -1,0 +1,66 @@
+---
+description: 'RawBLOBフォーマットのリファレンス'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+`RawBLOB`フォーマットは、入力データ全体を単一の値として読み取ります。パースできるのは、[`String`](/ja/reference/data-types/string)型またはそれに類する型の単一のフィールドを持つテーブルだけです。
+結果は、区切り文字やエスケープを使わないバイナリ形式で出力されます。複数の値を出力すると、このフォーマットは曖昧になり、データを読み戻せなくなります。
+
+<div id="raw-formats-comparison">
+  ### Rawフォーマットの比較
+</div>
+
+以下は、`RawBLOB` フォーマットと [`TabSeparatedRaw`](/ja/reference/formats/TabSeparated/TabSeparatedRaw) の比較です。
+
+`RawBLOB`:
+
+* データはバイナリ形式で出力され、エスケープは行われません。
+* 値の間に区切り文字はありません。
+* 各値の末尾に改行はありません。
+
+`TabSeparatedRaw`:
+
+* データはエスケープされずに出力されます。
+* 各行の値はタブで区切られます。
+* 各行では、最後の値の後に改行が入ります。
+
+以下は、`RawBLOB` フォーマットと [RowBinary](/ja/reference/formats/RowBinary/RowBinary) フォーマットの比較です。
+
+`RawBLOB`:
+
+* String フィールドは、長さのプレフィックスなしで出力されます。
+
+`RowBinary`:
+
+* String フィールドは、varint フォーマットの長さ (符号なし [LEB128] (https://en.wikipedia.org/wiki/LEB128)) と、それに続く文字列のバイト列で表現されます。
+
+空のデータが `RawBLOB` への入力として渡されると、ClickHouse は例外をスローします。
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

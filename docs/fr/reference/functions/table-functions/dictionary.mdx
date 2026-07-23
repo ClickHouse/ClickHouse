@@ -1,0 +1,67 @@
+---
+description: 'Affiche les données du dictionnaire sous forme de table ClickHouse. Fonctionne de la même manière
+  que le moteur Dictionnaire.'
+sidebarTitle: 'dictionnaire'
+slug: /sql-reference/table-functions/dictionary
+title: 'dictionnaire'
+doc_type: 'reference'
+---
+
+Affiche les données du [dictionnaire](/fr/reference/statements/create/dictionary) sous forme de table ClickHouse. Fonctionne de la même manière que le moteur [Dictionnaire](/fr/reference/engines/table-engines/special/dictionary).
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+dictionary('dict')
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `dict` — Nom d’un dictionnaire. [String](/fr/reference/data-types/string).
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Une table ClickHouse.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Table d’entrée `dictionary_source_table` :
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+Créez un dictionnaire :
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Moteur Dictionary](/fr/reference/engines/table-engines/special/dictionary)

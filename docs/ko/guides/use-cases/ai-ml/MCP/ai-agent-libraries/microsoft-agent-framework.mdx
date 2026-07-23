@@ -1,0 +1,152 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/microsoft-agent-framework
+sidebarTitle: 'Microsoft Agent framework 통합'
+title: 'Microsoft Agent framework와 ClickHouse MCP 서버로 AI 에이전트를 구축하는 방법'
+description: 'Microsoft Agent framework와 ClickHouse MCP 서버로 AI 에이전트를 구축하는 방법을 알아봅니다'
+keywords: ['ClickHouse', 'MCP', 'Microsoft']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+이 가이드에서는 [Microsoft Agent framework](https://github.com/microsoft/agent-framework)를 사용해 [ClickHouse SQL playground](https://sql.clickhouse.com/)와 [ClickHouse MCP 서버](https://github.com/ClickHouse/mcp-clickhouse)를 통해 상호작용할 수 있는 AI 에이전트를 구축하는 방법을 알아봅니다.
+
+<Info>
+  **예시 노트북**
+
+  이 예시는 [examples 리포지토리](https://github.com/ClickHouse/examples/blob/main/ai/mcp/microsoft-agent-framework/microsoft-agent-framework.ipynb)에서 노트북 형태로 확인할 수 있습니다.
+</Info>
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+* 시스템에 Python이 설치되어 있어야 합니다.
+* 시스템에 `pip`가 설치되어 있어야 합니다.
+* OpenAI API Key가 필요합니다.
+
+다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
+
+<Steps>
+  <Step>
+    ## 라이브러리 설치
+
+    다음 명령을 실행하여 Microsoft Agent 프레임워크 라이브러리를 설치하십시오:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q agent-framework --pre
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## 자격 증명 설정
+
+    다음으로 OpenAI API Key를 입력해야 합니다:
+
+    ```python
+    import os, getpass
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter OpenAI API Key:")
+    ```
+
+    ```response title="Response"
+    Enter OpenAI API Key: ········
+    ```
+
+    다음으로, ClickHouse SQL playground에 연결하는 데 필요한 자격 증명을 설정합니다:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## MCP 서버와 Microsoft Agent framework 에이전트 초기화
+
+    이제 ClickHouse MCP 서버가 ClickHouse SQL Playground를 가리키도록 구성하고,
+    에이전트도 초기화한 다음 질문을 하나 해보겠습니다:
+
+    ```python
+    from agent_framework import ChatAgent, MCPStdioTool
+    from agent_framework.openai import OpenAIResponsesClient
+    ```
+
+    ```python
+    clickhouse_mcp_server = MCPStdioTool(
+        name="clickhouse",
+        command="uv",
+        args=[
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+        ],
+        env=env
+    )
+
+    async with ChatAgent(
+        chat_client=OpenAIResponsesClient(model_id="gpt-5-mini-2025-08-07"),
+        name="HousePricesAgent",
+        instructions="You are a helpful assistant that can help query a ClickHouse database",
+        tools=clickhouse_mcp_server,
+    ) as agent:
+        query = "Tell me about UK property prices over the last five years"
+        print(f"User: {query}")
+        async for chunk in agent.run_stream(query):
+            print(chunk.text, end="", flush=True)
+        print("\n\n")
+    ```
+
+    이 스크립트를 실행한 결과는 아래와 같습니다:
+
+    ```response title="Response"
+    사용자: 지난 5년간 영국 부동산 가격에 대해 알려주세요
+    uk.uk_price_paid_simple_partitioned 테이블에서 지난 5년간(toStartOfMonth(date), 2020년 10월 → 2025년 8월)의 월별 영국 매매가 기록을 살펴보았습니다. 요약 및 주요 사항:
+
+    측정 항목
+    - 지표: 월별 중앙값 가격, 평균 가격, 거래 건수(매매가 기록).
+    - 기간: 2020-10-01부터 2025-08-01까지의 월별 데이터 (오늘 기준 최근 5년).
+
+    주요 발견 사항
+    - 중앙값 가격이 £255,000 (2020년 10월)에서 £294,500 (2025년 8월)으로 상승 — 5년간 약 +15.4% 증가.
+      - 중앙값의 연평균 복합 성장률(CAGR) ≈ 연 +2.9%.
+    - 평균 가격은 약 £376,538 (2020년 10월)에서 £364,653 (2025년 8월)으로 소폭 하락 — 5년간 약 ≈ −3.2% 감소.
+      - 평균 가격 CAGR ≈ 연 −0.6%.
+    - 이러한 괴리(중앙값 상승, 평균 소폭 하락)는 거래 구성의 변화(초고가 매물 감소 또는 기타 구성 효과)를 시사하며, 평균은 이상값에 민감한 반면 중앙값은 그렇지 않습니다.
+
+    데이터의 주목할 만한 패턴 및 이벤트
+    - 2020–2021년의 강한 상승세(중앙값과 평균 모두에서 확인 가능)는 해당 기간에 나타난 팬데믹 이후 / 인지세 / 수요 주도 시장 급등과 일치합니다.
+    - 2022년 중반경 평균 가격 정점(평균값 ~£440k), 이후 2022–2023년에 걸쳐 전반적인 완화 및 2023–2024년경 안정화.
+    - 일부 월에서 큰 변동성 또는 비정상적인 건수가 나타납니다(예: 2021년 6월에 매우 높은 거래 건수; 2025년 3월은 높은 중앙값을 보이지만 2025년 4–5월은 낮은 건수). 최근 월(2025년 중반)은 테이블에서 거래 건수가 훨씬 낮게 나타나는데, 이는 최근 월의 보고가 불완전함을 나타내는 경우가 많으므로 최근 월별 수치는 주의하여 해석해야 합니다.
+
+    예시 데이터 포인트 (쿼리 결과)
+    - 2020-10: 중앙값 £255,000, 평균 £376,538, 거래 건수 89,125
+    - 2022-08: 평균 최고치 ~£441,209 (중앙값 ~£295,000)
+    - 2025-03: 중앙값 ~£314,750 (가장 높은 중앙값 중 하나)
+    - 2025-08: 중앙값 £294,500, 평균 £364,653, 거래 건수 18,815 (낮은 건수 — 불완전한 데이터일 가능성 높음)
+
+    주의 사항
+    - 이는 거래 가격(Price Paid 데이터셋)으로, 실제 주택 "가치"와 다를 수 있습니다.
+    - 평균은 구성 및 이상값에 민감합니다. 매매된 부동산 유형의 변화(예: 아파트 대 단독주택 비율, 지역 구성)는 평균과 중앙값에 각각 다른 영향을 미칩니다.
+    - 최근 월은 불완전할 수 있으며, 거래 건수가 비정상적으로 낮은 월은 주의하여 해석해야 합니다.
+    - 이는 전국 집계 데이터로, 지역별 차이가 상당할 수 있습니다.
+
+    원하신다면 다음을 제공해 드릴 수 있습니다:
+    - 시간에 따른 중앙값 및 평균 차트 생성.
+    - 전년 대비 비교 또는 다른 시작/종료 월에 대한 CAGR 계산.
+    - 지역/군/도시, 부동산 유형(아파트, 테라스하우스, 반독립주택, 단독주택) 또는 가격대별 분석.
+    - 지난 5년간 가격 상승률 상위/하위 지역 표 제공.
+
+    어떤 후속 분석을 원하시나요?
+
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,47 @@
+---
+description: 'Une technique expérimentale visant à définir des limites de mémoire
+  plus flexibles pour les requêtes.'
+slug: /operations/settings/memory-overcommit
+title: 'Surallocation de mémoire'
+doc_type: 'reference'
+---
+
+La surallocation de mémoire est une technique expérimentale visant à définir des limites de mémoire plus flexibles pour les requêtes.
+
+Cette technique consiste à introduire des paramètres représentant la quantité de mémoire garantie qu&#39;une requête peut utiliser.
+Lorsque la surallocation de mémoire est activée et que la limite de mémoire est atteinte, ClickHouse sélectionne la requête la plus surallouée et tente de libérer de la mémoire en interrompant cette requête.
+
+Lorsque la limite de mémoire est atteinte, toute requête attend un certain temps lorsqu&#39;elle tente d&#39;allouer davantage de mémoire.
+Si le délai d&#39;expiration est dépassé et que de la mémoire est libérée, la requête poursuit son exécution.
+Sinon, une exception est levée et la requête est interrompue.
+
+La requête à arrêter ou à interrompre est sélectionnée par le tracker de surallocation global ou utilisateur, selon la limite de mémoire atteinte.
+Si le tracker de surallocation ne peut pas choisir de requête à arrêter, l&#39;exception MEMORY&#95;LIMIT&#95;EXCEEDED est levée.
+
+<div id="user-overcommit-tracker">
+  ## Tracker de surallocation utilisateur
+</div>
+
+Le tracker de surallocation utilisateur identifie la requête dont le ratio de surallocation est le plus élevé dans la liste des requêtes de l&#39;utilisateur.
+Le ratio de surallocation d&#39;une requête est calculé en divisant le nombre d&#39;octets alloués par la valeur du paramètre `memory_overcommit_ratio_denominator_for_user`.
+
+Si `memory_overcommit_ratio_denominator_for_user` pour la requête est égal à zéro, le tracker de surallocation ne sélectionnera pas cette requête.
+
+Le délai d&#39;attente est défini par le paramètre `memory_usage_overcommit_max_wait_microseconds`.
+
+**Exemple**
+
+```sql
+SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=4000, memory_usage_overcommit_max_wait_microseconds=500
+```
+
+<div id="global-overcommit-tracker">
+  ## Tracker global de surallocation
+</div>
+
+Le tracker global de surallocation trouve, dans la liste de toutes les requêtes, celle qui présente le ratio de surallocation le plus élevé.
+Dans ce cas, le ratio de surallocation est calculé comme le nombre d’octets alloués divisé par la valeur du paramètre `memory_overcommit_ratio_denominator`.
+
+Si `memory_overcommit_ratio_denominator` pour la requête est égal à zéro, le tracker de surallocation ne choisira pas cette requête.
+
+Le délai d’attente maximal est défini par le paramètre `memory_usage_overcommit_max_wait_microseconds` dans le fichier de configuration.

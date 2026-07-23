@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Metabase'
+slug: /integrations/metabase
+keywords: ['Metabase']
+description: 'Metabase — это простой в использовании инструмент с открытым исходным кодом и графическим интерфейсом для анализа ваших данных.'
+title: 'Подключение Metabase к ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+  - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Metabase — это простой в использовании инструмент с открытым исходным кодом и удобным интерфейсом для работы с данными. Metabase — это Java-приложение, которое можно запустить, просто <a href="https://www.metabase.com/start/oss/jar" target="_blank">скачав JAR-файл</a> и выполнив команду `java -jar metabase.jar`. Metabase подключается к ClickHouse с помощью JDBC-драйвера, который нужно скачать и поместить в папку `plugins`:
+
+<div id="goal">
+  ## Цель
+</div>
+
+В этом руководстве вы будете задавать вопросы к данным в ClickHouse через Metabase и визуализировать полученные ответы. Один из результатов будет выглядеть так:
+
+<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Визуализация круговой диаграммы в Metabase с данными из ClickHouse" border />
+
+<p />
+
+<Tip>
+  **Добавьте данные**
+
+  Если у вас нет датасета для работы, можно добавить один из примеров. В этом руководстве используется датасет [UK Price Paid](/ru/get-started/sample-datasets/uk-price-paid), так что можете выбрать его. В этой категории документации есть и другие варианты.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2--download-the-clickhouse-plugin-for-metabase">
+  ## 2.  Загрузите плагин ClickHouse для Metabase
+</div>
+
+1. Если у вас нет папки `plugins`, создайте её в качестве подпапки в каталоге, где сохранён `metabase.jar`.
+
+2. Плагин представляет собой JAR-файл с именем `clickhouse.metabase-driver.jar`. Загрузите последнюю версию JAR-файла по адресу <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
+
+3. Сохраните `clickhouse.metabase-driver.jar` в папке `plugins`.
+
+4. Запустите (или перезапустите) Metabase, чтобы драйвер загрузился корректно.
+
+5. Откройте Metabase по адресу <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>. При первом запуске вы увидите экран приветствия, после чего нужно будет ответить на ряд вопросов. Если система предложит выбрать базу данных, выберите &quot;**Я добавлю данные позже**&quot;:
+
+<div id="3--connect-metabase-to-clickhouse">
+  ## 3.  Подключите Metabase к ClickHouse
+</div>
+
+1. Нажмите значок шестерёнки в правом верхнем углу и выберите **Admin Settings**, чтобы перейти на <a href="http://localhost:3000/admin/settings/setup" target="_blank">страницу администратора Metabase</a>.
+
+2. Нажмите **Add a database**. Либо откройте вкладку **Databases** и нажмите кнопку **Add database**.
+
+3. Если драйвер установлен правильно, в выпадающем меню **Database type** появится **ClickHouse**:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Выбор базы данных в Metabase, где ClickHouse доступен как один из вариантов" border />
+
+4. Укажите для своей базы данных **Display name** — это параметр Metabase, поэтому можно использовать любое имя.
+
+5. Введите сведения о подключении к базе данных ClickHouse. Включите защищённое подключение, если ваш сервер ClickHouse настроен на использование SSL. Например:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Форма сведений о подключении в Metabase для базы данных ClickHouse" border />
+
+6. Нажмите кнопку **Save**, и Metabase просканирует базу данных на наличие таблиц.
+
+<div id="4-run-a-sql-query">
+  ## 4. Выполните SQL-запрос
+</div>
+
+1. Выйдите из **настроек Admin**, нажав кнопку **Exit admin** в правом верхнем углу.
+
+2. В правом верхнем углу откройте меню **+ New** и обратите внимание, что здесь можно задавать вопросы, выполнять SQL-запросы и создавать панели мониторинга:
+
+   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Меню New в Metabase с вариантами создания вопросов, SQL-запросов и панелей мониторинга" border />
+
+3. Например, вот SQL-запрос к таблице `uk_price_paid`, который возвращает среднюю цену покупки по годам с 1995 по 2022 год:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="Редактор SQL в Metabase с запросом к данным UK price paid" border />
+
+<div id="5-ask-a-question">
+  ## 5. Задайте вопрос
+</div>
+
+1. Нажмите **+ New** и выберите **Question**. Обратите внимание, что вопрос можно строить, начиная с базы данных и таблицы. Например, ниже вопрос задаётся к таблице `uk_price_paid` в базе данных `default`. Вот простой пример вопроса, который вычисляет среднюю цену по городам в графстве Greater Manchester:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Интерфейс конструктора вопросов Metabase с данными о ценах в Великобритании" border />
+
+2. Нажмите кнопку **Visualize**, чтобы увидеть результаты в виде таблицы.
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Визуализация Metabase с табличными результатами средней цены по городам" border />
+
+3. Под результатами нажмите кнопку **Visualization**, чтобы изменить тип визуализации на столбчатую диаграмму (или любой другой доступный вариант):
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Круговая диаграмма Metabase со средней ценой по городам в Greater Manchester" border />
+
+<div id="learn-more">
+  ## Узнайте больше
+</div>
+
+Дополнительную информацию о Metabase и создании панелей мониторинга можно найти, <a href="https://www.metabase.com/docs/latest/" target="_blank">обратившись к документации Metabase</a>.

@@ -2228,6 +2228,18 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, L
     return normalizeZooKeeperPath(path, check_starts_with_slash, log);
 }
 
+String extractZooKeeperPathAndCollapseTrailingSlashes(const String & path, bool check_starts_with_slash, LoggerPtr log)
+{
+    String result = extractZooKeeperPath(path, check_starts_with_slash, log);
+    /// extractZooKeeperPath (via normalizeZooKeeperPath) strips only a single trailing slash, so a path
+    /// like "/a//" keeps a leftover one. Collapse all of them (keeping the leading root '/') to get a
+    /// canonical form: the interpreter concatenates "path + /replicas", and comparisons must treat
+    /// "/a", "/a/" and "/a//" as the same keeper path.
+    while (result.size() > 1 && result.back() == '/')
+        result.pop_back();
+    return result;
+}
+
 String getSequentialNodeName(const String & prefix, UInt64 number)
 {
     /// NOTE Sequential counter in ZooKeeper is Int32.

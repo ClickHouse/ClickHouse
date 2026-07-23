@@ -1,0 +1,91 @@
+---
+description: 'يتيح لك محرك قاعدة البيانات DataLakeCatalog ربط ClickHouse بكتالوجات البيانات الخارجية والاستعلام عن البيانات بتنسيقات الجداول المفتوحة'
+sidebarTitle: 'DataLakeCatalog'
+slug: /engines/database-engines/datalakecatalog
+title: 'DataLakeCatalog'
+doc_type: 'reference'
+---
+
+يتيح لك محرك قاعدة البيانات `DataLakeCatalog` ربط ClickHouse بكتالوجات
+البيانات الخارجية والاستعلام عن البيانات بتنسيقات الجداول المفتوحة من دون
+الحاجة إلى تكرار البيانات. ويحوّل ذلك ClickHouse إلى محرك استعلامات قوي يعمل
+بسلاسة مع البنية التحتية القائمة لبحيرة البيانات لديك.
+
+<div id="supported-catalogs">
+  ## الكتالوجات المدعومة
+</div>
+
+يدعم محرك `DataLakeCatalog` كتالوجات البيانات التالية:
+
+* **AWS Glue Catalog** - لجداول Iceberg في بيئات AWS
+* **Databricks Unity Catalog** - لجداول Delta Lake وIceberg
+* **Hive Metastore** - كتالوج نظام Hadoop التقليدي
+* **REST Catalogs** - أي كتالوج يدعم مواصفة Iceberg REST
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+ستحتاج إلى تمكين الإعدادات التالية لاستخدام محرك `DataLakeCatalog`:
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
+SET allow_experimental_database_hms_catalog = 1;
+SET allow_experimental_database_paimon_rest_catalog = 1;
+```
+
+يمكن إنشاء قواعد بيانات باستخدام المحرك `DataLakeCatalog` وفق الصيغة التالية:
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint[, user, password])
+SETTINGS
+catalog_type,
+[...]
+```
+
+الإعدادات التالية مدعومة:
+
+| الإعداد                 | الوصف                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `catalog_type`          | نوع الكتالوج: `glue`، `unity` (Delta)، `rest` (Iceberg)، `hive`، `onelake` (Iceberg)                             |
+| `warehouse`             | اسم الـwarehouse/قاعدة البيانات المراد استخدامها في الكتالوج.                                                    |
+| `catalog_credential`    | بيانات اعتماد المصادقة الخاصة بالكتالوج (مثل مفتاح API أو رمز وصول)                                              |
+| `auth_header`           | رأس HTTP مخصص للمصادقة مع خدمة الكتالوج                                                                          |
+| `auth_scope`            | نطاق OAuth2 للمصادقة (إذا كنت تستخدم OAuth)                                                                      |
+| `storage_endpoint`      | URL نقطة النهاية للتخزين الأساسي                                                                                 |
+| `oauth_server_uri`      | URI لخادم تخويل OAuth2 للمصادقة                                                                                  |
+| `vended_credentials`    | قيمة منطقية تشير إلى ما إذا كان يجب استخدام بيانات الاعتماد التي يوفّرها الكتالوج (يدعم AWS S3 وAzure ADLS Gen2) |
+| `aws_access_key_id`     | معرّف مفتاح الوصول في AWS للوصول إلى S3/Glue (إذا لم تكن تستخدم بيانات الاعتماد التي يوفّرها الكتالوج)           |
+| `aws_secret_access_key` | مفتاح الوصول السري في AWS للوصول إلى S3/Glue (إذا لم تكن تستخدم بيانات الاعتماد التي يوفّرها الكتالوج)           |
+| `region`                | منطقة AWS الخاصة بالخدمة (مثل `us-east-1`)                                                                       |
+| `dlf_access_key_id`     | معرّف مفتاح الوصول للوصول إلى DLF                                                                                |
+| `dlf_access_key_secret` | مفتاح الوصول السري للوصول إلى DLF                                                                                |
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+راجع الأقسام التالية للاطلاع على أمثلة لاستخدام محرك `DataLakeCatalog`:
+
+* [Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog)
+* [Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog)
+* OneLake Catalog
+  يمكن استخدامه عند تمكين `allow_experimental_database_iceberg` أو `allow_database_iceberg`.
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint)
+SETTINGS
+    catalog_type = 'onelake',
+    warehouse = warehouse,
+    onelake_tenant_id = tenant_id,
+    oauth_server_uri = server_uri,
+    auth_scope = auth_scope,
+    onelake_client_id = client_id,
+    onelake_client_secret = client_secret;
+SHOW TABLES IN database_name;
+SELECT count() from database_name.table_name;
+```

@@ -1,0 +1,323 @@
+---
+slug: /use-cases/AI/jupyter-notebook
+sidebarTitle: '使用 Jupyter 笔记本和 chDB 探索数据'
+title: '使用 Jupyter 笔记本和 chDB 探索数据'
+description: '本指南介绍如何设置并使用 chDB，在 Jupyter 笔记本中探索来自 ClickHouse Cloud 或本地文件的数据'
+keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在本指南中，你将了解如何借助 [chDB](/zh/products/chdb/index) (由 ClickHouse 提供支持的高性能进程内 SQL OLAP Engine) ，在 Jupyter 笔记本中探索 ClickHouse Cloud 上的数据集。
+
+**前置条件**：
+
+* 一个虚拟环境
+* 一个可用的 ClickHouse Cloud 服务，以及你的[连接信息](/zh/products/cloud/guides/sql-console/connection-details)
+
+<Tip>
+  如果你还没有 ClickHouse Cloud 账户，可以[注册](https://console.clickhouse.cloud/signUp?loc=docs-juypter-chdb)试用，
+  并获得价值 300 美元的免费额度以开始使用。
+</Tip>
+
+**你将学到什么：**
+
+* 使用 chDB 在 Jupyter 笔记本中连接到 ClickHouse Cloud
+* 查询远程数据集并将结果转换为 Pandas DataFrame
+* 将云端数据与本地 CSV 文件结合起来进行分析
+* 使用 matplotlib 进行数据可视化
+
+我们将使用 UK Property Price 数据集，它是 ClickHouse Cloud 提供的入门数据集之一。
+其中包含 1995 年至 2024 年英国房屋成交价格的数据。
+
+<div id="setup">
+  ## 设置
+</div>
+
+要将此数据集添加到现有的 ClickHouse Cloud 服务中，请使用你的账户信息登录 [console.clickhouse.cloud](https://console.clickhouse.cloud/)。
+
+在左侧菜单中，点击 `Data sources`。然后点击 `Predefined sample data`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="添加示例数据集" />
+
+在英国房产成交价格数据 (4GB) 卡片中点击 `Get started`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="选择英国房价成交数据集" />
+
+然后点击 `Import dataset`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="导入英国房价成交数据集" />
+
+ClickHouse 将自动在 `default` 数据库中创建 `pp_complete` 表，并向该表填充 2892 万行价格数据。
+
+为降低凭据泄露的风险，我们建议你将 Cloud 用户名和密码添加为本地计算机上的环境变量。
+在终端中运行以下命令，将你的用户名和密码添加为环境变量：
+
+```bash
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=your_actual_password
+```
+
+<Note>
+  上述环境变量仅在当前终端会话期间有效。
+  如需永久生效，请将其添加到 shell 配置文件中。
+</Note>
+
+现在激活你的虚拟环境。
+在虚拟环境中，使用以下命令安装 Jupyter 笔记本：
+
+```python
+pip install notebook
+```
+
+使用以下命令启动 Jupyter 笔记本：
+
+```python
+jupyter notebook
+```
+
+此时应会打开一个新的浏览器窗口，并显示 `localhost:8888` 上的 Jupyter 界面。
+点击 `File` &gt; `New` &gt; `Notebook`，创建一个新的笔记本。
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="创建新笔记本" />
+
+系统会提示你选择一个内核。
+选择任意一个可用的 Python 内核，本示例中我们选择 `ipykernel`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="选择内核" />
+
+在空白单元格中，输入以下命令安装 chDB，我们将使用它连接到远程 ClickHouse Cloud 实例：
+
+```python
+pip install chdb
+```
+
+现在，你可以导入 chDB，并运行一个简单的查询，检查是否已正确完成所有设置：
+
+```python
+import chdb
+
+result = chdb.query("SELECT 'Hello, ClickHouse!' as message")
+print(result)
+```
+
+<div id="exploring-the-data">
+  ## 探索数据
+</div>
+
+UK price paid 数据集准备就绪后，且 chDB 已在 Jupyter 笔记本中运行起来，我们现在就可以开始探索这些数据了。
+
+假设我们想查看英国某个特定地区 (例如首都伦敦) 的房价如何随时间变化。
+ClickHouse 的 [`remoteSecure`](/zh/reference/functions/table-functions/remote) 函数可让你轻松从 ClickHouse Cloud 获取数据。
+你可以让 chDB 以进程内 Pandas DataFrame 的形式返回这些数据——这是一种方便且熟悉的数据处理方式。
+
+编写以下查询，从你的 ClickHouse Cloud 服务中拉取 UK price paid 数据，并将其转换为 `pandas.DataFrame`：
+
+```python
+import os
+from dotenv import load_dotenv
+import chdb
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+# 从 .env 文件加载环境变量
+load_dotenv()
+
+username = os.environ.get('CLICKHOUSE_USER')
+password = os.environ.get('CLICKHOUSE_PASSWORD')
+
+query = f"""
+SELECT 
+    toYear(date) AS year,
+    avg(price) AS avg_price
+FROM remoteSecure(
+'****.europe-west4.gcp.clickhouse.cloud',
+default.pp_complete,
+'{username}',
+'{password}'
+)
+WHERE town = 'LONDON'
+GROUP BY toYear(date)
+ORDER BY year;
+"""
+
+df = chdb.query(query, "DataFrame")
+df.head()
+```
+
+在上面的代码片段中，`chdb.query(query, "DataFrame")` 会运行指定的查询，并将结果以 Pandas DataFrame 的形式输出到终端。
+在这个查询中，我们使用 `remoteSecure` 函数连接到 ClickHouse Cloud。
+`remoteSecure` 函数接受以下参数：
+
+* 连接字符串
+* 要使用的数据库和表名称
+* 你的用户名
+* 你的密码
+
+作为安全最佳实践，建议优先使用环境变量来传递用户名和密码参数，而不是在函数中直接指定它们；当然，如果你愿意，也可以直接指定。
+
+`remoteSecure` 函数会连接到远程 ClickHouse Cloud 服务，运行查询并返回结果。
+具体耗时取决于数据量，可能需要几秒钟。
+在这个示例中，我们返回每年的平均价格，并通过 `town='LONDON'` 进行过滤。
+结果随后会以 DataFrame 的形式存储在名为 `df` 的变量中。
+
+`df.head` 仅显示返回数据的前几行：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="数据框预览" />
+
+在新单元格中运行以下命令，以检查各列的数据类型：
+
+```python
+df.dtypes
+```
+
+```response
+year          uint16
+avg_price    float64
+dtype: object
+```
+
+请注意，虽然在 ClickHouse 中 `date` 的类型是 `Date`，但在生成的 DataFrame 中，它的类型是 `uint16`。
+chDB 会在返回 DataFrame 时自动推断出最合适的类型。
+
+现在数据已经以一种熟悉的形式呈现出来，让我们看看伦敦房产价格如何随时间变化。
+
+在新的单元中，运行以下命令，使用 matplotlib 为伦敦绘制一个简单的时间与价格关系图表：
+
+```python
+plt.figure(figsize=(12, 6))
+plt.plot(df['year'], df['avg_price'], marker='o')
+plt.xlabel('Year')
+plt.ylabel('Price (£)')
+plt.title('Price of London property over time')
+
+# 每隔一年显示，避免标签过密
+years_to_show = df['year'][::2]  # 每隔一年
+plt.xticks(years_to_show, rotation=45)
+
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="数据框预览" />
+
+不出所料，伦敦的房价随着时间推移已经大幅上涨。
+
+一位数据科学家同事给我们发来一个包含更多住房相关变量的 .csv 文件，想了解
+伦敦售出房屋的数量随时间发生了怎样的变化。
+我们把其中一些变量与房价一起绘制出来，看看能否发现相关性。
+
+你可以使用 `file` File 表引擎直接读取本地机器上的文件。
+在一个新单元中，运行以下命令，根据本地 .csv 文件创建一个新的 DataFrame。
+
+```python
+query = f"""
+SELECT 
+    toYear(date) AS year,
+    sum(houses_sold)*1000
+    FROM file('/Users/datasci/Desktop/housing_in_london_monthly_variables.csv')
+WHERE area = 'city of london' AND houses_sold IS NOT NULL
+GROUP BY toYear(date)
+ORDER BY year;
+"""
+
+df_2 = chdb.query(query, "DataFrame")
+df_2.head()
+```
+
+<Accordion title="在一步中从多个源读取">
+  也可以在一步中从多个源读取。你可以使用下面这个带有 `JOIN` 的查询来实现：
+
+  ```python
+  query = f"""
+  SELECT 
+      toYear(date) AS year,
+      avg(price) AS avg_price, housesSold
+  FROM remoteSecure(
+  '****.europe-west4.gcp.clickhouse.cloud',
+  default.pp_complete,
+  '{username}',
+  '{password}'
+  ) AS remote
+  JOIN (
+    SELECT 
+      toYear(date) AS year,
+      sum(houses_sold)*1000 AS housesSold
+      FROM file('/Users/datasci/Desktop/housing_in_london_monthly_variables.csv')
+    WHERE area = 'city of london' AND houses_sold IS NOT NULL
+    GROUP BY toYear(date)
+    ORDER BY year
+  ) AS local ON local.year = remote.year
+  WHERE town = 'LONDON'
+  GROUP BY toYear(date)
+  ORDER BY year;
+  """
+  ```
+</Accordion>
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="数据框预览" />
+
+虽然缺少 2020 年及之后的数据，但我们仍然可以将这两个数据集在 1995 年到 2019 年期间绘制在同一张图中进行对比。
+在新的单元格中运行以下命令：
+
+```python
+# 创建一个具有两个 y 轴的图形
+fig, ax1 = plt.subplots(figsize=(14, 8))
+
+# 在左侧 y 轴绘制房屋销售量
+color = 'tab:blue'
+ax1.set_xlabel('Year')
+ax1.set_ylabel('Houses Sold', color=color)
+ax1.plot(df_2['year'], df_2['houses_sold'], marker='o', color=color, label='Houses Sold', linewidth=2)
+ax1.tick_params(axis='y', labelcolor=color)
+ax1.grid(True, alpha=0.3)
+
+# 为价格数据创建第二个 y 轴
+ax2 = ax1.twinx()
+color = 'tab:red'
+ax2.set_ylabel('Average Price (£)', color=color)
+
+# 绘制截至 2019 年的价格数据
+ax2.plot(df[df['year'] <= 2019]['year'], df[df['year'] <= 2019]['avg_price'], marker='s', color=color, label='Average Price', linewidth=2)
+ax2.tick_params(axis='y', labelcolor=color)
+
+# 对价格轴应用货币格式
+ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'£{x:,.0f}'))
+
+# 设置标题并每隔一年显示一次
+plt.title('London Housing Market: Sales Volume vs Prices Over Time', fontsize=14, pad=20)
+
+# 两个数据集均只使用截至 2019 年的数据
+all_years = sorted(list(set(df_2[df_2['year'] <= 2019]['year']).union(set(df[df['year'] <= 2019]['year']))))
+years_to_show = all_years[::2]  # 每隔一年
+ax1.set_xticks(years_to_show)
+ax1.set_xticklabels(years_to_show, rotation=45)
+
+# 添加图例
+ax1.legend(loc='upper left')
+ax2.legend(loc='upper right')
+
+plt.tight_layout()
+plt.show()
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="远程数据集和本地数据集的图表" />
+
+从图中可以看出，1995 年的销售量起步于约 160,000，随后快速攀升，并在 1999 年达到约 540,000 的峰值。
+此后，成交量一路大幅下滑，至 2000 年代中期持续走低，在 2007—2008 年金融危机期间更是明显萎缩，降至约 140,000。
+另一方面，价格则保持了平稳且持续的增长，从 1995 年约 £150,000 上升到 2005 年约 £300,000。
+2012 年之后，增长明显加速，从约 £400,000 快速升至 2019 年超过 £1,000,000。
+与销售量不同，价格几乎未受 2008 年危机影响，并始终保持上升趋势。真夸张！
+
+<div id="summary">
+  ## 总结
+</div>
+
+本指南演示了 chDB 如何通过连接 ClickHouse Cloud 与本地数据源，在 Jupyter 笔记本中实现无缝的数据探索。
+我们以英国房产价格数据集为例，展示了如何使用 `remoteSecure()` 函数查询远程 ClickHouse Cloud 数据，如何使用 `file()` 表引擎读取本地 CSV 文件，以及如何将结果直接转换为 Pandas DataFrame 以便进行分析和可视化。
+借助 chDB，数据科学家可以将 ClickHouse 强大的 SQL 能力与 Pandas、matplotlib 等熟悉的 Python 工具结合起来，轻松整合多个数据源，开展更全面的分析。
+
+虽然许多身处伦敦的数据科学家短期内可能还买不起自己的房子或公寓，但至少他们还能分析这个让自己望房兴叹的市场！

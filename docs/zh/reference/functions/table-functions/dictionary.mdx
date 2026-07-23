@@ -1,0 +1,66 @@
+---
+description: '将字典数据以 ClickHouse 表的形式显示。其工作方式与 字典 引擎相同。'
+sidebarTitle: 'dictionary'
+slug: /sql-reference/table-functions/dictionary
+title: 'dictionary'
+doc_type: 'reference'
+---
+
+将[字典](/zh/reference/statements/create/dictionary)数据以 ClickHouse 表的形式显示。其工作方式与 [字典](/zh/reference/engines/table-engines/special/dictionary) 引擎相同。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+dictionary('dict')
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `dict` — 字典的名称。[String](/zh/reference/data-types/string)。
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+ClickHouse 表。
+
+<div id="examples">
+  ## 示例
+</div>
+
+输入表 `dictionary_source_table`：
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+创建字典：
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+<div id="related">
+  ## 相关
+</div>
+
+* [字典 表引擎](/zh/reference/engines/table-engines/special/dictionary)

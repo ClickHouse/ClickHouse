@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'خيارات إضافية'
+keywords: ['ClickHouse', 'بايثون', 'خيارات', 'إعدادات']
+description: 'خيارات إضافية في ClickHouse Connect'
+slug: /integrations/language-clients/python/additional-options
+title: 'خيارات إضافية'
+doc_type: 'مرجع'
+---
+
+يوفّر ClickHouse Connect عددًا من الخيارات الإضافية لحالات الاستخدام المتقدمة.
+
+<div id="global-settings">
+  ## الإعدادات العامة
+</div>
+
+يوجد عدد محدود من الإعدادات التي تتحكم في سلوك ClickHouse Connect بشكل عام. ويمكن الوصول إليها من الحزمة `common` ذات المستوى الأعلى:
+
+```python
+from clickhouse_connect import common
+
+common.set_setting('autogenerate_session_id', False)
+common.get_setting('invalid_setting_action')
+'drop'
+```
+
+<Note>
+  يجب *دائمًا* تعديل هذه الإعدادات الشائعة `autogenerate_session_id` و`product_name` و`readonly` قبل إنشاء عميل باستخدام الدالة `clickhouse_connect.get_client`. إن تغيير هذه الإعدادات بعد إنشاء العميل لا يؤثر في سلوك العملاء الحاليين.
+</Note>
+
+الإعدادات العامة التالية معرّفة حاليًا:
+
+| اسم الإعداد                                     | الافتراضي       | الخيارات                                        | الوصف                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------- | --------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| autogenerate&#95;session&#95;id                 | True            | True, False                                     | يُنشئ تلقائيًا معرّف جلسة UUID(1) جديدًا (إذا لم يتم توفيره) لكل session للعميل. وإذا لم يتم توفير معرّف جلسة (إما على مستوى العميل أو query)، فسيُنشئ ClickHouse معرّفًا داخليًا عشوائيًا لكل query.                                                                                |
+| dict&#95;parameter&#95;format                   | &#39;json&#39;  | &#39;json&#39;, &#39;map&#39;                   | يحدد هذا ما إذا كانت queries المعلَّمة تحوّل قاموس بايثون إلى JSON أو إلى صياغة ClickHouse Map. يجب استخدام `json` لعمليات insert في JSON columns، و`map` لأعمدة ClickHouse Map.                                                                                                     |
+| invalid&#95;setting&#95;action                  | &#39;error&#39; | &#39;drop&#39;, &#39;send&#39;, &#39;error&#39; | الإجراء الذي يجب اتخاذه عند تقديم إعداد غير صالح أو readonly (سواء كان ذلك لجلسة العميل أو query). إذا كانت القيمة `drop` فسيتم تجاهل الإعداد، وإذا كانت `send` فسيُرسَل الإعداد إلى ClickHouse، وإذا كانت `error` فسيتم رفع ProgrammingError من جهة العميل.                         |
+| max&#95;connection&#95;age                      | 600             |                                                 | الحد الأقصى بالثواني الذي سيظل خلاله اتصال HTTP Keep Alive مفتوحًا أو قابلًا لإعادة الاستخدام. يمنع ذلك تكدس connections على عقدة ClickHouse واحدة خلف load balancer/وكيل. القيمة الافتراضية هي 10 دقائق.                                                                           |
+| product&#95;name                                |                 |                                                 | سلسلة نصية تُمرَّر مع query إلى ClickHouse لتتبّع التطبيق الذي يستخدم ClickHouse Connect. يجب أن تكون بالشكل &lt;اسم المنتج;&amp;gl/&lt;إصدار المنتج&gt;.                                                                                                                            |
+| readonly                                        | 0               | 0, 1                                            | إعدادات ClickHouse &quot;read&#95;only&quot; الضمنية للإصدارات الأقدم من 19.17. يمكن ضبطها لتطابق قيمة ClickHouse &quot;read&#95;only&quot; الخاصة بالإعدادات، بما يسمح بالتشغيل مع إصدارات ClickHouse القديمة جدًا.                                                                 |
+| send&#95;os&#95;user                            | True            | True, False                                     | تضمين مستخدم نظام التشغيل المكتشف ضمن معلومات العميل المُرسلة إلى ClickHouse (سلسلة HTTP User-Agent).                                                                                                                                                                                |
+| send&#95;integration&#95;tags                   | True            | True, False                                     | تضمين مكتبات التكامل المستخدمة وإصداراتها (مثل Pandas/SQLAlchemy/etc.) ضمن معلومات العميل المُرسلة إلى ClickHouse (سلسلة HTTP User-Agent).                                                                                                                                           |
+| use&#95;protocol&#95;version                    | True            | True, False                                     | استخدام protocol version الخاص بالعميل. هذا مطلوب لأعمدة المنطقة الزمنية `DateTime`، لكنه لا يعمل مع الإصدار الحالي من chproxy.                                                                                                                                                      |
+| max&#95;error&#95;size                          | 1024            |                                                 | الحد الأقصى لعدد الأحرف التي ستُعاد في رسائل error الخاصة بالعميل. استخدم القيمة 0 لهذا الإعداد للحصول على رسالة الخطأ الكاملة من ClickHouse. القيمة الافتراضية هي 1024 حرفًا.                                                                                                       |
+| http&#95;buffer&#95;size                        | 10MB            |                                                 | الحجم (بالبايت) للـ buffer &quot;داخل الذاكرة&quot; المستخدم في Streaming Queries عبر HTTP.                                                                                                                                                                                          |
+| preserve&#95;pandas&#95;datetime&#95;resolution | False           | True, False                                     | عند ضبطها على True ومع استخدام pandas 2.x، فإنها تحافظ على دقة نوع البيانات datetime64/timedelta64 (مثل &#39;s&#39; و&#39;ms&#39; و&#39;us&#39; و&#39;ns&#39;). أما إذا كانت False (أو عند استخدام pandas &lt;2.x)، فسيتم تحويلها إلى دقة النانوثانية (&#39;ns&#39;) لأغراض التوافق. |
+
+<div id="compression">
+  ## الضغط
+</div>
+
+يدعم ClickHouse Connect ضغط lz4 وzstd وbrotli وgzip لكلٍّ من نتائج الاستعلام وعمليات الإدراج. ضع في اعتبارك دائمًا أن استخدام الضغط ينطوي عادةً على موازنة بين عرض النطاق الترددي للشبكة/سرعة النقل وبين استخدام CPU (على كلٍّ من العميل والخادم).
+
+لاستقبال بيانات مضغوطة، يجب ضبط `enable_http_compression` على خادم ClickHouse إلى 1، أو يجب أن يمتلك المستخدم إذنًا بتغيير هذا الإعداد على أساس &quot;لكل استعلام&quot;.
+
+يُتحكَّم في الضغط عبر المَعلمة `compress` عند استدعاء دالة المصنع `clickhouse_connect.get_client`. افتراضيًا، تكون `compress` مضبوطة على `True`، مما يؤدي إلى تفعيل إعدادات الضغط الافتراضية. بالنسبة إلى الاستعلامات المنفَّذة باستخدام طرق العميل `query` و`query_np` و`query_df`، يضيف ClickHouse Connect ترويسة `Accept-Encoding` مع
+ترميزات `lz4` و`zstd` و`br` (أي brotli، إذا كانت مكتبة brotli مثبّتة) و`gzip` و`deflate` إلى الاستعلامات المنفَّذة باستخدام طريقة العميل `query` (وبشكل غير مباشر، `query_np` و`query_df`). (في معظم الطلبات، سيُرجع خادم ClickHouse
+حمولة مضغوطة باستخدام `zstd`.) أما بالنسبة إلى عمليات الإدراج، فيضغط ClickHouse Connect افتراضيًا كتل الإدراج باستخدام ضغط `lz4`، ويرسل ترويسة HTTP ‏`Content-Encoding: lz4`.
+
+يمكن أيضًا ضبط المَعلمة `compress` في `get_client` على طريقة ضغط محددة، وهي إحدى `lz4` أو `zstd` أو `br` أو `gzip`. وعندئذٍ ستُستخدم هذه الطريقة لكلٍّ من عمليات الإدراج ونتائج الاستعلام (إذا كان خادم ClickHouse يدعمها). تُثبَّت الآن مكتبتا الضغط المطلوبتان `zstd` و`lz4` افتراضيًا مع ClickHouse Connect. وإذا جرى تحديد `br`/brotli، فيجب تثبيت مكتبة brotli بشكل منفصل.
+
+لاحظ أن طرق العميل `raw*` لا تستخدم الضغط المحدد في إعدادات العميل.
+
+كما نوصي بعدم استخدام ضغط `gzip`، لأنه أبطأ بكثير من البدائل، سواء في ضغط البيانات أو فك ضغطها.
+
+<div id="http-proxy-support">
+  ## دعم وكيل HTTP
+</div>
+
+تضيف ClickHouse Connect دعمًا أساسيًا لوكيل HTTP باستخدام مكتبة `urllib3`. وهي تتعرّف على متغيرَي البيئة القياسيين `HTTP_PROXY` و`HTTPS_PROXY`. لاحظ أن استخدام متغيرات البيئة هذه سيُطبَّق على أي عميل يتم إنشاؤه باستخدام الطريقة `clickhouse_connect.get_client`. وبدلًا من ذلك، لتهيئة كل عميل على حدة، يمكنك استخدام الوسيطتين `http_proxy` أو `https_proxy` في الطريقة `get_client`. وللاطلاع على تفاصيل تنفيذ دعم وكيل HTTP، راجع توثيق [urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies).
+
+لاستخدام وكيل SOCKS، يمكنك تمرير `urllib3` `SOCKSProxyManager` باعتباره الوسيطة `pool_mgr` إلى `get_client`. لاحظ أن هذا يتطلب تثبيت مكتبة PySocks، إما مباشرةً أو باستخدام الخيار `[socks]` لتبعية `urllib3`.
+
+<div id="old-json-data-type">
+  ## نوع بيانات JSON &quot;القديم&quot;
+</div>
+
+نوع البيانات التجريبي `Object` (أو `Object('json')`) مُهمَل ويجب تجنّب استخدامه في بيئة الإنتاج. يواصل ClickHouse Connect توفير دعم محدود لهذا النوع من البيانات حفاظًا على التوافق مع الإصدارات السابقة. لاحظ أن هذا الدعم لا يشمل الاستعلامات التي يُتوقع أن تُرجع قيم JSON على &quot;المستوى الأعلى&quot; أو على مستوى &quot;العنصر الأب&quot; على هيئة قواميس أو ما يعادلها، وستؤدي مثل هذه الاستعلامات إلى استثناء.
+
+<div id="new-variantdynamicjson-datatypes-experimental-feature">
+  ## أنواع البيانات &quot;الجديدة&quot; Variant/Dynamic/JSON (ميزة تجريبية)
+</div>
+
+بدءًا من الإصدار 0.8.0، يوفّر `clickhouse-connect` دعمًا تجريبيًا لأنواع ClickHouse الجديدة — وهي أيضًا تجريبية — وهي Variant وDynamic وJSON.
+
+<div id="usage-notes">
+  ### ملاحظات الاستخدام
+</div>
+
+* يمكن insert بيانات JSON إما على هيئة قاموس بايثون أو كسلسلة JSON تحتوي على JSON object `{}`. ولا تُدعَم الأشكال الأخرى لبيانات JSON.
+* ستُرجع queries التي تستخدم subcolumns/paths لهذه الأنواع نوع العمود الفرعي.
+* راجع [الوثائق](/ar/) الرئيسية لـ ClickHouse للاطلاع على ملاحظات استخدام أخرى.
+
+<div id="known-limitations">
+  ### القيود المعروفة
+</div>
+
+* يجب تمكين كل نوع من هذه الأنواع في إعدادات ClickHouse قبل استخدامه.
+* يتوفر نوع JSON &quot;الجديد&quot; بدءًا من إصدار ClickHouse 24.8
+* بسبب تغييرات التنسيق الداخلية، لا يتوافق `clickhouse-connect` إلا مع أنواع Variant بدءًا من إصدار ClickHouse 24.7
+* لن تُرجِع كائنات JSON المُعادة سوى عدد العناصر المحدد في `max_dynamic_paths` (والذي تكون قيمته الافتراضية 1024). سيُصلَح هذا في إصدار مستقبلي.
+* ستكون عمليات الإدراج في أعمدة `Dynamic` دائمًا بالتمثيل النصي لقيمة بايثون. سيُصلَح هذا في إصدار مستقبلي، بمجرد إصلاح https://github.com/ClickHouse/ClickHouse/issues/70395.
+* لم يُحسَّن تنفيذ الأنواع الجديدة في شيفرة C، لذلك قد يكون الأداء أبطأ إلى حد ما مقارنةً بأنواع البيانات الأبسط والأكثر استقرارًا.

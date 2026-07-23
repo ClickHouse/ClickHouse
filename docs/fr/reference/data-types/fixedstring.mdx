@@ -1,0 +1,103 @@
+---
+description: 'Documentation du type de données FixedString dans ClickHouse'
+sidebarTitle: 'FixedString(N)'
+slug: /sql-reference/data-types/fixedstring
+title: 'FixedString(N)'
+doc_type: 'reference'
+---
+
+Chaîne de longueur fixe de `N` octets (ni caractères ni points de code).
+
+Pour déclarer une colonne de type `FixedString`, utilisez la syntaxe suivante :
+
+```sql
+<column_name> FixedString(N)
+```
+
+où `N` représente un nombre naturel.
+
+Le type `FixedString` est efficace lorsque les données ont une longueur exactement égale à `N` octets. Dans tous les autres cas, il risque de réduire l&#39;efficacité.
+
+Exemples de valeurs pouvant être stockées efficacement dans des colonnes de type `FixedString` :
+
+* La représentation binaire des adresses IP (`FixedString(16)` pour IPv6).
+* Les codes de langue (ru&#95;RU, en&#95;US ... ).
+* Les codes de devise (USD, RUB ... ).
+* La représentation binaire des hachages (`FixedString(16)` pour MD5, `FixedString(32)` pour SHA256).
+
+Pour stocker des valeurs UUID, utilisez le type de données [UUID](/fr/reference/data-types/uuid).
+
+Lors de l&#39;insertion de données, ClickHouse :
+
+* Complète la chaîne avec des octets nuls si elle contient moins de `N` octets.
+* Lève l&#39;exception `Too large value for FixedString(N)` si la chaîne contient plus de `N` octets.
+
+Considérons la table suivante avec une seule colonne `FixedString(2)` :
+
+```sql
+
+INSERT INTO FixedStringTable VALUES ('a'), ('ab'), ('');
+```
+
+```sql
+SELECT
+    name,
+    toTypeName(name),
+    length(name),
+    empty(name)
+FROM FixedStringTable;
+```
+
+```text
+┌─name─┬─toTypeName(name)─┬─length(name)─┬─empty(name)─┐
+│ a    │ FixedString(2)   │            2 │           0 │
+│ ab   │ FixedString(2)   │            2 │           0 │
+│      │ FixedString(2)   │            2 │           1 │
+└──────┴──────────────────┴──────────────┴─────────────┘
+```
+
+Notez que la longueur de la valeur `FixedString(N)` est constante. La fonction [length](/fr/reference/functions/regular-functions/array-functions#length) renvoie `N` même si la valeur `FixedString(N)` n’est remplie que d’octets nuls, mais la fonction [empty](/fr/reference/functions/regular-functions/array-functions#empty) renvoie `1` dans ce cas.
+
+La sélection de données avec la clause `WHERE` renvoie des résultats différents selon la manière dont la condition est spécifiée :
+
+* Si l’opérateur d’égalité `=` ou `==`, ou la fonction `equals`, est utilisé, ClickHouse ne tient *pas* compte du caractère `\0`, c.-à-d. que les requêtes `SELECT * FROM FixedStringTable WHERE name = 'a';` et `SELECT * FROM FixedStringTable WHERE name = 'a\0';` renvoient le même résultat.
+* Si la clause `LIKE` est utilisée, ClickHouse tient *bien* compte du caractère `\0`, il peut donc être nécessaire de spécifier explicitement le caractère `\0` dans la condition de filtre.
+
+```sql
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a\0'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a'
+FORMAT JSONStringsEachRow
+
+Query id: c32cec28-bb9e-4650-86ce-d74a1694d79e
+
+{"name":"a\u0000"}
+
+SELECT name
+FROM FixedStringTable
+WHERE name LIKE 'a'
+FORMAT JSONStringsEachRow
+
+0 rows in set.
+
+SELECT name
+FROM FixedStringTable
+WHERE name LIKE 'a\0'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+```

@@ -1,0 +1,198 @@
+---
+description: 'Visão geral de backup e restauração do ClickHouse'
+sidebarTitle: 'endpoint do S3'
+slug: /operations/backup/s3_endpoint
+title: 'BACKUP / RESTAURAÇÃO para ou de um endpoint do S3'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/pt-BR/_syntax.mdx';
+
+Este artigo aborda como fazer backup ou restaurar backups para e de um bucket do S3
+por meio de um endpoint do S3.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+<Syntax />
+
+<div id="usage-examples">
+  ## Exemplo de uso
+</div>
+
+<div id="incremental-backup-to-an-s3-endpoint">
+  ### Backup incremental para um endpoint do S3
+</div>
+
+Neste exemplo, vamos criar um backup em um endpoint do S3 e depois restaurá-lo a partir dele.
+
+<Note>
+  Para ver uma explicação das diferenças entre um backup completo e um backup incremental,
+  consulte [&quot;Tipos de backup&quot;](/pt-BR/concepts/features/backup-restore/overview#backup-types)
+</Note>
+
+Você precisará das seguintes informações para usar este método:
+
+| Parâmetro               | Exemplo                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| Um endpoint do S3       | `https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/` |
+| ID da chave de acesso   | `BKIOZLE2VYN3VXXTP9RC`                                       |
+| Chave de acesso secreta | `40bwYnbqN7xU8bVePaUCh3+YEyGXu8UOMV9ANpwL`                   |
+
+<Tip>
+  A criação de um bucket do S3 é abordada na seção [&quot;usar o armazenamento de objetos do S3 como um disco do ClickHouse&quot;](/pt-BR/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#configuring-s3-for-clickhouse-use)
+</Tip>
+
+O destino de um backup é especificado da seguinte forma:
+
+```sql
+S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extra_credentials>')
+```
+
+<br />
+
+<Steps>
+  <Step>
+    #### Configuração
+
+    Crie o banco de dados e a tabela a seguir e insira alguns dados aleatórios nela:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test_db;
+    CREATE TABLE test_db.test_table
+    (
+        `key` Int,
+        `value` String,
+        `array` Array(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    ```
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 1000
+    ```
+  </Step>
+
+  <Step>
+    #### Crie um backup de base
+
+    Backups incrementais exigem um backup *de base* como ponto de partida. O primeiro parâmetro do
+    destino S3 é o endpoint do S3, seguido pelo diretório dentro do bucket
+    que será usado para este backup. Neste exemplo, o diretório se chama `my_backup`.
+
+    Execute o seguinte comando para criar o backup de base:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ de442b75-a66c-4a3c-a193-f76f278c70f3 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Adicione mais dados
+
+    Os backups incrementais contêm apenas a diferença entre o backup base e
+    o conteúdo atual da tabela da qual está sendo feito o backup. Adicione mais dados antes de fazer o
+    backup incremental:
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 100
+    ```
+  </Step>
+
+  <Step>
+    #### Fazer um backup incremental
+
+    Este comando de backup é semelhante ao backup de base, mas adiciona `SETTINGS base_backup` e o local do backup de base. Observe que o destino do backup incremental não é o mesmo diretório do backup de base, mas sim o mesmo endpoint com um diretório de destino diferente dentro do bucket. O backup de base está em `my_backup`, e o incremental será gravado em `my_incremental`:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    SETTINGS base_backup = S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Restaurar a partir do backup incremental
+
+    Este comando restaura o backup incremental para uma nova tabela, `test_table_restored`.
+    Observe que, quando um backup incremental é restaurado, o backup base também é incluído.
+    Especifique apenas o **backup incremental** ao restaurar:
+
+    ```sql
+    RESTORE TABLE data AS test_db.test_table_restored FROM S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status───┐
+    │ ff0c8c39-7dff-4324-a241-000796de11ca │ RESTORED │
+    └──────────────────────────────────────┴──────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Verifique a contagem
+
+    Foram feitos dois inserts na tabela original `data`, um com 1.000 linhas e outro com 100 linhas, totalizando 1.100.
+    Verifique se a tabela restaurada tem 1.100 linhas:
+
+    ```sql
+    SELECT count()
+    FROM test_db.test_table_restored
+    ```
+
+    ```response
+    ┌─count()─┐
+    │    1100 │
+    └─────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Verifique o conteúdo
+
+    Isso compara o conteúdo da tabela original, `test_table`, com o da tabela restaurada `test_table_restored`:
+
+    ```sql
+    SELECT throwIf((
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table
+       ) != (
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table_restored
+    ), 'Data does not match after BACKUP/RESTORE')
+    ```
+  </Step>
+</Steps>

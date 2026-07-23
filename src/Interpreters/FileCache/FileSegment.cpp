@@ -1,10 +1,13 @@
 #include <Interpreters/FileCache/FileSegment.h>
 
 #include <filesystem>
+#include <fcntl.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
@@ -45,11 +48,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
+    extern const char cache_filesystem_failure_non_errno[];
 }
 
 String toString(FileSegmentKind kind)
@@ -66,12 +71,14 @@ FileSegment::FileSegment(
         bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        Priority::IteratorPtr queue_iterator_)
+        Priority::IteratorPtr queue_iterator_,
+        bool size_in_filename_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
     , background_download_enabled(background_download_enabled_)
+    , size_in_filename(size_in_filename_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
@@ -80,6 +87,11 @@ FileSegment::FileSegment(
     , log(getLogger(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #endif
 {
+    /// The size is encoded into the file name only for fully downloaded regular segments
+    /// (see `renameToIncludeSizeInNameUnlocked`), so on creation it can be set only together
+    /// with the `DOWNLOADED` state (used when loading cache metadata on startup).
+    chassert(!size_in_filename || download_state == State::DOWNLOADED);
+
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
     {
@@ -94,7 +106,14 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
-            chassert(fs::file_size(getPath()) == size_);
+            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
+            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// `getCacheReadBuffer` already has the file open, so it compares the on-disk size against
+            /// the recorded one and discards the broken entry (re-fetching from the source) rather than
+            /// raising a server-bug-class error. Asserting the on-disk size here would both re-introduce
+            /// the `stat` and turn that discardable inconsistency into an abort in debug/sanitizer builds.
+            chassert(size_in_filename || fs::file_size(getPath()) == size_);
             chassert(queue_iterator);
             chassert(key_metadata.lock());
             break;
@@ -132,8 +151,12 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
-    auto lk = lock();
-    return download_state;
+    /// Read without lock. This is safe because every terminal state is published as the last write
+    /// of its transition: in particular DOWNLOADED is set only after the segment is fully
+    /// finalized (writer flushed and closed, reader released, range/size settled - see
+    /// `setDownloadedUnlocked` and `shrinkFileSegmentToDownloadedSize`). So an observer of a state
+    /// here is guaranteed to also see all the state that belongs to it.
+    return download_state.load();
 }
 
 String FileSegment::getPath() const
@@ -171,8 +194,7 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
 
 size_t FileSegment::getReservedSize() const
 {
-    auto lk = lock();
-    return reserved_size;
+    return reserved_size.load();
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -220,8 +242,9 @@ size_t FileSegment::getDownloadedSize() const
 
 bool FileSegment::isDownloaded() const
 {
-    auto lk = lock();
-    return download_state == State::DOWNLOADED;
+    /// Read without lock, see the comment in `state`: DOWNLOADED is published last, so observing it here
+    /// implies a fully-downloaded, consistent segment.
+    return download_state.load() == State::DOWNLOADED;
 }
 
 time_t FileSegment::getFinishedDownloadTime() const
@@ -467,6 +490,13 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             throw ErrnoException(EIO, "Failpoint: simulated cache disk IO failure");
         });
 
+        fiu_do_on(FailPoints::cache_filesystem_failure_non_errno,
+        {
+            /// A non-ErrnoException failure (e.g. a generic Exception thrown by the
+            /// underlying object-storage read) after the cache file was created.
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint: simulated cache non-errno failure");
+        });
+
         /// Size is equal to offset as offset for write buffer points to data end.
         download->cache_writer->set(from, /* size */size, /* offset */size);
         /// Reset the buffer when finished.
@@ -514,12 +544,28 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         auto lk = lock();
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
+
+        /// The writer created the file before any byte was accounted; drop the empty
+        /// orphan (noexcept overload to not mask `e`), same as the ErrnoException path.
+        if (downloaded_size == 0)
+        {
+            std::error_code ec;
+            fs::remove(file_segment_path, ec);
+        }
+
         throw;
     }
     catch (const fs::filesystem_error & e)
     {
         auto lk = lock();
         setDownloadFailedUnlocked(lk);
+
+        if (downloaded_size == 0)
+        {
+            std::error_code ec;
+            fs::remove(file_segment_path, ec);
+        }
+
         throw ErrnoException(e.code().value(),
             "Filesystem error in cache write ({}), current cache state: {}",
             e.what(), getInfoForLogUnlocked(lk));
@@ -550,11 +596,30 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        [[maybe_unused]] const auto ok = cv.wait_for(lk, std::chrono::seconds(60), [&, this]()
+        /// Wait for the download in short slices so that cancellation of the waiting query
+        /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
+        /// is observed promptly. The condition variable is only notified on download progress, so a
+        /// stalled or dead downloader would otherwise pin this thread — and anything blocked on it,
+        /// e.g. RefreshTask::shutdown() -> deactivate() — until the full timeout. throwIfKilled()
+        /// re-raises the query's original cancellation reason rather than a generic one.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
+        auto downloaded = [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
-        });
-        /// chassert(ok);
+        };
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (true)
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+            if (cv.wait_for(lk, std::chrono::seconds(1), downloaded))
+                break;
+            if (std::chrono::steady_clock::now() >= deadline)
+                break;
+        }
     }
 
     return download_state;
@@ -681,16 +746,92 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     if (download_state == State::DOWNLOADED)
         return;
 
-    download_state = State::DOWNLOADED;
-    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
-
     if (download_data && download_data->cache_writer)
-        download_data->cache_writer->finalize();
+    {
+        try
+        {
+            download_data->cache_writer->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLog(), "Failed to finalize cache writer while marking file segment as downloaded");
+            setDownloadFailedUnlocked(lock);
+            return;
+        }
+    }
 
     resetDownloadDataUnlocked(lock);
 
+    /// The file is now fully written and closed; encode its size into the file name so that
+    /// startup metadata loading can avoid a `stat` per file. This is best-effort: the segment is
+    /// already fully downloaded and valid under its legacy `<offset>` name, so a rename failure must
+    /// not abort completion. `renameToIncludeSizeInNameUnlocked` therefore never throws — on failure
+    /// it keeps the legacy name (the loader falls back to a `stat`). Doing it here, before publishing
+    /// the `DOWNLOADED` state, also keeps `getPath` (which depends on `size_in_filename`) consistent
+    /// with the file's actual on-disk name for the assertions below.
+    renameToIncludeSizeInNameUnlocked(lock);
+
+    download_state = State::DOWNLOADED;
+    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
+
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
+}
+
+void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &)
+{
+    /// Only regular segments encode their size in the name; ephemeral (temporary) segments
+    /// keep the "_temporary" marker and are removed on startup anyway.
+    if (segment_kind != FileSegmentKind::Regular || size_in_filename)
+        return;
+
+    chassert(!download_data);
+
+    auto key_metadata_ptr = getKeyMetadata();
+    /// Current (on-disk) name has no size suffix yet; the new name encodes the final size.
+    const auto old_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, /* size */std::nullopt);
+    const auto new_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, range().size());
+
+    if (old_path == new_path)
+    {
+        size_in_filename = true;
+        return;
+    }
+
+    /// Encoding the size in the name is only a startup optimization, so the rename is best-effort.
+    /// The segment is already fully downloaded and valid under its legacy `<offset>` name; if the
+    /// rename fails we keep that name (`size_in_filename` stays false and the loader falls back to a
+    /// `stat`) and do not propagate the error. Letting it escape would be unsafe: this runs from
+    /// `setDownloadedUnlocked` while the segment is still `DOWNLOADING` (the `DOWNLOADED` state is
+    /// published only after this returns), so a throw would leave the segment owned by the unwinding
+    /// query (no other reader could acquire it to retry), and `FileSegmentsHolder::reset` would hit
+    /// its `chassert(false)` on the way out.
+    /// `rename` is atomic, so a crash leaves either the old (`<offset>`) or the new
+    /// (`<offset>_<size>`) name, both of which the loader handles correctly.
+    try
+    {
+        fs::rename(old_path, new_path);
+        size_in_filename = true;
+
+        /// A reader that opened this segment while it was still named `old_path` left an entry in
+        /// `OpenedFileCache` keyed by `old_path`. When this segment is later removed,
+        /// `removeFileSegmentImpl` invalidates only the current (`new_path`) name, so without this the
+        /// `old_path` entry would survive. A future segment created at the same key and offset is again
+        /// named `old_path` while it downloads, so opening it could reuse the stale descriptor of this —
+        /// by then removed — segment and read its old bytes. Drop the `old_path` entry now; existing
+        /// readers keep their own shared descriptors (the inode is unchanged across the rename), so this
+        /// only prevents future opens from reusing the pre-rename descriptor. Mirror the flag handling in
+        /// `removeFileSegmentImpl`: the file may have been opened with or without `O_DIRECT`.
+        const int flags = getFlagsForLocalRead();
+        OpenedFileCache::instance().remove(old_path, flags);
+        OpenedFileCache::instance().remove(old_path, flags | O_DIRECT);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLog(),
+            fmt::format("Failed to rename cache file '{}' to encode its size in the name; keeping the legacy name", old_path));
+    }
 }
 
 void FileSegment::setDownloadFailed()
@@ -703,6 +844,13 @@ void FileSegment::setDownloadFinishedWithoutContinuation()
 {
     auto lk = lock();
     assertIsDownloaderUnlocked("setDownloadFinishedWithoutContinuation", lk);
+    /// This publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and wakes up the waiters, and from that
+    /// moment the segment's remote reader is up for grabs: `extractRemoteFileReader` is gated only on
+    /// the state, not on being the downloader. The caller must withdraw the reader
+    /// (`resetRemoteFileReader`) beforehand, while still owning it exclusively as the downloader;
+    /// otherwise the caller's own references to the reader (e.g. diagnostics on its unwind path)
+    /// would race with the reader's new owner.
+    chassert(!download_data || !download_data->remote_file_reader);
     setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lk);
     cv.notify_all();
 }
@@ -797,17 +945,22 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
+    segment_range.right = segment_range.left + result_size - 1;
+
     if (downloaded_size == result_size)
     {
-        setDownloadState(State::DOWNLOADED, lock);
         /// Terminal state: free the download-only state so it is not leaked on an
         /// already-cached segment (and to uphold the `!download_data` invariant).
         resetDownloadDataUnlocked(lock);
+        setDownloadState(State::DOWNLOADED, lock);
     }
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 
-    segment_range.right = segment_range.left + result_size - 1;
+    /// If shrinking finished the download (downloaded size == final segment size), the file
+    /// reached its final size, so encode it into the name (see `setDownloadedUnlocked`).
+    if (download_state == State::DOWNLOADED)
+        renameToIncludeSizeInNameUnlocked(lock);
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
@@ -947,7 +1100,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            download_data->cache_writer->finalize();
+                            try
+                            {
+                                download_data->cache_writer->finalize();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
+                            }
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -979,7 +1139,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            download_data->cache_writer->finalize();
+                            try
+                            {
+                                download_data->cache_writer->finalize();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
+                            }
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -1122,10 +1289,20 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
 
-            auto file_size = fs::file_size(getPath());
-            UNUSED(file_size);
+            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
+            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// `getCacheReadBuffer` compares the on-disk size against the recorded one and discards the
+            /// broken entry (re-fetching from the source). Asserting the on-disk size here would both
+            /// re-introduce the `stat` and turn that discardable inconsistency into a startup abort in
+            /// debug/sanitizer builds (`FileCache::assertCacheCorrectness` runs right after metadata load).
+            if (!size_in_filename)
+            {
+                auto file_size = fs::file_size(getPath());
+                UNUSED(file_size);
 
-            chassert(file_size == range().size());
+                chassert(file_size == range().size());
+            }
             chassert(downloaded_size == range().size());
 
             chassert(queue_iterator || on_delayed_removal);
@@ -1218,6 +1395,10 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 
 bool FileSegment::isDetached() const
 {
+    /// Keep the lock: `complete` uses `isDetached` to confirm a benign concurrent detach when
+    /// `lockKeyMetadata` fails. `setDetachedState` sets DETACHED and resets `key_metadata` under
+    /// the segment lock, so only taking the lock here guarantees we observe DETACHED once the key
+    /// metadata is gone - a bare atomic load could race and turn the detach into a `LOGICAL_ERROR`.
     auto lk = lock();
     return download_state == State::DETACHED;
 }

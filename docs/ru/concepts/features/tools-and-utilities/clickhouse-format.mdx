@@ -1,0 +1,105 @@
+---
+description: 'Руководство по использованию утилиты format для работы с форматами данных ClickHouse'
+slug: /operations/utilities/clickhouse-format
+title: 'clickhouse-format'
+doc_type: 'reference'
+---
+
+Позволяет форматировать входные запросы.
+
+Ключи:
+
+* `--help` or`-h` — Вывести справку.
+* `--query` — Форматировать запросы любой длины и сложности.
+* `--hilite` or `--highlight` — Добавить подсветку синтаксиса с помощью ANSI-последовательностей терминала.
+* `--oneline` — Форматировать в одну строку.
+* `--max_line_length` — Форматировать в одну строку запросы, длина которых меньше указанного значения.
+* `--comments` — Сохранять комментарии в выводе.
+* `--quiet` or `-q` — Только проверить синтаксис; при успехе ничего не выводить.
+* `--multiquery` or `-n` — Разрешить несколько запросов в одном файле.
+* `--obfuscate` — Выполнять обфускацию вместо форматирования.
+* `--seed <string>` — Произвольная строка seed, определяющая результат обфускации.
+* `--backslash` — Добавлять обратную косую черту в конце каждой строки форматированного запроса. Полезно, если вы копируете многострочный запрос из интернета или другого источника и хотите выполнить его в командной строке.
+* `--semicolons_inline` — В режиме multiquery ставить точки с запятой в последней строке запроса, а не на новой строке.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+1. Форматирование запроса:
+
+```bash title="Query"
+$ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
+```
+
+```bash title="Response"
+SELECT number
+FROM numbers(10)
+WHERE number % 2
+ORDER BY number DESC
+```
+
+2. Подсветка и вывод в одну строку:
+
+```bash title="Query"
+$ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
+```
+
+```sql title="Response"
+SELECT sum(number) FROM numbers(5)
+```
+
+3. Мультизапросы:
+
+```bash title="Query"
+$ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(number) FROM numbers(5);"
+```
+
+```sql title="Response"
+SELECT min(number)
+FROM numbers(5)
+;
+
+SELECT max(number)
+FROM numbers(5)
+;
+
+```
+
+4. Обфускация:
+
+```bash title="Query"
+$ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+```
+
+```sql title="Response"
+SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
+```
+
+Тот же запрос и другая строка seed:
+
+```bash title="Query"
+$ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+```
+
+```sql title="Response"
+SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
+```
+
+5. Добавление обратной косой черты:
+
+```bash title="Query"
+$ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+```
+
+```sql title="Response"
+SELECT * \
+FROM  \
+( \
+    SELECT 1 AS x \
+    UNION ALL \
+    SELECT 1 \
+    UNION DISTINCT \
+    SELECT 3 \
+)
+```

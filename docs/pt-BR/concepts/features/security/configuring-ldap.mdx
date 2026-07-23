@@ -1,0 +1,184 @@
+---
+sidebarTitle: 'Configurando LDAP'
+slug: /guides/sre/configuring-ldap
+title: 'Configurando o ClickHouse para usar LDAP para autenticação e mapeamento de funções'
+description: 'Descreve como configurar o ClickHouse para usar LDAP para autenticação e mapeamento de funções'
+keywords: ['Configuração de LDAP', 'Autenticação LDAP', 'mapeamento de funções', 'gerenciamento de usuários', 'guia de SRE']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/pt-BR/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+O ClickHouse pode ser configurado para usar LDAP na autenticação de usuários de banco de dados do ClickHouse. Este guia apresenta um exemplo simples de integração do ClickHouse com um sistema LDAP para autenticação em um diretório disponível publicamente.
+
+<Steps>
+  <Step>
+    ## Configure as definições de conexão LDAP no ClickHouse
+
+    1. Teste a conexão com este servidor LDAP público:
+
+       ```bash
+       $ ldapsearch -x -b dc=example,dc=com -H ldap://ldap.forumsys.com
+       ```
+
+       A resposta será semelhante a esta:
+
+       ```response
+       # LDIF estendido
+       #
+       # LDAPv3
+       # base <dc=example,dc=com> with scope subtree
+       # filter: (objectclass=*)
+       # requesting: ALL
+       #
+
+       # example.com
+       dn: dc=example,dc=com
+       objectClass: top
+       objectClass: dcObject
+       objectClass: organization
+       o: example.com
+       dc: example
+       ...
+       ```
+
+    2. Edite o arquivo `config.xml` e adicione o seguinte para configurar o LDAP:
+       ```xml
+       <ldap_servers>
+           <test_ldap_server>
+           <host>ldap.forumsys.com</host>
+           <port>389</port>
+           <bind_dn>uid={user_name},dc=example,dc=com</bind_dn>
+           <enable_tls>no</enable_tls>
+           <tls_require_cert>never</tls_require_cert>
+           </test_ldap_server>
+       </ldap_servers>
+       ```
+
+    <Note>
+      As tags `<test_ldap_server>` são um rótulo arbitrário usado para identificar um servidor LDAP específico.
+    </Note>
+
+    Estas são as configurações básicas usadas acima:
+
+    | Parâmetro                | Descrição                                 | Exemplo                             |
+    | ------------------------ | ----------------------------------------- | ----------------------------------- |
+    | host                     | hostname ou IP do servidor LDAP           | ldap.forumsys.com                   |
+    | port                     | porta do diretório no servidor LDAP       | 389                                 |
+    | bind&#95;dn              | caminho de modelo para os usuários        | `uid={user_name},dc=example,dc=com` |
+    | enable&#95;tls           | se deve usar LDAP seguro                  | no                                  |
+    | tls&#95;require&#95;cert | se deve exigir certificado para a conexão | never                               |
+
+    <Note>
+      Neste exemplo, como o servidor público usa a porta 389 e não usa uma porta segura, desativamos o TLS para fins de demonstração.
+    </Note>
+
+    <Note>
+      Consulte a [página da documentação de LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) para mais detalhes sobre as configurações de LDAP.
+    </Note>
+
+    3. Adicione a seção `<ldap>` à seção `<user_directories>` para configurar o mapeamento de roles do usuário. Esta seção define quando um usuário é autenticado e qual role ele receberá. Neste exemplo básico, qualquer usuário autenticado via LDAP receberá a `scientists_role`, que será definida em uma etapa posterior no ClickHouse. A seção deve ficar semelhante a esta:
+
+       ```xml
+       <user_directories>
+           <users_xml>
+               <path>users.xml</path>
+           </users_xml>
+           <local_directory>
+               <path>/var/lib/clickhouse/access/</path>
+           </local_directory>
+           <ldap>
+                 <server>test_ldap_server</server>
+                 <roles>
+                    <scientists_role />
+                 </roles>
+                 <role_mapping>
+                    <base_dn>dc=example,dc=com</base_dn>
+                    <search_filter>(&amp;(objectClass=groupOfUniqueNames)(uniqueMember={bind_dn}))</search_filter>
+                    <attribute>cn</attribute>
+                 </role_mapping>
+           </ldap>
+       </user_directories>
+       ```
+
+       Estas são as configurações básicas usadas acima:
+
+       | Parâmetro         | Descrição                                                                                      | Exemplo                                                       |
+       | ----------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+       | server            | rótulo definido na seção ldap&#95;servers anterior                                             | test&#95;ldap&#95;server                                      |
+       | roles             | nome das roles definidas no ClickHouse para as quais os usuários serão mapeados                | scientists&#95;role                                           |
+       | base&#95;dn       | caminho base para iniciar a busca pelos grupos do usuário                                      | dc=example,dc=com                                             |
+       | search&#95;filter | filtro de busca LDAP para identificar os grupos a serem selecionados no mapeamento de usuários | `(&(objectClass=groupOfUniqueNames)(uniqueMember={bind_dn}))` |
+       | attribute         | nome do atributo cujo valor deve ser retornado                                                 | cn                                                            |
+
+    4. Reinicie o servidor ClickHouse para aplicar as configurações.
+  </Step>
+
+  <Step>
+    ## Configure roles e permissões do banco de dados ClickHouse
+
+    <Note>
+      Os procedimentos desta seção presumem que o SQL Access Control and Account Management no ClickHouse esteja habilitado. Para habilitá-lo, consulte o [guia SQL Users and Roles](/pt-BR/concepts/features/security/access-rights).
+    </Note>
+
+    1. Crie uma role no ClickHouse com o mesmo nome usado na seção de mapeamento de roles do arquivo `config.xml`
+       ```sql
+       CREATE ROLE scientists_role;
+       ```
+
+    2. Conceda os privilégios necessários à role. A instrução a seguir concede privilégios de admin a qualquer usuário que consiga se autenticar via LDAP:
+       ```sql
+       GRANT ALL ON *.* TO scientists_role;
+       ```
+  </Step>
+
+  <Step>
+    ## Teste a configuração do LDAP
+
+    1. Faça login usando o clickhouse client
+       ```bash
+       $ clickhouse-client --user einstein --password password
+       ClickHouse client version 22.2.2.1.
+       Connecting to localhost:9000 as user einstein.
+       Connected to ClickHouse server version 22.2.2 revision 54455.
+
+       chnode1 :)
+       ```
+
+    <Note>
+      Use o comando `ldapsearch` na etapa 1 para ver todos os usuários disponíveis no diretório; para todos eles, a senha é `password`
+    </Note>
+
+    2. Verifique se o usuário foi mapeado corretamente para a função `scientists_role` e se tem permissões de Admin
+
+       ```sql
+       SHOW DATABASES
+       ```
+
+       ```response
+       Query id: 93b785ff-1482-4eda-95b0-b2d68b2c5e0f
+
+       ┌─name───────────────┐
+       │ INFORMATION_SCHEMA │
+       │ db1_mysql          │
+       │ db2                │
+       │ db3                │
+       │ db4_mysql          │
+       │ db5_merge          │
+       │ default            │
+       │ information_schema │
+       │ system             │
+       └────────────────────┘
+
+       9 rows in set. Elapsed: 0.004 sec.
+       ```
+  </Step>
+</Steps>
+
+<div id="summary">
+  ## Resumo
+</div>
+
+Este artigo apresentou o básico da configuração do ClickHouse para autenticar em um servidor LDAP e também para mapear uma função. Também há opções para configurar usuários individuais no ClickHouse e fazer com que esses usuários sejam autenticados pelo LDAP, sem configurar o mapeamento automático de funções. O módulo LDAP também pode ser usado para se conectar ao Active Directory.

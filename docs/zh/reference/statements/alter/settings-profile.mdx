@@ -1,0 +1,202 @@
+---
+description: 'SETTINGS PROFILE 的文档'
+sidebarTitle: 'SETTINGS PROFILE'
+slug: /sql-reference/statements/alter/settings-profile
+title: 'ALTER SETTINGS PROFILE'
+doc_type: 'reference'
+---
+
+更改 profile。
+
+语法：
+
+```sql
+ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [DROP SETTINGS variable [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP ALL SETTINGS]
+    [DROP ALL PROFILES]
+    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
+```
+
+`ON CLUSTER` 子句允许在集群中更改 profile，参见 [Distributed DDL](/zh/reference/statements/distributed-ddl)。
+
+<div id="replacing-vs-modifying">
+  ## 替换设置与修改设置
+</div>
+
+`ALTER SETTINGS PROFILE` 支持用两种不同的方式来更改某个 profile 的设置及其父级 (继承的) profile。两者的行为差异很大，因此务必选择合适的方式。
+
+<div id="replacing-form">
+  ### 替换形式：直接使用 `SETTINGS` / `INHERIT`
+</div>
+
+直接使用 `SETTINGS` 子句 (不带 `ADD`、`MODIFY` 或 `DROP`) 会**用你列出的内容完整替换该 profile 的 settings 列表及其所有父 profile**。凡是之前存在但未列出的内容，都会被静默删除——不会有任何警告。
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p
+    SETTINGS max_execution_time = 10, enable_lazy_columns_replication = 1;
+
+ALTER SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360;
+
+SHOW CREATE SETTINGS PROFILE p;
+-- → CREATE SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360
+-- max_execution_time and enable_lazy_columns_replication are gone.
+```
+
+<Warning>
+  由于不带附加项的 `SETTINGS` 形式会进行完全替换，因此如果在已设置内容的基础 profile 上用它来“覆盖某一个设置”，该 profile 上的其他所有设置 (以及所有父 profile) 都会被一并移除。如果你只想修改单个设置并保留其余内容，请使用下面介绍的增量 `MODIFY`/`ADD`/`DROP` 形式。
+</Warning>
+
+这与 [`CREATE SETTINGS PROFILE`](/zh/reference/statements/create/settings-profile) 中 `SETTINGS` 的行为相同：该子句定义的是完整的设置列表。
+
+<div id="incremental-form">
+  ### 增量形式：`ADD` / `MODIFY` / `DROP`
+</div>
+
+`ADD`、`MODIFY` 和 `DROP` 关键字会修改单个条目，而不会影响 profile 中的其他内容：
+
+* `ADD SETTINGS variable = value [constraints]` — 添加尚未存在的设置。
+* `MODIFY SETTINGS variable = value [constraints]` — 替换单个设置条目。整个条目 (值和约束) 都会被覆盖，因此如果你想保留 `MIN`/`MAX`/`READONLY`/等内容，需要重新指定。
+* `DROP SETTINGS variable [,...]` — 删除列出的设置。
+* `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — 添加或删除父级 profile (继承的 profile) 。
+* `DROP ALL SETTINGS` / `DROP ALL PROFILES` — 删除所有设置或所有父级 profile。
+
+其中的多个子句可以组合在同一条语句中，例如 `DROP SETTINGS a ADD SETTINGS b = 1`。
+
+<div id="examples">
+  ## 示例
+</div>
+
+在保留已填充 profile 其余设置的情况下，仅覆盖单个设置：
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 16106127360;
+```
+
+添加一个新的受限设置，并删除另一个：
+
+```sql
+ALTER SETTINGS PROFILE my_profile
+    DROP SETTINGS readonly
+    ADD SETTINGS max_threads = 8 MIN 4 MAX 16 WRITABLE;
+```
+
+对父级 profile 进行增量管理：
+
+```sql
+ALTER SETTINGS PROFILE my_profile ADD PROFILES p1;
+ALTER SETTINGS PROFILE my_profile DROP PROFILES p1;
+```
+
+请始终使用 [`SHOW CREATE SETTINGS PROFILE`](/zh/reference/statements/show) 验证结果：
+
+```sql
+SHOW CREATE SETTINGS PROFILE my_profile;
+```
+
+<div id="incremental-vs-full-replacement">
+  ## 增量与完全替换
+</div>
+
+<Warning>
+  单独使用 `SETTINGS` 子句时，会在应用新设置前**移除该 profile 中的所有现有设置以及所有继承的 (父) profile**。
+</Warning>
+
+如果想只更改某一项设置而保留其余设置，请使用 `ADD SETTINGS` 或 `MODIFY SETTINGS` (见下方示例) 。
+
+<div id="add-vs-modify">
+  ## ADD 与 MODIFY 的区别
+</div>
+
+`ADD SETTINGS` 和 `MODIFY SETTINGS` 都会保留 profile 中的其他设置，但它们对*同一*设置已有条目的处理方式不同：
+
+* `ADD SETTINGS variable = value ...` 会先删除 `variable` 的现有条目，再插入新条目。因此，它会**连同该设置的所有约束一起替换其值**。对于 `variable`，此前定义的任何 `MIN`、`MAX` 或可写性 (`READONLY`/`WRITABLE`/`CONST`/`CHANGEABLE_IN_READONLY`) ，如果你没有再次指定，都会被丢弃。
+* `MODIFY SETTINGS variable = value ...` 会**按字段逐一合并**：它只会覆盖你实际指定的字段 (值、`MIN`、`MAX` 或可写性) ，而该设置的其他字段则保持不变。
+
+<Tip>
+  简而言之，如果你只想微调某个设置的某一方面，请使用 `MODIFY SETTINGS` (例如只修改值，同时保留现有的 `MAX`) ；如果你想从头重新定义某个设置，请使用 `ADD SETTINGS`。
+</Tip>
+
+<div id="examples">
+  ## 示例
+</div>
+
+创建一个将在下方示例中使用的 profile：
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p SETTINGS max_execution_time = 60;
+```
+
+<div id="example-modify-settings">
+  ### MODIFY SETTINGS
+</div>
+
+在保留其他设置不变的情况下，添加或修改单个设置：
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- CREATE SETTINGS PROFILE p SETTINGS
+--     max_execution_time = 60,
+--     max_memory_usage = 20000000000
+```
+
+由于 `MODIFY` 是按字段逐一合并的，因此如果只更改某个设置的值，就会保留其现有约束：
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000 MAX 30000000000;
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 25000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_memory_usage = 25000000000 MAX 30000000000  -- the MAX constraint is preserved
+```
+
+<div id="example-add-settings">
+  ### ADD SETTINGS
+</div>
+
+添加一个设置 (同时保留其他设置) ；如果该设置已存在，则会将其完全重新定义：
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 8 MAX 16 READONLY;
+```
+
+与 `MODIFY` 不同，如果仅使用一个值再次运行 `ADD`，会删除此前为该设置定义的约束：
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 4;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_threads = 4   -- the MAX and READONLY constraints are gone
+```
+
+<div id="example-drop-settings">
+  ### DROP SETTINGS
+</div>
+
+删除一个或多个指定名称的设置：
+
+```sql
+ALTER SETTINGS PROFILE p DROP SETTINGS max_threads;
+```
+
+一次删除所有设置：
+
+```sql
+ALTER SETTINGS PROFILE p DROP ALL SETTINGS;
+```
+
+<div id="example-profiles">
+  ### 使用继承的 profile
+</div>
+
+在不影响该 profile 自身设置的情况下，添加或移除父级 (继承的) profile：
+
+```sql
+ALTER SETTINGS PROFILE p ADD PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP ALL PROFILES;
+```

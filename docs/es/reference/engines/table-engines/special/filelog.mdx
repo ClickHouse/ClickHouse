@@ -1,0 +1,112 @@
+---
+description: 'Este motor permite procesar archivos de registro de aplicaciones como un flujo de
+  registros.'
+sidebarTitle: 'FileLog'
+slug: /engines/table-engines/special/filelog
+title: 'Motor de tabla FileLog'
+doc_type: 'reference'
+---
+
+Este motor permite procesar archivos de registro de aplicaciones como un flujo de registros.
+
+`FileLog` le permite:
+
+* Suscribirse a archivos de registro.
+* Procesar nuevos registros a medida que se añaden a los archivos de registro a los que se haya suscrito.
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = FileLog('path_to_logs', 'format_name') SETTINGS
+    [poll_timeout_ms = 0,]
+    [poll_max_batch_size = 0,]
+    [max_block_size = 0,]
+    [max_threads = 0,]
+    [poll_directory_watch_events_backoff_init = 500,]
+    [poll_directory_watch_events_backoff_max = 32000,]
+    [poll_directory_watch_events_backoff_factor = 2,]
+    [handle_error_mode = 'default']
+```
+
+Argumentos del motor:
+
+* `path_to_logs` – Ruta de los archivos de registro a los que suscribirse. Puede ser la ruta a un directorio con archivos de registro o a un único archivo de registro. Tenga en cuenta que ClickHouse solo permite rutas dentro del directorio `user_files`.
+* `format_name` - Formato del registro. Tenga en cuenta que FileLog procesa cada línea de un archivo como un registro independiente y que no todos los formatos de datos son adecuados para ello.
+
+Parámetros opcionales:
+
+* `poll_timeout_ms` - Tiempo de espera para una sola operación de sondeo del archivo de registro. Predeterminado: [stream&#95;poll&#95;timeout&#95;ms](/es/reference/settings/session-settings#stream_poll_timeout_ms).
+* `poll_max_batch_size` — Número máximo de registros que se pueden sondear en una sola operación. Predeterminado: [max&#95;block&#95;size](/es/reference/settings/session-settings#max_block_size).
+* `max_block_size` — Tamaño máximo del lote (en registros) para el sondeo. Predeterminado: [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings#max_insert_block_size).
+* `max_threads` - Número máximo de hilos para analizar archivos; el valor predeterminado es 0, lo que significa que el número será max(1, physical&#95;cpu&#95;cores / 4).
+* `poll_directory_watch_events_backoff_init` - Valor de espera inicial para el hilo de supervisión del directorio. Predeterminado: `500`.
+* `poll_directory_watch_events_backoff_max` - Valor de espera máximo para el hilo de supervisión del directorio. Predeterminado: `32000`.
+* `poll_directory_watch_events_backoff_factor` - Velocidad del backoff; de forma predeterminada, es exponencial. Predeterminado: `2`.
+* `handle_error_mode` — Cómo gestionar los errores del motor FileLog. Valores posibles: default (se lanzará una excepción si no se puede analizar un mensaje), stream (el mensaje de excepción y el mensaje sin procesar se guardarán en las columnas virtuales `_error` y `_raw_message`).
+
+<div id="description">
+  ## Descripción
+</div>
+
+Los registros entregados se controlan automáticamente, de modo que cada registro de un archivo de registro solo se cuenta una vez.
+
+`SELECT` no resulta especialmente útil para leer registros (excepto para depuración), porque cada registro solo puede leerse una vez. Es más práctico crear hilos en tiempo real mediante [vistas materializadas](/es/reference/statements/create/view). Para ello:
+
+1. Use el motor para crear una tabla FileLog y considérela un flujo de datos.
+2. Cree una tabla con la estructura deseada.
+3. Cree una vista materializada que convierta los datos del motor y los inserte en una tabla creada previamente.
+
+Cuando la `MATERIALIZED VIEW` se conecta al motor, comienza a recopilar datos en segundo plano. Esto le permite recibir continuamente registros de archivos de registro y convertirlos al formato requerido mediante `SELECT`.
+Una tabla FileLog puede tener tantas vistas materializadas como desee; no leen datos de la tabla directamente, sino que reciben nuevos registros (en bloques). De este modo, puede escribir en varias tablas con distintos niveles de detalle (con agrupación y agregación, y sin ellas).
+
+Ejemplo:
+
+```sql
+  CREATE TABLE logs (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+
+  CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM logs GROUP BY day, level;
+
+  SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+Para dejar de recibir datos de los streams o cambiar la lógica de conversión, desvincula la vista materializada:
+
+```sql
+  DETACH TABLE consumer;
+  ATTACH TABLE consumer;
+```
+
+Si desea cambiar la tabla de destino con `ALTER`, le recomendamos deshabilitar la vista materializada para evitar discrepancias entre la tabla de destino y los datos de la vista.
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_filename` - Nombre del archivo de registro. Tipo de dato: `LowCardinality(String)`.
+* `_offset` - Desplazamiento en el archivo de registro. Tipo de dato: `UInt64`.
+
+Columnas virtuales adicionales cuando `handle_error_mode='stream'`:
+
+* `_raw_record` - Registro sin procesar que no pudo analizarse correctamente. Tipo de dato: `Nullable(String)`.
+* `_error` - Mensaje de excepción que se produjo durante un análisis fallido. Tipo de dato: `Nullable(String)`.
+
+Nota: las columnas virtuales `_raw_record` y `_error` solo se rellenan en caso de excepción durante el análisis; siempre son `NULL` cuando el mensaje se analiza correctamente.

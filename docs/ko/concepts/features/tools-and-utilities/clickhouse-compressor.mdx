@@ -1,0 +1,36 @@
+---
+description: 'ClickHouse Compressor 문서'
+slug: /operations/utilities/clickhouse-compressor
+title: 'clickhouse-compressor'
+doc_type: 'reference'
+---
+
+데이터를 압축하고 압축을 해제하는 간단한 프로그램입니다.
+
+<div id="examples">
+  ### 예시
+</div>
+
+LZ4를 사용해 데이터를 압축합니다:
+
+```bash
+$ ./clickhouse-compressor < input_file > output_file
+```
+
+LZ4 포맷으로 된 데이터의 압축을 해제합니다:
+
+```bash
+$ ./clickhouse-compressor --decompress < input_file > output_file
+```
+
+ZSTD 레벨 5로 데이터를 압축합니다:
+
+```bash
+$ ./clickhouse-compressor --codec 'ZSTD(5)' < input_file > output_file
+```
+
+4바이트 Delta와 ZSTD 레벨 10을 사용해 데이터를 압축합니다.
+
+```bash
+$ ./clickhouse-compressor --codec 'Delta(4)' --codec 'ZSTD(10)' < input_file > output_file
+```

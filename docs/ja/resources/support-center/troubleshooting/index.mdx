@@ -1,0 +1,183 @@
+---
+slug: /troubleshooting
+sidebarTitle: 'トラブルシューティング'
+doc_type: 'guide'
+keywords: [
+  'clickhouse トラブルシューティング',
+  'clickhouse エラー',
+  'データベース トラブルシューティング',
+  'clickhouse 接続の問題',
+  'メモリ制限超過',
+  'clickhouse パフォーマンスの問題',
+  'データベースのエラーメッセージ',
+  'clickhouse 設定の問題',
+  '接続拒否エラー',
+  'clickhouse デバッグ',
+  'データベース接続の問題',
+  'トラブルシューティングガイド'
+]
+title: 'よくある問題のトラブルシューティング'
+description: '遅いクエリ、メモリエラー、接続の問題、設定の問題など、ClickHouse でよく発生する問題の解決策を紹介します。'
+---
+
+ClickHouse で問題が発生した場合は、こちらでよくある問題の解決策を確認できます。
+
+<div id="performance-and-errors">
+  ## パフォーマンスとエラー
+</div>
+
+クエリの実行が遅い、タイムアウトする、または &quot;Memory limit exceeded&quot; や &quot;Connection refused&quot; などの特定のエラーメッセージが表示される場合。
+
+<Accordion title="パフォーマンスとエラーの対処法を表示">
+  ### クエリのパフォーマンス
+
+  * [最も多くのリソースを消費しているクエリを特定する](/ja/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+  * [クエリ最適化の完全ガイド](/ja/guides/clickhouse/performance-and-monitoring/query-optimization)
+  * [JOIN演算を最適化する](/ja/concepts/best-practices/minimize-optimize-joins)
+  * [ボトルネックを見つけるために診断クエリを実行する](/ja/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+
+  <br />
+
+  ### データ挿入のパフォーマンス
+
+  * [データ挿入を高速化する](/ja/concepts/features/operations/insert/bulkinserts)
+  * [非同期挿入を設定する](/ja/concepts/features/operations/insert/asyncinserts)
+
+  <br />
+
+  ### 高度な分析ツール
+
+  {/* - [LLVM XRay でプロファイリングする](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+
+  * [現在実行中のプロセスを確認する](/ja/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+  * [システムパフォーマンスを監視する](/ja/reference/system-tables/processes)
+
+  <br />
+
+  ### エラーメッセージ
+
+  * **&quot;Memory limit exceeded&quot;** → [メモリ上限エラーをデバッグする](/ja/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * **&quot;Connection refused&quot;** → [接続の問題を解決する](#connections-and-authentication)
+  * **&quot;Login failures&quot;** → [ユーザー、ロール、権限を設定する](/ja/concepts/features/security/access-rights)
+  * **&quot;SSL certificate errors&quot;** → [証明書の問題を解決する](/ja/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * **&quot;Table/database errors&quot;** → [データベース作成ガイド](/ja/reference/statements/create/database) | [テーブル UUID の問題](/ja/reference/engines/database-engines/atomic)
+  * **&quot;Network timeouts&quot;** → [ネットワークのトラブルシューティング](/ja/concepts/features/interfaces/http)
+  * **その他の問題** → [クラスター全体でエラーを追跡する](/ja/reference/system-tables/errors)
+</Accordion>
+
+<div id="memory-and-resources">
+  ## メモリとリソース
+</div>
+
+メモリ使用量が多い、メモリ不足によるクラッシュが発生する、または ClickHouse デプロイメントの適切なサイジングについて支援が必要な場合。
+
+<Accordion title="メモリ関連の解決策を表示">
+  ### メモリのデバッグと監視:
+
+  * [何がメモリを消費しているかを特定する](/ja/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * [現在のメモリ使用量を確認する](/ja/reference/system-tables/processes)
+  * [メモリ割り当てのプロファイリング](/ja/concepts/features/performance/allocation-profiling)
+  * [メモリ使用量のパターンを分析する](/ja/reference/system-tables/query_log)
+
+  <br />
+
+  ### メモリ設定:
+
+  * [メモリ制限を設定する](/ja/concepts/features/configuration/settings/memory-overcommit)
+  * [サーバーのメモリ設定](/ja/reference/settings/server-settings/settings)
+  * [セッションのメモリ設定](/ja/reference/settings/session-settings)
+
+  <br />
+
+  ### スケーリングとサイジング:
+
+  * [サービスを適切にサイジングする](/ja/guides/oss/best-practices/tips)
+  * [オートスケーリングを設定する](/ja/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+<div id="connections-and-authentication">
+  ## 接続と認証
+</div>
+
+ClickHouse に接続できない、認証に失敗する、SSL 証明書エラーが発生する、クライアント設定に問題がある場合。
+
+<Accordion title="接続に関する解決策を表示">
+  ### 基本的な接続の問題
+
+  * [HTTP インターフェイスの問題を解決する](/ja/concepts/features/interfaces/http)
+  * [SSL 証明書の問題に対処する](/ja/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * [ユーザー認証の設定](/ja/concepts/features/security/access-rights)
+
+  <br />
+
+  ### クライアント インターフェイス
+
+  * [ネイティブ ClickHouse クライアント](/ja/concepts/features/interfaces/native-clients-interfaces-index)
+  * [MySQL インターフェイスの問題](/ja/concepts/features/interfaces/mysql)
+  * [PostgreSQL インターフェイスの問題](/ja/concepts/features/interfaces/postgresql)
+  * [gRPC インターフェイスの設定](/ja/concepts/features/interfaces/grpc)
+  * [SSH インターフェイスの設定](/ja/concepts/features/interfaces/ssh)
+
+  <br />
+
+  ### ネットワークとデータ
+
+  * [ネットワーク セキュリティの設定](/ja/reference/settings/server-settings/settings)
+  * [データ フォーマットのパースの問題](/ja/reference/formats/index)
+</Accordion>
+
+<div id="setup-and-configuration">
+  ## セットアップと設定
+</div>
+
+初期インストール、サーバー設定、データベースの作成、データインジェストの問題、またはレプリケーションのセットアップ。
+
+<Accordion title="セットアップと設定の解決策を表示">
+  ### 初期セットアップ
+
+  * [サーバー設定を行う](/ja/reference/settings/server-settings/settings)
+  * [セキュリティとアクセス制御を設定する](/ja/concepts/features/security/access-rights)
+  * [ハードウェアを適切に構成する](/ja/guides/oss/best-practices/tips)
+
+  <br />
+
+  ### データベース管理
+
+  * [データベースを作成・管理する](/ja/reference/statements/create/database)
+  * [適切なテーブルエンジンを選択する](/ja/reference/engines/table-engines/index)
+
+  {/* - [Modify schemas safely](/reference/statements/alter/index) */}
+
+  <br />
+
+  ### データ操作
+
+  * [大量データの挿入を最適化する](/ja/concepts/features/operations/insert/bulkinserts)
+  * [データフォーマットの問題に対処する](/ja/reference/formats/index)
+  * [ストリーミングデータパイプラインを設定する](/ja/concepts/features/operations/insert/asyncinserts)
+  * [S3インテグレーションのパフォーマンスを向上させる](/ja/integrations/connectors/data-ingestion/AWS/performance)
+
+  <br />
+
+  ### 高度な設定
+
+  * [データレプリケーションを設定する](/ja/reference/engines/table-engines/mergetree-family/replication)
+  * [分散テーブルを設定する](/ja/reference/engines/table-engines/special/distributed)
+
+  {/* - [ClickHouse Keeper setup](/guides/oss/deployment-and-scaling/keeper/index) */}
+
+  * [バックアップと復旧を設定する](/ja/concepts/features/backup-restore/overview)
+  * [監視を設定する](/ja/reference/system-tables/overview)
+</Accordion>
+
+<div id="still-need-help">
+  ## まだお困りですか？
+</div>
+
+解決策が見つからない場合:
+
+1. **AI に質問** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>AI に質問</button> すると、すぐに回答を得られます。
+2. **システムテーブルを確認** - [概要](/ja/reference/system-tables/overview)
+3. **サーバーログを確認** - ClickHouse の logs で error メッセージを探してください
+4. **コミュニティに質問** - [コミュニティ Slack に参加](https://clickhouse.com/slack), [GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions)
+5. **プロフェッショナルサポートを受ける** - [ClickHouse Cloud Support](https://clickhouse.com/support)

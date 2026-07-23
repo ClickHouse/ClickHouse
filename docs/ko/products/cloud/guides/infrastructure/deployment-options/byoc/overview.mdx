@@ -1,0 +1,73 @@
+---
+title: '개요'
+slug: /cloud/reference/byoc/overview
+sidebarTitle: '개요'
+keywords: ['BYOC', '클라우드', 'Bring Your Own Cloud']
+description: '자체 클라우드 인프라에 ClickHouse 배포'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="overview">
+  ## 개요
+</div>
+
+Bring Your Own Cloud (BYOC)는 기본 ClickHouse Cloud 인프라를 사용하지 않고 자체 클라우드 계정 내에 ClickHouse 서비스를 배포하고 데이터를 직접 저장할 수 있게 해줍니다. 이 방식은 특히 데이터에 대한 완전한 통제권과 주권이 요구되는 엄격한 보안 정책 또는 규제 컴플라이언스 요구 사항이 있는 조직에 적합합니다.
+
+개략적으로 보면, BYOC는 ClickHouse VPC에서 실행되며 ClickHouse Cloud가 관리하는 ClickHouse 컨트롤 플레인과, 클라우드 계정에서 전적으로 실행되며 ClickHouse 클러스터, 데이터, 백업을 포함하는 데이터 플레인을 분리합니다. 관련 구성 요소와 이들 사이의 트래픽 흐름에 대한 자세한 내용은 [Architecture](/ko/products/bring-your-own-cloud/overview/architecture) 페이지를 참조하십시오.
+
+> **액세스가 필요하면 [문의해 주세요](https://clickhouse.com/cloud/bring-your-own-cloud).** 자세한 내용은 [Terms of Service](https://clickhouse.com/legal/agreements/terms-of-service)를 참조하십시오.
+
+<Note>
+  BYOC는 대규모 배포를 위해 특별히 설계되었으며, committed 계약 체결이 필요합니다.
+</Note>
+
+**지원되는 클라우드 서비스 제공업체:**
+
+* AWS (일반 제공)
+* GCP (일반 제공)
+* Azure (비공개 프리뷰). 관심이 있으면 [여기](https://clickhouse.com/cloud/bring-your-own-cloud)에서 대기자 명단에 등록하십시오.
+
+**지원되는 Cloud 리전:**
+BYOC 배포에서는 [지원되는 리전](/ko/products/cloud/reference/supported-regions) 문서에 나열된 모든 **퍼블릭 리전**을 사용할 수 있습니다. 프라이빗 리전은 현재 지원되지 않습니다.
+
+<div id="features">
+  ## 기능
+</div>
+
+<div id="supported-features">
+  ### 지원되는 기능
+</div>
+
+* **SharedMergeTree**: ClickHouse Cloud와 BYOC는 동일한 바이너리와 구성을 사용합니다. 따라서 SharedMergeTree를 비롯한 ClickHouse 핵심의 모든 기능이 BYOC에서 지원됩니다.
+* **Shared Catalog**
+* **서비스 상태 관리를 위한 Console 액세스**:
+  * 시작, 중지, 종료 등의 작업을 지원합니다.
+  * 서비스와 상태를 확인할 수 있습니다.
+* **관리형 백업 및 복원**
+* **수동 수직 및 수평 스케일링**
+* **자동 유휴 상태 전환/깨우기**
+* **Warehouses**: 컴퓨트-컴퓨트 분리
+* **Tailscale을 통한 Zero Trust 네트워크**
+* **모니터링**:
+  * Prometheus, Grafana, Datadog를 사용한 중앙 집중식 모니터링을 위해 Prometheus 스크레이핑을 지원합니다. 설정 방법은 [BYOC Observability](/ko/products/bring-your-own-cloud/reference/observability-aws)를 참조하십시오.
+* **VPC Peering**
+* **Secure S3**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
+* **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **통합**: 전체 목록은 [이 페이지](/ko/integrations/home)에서 확인하십시오.
+
+<div id="planned-features-currently-unsupported">
+  ### 예정된 기능(현재 미지원)
+</div>
+
+다음 기능은 Bring Your Own Cloud (BYOC) 배포에서 제한이 있거나 아직 완전히 지원되지 않습니다.
+
+* SQL 콘솔: 표준 SQL 콘솔은 BYOC 배포에서 아직 사용할 수 없지만, 로드맵에 포함되어 있습니다.
+* ClickPipes 지원: 현재 Kafka, Kinesis와 같은 streaming 통합에 대해 비공개 프리뷰로 제공됩니다. 추가 통합(CDC, 객체 스토리지 등)은 로드맵에 포함되어 있습니다.
+* 자동 스케일링: 향후 릴리스에 추가될 예정이며, 현재 로드맵에 포함되어 있습니다.
+* MySQL 인터페이스
+* AWS KMS aka CMEK(고객 관리형 암호화 키)
+* Advanced Dashboard: 브라우저가 ClickHouse 서버의 엔드포인트에 직접 접근하고 직접 연결할 수 있어야 하는 클라이언트 전용 UI입니다. VPC 네트워크 정책이 ClickHouse 엔드포인트에 대한 브라우저의 인바운드 액세스를 제한하면 Advanced Dashboard는 작동하지 않습니다.
+* 모니터링 대시보드: 현재 모니터링 대시보드에서는 메모리 할당 메트릭만 사용할 수 있습니다. 추가 메트릭 지원은 현재 진행 중이며 향후 릴리스에서 제공될 예정입니다.

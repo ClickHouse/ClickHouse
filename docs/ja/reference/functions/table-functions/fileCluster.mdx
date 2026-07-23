@@ -1,0 +1,97 @@
+---
+description: 'クラスター内の複数のノードで、指定したパスに一致するファイルを同時に処理できるようにします。イニシエーターはワーカーノードへの接続を確立し、ファイルパス内のグロブを展開して、ファイル読み取りタスクをワーカーノードに割り当てます。各ワーカーノードは、次に処理するファイルをイニシエーターに問い合わせ、すべてのタスクが完了する（つまり、すべてのファイルが読み込まれる）までこれを繰り返します。'
+sidebarTitle: 'fileCluster'
+slug: /sql-reference/table-functions/fileCluster
+title: 'fileCluster'
+doc_type: 'reference'
+---
+
+クラスター内の複数のノードで、指定したパスに一致するファイルを同時に処理できるようにします。イニシエーターはワーカーノードへの接続を確立し、ファイルパス内のグロブを展開して、ファイル読み取りタスクをワーカーノードに割り当てます。各ワーカーノードは、次に処理するファイルをイニシエーターに問い合わせ、すべてのタスクが完了する (つまり、すべてのファイルが読み込まれる) までこれを繰り返します。
+
+<Note>
+  この関数が&#95;正しく&#95;動作するのは、最初に指定したパスに一致するファイルの集合がすべてのノードで同一であり、それらの内容がノード間で一貫している場合に限られます。
+  これらのファイルがノードごとに異なる場合、戻り値は事前には決定できず、ワーカーノードがイニシエーターにタスクを要求する順序に依存します。
+</Note>
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+fileCluster(cluster_name, path[, format, structure, compression_method])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| Argument             | Description                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | リモートサーバーおよびローカルサーバーへのアドレスのセットと接続パラメーターを構築する際に使用するクラスター名。                                                                                          |
+| `path`               | [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings#user_files_path) からのファイルへの相対パスです。ファイルパスでは [グロブ](#globs-in-path) もサポートされます。 |
+| `format`             | ファイルの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                                                               |
+| `structure`          | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                |
+| `compression_method` | 圧縮方式。サポートされている圧縮タイプは `gz`、`br`、`xz`、`zst`、`lz4`、`bz2` です。                                                                                         |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定されたフォーマットと構造を持ち、指定されたパスに一致するファイル内のデータを含むテーブル。
+
+**例**
+
+`my_cluster` という名前のクラスターがあり、設定 `user_files_path` の値が次のとおりであるとします。
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+また、クラスター内の各ノードの `user_files_path` に `test1.csv` と `test2.csv` があり、それらの内容がすべてのノードで同一である場合:
+
+```bash
+$ cat /var/lib/clickhouse/user_files/test1.csv
+    1,"file1"
+    11,"file11"
+
+$ cat /var/lib/clickhouse/user_files/test2.csv
+    2,"file2"
+    22,"file22"
+```
+
+たとえば、各クラスター ノードで次の 2 つのクエリを実行すると、これらのファイルを作成できます。
+
+```sql
+INSERT INTO TABLE FUNCTION file('file1.csv', 'CSV', 'i UInt32, s String') VALUES (1,'file1'), (11,'file11');
+INSERT INTO TABLE FUNCTION file('file2.csv', 'CSV', 'i UInt32, s String') VALUES (2,'file2'), (22,'file22');
+```
+
+次に、`fileCluster` テーブル関数を使用して `test1.csv` と `test2.csv` のデータ内容を読み込みます。
+
+```sql
+SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
+```
+
+```response
+┌──i─┬─s──────┐
+│  1 │ file1  │
+│ 11 │ file11 │
+└────┴────────┘
+┌──i─┬─s──────┐
+│  2 │ file2  │
+│ 22 │ file22 │
+└────┴────────┘
+```
+
+<div id="globs-in-path">
+  ## Path内のグロブ
+</div>
+
+[File](/ja/reference/functions/table-functions/file#globs-in-path) テーブル関数でサポートされているすべてのパターンは、FileClusterでもサポートされています。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [File テーブル関数](/ja/reference/functions/table-functions/file)

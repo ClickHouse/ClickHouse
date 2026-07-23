@@ -1,0 +1,218 @@
+---
+slug: /cloud/managed-postgres/migrations/clickhouse-cloud
+sidebarTitle: 'ClickHouse Cloud'
+title: Миграция в Managed Postgres с помощью ClickHouse Cloud
+description: 'Узнайте, как перенести базу данных PostgreSQL в ClickHouse Managed Postgres с помощью встроенного мастера импорта в разделе «Источники данных» ClickHouse Cloud.'
+keywords: ['postgres', 'postgresql', 'логическая репликация', 'миграция', 'передача данных', 'managed postgres', 'источники данных', 'импорт']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse Cloud включает встроенный мастер импорта, который переносит вашу внешнюю базу данных PostgreSQL в сервис Managed Postgres. Этот мастер выполняет подключение к источнику, экспорт и импорт схемы, настройку репликации и выбор таблиц в рамках пяти пошаговых этапов.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Доступ к вашей исходной базе данных PostgreSQL с пользователем, у которого есть права на репликацию.
+* Сервис ClickHouse Managed Postgres в качестве целевого сервиса для миграции. Если у вас его ещё нет, см. [руководство по быстрому старту](/ru/products/managed-postgres/quickstart).
+* На локальной машине должны быть установлены `pg_dump` и `psql`. Оба входят в стандартный набор клиентских инструментов PostgreSQL.
+
+<div id="considerations">
+  ## Что нужно учитывать перед миграцией
+</div>
+
+* **Распространение DDL**: непрерывная репликация (CDC) фиксирует операции DML и `ADD COLUMN`. Другие изменения DDL, такие как `DROP COLUMN` и `ALTER COLUMN`, не распространяются и должны применяться вручную на целевой стороне.
+
+<div id="step-1-connect">
+  ## Шаг 1: Подключитесь к исходной базе данных
+</div>
+
+Откройте [консоль ClickHouse Cloud](https://clickhouse.cloud) и выберите свой сервис Managed Postgres.
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud" size="lg" border />
+
+На левой боковой панели нажмите **Источники данных**.
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Пункт &#x22;Источники данных&#x22; на боковой панели сервиса Managed Postgres" size="lg" border />
+
+Нажмите **Начать импорт**.
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Страница &#x22;Источники данных&#x22; с кнопкой &#x22;Начать импорт&#x22;" size="lg" border />
+
+Заполните сведения о подключении к исходной базе данных PostgreSQL: хост, порт, имя пользователя, пароль и имя базы данных. Включите **TLS**, если это требуется для источника.
+
+Если для подключения к исходной базе данных требуется приватное соединение, выберите **SSH-туннелирование** и укажите необходимые параметры SSH. Это позволит миграции безопасно подключаться к базам данных без публичного доступа.
+
+Выберите способ ингестии:
+
+* **Начальная загрузка + CDC** — копирует существующие данные, а затем поддерживает синхронизацию целевой системы с последующими изменениями.
+* **Только начальная загрузка** — однократное копирование без дальнейшей репликации.
+* **Только CDC** — пропускает первоначальное копирование и реплицирует только новые изменения, начиная с этого момента.
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Шаг 1: форма подключения к исходной базе данных с вариантами способа ингестии" size="lg" border />
+
+Нажмите **Далее**.
+
+<div id="step-2-export-schema">
+  ## Шаг 2: Экспортируйте схему вашей базы данных
+</div>
+
+Мастер показывает команду `pg_dump`, уже заполненную сведениями о подключении к исходной базе данных. Выполните её в терминале:
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Шаг 2: команда pg_dump для экспорта схемы" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+Это создаст `pg.sql` в вашем текущем каталоге.
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Вывод в терминале после выполнения pg_dump" size="lg" border />
+
+Нажмите **Next**.
+
+<div id="step-3-import-schema">
+  ## Шаг 3: Импортируйте схему в сервис Managed Postgres
+</div>
+
+Выберите базу данных назначения в раскрывающемся списке или нажмите **Create a new database**, чтобы создать новую.
+
+Мастер покажет команду `psql`, чтобы применить дамп схемы к вашему сервису Managed Postgres. Выполните её в терминале:
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Шаг 3: команда psql для импорта схемы" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Вывод в терминале после импорта схемы через psql" size="lg" border />
+
+Нажмите **Далее**.
+
+<div id="step-4-ingestion-settings">
+  ## Шаг 4: Настройка параметров ингестии
+</div>
+
+Укажите публикацию, которую нужно использовать для логической репликации. Если оставить это поле пустым, публикация будет создана автоматически.
+
+Разверните **Расширенные параметры репликации**, чтобы настроить пропускную способность:
+
+| Параметр                                               | По умолчанию | Описание                                                     |
+| ------------------------------------------------------ | ------------ | ------------------------------------------------------------ |
+| Интервал синхронизации (секунды)                       | 10           | Как часто опрашивается слот репликации                       |
+| Параллельные потоки для первоначальной загрузки        | 4            | Количество потоков для этапа пакетной загрузки               |
+| Размер батча Pull                                      | 100,000      | Количество строк, получаемых за один батч репликации         |
+| Количество строк в снимке на партицию                  | 100000       | Размер партиции для снимков больших таблиц                   |
+| Количество таблиц в снимке, обрабатываемых параллельно | 1            | Количество таблиц, для которых одновременно создаются снимки |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Шаг 4: форма параметров ингестии с публикацией и расширенными параметрами репликации" size="lg" border />
+
+Нажмите **Next**.
+
+<div id="step-5-select-tables">
+  ## Шаг 5: Выберите таблицы
+</div>
+
+Выберите таблицы, которые нужно реплицировать. Таблицы сгруппированы по схемам. Выберите отдельные таблицы или разверните схему, чтобы выбрать все таблицы в ней.
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Шаг 5: окно выбора таблиц, сгруппированных по схемам, с кнопкой «Создать миграцию»" size="lg" border />
+
+Нажмите **Создать миграцию**.
+
+<div id="monitor">
+  ## Отслеживание миграции
+</div>
+
+После создания миграции вы увидите её в разделе **источник данных** со статусом **Running**.
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Список в разделе источник данных, показывающий выполняющуюся миграцию" size="lg" border />
+
+Нажмите на миграцию, чтобы открыть подробное представление. На вкладке **Tables** отображается ход начальной загрузки для каждой таблицы, включая количество обработанных строк, партиции и среднее время на партицию. На вкладке **Metrics** после начала CDC отображаются отставание репликации и пропускная способность.
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Подробное представление миграции, показывающее статистику начальной загрузки по каждой таблице" size="lg" border />
+
+<div id="post-migration">
+  ## Действия после миграции
+</div>
+
+После завершения начальной загрузки и, если используется CDC, когда задержка репликации становится близкой к нулю:
+
+**Проверьте число строк.** Выборочно проверьте критически важные таблицы в исходной и целевой системах перед переключением трафика:
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**Остановите запись в источнике.** Приостановите запись со стороны приложения. Чтобы перевести систему в режим только для чтения на время переключения:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**Убедитесь, что репликация синхронизировалась.** Сравните последнюю строку в источнике и целевой базе данных:
+
+```sql
+-- Выполните на источнике и целевой базе данных
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**Сбросьте последовательности.** Синхронизируйте последовательности с текущими максимальными значениями в каждой таблице:
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**Переведите трафик приложения.** Направьте операции чтения и записи на ваш сервис Managed Postgres и отслеживайте ошибки, нарушения ограничений и состояние репликации.
+
+**Выполните очистку.**  После перевода трафика и подтверждения, что новый сервис работает нормально, удалите миграцию из раздела **Источники данных**. Если вы использовали CDC, удалите слот репликации на источнике, чтобы освободить ресурсы:
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+<div id="next-steps">
+  ## Дальнейшие шаги
+</div>
+
+* [Краткое руководство по Managed Postgres](/ru/products/managed-postgres/quickstart)
+* [Сведения о подключении к Managed Postgres](/ru/products/managed-postgres/connection)
+* [FAQ по ClickPipes Postgres](/ru/integrations/clickpipes/postgres/faq)

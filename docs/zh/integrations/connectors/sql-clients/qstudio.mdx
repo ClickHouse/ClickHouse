@@ -1,0 +1,80 @@
+---
+slug: /integrations/qstudio
+sidebarTitle: 'QStudio'
+description: 'QStudio 是一款免费的 SQL 工具。'
+title: '将 QStudio 连接至 ClickHouse'
+doc_type: 'guide'
+keywords: ['qstudio', 'sql 客户端', '数据库工具', '查询工具', 'ide']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+QStudio 是一款免费的 SQL 图形界面工具，可用于运行 SQL 脚本、轻松浏览表、生成图表并导出结果。它支持所有操作系统和各种数据库。
+
+QStudio 通过 JDBC 连接到 ClickHouse。
+
+<div id="1-gather-your-clickhouse-details">
+  ## 1. 获取 ClickHouse 连接信息
+</div>
+
+QStudio 使用基于 HTTP(S) 的 JDBC 连接 ClickHouse；你需要准备以下信息：
+
+* 端点
+* 端口号
+* 用户名
+* 密码
+
+<ConnectionDetails />
+
+<div id="2-download-qstudio">
+  ## 2. 下载 QStudio
+</div>
+
+QStudio 可在 https://www.timestored.com/qstudio/download/ 下载。
+
+<div id="3-add-a-database">
+  ## 3. 添加数据库
+</div>
+
+* 首次打开 QStudio 时，点击菜单中的 **Server-&gt;Add Server**，或点击工具栏上的添加服务器按钮。
+* 然后设置以下信息：
+
+<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="显示 ClickHouse 连接设置的 QStudio 数据库连接配置界面" />
+
+1. 服务器类型：Clickhouse.com
+2. 注意：Host 必须包含 https://
+   Host: https://abc.def.clickhouse.cloud
+   Port: 8443
+3. 用户名：default
+   密码：`XXXXXXXXXXX`
+4. 点击 Add
+
+如果 QStudio 检测到你尚未安装 ClickHouse JDBC 驱动，它会提示你下载并安装：
+
+<div id="4-query-clickhouse">
+  ## 4. 查询 ClickHouse
+</div>
+
+* 打开查询编辑器并运行查询。你可以通过以下方式运行查询：
+
+* Ctrl + e - 运行高亮选中的文本
+
+* Ctrl + Enter - 运行当前行
+
+* 示例查询：
+
+<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="QStudio 界面显示了针对 ClickHouse 数据库执行示例 SQL 查询的过程" />
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+请参阅 [QStudio](https://www.timestored.com/qstudio)，了解 QStudio 的功能；另请参阅 [ClickHouse documentation](/zh/)，了解 ClickHouse 的功能。
