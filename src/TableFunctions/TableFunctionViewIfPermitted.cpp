@@ -119,6 +119,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
@@ -133,6 +134,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     {
         if (e.code() == ErrorCodes::ACCESS_DENIED)
             return false;
+        e.recordToSystemErrors();
         throw;
     }
 

@@ -3,6 +3,7 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
@@ -645,6 +646,7 @@ void collectSymbolsFromMachOImage(
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 std::filesystem::path binary_path(object.name);
                 std::string basename = binary_path.filename().string();
                 std::filesystem::path dsym_path = std::filesystem::path(object.name + ".dSYM")

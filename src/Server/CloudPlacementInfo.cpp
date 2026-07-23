@@ -1,4 +1,5 @@
 #include <Server/CloudPlacementInfo.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -69,6 +70,7 @@ PlacementInfo & PlacementInfo::instance()
 void PlacementInfo::initialize(const Poco::Util::AbstractConfiguration & config)
 try
 {
+    Exception::SuppressErrorCodesScope suppress_error_codes;
     if (initialized)
         return;
 

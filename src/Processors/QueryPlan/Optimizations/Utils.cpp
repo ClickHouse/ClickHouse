@@ -173,6 +173,7 @@ FilterResult filterResultForNotMatchedRows(
     ColumnsWithTypeAndName filter_output;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         filter_output = ActionsDAG::evaluatePartialResult(
             filter_input,
             targets,

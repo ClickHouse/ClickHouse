@@ -1,6 +1,7 @@
 #include <chrono>
 #include <variant>
 #include <Columns/ColumnTuple.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -500,13 +501,17 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             plan = std::make_unique<QueryPlan>(source->clone());
             source_preserved = true;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
     }
 

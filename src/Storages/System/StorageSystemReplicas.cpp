@@ -401,6 +401,7 @@ Chunk SystemReplicasSource::generate()
                 tryLogCurrentException(logger, "Received the ABORTED error while trying to get the status of a storage, this is likely because it has been shut down");
                 continue;
             }
+            e.recordToSystemErrors();
             throw;
         }
 

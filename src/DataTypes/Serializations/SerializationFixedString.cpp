@@ -207,14 +207,24 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     size_t prev_size = data.size();
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+    }
+    catch (Exception & e)
+    {
+        data.resize_assume_reserved(prev_size);
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        if (!isParseError(e.code()))
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        return false;
     }
     catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        return false;
+        throw;
     }
 }
 

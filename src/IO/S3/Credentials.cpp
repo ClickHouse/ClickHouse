@@ -26,6 +26,7 @@ namespace S3
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return getRunningAvailabilityZone(az_facility);
         }
         catch (...)
@@ -549,7 +550,10 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
             try
             {
                 if (getter.first)
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     return getter.second();
+                }
             }
             catch (...)
             {
@@ -566,6 +570,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto getter_index = magic_enum::enum_integer(az_facility) - 1;
             return az_getters[getter_index].second();
         }

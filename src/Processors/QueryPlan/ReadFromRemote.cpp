@@ -624,6 +624,7 @@ void ReadFromRemote::addLazyPipe(
         std::exception_ptr exception_ptr;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             if (my_table_func_ptr)
                 try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_ONE);
             else
@@ -631,14 +632,17 @@ void ReadFromRemote::addLazyPipe(
                     timeouts, current_settings, PoolMode::GET_ONE,
                     my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
-        catch (const Exception & ex)
+        catch (Exception & ex)
         {
             exception_ptr = std::current_exception();
             if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "Connections to remote replicas of local shard {} failed, will use stale local replica", my_shard.shard_info.shard_num);
             else
+            {
+                ex.recordToSystemErrors();
                 throw;
+            }
         }
 
         UInt32 max_remote_delay = 0;
@@ -696,7 +700,17 @@ void ReadFromRemote::addLazyPipe(
         /// but it turns out to be false (likely due to manual triggering of use_delayed_remote_source failpoint),
         /// so we need to rethrow exception here, to avoid creating connections with zero replicas
         if (exception_ptr)
-            std::rethrow_exception(exception_ptr);
+        {
+            try
+            {
+                std::rethrow_exception(exception_ptr);
+            }
+            catch (Exception & ex)
+            {
+                ex.recordToSystemErrors();
+                throw;
+            }
+        }
 
         std::vector<IConnectionPool::Entry> connections;
         connections.reserve(try_results.size());

@@ -267,6 +267,7 @@ Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             new_value = SettingsT::castValueUtil(change.name, change.value);
         }
         catch (const Exception &)
@@ -360,6 +361,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
             return accurateLess(left, right);
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return accurateLess(left, right);
         }
         catch (const Exception &)
@@ -374,6 +376,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
             return accurateEquals(left, right);
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return accurateEquals(left, right);
         }
         catch (const Exception &)

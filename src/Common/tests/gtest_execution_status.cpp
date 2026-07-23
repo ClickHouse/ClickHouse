@@ -1,8 +1,19 @@
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+namespace
+{
+
+size_t getLocalErrorCount(int code)
+{
+    return ErrorCodes::values[code].get().local.count;
+}
+
+}
 
 /// tryDeserializeText must be atomic: on a malformed payload it returns false and leaves the target
 /// unchanged. deserializeText reads `code` before it can fail on the rest of the payload, so a
@@ -29,4 +40,35 @@ TEST(ExecutionStatus, TryDeserializeTextRoundTrip)
     EXPECT_TRUE(parsed.tryDeserializeText(original.serializeText()));
     EXPECT_EQ(parsed.code, 42);
     EXPECT_EQ(parsed.message, "boom");
+}
+
+TEST(ExecutionStatus, TryDeserializeTextDoesNotRecordHandledError)
+{
+    const std::string malformed = "0";
+    int error_code = 0;
+    try
+    {
+        ExecutionStatus status;
+        status.deserializeText(malformed);
+        FAIL() << "Expected malformed status to throw";
+    }
+    catch (const Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    const auto count = getLocalErrorCount(error_code);
+    ExecutionStatus status;
+    EXPECT_FALSE(status.tryDeserializeText(malformed));
+    EXPECT_EQ(getLocalErrorCount(error_code), count);
+
+    try
+    {
+        status.deserializeText(malformed);
+        FAIL() << "Expected malformed status to throw";
+    }
+    catch (const Exception &)
+    {
+    }
+    EXPECT_EQ(getLocalErrorCount(error_code), count + 1);
 }

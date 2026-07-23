@@ -201,7 +201,13 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
     ReadBufferFromString buf(key_string);
     try
     {
-        key_serialization->deserializeWholeText(*key_column, buf, FormatSettings{});
+        if (throw_if_null)
+            key_serialization->deserializeWholeText(*key_column, buf, FormatSettings{});
+        else
+        {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
+            key_serialization->deserializeWholeText(*key_column, buf, FormatSettings{});
+        }
     }
     catch (...)
     {

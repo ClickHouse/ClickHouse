@@ -127,6 +127,27 @@ namespace
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
+        template <typename Function>
+        static void runWithAccessDeniedSuppressed(Function && function)
+        {
+            try
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                function();
+            }
+            catch (S3Exception & e)
+            {
+                if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                    e.recordToSystemErrors();
+                throw;
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+        }
+
         void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
         {
             request.SetBucket(dest_bucket);
@@ -263,10 +284,13 @@ namespace
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
-        void performMultipartUpload(size_t start_offset, size_t size)
+        void performMultipartUpload(size_t start_offset, size_t size, bool suppress_access_denied = false)
         {
             calculatePartSize(size);
-            createMultipartUpload();
+            if (suppress_access_denied)
+                runWithAccessDeniedSuppressed([&] { createMultipartUpload(); });
+            else
+                createMultipartUpload();
 
             size_t position = start_offset;
             size_t end_position = start_offset + size;
@@ -291,17 +315,23 @@ namespace
 
                     auto & part_tag = multipart_tags[part_number - 1];
 
-                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
+                    task_tracker.add([this, part_number, position, part_size, &part_tag, suppress_access_denied]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task, part_tag);
+                        if (suppress_access_denied)
+                            runWithAccessDeniedSuppressed([&] { this->processUploadTask(task, part_tag); });
+                        else
+                            this->processUploadTask(task, part_tag);
                     });
 
                     position = next_position;
                 }
 
                 task_tracker.waitAll();
-                completeMultipartUpload();
+                if (suppress_access_denied)
+                    runWithAccessDeniedSuppressed([&] { completeMultipartUpload(); });
+                else
+                    completeMultipartUpload();
             }
             catch (...)
             {
@@ -403,6 +433,7 @@ namespace
                 e.addMessage(fmt::format("while uploading part #{}", task.part_number, dest_key, dest_bucket));
                 /// stop other tasks
                 has_failed = true;
+                e.recordToSystemErrors();
                 throw;
             }
 
@@ -774,15 +805,23 @@ namespace
         {
             try
             {
-                UploadHelper::performMultipartUpload(offset, size);
+                UploadHelper::performMultipartUpload(offset, size, true);
             }
-            catch (const S3Exception & e)
+            catch (S3Exception & e)
             {
                 if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
 
                 tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
                 fallback_method();
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
             }
         }
 

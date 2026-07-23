@@ -31,6 +31,7 @@ TerminalKeystrokeInterceptor::~TerminalKeystrokeInterceptor()
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         stopIntercept();
     }
     catch (...)

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -1008,6 +1009,10 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
                     StoragePtr storage = nullptr;
                     try
                     {
+                        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access]
+                            && !keep_unresolved_tables)
+                            suppress_error_codes.emplace();
                         LOG_INFO(log, "Get table information for table {}", table_name);
                         storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
                     }

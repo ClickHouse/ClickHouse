@@ -360,10 +360,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_HEAD);
                 setHeadSupportForOrigin(uri, HeadSupport::Supported);
             }
-            catch (const HTTPException & e)
+            catch (HTTPException & e)
             {
                 /// Many servers/CDNs serve `GET` but reject `HEAD` with a non-`405` status (e.g. webhdfs
                 /// answers `400`, others use `403`). Mirror `ReadWriteBufferFromHTTP::getFileInfo`: treat any
@@ -385,8 +386,14 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
                 }
                 else
                 {
+                    e.recordToSystemErrors();
                     throw;
                 }
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
             }
         }
 
@@ -428,6 +435,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
             if (metadata)
                 return metadata;
@@ -440,7 +448,21 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     }
 
     if (last_exception)
-        std::rethrow_exception(last_exception);
+    {
+        try
+        {
+            std::rethrow_exception(last_exception);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
 
     if (has_not_found)
         return std::nullopt;

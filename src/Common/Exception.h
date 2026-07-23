@@ -138,8 +138,8 @@ public:
 
     /// Prevent exceptions constructed on the current thread from being recorded in `system.errors`
     /// and consequently `system.error_log`.
-    /// An exception that leaves the scope must be recorded explicitly with `recordToSystemErrors`.
-    /// `recordToSystemErrors` bypasses active suppression and records the exception at most once.
+    /// Scopes can be nested. An exception that propagates out of a speculative operation must be
+    /// passed to `recordToSystemErrors`; it is recorded only after all surrounding scopes unwind.
     /// Example:
     ///     try
     ///     {
@@ -160,8 +160,6 @@ public:
         SuppressErrorCodesScope(const SuppressErrorCodesScope &) = delete;
         SuppressErrorCodesScope & operator=(const SuppressErrorCodesScope &) = delete;
 
-    private:
-        bool previous;
     };
 
 protected:
@@ -260,7 +258,7 @@ public:
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
     /// Record an exception that was constructed under `SuppressErrorCodesScope` but will be propagated.
-    /// This method bypasses active suppression and is idempotent.
+    /// Recording is deferred while any suppression scope remains active and is idempotent for this object.
     void recordToSystemErrors();
 
     void markAsLogged() { logged.store(true, std::memory_order_relaxed); }

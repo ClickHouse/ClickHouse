@@ -484,9 +484,10 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
         }
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             result.emplace(collection_name, get(collection_name));
         }
-        catch (const Coordination::Exception & e)
+        catch (Coordination::Exception & e)
         {
             /// A concurrent update may have removed the collection between listing and reading.
             /// This is expected in a replicated setup - the next refresh cycle will handle it.
@@ -496,6 +497,12 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
                     "Collection '{}' was removed while reading, skipping", collection_name);
                 continue;
             }
+            e.recordToSystemErrors();
+            throw;
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
             throw;
         }
     }

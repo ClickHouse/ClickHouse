@@ -109,6 +109,7 @@ namespace
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto resolver = factory.tryGet(name, context);
                 if (resolver)
                 {
@@ -193,14 +194,18 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         ASTPtr ast;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ast = user_defined_sql_functions_factory.get(function_name);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
                 tryLogCurrentException(getLogger("system.functions"), fmt::format("Function {} does not exist", function_name), LogsLevel::debug);
             else
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
         /// WASM functions are stored in the same SQL objects storage but have their own origin.
         /// They are emitted separately below; skip them here to avoid duplicates.

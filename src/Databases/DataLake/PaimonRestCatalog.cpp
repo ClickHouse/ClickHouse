@@ -305,16 +305,23 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
     LOG_TRACE(log, "Requesting endpoint: {}", endpoint);
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         return create_buffer();
     }
     catch (DB::HTTPException & e)
     {
-        if (e.code() == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED && refresh_token && token->token_provider == "dlf")
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED && refresh_token && token->token_provider == "dlf")
         {
             refresh_token = false;
             token->dlf_generated_authorization = "";
             return create_buffer();
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
 }
@@ -480,15 +487,22 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
 {
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         createReadBuffer(
             std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
     }
-    catch (const DB::HTTPException & e)
+    catch (DB::HTTPException & e)
     {
-        if (e.code() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
         {
             return false;
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
     return true;
@@ -498,6 +512,7 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
 {
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         auto table_json_ptr = requestRest(
             std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
         if (result.requiresLocation())
@@ -598,12 +613,18 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
         }
         return true;
     }
-    catch (const DB::HTTPException & e)
+    catch (DB::HTTPException & e)
     {
-        if (e.code() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
         {
             return false;
         }
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (DB::Exception & e)
+    {
+        e.recordToSystemErrors();
         throw;
     }
 }

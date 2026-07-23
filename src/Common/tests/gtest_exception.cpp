@@ -20,9 +20,23 @@ size_t getLocalErrorCount(int code)
 {
     return ErrorCodes::values[code].get().local.count;
 }
+
+[[noreturn]] void throwFromSuppressedHelper()
+{
+    try
+    {
+        Exception::SuppressErrorCodesScope scope;
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "helper failed");
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
+    }
+}
 }
 
-TEST(Exception, RecordToSystemErrorsOnlyRecordsSuppressedExceptions)
+TEST(Exception, RecordToSystemErrorsRespectsSuppression)
 {
     const auto suppressed_count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
     Exception suppressed;
@@ -32,11 +46,12 @@ TEST(Exception, RecordToSystemErrorsOnlyRecordsSuppressedExceptions)
 
         EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count);
         suppressed.recordToSystemErrors();
-        EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count + 1);
-        suppressed.recordToSystemErrors();
-        EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count + 1);
+        EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count);
     }
 
+    suppressed.recordToSystemErrors();
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count + 1);
+    suppressed.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count + 1);
 
     const auto unrecorded_count = getLocalErrorCount(ErrorCodes::STD_EXCEPTION);
@@ -53,6 +68,54 @@ TEST(Exception, RecordToSystemErrorsOnlyRecordsSuppressedExceptions)
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::UNSUPPORTED_METHOD), recorded_count + 1);
     recorded.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::UNSUPPORTED_METHOD), recorded_count + 1);
+}
+
+TEST(Exception, RecordingWaitsForOutermostSuppressionScope)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    Exception nested;
+
+    {
+        Exception::SuppressErrorCodesScope outer_scope;
+        {
+            Exception::SuppressErrorCodesScope inner_scope;
+            nested = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "nested");
+        }
+
+        nested.recordToSystemErrors();
+        EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count);
+    }
+
+    nested.recordToSystemErrors();
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+}
+
+TEST(Exception, OutermostCallerControlsRecording)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+
+    try
+    {
+        Exception::SuppressErrorCodesScope outer_scope;
+        throwFromSuppressedHelper();
+    }
+    catch (const Exception &)
+    {
+        /// The outer caller handled the helper failure with a successful fallback.
+    }
+
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count);
+
+    try
+    {
+        throwFromSuppressedHelper();
+    }
+    catch (const Exception &)
+    {
+        /// Without an outer suppression scope, the helper records before propagation.
+    }
+
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
 }
 
 }

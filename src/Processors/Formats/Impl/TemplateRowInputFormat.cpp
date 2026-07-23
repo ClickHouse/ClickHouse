@@ -178,6 +178,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
     bool caught = false;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         PeekableReadBufferCheckpoint checkpoint{*buf, true};
         format_reader->tryReadPrefixOrSuffix<void>(last_successfully_parsed_idx, format.columnsCount());
     }
@@ -243,6 +244,7 @@ bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const
         skipWhitespaceIfAny(buf);
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         assertString(delimiter, buf);
     }
     catch (const DB::Exception &)
@@ -444,14 +446,18 @@ bool TemplateFormatReader::checkForSuffix()
     size_t last_successfully_parsed_idx = format_data_idx + 1;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         suffix_found = tryReadPrefixOrSuffix<bool>(last_successfully_parsed_idx, format.columnsCount());
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         if (e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF &&
             e.code() != ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE &&
             e.code() != ErrorCodes::CANNOT_PARSE_QUOTED_STRING)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
     }
 
     if (unlikely(suffix_found))

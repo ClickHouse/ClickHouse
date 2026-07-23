@@ -656,15 +656,19 @@ void CPULeaseAllocation::release(Lease & lease)
     std::unique_lock lock{mutex};
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         consume(lock, delta_ns);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         // `consume` may call `schedule` which may call `enqueueRequest` on a scheduler queue
         // that is being destructed (e.g. when a workload is dropped while queries are still running).
         // Since `release` is called from Lease destructor, we must not throw.
         if (e.code() != ErrorCodes::INVALID_SCHEDULER_NODE)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
     }
 
     // Release the slot

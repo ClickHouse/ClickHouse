@@ -1108,7 +1108,18 @@ private:
 
         try
         {
-            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            typename PooledConnection::Ptr connection_to_store;
+            try
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED)
+                    e.recordToSystemErrors();
+                throw;
+            }
             connection_to_store->assign(connection);
             connection_to_store->notifySocketInode();
 

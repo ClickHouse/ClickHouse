@@ -3,6 +3,8 @@
 
 #if USE_LIBPQXX
 
+#include <optional>
+
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
@@ -317,6 +319,9 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     ASTPtr ast_storage;
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if (throw_on_error)
+            suppress_error_codes.emplace();
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
         assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;

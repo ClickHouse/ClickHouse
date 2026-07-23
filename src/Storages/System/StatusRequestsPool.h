@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/logger_useful.h>
@@ -36,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int QUERY_WAS_CANCELLED;
+extern const int ABORTED;
 }
 
 template <typename T>
@@ -194,6 +196,7 @@ public:
 
                 try
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     TStatus status;
 
                     if (auto * holder = dynamic_cast<THolder *>(req.base_holder.get()))
@@ -219,6 +222,8 @@ public:
                 catch (...)
                 {
                     tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(req.base_holder));
+                    if (auto * e = current_exception_cast<Exception *>(); e && e->code() != ErrorCodes::ABORTED)
+                        e->recordToSystemErrors();
                     req.promise->set_exception(std::current_exception());
                 }
 

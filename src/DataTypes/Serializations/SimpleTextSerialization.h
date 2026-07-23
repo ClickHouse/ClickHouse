@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/Exception.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/ParseError.h>
 
@@ -90,13 +91,22 @@ protected:
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             deserializeText(column, istr, settings, whole);
             return true;
         }
+        catch (Exception & e)
+        {
+            if (!isParseError(e.code()))
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            return false;
+        }
         catch (...) // Ok: tryDeserializeText is a try-pattern
         {
-            rethrowIfNotParseError();
-            return false;
+            throw;
         }
     }
 };

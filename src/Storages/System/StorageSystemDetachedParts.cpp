@@ -17,6 +17,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -50,6 +51,7 @@ UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
     UInt64 total_size = 0;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         calculateTotalSizeOnDiskImpl(disk, from, total_size);
     }
     catch (...)

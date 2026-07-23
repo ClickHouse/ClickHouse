@@ -74,6 +74,7 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (const ASTLiteral * literal = ast->as<ASTLiteral>())
         {
             value = !literal->value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);

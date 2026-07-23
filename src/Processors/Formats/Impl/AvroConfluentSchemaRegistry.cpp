@@ -109,12 +109,16 @@ auto runWithRetry(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             return op();
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (attempt >= retry.max_retries || !isRetryableException(e))
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
             LOG_DEBUG(
                 getLogger("ConfluentSchemaRegistry"),
                 "Retry {}/{} for {} after transient error: {}",

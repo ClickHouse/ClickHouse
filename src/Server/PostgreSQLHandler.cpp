@@ -581,6 +581,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         copy_query_parsed = parseQuery(parser_copy, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
     catch (const Exception &)
@@ -870,6 +871,7 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
     ASTPtr prepare;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         prepare = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
     catch (const Exception &)
@@ -891,6 +893,7 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
     ASTPtr prepare;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         prepare = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
     catch (const Exception &)
@@ -918,6 +921,7 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
     ASTPtr deallocate;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         deallocate = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
     catch (const Exception &)

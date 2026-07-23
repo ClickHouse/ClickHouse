@@ -257,6 +257,7 @@ try
 
                 try
                 {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
                     schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, schema_reader_settings);
                     schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                     names_and_types = schema_reader->readSchema();
@@ -335,6 +336,7 @@ try
                 {
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         SchemaReaderPtr schema_reader = format_factory.getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                         schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                         names_and_types = schema_reader->readSchema();
@@ -380,6 +382,7 @@ try
                     {
                         try
                         {
+                            Exception::SuppressErrorCodesScope suppress_error_codes;
                             SchemaReaderPtr schema_reader = format_factory.getSchemaReader(
                                 formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                             schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);

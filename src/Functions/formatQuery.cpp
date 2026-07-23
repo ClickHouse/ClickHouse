@@ -120,7 +120,13 @@ private:
 
             try
             {
-                ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
+                if (error_handling == ErrorHandling::Null)
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
+                }
+                else
+                    ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
             }
             catch (...)
             {

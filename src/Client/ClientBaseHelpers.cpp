@@ -2,6 +2,7 @@
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 #include <Common/LocalDate.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
@@ -297,6 +298,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         while (!token_iterator->isEnd())
         {
             parse_res = parser.parse(token_iterator, ast, expected);
@@ -483,6 +485,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         while (!highlight_token_iterator->isEnd())
         {
             if (highlight_token_iterator->isError())

@@ -544,6 +544,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     S3::ObjectInfo object_info;
     try
     {
+        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
         object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
@@ -561,6 +562,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
         }
         if (!updated)
         {
+            e.recordToSystemErrors();
             e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", path, uri.bucket, disk_name);
             throw;
         }

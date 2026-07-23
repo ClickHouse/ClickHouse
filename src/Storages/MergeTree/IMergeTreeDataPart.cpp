@@ -1664,6 +1664,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ParserCodec codec_parser;
             auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
             default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
@@ -2652,15 +2653,13 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (!parent_part)
             {
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
-                    try
-                    {
-                        check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
-                    }
-                    catch (Exception&)
-                    {
-                        /// check hash one more time
+                {
+                    const String legacy_file = "minmax_" + escapeForFileName(col_name) + ".idx";
+                    if (getDataPartStorage().existsFile(legacy_file))
+                        check_file_not_empty(legacy_file);
+                    else
                         check_file_not_empty("minmax_" + sipHash128String(escapeForFileName(col_name)) + ".idx");
-                    }
+                }
             }
         }
     }

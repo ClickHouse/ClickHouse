@@ -107,6 +107,8 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ACCESS_DENIED;
+    extern const int UNACCEPTABLE_URL;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -132,6 +134,37 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace
 {
+    void recordCurrentExceptionToSystemErrors()
+    {
+        try
+        {
+            throw;
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+        }
+        catch (...)
+        {
+        }
+    }
+
+    void recordCurrentExceptionIfPolicy()
+    {
+        try
+        {
+            throw;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::ACCESS_DENIED || e.code() == ErrorCodes::UNACCEPTABLE_URL)
+                e.recordToSystemErrors();
+        }
+        catch (...)
+        {
+        }
+    }
+
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
         if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
@@ -593,6 +626,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     bool delay_initialization)
 {
     String first_exception_message;
+    std::exception_ptr last_exception;
     ReadSettings read_settings = context_->getReadSettings();
 
     size_t options = std::distance(option, end);
@@ -611,6 +645,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto res = BuilderRWBufferFromHTTP(request_uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(http_method)
@@ -637,7 +672,14 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         catch (...)
         {
             if (options == 1)
+            {
+                recordCurrentExceptionToSystemErrors();
                 throw;
+            }
+
+            recordCurrentExceptionIfPolicy();
+
+            last_exception = std::current_exception();
 
             if (first_exception_message.empty())
                 first_exception_message = getCurrentExceptionMessage(false);
@@ -2390,10 +2432,12 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     StorageURL::Configuration configuration;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
     }
     catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
     {
+        recordCurrentExceptionIfPolicy();
         return nullptr;
     }
 

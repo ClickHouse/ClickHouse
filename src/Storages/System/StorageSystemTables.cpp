@@ -627,6 +627,7 @@ protected:
                             {
                                 try
                                 {
+                                    Exception::SuppressErrorCodesScope suppress_error_codes;
                                     if (auto total_rows = table.second->totalRows(context))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
@@ -645,6 +646,7 @@ protected:
                             {
                                 try
                                 {
+                                    Exception::SuppressErrorCodesScope suppress_error_codes;
                                     if (auto total_bytes = table.second->totalBytes(context))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
@@ -920,6 +922,7 @@ protected:
                 {
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         auto total_rows = table ? table->totalRows(context) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
@@ -939,6 +942,7 @@ protected:
                 {
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         auto total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
@@ -958,6 +962,7 @@ protected:
                 {
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);

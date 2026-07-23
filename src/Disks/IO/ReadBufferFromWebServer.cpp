@@ -122,6 +122,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
         setCredentialsFromURL(credentials, uri);
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             /// External buffer reads require `delay_initialization = true`, which defers the HTTP
             /// request until the external buffer is set in `nextImpl`. That makes it impossible to
             /// detect a failing failover option here and skip it. Probe connectivity with a throwaway,
@@ -180,7 +181,21 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     }
 
     if (last_exception)
-        std::rethrow_exception(last_exception);
+    {
+        try
+        {
+            std::rethrow_exception(last_exception);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
 }

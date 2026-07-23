@@ -96,8 +96,17 @@ public:
             std::string_view value = col_str->getDataAt(i);
             try
             {
-                UInt64 num_bytes = parseReadableFormat(value);
-                res_data[i] = num_bytes;
+                if (error_handling == ErrorHandling::Exception)
+                {
+                    UInt64 num_bytes = parseReadableFormat(value);
+                    res_data[i] = num_bytes;
+                }
+                else
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    UInt64 num_bytes = parseReadableFormat(value);
+                    res_data[i] = num_bytes;
+                }
             }
             catch (const Exception &)
             {

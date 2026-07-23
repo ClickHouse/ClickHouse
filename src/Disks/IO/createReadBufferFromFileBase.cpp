@@ -58,6 +58,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             std::unique_ptr<MMapReadBufferFromFileWithCache> res;
             if (file_size)
                 res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.local_fs_settings.mmap_cache, filename, 0, *file_size);
@@ -71,6 +72,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         {
             /// Fallback if mmap is not supported (example: pipe).
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 
@@ -201,6 +207,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         /// Attempt to open a file with O_DIRECT
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             res = create(buffer_size, min_alignment, flags | O_DIRECT);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
         }
@@ -208,6 +215,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         {
             /// Fallback to cached IO if O_DIRECT is not supported.
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIOFailed);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 #endif

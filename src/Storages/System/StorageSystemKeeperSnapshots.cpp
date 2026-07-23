@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -47,6 +48,7 @@ void StorageSystemKeeperSnapshots::fillData(MutableColumns & res_columns, Contex
         bool exists_on_disk = false;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             if (entry.disk->existsFile(entry.path))
             {
                 exists_on_disk = true;

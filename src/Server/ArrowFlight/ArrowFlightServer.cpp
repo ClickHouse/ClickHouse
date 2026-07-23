@@ -8,6 +8,7 @@
 #include <Server/ArrowFlight/PollSession.h>
 
 #include <Core/Settings.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
@@ -1521,10 +1522,15 @@ arrow::Status ArrowFlightServer::DoAction(
                 /// the schema at execution time.
                 try
                 {
-                    auto [_, block_io] = executeQuery(substituted_query, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+                    auto [_, block_io] = [&]
+                    {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
+                        return executeQuery(substituted_query, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+                    }();
 
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         if (block_io.pipeline.pulling())
                         {
                             PullingPipelineExecutor executor{block_io.pipeline};

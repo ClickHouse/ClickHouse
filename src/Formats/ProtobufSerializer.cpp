@@ -3784,6 +3784,7 @@ namespace
                     /// try as ProtobufSerializerMessage
                     try
                     {
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         if (auto serializer = attempt_build_serializer(nested_data_types))
                         {
                             transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
@@ -3795,7 +3796,10 @@ namespace
                     catch (Exception & e)
                     {
                         if ((e.code() != ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED) || !repeated_field_matching_nested_columns_have_some_arrays)
+                        {
+                            e.recordToSystemErrors();
                             throw;
+                        }
                     }
 
                     /// if the protobuf field has the repeated label,

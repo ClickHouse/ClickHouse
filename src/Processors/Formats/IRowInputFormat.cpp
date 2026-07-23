@@ -41,6 +41,7 @@ void IRowInputFormat::logError()
     String raw_data;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
     }
     catch (const Exception & exception)
@@ -143,7 +144,10 @@ Chunk IRowInputFormat::read()
             try
             {
                 info.read_columns.clear();
-                continue_reading = readRow(columns, info);
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    continue_reading = readRow(columns, info);
+                }
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
@@ -189,10 +193,19 @@ Chunk IRowInputFormat::read()
                 /// catch handler), and syncAfterError() reads from it again
                 /// (skipToNextLineOrEOF/ignore/eof -> next()), tripping chassert(!isCanceled()).
                 if (!isParseError(e.code()) || getReadBuffer().isCanceled())
+                {
+                    if (params.connection_handling && isConnectionError(e.code()))
+                        e.recordToSystemErrors();
+                    else
+                        e.recordToSystemErrors();
                     throw;
+                }
 
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
 
                 if (errors_logger)
                     logError();
@@ -206,12 +219,14 @@ Chunk IRowInputFormat::read()
                     e.addMessage("(Already have " + toString(num_errors) + " errors"
                         " out of " + toString(total_rows) + " rows"
                         ", which is " + toString(current_error_ratio) + " of all rows)");
+                    e.recordToSystemErrors();
                     throw;
                 }
 
                 if (!allowSyncAfterError())
                 {
                     e.addMessage("(Input format doesn't allow to skip errors)");
+                    e.recordToSystemErrors();
                     throw;
                 }
 
@@ -231,6 +246,7 @@ Chunk IRowInputFormat::read()
     {
         if (params.connection_handling && isConnectionError(e.code()))
         {
+            e.recordToSystemErrors();
             got_connection_exception  = true;
 
             for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
@@ -251,6 +267,7 @@ Chunk IRowInputFormat::read()
             String verbose_diagnostic;
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 verbose_diagnostic = getDiagnosticInfo();
             }
             catch (const Exception & exception)

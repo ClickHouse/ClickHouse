@@ -3,6 +3,7 @@
 
 #if USE_MYSQL
 #    include <filesystem>
+#    include <optional>
 #    include <string>
 #    include <Columns/IColumn.h>
 #    include <Core/Settings.h>
@@ -180,6 +181,9 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if (throw_on_error)
+            suppress_error_codes.emplace();
         /// This function can throw mysql exception, we don't have enough context to handle it.
         /// So we just catch and re-throw as known exception if needed.
         fetchTablesIntoLocalCache(local_context);

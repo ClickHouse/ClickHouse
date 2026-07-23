@@ -73,18 +73,17 @@ std::function<void(std::string_view format_string, int code, bool remote, const 
 
 namespace
 {
-thread_local bool suppress_error_codes = false;
+thread_local size_t suppress_error_codes_depth = 0;
 }
 
 Exception::SuppressErrorCodesScope::SuppressErrorCodesScope()
-    : previous(suppress_error_codes)
 {
-    suppress_error_codes = true;
+    ++suppress_error_codes_depth;
 }
 
 Exception::SuppressErrorCodesScope::~SuppressErrorCodesScope()
 {
-    suppress_error_codes = previous;
+    --suppress_error_codes_depth;
 }
 
 constexpr bool debug_or_sanitizer_build =
@@ -116,7 +115,7 @@ size_t Exception::handleErrorCode(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    if (suppress_error_codes)
+    if (suppress_error_codes_depth > 0)
         return static_cast<size_t>(Exception::ErrorIndexState::Suppressed);
 
     return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
@@ -167,7 +166,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
 
 void Exception::recordToSystemErrors()
 {
-    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
+    if (suppress_error_codes_depth == 0 && error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
         error_index = ErrorCodes::increment(code(), remote, message(), std::string(message_format_string), getStackFramePointers());
 }
 
@@ -739,6 +738,7 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     ExecutionStatus tmp;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes_scope;
         tmp.deserializeText(data);
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected

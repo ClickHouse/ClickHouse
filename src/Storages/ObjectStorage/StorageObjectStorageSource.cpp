@@ -691,6 +691,7 @@ Chunk StorageObjectStorageSource::generate()
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 const auto * input_format = reader.getInputFormat();
                 if (input_format)
                 {

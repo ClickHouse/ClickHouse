@@ -58,6 +58,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
 }
@@ -1427,10 +1429,16 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             readQuotedStringWithSQLStyle(s, in);
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
+            if (e.code() != ErrorCodes::CANNOT_PARSE_QUOTED_STRING && e.code() != ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
             expected.add(pos, "string literal");
             return false;
         }

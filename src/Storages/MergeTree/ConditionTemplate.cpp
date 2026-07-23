@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 
+#include <Common/Exception.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <Columns/ColumnConst.h>
@@ -201,6 +202,7 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot);
         chassert(!specialized.getOutputs().empty());
 

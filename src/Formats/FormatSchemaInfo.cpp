@@ -279,6 +279,7 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         WriteBufferFromFile out(temp_path, content.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(content, out);
         out.next();
@@ -291,6 +292,16 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
             DB::renameNoReplace(temp_path, file_path);
 
         fs::remove(temp_path);
+    }
+    catch (Exception & e)
+    {
+        fs::remove(temp_path);
+        tryLogCurrentException("FormatSchemaInfo", "Unable to store schema file " + file_path.string() + " on disk");
+        if (!fs::exists(file_path))
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
     }
     catch (...)
     {

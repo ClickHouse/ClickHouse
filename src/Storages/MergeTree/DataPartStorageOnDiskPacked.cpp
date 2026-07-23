@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -687,15 +688,19 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         const String data_path = getRelativeDataPath();
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto inner_archive_buf = reader->readFile(
                 volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
             auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
             seedSkipIndicesPackedReader(inner_index);
         }
-        catch (const Exception &)
+        catch (Exception & e)
         {
             if (volume->getDisk()->existsFile(data_path))
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
     }
     else

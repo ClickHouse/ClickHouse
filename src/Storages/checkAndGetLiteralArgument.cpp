@@ -84,6 +84,7 @@ std::optional<T> tryGetLiteralArgument(const ASTPtr & arg, const String & arg_na
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
             }
             catch (const Exception &)

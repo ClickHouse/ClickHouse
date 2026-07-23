@@ -178,6 +178,7 @@ static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             getLeastSupertype(DataTypes{left_type, right_type});
         }
         catch (const Exception &)
@@ -307,6 +308,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             DataTypePtr common_type;
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 common_type = getLeastSupertype(DataTypes{left_type, right_type});
             }
             catch (const Exception &)

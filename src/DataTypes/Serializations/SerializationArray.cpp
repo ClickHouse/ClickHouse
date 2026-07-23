@@ -18,6 +18,7 @@
 #include <Formats/ParseError.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace DB
 {
@@ -599,6 +600,10 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 
     try
     {
+        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+        if constexpr (!throw_exception)
+            suppress_error_codes.emplace();
+
         bool first = true;
         while (!istr.eof() && *istr.position() != ']')
         {
@@ -650,15 +655,30 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
                 return on_error_no_throw();
         }
     }
-    catch (...)
+    catch (Exception & e)
     {
         if (size)
             nested_column.popBack(size);
         if constexpr (throw_exception)
+        {
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
-        return ReturnType(false);
+        }
+        else
+        {
+            /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+            if (!isParseError(e.code()))
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            return ReturnType(false);
+        }
+    }
+    catch (...)
+    {
+        if (size)
+            nested_column.popBack(size);
+        throw;
     }
 
     offsets.push_back(offsets.back() + size);

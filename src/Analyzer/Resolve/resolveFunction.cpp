@@ -23,6 +23,7 @@
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1075,12 +1076,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             /// `BAD_ARGUMENTS` and let identifier resolution proceed.
                             try
                             {
+                                Exception::SuppressErrorCodesScope suppress_error_codes;
                                 inner_resolver = UserDefinedExecutableFunctionFactory::tryGet(identifier_name, scope.context);
                             }
-                            catch (const Exception & e)
+                            catch (Exception & e)
                             {
                                 if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                                {
+                                    e.recordToSystemErrors();
                                     throw;
+                                }
                             }
                         }
                         if (!inner_resolver)

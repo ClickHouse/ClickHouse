@@ -608,7 +608,10 @@ bool VersionMetadata::hasValidMetadata()
     VersionInfo persisted_info;
     try
     {
-        persisted_info = readMetadata();
+        {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
+            persisted_info = readMetadata();
+        }
         if (current_info.creation_tid != persisted_info.creation_tid)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
@@ -657,7 +660,7 @@ bool VersionMetadata::hasValidMetadata()
 
         return true;
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// The part directory may have been removed externally (e.g., between
         /// DETACH and ATTACH in an Ordinary database). If the directory is gone,
@@ -666,6 +669,7 @@ bool VersionMetadata::hasValidMetadata()
         if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && !merge_tree_data_part->getDataPartStorage().exists())
             return true;
 
+        e.recordToSystemErrors();
         throw;
     }
     catch (...)

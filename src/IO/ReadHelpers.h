@@ -1174,12 +1174,16 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             try
             {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
             }
-            catch (const DB::Exception &)
+            catch (DB::Exception & e)
             {
                 if (buf.eof() || *buf.position() != '.')
+                {
+                    e.recordToSystemErrors();
                     throw;
+                }
             }
         }
         else
@@ -1294,10 +1298,11 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             readTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
             parse_success = true;
         }
-        catch (const DB::Exception & e)
+        catch (DB::Exception & e)
         {
             // Check if we can continue with fractional part parsing
             if (buf.eof() || *buf.position() != '.')

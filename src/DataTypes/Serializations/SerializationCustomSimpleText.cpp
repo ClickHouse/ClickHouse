@@ -45,14 +45,23 @@ bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB:
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         deserializeText(column, istr, settings, whole);
         return true;
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern
+    catch (Exception & e)
     {
         /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
+        if (!isParseError(e.code()))
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
         return false;
+    }
+    catch (...) // Ok: tryDeserializeText is a try-pattern
+    {
+        throw;
     }
 }
 

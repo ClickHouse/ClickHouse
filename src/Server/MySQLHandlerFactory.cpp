@@ -1,5 +1,6 @@
 #include <Server/MySQLHandlerFactory.h>
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Server/MySQLHandler.h>
 #include <base/scope_guard.h>
@@ -40,6 +41,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool secure_required
     /// Reading RSA keys for SHA256 authentication plugin.
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
 
         String private_key_file_property = "openSSL.server.privateKeyFile";

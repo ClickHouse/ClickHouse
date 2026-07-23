@@ -1,4 +1,5 @@
 #include <Client/ConnectionEstablisher.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -159,10 +160,16 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     {
         try
         {
-            try_establish();
+            if (can_reconnect)
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                try_establish();
+            }
+            else
+                try_establish();
             return;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
@@ -175,7 +182,10 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
                 && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
                 && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET
                 && e.code() != ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
 

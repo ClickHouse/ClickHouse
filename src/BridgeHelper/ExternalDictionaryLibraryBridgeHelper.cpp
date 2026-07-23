@@ -74,6 +74,7 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto buf = BuilderRWBufferFromHTTP(getPingURI())
                        .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                        .withTimeouts(http_timeouts)
@@ -122,6 +123,7 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
         bool reinitialized = false;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto uri = createRequestURI(EXT_DICT_LIB_NEW_METHOD);
             reinitialized = executeRequest(uri, getInitLibraryCallback());
         }

@@ -696,9 +696,10 @@ void DiskLocal::checkAccessImpl(const String & path)
 
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         IDisk::checkAccessImpl(path);
     }
-    catch (const ErrnoException & e)
+    catch (ErrnoException & e)
     {
         if (errnoIndicatesReadOnlyDisk(e.getErrno()))
         {
@@ -710,6 +711,13 @@ void DiskLocal::checkAccessImpl(const String & path)
         }
 
         broken = true;
+        e.recordToSystemErrors();
+        throw;
+    }
+    catch (Exception & e)
+    {
+        broken = true;
+        e.recordToSystemErrors();
         throw;
     }
     catch (...)

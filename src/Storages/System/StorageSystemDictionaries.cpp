@@ -15,6 +15,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
+#include <Common/Exception.h>
 
 
 #include <ranges>
@@ -42,6 +43,7 @@ std::optional<DictionaryStructure>
 getDictionaryStructure(const ExternalLoader::LoadResult & load_result, std::exception_ptr & last_exception)
 try
 {
+    Exception::SuppressErrorCodesScope suppress_error_codes;
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 catch (const DB::Exception &)

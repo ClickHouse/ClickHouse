@@ -175,6 +175,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     IndexDescription fresh_index_desc;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         auto metadata = read_step->getStorageMetadata();
         fresh_index_desc = IndexDescription::getIndexFromAST(
             index_desc.definition_ast,
@@ -194,6 +195,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     MergeTreeIndexPtr index_helper;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(),fresh_index_desc, *data.getSettings());
     }
     catch (const Exception &)
@@ -232,6 +234,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     MergeTreeIndexConditionPtr condition;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         condition = index_helper->createIndexCondition(predicate, context);
     }
     catch (const Exception &)

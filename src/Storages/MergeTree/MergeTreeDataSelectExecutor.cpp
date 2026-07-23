@@ -2,6 +2,7 @@
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
 #include <boost/functional/hash.hpp>
@@ -843,6 +844,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto estimates = part.data_part->getEstimates();
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
             {

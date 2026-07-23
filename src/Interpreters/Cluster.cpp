@@ -11,6 +11,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/DNSResolver.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
@@ -82,6 +83,7 @@ std::optional<Poco::Net::SocketAddress> Cluster::Address::getResolvedAddress() c
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         return DNSResolver::instance().resolveAddress(host_name, port);
     }
     catch (...)
@@ -177,6 +179,7 @@ Cluster::Address::Address(
         /// If it doesn't include a port then use the default one and it could be local (if the address is)
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             parsed_host_port = parseAddress(info.hostname, 0);
             can_be_local = false;
         }

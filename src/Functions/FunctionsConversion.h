@@ -53,6 +53,7 @@
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
@@ -2845,12 +2846,20 @@ struct ConvertImplGenericFromString
             ReadBufferFromMemory read_buffer(val);
             try
             {
-                serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
+                if constexpr (throw_on_error)
+                    serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
+                else
+                {
+                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
+                }
             }
-            catch (const Exception &)
+            catch (Exception & e)
             {
                 if constexpr (throw_on_error)
                     throw;
+                if (!isParseError(e.code()))
+                    e.recordToSystemErrors();
                 /// Check if exception happened after we inserted the value
                 /// (deserializeWholeText should not do it, but let's check anyway).
                 if (column_to.size() > i)

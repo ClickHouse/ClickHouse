@@ -17,6 +17,7 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NetException.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 
 
@@ -171,6 +172,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
 
             /// Expect at least some columns.
@@ -185,6 +187,11 @@ ColumnsDescription getStructureOfRemoteTable(
             std::string fail_message = getCurrentExceptionMessage(false);
             fail_messages += fail_message + '\n';
             continue;
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 
