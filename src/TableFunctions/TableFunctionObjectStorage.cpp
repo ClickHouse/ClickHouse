@@ -557,7 +557,7 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 Supported for INSERT queries only.
 
-`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default only under `compatibility` settings older than `26.6`; otherwise the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default only when the `compatibility` setting is older than `26.6`. When `compatibility` is set to `26.6` or later, or when current defaults apply, the default is `hive`, so paths containing `{_partition_id}` must explicitly set `partition_strategy='wildcard'` (see the `file_like_engine_default_partition_strategy` setting).
 
 `hive` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -581,7 +581,7 @@ SELECT _path, * FROM s3(s3_conn, filename='t_03363_function/**.parquet');
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    s3('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32')
+    s3('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES ('x', 2, 3), ('x', 4, 5), ('y', 11, 12), ('y', 13, 14), ('z', 21, 22), ('z', 23, 24);
 ```
 As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, and `file_z.csv`.
@@ -590,7 +590,7 @@ As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, a
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    s3('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32')
+    s3('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES (1, 2, 3), (1, 4, 5), (10, 11, 12), (10, 13, 14), (20, 21, 22), (20, 23, 24);
 ```
 As a result, the data is written into three files in different buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, and `my_bucket_20/file.csv`.
@@ -756,7 +756,7 @@ If you have multiple replicas in your cluster, you can use the [s3Cluster functi
 ## Syntax {#syntax}
 
 ```sql
-gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
+gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
 gcs(named_collection[, option=value [,..]])
 ```
 
@@ -777,6 +777,7 @@ See the [Google interoperability docs](https://cloud.google.com/storage/docs/int
 | `format`                     | The [format](/reference/formats/index) of the file.                                                                                                                                        |
 | `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
 | `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
+| `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. It is the default only when `compatibility` is older than `26.6`; otherwise, including when current defaults apply, the default is `hive`. |
 
 <Info>
 **GCS**
@@ -790,7 +791,7 @@ The GCS path is in this format as the endpoint for the Google XML API is differe
 and not ~~https://storage.cloud.google.com~~.
 </Info>
 
-Arguments can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+Arguments can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `url`, `format`, `structure`, `compression_method`, `partition_strategy` work in the same way, and some extra parameters are supported:
 
 | Parameter                     | Description                                                                                                                                                                                                                       |
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -933,13 +934,15 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 
+When `compatibility` is set to `26.6` or later, or when current defaults apply, `hive` is the default partition strategy. Because paths containing `{_partition_id}` require `wildcard`, the following examples set `partition_strategy='wildcard'` explicitly.
+
 **Examples**
 
 1. Using partition ID in a key creates separate files:
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    gcs('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32')
+    gcs('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES ('x', 2, 3), ('x', 4, 5), ('y', 11, 12), ('y', 13, 14), ('z', 21, 22), ('z', 23, 24);
 ```
 As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, and `file_z.csv`.
@@ -948,7 +951,7 @@ As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, a
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    gcs('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32')
+    gcs('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES (1, 2, 3), (1, 4, 5), (10, 11, 12), (10, 13, 14), (20, 21, 22), (20, 23, 24);
 ```
 As a result, the data is written into three files in different buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, and `my_bucket_20/file.csv`.
@@ -995,7 +998,7 @@ Provides a table-like interface to select/insert files in [Azure Blob Storage](h
 Credentials are embedded in the connection string, so no separate `account_name`/`account_key` is needed:
 
 ```sql
-azureBlobStorage(connection_string, container_name, blobpath [, format, compression, structure])
+azureBlobStorage(connection_string, container_name, blobpath [, format, compression, partition_strategy, structure])
 ```
 
 </Tab>
@@ -1004,7 +1007,7 @@ azureBlobStorage(connection_string, container_name, blobpath [, format, compress
 Requires `account_name` and `account_key` as separate arguments:
 
 ```sql
-azureBlobStorage(storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+azureBlobStorage(storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, partition_strategy, structure])
 ```
 
 </Tab>
@@ -1032,7 +1035,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `format`                         | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                         |
 | `compression`                    | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension (same as setting to `auto`).                                                                                                                                                                                       |
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
-| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise). |
+| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` when `compatibility` is older than `26.6`; `HIVE` otherwise, including when current defaults apply). |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
 | `extra_credentials`              | Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.                                                                                                                                                                                                     |
 
@@ -1118,6 +1121,8 @@ LIMIT 5;
 
 ### Writing with partitions {#writing-with-partitions}
 
+When `compatibility` is set to `26.6` or later, or when current defaults apply, `HIVE` is the default partition strategy. Paths containing `{_partition_id}` therefore require an explicit `WILDCARD` strategy.
+
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
     'DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey...==;EndPointSuffix=core.windows.net',
@@ -1125,6 +1130,7 @@ INSERT INTO TABLE FUNCTION azureBlobStorage(
     'test_{_partition_id}.csv',
     'CSV',
     'auto',
+    'wildcard',
     'column1 UInt32, column2 UInt32, column3 UInt32'
 ) PARTITION BY column3
 VALUES (1, 2, 3), (3, 2, 1), (78, 43, 3);
@@ -1163,7 +1169,7 @@ FROM azureBlobStorage(
 
 Supported for INSERT queries only.
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default only under `compatibility` settings older than `26.6`; otherwise the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default only when the `compatibility` setting is older than `26.6`. When `compatibility` is set to `26.6` or later, or when current defaults apply, the default is `HIVE`, so paths containing `{_partition_id}` must explicitly select `WILDCARD` (see the `file_like_engine_default_partition_strategy` setting).
 
 `HIVE` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 

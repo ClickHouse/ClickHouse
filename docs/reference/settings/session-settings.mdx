@@ -2148,16 +2148,6 @@ Cloud mode
 
 Cloud default value: `1`.
 
-## cloud_mode_database_engine {#cloud_mode_database_engine} 
-
-<SettingsInfoBlock type="UInt64" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
-
-The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
-
-Cloud default value: `2`.
-
 ## cloud_mode_engine {#cloud_mode_engine} 
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -3940,6 +3930,16 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Enabled this optimization"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Filter left side by set of JOIN keys collected from the right side at runtime.
+
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis} 
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting to enable join filtering using dynamic index analysis"}]}]}/>
+
+Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates} 
 
@@ -8420,11 +8420,11 @@ Whether to use only prewhere columns size to determine reading task size.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting to limit the number of steps of the generic exclusion search over the primary key index."}]}]}/>
 
-When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. This setting limits the number of steps (index checks) the algorithm spends on each data part.
+When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. The same algorithm is used for the analysis of the text index. This setting limits the number of steps (index checks) the algorithm spends on each data part.
 
 The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
 
-The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` profile event counts how many times the budget was exhausted.
+The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` and `TextIndexGenericExclusionSearchStepLimitReached` profile events count how many times the budget was exhausted.
 
 The (default) value 0 means unlimited steps.
 
@@ -9558,6 +9558,14 @@ Possible values:
 **See Also**
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
+
+## optimize_redundant_comparisons {#optimize_redundant_comparisons} 
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to detect conflicting and redundant comparison conditions on the same expression within AND chains."}]}]}/>
+
+Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
 
 ## optimize_redundant_functions_in_order_by {#optimize_redundant_functions_in_order_by} 
 
