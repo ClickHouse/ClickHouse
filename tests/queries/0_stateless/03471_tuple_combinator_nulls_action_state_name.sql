@@ -16,6 +16,23 @@ SELECT toTypeName(sumDistinctTupleState((NULL, toUInt64(number)))) FROM numbers(
 SELECT finalizeAggregation(CAST(sumDistinctTupleState((NULL, toUInt64(number)))
     AS AggregateFunction(sumDistinctTuple, Tuple(Nullable(Nothing), UInt64)))) FROM numbers(3);
 
+-- The stronger carrier: an only-null element whose placeholder keeps an outer combinator
+-- (sumArray over [Nullable(Nothing)] resolves to the composite nothingNullArray, not a bare
+-- nothing* name), so structural detection is required. The type must stay sumArrayTuple and the
+-- second element must rebuild as sumArray (sum of distinct 0,1,2 = [3]), not the placeholder.
+SELECT toTypeName(sumArrayTupleState(tuple([NULL], [toUInt64(number)]))) FROM numbers(3);
+SELECT finalizeAggregation(CAST(sumArrayTupleState(tuple([NULL], [toUInt64(number)]))
+    AS AggregateFunction(sumArrayTuple, Tuple(Array(Nullable(Nothing)), Array(UInt64))))) FROM numbers(3);
+
+-- An element that is itself an all-only-null -Tuple carries no nulls-action variant, so the outer
+-- -Tuple must skip it (isOnlyNullPlaceholder must answer true for an all-placeholder -Tuple, not
+-- only for the single-nested combinator chain). Otherwise the outer name takes the inner all-null
+-- Tuple's pre-resolution spelling and the type stops being injective w.r.t. the nulls action, which
+-- makes a -State round-trip fail with CANNOT_CONVERT_TYPE. IGNORE NULLS flips anyRespectNulls to any.
+SELECT toTypeName(anyRespectNullsTupleIfTupleState(tuple(tuple(NULL), tuple(toNullable(number))), tuple(1, 1)) IGNORE NULLS) != toTypeName(anyRespectNullsTupleIfTupleState(tuple(tuple(NULL), tuple(toNullable(number))), tuple(1, 1))) FROM numbers(1);
+SELECT toTypeName(anyRespectNullsTupleIfTupleState(tuple(tuple(NULL), tuple(toNullable(number))), tuple(1, 1)) IGNORE NULLS) FROM numbers(1);
+SELECT toTypeName(anyRespectNullsTupleIfTupleState(tuple(tuple(NULL), tuple(toNullable(number))), tuple(1, 1))) FROM numbers(1);
+
 -- A Distributed table whose declared type differs from the shard type serializes shard aggregate
 -- states under the declared type name. When the name did not encode the nulls-action variant, the
 -- initiator reconstructed the wrong nested variant and reinterpreted the state bytes, crashing under

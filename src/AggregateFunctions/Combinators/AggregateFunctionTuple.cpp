@@ -51,12 +51,12 @@ DataTypePtr AggregateFunctionTuple::deriveResultType(
 /// already composes its name from `nested_func->getName()` for the same reason.
 ///
 /// Only-null elements collapse to a placeholder from the `nothing*` family, possibly wrapped in
-/// further combinators (`nothingUInt64Distinct`, `nothingNullArrayIf`, ...). Such a placeholder has
-/// an empty state and no variant, so it carries no naming information and must be ignored regardless
-/// of how it is wrapped; matching only the three bare `nothing*` names would let a composite
-/// placeholder win and reintroduce the same non-injective name. Detect placeholder-ness structurally
-/// via isOnlyNullPlaceholder() (which unwraps the combinator chain) and pick the first real element;
-/// fall back to the pre-resolution name only when every element is a placeholder.
+/// further combinators (`nothingNullArray`, `nothingNullArrayIf`, ...). The placeholder base carries
+/// no nulls-action variant, so it contributes no naming information and must be ignored regardless of
+/// how it is wrapped; matching only the three bare `nothing*` names would let a composite placeholder
+/// win and reintroduce the same non-injective name. Detect placeholder-ness structurally via
+/// isOnlyNullPlaceholder (which unwraps the combinator chain) and pick the first real element; fall
+/// back to the pre-resolution name only when every element is a placeholder.
 static String deriveNestedFuncName(
     const String & nested_name, const VectorWithMemoryTracking<AggregateFunctionPtr> & nested_functions)
 {
@@ -543,6 +543,18 @@ bool AggregateFunctionTuple::isState() const
         if (func->isState())
             return true;
     return false;
+}
+
+/// A -Tuple whose every element is an only-null placeholder carries no nulls-action variant itself,
+/// so an outer -Tuple must skip it in deriveNestedFuncName rather than take its name (which would be
+/// the pre-resolution spelling and reintroduce a non-injective type name). The base predicate only
+/// unwraps a single-nested chain, so -Tuple must answer for its element vector explicitly.
+bool AggregateFunctionTuple::isOnlyNullPlaceholder() const
+{
+    for (const auto & func : nested_functions)
+        if (!func->isOnlyNullPlaceholder())
+            return false;
+    return true;
 }
 
 /// Both `haveSameStateRepresentationImpl` and `getNormalizedStateType` define state compatibility as
