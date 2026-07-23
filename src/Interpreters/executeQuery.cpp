@@ -2844,6 +2844,13 @@ void executeQuery(
                 /// Ignore this exception and report the original one
                 LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
             }
+            catch (...)
+            {
+                /// Not only `DB::Exception` can be thrown here: for example, the `set_result_details`
+                /// callback may throw standard or Poco exceptions. Ignore them the same way, so the
+                /// original query exception is reported instead of the secondary failure.
+                tryLogCurrentException(getLogger("executeQuery"), "while updating the output format to write the exception");
+            }
         }
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
