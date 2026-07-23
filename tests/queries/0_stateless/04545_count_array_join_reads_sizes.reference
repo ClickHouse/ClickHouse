@@ -1,3 +1,4 @@
+Correctness: count() must be unchanged and equal to sum(length(arr)) / sum(greatest(length(arr), 1)) for LEFT.
 3859
 1
 1
@@ -10,6 +11,7 @@
 0
 1
 count()	UInt64					
+Optimization: the plan must read arr.size0 and no longer contain an ARRAY JOIN step.
 1
 1
 1
@@ -18,6 +20,7 @@ count()	UInt64
 1
 1
 1
+When the array is read elsewhere, the rewrite must NOT fire, so the plan keeps the ARRAY JOIN and never adds a synthetic array. Results must be unchanged.
 1
 1
 1

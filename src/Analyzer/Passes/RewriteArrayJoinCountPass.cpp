@@ -30,10 +30,8 @@ namespace Setting
 namespace
 {
 
-/// Returns true when the aggregate is a plain `count()` whose result equals the number of rows,
-/// regardless of any column value: zero arguments (count(), count(*)) or only non-NULL constant
-/// arguments (count(1), count('x')). count(column) is excluded because it counts non-NULL values,
-/// and count(NULL) is excluded because it always returns 0 (a NULL argument is never counted).
+/// Returns true when the aggregate is one of the following forms: `count()`, `count(*)`, `count(1)`, `count('x')`.
+/// count(column) and count(NULL) are excluded and return false
 bool isPlainRowCount(const FunctionNode & function_node)
 {
     if (!function_node.isAggregateFunction() || function_node.isWindowFunction())
@@ -61,8 +59,7 @@ public:
         const auto & settings = getSettings();
         if (!settings[Setting::optimize_functions_to_subcolumns])
             return;
-        /// With unaligned array join, the row count is the maximum length across joined arrays, not the
-        /// single array's length, so PruneArrayJoinColumnsPass leaves multiple expressions in place.
+        /// With unaligned array join, the row count is the maximum length across joined arrays,
         if (settings[Setting::enable_unaligned_array_join])
             return;
 
@@ -70,9 +67,7 @@ public:
         if (!query_node)
             return;
 
-        /// Only a bare `SELECT count() FROM ... ARRAY JOIN ...`: any other clause could make the row
-        /// count depend on values (GROUP BY, DISTINCT, HAVING) or the exploded element be referenced
-        /// (WHERE/PREWHERE/ORDER BY/window/qualify), so we require none of them.
+        /// Only a bare `SELECT count() FROM ... ARRAY JOIN ...`
         if (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere()
             || query_node->hasGroupBy() || query_node->hasHaving() || query_node->hasWindow()
             || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasInterpolate()
@@ -98,10 +93,7 @@ public:
         if (!table_node)
             return;
 
-        /// Exactly one surviving joined expression. For a value-unused count(), PruneArrayJoinColumnsPass
-        /// (which runs before this pass) has already collapsed a multi-expression ARRAY JOIN to a single
-        /// expression, so this both matches the target case and declines any residual multi-expression
-        /// shape, preserving the upstream row-multiplication semantics.
+        /// Exactly one surviving joined expression
         auto & join_expressions = array_join_node->getJoinExpressions().getNodes();
         if (join_expressions.size() != 1)
             return;

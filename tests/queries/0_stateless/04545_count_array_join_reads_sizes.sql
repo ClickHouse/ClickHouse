@@ -12,7 +12,7 @@ SET enable_parallel_replicas = 0;
 SET optimize_use_implicit_projections = 0;
 SET optimize_use_projections = 0;
 -- The rewrite declines under unaligned array join (row count is the max length, not one array's
--- length), so pin it off to keep the EXPLAIN assertions independent of randomized settings.
+-- length).
 SET enable_unaligned_array_join = 0;
 
 DROP TABLE IF EXISTS t_count_aj;
@@ -27,7 +27,7 @@ SELECT number, if(number % 7 = 0, [], range(number % 10)),
        (SELECT map('k1', number, 'k2', number + 1))
 FROM numbers(1000);
 
--- Correctness: count() must be unchanged and equal to sum(length(arr)) / sum(greatest(length(arr), 1)) for LEFT.
+SELECT 'Correctness: count() must be unchanged and equal to sum(length(arr)) / sum(greatest(length(arr), 1)) for LEFT.';
 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value;
 SELECT count() = (SELECT sum(length(arr)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN arr AS value;
 SELECT count() = (SELECT sum(if(empty(arr), 1, length(arr))) FROM t_count_aj) FROM t_count_aj LEFT ARRAY JOIN arr AS value;
@@ -45,7 +45,7 @@ SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count(NULL) FROM t_coun
 -- The output column name must remain count() (the rewrite must not rename the projection).
 DESCRIBE (SELECT count() FROM t_count_aj ARRAY JOIN arr AS value) FORMAT TSVRaw;
 
--- Optimization: the plan must read arr.size0 and no longer contain an ARRAY JOIN step.
+SELECT 'Optimization: the plan must read arr.size0 and no longer contain an ARRAY JOIN step.';
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value) WHERE explain ILIKE '%arr.size0%';
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj LEFT ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN narr) WHERE explain ILIKE '%narr.size0%';
@@ -58,8 +58,7 @@ SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value) WHERE explain ILIKE '%sum(%';
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value) WHERE explain ILIKE '%arrayWithConstant%';
 
--- Finding 2 (no regression): when the array is read elsewhere, the rewrite must NOT fire, so the plan
--- keeps the ARRAY JOIN and never adds a synthetic array. Results must be unchanged.
+SELECT 'When the array is read elsewhere, the rewrite must NOT fire, so the plan keeps the ARRAY JOIN and never adds a synthetic array. Results must be unchanged.';
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(value) FROM t_count_aj ARRAY JOIN arr AS value) WHERE explain ILIKE '%arr.size0%';
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT arr, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY arr) WHERE explain ILIKE '%ARRAY JOIN%';
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT arr, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY arr) WHERE explain ILIKE '%arrayWithConstant%';

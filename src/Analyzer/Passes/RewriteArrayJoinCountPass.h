@@ -15,10 +15,6 @@ namespace DB
   *     SELECT count() FROM t LEFT ARRAY JOIN arr  ->  SELECT sum(greatest(length(arr), 1)) FROM t
   * (LEFT ARRAY JOIN emits one row for an empty array.)
   *
-  * The following FunctionToSubcolumnsPass then folds `length(arr)` into the `arr.size0` subcolumn, so
-  * only the offsets are read from storage. This also removes the `arrayWithConstant`-based rewrite's
-  * TOO_LARGE_ARRAY_SIZE regression, because no array is materialized at all.
-  *
   * Applied only for a plain `count()` with no other projection, GROUP BY, DISTINCT, or other clause
   * that would change the row cardinality, and only when the ARRAY JOIN has a single surviving joined
   * expression that is a plain physical Array/Map column of the joined table.
