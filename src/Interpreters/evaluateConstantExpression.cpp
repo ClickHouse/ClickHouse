@@ -64,15 +64,27 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(ASTLiteral * literal)
+/// NOTE (transitional bridge B1, see `.cursor/projects/valueref-pilot/BRIDGES.md`): this helper and
+/// the `ASTLiteral` short-circuits below are a temporary compatibility shim for the legacy
+/// `Field`-returning API. They re-add a `Field` materialization (against the goal of removing
+/// `Field`) purely to preserve behavior: without them a literal round-trips through the size-1
+/// column and `operator[]` canonicalizes tags (`Bool`->`UInt64`), so e.g. `values('x String', true)`
+/// returns `'1'` instead of `'true'`. Delete this together with the `Field`-returning
+/// `evaluateConstantExpression` once its callers move to the column API.
+static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
     /// In case of Array field nested fields can have different types.
     /// Example: Array [1, 2.3] will have 2 fields with types UInt64 and Float64
     /// when result type is Array(Float64).
     /// So, we need to convert this field to the result type.
-    Field res = convertFieldToType(literal->value, *type);
-    return {type->createColumnConst(1, res), type};
+    return {convertFieldToType(literal->value, *type), type};
+}
+
+static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(ASTLiteral * literal)
+{
+    auto [field, type] = getFieldAndDataTypeFromLiteral(literal);
+    return {type->createColumnConst(1, field), type};
 }
 
 static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExpressionAsColumnImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
@@ -208,7 +220,10 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 }
 
 /// Materialize the column result into the legacy `Field` result. Used by the `Field`-returning
-/// entry points below, which remain for callers not yet migrated to the column API.
+/// entry points below (for callers not yet migrated to the column API) for NON-literal nodes only;
+/// literal nodes take the tag-preserving fast path (transitional bridge B1). Reading the value back
+/// with `operator[]` canonicalizes nested tags (`Bool`->`UInt64`), matching the historical behavior
+/// of the non-literal path, which also returned `(*result_column)[0]`.
 static std::optional<EvaluateConstantExpressionResult> materializeToField(std::optional<EvaluateConstantExpressionColumnResult> column_result)
 {
     if (!column_result)
@@ -231,11 +246,17 @@ EvaluateConstantExpressionColumnResult evaluateConstantExpressionAsColumn(const 
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
+    /// Literal fast path: return the original literal `Field` directly (transitional bridge B1).
+    if (ASTLiteral * literal = node->as<ASTLiteral>())
+        return getFieldAndDataTypeFromLiteral(literal);
     return materializeToField(evaluateConstantExpressionAsColumnImpl(node, context, true));
 }
 
 EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
+    /// Literal fast path (transitional bridge B1).
+    if (ASTLiteral * literal = node->as<ASTLiteral>())
+        return getFieldAndDataTypeFromLiteral(literal);
     auto res = materializeToField(evaluateConstantExpressionAsColumnImpl(node, context, false));
     if (!res)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");

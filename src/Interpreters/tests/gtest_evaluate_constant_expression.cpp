@@ -9,28 +9,43 @@
 
 using namespace DB;
 
-/// The legacy `Field`-returning `evaluateConstantExpression` is lossy: it produces the value as a
-/// size-1 column and reads it back with `operator[]`, which re-canonicalizes nested `Field` type
-/// tags through the column implementation. So `Bool` elements of a literal `array(...)` / `tuple(...)`
-/// come back as `UInt64` (the nested column of `Array(Bool)` is a plain `ColumnUInt8`). This is one
-/// of the reasons `Field` is being removed; it is documented here so the behavior is not changed
-/// unknowingly while callers are migrated off the `Field` API. Note that it is not user-reachable:
-/// strict `Bool` consumers use `evaluateConstantExpressionAsLiteral` (which returns literal nodes
-/// verbatim) or `Array(Variant)` (which is per-element type-aware), and tolerant consumers pass the
-/// value through `convertFieldToType`.
-TEST(EvaluateConstantExpression, FieldApiCanonicalizesNestedBoolTags)
+/// The legacy `Field`-returning `evaluateConstantExpression` must preserve the exact `Field` type
+/// tags of a literal node - in particular `Bool` elements of `array(...)` / `tuple(...)` (and a bare
+/// scalar `Bool`) must stay `Bool`, not collapse to `UInt64`. Callers still convert this `Field`
+/// (e.g. `TableFunctionValues`), so a collapsed tag changes results: `values('x String', true)` would
+/// return `'1'` instead of `'true'`. Literal nodes therefore take a tag-preserving fast path instead
+/// of round-tripping through the size-1 column (transitional bridge B1, see
+/// `.cursor/projects/valueref-pilot/BRIDGES.md` - this fast path is removed together with the
+/// `Field`-returning API once its callers move to the column API).
+TEST(EvaluateConstantExpression, LiteralPreservesNestedBoolTags)
 {
     const auto & context = getContext().context;
 
-    const ASTPtr array_literal = make_intrusive<ASTLiteral>(Field(Array{Field(true), Field(false)}));
-    const Field array_field = evaluateConstantExpression(array_literal, context).first;
-    ASSERT_EQ(array_field.getType(), Field::Types::Array);
-    EXPECT_EQ(array_field.safeGet<Array>().at(0).getType(), Field::Types::UInt64);
+    {
+        const ASTPtr literal = make_intrusive<ASTLiteral>(Field(true));
+        const Field field = evaluateConstantExpression(literal, context).first;
+        EXPECT_EQ(field.getType(), Field::Types::Bool);
+    }
 
-    const ASTPtr tuple_literal = make_intrusive<ASTLiteral>(Field(Tuple{Field(true), Field(false)}));
-    const Field tuple_field = evaluateConstantExpression(tuple_literal, context).first;
-    ASSERT_EQ(tuple_field.getType(), Field::Types::Tuple);
-    EXPECT_EQ(tuple_field.safeGet<Tuple>().at(0).getType(), Field::Types::UInt64);
+    {
+        const ASTPtr literal = make_intrusive<ASTLiteral>(Field(Array{Field(true), Field(false)}));
+        const Field field = evaluateConstantExpression(literal, context).first;
+        ASSERT_EQ(field.getType(), Field::Types::Array);
+        const Array & array = field.safeGet<Array>();
+        ASSERT_EQ(array.size(), 2u);
+        EXPECT_EQ(array[0].getType(), Field::Types::Bool);
+        EXPECT_EQ(array[1].getType(), Field::Types::Bool);
+    }
+
+    {
+        const ASTPtr literal = make_intrusive<ASTLiteral>(Field(Tuple{Field(true), Field(false)}));
+        const Field field = evaluateConstantExpression(literal, context).first;
+        ASSERT_EQ(field.getType(), Field::Types::Tuple);
+        const Tuple & tuple = field.safeGet<Tuple>();
+        ASSERT_EQ(tuple.size(), 2u);
+        EXPECT_EQ(tuple[0].getType(), Field::Types::Bool);
+        EXPECT_EQ(tuple[1].getType(), Field::Types::Bool);
+    }
 }
 
 /// The column API is type-faithful: it keeps the exact SQL type (`Array(Bool)`) with no `Field` tag
