@@ -11,6 +11,8 @@
 
 #include <Common/NaNUtils.h>
 
+#include <cctype>
+
 
 namespace DB
 {
