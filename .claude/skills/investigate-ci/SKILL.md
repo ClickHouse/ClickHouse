@@ -113,12 +113,15 @@ can re-read or `grep`. **If `node` is absent, the fallback depends on the input 
   install `node` (or re-run where `node` is on `PATH`).
 
 Per failure the tool prints a `🏷️ labels:` line (CI's non-CIDB labels — the `issue` match link and
-flags like `retry_ok`; see step 2a), the CIDB link, and the **log *tail*** — the last ~30 non-empty
-lines of `result.info`, **not** the full output. CI's matchers test `Failure reason` against the
-**whole** `result.info`, so a `Failure reason` located earlier than the tail will match in CI yet be
-**invisible** here — when mirroring CI's attribution (step 2a) or judging whether a reason string is
-present, do not read a "not in the visible output" as a definitive non-match; drill via the CIDB
-link or the full artifact (step 4) if it matters.
+flags like `retry_ok`; see step 2a), the CIDB link, and the **failure reason section** extracted
+from `result.info` as follows: the bash debug-trace section (`.debuglog:` path header or
+`+ [timestamp]` xtrace lines) is stripped entirely as pure noise; then from what remains, up to 40
+lines are shown as **head + tail** (first 20, `--- (N lines omitted) ---`, last 20), so the
+`Reason: ...` at the top of stateless-test output and the `ninja: build stopped` / compiler
+errors at the bottom of build logs are both visible. If the meaningful section is ≤ 40 lines,
+it appears in full. CI's matchers test `Failure reason` against the **whole** `result.info`;
+when the full output matters (e.g. an issue with a `Failure reason:` field deep in the trace),
+drill via the CIDB link or the full artifact (step 4).
 
 - If `$0` is a PR URL with many reports and the noise is high, narrow with `--report <n>`
   after listing reports (run the tool with no `--failed` to see the index).

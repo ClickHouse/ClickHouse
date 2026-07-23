@@ -208,6 +208,43 @@ function constructJsonUrl(baseUrl, suffix, sha, taskName) {
 /**
  * Check if a status represents a failure
  */
+/**
+ * Extract the meaningful failure reason from result.info.
+ *
+ * result.info for stateless/functional tests has this structure:
+ *   Reason: <category>:
+ *   <actual error output, exceptions, or diff>
+ *
+ *   /path/to/test.sh.debuglog:
+ *   + [timestamp] [:line] bash-command ...
+ *   + [timestamp] [:line] bash-command ...
+ *
+ * The actionable part is the top section before the bash xtrace.
+ * Showing the tail (as we used to) gives only useless bash commands.
+ */
+function extractFailureReason(info, maxLines = 40) {
+  if (!info) return [];
+  const allLines = info.split('\n');
+  // Bash debug-trace lines ('+ [timestamp] [line] cmd') are pure noise — strip everything
+  // from the first xtrace line (or the '.debuglog:' section header) to the end.
+  const sepIdx = allLines.findIndex(
+    l => /^\+\+? \[/.test(l) || /\.(?:debug)?log:$/.test(l.trim())
+  );
+  const meaningful = (sepIdx > 0 ? allLines.slice(0, sepIdx) : allLines)
+    .filter(l => l.trim());
+  if (meaningful.length === 0) return [];
+  // Short enough to show in full.
+  if (meaningful.length <= maxLines) return meaningful;
+  // Too long: show head + tail so both 'Reason: ...' (stateless tests, always at top)
+  // and build errors / 'ninja: stopped' (always at bottom) are visible.
+  const half = Math.floor(maxLines / 2);
+  return [
+    ...meaningful.slice(0, half),
+    `--- (${meaningful.length - maxLines} lines omitted) ---`,
+    ...meaningful.slice(-half),
+  ];
+}
+
 function isFailureStatus(status) {
   return status === 'failed' || status === 'FAIL' || status === 'failure' ||
          status === 'error' || status === 'ERROR';
@@ -241,7 +278,7 @@ function parseTestResults(jsonData) {
           duration: result.duration || 0
         };
 
-        // Include info field (contains build log tail for build failures)
+        // Include info field (failure reason + optional bash debug trace)
         if (result.info) {
           test.info = result.info;
         }
@@ -538,10 +575,9 @@ async function renderMultiReport(ciUrls, options) {
           }
         }
         if (test.info) {
-          const lines = test.info.split('\n').filter(l => l.trim());
-          const tail = lines.slice(-30);
-          console.log('         --- log tail ---');
-          for (const line of tail) {
+          const reason = extractFailureReason(test.info);
+          console.log('         --- failure reason ---');
+          for (const line of reason) {
             console.log(`         ${line}`);
           }
           console.log('         --- end ---');
@@ -767,11 +803,9 @@ async function fetchReport(inputUrl, options = {}) {
           }
         }
         if (test.info) {
-          // Show last 30 non-empty lines of info (build log tail with actual errors)
-          const lines = test.info.split('\n').filter(l => l.trim());
-          const tail = lines.slice(-30);
-          console.log('   --- log tail ---');
-          for (const line of tail) {
+          const reason = extractFailureReason(test.info);
+          console.log('   --- failure reason ---');
+          for (const line of reason) {
             console.log(`   ${line}`);
           }
           console.log('   --- end ---');
