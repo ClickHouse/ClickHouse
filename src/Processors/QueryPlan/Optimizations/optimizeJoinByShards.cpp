@@ -512,117 +512,13 @@ static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
     return result;
 }
 
-/// Stop every MergeTree source in a subtree from emitting read-in-order virtual rows. A virtual row marks
-/// the boundary of a whole input stream for a single downstream merge; once the stream is scattered by the
-/// hash of the join keys, each virtual row is routed to one shard and, having lost its `MergeTreeReadInfo`
-/// through the scatter, would surface as a spurious result row. The in-order read itself is preserved.
-///
-/// The walk stops at a nested `SortingStep` below the one being scattered (`node` itself) only when that
-/// inner sort actually consumes or removes the virtual rows of the reads beneath it: `Type::FinishSorting`,
-/// `Type::MergingSorted` and `Type::Full` all run a `MergingSortedTransform` (or, for a single-stream full
-/// sort, a `RemoveVirtualRowTransform`), so those rows never reach the outer scatter and must be left in
-/// place. Clearing them there would be worse than useless: `optimizeReadInOrder` may have admitted such an
-/// inner read-in-order plan only because `setVirtualRowConversions` succeeded (for a non-`LEFT ANY/ALL`
-/// inner join it otherwise bails out of the in-order read to avoid reading excessive data), so resetting the
-/// conversions after that decision would leave the inner plan in a shape the inner optimizer would never
-/// have produced.
-///
-/// `Type::PartitionedFinishSorting` is not such a boundary: with `scatter_partitions == 0` (the
-/// primary-key-range path, `query_plan_join_shard_by_pk_ranges`, which shards a nested read-in-order join at
-/// the source) it only finishes the sort suffix within each partition and never merges, so it does not
-/// consume the source virtual rows below it. Left in place, those rows would reach the outer
-/// `ScatterByPartitionTransform` unchanged - `JoiningTransform` forwards them (see below) - and surface as
-/// spurious result rows. The walk therefore keeps descending through it and resets those sources too.
-///
-/// A nested `JoinStep` is likewise not a boundary: `JoiningTransform` forwards virtual rows unchanged, so
-/// without an intervening consuming sort they can still reach the outer scatter through a join - the walk
-/// recurses through joins, filters and unions and only stops at inner consuming sorts.
-static void disableVirtualRowInSubtree(QueryPlan::Node & node)
-{
-    std::stack<QueryPlan::Node *> stack;
-    stack.push(&node);
-    while (!stack.empty())
-    {
-        auto * current = stack.top();
-        stack.pop();
-
-        if (auto * reading = typeid_cast<ReadFromMergeTree *>(current->step.get()))
-            reading->resetVirtualRowConversions();
-
-        for (auto * child : current->children)
-        {
-            /// A nested consuming `SortingStep` (`FinishSorting` / `MergingSorted` / `Full`) consumes or
-            /// removes the virtual rows of the reads below it, so those reads cannot reach the outer scatter
-            /// - do not descend past it. `PartitionedFinishSorting` does not consume them (see above), so it
-            /// is not a boundary: descend through it and reset the sources beneath it.
-            if (const auto * sort = typeid_cast<const SortingStep *>(child->step.get());
-                sort && sort->getType() != SortingStep::Type::PartitionedFinishSorting)
-                continue;
-            stack.push(child);
-        }
-    }
-}
-
-/// Whether a `FinishSorting` side's read-in-order plan relies on virtual rows, so the side must not be
-/// scattered. The scatter cannot pass virtual rows through, so `disableVirtualRowInSubtree` clears them.
-/// That is fine when they are a mere optimization, but `optimizeReadInOrder` admits an in-order read
-/// *through* a nested join other than `LEFT ANY`/`LEFT ALL` only when the source emits virtual rows
-/// (see the guard in `buildInputOrderInfo` in optimizeReadInOrder.cpp): without them the merge above the
-/// nested join cannot cheaply pick the next input stream once the join filters rows out, and can read an
-/// excessive amount of data. Clearing the conversions on such a side would leave the plan in the exact
-/// shape that optimizer refused to produce, so the whole join falls back to a single merge join with the
-/// virtual rows intact, exactly like `full_sorting_merge`.
-///
-/// The walk mirrors `disableVirtualRowInSubtree`: it stops at nested consuming sorts (their virtual rows
-/// are consumed below them and never cleared, so they are irrelevant to the scatter) and descends through
-/// everything else, tracking whether the path has passed through a virtual-row-requiring `JoinStep`.
-static bool subtreeReliesOnVirtualRows(const QueryPlan::Node & node)
-{
-    struct Frame
-    {
-        const QueryPlan::Node * node;
-        bool below_join_requiring_virtual_rows;
-    };
-
-    std::stack<Frame> stack;
-    stack.push({&node, false});
-    while (!stack.empty())
-    {
-        auto [current, below_join] = stack.top();
-        stack.pop();
-
-        if (below_join)
-            if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(current->step.get());
-                reading && reading->hasVirtualRowConversions())
-                return true;
-
-        if (const auto * nested_join = typeid_cast<const JoinStep *>(current->step.get()))
-        {
-            const auto & nested_table_join = nested_join->getJoin()->getTableJoin();
-            auto nested_strictness = nested_table_join.strictness();
-            if (nested_table_join.kind() != JoinKind::Left
-                || (nested_strictness != JoinStrictness::All && nested_strictness != JoinStrictness::Any))
-                below_join = true;
-        }
-
-        for (const auto * child : current->children)
-        {
-            if (const auto * sort = typeid_cast<const SortingStep *>(child->step.get());
-                sort && sort->getType() != SortingStep::Type::PartitionedFinishSorting)
-                continue;
-            stack.push({child, below_join});
-        }
-    }
-    return false;
-}
-
 /// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
 /// join keys.
 ///
 /// Unlike `optimizeJoinByShards` above (which shards by primary-key ranges and only works when both sides
-/// read from MergeTree in order), this works on any sorted input: each side's pre-join `SortingStep` is
-/// switched to scatter the rows by the hash of the join keys into independent partitions and sort each
-/// partition (one sorted stream per shard), and the join is executed shard-by-shard
+/// read from MergeTree in order), this works on any unsorted input: each side's pre-join full
+/// `SortingStep` is switched to scatter the rows by the hash of the join keys into independent partitions
+/// and sort each partition (one sorted stream per shard), and the join is executed shard-by-shard
 /// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
 /// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
 /// in the same shard on both sides. The join output is unordered.
@@ -668,26 +564,37 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                 auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
                 auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
 
-                /// A merge-join pre-sort is scattered when it is either:
-                ///   - a plain full sort (`Type::Full`) - the input is unsorted, so each shard sorts from
-                ///     scratch (`convertToScatteredFullSort`); or
-                ///   - a `FinishSorting` - the input is already sorted by a prefix: a MergeTree read in order,
-                ///     or any input `applyOrder` recognized as pre-sorted (a sorted subquery, a sorted
-                ///     `UNION ALL`, ...). Here each shard keeps that prefix order and only finishes the sort
-                ///     (`convertToScatteredFinishSorting`), so the low-cost in-order read of a merge join is
-                ///     preserved rather than thrown away by a redundant full re-sort.
+                /// A merge-join pre-sort is scattered only when it is a plain full sort (`Type::Full`):
+                /// the input is unsorted, each shard sorts from scratch (`convertToScatteredFullSort`).
+                /// It is safe to reshuffle (and thus lose the input order) because the sort here exists
+                /// only to feed the merge join - the join result is unordered - so no downstream operator
+                /// observes the order.
                 ///
-                /// This lets `parallel_full_sorting_merge` parallelize read-in-order merge joins by default,
-                /// not only unsorted inputs. It is safe to reshuffle (and thus lose the input order) because
-                /// the sort here exists only to feed the merge join - the join result is unordered - so no
-                /// downstream operator observes the order. The primary-key-range path (`optimizeJoinByShards`,
-                /// off by default) remains an alternative that shards at the source without a shuffle.
+                /// An already-sorted side (a `FinishSorting`: a MergeTree read in order, or any input
+                /// `applyOrder` recognized as pre-sorted) must NOT be scattered, even though an
+                /// order-preserving scatter per shard looks attractive (each shard would only finish the
+                /// sort instead of redoing it). Such a pipeline can deadlock: pipeline ports hold a single
+                /// chunk, a `ScatterByPartitionTransform` does not consume new input until all partition
+                /// chunks of the previous one are pushed, and its consumers - the per-partition
+                /// `MergingSortedTransform`s and the per-shard `MergeJoinTransform`s - consume selectively
+                /// (each waits for a chunk of one specific input, as its merge cursors dictate). Two such
+                /// scatters (the two per-part streams of one in-order side, or the two sides of the join)
+                /// then form a circular wait: scatter A is blocked pushing a chunk for shard `i` whose merge
+                /// waits for a chunk from scatter B, while B is blocked pushing a chunk for shard `j` whose
+                /// merge waits for A (observed as `Logical error: Pipeline stuck` in the AST fuzzer). The
+                /// full-sort path is immune: each shard's `MergeSortingTransform` consumes its whole input
+                /// unconditionally before emitting anything, so the scatters always drain.
+                ///
+                /// A pre-sorted side therefore falls back to a single merge join, exactly like
+                /// `full_sorting_merge` - keeping the low-cost in-order read, its virtual rows
+                /// (`read_in_order_use_virtual_row`) intact, and the streaming memory profile. In-order
+                /// MergeTree sides can still be joined shard-by-shard without a shuffle - and without this
+                /// deadlock topology - by the primary-key-range path (`optimizeJoinByShards`,
+                /// `query_plan_join_shard_by_pk_ranges`), which shards both reads at the source into
+                /// independent per-range streams.
                 auto is_scatterable_merge_join_sort = [](const SortingStep & sort)
                 {
-                    if (!sort.isSortingForMergeJoin())
-                        return false;
-                    return sort.getType() == SortingStep::Type::Full
-                        || sort.getType() == SortingStep::Type::FinishSorting;
+                    return sort.isSortingForMergeJoin() && sort.getType() == SortingStep::Type::Full;
                 };
                 if (left_sort && right_sort
                     && is_scatterable_merge_join_sort(*left_sort)
@@ -714,40 +621,10 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                             can_shard = false;
                     }
 
-                    /// A `FinishSorting` side whose in-order plan relies on virtual rows must not be
-                    /// scattered - the scatter would clear the virtual rows the plan was admitted on
-                    /// (see `subtreeReliesOnVirtualRows`). Both sides are scattered together or not at
-                    /// all, so this skips the sharded rewrite for the whole join.
-                    auto side_relies_on_virtual_rows = [](const QueryPlan::Node & sort_node, const SortingStep & sort)
-                    {
-                        return sort.getType() == SortingStep::Type::FinishSorting
-                            && subtreeReliesOnVirtualRows(sort_node);
-                    };
-                    if (can_shard
-                        && (side_relies_on_virtual_rows(*node->children[0], *left_sort)
-                            || side_relies_on_virtual_rows(*node->children[1], *right_sort)))
-                        can_shard = false;
-
                     if (can_shard)
                     {
-                        /// A `Full` sort is redone per shard; a `FinishSorting` side is already sorted, so it
-                        /// is only finished per shard after an order-preserving scatter - and its MergeTree
-                        /// source (if any) must stop emitting virtual rows, which the scatter cannot consume.
-                        auto scatter_side = [num_shards](QueryPlan::Node & sort_node, SortingStep & sort)
-                        {
-                            if (sort.getType() == SortingStep::Type::Full)
-                            {
-                                sort.convertToScatteredFullSort(num_shards);
-                            }
-                            else
-                            {
-                                disableVirtualRowInSubtree(sort_node);
-                                sort.convertToScatteredFinishSorting(num_shards);
-                            }
-                        };
-
-                        scatter_side(*node->children[0], *left_sort);
-                        scatter_side(*node->children[1], *right_sort);
+                        left_sort->convertToScatteredFullSort(num_shards);
+                        right_sort->convertToScatteredFullSort(num_shards);
 
                         JoinStep::PrimaryKeySharding sharding;
                         for (size_t i = 0; i < clause.key_names_left.size(); ++i)

@@ -3,8 +3,9 @@
 --   1. `ASOF` joins - the trailing key is an inequality key, so hashing by the whole key list would scatter
 --      candidate rows with the same equality key but different `ASOF` values into different shards, and the
 --      per-shard merge join could miss the closest match.
---   2. Inputs where read-in-order (with `read_in_order_use_virtual_row = 1`) has turned the pre-join sort
---      into a partial `FinishSorting` that emits virtual rows, which the scattered full sort cannot consume.
+--   2. Pre-sorted inputs, e.g. where read-in-order (with `read_in_order_use_virtual_row = 1`) has turned
+--      the pre-join sort into a partial `FinishSorting` - an order-preserving scatter of such a side into
+--      the per-shard merges can deadlock the pipeline, so it is never scattered.
 -- In both cases the optimizer must fall back to a single merge join and still match the `hash` algorithm.
 
 DROP TABLE IF EXISTS pfsmj_asof_left;

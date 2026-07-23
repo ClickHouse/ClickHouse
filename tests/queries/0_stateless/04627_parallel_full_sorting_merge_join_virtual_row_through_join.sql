@@ -6,9 +6,10 @@
 -- join (here: a view joining with `hash`, which preserves the left stream's order). For a non-`LEFT ANY/ALL`
 -- nested join, `optimizeReadInOrder` admits that in-order read only when the source emits virtual rows -
 -- without them the downstream merge cannot cheaply pick the next input stream once the nested join filters
--- rows out, and can read an excessive amount of data. The scattered rewrite clears virtual rows on a
--- `FinishSorting` side (the scatter cannot pass them through), so such a side must not be sharded at all:
--- the join must fall back to a single merge join with the virtual rows intact, like `full_sorting_merge`.
+-- rows out, and can read an excessive amount of data. Such a side is a pre-sorted `FinishSorting`, which
+-- the sharded rewrite never scatters (an order-preserving scatter into the per-shard merges can deadlock
+-- the pipeline): the join must fall back to a single merge join with the virtual rows intact, like
+-- `full_sorting_merge`.
 
 -- The nested join must not use delayed blocks (external-join spilling) and must preserve the left
 -- stream's order, or `optimizeReadInOrder` refuses to read in order through it in the first place.
@@ -51,14 +52,15 @@ FROM
     SETTINGS join_algorithm = 'parallel_full_sorting_merge'
 );
 
--- Sanity: the same query without the nested join (plain tables on both sides) is still scattered, so the
--- previous check verifies the guard and not an unrelated failure to shard.
+-- Sanity: the same query with plain unsorted sides (read-in-order disabled, so the pre-join sorts are
+-- plain full sorts) is still scattered, so the previous check verifies the pre-sorted-side fallback and not
+-- an unrelated failure to shard.
 SELECT 'plain_sides_still_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
 FROM
 (
     EXPLAIN PIPELINE
     SELECT a.v, c.u FROM pfsmj_vr_a AS a INNER JOIN pfsmj_vr_c AS c ON a.id = c.id
-    SETTINGS join_algorithm = 'parallel_full_sorting_merge'
+    SETTINGS join_algorithm = 'parallel_full_sorting_merge', optimize_read_in_order = 0
 );
 
 -- Correctness: the fallback single merge join must still produce the same result as `hash`.

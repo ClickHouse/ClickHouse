@@ -1,6 +1,6 @@
-read_in_order_is_scattered	1
+read_in_order_not_scattered	1
 read_in_order_not_resorted	1
-plain_is_not_scattered	1
+unordered_is_scattered	1
 inner	1
 left	1
 right	1

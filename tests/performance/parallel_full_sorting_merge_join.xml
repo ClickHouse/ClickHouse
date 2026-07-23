@@ -10,9 +10,9 @@
              key: the pre-join sort is a full parallel sort that is scattered into
              shards (each shard sorts from scratch).
            - `pfsm_sorted_*` use `ORDER BY k` and join on `k`, so both sides are read
-             in order: the already-sorted input is scattered by the hash of the join
-             keys while preserving order, and each shard only finishes the sort
-             instead of redoing it.
+             in order: an already-sorted side is not scattered (an order-preserving
+             scatter into the per-shard merges can deadlock the pipeline), so the
+             join falls back to a single merge join, like `full_sorting_merge`.
 
          `full_sorting_merge` (single merge) and `parallel_hash` are included on the
          same data as a reference, mirroring the benchmark in the PR. Each query
@@ -40,7 +40,7 @@
     <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
     <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
 
-    <!-- Read-in-order input (join on the ORDER BY key): scattered while preserving order, sort only finished per shard. -->
+    <!-- Read-in-order input (join on the ORDER BY key): not scattered, falls back to a single merge join. -->
     <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
     <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
 

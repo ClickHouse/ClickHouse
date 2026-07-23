@@ -323,8 +323,7 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
 
 /// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
 /// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
-/// `max_threads` cannot explode the port/processor count. Both the full-sort (`scatterByPartitionIfNeeded`)
-/// and the read-in-order (`Type::PartitionedFinishSorting`) scatter paths share this limit.
+/// `max_threads` cannot explode the port/processor count.
 static void checkScatterConnectionLimit(size_t threads, size_t streams)
 {
     const size_t connection_count_limit = 1000000;
@@ -596,27 +595,10 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::PartitionedFinishSorting)
     {
-        /// `parallel_full_sorting_merge` shards an already-sorted side (see `convertToScatteredFinishSorting`):
-        /// scatter the rows by the hash of the join keys into a fixed number of shards, keeping each shard
-        /// sorted by the prefix the input already provides, so that only the sort suffix is finished per shard
-        /// rather than the whole sort being redone. When `scatter_partitions == 0` the input is already
-        /// partitioned upstream (the primary-key-range path), so no scatter is inserted.
-        if (scatter_partitions > 0 && !partition_by_description.empty())
-        {
-            /// Like `scatterByPartitionIfNeeded`, cap the (shards * streams) fan-out so a large
-            /// `max_threads` fails fast with `LIMIT_EXCEEDED` instead of materializing the whole matrix.
-            checkScatterConnectionLimit(scatter_partitions, pipeline.getNumStreams());
-
-            auto stream_header = pipeline.getSharedHeader();
-            ColumnNumbers key_columns;
-            key_columns.reserve(partition_by_description.size());
-            for (const auto & col : partition_by_description)
-                key_columns.push_back(stream_header->getPositionByName(col.column_name));
-
-            scatterByPartitionPreservingOrder(
-                pipeline, scatter_partitions, key_columns, prefix_description, sort_settings.max_block_size);
-        }
-
+        /// The input is already partitioned upstream: the primary-key-range join sharding path
+        /// (`convertToPartitionedFinishSorting`) feeds one pre-sorted stream per shard, so each stream only
+        /// needs its sort suffix finished. No scatter is inserted here - an order-preserving scatter feeding
+        /// the selective per-shard merge consumers can deadlock (see `optimizeParallelFullSortingMergeJoin`).
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
