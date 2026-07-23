@@ -56,6 +56,17 @@ $CLICKHOUSE_LOCAL --query "
                 FROM system.settings_changes ARRAY JOIN changes AS c WHERE type = 'Session'
             )
             GROUP BY name
+        ),
+        mergetree_expected_default AS
+        (
+            SELECT name, argMax(new_value, vnum) AS expected
+            FROM
+            (
+                SELECT c.1 AS name, c.3 AS new_value,
+                    splitByChar('.', version)[1]::UInt64 * 1000 + splitByChar('.', version)[2]::UInt64 AS vnum
+                FROM system.settings_changes ARRAY JOIN changes AS c WHERE type = 'MergeTree'
+            )
+            GROUP BY name
         )
     SELECT * FROM
     (
@@ -91,7 +102,7 @@ $CLICKHOUSE_LOCAL --query "
 
         UNION ALL
 
-        -- Default changed in code but the newest recorded new_value was not updated to match.
+        -- Session default changed in code but the newest recorded new_value was not updated to match.
         SELECT 'PLEASE RECORD THE DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
             || ' default is ' || s.default || ' but history last records ' || e.expected
         FROM system.settings s
@@ -100,8 +111,30 @@ $CLICKHOUSE_LOCAL --query "
           AND s.default NOT LIKE 'auto(%'   -- runtime-derived value, not comparable
           AND s.type != 'Map'               -- avoid '{}' vs '' rendering differences
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
-          -- normalize Bool rendering (history may store true/false, system.settings shows 1/0)
-          AND if(s.type = 'Bool', transform(e.expected, ['true', 'false'], ['1', '0'], e.expected), e.expected) != s.default
+          AND if(s.type = 'Bool',
+                 -- history may store true/false, system.settings shows 1/0
+                 transform(e.expected, ['true', 'false'], ['1', '0'], e.expected) != s.default,
+              if(s.type = 'Float',
+                 -- Float settings render at different precision (Float32 value shown via Float64)
+                 toFloat32OrNull(e.expected) != toFloat32OrNull(s.default),
+                 e.expected != s.default))
+
+        UNION ALL
+
+        -- MergeTree default changed in code but the newest recorded new_value was not updated to match.
+        SELECT 'PLEASE RECORD THE MERGE_TREE_SETTING DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+            || ' default is ' || s.default || ' but history last records ' || e.expected
+        FROM system.merge_tree_settings s
+        JOIN mergetree_expected_default e ON s.name = e.name
+        WHERE s.is_obsolete = 0
+          AND s.default NOT LIKE 'auto(%'
+          AND s.type != 'Map'
+          AND s.name NOT IN (SELECT name FROM value_drift_ignore)
+          AND if(s.type = 'Bool',
+                 transform(e.expected, ['true', 'false'], ['1', '0'], e.expected) != s.default,
+              if(s.type = 'Float',
+                 toFloat32OrNull(e.expected) != toFloat32OrNull(s.default),
+                 e.expected != s.default))
     )
     ORDER BY message
 "
