@@ -43,17 +43,36 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
+    TextSearchQuery(
+        String function_name_,
+        TextSearchMode search_mode_,
+        TextIndexDirectReadMode direct_read_mode_,
+        VectorWithMemoryTracking<String> tokens_,
+        std::vector<OptimizedRegularExpression> patterns_ = {},
+        VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
+    const String & getFunctionName() const { return function_name; }
+    TextSearchMode getSearchMode() const { return search_mode; }
+    TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
+    const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
+    const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
+    const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    UInt128 getHash() const { return hash; }
+
+private:
+    void initializeHash();
+
+    /// Fields are immutable after construction, otherwise the precomputed hash becomes stale.
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
+    /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
-    /// not sorted, not deduplicated
+    /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
-
-    SipHash getHash() const;
+    /// Precomputed in the constructor because getHash is called on hot paths.
+    UInt128 hash{};
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;

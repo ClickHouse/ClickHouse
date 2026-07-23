@@ -1104,6 +1104,8 @@ public:
         return column_sizes;
     }
 
+    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         /// Always keep locks order parts_lock -> sizes_lock

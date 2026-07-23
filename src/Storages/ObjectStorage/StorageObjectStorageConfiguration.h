@@ -324,6 +324,14 @@ public:
     bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
+    /// False when the storage is instantiated from anything other than a user-issued `CREATE`
+    /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
+    /// apply the `file_like_engine_default_partition_strategy` default to such tables: a pre-26.6
+    /// table with a `{_partition_id}` path was created under the implicit wildcard strategy, and
+    /// re-deriving `hive` from the current default on ATTACH would refuse to load it and abort
+    /// server startup/upgrade. Defaults to true so table functions keep strict validation.
+    bool is_create_query = true;
+
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

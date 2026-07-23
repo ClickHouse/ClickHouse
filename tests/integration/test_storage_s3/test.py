@@ -242,7 +242,7 @@ def test_partition_by(started_cluster):
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
-        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}')
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}', partition_strategy='wildcard')
         PARTITION BY {partition_by} VALUES {values}"""
 
     run_query(instance, put_query)
@@ -255,7 +255,7 @@ def test_partition_by(started_cluster):
 
     filename = "test2_{_partition_id}.csv"
     instance.query(
-        f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV') partition by column3"
+        f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', partition_strategy='wildcard') partition by column3"
     )
     instance.query(f"insert into p values {values}")
     assert "1,2,3\n" == get_s3_file_content(
@@ -280,7 +280,7 @@ def test_partition_by_string_column(started_cluster):
     values = "(1, 'foo/bar'), (3, 'йцук'), (78, '你好')"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
-        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}')
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}', partition_strategy='wildcard')
         PARTITION BY {partition_by} VALUES {values}"""
 
     run_query(instance, put_query)
@@ -306,7 +306,7 @@ def test_partition_by_const_column(started_cluster):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
-        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}')
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}', partition_strategy='wildcard')
         PARTITION BY {partition_by} VALUES {values}"""
 
     run_query(instance, put_query)
@@ -2155,7 +2155,7 @@ def test_s3_list_objects_failure(started_cluster):
 
     put_query = f"""
         INSERT INTO TABLE FUNCTION
-        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32')
+        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32', partition_strategy='wildcard')
         PARTITION BY c1 % 20
         SELECT number FROM numbers(100)
         SETTINGS s3_truncate_on_insert=1
@@ -2504,13 +2504,13 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     assert int(result) == 42
 
     error = instance.query_and_get_error(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 42 settings s3_truncate_on_insert=0"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64', partition_strategy='wildcard') partition by 42 select 42 settings s3_truncate_on_insert=0"
     )
 
     assert "BAD_ARGUMENTS" in error
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 43 settings s3_truncate_on_insert=1"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64', partition_strategy='wildcard') partition by 42 select 43 settings s3_truncate_on_insert=1"
     )
 
     result = instance.query(
@@ -2520,7 +2520,7 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     assert int(result) == 43
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 44 settings s3_truncate_on_insert=0, s3_create_new_file_on_insert=1"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64', partition_strategy='wildcard') partition by 42 select 44 settings s3_truncate_on_insert=0, s3_create_new_file_on_insert=1"
     )
 
     result = instance.query(

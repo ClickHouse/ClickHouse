@@ -20,9 +20,9 @@ public:
         TextSearchQueryPtr query;
         /// Tokens this query has observed so far (declared + pattern-discovered).
         TokenToPostingsInfosMap tokens;
-        /// Row range folded across observed tokens by `query->search_mode` (intersect for `All`, union for `Any`).
+        /// Row range folded across observed tokens by the query search mode (intersect for `All`, union for `Any`).
         std::optional<RowsRange> rows_range;
-        /// Posting list folded across materialized tokens by `query->search_mode`.
+        /// Posting list folded across materialized tokens by the query search mode.
         std::optional<PostingList> postings;
 
         /// Query can never match (e.g. missing token in `All` mode, empty intersection).

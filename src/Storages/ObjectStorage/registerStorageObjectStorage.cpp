@@ -80,6 +80,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
+
+    /// Only a user-issued `CREATE` may apply the `file_like_engine_default_partition_strategy`
+    /// default; ATTACH / startup / RESTORE / replicated-DDL replay must load pre-existing
+    /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
+    configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
@@ -416,7 +422,8 @@ ENGINE = S3(
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
-           'CSV')
+           'CSV',
+           partition_strategy='wildcard')
 PARTITION BY column3
 ```
 
