@@ -460,19 +460,26 @@ TEST(BackupInfo, DestinationIdentityIgnoresAzureCredentials)
 TEST(BackupInfo, DestinationIdentityRejectsCredentialBearingAzureEndpoint)
 {
     auto context = getContext().context;
-    auto info = BackupInfo::fromString(
-        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=TOPSECRET', "
-        "'container', 'backup', 'account', 'key')");
+    auto check_rejected = [&](const String & backup_name, const String & secret)
+    {
+        try
+        {
+            (void)getDestinationIdentity(backup_name, context);
+            FAIL() << "Expected invalid Azure destination";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.message().find(secret), String::npos);
+        }
+    };
 
-    try
-    {
-        (void)BackupFactory::instance().getDestinationIdentity(info, context);
-        FAIL() << "Expected invalid Azure destination";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
-    }
+    check_rejected(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=TOPSECRET', "
+        "'container', 'backup', 'account', 'key')",
+        "TOPSECRET");
+    check_rejected(
+        "AzureBlobStorage('https://user:URLPASSWORD@account.blob.core.windows.net', 'container', 'backup')",
+        "URLPASSWORD");
 }
 
 

@@ -194,7 +194,8 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Azure backup destination contains an unsupported URL fragment");
 
             Poco::URI uri(connection_url);
-            uri.setUserInfo("");
+            if (!uri.getUserInfo().empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Azure backup destination URL must not contain userinfo");
             uri.setQuery("");
             uri.setFragment("");
             return Azure::Core::Url(uri.toString()).GetAbsoluteUrl();
