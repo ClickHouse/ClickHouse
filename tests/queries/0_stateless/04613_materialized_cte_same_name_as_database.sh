@@ -29,3 +29,21 @@ FROM ${DB}
 JOIN ${DB}.other USING (id)
 SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
 "
+
+# Under `analyzer_compatibility_prefer_alias_over_subcolumn = 1` the materialized CTE name is a
+# qualifier carrier like an alias or a table name: when the lookup behind it succeeds, resolution is
+# pruned to the CTE side of the JOIN instead of competing with the database-qualified interpretation
+# (`${DB}.tbl.value`) of the other side, which would throw `AMBIGUOUS_IDENTIFIER`.
+$CLICKHOUSE_CLIENT --query "
+CREATE TABLE ${DB}.tbl (id Int32, value Int32) ENGINE = MergeTree ORDER BY ();
+INSERT INTO ${DB}.tbl VALUES (42, 7);
+"
+
+$CLICKHOUSE_CLIENT --query "
+WITH ${DB} AS MATERIALIZED (SELECT 42 AS id, 99 AS \`tbl.value\`)
+SELECT ${DB}.tbl.value
+FROM ${DB}
+JOIN ${DB}.tbl USING (id)
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+    analyzer_compatibility_prefer_alias_over_subcolumn = 1, single_join_prefer_left_table = 0;
+"

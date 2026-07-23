@@ -1171,7 +1171,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 }
 
 /// With `database_qualified = false`, the qualifier is the first identifier part matched against
-/// aliases and table names. With `database_qualified = true`, the first two identifier parts are
+/// aliases, table names and materialized CTE names. With `database_qualified = true`, the first two identifier parts are
 /// matched against the database and table names of the leaf table expressions (`db.table.column`);
 /// this binding is weaker and must not compete with a successful alias / table-name resolution,
 /// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
@@ -1220,7 +1220,17 @@ static bool qualifierBindsToJoinSubtree(
     if (database_qualified)
         return !it->second.database_name.empty() && it->second.database_name == qualifier
             && it->second.table_name == identifier[1];
-    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+
+    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+        return true;
+
+    /// A materialized CTE is registered under its internal temporary table name;
+    /// the name visible to queries is the CTE name, and it qualifies like a table name.
+    if (const auto * table_node = join_tree_node->as<TableNode>())
+        if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
+            return true;
+
+    return false;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
