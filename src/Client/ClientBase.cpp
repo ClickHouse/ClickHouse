@@ -4148,6 +4148,31 @@ void ClientBase::validateClientConfiguration()
     /// file must be rejected before any query is sent, not silently ignored.
     assertMemoryUsageMode(config.getString("print-memory-to-stderr", ""));
 
+    /// `print-profile-events` is also read lazily (`onProfileEvents`), so a malformed value
+    /// would otherwise throw only after the query has started. The empty form
+    /// (`<print-profile-events/>`) idiomatically means "enabled", but `Poco` cannot parse an
+    /// empty string as a boolean, so normalize it here.
+    if (config.has("print-profile-events"))
+    {
+        if (config.getString("print-profile-events").empty())
+        {
+            config.setBool("print-profile-events", true);
+        }
+        else
+        {
+            try
+            {
+                config.getBool("print-profile-events");
+            }
+            catch (const Poco::Exception &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid value '{}' for the 'print-profile-events' configuration key: expected a boolean",
+                    config.getString("print-profile-events"));
+            }
+        }
+    }
+
     /// Numeric keys whose values are read lazily at their use sites (the reads there keep
     /// their fallbacks; this check only guarantees they cannot throw mid-query).
     for (const auto * key : {"chime-threshold-seconds", "profile-events-delay-ms", "history_max_entries", "suggestion_limit"})

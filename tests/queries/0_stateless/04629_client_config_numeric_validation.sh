@@ -29,8 +29,24 @@ EOF
     $CLICKHOUSE_CLIENT --config "$config" -q "INSERT INTO t_04629 VALUES (1)" 2>&1 >/dev/null | grep -c -F "Invalid value 'banana' for the '${key}' configuration key"
 done
 
+cat > "$config" <<EOF
+<config>
+    <print-profile-events>banana</print-profile-events>
+</config>
+EOF
+echo "-- non-boolean print-profile-events in config is rejected before the query runs"
+$CLICKHOUSE_CLIENT --config "$config" -q "INSERT INTO t_04629 VALUES (1)" 2>&1 >/dev/null | grep -c -F "Invalid value 'banana' for the 'print-profile-events' configuration key"
+
 echo "-- no rows were inserted"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_04629"
+
+echo "-- the empty <print-profile-events/> form means enabled"
+cat > "$config" <<'EOF'
+<config>
+    <print-profile-events/>
+</config>
+EOF
+$CLICKHOUSE_CLIENT --config "$config" --max_block_size=65505 -q 'SELECT * FROM numbers(1e5) FORMAT Null' |& grep -F -o '[ 0 ] SelectedRows: 100000 (increment)'
 
 echo "-- a valid numeric value is accepted"
 cat > "$config" <<'EOF'

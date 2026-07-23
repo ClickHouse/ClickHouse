@@ -6,7 +6,11 @@
 1
 -- non-numeric suggestion_limit in config is rejected before the query runs
 1
+-- non-boolean print-profile-events in config is rejected before the query runs
+1
 -- no rows were inserted
 0
+-- the empty <print-profile-events/> form means enabled
+[ 0 ] SelectedRows: 100000 (increment)
 -- a valid numeric value is accepted
 1

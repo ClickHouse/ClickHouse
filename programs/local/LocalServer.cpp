@@ -359,6 +359,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
         loaded_config_path = config_path;
     }
 
+    /// The config file is loaded after the command line is processed, so the option parser
+    /// never sees values that come only from the file. Validate them now, before any query
+    /// can start: a config typo must not fail open (e.g. run a mutating query and only then
+    /// throw from a lazy read at the use site).
+    validateClientConfiguration();
+
     server_settings.loadSettingsFromConfig(config());
 
 #if USE_JEMALLOC
