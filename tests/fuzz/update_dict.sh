@@ -18,6 +18,17 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 CLICKHOUSE_BIN="${CLICKHOUSE_BIN:-$SCRIPT_DIR/../../build/programs/clickhouse}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR}"
 
+# The coverage check below derives the source root from the script location,
+# so the script must run from a full repository checkout (in the CI container,
+# the whole repository is mounted - see generate_dictionary in
+# ci/jobs/libfuzzer_test_check.py). Fail loudly if the sources are not there.
+SOURCE_ROOT=$(realpath "$SCRIPT_DIR/../..")
+if [ ! -f "$SOURCE_ROOT/src/Parsers/CommonParsers.h" ]; then
+    echo "error: $SOURCE_ROOT does not look like a ClickHouse source root (src/Parsers/CommonParsers.h not found)." \
+         "This script must be run from a full repository checkout."
+    exit 1
+fi
+
 # Curated tokens that cannot be derived from the system tables (multi-word
 # keywords, historical names, etc.). This is the only committed dictionary.
 CURATED_DICT="$SCRIPT_DIR/dictionaries/old.dict"
@@ -49,7 +60,7 @@ cat "$TMP_DIR"/*.dict "$CURATED_DICT" | LC_ALL=C sort | uniq > "$OUTPUT_DIR/all.
 # where a binary exists, that it covers the authoritative binary-derived
 # surface, so extractor gaps cannot regress silently.
 echo "Checking that the source-derived dictionary covers the binary-derived one"
-"$SCRIPT_DIR/generate_source_dict.sh" "$SCRIPT_DIR/../.." "$TMP_DIR/source.dict"
+"$SCRIPT_DIR/generate_source_dict.sh" "$SOURCE_ROOT" "$TMP_DIR/source.dict"
 MISSING_TOKENS=$(comm -23 <(LC_ALL=C sort -u "$OUTPUT_DIR/all.dict") <(LC_ALL=C sort -u "$TMP_DIR/source.dict"))
 if [ -n "$MISSING_TOKENS" ]; then
     echo "error: tokens present in the binary-derived all.dict are missing from the source-derived dictionary:"

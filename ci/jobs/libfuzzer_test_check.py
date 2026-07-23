@@ -119,16 +119,20 @@ def generate_dictionary(
 
     uid = os.getuid()
     gid = os.getgid()
+    # The whole repository is mounted (read-only), not just tests/: update_dict.sh
+    # verifies that the source-derived dictionary covers the binary-derived one,
+    # and derives the source root from its own location, so it must run from a
+    # full checkout.
     cmd = (
         f"docker run --rm "
         f"--user {uid}:{gid} "
         f"--workdir=/fuzzers "
         f"--volume={fuzzers_path}:/fuzzers "
-        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_path}:/repo:ro "
         f'-e CLICKHOUSE_BIN="/fuzzers/clickhouse" '
         f'-e OUTPUT_DIR="/fuzzers" '
         f"{image} "
-        f"bash /usr/share/clickhouse-test/fuzz/update_dict.sh"
+        f"bash /repo/tests/fuzz/update_dict.sh"
     )
     logging.info("Generating fuzzer dictionary: %s", cmd)
     subprocess.check_call(cmd, shell=True)
