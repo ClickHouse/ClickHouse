@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"recursive_cte_max_in_filter_cardinality", 0, 10000, "New setting to cap the cardinality of IN filters generated when pushing recursive CTE join keys into MergeTree index. Previous value of 0 disables the optimization for `compatibility` profiles set to versions before 26.8."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
@@ -79,7 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_minmax_for_primary_key_pruning", false, true, "New setting to use the part's partition minmax to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key."},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
-            {"recursive_cte_max_in_filter_cardinality", 0, 10000, "New setting to cap the cardinality of IN filters generated when pushing recursive CTE join keys into MergeTree index. Previous value of 0 disables the optimization for `compatibility` profiles set to versions before 26.7."},
             {"optimize_redundant_comparisons", false, true, "New setting to detect conflicting and redundant comparison conditions on the same expression within AND chains."},
             {"mysql_datatypes_support_level", "decimal,datetime64,date2Date32", "decimal,datetime64,date2Date32,geometry", "Map MySQL's concrete spatial types (LINESTRING, POLYGON, MULTILINESTRING, MULTIPOLYGON) and the generic GEOMETRY type to the corresponding ClickHouse geometric types by default. The generic GEOMETRY column maps to the umbrella Geometry type; reading a value whose subtype has no ClickHouse counterpart (MULTIPOINT, GEOMETRYCOLLECTION) throws at read time."},
             {"snappy_mode", "basic", "basic", "New setting to control the wire format used for snappy compression in generic file/URL I/O. The default `basic` preserves backward-compatible Hadoop snappy block format reads; HTTP `Content-Encoding: snappy` always uses the framing format independently of this setting."},
