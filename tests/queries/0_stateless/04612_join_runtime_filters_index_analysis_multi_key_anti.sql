@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS anti_dim;
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';
