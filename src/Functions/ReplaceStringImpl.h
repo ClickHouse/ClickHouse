@@ -180,8 +180,8 @@ struct ReplaceStringImpl
 
             if (cur_needle_length)
             {
-                /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
-                StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
+                /// Cheap-to-initialize searcher instead of Volnitsky because there is a different pattern in each row
+                CaseSensitiveStringSearcher searcher(cur_needle_data, cur_needle_length);
 
                 while (start_pos < cur_haystack_end)
                 {
@@ -243,6 +243,8 @@ struct ReplaceStringImpl
         size_t prev_haystack_offset = 0;
         size_t prev_replacement_offset = 0;
 
+        CaseSensitiveStringSearcher searcher(needle.data(), needle.size());
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
@@ -250,9 +252,6 @@ struct ReplaceStringImpl
 
             const auto * const cur_replacement_data = &replacement_data[prev_replacement_offset];
             const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset;
-
-            /// Using "slow" "stdlib searcher instead of Volnitsky just to keep things simple
-            StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(needle.data(), needle.size());
 
             const auto * last_match = static_cast<UInt8 *>(nullptr);
             const auto * start_pos = cur_haystack_data;
@@ -330,8 +329,8 @@ struct ReplaceStringImpl
 
             if (cur_needle_length)
             {
-                /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
-                StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
+                /// Cheap-to-initialize searcher instead of Volnitsky because there is a different pattern in each row
+                CaseSensitiveStringSearcher searcher(cur_needle_data, cur_needle_length);
 
                 while (start_pos < cur_haystack_end)
                 {

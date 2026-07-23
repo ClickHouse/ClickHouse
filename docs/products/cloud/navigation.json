@@ -6,10 +6,10 @@
         {
           "group": "Get started",
           "pages": [
+            "products/cloud/getting-started/cloud-get-started",
             "products/cloud/getting-started/intro",
             "products/cloud/getting-started/resource-tour"
-          ],
-          "root": "products/cloud/getting-started/cloud-get-started"
+          ]
         },
         {
           "group": "Features",
@@ -28,7 +28,7 @@
                 "products/cloud/features/sql-console-features/query-insights",
                 "products/cloud/features/sql-console-features/query-endpoints",
                 "products/cloud/features/sql-console-features/dashboards",
-                "products/cloud/features/sql-console-features/hyperdx",
+                "products/cloud/features/sql-console-features/clickstack",
                 "products/cloud/features/sql-console-features/user-defined-functions"
               ]
             },
@@ -39,14 +39,14 @@
                 {
                   "group": "Automatic scaling",
                   "pages": [
+                    "products/cloud/features/autoscaling/overview",
                     "products/cloud/features/autoscaling/vertical",
                     "products/cloud/features/autoscaling/horizontal",
                     "products/cloud/features/autoscaling/make-before-break",
                     "products/cloud/features/autoscaling/idling",
                     "products/cloud/features/autoscaling/scaling-recommendations",
                     "products/cloud/features/autoscaling/scheduled-scaling"
-                  ],
-                  "root": "products/cloud/features/autoscaling/overview"
+                  ]
                 },
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/deployment-options",
@@ -65,8 +65,7 @@
                     "products/cloud/features/admin-features/api/api-overview",
                     "products/cloud/features/admin-features/api/openapi",
                     "products/cloud/features/admin-features/api/postman"
-                  ],
-                  "root": "products/cloud/features/admin-features/api/index"
+                  ]
                 },
                 "products/cloud/features/admin-features/upgrades"
               ]
@@ -88,15 +87,16 @@
             {
               "group": "Backups",
               "pages": [
+                "products/cloud/features/backups/overview",
                 "products/cloud/features/backups/faq"
-              ],
-              "root": "products/cloud/features/backups/overview"
+              ]
             },
             "products/cloud/features/support",
             {
               "expanded": false,
               "group": "AI/ML",
               "pages": [
+                "products/cloud/features/ai-ml/index",
                 "products/cloud/features/ai-ml/ask-ai",
                 "products/cloud/features/ai-ml/aichat/using-ai-chat",
                 "products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
@@ -106,11 +106,13 @@
                 {
                   "group": "ClickHouse Agents",
                   "pages": [
+                    "products/cloud/features/ai-ml/agents/index",
                     "products/cloud/features/ai-ml/agents/quickstart",
                     "products/cloud/features/ai-ml/agents/chat",
                     {
                       "group": "Agent Builder",
                       "pages": [
+                        "products/cloud/features/ai-ml/agents/builder/index",
                         "products/cloud/features/ai-ml/agents/builder/model-parameters",
                         "products/cloud/features/ai-ml/agents/builder/code-interpreter",
                         "products/cloud/features/ai-ml/agents/builder/web-search",
@@ -119,25 +121,23 @@
                         "products/cloud/features/ai-ml/agents/builder/mcp-servers",
                         "products/cloud/features/ai-ml/agents/builder/skills",
                         "products/cloud/features/ai-ml/agents/builder/subagents"
-                      ],
-                      "root": "products/cloud/features/ai-ml/agents/builder/index"
+                      ]
                     },
                     "products/cloud/features/ai-ml/agents/prompts",
                     "products/cloud/features/ai-ml/agents/memory",
                     "products/cloud/features/ai-ml/agents/marketplace",
                     "products/cloud/features/ai-ml/agents/sharing-and-access"
-                  ],
-                  "root": "products/cloud/features/ai-ml/agents/index"
+                  ]
                 },
                 "products/cloud/features/ai-ml/model-developer-terms"
-              ],
-              "root": "products/cloud/features/ai-ml/index"
+              ]
             }
           ]
         },
         {
           "group": "Cloud reference",
           "pages": [
+            "products/cloud/reference/index",
             "products/cloud/reference/service-uptime",
             "products/cloud/reference/account-close",
             "products/cloud/reference/data-resiliency",
@@ -147,8 +147,7 @@
             "products/cloud/reference/security/compliance-overview",
             "products/cloud/reference/security/ai-compliance",
             "products/cloud/reference/personal-data-access"
-          ],
-          "root": "products/cloud/reference/index"
+          ]
         },
         {
           "group": "Billing",
@@ -166,36 +165,35 @@
                 "products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
                 "products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
                 "products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
-              ],
-              "root": "products/cloud/reference/billing/marketplace/index"
+              ]
             },
             {
               "expanded": false,
               "group": "ClickPipes",
               "pages": [
+                "products/cloud/reference/billing/clickpipes/index",
                 "products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
                 "products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
-              ],
-              "root": "products/cloud/reference/billing/clickpipes/index"
+              ]
             },
             "products/cloud/reference/billing/network-data-transfer",
             "products/cloud/reference/billing/payment-thresholds",
             "products/cloud/reference/billing/spend-alerts",
             "products/cloud/reference/billing/managing-payment-methods",
             "products/cloud/reference/billing/billing-compliance"
-          ],
-          "root": "products/cloud/reference/billing/index"
+          ]
         },
         {
           "group": "Guides",
           "pages": [
+            "products/cloud/guides/index",
             {
               "group": "Best practices",
               "pages": [
+                "products/cloud/guides/best-practices/index",
                 "products/cloud/guides/best-practices/multitenancy",
                 "products/cloud/guides/best-practices/usagelimits"
-              ],
-              "root": "products/cloud/guides/best-practices/index"
+              ]
             },
             {
               "expanded": false,
@@ -225,6 +223,7 @@
               "expanded": false,
               "group": "Backups",
               "pages": [
+                "products/cloud/guides/backups/index",
                 "products/cloud/guides/backups/review-and-restore-backups",
                 "products/cloud/guides/backups/configurable-backups",
                 {
@@ -236,20 +235,19 @@
                     "products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
                   ]
                 }
-              ],
-              "root": "products/cloud/guides/backups/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Data sources",
               "pages": [
+                "products/cloud/guides/data-sources/index",
                 "products/cloud/guides/data-sources/cloud-endpoints-api",
                 "products/cloud/guides/data-sources/accessing-s3-data-securely",
                 "products/cloud/guides/data-sources/secure-azure",
                 "products/cloud/guides/data-sources/secure-gcs",
                 "products/cloud/guides/data-sources/accessing-iceberg-data-securely"
-              ],
-              "root": "products/cloud/guides/data-sources/index"
+              ]
             },
             {
               "expanded": false,
@@ -274,6 +272,7 @@
                   "expanded": false,
                   "group": "Cloud access management",
                   "pages": [
+                    "products/cloud/guides/security/cloud-access-management/index",
                     "products/cloud/guides/security/cloud-access-management/manage-my-account",
                     "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                     "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
@@ -284,8 +283,7 @@
                     "products/cloud/guides/security/cloud-access-management/common-access-management-queries",
                     "products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
                     "products/cloud/guides/security/saml-sso-removal"
-                  ],
-                  "root": "products/cloud/guides/security/cloud-access-management/index"
+                  ]
                 },
                 {
                   "expanded": false,
@@ -296,11 +294,11 @@
                       "expanded": false,
                       "group": "Private networking",
                       "pages": [
+                        "products/cloud/guides/security/connectivity/private-networking/index",
                         "products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                         "products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                         "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
-                      ],
-                      "root": "products/cloud/guides/security/connectivity/private-networking/index"
+                      ]
                     }
                   ]
                 },
@@ -308,11 +306,11 @@
                   "expanded": false,
                   "group": "Audit logging",
                   "pages": [
+                    "products/cloud/guides/security/audit-logging/index",
                     "products/cloud/guides/security/audit-logging/console-audit-log",
                     "products/cloud/guides/security/audit-logging/database-audit-log",
                     "products/cloud/guides/security/audit-logging/byoc-security-playbook"
-                  ],
-                  "root": "products/cloud/guides/security/audit-logging/index"
+                  ]
                 },
                 {
                   "expanded": false,
@@ -332,13 +330,23 @@
                 }
               ]
             }
-          ],
-          "root": "products/cloud/guides/index"
+          ]
         },
-        { "group": "API reference", "openapi": { "source": "_specs/cloud-openapi.json", "directory": "products/cloud/api-reference" }, "pages": { "$ref": "./api-reference/navigation.json" } }
+        {
+          "group": "API reference",
+          "openapi": {
+            "source": "_specs/cloud-openapi.json",
+            "directory": "products/cloud/api-reference"
+          },
+          "pages": {
+            "$ref": "./api-reference/navigation.json"
+          }
+        }
       ]
     },
-    { "$ref": "../bring-your-own-cloud/navigation.json" }
+    {
+      "$ref": "../bring-your-own-cloud/navigation.json"
+    }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
