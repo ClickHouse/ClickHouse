@@ -1568,8 +1568,8 @@ public:
             if (!tryGetLeastSupertype(arguments))
             {
                 /// Arrays with elements types bigger than 32 bits (e.g. `Array(Int64)` vs
-                /// `Array(UInt64)`, or `Array(Int256)` vs `Array(UInt256)`) can still be compared
-                /// element-wise using the accurate scalar comparison, exactly like tuples.
+                /// `Array(UInt64)`, can still be compared
+                /// element-wise using the accurate scalar comparison.
                 const auto * left_array = checkAndGetDataType<DataTypeArray>(arguments[0].get());
                 const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
                 if (left_array && right_array)
@@ -1591,10 +1591,7 @@ public:
 
                     /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
                     /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields
-                    /// `Nullable(UInt8)`; that is still comparable for EQUALITY, where array null-as-value
-                    /// semantics let the executor use the null-safe equals element comparator (which returns
-                    /// a definite `UInt8`). Ordering has no null-safe primitive, so it stays restricted to a
-                    /// non-`Nullable` element result.
+                    /// `Nullable(UInt8)`;
                     const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
                     const bool element_result_ok
                         = WhichDataType(element_result_type.get()).isUInt8()

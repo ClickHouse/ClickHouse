@@ -103,8 +103,7 @@ public:
         if (!tryGetLeastSupertype(arguments))
         {
             /// A `String`/`FixedString` on one side aligned with a non-string type on the other (at
-            /// any nesting depth) can never be compared null-safely (unlike the regular `=` / `!=`
-            /// operators). Aligned String-vs-String positions are fine and fall through to the probe.
+            /// any nesting depth) can never be compared null-safely
             auto left_nested_type = removeLowCardinalityAndNullable(left_ele_type);
             auto right_nested_type = removeLowCardinalityAndNullable(right_ele_type);
             const bool has_string_vs_non_string
@@ -118,8 +117,7 @@ public:
                     backQuote(name));
 
             /// Types like `UInt64` vs `Int64` (or arrays/tuples of them) have no least common
-            /// supertype but are still comparable element-wise using accurate comparison, exactly
-            /// like the regular `=` / `!=` operators.
+            /// supertype but are still comparable element-wise using accurate comparison
             FunctionOverloadResolverPtr comparator = std::make_unique<FunctionToOverloadResolverAdaptor>(
                 std::make_shared<FunctionComparison<CompareOp, CompareName, true /*is null safe*/>>(params));
             ColumnsWithTypeAndName probe_args{
