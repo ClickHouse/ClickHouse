@@ -1,0 +1,47 @@
+---
+description: 'Documentación del tipo de datos Date32 en ClickHouse, que almacena fechas
+  con un rango ampliado en comparación con Date'
+sidebarTitle: 'Date32'
+slug: /sql-reference/data-types/date32
+title: 'Date32'
+doc_type: 'reference'
+---
+
+Una fecha. Admite el mismo rango de fechas que [DateTime64](/es/reference/data-types/datetime64). Se almacena como un entero con signo de 32 bits en orden de bytes nativo, cuyo valor representa los días transcurridos desde `1900-01-01`. **¡Importante!** 0 representa `1970-01-01`, y los valores negativos representan los días anteriores a `1970-01-01`.
+
+**Ejemplos**
+
+Creación de una tabla con una columna de tipo `Date32` e inserción de datos en ella:
+
+```sql
+CREATE TABLE dt32
+(
+    `timestamp` Date32,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parsear fecha
+-- - desde una cadena,
+-- - desde un entero 'pequeño' interpretado como número de días desde 1970-01-01, y
+-- - desde un entero 'grande' interpretado como número de segundos desde 1970-01-01.
+INSERT INTO dt32 VALUES ('2100-01-01', 1), (47482, 2), (4102444800, 3);
+
+SELECT * FROM dt32;
+```
+
+```text
+┌──timestamp─┬─event_id─┐
+│ 2100-01-01 │        1 │
+│ 2100-01-01 │        2 │
+│ 2100-01-01 │        3 │
+└────────────┴──────────┘
+```
+
+**Véase también**
+
+* [toDate32](/es/reference/functions/regular-functions/type-conversion-functions#toDate32)
+* [toDate32OrZero](/es/reference/functions/regular-functions/type-conversion-functions#toDate32OrZero)
+* [toDate32OrNull](/es/reference/functions/regular-functions/type-conversion-functions#toDate32OrNull)

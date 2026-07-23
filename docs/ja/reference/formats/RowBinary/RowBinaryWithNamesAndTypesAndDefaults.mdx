@@ -1,0 +1,90 @@
+---
+alias: []
+description: 'RowBinaryWithNamesAndTypesAndDefaults フォーマットに関するドキュメント'
+input_format: true
+keywords: ['RowBinaryWithNamesAndTypesAndDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithNamesAndTypesAndDefaults
+title: 'RowBinaryWithNamesAndTypesAndDefaults'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/ja/common-row-binary-format-settings.mdx';
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✗  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+[`RowBinaryWithNamesAndTypes`](/ja/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) フォーマットに似ていますが、各セルの前に 1 バイト追加されており、そのカラムの `DEFAULT` 値を使用するかどうかを示します。これは [`RowBinaryWithDefaults`](/ja/reference/formats/RowBinary/RowBinaryWithDefaults) フォーマットとまったく同じです。この組み合わせにより、スキーマの進化に対応した `INSERT` をサポートします。書き込み側はヘッダーからカラムを省略でき、その場合は対象カラムの `DEFAULT` が使用されます。さらに、送信するカラムについては、個々のセルごとに「そのカラムの `DEFAULT` を使う」と指定でき、これを `NULL` と混同せずに扱えます。
+
+このフォーマットは入力専用です。
+
+<div id="wire-format">
+  ## ワイヤ形式
+</div>
+
+ヘッダーは [`RowBinaryWithNamesAndTypes`](/ja/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) と同一です。
+
+1. カラム数 `N` を表す `VarUInt`。
+2. カラム名を格納した、長さプレフィックス付きの `String` が `N` 個。
+3. `N` 個のカラム型 — テキスト名、またはコンパクトなバイナリエンコーディングのいずれかで、`output_format_binary_encode_types_in_binary_format` / `input_format_binary_decode_types_in_binary_format` 設定で制御されます。
+
+ヘッダーの後には、各行は `N` 個のセルで構成されます。各セルについて:
+
+* 1 バイトの `UInt8` マーカーバイト。
+  * `0x01` — 対象カラムの `DEFAULT` 式を使用します。後続する値バイトはありません。
+  * `0x00` — 値が続き、カラム型の `RowBinary` シリアライザーでシリアライズされます。`Nullable(T)` の場合、値バイトは `Nullable` の ヌルバイト (非NULLは `0`、NULL は `1`) で始まり、非NULLであればその後に内部値が続きます。
+
+<div id="defaults-vs-null">
+  ## デフォルト値と NULL
+</div>
+
+セルごとのデフォルトマーカーと、`Nullable` に組み込まれているヌルバイトは独立しています。`Nullable(UInt32) DEFAULT 42` カラムは、各行ごとに次の 3 通りで送信できます。
+
+| Bytes     | Meaning                                   |
+| --------- | ----------------------------------------- |
+| `01`      | `DEFAULT 42` を使用します。                      |
+| `00 01`   | 値パスに入り、その後 `Nullable` 型によって `NULL` を表します。 |
+| `00 00 …` | 値パスに入り、その後に NULL ではない内部値が続きます。            |
+
+<div id="schema-evolution">
+  ## スキーマの進化
+</div>
+
+| ケース                             | 動作                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| ファイルのヘッダーにカラムがまったく存在しない         | `insertDefaultsForNotSeenColumns` によりターゲット側で補完されます。これは `defaults_for_omitted_fields` で制御されます。                                  |
+| ヘッダーにカラムが存在し、セルマーカーが `0x01`     | 各行に対して `insertDefault` が実行されます。                                                                                                |
+| ヘッダーにカラムが存在し、セルマーカーが `0x00`     | 値は通常どおりパースされます。                                                                                                                |
+| ヘッダーに余分なカラムがあり、ターゲットテーブルには存在しない | `input_format_skip_unknown_fields = 1` の場合は何も通知されずに破棄されます (最初にマーカーが消費され、`0x01` ならそれ以上は何も行われず、`0x00` なら型付きの値がパースされたうえで破棄されます) 。 |
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+```sql title="Query"
+SELECT * FROM format(
+    'RowBinaryWithNamesAndTypesAndDefaults',
+    'x Nullable(UInt32) DEFAULT 42',
+    unhex('01' || '0178' || '10' || hex('Nullable(UInt32)') || '01')
+);
+```
+
+```response title="Response"
+┌──x─┐
+│ 42 │
+└────┘
+```
+
+* ヘッダーには、`Nullable(UInt32)` 型の `x` という名前のカラムが 1 つあります。
+* その 1 つのセルではマーカー `0x01` が使われ、&quot;`DEFAULT 42` を使用する&quot; ことを意味します。
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+<RowBinaryFormatSettings />

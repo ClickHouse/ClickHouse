@@ -1,0 +1,189 @@
+---
+slug: /cloud/managed-postgres/monitoring/prometheus
+sidebarTitle: 'endpoint do Prometheus'
+title: 'Integração do Managed Postgres com Prometheus'
+description: 'Colete métricas do Managed Postgres no Prometheus, Grafana, Datadog ou em qualquer collector compatível com OpenMetrics'
+keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'métricas', 'openmetrics', 'observabilidade']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
+
+O Managed Postgres expõe dois endpoints de métricas compatíveis com Prometheus
+na [ClickHouse Cloud API][cloud-api]:
+
+| Endpoint | Path                                                   | Returns                                                          |
+| -------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | Métricas de todos os serviços do Managed Postgres na organização |
+| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Métricas de um único serviço                                     |
+
+<Note>
+  O endpoint no nível da organização retorna métricas para até 100 serviços. Se a sua
+  organização tiver mais de 100 serviços do Managed Postgres, [entre em contato com o
+  suporte](https://clickhouse.com/support/program).
+</Note>
+
+<div id="authentication">
+  ## Autenticação
+</div>
+
+O endpoint usa as mesmas [chaves de API] usadas no restante da OpenAPI; consulte
+o [guia da OpenAPI](/pt-BR/products/managed-postgres/openapi) para saber como criá-las
+e localizar os IDs da sua organização e do seu serviço.
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+ORG_ID=myorgid
+PG_ID=mypgid
+```
+
+<div id="scrape-org">
+  ## Coletando métricas de todos os serviços de uma organização
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/prometheus"
+```
+
+<div id="scrape-instance">
+  ## Coleta de um único serviço
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/prometheus"
+```
+
+<div id="sample-response">
+  ## Exemplo de resposta
+</div>
+
+```response
+# HELP PostgresServiceInfo Informações sobre o serviço PostgreSQL, incluindo status e versão.
+# TYPE PostgresServiceInfo gauge
+PostgresServiceInfo{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",postgres_status="running",postgres_version="18"} 1
+
+# HELP PostgresServer_ActiveConnections Número de conexões ativas por estado.
+# TYPE PostgresServer_ActiveConnections gauge
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="active"} 1
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="idle"} 4
+
+# HELP PostgresServer_CacheHitRatio Taxa de acerto do cache de buffer: blocos servidos do cache vs. total de blocos acessados (%).
+# TYPE PostgresServer_CacheHitRatio gauge
+PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres"} 100
+```
+
+Para ver a lista completa de métricas e seus significados, consulte a
+[referência de métricas](/pt-BR/products/managed-postgres/monitoring/metrics).
+
+<div id="configuring-prometheus">
+  ## Configurando o Prometheus
+</div>
+
+Esta configuração faz coleta do endpoint em nível de organização a cada 60 segundos:
+
+```yaml
+scrape_configs:
+  - job_name: "managed-postgres"
+    scheme: https
+    metrics_path: "/v1/organizations/<ORG_ID>/postgres/prometheus"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+    scrape_interval: 60s
+```
+
+O endpoint atualiza as métricas uma vez por minuto. Fazer coleta em um intervalo menor que
+`60s` duplica as amostras e produz um padrão em degraus nos painéis de gauge.
+
+Defina `honor_labels: true` para que os labels `postgres_service` e
+`postgres_service_name` do endpoint sejam preservados, em vez de serem
+sobrescritos pelo Prometheus.
+
+Para fazer a coleta de um único serviço, acrescente `/<PG_ID>` a `metrics_path`.
+
+<div id="grafana-dashboard">
+  ## Dashboard pré-criado do Grafana
+</div>
+
+Um dashboard pronto para uso do Grafana visualiza cada métrica que o endpoint
+expõe — uma tabela de serviços que pode ser ordenada, utilização de CPU e memória, uso de disco
+com alertas de limite, conexões por estado, transações e
+taxa de rollback, atividade de Tuple, E/S, armazenamento por banco de dados e
+deadlocks.
+
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Dashboard do Grafana dos serviços do Managed Postgres" size="md" border />
+
+<div id="import-dashboard">
+  ### Importando o dashboard
+</div>
+
+<Steps>
+  <Step>
+    #### Baixe o JSON do dashboard
+
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Baixe o JSON do dashboard</TrackedLink>.
+  </Step>
+
+  <Step>
+    #### Abra o processo de importação no Grafana
+
+    Vá para **Dashboards → New → Import**. Faça upload do arquivo JSON ou cole seu conteúdo.
+  </Step>
+
+  <Step>
+    #### Escolha sua fonte de dados do Prometheus
+
+    Quando o campo `DS_PROMETHEUS` for solicitado, selecione a fonte de dados do Prometheus que coleta do endpoint configurado na [seção anterior](#configuring-prometheus).
+  </Step>
+</Steps>
+
+Para implantações provisionadas do Grafana, coloque o JSON no seu
+caminho de provisionamento de dashboards. O Grafana associa a referência `${DS_PROMETHEUS}`
+a uma fonte de dados do Prometheus disponível na instância.
+
+<div id="template-variables">
+  ### Variáveis de template
+</div>
+
+O dashboard disponibiliza três variáveis:
+
+* **Fonte de dados** — a fonte de dados do Prometheus usada pelo dashboard.
+* **Serviço** — filtro de múltipla seleção em `postgres_service_name`.
+  O padrão é *All*; escolha um ou mais serviços para restringir todos os painéis.
+* **Intervalo de coleta** — constante oculta; o padrão é `60s`. Determina
+  o cálculo de `$__rate_interval` do Grafana. Altere esse valor no
+  JSON se o seu intervalo de coleta for diferente.
+
+<div id="drill-in">
+  ### Filtre para um único serviço para aprofundar a análise
+</div>
+
+Vários painéis permitem uma análise mais detalhada quando você filtra
+para um único serviço por meio da variável **Service**. O painel de CPU por modo, por
+exemplo, empilha `user`, `system`, `iowait`, `steal` e outros modos de CPU
+para que você possa identificar se um pico vem do código da aplicação, de processamento do kernel,
+de espera por disco ou de contenção no hipervisor.
+
+<div id="third-party-integrations">
+  ## Integração com Grafana e Datadog
+</div>
+
+O endpoint segue o mesmo formato do [endpoint Prometheus do ClickHouse](/pt-BR/products/cloud/features/monitoring/prometheus), portanto as configurações do Grafana Cloud, Grafana
+Alloy e do agente OpenMetrics do Datadog descritas ali
+também se aplicam aqui. Aponte `metrics_path` para o caminho da organização ou
+da instância do Managed Postgres, em vez do caminho do ClickHouse.
+
+[cloud-api]: /products/cloud/features/admin-features/api/index "API do Cloud"
+
+[API keys]: /products/cloud/features/admin-features/api/openapi "Gerenciar chaves de API"

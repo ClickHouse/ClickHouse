@@ -1,0 +1,157 @@
+---
+title: 'ClickHouse Cloud Console での監視'
+slug: /cloud/monitoring/cloud-console
+description: 'ClickHouse Cloud Console に組み込まれている監視ダッシュボード'
+keywords: ['cloud', '監視', 'ダッシュボード', 'サービスの健全性', 'リソース使用状況', '高度なダッシュボード']
+sidebarTitle: 'Cloud Console'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse Cloud のサービスには、ダッシュボードや通知を提供する、すぐに利用できる監視コンポーネントが備わっています。デフォルトでは、Cloud Console のすべてのユーザーがこれらのダッシュボードにアクセスできます。
+
+<div id="dashboards">
+  ## ダッシュボード
+</div>
+
+<div id="service-health">
+  ### サービスの健全性
+</div>
+
+Service Healthダッシュボードでは、サービス全体の健全性を監視できます。ClickHouse Cloudは、このダッシュボードに表示されるメトリクスをシステムテーブルから収集して保存するため、サービスがアイドル状態のときでも確認できます。
+
+{/* TODO: Service Health ダッシュボードのスクリーンショットを追加 */}
+
+<div id="resource-utilization">
+  ### リソース使用状況
+</div>
+
+Infrastructure ダッシュボードでは、ClickHouse プロセスが使用しているリソースの詳細を確認できます。ClickHouse Cloud は、このダッシュボードに表示されるメトリクスをシステムテーブルからスクレイプして保存しているため、サービスがアイドル状態になっていても確認できます。
+
+<div id="memory-and-cpu">
+  #### メモリと CPU
+</div>
+
+**Allocated CPU** と **Allocated Memory** のグラフには、サービス内の各レプリカで利用可能なコンピュートリソースの総量が表示されます。これらの割り当ては、ClickHouse Cloud の [オートスケーリング機能](/ja/products/cloud/features/autoscaling/overview)を使用して変更できます。
+
+**Memory Usage** と **CPU Usage** のグラフには、各レプリカで ClickHouse のプロセスが実際にどの程度 CPU とメモリを使用しているかの推定値が表示されます。これには、クエリだけでなく、マージなどのバックグラウンドプロセスも含まれます。
+
+<Info>
+  **パフォーマンスの低下**
+
+  メモリまたは CPU の使用率が割り当て済みのメモリまたは CPU に近づくと、パフォーマンスが低下し始める可能性があります。対処方法として、以下を推奨します。
+
+  * クエリを最適化する
+  * テーブルエンジンのパーティション化を変更する
+  * [オートスケーリング](/ja/products/cloud/features/autoscaling/overview)を使用して、サービスにより多くのコンピュートリソースを追加する
+</Info>
+
+これらのグラフに表示される、対応するシステムテーブルのメトリクスは次のとおりです。
+
+| グラフ        | 対応するメトリクス名          | 集計 | 注記                                                  |
+| ---------- | ------------------- | -- | --------------------------------------------------- |
+| 割り当て済みメモリ  | `CGroupMemoryTotal` | 最大 |                                                     |
+| 割り当て済み CPU | `CGroupMaxCPU`      | 最大 |                                                     |
+| 使用メモリ      | `MemoryResident`    | 最大 |                                                     |
+| 使用 CPU     | System CPU metric   | 最大 | Prometheus エンドポイント経由の `ClickHouseServer_UsageCores` |
+
+<div id="data-transfer">
+  #### データ転送
+</div>
+
+グラフには、ClickHouse Cloud との間のデータの送受信量が表示されます。詳しくは、[ネットワークデータ転送](/ja/products/cloud/reference/billing/network-data-transfer)を参照してください。
+
+<div id="advanced-dashboard">
+  ### 高度なダッシュボード
+</div>
+
+このダッシュボードは、[組み込みの高度なオブザーバビリティダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard)をベースに変更を加えたもので、各系列はレプリカごとのメトリクスを表します。ClickHouse 固有の問題を監視し、トラブルシューティングする際に役立ちます。
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="ClickHouse Cloud の高度なダッシュボード" border />
+
+<Note>
+  ClickHouse Cloud は、このダッシュボードに表示されるメトリクスをシステムテーブルからスクレイプして保存しているため、サービスがアイドル状態でも表示できます。これらのメトリクスにアクセスしても、基盤となるサービスに対してクエリは発行されず、アイドル状態のサービスが起動することもありません。
+</Note>
+
+以下の表は、高度なダッシュボード内の各グラフと、対応する ClickHouse メトリクス、取得元のシステムテーブル、および集計タイプの対応関係を示しています。
+
+| グラフ                        | 対応する ClickHouse メトリクス名                                                                                                                                                  | システムテーブル                  | 集計タイプ                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
+| クエリ/秒                      | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| 実行中のクエリ                    | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
+| 実行中のマージ                    | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
+| 読み取りバイト数/秒                 | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
+| IO 待機                      | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| S3 読み取り待機                  | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
+| S3 読み取りエラー/秒               | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
+| CPU 待機                     | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| OS CPU 使用率 (ユーザー空間、正規化済み)  | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
+| OS CPU 使用率 (カーネル、正規化済み)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
+| ディスクからの読み取り                | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| ファイルシステムからの読み取り            | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| メモリ (追跡対象、バイト)             | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
+| MergeTree パーツ総数            | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
+| パーティションあたりの最大パーツ数          | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
+| S3 からの読み取り                 | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| ファイルシステムキャッシュサイズ           | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
+| Disk S3 書き込みリクエスト/秒        | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
+| Disk S3 読み取りリクエスト/秒        | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| FS cache ヒット率              | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
+| Page cache ヒット率            | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
+| ネットワーク受信バイト数/秒             | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| ネットワーク送信バイト数/秒             | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| 同時 TCP 接続数                 | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
+| 同時 MySQL 接続数               | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
+| 同時 HTTP 接続数                | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
+
+各可視化の詳細と、トラブルシューティングでの活用方法については、[高度なダッシュボードのドキュメント](/ja/products/cloud/features/monitoring/advanced-dashboard)を参照してください。
+
+<div id="query-insights">
+  ## クエリインサイト
+</div>
+
+**クエリインサイト** 機能を使うと、さまざまな可視化やテーブルを通じて、ClickHouse に組み込まれているクエリログをより簡単に活用できます。ClickHouse の `system.query_log` テーブルは、クエリ最適化、デバッグ、そしてクラスター全体の健全性とパフォーマンスの監視における重要な情報源です。
+
+サービスを選択すると、左側のサイドバーにある **監視** ナビゲーション項目が展開され、**クエリインサイト** サブ項目が表示されます。
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="クエリインサイト UI の概要" border />
+
+<div id="top-level-metrics">
+  ### 上部のメトリクス
+</div>
+
+上部の統計ボックスには、選択した時間範囲における基本的なクエリメトリクスが表示されます。その下の時系列チャートには、クエリ量、レイテンシ、エラー率がクエリ種別 (select、insert、other) ごとに表示されます。レイテンシチャートは、p50、p90、p99 のレイテンシを表示するように切り替えられます。
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="クエリインサイトのレイテンシチャート" border />
+
+<div id="recent-queries">
+  ### 最近のクエリ
+</div>
+
+選択した時間範囲について、正規化されたクエリハッシュとユーザーごとにグループ化されたクエリログエントリを表示するテーブルです。最近のクエリは、利用可能な任意のフィールドでフィルタやソートを行えます。また、tables、p90、p99 レイテンシなどの追加フィールドを表示するか非表示にするかを設定できます。
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="クエリインサイトの最近のクエリ テーブル" border />
+
+<div id="query-drill-down">
+  ### クエリのドリルダウン
+</div>
+
+Recent queries テーブルでクエリを選択すると、選択したクエリに固有のメトリクスや情報を表示するフライアウトが開きます。
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="クエリインサイト UI のクエリドリルダウン" border />
+
+**Query info** タブ内のすべてのメトリクスは集計メトリクスですが、**Query history** タブを選択すると、各実行のメトリクスも確認できます。
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="クエリインサイト UI のクエリ情報" border />
+
+このペインでは、各クエリ実行の `Settings` 項目と `Profile Events` 項目を展開して、追加情報を確認できます。
+
+<div id="related">
+  ## 関連ページ
+</div>
+
+* [Notifications](/ja/products/cloud/features/monitoring/notifications) — スケーリングイベント、エラー、請求に関するアラートを設定します
+* [高度なダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard) — 各ダッシュボードの可視化についての詳細なリファレンス
+* [システムテーブルのクエリ](/ja/products/cloud/features/monitoring/system-tables) — 詳細な内部診断のために、システムテーブルに対してカスタム SQL クエリを実行します
+* [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — メトリクスを Grafana、Datadog、その他の Prometheus 互換ツールにエクスポートします

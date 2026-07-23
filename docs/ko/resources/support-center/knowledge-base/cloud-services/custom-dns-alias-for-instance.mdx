@@ -1,0 +1,128 @@
+---
+title: 리버스 프록시 설정을 통한 사용자 지정 DNS 별칭 만들기
+description: 리버스 프록시를 사용해 인스턴스용 사용자 지정 DNS 별칭을 설정하는 방법을 알아봅니다
+date: 2025-05-16
+tags: ['서버 관리자', '보안 및 인증']
+keywords: ['사용자 지정 DNS 별칭', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+<br />
+
+<div id="custom-dns-alias">
+  # 리버스 프록시 설정을 통한 사용자 지정 DNS 별칭
+</div>
+
+> 이 기술 자료 문서에서는 ClickHouse 네이티브 클라이언트를 위해 Nginx와 같은 리버스 프록시를 사용하여 ClickHouse Cloud 인스턴스에 사용자 지정 DNS 별칭을 설정하는 방법을 안내합니다.
+
+<div id="create-certificate">
+  ## 자체 서명 인증서 생성
+</div>
+
+<Note>
+  서명된 인증서를 사용하는 경우 이 단계는 필요하지 않습니다.
+</Note>
+
+원하는 도메인 이름으로 자체 서명 인증서를 생성하십시오.
+이 예시에서는 도메인 이름으로 `xyz-customdomain.com`을 사용하고
+`MyCertificate.crt`라는 인증서를 생성합니다. 자세한 내용은 [&quot;SSL 인증서 생성&quot;](/ko/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)
+을 참조하십시오.
+
+인증서를 `/etc/clickhouse-client/config.xml`에 추가하십시오:
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+<div id="update-nginx-config">
+  ## Nginx 구성 업데이트
+</div>
+
+`nginx.conf` 파일에 다음 내용을 추가하세요:
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+여기서 `isrgrootx1.pem`은 ClickHouse Cloud의 루트 인증서로,
+[여기](https://letsencrypt.org/certs/isrgrootx1.pem)에서 다운로드할 수 있습니다.
+
+<div id="update-hosts-file">
+  ## hosts 파일 업데이트
+</div>
+
+<Note>
+  자체 도메인 컨트롤러를 사용하는 경우에는 다음 단계가 필요하지 않습니다
+</Note>
+
+Nginx 서버의 `/etc/hosts` 파일에 다음 내용을 추가하세요:
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+여기서 `10.X.Y.Z`는 사용 중인 Nginx 서버의 IP 주소입니다.
+
+<div id="connect-to-cloud-using-alias">
+  ## 별칭을 사용해 Cloud에 연결
+</div>
+
+이제 사용자 지정 별칭으로 연결할 수 있습니다:
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

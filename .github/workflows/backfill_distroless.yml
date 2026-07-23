@@ -122,6 +122,7 @@ jobs:
 
           SEEN_MINOR=""
           SEEN_MAJOR=""
+          SEEN_LATEST=""
 
           for VERSION in $SORTED_VERSIONS; do
             echo "============================================"
@@ -134,7 +135,11 @@ jobs:
             # Decide which floating tags THIS version is allowed to write.
             # First time we see a given X.Y.Z or X.Y in this run, we let
             # this build update that floating ref. Subsequent (lower)
-            # versions in the same group skip it.
+            # versions in the same group skip it. The :latest-distroless
+            # ref is only ever a candidate for the very first (highest)
+            # version in the run; the cross-run version_ge check below
+            # then refuses to actually overwrite :latest if a newer
+            # version is already published there.
             FLOATING_TAGS=""
             case " $SEEN_MINOR " in
               *" $VERSION_MINOR "*)
@@ -150,6 +155,12 @@ jobs:
                 FLOATING_TAGS="$FLOATING_TAGS:${VERSION_MAJOR}"
                 SEEN_MAJOR="$SEEN_MAJOR $VERSION_MAJOR" ;;
             esac
+            if [ -z "$SEEN_LATEST" ]; then
+              FLOATING_TAGS="$FLOATING_TAGS:latest"
+              SEEN_LATEST=1
+            else
+              echo "skipping :latest-distroless — already considered for a higher patch in this run"
+            fi
 
             for image_config in \
               "clickhouse/clickhouse-server:docker/server/Dockerfile.distroless:docker/server" \
@@ -197,6 +208,7 @@ jobs:
                 --platform=linux/amd64,linux/arm64 \
                 --provenance=true \
                 --sbom=true \
+                --target=production \
                 ${PUSH_FLAG:-$OUTPUT_FLAG} \
                 --label="build-url=${GITHUB_RUN_URL}" \
                 --label="com.clickhouse.build.githash=${SHA}" \

@@ -58,7 +58,9 @@ CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 5)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0,1,2,3,4]);
 INSERT INTO qbit VALUES (2, [1,2,3,4,5]);
 
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+-- `id` is not a constant, so this is not a valid internal optimized form; and the first argument is not a QBit, so it is not the
+-- user-facing form (which now accepts an optional 4th `dims` argument) either.
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE qbit;
 
 -- Check if full column as third argument throws

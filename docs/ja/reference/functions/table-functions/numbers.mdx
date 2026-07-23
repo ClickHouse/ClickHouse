@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/table-functions/numbers
+sidebarTitle: 'numbers'
+title: 'numbers'
+description: '整数の連続列を含む、単一の `number` カラムを持つテーブルを返します。'
+doc_type: 'reference'
+---
+
+* `numbers()` – 0 から始まる整数を昇順で含む、単一の `number` カラム (UInt64) を持つ無限テーブルを返します。行数を制限するには `LIMIT` (必要に応じて `OFFSET` も) を使用します。
+
+* `numbers(N)` – 0 から `N - 1` までの整数を含む、単一の `number` カラム (UInt64) を持つテーブルを返します。
+
+* `numbers(N, M)` – `N` から `N + M - 1` までの `M` 個の整数を含む、単一の `number` カラム (UInt64) を持つテーブルを返します。
+
+* `numbers(N, M, S)` – `[N, N + M)` の範囲の値をステップ `S` で含む、単一の `number` カラム (UInt64) を持つテーブルを返します (約 `M / S` 行、端数切り上げ) 。`S` は `>= 1` である必要があります。
+
+これは [`system.numbers`](/ja/reference/system-tables/numbers) システムテーブルに似ています。テストや連続する値の生成に使用できます。
+
+次のクエリは同等です:
+
+```sql
+SELECT * FROM numbers(10);
+SELECT * FROM numbers(0, 10);
+SELECT * FROM numbers() LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers WHERE number BETWEEN 0 AND 9;
+SELECT * FROM system.numbers WHERE number IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+```
+
+次のクエリも等価です:
+
+```sql
+SELECT * FROM numbers(10, 10);
+SELECT * FROM numbers() LIMIT 10 OFFSET 10;
+SELECT * FROM system.numbers LIMIT 10 OFFSET 10;
+```
+
+次のクエリも等価です:
+
+```sql
+SELECT number * 2 FROM numbers(10);
+SELECT (number - 10) * 2 FROM numbers(10, 10);
+SELECT * FROM numbers(0, 20, 2);
+```
+
+<div id="examples">
+  ### 例
+</div>
+
+最初の10個の数。
+
+```sql
+SELECT * FROM numbers(10);
+```
+
+```response
+ ┌─number─┐
+ │      0 │
+ │      1 │
+ │      2 │
+ │      3 │
+ │      4 │
+ │      5 │
+ │      6 │
+ │      7 │
+ │      8 │
+ │      9 │
+ └────────┘
+```
+
+2010-01-01 から 2010-12-31 までの日付列を生成します。
+
+```sql
+SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
+```
+
+`>= 10^15` を満たす `UInt64` のうち、`sipHash64(number)` の末尾に 0 ビットが 20 個連続する最初のものを見つけます。
+
+```sql
+SELECT number
+FROM numbers()
+WHERE number >= 1e15
+  AND bitAnd(sipHash64(number), 0xFFFFF) = 0
+LIMIT 1;
+```
+
+```response
+ ┌───────────number─┐
+ │ 1000000000056095 │ -- 1.00 quadrillion
+ └──────────────────┘
+```
+
+<div id="notes">
+  ### 注意事項
+</div>
+
+* パフォーマンス上の理由から、必要な行数がわかっている場合は、制限付きの形式 (`numbers(N)`、`numbers(N, M[, S])`) を、制限のない `numbers()` / `system.numbers` より優先してください。
+* 並列生成を行う場合は、`numbers_mt(...)` または [`system.numbers_mt`](/ja/reference/system-tables/numbers_mt) テーブルを使用してください。なお、結果は任意の順序で返される可能性があります。

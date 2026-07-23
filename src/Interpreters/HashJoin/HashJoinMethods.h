@@ -17,31 +17,32 @@ namespace DB
 /// Returns the threshold (in bytes) above which prefetching is enabled in JOIN.
 size_t getMinBytesForPrefetchInJoin();
 
-/// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
+/// Inserting an element into a hash table of the form `key -> reference to a row`, which will then be used by JOIN.
 template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
     static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, const ColumnsInfo * stored_columns_info, size_t i, Arena & pool)
+    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
         if (emplace_result.isInserted() || join.anyTakeLastRow())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns_info, i);
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
         return emplace_result.isInserted() || join.anyTakeLastRow();
     }
 
     static ALWAYS_INLINE bool
-    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const ColumnsInfo * stored_columns_info, size_t i, Arena & pool)
+    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
         if (emplace_result.isInserted())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns_info, i);
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
         else
         {
-            /// The first element of the list is stored in the value of the hash table, the rest in the pool.
-            emplace_result.getMapped().insert({stored_columns_info, i}, pool);
+            /// A single ref is stored inline in the value of the hash table; the first duplicate
+            /// switches the value to a pointer to an arena-allocated list of refs.
+            emplace_result.getMapped().insert(RowRef(stored_block_no, i).encode(), pool);
         }
         return emplace_result.isInserted();
     }
@@ -50,7 +51,7 @@ struct Inserter
         HashJoin & join,
         HashMap & map,
         KeyGetter & key_getter,
-        const ColumnsInfo * stored_columns_info,
+        UInt32 stored_block_no,
         size_t i,
         Arena & pool,
         const IColumn & asof_column)
@@ -61,7 +62,7 @@ struct Inserter
         TypeIndex asof_type = *join.getAsofType();
         if (emplace_result.isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
-        (*time_series_map)->insert(asof_column, stored_columns_info, i);
+        (*time_series_map)->insert(asof_column, stored_block_no, i);
         return emplace_result.isInserted();
     }
 };
@@ -77,7 +78,7 @@ public:
         MapsTemplate & maps,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const ColumnsInfo * stored_columns_info,
+        UInt32 stored_block_no,
         const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
@@ -111,7 +112,7 @@ private:
         HashMap & map,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const ColumnsInfo * stored_columns_info,
+        UInt32 stored_block_no,
         const Selector & selector,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
@@ -146,12 +147,13 @@ private:
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+    /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
+    /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
     template <
         typename KeyGetter,
         typename Map,
         bool need_filter,
-        bool check_null_map,
-        JoinCommon::JoinMask::Kind join_mask_kind,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
@@ -165,33 +167,10 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
-        bool check_null_map,
-        typename AddedColumns,
-        typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
-        std::vector<KeyGetter> && key_getter_vector,
-        const std::vector<const Map *> & mapv,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
-
-    template <
-        typename KeyGetter,
-        typename Map,
-        bool need_filter,
-        bool check_null_map,
-        JoinCommon::JoinMask::Kind join_mask_kind,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
-        KeyGetter & key_getter,
-        const Map * map,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
-
-    template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,

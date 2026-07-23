@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -121,7 +122,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
@@ -284,7 +285,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -305,3 +306,6 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataSkippingIndices) }

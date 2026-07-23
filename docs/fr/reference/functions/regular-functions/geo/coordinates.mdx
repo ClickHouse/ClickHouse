@@ -1,0 +1,191 @@
+---
+description: 'Documentation des coordonnées'
+sidebarTitle: 'Coordonnées géographiques'
+slug: /sql-reference/functions/geo/coordinates
+title: 'Fonctions de manipulation des coordonnées géographiques'
+doc_type: 'reference'
+---
+
+<div id="greatcircledistance">
+  ## greatCircleDistance
+</div>
+
+Calcule la distance entre deux points à la surface de la Terre à l’aide de [la formule du grand cercle](https://en.wikipedia.org/wiki/Great-circle_distance).
+
+```sql
+greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Paramètres d&#39;entrée**
+
+* `lon1Deg` — Longitude du premier point, en degrés. Intervalle : `[-180°, 180°]`.
+* `lat1Deg` — Latitude du premier point, en degrés. Intervalle : `[-90°, 90°]`.
+* `lon2Deg` — Longitude du deuxième point, en degrés. Intervalle : `[-180°, 180°]`.
+* `lat2Deg` — Latitude du deuxième point, en degrés. Intervalle : `[-90°, 90°]`.
+
+Les valeurs positives correspondent aux latitudes nord et aux longitudes est, et les valeurs négatives aux latitudes sud et aux longitudes ouest.
+
+**Valeur renvoyée**
+
+La distance entre deux points à la surface de la Terre, en mètres.
+
+Déclenche une exception si les valeurs des paramètres d&#39;entrée sont hors de cet intervalle.
+
+**Exemple**
+
+```sql
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+```
+
+```text
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+```
+
+<div id="geodistance">
+  ## geoDistance
+</div>
+
+Semblable à `greatCircleDistance`, mais calcule la distance sur l’ellipsoïde WGS-84 plutôt que sur la sphère. Il s’agit d’une approximation plus précise du géoïde terrestre.
+Les performances sont les mêmes que pour `greatCircleDistance` (sans perte de performances). Il est recommandé d’utiliser `geoDistance` pour calculer les distances à la surface de la Terre.
+
+Note technique : pour des points suffisamment proches, nous calculons la distance à l’aide d’une approximation plane, avec la métrique du plan tangent au milieu des coordonnées.
+
+```sql
+geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Paramètres d&#39;entrée**
+
+* `lon1Deg` — Longitude du premier point en degrés. Intervalle : `[-180°, 180°]`.
+* `lat1Deg` — Latitude du premier point en degrés. Intervalle : `[-90°, 90°]`.
+* `lon2Deg` — Longitude du deuxième point en degrés. Intervalle : `[-180°, 180°]`.
+* `lat2Deg` — Latitude du deuxième point en degrés. Intervalle : `[-90°, 90°]`.
+
+Les valeurs positives correspondent à la latitude nord et à la longitude est, tandis que les valeurs négatives correspondent à la latitude sud et à la longitude ouest.
+
+**Valeur renvoyée**
+
+La distance entre deux points à la surface de la Terre, en mètres.
+
+Génère une exception si les valeurs des paramètres d&#39;entrée sont en dehors de cet intervalle.
+
+**Exemple**
+
+```sql
+SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
+```
+
+```text
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+```
+
+<div id="greatcircleangle">
+  ## greatCircleAngle
+</div>
+
+Calcule l’angle au centre entre deux points situés à la surface de la Terre à l’aide de [la formule du grand cercle](https://en.wikipedia.org/wiki/Great-circle_distance).
+
+```sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Paramètres d’entrée**
+
+* `lon1Deg` — Longitude du premier point en degrés.
+* `lat1Deg` — Latitude du premier point en degrés.
+* `lon2Deg` — Longitude du deuxième point en degrés.
+* `lat2Deg` — Latitude du deuxième point en degrés.
+
+**Valeur renvoyée**
+
+L’angle central entre deux points, en degrés.
+
+**Exemple**
+
+```sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+```text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
+<div id="pointinellipses">
+  ## pointInEllipses
+</div>
+
+Vérifie si le point appartient à au moins une des ellipses.
+Les coordonnées sont géométriques dans le système de coordonnées cartésien.
+
+```sql
+pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
+```
+
+**Paramètres d&#39;entrée**
+
+* `x, y` — Coordonnées d&#39;un point dans le plan.
+* `xᵢ, yᵢ` — Coordonnées du centre de la `i`-ième ellipse.
+* `aᵢ, bᵢ` — Axes de la `i`-ième ellipse, dans les unités des coordonnées x et y.
+
+Le nombre de paramètres d&#39;entrée doit être de `2+4⋅n`, où `n` est le nombre d&#39;ellipses.
+
+**Valeurs renvoyées**
+
+`1` si le point se trouve à l&#39;intérieur d&#39;au moins une ellipse ; `0` dans le cas contraire.
+
+**Exemple**
+
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
+```
+
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
+<div id="pointinpolygon">
+  ## pointInPolygon
+</div>
+
+Vérifie si le point appartient au polygone dans le plan.
+
+```sql
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**Valeurs d’entrée**
+
+* `(x, y)` — Coordonnées d’un point dans le plan. Type de données — [Tuple](/fr/reference/data-types/tuple) — un tuple de deux nombres.
+* `[(a, b), (c, d) ...]` — Sommets du polygone. Type de données — [Array](/fr/reference/data-types/array). Chaque sommet est représenté par une paire de coordonnées `(a, b)`. Les sommets doivent être indiqués dans le sens horaire ou antihoraire. Le nombre minimum de sommets est de 3. Le polygone doit être constant.
+* La fonction prend également en charge les polygones avec des trous (zones évidées). Type de données — [Polygon](/fr/reference/data-types/geo#polygon). Passez soit le `Polygon` entier comme deuxième argument, soit l’anneau extérieur d’abord, puis chaque trou comme argument supplémentaire distinct.
+* La fonction prend également en charge les multipolygones. Type de données — [MultiPolygon](/fr/reference/data-types/geo#multipolygon). Passez soit le `MultiPolygon` entier comme deuxième argument, soit chaque polygone qui le compose comme argument distinct.
+
+**Valeurs renvoyées**
+
+`1` si le point est à l’intérieur du polygone, `0` sinon.
+Si le point se trouve sur le bord du polygone, la fonction peut renvoyer 0 ou 1.
+
+**Exemple**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+> **Remarque**
+> • Vous pouvez définir `validate_polygons = 0` pour contourner la validation de la géométrie.
+> • `pointInPolygon` suppose que chaque polygone est bien formé. Si l’entrée se recoupe, comporte des anneaux mal ordonnés ou des arêtes qui se chevauchent, les résultats deviennent peu fiables, en particulier pour les points situés exactement sur une arête, un sommet ou à l’intérieur d’une auto-intersection, où la notion de &quot;à l’intérieur&quot; ou &quot;à l’extérieur&quot; n’est pas définie.
+> • Lorsque l’argument polygone est constant et que le point est exprimé à l’aide de colonnes de clé indexées (par exemple, `pointInPolygon((x, y), constant_polygon)` sur une table où `x, y` font partie de la `PRIMARY KEY` ou sont couverts par un index `minmax`), ClickHouse peut utiliser à la fois la clé primaire et les index de data-skipping `minmax` pour écarter les granules non pertinentes.

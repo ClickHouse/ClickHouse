@@ -1,0 +1,135 @@
+---
+sidebarTitle: 'Explo'
+slug: /integrations/explo
+keywords: ['clickhouse', 'Explo', '连接', '集成', 'ui']
+description: 'Explo 是一款易于使用的开源 UI 工具，可帮助您就数据提出问题。'
+title: '将 Explo 连接到 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+适用于任何平台的面向客户分析。专为出色的可视化而设计，追求简洁易用。
+
+<div id="goal">
+  ## 目标
+</div>
+
+在本指南中，你将把 ClickHouse 中的数据连接到 Explo，并将结果可视化。图表效果如下：
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<p />
+
+<Tip>
+  **添加一些数据**
+
+  如果你还没有可用的数据集，可以添加一个示例。本指南使用的是 [UK Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 数据集，因此你也可以选择它。在同一文档分类下，还有其他几个示例可供查看。
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 获取您的连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-explo-to-clickhouse">
+  ## 2.  将 Explo 连接到 ClickHouse
+</div>
+
+1. 注册 Explo 账户。
+
+2. 点击左侧边栏中的 Explo **数据**选项卡。
+
+<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="数据选项卡" border />
+
+3. 点击右上角的 **连接数据源**。
+
+<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="连接数据源" border />
+
+4. 在 **入门** 页面填写相关信息
+
+<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="入门" border />
+
+5. 选择 **ClickHouse**
+
+<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+
+6. 输入你的 **ClickHouse 凭据**。
+
+<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="凭据" border />
+
+7. 配置 **安全**
+
+<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="安全" border />
+
+8. 在 ClickHouse 中，**将 Explo 的 IP 地址加入白名单**。
+   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+
+<div id="3-create-a-dashboard">
+  ## 3. 创建仪表盘
+</div>
+
+1. 前往左侧导航栏中的 **Dashboard** 选项卡。
+
+<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="仪表盘" border />
+
+2. 点击右上角的 **Create Dashboard**，然后为仪表盘命名。至此，你已创建好一个仪表盘。
+
+<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="创建仪表盘" border />
+
+3. 现在，你应该会看到一个类似这样的界面：
+
+<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo 仪表盘" border />
+
+<div id="4-run-a-sql-query">
+  ## 4. 运行 SQL 查询
+</div>
+
+1. 在右侧边栏中 schema 标题下找到你的表名。然后将以下命令输入到数据集编辑器中：
+   `SELECT * FROM YOUR_TABLE_NAME
+   LIMIT 100`
+
+<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+
+2. 现在点击“运行”，然后前往“预览”选项卡查看数据。
+
+<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+
+<div id="5-build-a-chart">
+  ## 5. 创建图表
+</div>
+
+1. 从左侧将柱状图图标拖到画布上。
+
+<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+
+2. 选择数据集。此时你应该会看到如下界面：
+
+<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+
+3. 按如下方式在 X 轴中填入 **county**，并在 Y 轴部分填入 **Price**：
+
+<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+
+4. 现在，将聚合方式更改为 **AVG**。
+
+<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+
+5. 现在，我们已经得到了按县划分的房屋平均价格！
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+如需了解有关 Explo 以及如何构建仪表盘的更多信息，请<a href="https://docs.explo.co/" target="_blank">参阅 Explo 文档</a>。

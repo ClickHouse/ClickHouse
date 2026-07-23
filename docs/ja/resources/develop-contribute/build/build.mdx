@@ -1,0 +1,252 @@
+---
+description: 'Linux システムでソースから ClickHouse をビルドするための手順ガイド'
+sidebarTitle: 'Linux でビルド'
+slug: /development/build
+title: 'Linux で ClickHouse をソースからビルドする方法'
+doc_type: 'guide'
+---
+
+<Info>
+  **このビルドガイドは、ClickHouse 本体を変更するコントリビューター向けです。**
+
+  ClickHouse のソースコードを変更しない場合は、[クイックスタート](/ja/get-started/setup/install)で説明しているとおり、ビルド済みの ClickHouse をインストールできます。
+</Info>
+
+ClickHouse は以下のプラットフォームでビルドできます。
+
+* x86&#95;64
+* AArch64
+* PowerPC 64 LE (実験的)
+* s390/x (実験的)
+* RISC-V 64 (実験的)
+
+<div id="assumptions">
+  ## 前提
+</div>
+
+以下のチュートリアルは Ubuntu Linux を前提としていますが、適宜変更を加えれば、他の Linux ディストリビューションでも動作します。
+開発用途として推奨される Ubuntu の最小バージョンは 24.04 LTS です。
+
+このチュートリアルでは、ClickHouse リポジトリとすべてのサブモジュールをローカルにチェックアウト済みであることを前提としています。
+
+<div id="install-prerequisites">
+  ## 前提条件をインストールする
+</div>
+
+まず、一般的な[前提条件のドキュメント](/ja/resources/develop-contribute/introduction/developer-instruction)を参照してください。
+
+ClickHouse のビルドには CMake と Ninja を使用します。
+
+必要に応じて、すでにコンパイル済みの object ファイルをビルドで再利用できるよう、ccache をインストールできます。
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+```
+
+<div id="install-the-clang-compiler">
+  ## Clang コンパイラをインストールする
+</div>
+
+Ubuntu/Debian に Clang をインストールするには、[こちら](https://apt.llvm.org/) にある LLVM の自動インストールスクリプトを使用してください。
+
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
+```
+
+その他の Linux ディストリビューションについては、LLVM の[ビルド済みパッケージ](https://releases.llvm.org/download.html)をインストールできるか確認してください。
+
+2026 年 2 月時点では、Clang 21 以上が必要です。
+GCC やその他のコンパイラはサポートされていません。
+
+<div id="install-the-rust-compiler-optional">
+  ## Rust コンパイラをインストールする (任意)
+</div>
+
+<Note>
+Rust は ClickHouse のオプションの依存関係です。
+Rust がインストールされていない場合、ClickHouse の一部機能はコンパイルに含まれません。
+</Note>
+
+まず、公式の [Rust ドキュメント](https://www.rust-lang.org/tools/install) の手順に従って `rustup` をインストールしてください。
+
+C++ の依存関係と同様に、ClickHouse では vendoring を使用して、インストールされる内容を厳密に管理し、サードパーティサービス (`crates.io` registry など) への依存を避けています。
+
+リリースモードでは、通常は比較的新しい rustup ツールチェーンであれば、どのバージョンでもこれらの依存関係で動作するはずです。ただし、サニタイザを有効にする予定がある場合は、CI で使われているものと完全に同じ `std` に対応するバージョンを使用する必要があります (そのために crate を vendoring しています) :
+
+```bash
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
+rustup component add rust-src
+```
+
+<div id="build-clickhouse">
+## ClickHouse をビルドする
+</div>
+
+ビルド成果物をすべて格納するため、`ClickHouse` 内に `build` という別のディレクトリを作成することを推奨します。
+
+```sh
+mkdir build
+cd build
+```
+
+ビルドタイプごとに、別々のディレクトリ (例: `build_release`、`build_debug` など) を用意できます。
+
+任意: 複数バージョンのコンパイラがインストールされている場合は、使用するコンパイラを明示的に指定することもできます。
+
+```sh
+export CC=clang-21
+export CXX=clang++-21
+```
+
+開発用途では、デバッグビルドを推奨します。
+リリースビルドと比べると、コンパイラの最適化レベル (`-O`) が低いため、デバッグしやすくなります。
+また、`LOGICAL_ERROR` 型の内部例外は穏当に失敗せず、即座にクラッシュします。
+
+```sh
+cmake -D CMAKE_BUILD_TYPE=Debug ..
+```
+
+<Note>
+gdb などのデバッガを使用する場合は、上記のコマンドに `-D DEBUG_O_LEVEL="0"` を追加して、すべてのコンパイラ最適化を無効にしてください。これにより、変数の表示やアクセスに対する gdb の動作を妨げる要因を取り除けます。
+</Note>
+
+ビルドするには、ninja を実行します:
+
+```sh
+ninja clickhouse
+```
+
+すべてのバイナリ (ユーティリティとテストを含む) をビルドするには、パラメータを指定せずに `ninja` を実行します。
+
+```sh
+ninja
+```
+
+`-j` パラメーターを使うと、ビルドを並列実行するジョブ数を制御できます。
+
+```sh
+ninja -j 1 clickhouse
+```
+
+<Note>
+`clickhouse-server`、`clickhouse-client`、および同様のバイナリは、ビルド完了後、`programs/` ディレクトリ内で `clickhouse` 実行可能ファイルを指すシンボリックリンクになります。
+</Note>
+
+<Tip>
+CMake には、上記コマンドのショートカットがあります。
+
+```sh
+cmake -S . -B build  # ビルドを設定。リポジトリのトップレベルディレクトリから実行
+cmake --build build  # コンパイル
+```
+</Tip>
+
+<div id="running-the-clickhouse-executable">
+  ## ClickHouse 実行可能ファイルの実行
+</div>
+
+ビルドが正常に完了すると、実行可能ファイルは `ClickHouse/<build_dir>/programs/` にあります。
+
+ClickHouse server は、現在のディレクトリで設定ファイル `config.xml` を探します。
+代わりに、コマンドラインから `-C` を使って設定ファイルを指定することもできます。
+
+`clickhouse-client` で ClickHouse server に接続するには、別のターミナルを開き、`ClickHouse/build/programs/` に移動して `./clickhouse client` を実行します。
+
+macOS または FreeBSD で `Connection refused` メッセージが表示される場合は、ホストアドレス 127.0.0.1 を指定してみてください。
+
+```bash
+clickhouse client --host 127.0.0.1
+```
+
+<div id="advanced-options">
+  ## 詳細オプション
+</div>
+
+<div id="minimal-build">
+  ### 最小構成でのビルド
+</div>
+
+サードパーティ製ライブラリが提供する機能が不要な場合は、ビルドをさらに高速化できます。
+
+```sh
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+問題が発生した場合は、自己責任で対処してください…
+
+Rust にはインターネット接続が必要です。Rust サポートを無効にするには:
+
+```sh
+cmake -DENABLE_RUST=OFF
+```
+
+<div id="running-the-clickhouse-executable-1">
+  ### ClickHouse 実行可能ファイルの実行
+</div>
+
+システムにインストールされている本番環境用のClickHouseバイナリを、コンパイル済みのClickHouseバイナリに置き換えることができます。
+そのためには、公式Webサイトの手順に従って、お使いのマシンにClickHouseをインストールしてください。
+次に、以下を実行します。
+
+```bash
+sudo service clickhouse-server stop
+sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
+sudo service clickhouse-server start
+```
+
+`clickhouse-client`、`clickhouse-server` などは、共通の `clickhouse` バイナリへのシンボリックリンクであることに注意してください。
+
+また、システムにインストールされている ClickHouse パッケージの設定ファイルを使用して、独自にビルドした ClickHouse バイナリを実行することもできます。
+
+```bash
+sudo service clickhouse-server stop
+sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+<div id="building-on-any-linux">
+  ### 任意の Linux でのビルド
+</div>
+
+OpenSUSE Tumbleweed で必要な前提条件をインストールします:
+
+```bash
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+Fedora Rawhide で必要な前提条件をインストールします：
+
+```bash
+sudo yum update
+sudo yum --nogpg install git cmake make clang python3 ccache lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+<div id="building-in-docker">
+  ### Docker でのビルド
+</div>
+
+CI に近い環境で任意のビルドをローカル実行するには、次を使用します。
+
+```bash
+python -m ci.praktika run "BUILD_JOB_NAME"
+```
+
+ここで BUILD&#95;JOB&#95;NAME は、CI レポートに表示されるジョブ名です。たとえば、&quot;Build (arm&#95;release)&quot;、&quot;Build (amd&#95;debug)&quot; などです。
+
+このコマンドは、必要な依存関係をすべて含む適切な Dockerイメージ `clickhouse/binary-builder` を取得し、
+その中でビルドスクリプト `./ci/jobs/build_clickhouse.py` を実行します。
+
+ビルドの出力は `./ci/tmp/` に配置されます。
+
+これは AMD と ARM の両方のアーキテクチャで動作し、追加で必要なのは、`requests` モジュールが利用可能な Python と Docker だけです。

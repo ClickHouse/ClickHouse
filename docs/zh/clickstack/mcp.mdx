@@ -1,0 +1,332 @@
+---
+slug: /use-cases/observability/clickstack/mcp
+title: 'ClickStack MCP 服务器'
+sidebarTitle: 'MCP 服务器'
+description: '通过 Model Context Protocol (MCP) 服务器将 AI 助手连接到 ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', '可观测性', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickStack 内置了 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务器，让 AI 助手能够与你的可观测性数据交互。连接后，AI 助手可以通过自然语言查询日志、链路追踪和指标；管理仪表盘和告警；浏览数据源；以及使用已保存的搜索。
+
+这样一来，你就可以使用 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/) 或任何兼容 MCP 的客户端，在不离开开发环境的情况下排查故障、构建仪表盘并管理你的可观测性配置。
+
+<div id="availability">
+  ## 可用性
+</div>
+
+MCP 服务器可用于以下 ClickStack 部署类型：
+
+| 部署                                                | 状态  |
+| ------------------------------------------------- | --- |
+| **开源 ClickStack**                                 | 可用  |
+| **BYOC (自备 Cloud)**                               | 可用  |
+| **ClickHouse Cloud 上的 ClickStack**                | 可用  |
+| **HyperDX v1** ([hyperdx.io](https://hyperdx.io)) | 不支持 |
+
+<Info>
+  **ClickHouse Cloud 与 OSS/BYOC 的设置差异**
+
+  ClickHouse Cloud 上的 ClickStack 使用的端点和身份验证方法与开源和 BYOC 部署不同。有关 Cloud 专用设置，请参阅下方的 [ClickHouse Cloud 上的 ClickStack](#managed-clickstack) 部分。
+</Info>
+
+<div id="managed-clickstack">
+  ## ClickHouse Cloud 上的 ClickStack
+</div>
+
+ClickHouse Cloud 上的 ClickStack 通过 Cloud MCP 端点 `https://mcp.clickhouse.cloud/clickstack` 连接，并使用 OAuth 2.0 进行身份验证。该端点不支持 API key 身份验证。
+
+<div id="managed-prerequisites">
+  ### 前置条件
+</div>
+
+* 一个正在运行且已[启用 ClickStack](/zh/clickstack/deployment/managed)的 ClickHouse Cloud 服务
+* 服务上已[启用 MCP](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)——打开 Cloud 控制台，点击 **Connect**，选择 **Connect with MCP**，然后将其切换为开启状态
+
+<div id="managed-endpoint">
+  ### 端点
+</div>
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+身份验证采用 OAuth 2.0。首次连接时，MCP 客户端会打开浏览器窗口，供你使用 ClickHouse Cloud 凭据登录。无需 API 密钥。
+
+<div id="managed-connecting-a-client">
+  ### 连接 MCP 客户端
+</div>
+
+每个客户端在首次连接时都会自动处理 OAuth 流程。
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    启动 Claude Code 并运行 `/mcp`，然后选择 `clickstack` 以完成 OAuth 流程。
+  </Tab>
+
+  <Tab title="Cursor">
+    将以下内容添加到 `.cursor/mcp.json`：
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    将以下内容添加到 `.vscode/mcp.json`：
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    将以下内容添加到 `opencode.json`：
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    将以下内容添加到 `librechat.yaml`：
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="其他">
+    任何支持 **Streamable HTTP** 和 OAuth 的 MCP 客户端都可以连接。请按以下方式配置：
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+<div id="managed-service-override">
+  ### 指定特定服务
+</div>
+
+如果未提供 `x-service-id` 请求头，请求默认会发送到你账户中第一个已预配并使用的 ClickStack 服务。若要指定其他服务，请在 MCP 客户端配置中将 `x-service-id: <YOUR_SERVICE_ID>` 作为请求头传入。
+
+<div id="oss-byoc">
+  ## 开源和 BYOC
+</div>
+
+开源和 BYOC 部署使用您的 ClickStack 实例内置的 MCP 端点，并采用 Bearer 令牌身份验证。
+
+<div id="managed-prerequisites">
+  ### 前置条件
+</div>
+
+* 一个正在运行的 ClickStack 实例 (有关设置选项，请参见[部署](/zh/clickstack/deployment/overview))
+* 一个 **Personal API Access Key** — 您可以在 HyperDX 的 **Team Settings → API Keys → Personal API Access Key** 中找到
+
+<Image img="/images/clickstack/api-key-personal.webp" alt="Team Settings 中的 Personal API Access Key" size="md" border />
+
+<Note>
+  Personal API Access Key 与 **摄取 API key** 不同；后者也可在 Team Settings 中找到，用于验证发送到 OpenTelemetry Collector 的遥测数据。
+</Note>
+
+<div id="managed-endpoint">
+  ### 端点
+</div>
+
+可通过 ClickStack 前端 URL 上的 `/api/mcp` 路径访问 MCP 服务器。例如，使用默认本地部署时，URL 为 `http://localhost:8080/api/mcp`。如果你修改了默认设置，请将 `localhost:8080` 替换为你的实例主机和端口。
+
+<Note>
+  本页中的示例使用前端应用 URL (默认端口为 `8080`) 。你也可以通过后端的 `<BACKEND_URL>/mcp` 直接访问 MCP 服务器，但并非所有部署都会暴露后端，因此本文档使用前端路径。
+</Note>
+
+MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证。
+
+<div id="managed-connecting-a-client">
+  ### 连接 MCP 客户端
+</div>
+
+将 `<YOUR_CLICKSTACK_URL>` 替换为你的实例 URL (例如 `http://localhost:8080`) ，并将 `<YOUR_API_KEY>` 替换为你的 Personal API Access Key。
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http hyperdx <YOUR_CLICKSTACK_URL>/api/mcp \
+      --header "Authorization: Bearer <YOUR_API_KEY>"
+    ```
+  </Tab>
+
+  <Tab title="Cursor">
+    将以下内容添加到 `.cursor/mcp.json`：
+
+    ```json
+    {
+      "mcpServers": {
+        "hyperdx": {
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    将以下内容添加到 `.vscode/mcp.json`：
+
+    ```json
+    {
+      "servers": {
+        "hyperdx": {
+          "type": "http",
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    将以下内容添加到 `opencode.json`：
+
+    ```json
+    {
+      "mcp": {
+        "hyperdx": {
+          "type": "remote",
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "oauth": false,
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    将以下内容添加到 `librechat.yaml`：
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: <YOUR_CLICKSTACK_URL>/api/mcp
+        headers:
+          Authorization: "Bearer <YOUR_API_KEY>"
+    ```
+  </Tab>
+
+  <Tab title="其他">
+    任何支持 **Streamable HTTP** 的 MCP 客户端都可以连接。按以下方式配置：
+
+    * **URL：** `<YOUR_CLICKSTACK_URL>/api/mcp`
+    * **请求头：** `Authorization: Bearer <YOUR_API_KEY>`
+  </Tab>
+</Tabs>
+
+<div id="capabilities">
+  ## 你可以用 MCP 做什么？
+</div>
+
+连接后，你的 AI 助手可以访问覆盖 ClickStack 核心领域的一系列工具，包括：
+
+* **查询数据** — 使用 ClickStack 的查询构建器、搜索语法或原生 SQL，对日志、链路追踪和指标进行搜索与聚合。
+* **数据源** — 列出可用的数据源、数据库连接、列 schema 和属性键。
+* **仪表盘** — 创建、更新、删除和查看仪表盘及其卡片。
+* **告警** — 创建、更新和查看告警及其评估历史。
+* **已保存的搜索** — 创建、更新和查看可复用的已保存搜索定义。
+* **Webhooks** — 列出可用于告警通知的 webhook 目标端。
+* **团队** — 列出当前用户所属的团队，并识别当前活动团队。
+
+具体可用的工具集可能会随时间不断扩展。MCP 客户端 会在连接时自动发现可用工具。
+
+<div id="multi-team">
+  ## 多团队使用 (OSS/BYOC)
+</div>
+
+这仅适用于 开源和 BYOC 部署。对于 ClickHouse Cloud 上的 ClickStack，请参阅[指定特定服务](#managed-service-override)。
+
+默认情况下，MCP 请求会在你的主团队上下文中处理。如果你属于多个团队，可以在传递 `Authorization` 请求头的同时，添加一个值为该团队 ID 的 `x-hdx-team` 请求头，以指定特定团队。如果省略该请求头，则会使用你的主团队。如果你指定了一个自己不属于的团队，请求会被拒绝，并返回 `401` 错误。
+
+使用 MCP 客户端 中的团队列表工具，查看你可以访问哪些团队以及当前处于活动状态的是哪个团队。
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="troubleshooting-managed">
+  ### ClickHouse Cloud 上的 ClickStack
+</div>
+
+<Accordion title="OAuth 流程未完成">
+  * 确认您的 MCP 客户端 支持 OAuth 2.0。仅支持 Bearer 令牌或 stdio 传输的客户端无法通过 Cloud 端点进行身份验证。
+  * 检查您的浏览器是否拦截了 OAuth 弹窗或重定向。
+  * 确认您的 ClickHouse Cloud 账户有权访问相应的 organization 和 服务。
+</Accordion>
+
+<Accordion title="MCP 已启用，但客户端无法连接">
+  * 确认您使用的是 ClickStack 端点 (`https://mcp.clickhouse.cloud/clickstack`) ，而不是通用的 Cloud MCP 端点 (`https://mcp.clickhouse.cloud/mcp`) 。
+  * 确认该 服务 已在 Cloud 控制台 中[启用 MCP](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)。
+</Accordion>
+
+<Accordion title="请求发送到了错误的 服务">
+  如果未提供 `x-service-id` 请求头，请求默认会发送到您账户中预配并使用的第一个 ClickStack 服务。传递该请求头即可指定特定的目标 服务。请参见[指定特定 服务](#managed-service-override)。
+</Accordion>
+
+<div id="troubleshooting-oss">
+  ### 开源和 BYOC
+</div>
+
+<Accordion title="我遇到了 403 身份验证错误">
+  * 请确认你使用的是 **Personal API Access Key** (而不是摄取 API key) 。
+  * 确认该密钥已作为 `Bearer` 令牌包含在 `Authorization` 请求头中。
+  * 检查你的 ClickStack 实例是否正在运行，并且可通过你配置的 URL 访问。
+</Accordion>
+
+<Accordion title="我受到了速率限制">
+  MCP 服务器 对每位用户实施 **每分钟 600 次请求** 的速率限制。如果超过此限制，请求会被暂时拒绝。请降低请求频率，或等待后再重试。
+</Accordion>
+
+<Accordion title="使用 x-hdx-team 请求头时出现 401 错误">
+  请确认团队 ID 正确，并且你的用户账户属于该团队。
+</Accordion>
+
+<Accordion title="我无法连接到 MCP 服务器">
+  * 确保你的 MCP 客户端 支持 **Streamable HTTP** 传输。仅支持 stdio 传输的旧版客户端将无法使用。
+  * 如果你在本地运行 ClickStack，请确认应用可通过已配置的 URL 访问 (默认为 `http://localhost:8080`) 。
+  * 对于位于负载均衡器或反向代理之后的 BYOC 部署，请确保 `/api/mcp` 路径未被拦截或重写。
+</Accordion>

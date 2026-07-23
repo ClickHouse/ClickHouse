@@ -1,0 +1,53 @@
+---
+slug: /cloud/managed-postgres/backup-and-restore
+sidebarTitle: '备份与恢复'
+title: '备份与恢复'
+description: '了解 ClickHouse Managed Postgres 的备份策略和时间点恢复功能'
+keywords: ['备份', '恢复', '时间点恢复', 'pitr', '灾难恢复', 'Postgres 备份']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
+
+Managed Postgres 通过自动备份和时间点恢复，确保您的数据安全性和可用性。您可以在实例的 **Backups** 视图中查看备份历史并发起恢复。
+
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt="显示备份历史和时间点恢复选项的 Backups 视图" size="lg" border />
+
+<div id="backups">
+  ## Backups
+</div>
+
+<div id="backup-frequency">
+  ### 备份频率
+</div>
+
+Managed Postgres 每天都会对您的数据库执行一次全量备份。除全量备份外，预写日志 (WAL) 文件还会每 60 秒归档一次，或在 WAL 数据累计到 16 MB 时归档，以先发生者为准。通过结合全量备份和持续归档 WAL，可以在保留窗口内将数据库恢复到任意时间点。
+
+<div id="retention-period">
+  ### 保留期
+</div>
+
+备份会保留 7 天，在发生数据丢失或损坏时，这段时间足以用于恢复。如需延长备份保留策略，请联系 [support](https://clickhouse.com/support/program)。
+
+<div id="storage-and-durability">
+  ### 存储与持久性
+</div>
+
+备份通过纠删码分布在多个服务器上，即使部分存储服务器不可用，也能确保备份仍可访问。备份存储在存储桶级别相互隔离——每个 Managed Postgres 实例都有专属的存储桶，且其凭证范围仅限访问该实例的备份。
+
+<div id="point-in-time-recovery">
+  ## 时间点恢复
+</div>
+
+时间点恢复允许你将数据库恢复到备份保留期内的任意特定时刻。这对于从意外删除数据、数据损坏或其他需要回滚到已知正常状态的问题中恢复非常有用。
+
+要执行时间点恢复：
+
+1. 前往你的 Managed Postgres 实例的 **Backups** 视图。
+2. 在 **Point in time recovery** 部分，选择你要恢复到的目标日期和时间 (UTC) 。
+3. 点击 **Restore to point in time**。
+
+恢复操作会创建一个新的 Managed Postgres 实例，其数据库状态与所选时间点时的状态一致。原始实例保持不变，因此你可以先验证恢复后的数据，再决定保留哪个实例。

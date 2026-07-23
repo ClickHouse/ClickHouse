@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/ai-powered-sql-generation
+sidebarTitle: 'AI 驱动的 SQL 生成'
+title: 'AI 驱动的 SQL 生成'
+description: '本指南介绍如何在 ClickHouse Client 或 clickhouse-local 中使用 AI 生成 SQL 查询。'
+keywords: ['AI', 'SQL generation']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+从 ClickHouse 25.7 开始，[ClickHouse Client](/zh/concepts/features/interfaces/cli) 和 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 提供了可将自然语言描述转换为 SQL 查询的 [AI 驱动功能](/zh/concepts/features/interfaces/cli#ai-sql-generation)。借助此功能，你可以用自然语言描述数据需求，系统随后会将其转换为相应的 SQL 语句。
+
+如果你不熟悉复杂的 SQL 语法，或者需要为探索性数据分析快速生成查询，这项功能尤其有用。该功能适用于标准 ClickHouse 表，并支持常见的查询模式，包括过滤、聚合和 JOIN。
+
+它借助以下内置工具/函数来实现：
+
+* `list_databases` - 列出 ClickHouse 实例中所有可用的数据库
+* `list_tables_in_database` - 列出特定数据库中的所有表
+* `get_schema_for_table` - 获取特定表的 `CREATE TABLE` 语句 (schema)
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+我们需要将 Anthropic 或 OpenAI 的 API 密钥添加为环境变量：
+
+```bash
+export ANTHROPIC_API_KEY=your_api_key
+export OPENAI_API_KEY=your_api_key
+```
+
+或者，你也可以[提供配置文件](/zh/concepts/features/interfaces/cli#ai-sql-generation-configuration)。
+
+<div id="connecting-to-the-clickhouse-sql-playground">
+  ## 连接到 ClickHouse SQL playground
+</div>
+
+我们将使用 [ClickHouse SQL playground](https://sql.clickhouse.com/) 来体验此功能。
+
+我们可以使用以下命令连接到 ClickHouse SQL playground：
+
+```bash
+clickhouse client -mn \
+--host sql-clickhouse.clickhouse.com \
+--secure \
+--user demo --password ''
+```
+
+<Note>
+  我们假设你已安装 ClickHouse；如尚未安装，请参阅[安装指南](/zh/get-started/setup/install)
+</Note>
+
+<div id="asking-clickhouse-questions-in-natural-language">
+  ## 用自然语言向 ClickHouse 提问
+</div>
+
+现在可以开始提问了！
+
+文本转 SQL 功能本质上是一个一次性查询生成工具。由于它不会保留会话历史，因此请在问题中尽可能提供更多有用的上下文。请明确说明：
+
+时间段或日期范围
+所需的分析类型 (平均值、总计、排名等)
+任何筛选条件
+
+<div id="finding-expensive-housing-markets">
+  ### 查找房价高昂的房地产市场
+</div>
+
+我们先从一个关于房价的问题开始。SQL playground 包含英国房价数据集，AI 会自动识别它：
+
+```sql
+?? Can you tell me the most expensive place to buy a house in 2021?;
+```
+
+按下回车后，我们就能看到 AI 在尝试回答问题时的思考过程。
+
+```text
+• Starting AI SQL generation with schema discovery...
+─────────────────────────────────────────────────
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QpQd35ZD8HM9QSYFZuQ8Wh
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_016DxK8SMVKGrUPfFwi43AzE
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking.✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_015giF12wm619beNGC5aTrmw
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking..✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01HxT1HKbaTT3165Wx5bDtY9
+─────────────────────────────────────────────────
+• ✨ SQL query generated successfully!
+:) SELECT     town,     district,     county,     round(avg(price), 2) as avg_price,     count() as total_sales FROM uk.uk_price_paid WHERE date >= '2021-01-01' AND date <= '2021-12-31' GROUP BY     town,     district,     county HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10
+```
+
+AI 会按以下步骤执行：
+
+1. schema 发现 - 探索可用的 database 和表
+2. 表分析 - 检查相关表的结构
+3. 查询生成 - 根据你的问题和已发现的 schema 生成 SQL
+
+我们可以看到，它确实找到了 `uk_price_paid` 表，并为我们生成了一条可执行的查询。
+如果我们运行该查询，就会看到以下输出：
+
+```text
+┌─town───────────┬─district───────────────┬─county──────────┬──avg_price─┬─total_sales─┐
+│ ILKLEY         │ HARROGATE              │ NORTH YORKSHIRE │    4310200 │          10 │
+│ LONDON         │ CITY OF LONDON         │ GREATER LONDON  │ 4008117.32 │         311 │
+│ LONDON         │ CITY OF WESTMINSTER    │ GREATER LONDON  │ 2847409.81 │        3984 │
+│ LONDON         │ KENSINGTON AND CHELSEA │ GREATER LONDON  │  2331433.1 │        2594 │
+│ EAST MOLESEY   │ RICHMOND UPON THAMES   │ GREATER LONDON  │ 2244845.83 │          12 │
+│ LEATHERHEAD    │ ELMBRIDGE              │ SURREY          │ 2051836.42 │         102 │
+│ VIRGINIA WATER │ RUNNYMEDE              │ SURREY          │ 1914137.53 │         169 │
+│ REIGATE        │ MOLE VALLEY            │ SURREY          │ 1715780.89 │          18 │
+│ BROADWAY       │ TEWKESBURY             │ GLOUCESTERSHIRE │ 1633421.05 │          19 │
+│ OXFORD         │ SOUTH OXFORDSHIRE      │ OXFORDSHIRE     │ 1628319.07 │         405 │
+└────────────────┴────────────────────────┴─────────────────┴────────────┴─────────────┘
+```
+
+如果想继续追问，就需要从头重新提问。
+
+<div id="finding-expensive-properties-in-greater-london">
+  ### 查找 Greater London 的高价房产
+</div>
+
+由于该功能不会保留会话历史，因此每个查询都必须包含完整信息。提出后续问题时，你需要提供完整的上下文，而不是引用之前的查询。
+例如，看到前面的结果后，我们可能希望专门关注 Greater London 的房产。与其问“Greater London 呢？”，我们需要把完整上下文一并带上：
+
+```sql
+?? Can you tell me the most expensive place to buy a house in Greater London across the years?;
+```
+
+请注意，即使 AI 刚刚查看过这些数据，它仍会经历同样的探索过程：
+
+```text
+• 正在启动 AI SQL 生成并进行 schema 发现...
+─────────────────────────────────────────────────
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_012m4ayaSHTYtX98gxrDy1rz
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking.✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01KU4SZRrJckutXUzfJ4NQtA
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking..✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01X9CnxoBpbD2xj2UzuRy2is
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking.✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QTMypS1XuhjgVpDir7N9wD
+─────────────────────────────────────────────────
+• ✨ SQL 查询生成成功！
+:) SELECT     district,     toYear(date) AS year,     round(avg(price), 2) AS avg_price,     count() AS total_sales FROM uk.uk_price_paid WHERE county = 'GREATER LONDON' GROUP BY district, year HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10;
+```
+
+这会生成一个更有针对性的查询，专门筛选 Greater London，并按年份细分结果。
+该查询的输出如下所示：
+
+```text
+┌─district────────────┬─year─┬───avg_price─┬─total_sales─┐
+│ CITY OF LONDON      │ 2019 │ 14504772.73 │         299 │
+│ CITY OF LONDON      │ 2017 │  6351366.11 │         367 │
+│ CITY OF LONDON      │ 2016 │  5596348.25 │         243 │
+│ CITY OF LONDON      │ 2023 │  5576333.72 │         252 │
+│ CITY OF LONDON      │ 2018 │  4905094.54 │         523 │
+│ CITY OF LONDON      │ 2021 │  4008117.32 │         311 │
+│ CITY OF LONDON      │ 2025 │  3954212.39 │          56 │
+│ CITY OF LONDON      │ 2014 │  3914057.39 │         416 │
+│ CITY OF LONDON      │ 2022 │  3700867.19 │         290 │
+│ CITY OF WESTMINSTER │ 2018 │  3562457.76 │        3346 │
+└─────────────────────┴──────┴─────────────┴─────────────┘
+```
+
+伦敦金融城一直是价格最高的地区！你会注意到，AI 生成了一个相当合理的查询，不过结果是按平均价格排序，而不是按时间顺序排列。对于同比分析，我们可以进一步优化你的提问，明确要求“每年价格最高的地区”，以便让结果按不同方式分组。

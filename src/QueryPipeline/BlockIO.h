@@ -88,8 +88,17 @@ struct BlockIO
     /// Set is_all_data_sent in system.processes for this query.
     void setAllDataSent() const;
 
-    /// Release query slot early to allow client to reuse it for his next query.
+    /// Release all acquired workload resources (query slot and memory reservation).
+    /// Only safe once the pipeline has been stopped (see `releaseMemoryReservation`).
+    void releaseWorkloadResources() const;
+
+    /// Release the query slot early to allow the client to reuse it for its next query.
+    /// Safe while the pipeline is still running: pipeline threads do not access the query slot.
     void releaseQuerySlot() const;
+
+    /// Release the memory reservation. MUST be called only after the pipeline has been finalized,
+    /// because pipeline threads hold raw pointers to `MemoryReservation`.
+    void releaseMemoryReservation() const;
 
     void resetPipeline(bool cancel);
 

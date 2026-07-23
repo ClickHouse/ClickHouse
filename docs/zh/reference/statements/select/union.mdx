@@ -1,0 +1,78 @@
+---
+description: 'UNION 子句文档'
+sidebarTitle: 'UNION'
+slug: /sql-reference/statements/select/union
+title: 'UNION 子句'
+doc_type: 'reference'
+---
+
+你可以使用 `UNION`，并显式指定为 `UNION ALL` 或 `UNION DISTINCT`。
+
+如果未指定 `ALL` 或 `DISTINCT`，则取决于 `union_default_mode` 设置。`UNION ALL` 与 `UNION DISTINCT` 的区别在于，`UNION DISTINCT` 会对合并结果进行去重，这等价于对包含 `UNION ALL` 的子查询执行 `SELECT DISTINCT`。
+
+你可以使用 `UNION` 组合任意数量的 `SELECT` 查询，并将它们的结果合并在一起。示例：
+
+```sql title="Query"
+SELECT CounterID, 1 AS table, toInt64(count()) AS c
+    FROM test.hits
+    GROUP BY CounterID
+
+UNION ALL
+
+SELECT CounterID, 2 AS table, sum(Sign) AS c
+    FROM test.visits
+    GROUP BY CounterID
+    HAVING c > 0
+```
+
+结果列按其索引匹配 (即在 `SELECT` 中的顺序) 。如果列名不匹配，则最终结果的列名取自第一个查询。
+
+会对联合结果执行类型转换。例如，如果要合并的两个查询中，同一字段分别使用兼容类型的非 `Nullable` 和 `Nullable` 类型，那么最终 `UNION` 结果中该字段的类型将为 `Nullable`。
+
+作为 `UNION` 一部分的查询可以用 `()` 括起来。[ORDER BY](/zh/reference/statements/select/order-by) 和 [LIMIT](/zh/reference/statements/select/limit) 作用于各个单独的查询，而不是最终结果。如果你需要对最终结果应用转换，可以将所有通过 `UNION` 组合的查询放在 [FROM](/zh/reference/statements/select/from) 子句中的一个子查询里。
+
+如果在使用 `UNION` 时未显式指定 `UNION ALL` 或 `UNION DISTINCT`，则可以通过 [union&#95;default&#95;mode](/zh/reference/settings/session-settings#union_default_mode) 设置指定 union mode。该设置的值可以是 `ALL`、`DISTINCT` 或空字符串。不过，如果在 `union_default_mode` 设置为空字符串时使用 `UNION`，则会抛出异常。以下示例展示了在该设置取不同值时的查询结果。
+
+```sql title="Query"
+SET union_default_mode = 'DISTINCT';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+```text title="Response"
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+```sql title="Query"
+SET union_default_mode = 'ALL';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+```text title="Response"
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+属于 `UNION/UNION ALL/UNION DISTINCT` 的查询可以同时运行，其结果也可能交错在一起。
+
+**另请参见**
+
+* [insert&#95;null&#95;as&#95;default](/zh/reference/settings/session-settings#insert_null_as_default) 设置。
+* [union&#95;default&#95;mode](/zh/reference/settings/session-settings#union_default_mode) 设置。

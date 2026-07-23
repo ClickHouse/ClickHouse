@@ -42,6 +42,7 @@ ALL_DECLARATION_FILES=(
     "$ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.h"
     "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h"
     "$ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp"
+    "$ROOT_PATH/src/Storages/QueryRunnerSettings.cpp"
     "$ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp"
     "$ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp"
     "$ROOT_PATH/src/Storages/SetSettings.cpp"
@@ -81,7 +82,7 @@ FNR == 1 {
 # previous releases, which is more important than consistency
 for setting in $(
       awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
-      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size"
+      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size" | grep -vx "mode"
     );
 do
     echo "# Found multiple definitions of setting ${setting} with different types: "

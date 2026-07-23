@@ -1,0 +1,322 @@
+---
+description: 'Descripción general de la copia de seguridad y la restauración en ClickHouse'
+sidebarTitle: 'Información general'
+slug: /operations/backup/overview
+title: 'Copia de seguridad y restauración en ClickHouse'
+doc_type: 'reference'
+---
+
+import GenericSettings from '/snippets/es/_generic_settings.mdx';
+import Syntax from '/snippets/es/_syntax.mdx';
+import AzureSettings from '/snippets/es/_azure_settings.mdx';
+import S3Settings from '/snippets/es/_s3_settings.mdx';
+
+> Esta sección ofrece una visión general de las copias de seguridad y la restauración en ClickHouse. Para obtener una
+> descripción más detallada de cada método de copia de seguridad, consulta las páginas de cada método específico
+> en la barra lateral.
+
+<div id="introduction">
+  ## Introducción
+</div>
+
+Aunque la [replicación](/es/reference/engines/table-engines/mergetree-family/replication) ofrece protección frente a fallos de hardware, no
+protege contra errores humanos: eliminación accidental de datos, eliminación de la
+tabla equivocada o de una tabla en el clúster equivocado, y errores de software que den lugar a un
+procesamiento incorrecto de los datos o a su corrupción.
+
+En muchos casos, errores como estos afectarán a todas las réplicas. ClickHouse incorpora mecanismos de protección
+para evitar algunos tipos de errores; por ejemplo, de forma [predeterminada](/es/reference/settings/session-settings#max_table_size_to_drop)
+no se pueden eliminar sin más tablas con un motor de la familia `MergeTree` que contengan más de
+50 Gb de datos. Sin embargo, estas protecciones no cubren todos los casos posibles y
+los problemas pueden seguir ocurriendo.
+
+Para mitigar eficazmente los posibles errores humanos, debe preparar cuidadosamente una
+estrategia para realizar copias de seguridad y restaurar sus datos **con antelación**.
+
+Cada empresa dispone de recursos diferentes y tiene requisitos de negocio distintos, por lo que
+no existe una solución universal de copias de seguridad y restauración en ClickHouse que se adapte a
+todas las situaciones. Lo que funciona para un gigabyte de datos probablemente no funcionará para decenas
+de petabytes de datos. Existen varios enfoques posibles, cada uno con sus propias ventajas
+y desventajas, que se presentan en esta sección de la documentación. Conviene
+usar varios enfoques en lugar de uno solo, para compensar sus distintas
+limitaciones.
+
+<Note>
+  Tenga en cuenta que, si hizo una copia de seguridad de algo y nunca intentó restaurarla,
+  lo más probable es que la restauración no funcione correctamente cuando realmente la necesite (o, al
+  menos, tardará más de lo que la empresa puede tolerar). Por eso, sea cual sea el enfoque de copia de seguridad
+  que elija, asegúrese de automatizar también el proceso de restauración y practíquelo
+  regularmente en un clúster de ClickHouse de reserva.
+</Note>
+
+Las páginas siguientes detallan los distintos métodos de copia de seguridad y
+restauración disponibles en ClickHouse:
+
+| Página                                                                                                            | Descripción                                                                           |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [Copia de seguridad/restauración con disco local o disco S3](/es/concepts/features/backup-restore/local-disk)        | Detalla la copia de seguridad/restauración hacia o desde un disco local o un disco S3 |
+| [Copia de seguridad/restauración mediante endpoint de S3](/es/concepts/features/backup-restore/s3-endpoint)          | Detalla la copia de seguridad/restauración hacia o desde un endpoint de S3            |
+| [Copia de seguridad/restauración mediante AzureBlobStorage](/es/concepts/features/backup-restore/azure-blob-storage) | Detalla la copia de seguridad/restauración hacia o desde Azure blob storage           |
+| [Métodos alternativos](/es/concepts/features/backup-restore/alternative-methods)                                     | Analiza métodos alternativos de copia de seguridad                                    |
+| [Snapshot backup](/es/concepts/features/backup-restore/snapshot)                                                     | Snapshots ligeros para tablas SharedMergeTree que usan Cloud Object Storage           |
+
+Las copias de seguridad pueden:
+
+* ser [completas o incrementales](#backup-types)
+* ser [sincrónicas o asincrónicas](#synchronous-vs-asynchronous)
+* ser [concurrentes o no concurrentes](#concurrent-vs-non-concurrent)
+* estar [comprimidas o sin comprimir](#compressed-vs-uncompressed)
+* usar [colecciones con nombre](#using-named-collections)
+* estar protegidas con contraseña
+* hacerse de [system tables, log tables o tablas de gestión de acceso](#system-backups)
+
+<div id="backup-types">
+  ## Tipos de copias de seguridad
+</div>
+
+Las copias de seguridad pueden ser completas o incrementales. Las copias de seguridad completas son una copia íntegra de los datos, mientras que las incrementales contienen únicamente los cambios realizados desde la última copia de seguridad completa.
+
+Las copias de seguridad completas tienen la ventaja de ofrecer un método de recuperación simple, independiente (de otras copias de seguridad) y fiable. Sin embargo, pueden tardar mucho en completarse y ocupar mucho espacio. Las copias de seguridad incrementales, en cambio, son más eficientes tanto en tiempo como en espacio, pero para restaurar los datos es necesario que todas las copias de seguridad estén disponibles.
+
+Según sus necesidades, puede que le convenga usar:
+
+* **Copias de seguridad completas** para bases de datos más pequeñas o datos críticos.
+* **Copias de seguridad incrementales** para bases de datos más grandes o cuando sea necesario realizar copias de seguridad con frecuencia y de forma rentable.
+* **Ambas**; por ejemplo, copias de seguridad completas semanales y copias de seguridad incrementales diarias.
+
+<div id="synchronous-vs-asynchronous">
+  ## Copias de seguridad síncronas vs. asíncronas
+</div>
+
+Los comandos `BACKUP` y `RESTORE` también se pueden marcar como `ASYNC`. En este caso, el
+comando de copia de seguridad devuelve el control de inmediato y el proceso de copia de seguridad se ejecuta en segundo plano.
+Si los comandos no se marcan como `ASYNC`, el proceso de copia de seguridad es síncrono y
+el comando queda bloqueado hasta que se completa la copia de seguridad.
+
+<div id="concurrent-vs-non-concurrent">
+  ## Copias de seguridad concurrentes y no concurrentes
+</div>
+
+De forma predeterminada, ClickHouse permite realizar copias de seguridad y restauraciones de forma concurrente. Esto significa que
+puede iniciar varias operaciones de copia de seguridad o restauración simultáneamente. Sin embargo,
+hay ajustes a nivel de servidor que permiten desactivar este comportamiento. Si establece
+estos ajustes en false, solo se permitirá ejecutar una operación de copia de seguridad o restauración
+en un clúster a la vez. Esto puede ayudar a evitar la contención de recursos o posibles
+conflictos entre operaciones.
+
+Para desactivar las copias de seguridad/restauraciones concurrentes, puede usar estos ajustes, respectivamente:
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+El valor predeterminado de ambos es true, por lo que, por defecto, se permiten
+las copias de seguridad/restauraciones concurrentes. Cuando estas configuraciones están en false en un clúster, solo se permite que una única copia de seguridad/restauración
+se ejecute en un clúster a la vez.
+
+<div id="compressed-vs-uncompressed">
+  ## Copias de seguridad comprimidas y sin comprimir
+</div>
+
+Las copias de seguridad de ClickHouse admiten compresión mediante la configuración `compression_method` y `compression_level`.
+
+Al crear una copia de seguridad, puedes especificar:
+
+```sql
+BACKUP TABLE test.table
+  TO Disk('backups', 'filename.zip')
+  SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="using-named-collections">
+  ## Uso de colecciones con nombre
+</div>
+
+Las colecciones con nombre le permiten almacenar pares clave-valor (como credenciales de S3, endpoints y opciones de configuración) que pueden reutilizarse en operaciones de copia de seguridad y restauración.
+Ayudan a:
+
+* Ocultar las credenciales a los usuarios sin acceso de administrador
+* Simplificar los comandos al almacenar configuraciones complejas de forma centralizada
+* Mantener la coherencia entre operaciones
+* Evitar la exposición de credenciales en los logs de consultas
+
+Consulte [&quot;colecciones con nombre&quot;](/es/concepts/features/configuration/server-config/named-collections) para obtener más información.
+
+<div id="system-backups">
+  ## Copia de seguridad de tablas del sistema, de registro o de gestión de acceso
+</div>
+
+Las tablas del sistema también pueden incluirse en los flujos de trabajo de copia de seguridad y restauración, pero su
+inclusión depende de su caso de uso específico.
+
+Las tablas del sistema que almacenan datos históricos, como aquellas con el sufijo `_log` (p. ej.,
+`query_log`, `part_log`), pueden incluirse en copias de seguridad y restaurarse como cualquier otra tabla.
+Si su caso de uso depende del análisis de datos históricos —por ejemplo, usar `query_log`
+para hacer un seguimiento del rendimiento de las consultas o depurar problemas—, se recomienda incluir estas
+tablas en su estrategia de copia de seguridad. Sin embargo, si los datos históricos de estas tablas
+no son necesarios, pueden excluirse para ahorrar espacio de almacenamiento.
+
+Las tablas del sistema relacionadas con la gestión de acceso, como users, roles, row&#95;policies,
+settings&#95;profiles y quotas, reciben un tratamiento especial durante las operaciones de copia de seguridad y restauración.
+Cuando estas tablas se incluyen en una copia de seguridad, su contenido se exporta a un archivo especial
+`accessXX.txt`, que contiene las sentencias SQL equivalentes para crear
+y configurar las entidades de acceso. Durante la restauración, el proceso de restauración
+interpreta estos archivos y vuelve a aplicar los comandos SQL para recrear los users,
+roles y otras configuraciones. Esta funcionalidad garantiza que la configuración de control de acceso
+de un clúster de ClickHouse pueda incluirse en una copia de seguridad y restaurarse como parte de
+la configuración general del clúster.
+
+Esta funcionalidad solo funciona para configuraciones gestionadas mediante comandos SQL
+(conocidas como [&quot;Control de acceso y gestión de cuentas controlados por SQL&quot;](/es/concepts/features/security/access-rights#enabling-access-control)).
+Las configuraciones de acceso definidas en los archivos de configuración del ClickHouse server (p. ej. `users.xml`)
+no se incluyen en las copias de seguridad y no pueden restaurarse mediante este método.
+
+<div id="syntax">
+  ## Sintaxis general
+</div>
+
+<Syntax />
+
+<div id="command-summary">
+  ### Resumen de comandos
+</div>
+
+A continuación, se detallan cada uno de los comandos anteriores:
+
+| **Comando**                                                            | **Descripción**                                                                                                                                                                  |   |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | Crea una copia de seguridad de los objetos especificados                                                                                                                         |   |
+| `RESTORE`                                                              | Restaura objetos desde una copia de seguridad                                                                                                                                    |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Hace una copia de seguridad de una tabla específica o la restaura (se puede cambiar de nombre)                                                                                   |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | Solo hace una copia de seguridad de particiones específicas de la tabla o las restaura                                                                                           |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Hace una copia de seguridad de un objeto Diccionario o lo restaura                                                                                                               |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | Hace una copia de seguridad de una base de datos completa o la restaura (se puede cambiar de nombre)                                                                             |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Hace una copia de seguridad de una tabla temporal o la restaura (se puede cambiar de nombre)                                                                                     |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | Hace una copia de seguridad de una vista o la restaura (se puede cambiar de nombre)                                                                                              |   |
+| `[EXCEPT TABLES ...]`                                                  | Excluye tablas específicas al hacer una copia de seguridad de una base de datos                                                                                                  |   |
+| `ALL`                                                                  | Hace una copia de seguridad de todo o lo restaura (todas las bases de datos, tablas, etc.). Antes de la versión 23.4 de ClickHouse, `ALL` solo se aplicaba al comando `RESTORE`. |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Excluye tablas o bases de datos específicas al usar `ALL`                                                                                                                        |   |
+| `[ON CLUSTER 'cluster_name']`                                          | Ejecuta la copia de seguridad o la restauración en un clúster de ClickHouse                                                                                                      |   |
+| `TO\|FROM`                                                             | Dirección: `TO` para el destino de la copia de seguridad, `FROM` para el origen de la restauración                                                                               |   |
+| `File('<path>/<filename>')`                                            | Almacena en el sistema de archivos local o restaura desde él                                                                                                                     |   |
+| `Disk('<disk_name>', '<path>/')`                                       | Almacena en un disco configurado o restaura desde él                                                                                                                             |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Almacena en Amazon S3 o almacenamiento compatible con S3, o restaura desde ellos                                                                                                 |   |
+| `[SETTINGS ...]`                                                       | Consulta a continuación la lista completa de opciones de configuración                                                                                                           |   |
+| `[ASYNC]`                                                              | Hace que la operación se ejecute de forma asíncrona (devuelve inmediatamente un ID que puedes supervisar)                                                                        |   |
+
+<div id="settings">
+  ### Configuración
+</div>
+
+**Configuración general de copia de seguridad y restauración**
+
+<GenericSettings />
+
+**Configuración específica de S3**
+
+<S3Settings />
+
+**Configuración específica de Azure**
+
+<AzureSettings />
+
+<div id="check-the-status-of-backups">
+  ## Administración y resolución de problemas
+</div>
+
+El comando de copia de seguridad devuelve un `id` y un `status`, y ese `id` puede usarse para
+obtener el estado de la copia de seguridad. Esto es muy útil para comprobar el progreso de copias de seguridad
+`ASYNC` prolongadas. El ejemplo siguiente muestra un error que se produjo al intentar
+sobrescribir un archivo de copia de seguridad existente:
+
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
+```
+
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 fila en el conjunto. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT
+*
+FROM system.backups
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+
+```response highlight={5,9}
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Junto con la tabla [`system.backups`](/es/reference/system-tables/backups), todas las operaciones de copia de seguridad y restauración también quedan registradas en la tabla de registro del sistema
+[`system.backup_log`](/es/reference/system-tables/backup_log):
+
+```sql
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+
+```response highlight={26}
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```

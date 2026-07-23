@@ -1,0 +1,205 @@
+---
+title: 'Configuração de rede privada na AWS para BYOC'
+slug: /cloud/reference/byoc/onboarding/network-aws
+sidebarTitle: 'Configuração de rede privada na AWS'
+keywords: ['BYOC', 'nuvem', 'Bring Your Own Cloud', 'peering de VPC', 'aws', 'privatelink']
+description: 'Configure peering de VPC ou PrivateLink para BYOC na AWS'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O BYOC da ClickHouse na AWS oferece duas opções de conexão privada: peering de VPC e AWS PrivateLink.
+
+<div id="common-prerequisites">
+  ## Pré-requisitos
+</div>
+
+Etapas comuns necessárias tanto para o peering de VPC quanto para o Privatelink.
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### Habilite o balanceador de carga privado para o ClickHouse BYOC
+</div>
+
+Entre em contato com o suporte do ClickHouse para habilitar o balanceador de carga privado.
+
+<div id="aws-vpc-peering">
+  ## Configurar peering de VPC
+</div>
+
+Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas:
+
+<Steps>
+  <Step>
+    ### Criar uma conexão de peering
+
+    1. Acesse o VPC Dashboard na conta do ClickHouse BYOC.
+    2. Selecione Peering Connections.
+    3. Clique em Create Peering Connection.
+    4. Defina VPC Requester como o ID da VPC do ClickHouse.
+    5. Defina VPC Accepter como o ID da VPC de destino. (Selecione outra conta, se aplicável)
+    6. Clique em Create Peering Connection.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-1.webp" size="lg" alt="BYOC Criar conexão de peering" border />
+  </Step>
+
+  <Step>
+    ### Aceitar a solicitação de conexão de peering
+
+    Acesse a conta de peering e, na página (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request), o cliente poderá aprovar esta solicitação de peering de VPC.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-2.webp" size="lg" alt="BYOC Aceitar conexão de peering" border />
+  </Step>
+
+  <Step>
+    ### Adicionar o destino às tabelas de rotas da VPC do ClickHouse
+
+    Na conta do ClickHouse BYOC,
+
+    1. Selecione Route Tables no VPC Dashboard.
+    2. Procure o ID da VPC do ClickHouse. Edite cada tabela de rotas associada às sub-redes privadas.
+    3. Clique no botão Edit na guia Routes.
+    4. Clique em Add another route.
+    5. Insira o intervalo CIDR da VPC de destino em Destination.
+    6. Selecione “Peering Connection” e o ID da conexão de peering em Target.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-3.webp" size="lg" alt="BYOC Adicionar tabela de rotas" border />
+  </Step>
+
+  <Step>
+    ### Adicionar o destino às tabelas de rotas da VPC de destino
+
+    Na conta AWS de peering,
+
+    1. Selecione Route Tables no VPC Dashboard.
+    2. Procure o ID da VPC de destino.
+    3. Clique no botão Edit na guia Routes.
+    4. Clique em Add another route.
+    5. Insira o intervalo CIDR da VPC do ClickHouse em Destination.
+    6. Selecione “Peering Connection” e o ID da conexão de peering em Target.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-4.webp" size="lg" alt="BYOC Adicionar tabela de rotas" border />
+  </Step>
+
+  <Step>
+    ### Editar o Security Group para permitir acesso da VPC emparelhada
+
+    Na conta do ClickHouse BYOC, você precisa atualizar as configurações do Security Group para permitir tráfego da sua VPC emparelhada. Entre em contato com o suporte do ClickHouse para solicitar a adição de regras de entrada que incluam os intervalos CIDR da sua VPC emparelhada.
+
+    ***
+
+    O serviço do ClickHouse agora deve estar acessível a partir da VPC emparelhada.
+  </Step>
+</Steps>
+
+Para acessar o ClickHouse de forma privada, um balanceador de carga privado e um endpoint são provisionados para conectividade segura a partir da VPC emparelhada do usuário. O endpoint privado segue o formato do endpoint público com o sufixo `-private`. Por exemplo:
+
+* **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+* **Endpoint privado**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+
+Opcionalmente, após verificar que o peering está funcionando, você pode solicitar a remoção do balanceador de carga público do ClickHouse BYOC.
+
+<div id="setup-privatelink">
+  ## Configurar o PrivateLink
+</div>
+
+O AWS PrivateLink fornece conectividade segura e privada aos seus serviços ClickHouse BYOC sem exigir peering de VPC nem gateways de internet. O tráfego flui inteiramente dentro da rede da AWS, sem nunca passar pela internet pública.
+
+<Steps>
+  <Step>
+    ### Solicitar a configuração do PrivateLink
+
+    Entre em contato com o [suporte do ClickHouse](https://clickhouse.com/cloud/bring-your-own-cloud) para solicitar a configuração do PrivateLink para sua implantação BYOC. Nenhuma informação específica é necessária nesta etapa — basta informar que você deseja configurar a conectividade via PrivateLink.
+
+    O suporte do ClickHouse habilitará os componentes de infraestrutura necessários, incluindo **o balanceador de carga privado** e **o endpoint de serviço do PrivateLink**.
+  </Step>
+
+  <Step>
+    ### Criar um endpoint na sua VPC
+
+    Depois que o suporte do ClickHouse habilitar o PrivateLink no ambiente deles, você precisará criar um endpoint de VPC na VPC da sua aplicação cliente para se conectar ao serviço PrivateLink do ClickHouse.
+
+    1. **Obter o nome do serviço de endpoint**:
+       * O suporte do ClickHouse fornecerá o nome do serviço de endpoint
+       * Você também pode encontrá-lo no Console da AWS VPC em &quot;Endpoint Services&quot; (filtre pelo nome do serviço ou procure pelos serviços ClickHouse)
+
+    <Image img="/images/cloud/reference/byoc-privatelink-1.webp" size="lg" alt="Endpoint de serviço BYOC PrivateLink" border />
+
+    2. **Criar o endpoint de VPC**:
+       * Navegue até o AWS VPC Console → Endpoints → Create Endpoint
+       * Selecione &quot;Find service by name&quot; e insira o nome do serviço de endpoint fornecido pelo suporte do ClickHouse
+       * Escolha sua VPC e selecione as sub-redes (recomenda-se uma por zona de disponibilidade)
+       * **Importante**: habilite &quot;Private DNS names&quot; para o endpoint — isso é necessário para que a resolução de DNS funcione corretamente
+       * Selecione ou crie um Security Group para o endpoint
+       * Clique em &quot;Create Endpoint&quot;
+
+    <Warning>
+      **Requisitos de DNS**:
+
+      * Habilite &quot;Private DNS names&quot; ao criar o endpoint de VPC
+      * Certifique-se de que sua VPC tenha &quot;DNS Hostnames&quot; habilitado (VPC Settings → DNS resolution and DNS hostnames)
+
+      Essas configurações são necessárias para que o DNS do PrivateLink funcione corretamente.
+    </Warning>
+
+    3. **Aprovar a conexão do endpoint**:
+       * Depois de criar o endpoint, você precisará aprovar a solicitação de conexão
+       * No VPC Console, vá para &quot;Endpoint Connections&quot;
+       * Encontre a solicitação de conexão do ClickHouse e clique em &quot;Accept&quot; para aprová-la
+
+    <Image img="/images/cloud/reference/byoc-privatelink-2.webp" size="lg" alt="Aprovação do BYOC PrivateLink" border />
+  </Step>
+
+  <Step>
+    ### Adicionar o Endpoint ID à lista de permissões do serviço
+
+    Depois que o endpoint de VPC for criado e a conexão for aprovada, você precisará adicionar o Endpoint ID à lista de permissões de cada serviço ClickHouse que deseja acessar via PrivateLink.
+
+    1. **Obter seu Endpoint ID**:
+       * No AWS VPC Console, vá para Endpoints
+       * Selecione o endpoint recém-criado
+       * Copie o Endpoint ID (ele terá o formato `vpce-xxxxxxxxxxxxxxxxx`)
+
+    2. **Entrar em contato com o suporte do ClickHouse**:
+       * Forneça os Endpoint IDs ao suporte do ClickHouse
+       * Especifique quais serviços ClickHouse devem permitir acesso a partir desse endpoint
+       * O suporte do ClickHouse adicionará o Endpoint ID à lista de permissões do serviço
+  </Step>
+
+  <Step>
+    ### Conectar-se ao ClickHouse via PrivateLink
+
+    Depois que o Endpoint ID for adicionado à lista de permissões, você poderá se conectar ao seu serviço ClickHouse usando o endpoint do PrivateLink.
+
+    O formato do endpoint do PrivateLink é semelhante ao endpoint público, mas inclui um subdomínio `vpce`. Por exemplo:
+
+    * **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+    * **Endpoint do PrivateLink**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+    A resolução de DNS na sua VPC encaminhará automaticamente o tráfego pelo endpoint do PrivateLink quando você usar o formato de subdomínio `vpce`.
+  </Step>
+</Steps>
+
+<div id="privatelink-access-control">
+  ### Controle de acesso do PrivateLink
+</div>
+
+O acesso aos serviços do ClickHouse via PrivateLink é controlado em dois níveis:
+
+1. **Política de autorização do Istio**: políticas de autorização em nível de serviço do ClickHouse Cloud
+2. **Security Group do endpoint da VPC**: o grupo de segurança associado ao endpoint da sua VPC controla quais recursos na sua VPC podem usar o endpoint
+
+<Note>
+  O recurso &quot;Enforce inbound rules on PrivateLink traffic&quot; do balanceador de carga privado está desabilitado, portanto o acesso é controlado apenas pelas políticas de autorização do Istio e pelo Security Group do endpoint da sua VPC.
+</Note>
+
+<div id="privatelink-dns">
+  ### DNS do PrivateLink
+</div>
+
+O DNS do PrivateLink para endpoints BYOC (usando o formato `*.vpce.{subdomain}`) aproveita o recurso nativo &quot;Private DNS names&quot; do AWS PrivateLink. Nenhum registro no Route53 é necessário — a resolução de DNS ocorre automaticamente quando:
+
+* &quot;Private DNS names&quot; está habilitado no endpoint da sua VPC
+* A sua VPC está com &quot;DNS Hostnames&quot; habilitado
+
+Isso garante que as conexões que usam o subdomínio `vpce` sejam roteadas automaticamente pelo endpoint do PrivateLink, sem configuração adicional de DNS.

@@ -1,0 +1,70 @@
+---
+slug: /changelogs/24.8
+title: 'changelog de la v24.8 pour Cloud'
+description: 'changelog de la Fast release v24.8'
+keywords: ['changelog', 'cloud']
+sidebarTitle: '24.8'
+doc_type: 'changelog'
+---
+
+Changements pertinents pour les services ClickHouse Cloud dans la version v24.8.
+
+<div id="backward-incompatible-change">
+  ## Changement incompatible avec les versions précédentes
+</div>
+
+* Modification de la sérialisation binaire du type de données Variant : ajout d’un mode compact pour éviter d’écrire plusieurs fois le même discriminateur pour les granules ne contenant qu’une seule variante ou uniquement des valeurs NULL. Ajout du paramètre MergeTree use&#95;compact&#95;variant&#95;discriminators&#95;serialization, activé par défaut. Notez que le type Variant est toujours expérimental et que cette modification non rétrocompatible de la sérialisation ne devrait pas vous affecter, sauf si vous avez travaillé avec le support pour activer cette fonctionnalité plus tôt. [#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel).
+
+* Interdire CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ... avec les bases de données Replicated. Cette PR spécifique ne s’applique qu’aux utilisateurs qui utilisent encore ReplicatedMergeTree. [#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir).
+
+* La métrique KeeperOutstandingRequets a été renommée en KeeperOutstandingRequests. Cela corrige une faute de frappe signalée dans [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
+
+* clickhouse-client et clickhouse-local utilisent désormais par défaut le mode multi-requêtes (au lieu du mode requête unique). Par exemple, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; fonctionne désormais, alors qu’auparavant, les utilisateurs devaient ajouter --multiquery (ou -n). L’option --multiquery/-n est devenue obsolète. Les requêtes INSERT dans des instructions multi-requêtes sont traitées différemment selon leur clause FORMAT : si le FORMAT est VALUES (le cas le plus courant), la fin de l’instruction INSERT est marquée par un point-virgule ; à la fin de la requête. Pour tous les autres FORMATs (par ex. CSV ou JSONEachRow), la fin de l’instruction INSERT est marquée par deux sauts de ligne \n\n à la fin de la requête. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+
+* Dans les versions précédentes, il était possible d’utiliser une syntaxe alternative pour les types de données LowCardinality en ajoutant WithDictionary au nom du type de données. Il s’agissait d’une implémentation initiale fonctionnelle, qui n’a jamais été documentée ni exposée publiquement. Désormais, elle est dépréciée. Si vous avez utilisé cette syntaxe, vous devez ALTER vos tables et renommer les types de données en LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
+
+* Correction d’erreurs logiques avec le moteur Buffer utilisé avec une table de destination Distributed. Il s’agit d’un changement non rétrocompatible : les requêtes utilisant Buffer avec une table de destination Distributed peuvent cesser de fonctionner si la table apparaît plus d’une fois dans la requête (par ex. dans une self-join). [#67015](https://github.com/vdimir) (vdimir).
+
+* Dans les versions précédentes, l’appel de fonctions de distributions aléatoires basées sur la fonction gamma (comme Chi-Squared, Student, Fisher) avec des arguments négatifs proches de zéro entraînait un calcul long ou une boucle infinie. Dans la nouvelle version, l’appel de ces fonctions avec des arguments nuls ou négatifs produira une exception. Cela résout [#67297](https://github.com/ClickHouse/ClickHouse/issues/67297). [#67326](https://github.com/ClickHouse/ClickHouse/pull/67326) (Alexey Milovidov).
+
+* Dans les versions précédentes, arrayWithConstant pouvait être lent lorsqu’on lui demandait de générer de très grands tableaux. Dans la nouvelle version, il est limité à 1 Go par tableau. Cela résout [#32754](https://github.com/ClickHouse/ClickHouse/issues/32754). [#67741](https://github.com/ClickHouse/ClickHouse/pull/67741) (Alexey Milovidov).
+
+* Correction du formatage du modificateur REPLACE (interdiction d’omettre les parenthèses). [#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin).
+
+<div id="new-feature">
+  ## Nouvelle fonctionnalité
+</div>
+
+* Étend la fonction tuple pour construire des tuples nommés dans une requête. Introduit la fonction tupleNames pour extraire les noms des tuples. [#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
+
+* Prise en charge de ASOF JOIN pour l’algorithme full&#95;sorting&#95;join. Clôture [#54493](https://github.com/ClickHouse/ClickHouse/issues/54493). [#55051](https://github.com/ClickHouse/ClickHouse/pull/55051) (vdimir).
+
+* Une nouvelle fonction de table, fuzzQuery, a été ajoutée. Cette fonction vous permet de modifier une chaîne de requête donnée avec des variations aléatoires. Exemple : SELECT query FROM fuzzQuery(&#39;SELECT 1&#39;);. [#62103](https://github.com/ClickHouse/ClickHouse/pull/62103) (pufit).
+
+* Ajoute la nouvelle fonction de fenêtre percent&#95;rank. [#62747](https://github.com/ClickHouse/ClickHouse/pull/62747) (lgbo).
+
+* Prise en charge de l’authentification JWT dans clickhouse-client. [#62829](https://github.com/ClickHouse/ClickHouse/pull/62829) (Konstantin Bogdanov).
+
+* Ajoute les fonctions SQL changeYear, changeMonth, changeDay, changeHour, changeMinute, changeSecond. Par exemple, SELECT changeMonth(toDate(&#39;2024-06-14&#39;), 7) renvoie la date 2024-07-14. [#63186](https://github.com/ClickHouse/ClickHouse/pull/63186) (cucumber95).
+
+* Ajoute system.error&#95;log, qui contient l’historique des valeurs d’erreur de la table system.errors, périodiquement écrites sur disque. [#65381](https://github.com/ClickHouse/ClickHouse/pull/65381) (Pablo Marcos).
+
+* Ajoute la fonction d’agrégation groupConcat. Elle est à peu près équivalente à arrayStringConcat( groupArray(column), &#39;,&#39;). Elle peut recevoir 2 paramètres : un délimiteur de chaîne et le nombre d’éléments à traiter. [#65451](https://github.com/ClickHouse/ClickHouse/pull/65451) (Yarik Briukhovetskyi).
+
+* Ajoute le stockage AzureQueue. [#65458](https://github.com/ClickHouse/ClickHouse/pull/65458) (Kseniia Sumarokova).
+
+* Ajoute un nouveau paramètre pour désactiver/activer l’écriture de l’index de page dans les fichiers Parquet. [#65475](https://github.com/ClickHouse/ClickHouse/pull/65475) (lgbo).
+
+* Ajoute automatiquement un caractère générique * à la fin d’un chemin de répertoire avec la fonction de table file. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
+
+* Ajoute l’option --memory-usage au client en mode non interactif. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+
+* Ajoute la colonne virtuelle &#95;etag pour le moteur de table S3. Corrige [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
+
+* Cette pull request introduit le partitionnement de type Hive pour différents moteurs (File, URL, S3, AzureBlobStorage, HDFS). Le partitionnement de type Hive organise les données en sous-répertoires partitionnés, ce qui rend plus efficaces les requêtes et la gestion de grands jeux de données. Actuellement, cela crée uniquement des colonnes virtuelles avec le nom et les données appropriés. La PR suivante introduira le filtrage de données approprié (gain de performances). [#65997](https://github.com/ClickHouse/ClickHouse/pull/65997) (Yarik Briukhovetskyi).
+
+* Ajoute la fonction printf pour la compatibilité avec Spark. [#66257](https://github.com/ClickHouse/ClickHouse/pull/66257) (李扬).
+
+* Ajout de la prise en charge de la lecture de la géométrie MULTILINESTRING au format WKT à l’aide de la fonction readWKTLineString. [#67647](https://github.com/ClickHouse/ClickHouse/pull/67647) (Jacob Reckhard).
+
+* Ajout d’un mécanisme de balisage (namespace) pour le cache de requêtes. Les mêmes requêtes avec des tags différents sont considérées comme différentes par le cache de requêtes. Exemple : SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;abc&#39; et SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;def&#39; créent désormais des entrées de cache différentes dans le cache de requêtes. [#68235](https://github.com/ClickHouse/ClickHouse/pull/68235)(sakulali).

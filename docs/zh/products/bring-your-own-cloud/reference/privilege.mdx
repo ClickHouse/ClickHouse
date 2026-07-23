@@ -1,0 +1,81 @@
+---
+title: 'BYOC 权限'
+slug: /cloud/reference/byoc/reference/privilege
+sidebarTitle: '权限'
+keywords: ['BYOC', '云', '自备 Cloud', '权限']
+description: '在自有云基础设施上部署 ClickHouse'
+doc_type: 'reference'
+---
+
+<div id="aws-iam-roles">
+  ## AWS IAM 角色
+</div>
+
+<div id="bootstrap-iam-role">
+  ### 引导 IAM 角色
+</div>
+
+引导 IAM 角色需要具备以下权限：
+
+* **EC2 和 VPC 操作**：用于设置 VPC 和 EKS 集群。
+* **S3 操作 (例如 `s3:CreateBucket`)&#x20;**：用于为 ClickHouse BYOC Storage 创建 bucket。
+* **IAM 操作 (例如 `iam:CreatePolicy`)&#x20;**：供控制器创建其他角色所需 (详见下一节) 。
+* **EKS 操作**：仅限名称以前缀 `clickhouse-cloud` 开头的资源。
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### 控制器创建的其他 IAM 角色
+</div>
+
+除了通过 CloudFormation 创建的 `ClickHouseManagementRole` 之外，控制器还会创建其他几个角色。
+
+这些角色由运行在客户 EKS 集群中的应用来承担：
+
+* **状态导出器角色**
+  * 向 ClickHouse Cloud 报告服务健康信息的 ClickHouse 组件。
+  * 需要具备向 ClickHouse Cloud 拥有的 SQS 队列写入的权限。
+* **负载均衡控制器**
+  * 标准的 AWS 负载均衡控制器。
+  * 用于管理 ClickHouse 服务卷的 EBS CSI 控制器。
+* **External-DNS**
+  * 将 DNS 配置同步到 Route 53。
+* **Cert-Manager**
+  * 为 BYOC 服务域预配 TLS 证书。
+* **集群自动扩缩器**
+  * 根据需要调整节点组规模。
+
+**K8s-control-plane** 和 **k8s-worker** 角色由 AWS EKS 服务承担。
+
+最后，**`data-plane-mgmt`** 允许 ClickHouse Cloud 控制平面组件协调所需的自定义资源，例如 `ClickHouseCluster` 以及 Istio Virtual Service/Gateway。
+
+<div id="gcp-service-accounts">
+  ## GCP 服务账号
+</div>
+
+<div id="bootstrap-service-account">
+  ### 引导服务账号
+</div>
+
+引导服务账号会被授予项目级自定义角色，这些角色具备以下权限：
+
+* **通用**：基础只读和身份相关权限。
+* **VPC**：管理承载你的 BYOC 基础设施的 VPC、子网、路由以及 Private Service Connect 附加连接。
+* **集群**：管理 GKE 集群及集群内资源。
+* **存储**：用于管理存放 ClickHouse 备份、共享状态和监控数据的 Cloud Storage 存储桶。
+* **IAM 角色**：管理项目内的服务账号和自定义角色。此角色不授予创建服务账号密钥、绑定组织策略或操作其他项目中任何资源的能力。
+
+<div id="additional-service-accounts-created-by-the-controller">
+  ### 控制器创建的其他服务账号
+</div>
+
+除了在 onboarding 过程中通过 Terraform 创建的 `clickhouse-management` 服务账号外，当你预配首个 BYOC 服务时，ClickHouse 的 控制平面 (以 `clickhouse-management` 身份进行身份验证) 会在你的项目中为特定的集群内 workload 创建其他服务账号。每个账号都只授予一组权限范围严格且用途单一的权限。
+
+* **GKE 节点运行时身份**
+  * 附加到你的 BYOC 集群中的每个 GKE 节点虚拟机。
+  * 供 kubelet 节点代理、节点本地 agent 以及 Cloud Operations collectors 发送日志和指标，也供镜像拉取子系统下载容器镜像。
+* **计费抓取器身份**
+  * 由独立运行的抓取器 workload 用于收集计费 telemetry。
+* **监控身份**
+  * 作为在你的集群中运行的 monitoring stack 的目标身份。
+  * 用于对专用于此部署的 GCS 存储桶中的长期指标存储进行读写。
+* **ClickHouse 运行时管理身份**
+  * 由 ClickHouse 的运行时数据平面管理控制器使用，该控制器负责处理第 2 天运维操作，例如 Private Service Connect 端点管理、存储桶生命周期调整以及服务账号轮换。

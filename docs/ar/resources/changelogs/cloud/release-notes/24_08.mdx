@@ -1,0 +1,70 @@
+---
+slug: /changelogs/24.8
+title: 'سجل التغييرات للإصدار v24.8 لـ Cloud'
+description: 'سجل تغييرات Fast release للإصدار v24.8'
+keywords: ['سجل التغييرات', 'السحابة']
+sidebarTitle: '24.8'
+doc_type: 'changelog'
+---
+
+التغييرات ذات الصلة بخدمات ClickHouse Cloud استنادًا إلى إصدار v24.8.
+
+<div id="backward-incompatible-change">
+  ## تغيير غير متوافق مع الإصدارات السابقة
+</div>
+
+* تغيير التسلسل الثنائي لنوع البيانات `Variant`: إضافة الوضع `compact` لتجنّب كتابة `discriminator` نفسه عدة مرات في `granules` التي تحتوي على `variant` واحد أو على قيم `NULL` فقط. وإضافة إعداد MergeTree ‏`use_compact_variant_discriminators_serialization`، وهو مفعّل افتراضيًا. لاحظ أن نوع `Variant` لا يزال `experimental`، لذا لا يُفترض أن يؤثر هذا التغيير غير المتوافق مع الإصدارات السابقة في `serialization` عليك، إلا إذا كنت قد عملت مع فريق الدعم لتفعيل هذه الميزة في وقت مبكر. [#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel).
+
+* منع استخدام `CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ...` مع `Replicated databases`. لا ينطبق طلب السحب هذا إلا على المستخدمين الذين ما زالوا يستخدمون `ReplicatedMergeTree`. [#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir).
+
+* تمت إعادة تسمية `Metric` ‏`KeeperOutstandingRequets` إلى `KeeperOutstandingRequests`. يُصلح هذا خطأً مطبعيًا تم الإبلاغ عنه في [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
+
+* أصبح `clickhouse-client` و `clickhouse-local` الآن يعملان افتراضيًا في وضع الاستعلامات المتعددة بدلًا من وضع الاستعلام الواحد. على سبيل المثال، أصبح `clickhouse-client -q "SELECT 1; SELECT 2"` يعمل الآن، بينما كان على المستخدمين سابقًا إضافة `--multiquery` (أو `-n`). وقد أصبح الخيار `--multiquery/-n` قديمًا. وتُعامل استعلامات `INSERT` في العبارات متعددة الاستعلامات معاملة خاصة بناءً على `FORMAT clause` الخاصة بها: إذا كان `FORMAT` هو `VALUES` (وهي الحالة الأكثر شيوعًا)، فإن نهاية عبارة `INSERT` تُمثَّل بفاصلة منقوطة ختامية `;` في نهاية `query`. أما في جميع `FORMATs` الأخرى (مثل `CSV` أو `JSONEachRow`)، فإن نهاية عبارة `INSERT` تُمثَّل بسطرين جديدين `\n\n` في نهاية `query`. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+
+* في الإصدارات السابقة، كان من الممكن استخدام صياغة بديلة لأنواع البيانات `LowCardinality` عبر إلحاق `WithDictionary` باسم نوع البيانات. كان هذا تنفيذًا أوليًا عمليًا، ولم يُوثَّق أو يُطرح للعامة مطلقًا. وهو الآن `deprecated`. إذا كنت قد استخدمت هذه الصياغة، فعليك تنفيذ `ALTER` على جداولك وإعادة تسمية أنواع البيانات إلى `LowCardinality`. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
+
+* إصلاح أخطاء منطقية في `storage Buffer` عند استخدامه مع `distributed destination table`. وهذا تغيير غير متوافق مع الإصدارات السابقة: فقد تتوقف `queries` التي تستخدم `Buffer` مع `distributed destination table` عن العمل إذا ظهر `table` أكثر من مرة في `query` (على سبيل المثال، في `self-join`). [#67015](https://github.com/vdimir) (vdimir).
+
+* في الإصدارات السابقة، كان استدعاء الدوال الخاصة بالتوزيعات العشوائية المعتمدة على `gamma function` (مثل `Chi-Squared` و`Student` و`Fisher`) باستخدام `arguments` سالبة قريبة من الصفر يؤدي إلى حساب طويل أو إلى حلقة لا نهائية. في الإصدار الجديد، سيؤدي استدعاء هذه الدوال باستخدام `arguments` تساوي صفرًا أو سالبة إلى ظهور `Exception`. يُغلق هذا [#67297](https://github.com/ClickHouse/ClickHouse/issues/67297). [#67326](https://github.com/ClickHouse/ClickHouse/pull/67326) (Alexey Milovidov).
+
+* في الإصدارات السابقة، كان `arrayWithConstant` قد يكون بطيئًا إذا طُلب منه إنشاء `arrays` كبيرة جدًا. في الإصدار الجديد، جرى تقييده إلى 1 غيغابايت لكل `array`. يُغلق هذا [#32754](https://github.com/ClickHouse/ClickHouse/issues/32754). [#67741](https://github.com/ClickHouse/ClickHouse/pull/67741) (Alexey Milovidov).
+
+* إصلاح تنسيق المُعدِّل `REPLACE` (ومنع حذف الأقواس). [#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin).
+
+<div id="new-feature">
+  ## ميزة جديدة
+</div>
+
+* توسيع الدالة `tuple` لتكوين tuples مُسمّاة في الاستعلام. وإضافة الدالة `tupleNames` لاستخراج الأسماء من الـ tuples. [#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
+
+* دعم `ASOF JOIN` لخوارزمية `full_sorting_join`، مع إغلاق [#54493](https://github.com/ClickHouse/ClickHouse/issues/54493). [#55051](https://github.com/ClickHouse/ClickHouse/pull/55051) (vdimir).
+
+* أُضيفت دالة جدول جديدة، `fuzzQuery`. تتيح هذه الدالة تعديل سلسلة استعلام معيّنة بإدخال تغييرات عشوائية عليها. مثال: `SELECT query FROM fuzzQuery('SELECT 1');`. [#62103](https://github.com/ClickHouse/ClickHouse/pull/62103) (pufit).
+
+* إضافة دالة نافذة جديدة `percent_rank`. [#62747](https://github.com/ClickHouse/ClickHouse/pull/62747) (lgbo).
+
+* دعم مصادقة JWT في `clickhouse-client`. [#62829](https://github.com/ClickHouse/ClickHouse/pull/62829) (Konstantin Bogdanov).
+
+* إضافة دوال SQL `changeYear` و`changeMonth` و`changeDay` و`changeHour` و`changeMinute` و`changeSecond`. على سبيل المثال، يعيد `SELECT changeMonth(toDate('2024-06-14'), 7)` التاريخ 2024-07-14. [#63186](https://github.com/ClickHouse/ClickHouse/pull/63186) (cucumber95).
+
+* إضافة `system.error_log` الذي يحتوي على سجل قيم الأخطاء من الجدول `system.errors`، ويُفرَّغ دوريًا إلى القرص. [#65381](https://github.com/ClickHouse/ClickHouse/pull/65381) (Pablo Marcos).
+
+* إضافة دالة التجميع `groupConcat`. وهي تعادل تقريبًا `arrayStringConcat( groupArray(column), ',')`، ويمكنها تلقّي معاملين: محدِّد سلاسل وعدد العناصر المطلوب معالجتها. [#65451](https://github.com/ClickHouse/ClickHouse/pull/65451) (Yarik Briukhovetskyi).
+
+* إضافة AzureQueue Storage. [#65458](https://github.com/ClickHouse/ClickHouse/pull/65458) (Kseniia Sumarokova).
+
+* إضافة إعداد جديد لتعطيل/تمكين كتابة فهرس الصفحات في ملفات Parquet. [#65475](https://github.com/ClickHouse/ClickHouse/pull/65475) (lgbo).
+
+* إلحاق حرف البدل `*` تلقائيًا بنهاية مسار الدليل مع دالة الجدول `file`. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
+
+* إضافة الخيار `--memory-usage` إلى العميل في الوضع غير التفاعلي. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+
+* إضافة العمود الافتراضي `_etag` إلى محرك الجدول S3. وإصلاح [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
+
+* يقدّم طلب السحب هذا التقسيم بنمط Hive لمحركات مختلفة (`File` و`URL` و`S3` و`AzureBlobStorage` و`HDFS`). وينظّم التقسيم بنمط Hive البيانات في أدلة فرعية مقسّمة، مما يجعل الاستعلام عن مجموعات البيانات الكبيرة وإدارتها أكثر كفاءة. حاليًا، لا ينشئ إلا أعمدة افتراضية تحمل الاسم والبيانات المناسبين. وسيضيف طلب سحب لاحق تصفية البيانات المناسبة (لتسريع الأداء). [#65997](https://github.com/ClickHouse/ClickHouse/pull/65997) (Yarik Briukhovetskyi).
+
+* إضافة الدالة `printf` للتوافق مع Spark. [#66257](https://github.com/ClickHouse/ClickHouse/pull/66257) (李扬).
+
+* أُضيف دعم قراءة هندسة `MULTILINESTRING` بتنسيق WKT باستخدام الدالة `readWKTLineString`. [#67647](https://github.com/ClickHouse/ClickHouse/pull/67647) (Jacob Reckhard).
+
+* أُضيفت آلية وسم (مساحة اسمية) لذاكرة التخزين المؤقت للاستعلامات. وتُعامل الاستعلامات نفسها ذات الوسوم المختلفة على أنها استعلامات مختلفة في ذاكرة التخزين المؤقت للاستعلامات. مثال: `SELECT 1 SETTINGS use_query_cache = 1, query_cache_tag = 'abc'` و`SELECT 1 SETTINGS use_query_cache = 1, query_cache_tag = 'def'` ينشئان الآن مُدخلات مختلفة في ذاكرة التخزين المؤقت للاستعلامات. [#68235](https://github.com/ClickHouse/ClickHouse/pull/68235)(sakulali).

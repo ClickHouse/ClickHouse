@@ -27,20 +27,24 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/// Use AllocatorWithMemoryTracking so that building geometries (in particular parsing untrusted
+/// WKB/WKT, where element counts come straight off the wire) charges the MemoryTracker through its
+/// throwing path. Otherwise a declared-but-absent element count drives a large `reserve` that
+/// `max_memory_usage` does not bound (the default container tracking is non-throwing).
 template <typename Point>
-using LineString = boost::geometry::model::linestring<Point>;
+using LineString = boost::geometry::model::linestring<Point, std::vector, AllocatorWithMemoryTracking>;
 
 template <typename Point>
-using MultiLineString = boost::geometry::model::multi_linestring<LineString<Point>>;
+using MultiLineString = boost::geometry::model::multi_linestring<LineString<Point>, std::vector, AllocatorWithMemoryTracking>;
 
 template <typename Point>
-using Ring = boost::geometry::model::ring<Point>;
+using Ring = boost::geometry::model::ring<Point, true, true, std::vector, AllocatorWithMemoryTracking>;
 
 template <typename Point>
-using Polygon = boost::geometry::model::polygon<Point>;
+using Polygon = boost::geometry::model::polygon<Point, true, true, std::vector, std::vector, AllocatorWithMemoryTracking, AllocatorWithMemoryTracking>;
 
 template <typename Point>
-using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>>;
+using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>, std::vector, AllocatorWithMemoryTracking>;
 
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
 using CartesianLineString = LineString<CartesianPoint>;

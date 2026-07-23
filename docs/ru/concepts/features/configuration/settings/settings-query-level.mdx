@@ -1,0 +1,252 @@
+---
+description: 'Настройки на уровне запроса'
+sidebarTitle: 'Настройки сеанса на уровне запроса'
+slug: /operations/settings/query-level
+title: 'Настройки сеанса на уровне запроса'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Обзор
+</div>
+
+Существует несколько способов выполнять команды с определёнными настройками.
+Настройки задаются на нескольких уровнях, и каждый следующий уровень переопределяет предыдущие значения настройки.
+
+<div id="order-of-priority">
+  ## Порядок приоритета
+</div>
+
+Порядок приоритета при определении настройки следующий:
+
+1. Применение настройки непосредственно к пользователю или в профиле настроек
+
+   * SQL (рекомендуется)
+   * добавление одного или нескольких XML- или YAML-файлов в `/etc/clickhouse-server/users.d`
+
+2. Настройки сеанса
+
+   * Отправьте `SET setting=value` из SQL-консоли ClickHouse Cloud или через
+     `clickhouse client` в интерактивном режиме. Аналогичным образом можно использовать сеансы ClickHouse
+     в HTTP-протоколе. Для этого необходимо указать
+     HTTP-параметр `session_id`.
+
+3. Настройки запроса
+
+   * При запуске `clickhouse client` в неинтерактивном режиме задайте параметр
+     запуска `--setting=value`.
+   * При использовании HTTP API передавайте CGI-параметры (`URL?setting_1=value&setting_2=value...`).
+   * Задайте настройки в
+     секции [SETTINGS](/ru/reference/statements/select/index#settings-in-select-query)
+     запроса SELECT. Значение настройки применяется только к этому запросу
+     и после его выполнения сбрасывается до значения по умолчанию или предыдущего значения.
+
+<div id="converting-a-setting-to-its-default-value">
+  ## Возврат настройки к значению по умолчанию
+</div>
+
+Если вы изменили настройку и хотите вернуть ей значение по умолчанию, установите `DEFAULT`. Синтаксис выглядит так:
+
+```sql
+SET setting_name = DEFAULT
+```
+
+Например, значение `async_insert` по умолчанию — `0`. Предположим, вы изменили его на `1`:
+
+```sql
+SET async_insert = 1;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+Ответ:
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+Следующая команда возвращает его значение к 0:
+
+```sql
+SET async_insert = DEFAULT;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+Теперь параметр снова имеет значение по умолчанию:
+
+```response
+┌─value───┐
+│ 0       │
+└─────────┘
+```
+
+<div id="custom_settings">
+  ## Пользовательские настройки
+</div>
+
+Помимо общих [настроек](/ru/reference/settings/session-settings), пользователи могут определять пользовательские настройки.
+Пользовательские настройки позволяют передавать **параметры, специфичные для сеанса**, на которые можно ссылаться в запросах, политиках или функциях. Это полезно, когда вам нужно:
+
+* Фильтровать данные по идентификатору пользователя или организации
+* Применять различную бизнес-логику в зависимости от контекста
+* Сохранять информацию о состоянии между запросами в рамках сеанса
+
+Имя пользовательской настройки должно начинаться с одного из нескольких предопределённых префиксов из заданного вами списка.
+Список префиксов можно указать с помощью настройки сервера [`custom_settings_prefixes`](/ru/reference/settings/server-settings/settings#custom_settings_prefixes), заданной в файле конфигурации сервера.
+
+В примере ниже в качестве пользовательского префикса выбран `SQL_`:
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+<Note>
+  В ClickHouse Cloud невозможно указать собственный префикс.
+  Все пользовательские настройки начинаются с префикса `SQL_`.
+</Note>
+
+Чтобы задать пользовательскую настройку, используйте команду `SET`:
+
+```sql
+SET SQL_a = 123;
+```
+
+Чтобы получить текущее значение пользовательской настройки, используйте функцию `getSetting()`:
+
+```sql
+SELECT getSetting('SQL_a');
+```
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Во всех этих примерах значение настройки `async_insert` установлено в `1`, а
+также показано, как просматривать настройки в работающей системе.
+
+<div id="using-sql-to-apply-a-setting-to-a-user-directly">
+  ### Применение настройки к пользователю напрямую с помощью SQL
+</div>
+
+Это создаст пользователя `ingester` с настройкой `async_inset = 1`:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS async_insert = 1
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### Изучите профиль настроек и его назначение пользователю
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="using-sql-to-create-a-settings-profile-and-assign-to-a-user">
+  ### Использование SQL для создания профиля настроек и назначения его пользователю
+</div>
+
+Ниже создаётся профиль `log_ingest` с настройкой `async_inset = 1`:
+
+```sql
+CREATE
+SETTINGS PROFILE log_ingest SETTINGS async_insert = 1
+```
+
+Эта команда создаёт пользователя `ingester` и назначает ему профиль настроек `log_ingest`:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS PROFILE log_ingest
+```
+
+<div id="using-xml-to-create-a-settings-profile-and-user">
+  ### Создание профиля настроек и пользователя с помощью XML
+</div>
+
+```xml title=/etc/clickhouse-server/users.d/users.xml highlight={2-6,11}
+<clickhouse>
+    <profiles>
+        <log_ingest>
+            <async_insert>1</async_insert>
+        </log_ingest>
+    </profiles>
+
+    <users>
+        <ingester>
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <profile>log_ingest</profile>
+        </ingester>
+        <default replace="true">
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
+```
+
+<div id="examine-the-settings-profile-and-assignment-1">
+  #### Изучите профиль настроек и его назначение
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3,5}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ CREATE USER default IDENTIFIED WITH sha256_password                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
+│ CREATE SETTINGS PROFILE default                                                    │
+│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
+│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="assign-a-setting-to-a-session">
+  ### Назначить настройку для сеанса
+</div>
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+<div id="assign-a-setting-during-a-query">
+  ### Задать настройку при выполнении запроса
+</div>
+
+```sql highlight={2}
+INSERT INTO YourTable
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* Описание настроек ClickHouse приведено на странице [Настройки](/ru/reference/settings/session-settings).
+* [Глобальные настройки сервера](/ru/reference/settings/server-settings/settings)

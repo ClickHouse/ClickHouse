@@ -1,0 +1,126 @@
+---
+description: 'Proporciona una interfaz de solo lectura similar a una tabla para las tablas de Delta Lake en
+  Amazon S3.'
+sidebarTitle: 'deltaLake'
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
+doc_type: 'reference'
+---
+
+Proporciona una interfaz similar a una tabla para las tablas de [Delta Lake](https://github.com/delta-io/delta) en Amazon S3, Azure Blob Storage o un sistema de archivos montado localmente, con soporte tanto para operaciones de lectura como de escritura (desde la v25.10)
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+`deltaLake` es un alias de `deltaLakeS3`, admitido por motivos de compatibilidad.
+
+```sql
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+deltaLakeLocal(path, [,format])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+Los argumentos de esta función de tabla son los mismos que los de las funciones de tabla `s3`, `azureBlobStorage`, `HDFS` y `file`, respectivamente.
+El argumento `format` se refiere al formato de los archivos de datos de la tabla Delta Lake.
+
+Se puede usar un parámetro opcional `extra_credentials` para pasar un `role_arn` para el acceso basado en roles en ClickHouse Cloud. Consulta [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Devuelve una tabla con la estructura especificada para leer o escribir datos en la tabla Delta Lake especificada.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+<div id="reading-data">
+  ### Lectura de datos
+</div>
+
+Considere una tabla en S3 ubicada en `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
+Para leer los datos de la tabla en ClickHouse, ejecute:
+
+```sql title="Query"
+SELECT
+    URL,
+    UserAgent
+FROM deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/')
+WHERE URL IS NOT NULL
+LIMIT 2
+```
+
+```response title="Response"
+┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
+│ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
+│ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
+└───────────────────────────────────────────────────────────────────────┴───────────┘
+```
+
+<div id="inserting-data">
+  ### Inserción de datos
+</div>
+
+Considere una tabla en un almacenamiento S3 en `s3://ch-docs-s3-bucket/people_10k/`.
+Para insertar datos en la tabla, primero habilite la funcionalidad experimental:
+
+```sql title="Query"
+SET allow_experimental_delta_lake_writes=1
+```
+
+Después, escribe:
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
+```
+
+```response title="Response"
+Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
+
+Ok.
+
+1 row in set. Elapsed: 3.426 sec.
+```
+
+Puede confirmar que la inserción se realizó correctamente volviendo a consultar la tabla:
+
+```sql title="Query"
+SELECT *
+FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
+WHERE (firstname = 'John') AND (lastname = 'Smith')
+```
+
+```response title="Response"
+Query id: 65032944-bed6-4d45-86b3-a71205a2b659
+
+   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
+1. │ 10001 │ John      │ Smith    │ Male   │  30 │
+   └───────┴───────────┴──────────┴────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
+* `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
+* `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño del archivo, el valor es `NULL`.
+* `_time` — Hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+* `_etag` — El etag del archivo. Tipo: `LowCardinality(String)`. Si se desconoce el etag, el valor es `NULL`.
+
+<div id="related">
+  ## Relacionado
+</div>
+
+* [motor de DeltaLake](/es/reference/engines/table-engines/integrations/deltalake)
+* [función de tabla de clúster de DeltaLake](/es/reference/functions/table-functions/deltalakeCluster)

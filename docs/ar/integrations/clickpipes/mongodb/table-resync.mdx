@@ -1,0 +1,34 @@
+---
+title: 'إعادة مزامنة جداول محددة'
+description: 'إعادة مزامنة جداول محددة في ClickPipe لـ MongoDB'
+slug: /integrations/clickpipes/mongodb/table_resync
+sidebarTitle: 'إعادة مزامنة جدول'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'مزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+توجد حالات يكون فيها من المفيد إعادة مزامنة جداول محددة ضمن خط الأنابيب. ومن أمثلة حالات الاستخدام المحتملة حدوث تغييرات كبيرة في مخطط البيانات في MongoDB، أو إعادة نمذجة بعض البيانات في ClickHouse.
+
+وبينما لا تزال إعادة مزامنة الجداول الفردية بنقرة زر قيد التطوير، يوضح هذا الدليل الخطوات التي تمكّنك من تنفيذ ذلك اليوم في MongoDB ClickPipe.
+
+<div id="removing-table">
+  ### 1. إزالة الجدول من خط الأنابيب
+</div>
+
+يمكن تنفيذ ذلك باتباع [دليل إزالة الجدول](/ar/integrations/clickpipes/mongodb/remove-table).
+
+<div id="truncate-drop-table">
+  ### 2. نفّذ TRUNCATE أو احذف الجدول في ClickHouse
+</div>
+
+تهدف هذه الخطوة إلى تجنّب تكرار البيانات عند إضافة هذا الجدول مرة أخرى في الخطوة التالية. يمكنك تنفيذ ذلك بالانتقال إلى علامة تبويب **SQL Console** في ClickHouse Cloud وتشغيل استعلام.
+لاحظ أن لدينا آلية تحقّق تمنع إضافة الجدول إذا كان موجودًا بالفعل في ClickHouse ولم يكن فارغًا.
+
+<div id="add-table-again">
+  ### 3. أضِف الجدول إلى ClickPipe مجددًا
+</div>
+
+يمكنك القيام بذلك باتباع [دليل إضافة الجدول](/ar/integrations/clickpipes/mongodb/add-table).

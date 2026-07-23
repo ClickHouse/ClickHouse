@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Google Dataflow와 ClickHouse 통합'
+slug: /integrations/google-dataflow/dataflow
+description: 'Google Dataflow를 사용해 데이터를 ClickHouse로 수집할 수 있습니다'
+title: 'Google Dataflow와 ClickHouse 통합'
+doc_type: 'guide'
+keywords: ['Google Dataflow ClickHouse', 'Dataflow ClickHouse 통합', 'Apache Beam ClickHouse', 'ClickHouseIO connector', 'Google Cloud ClickHouse 통합']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Google Dataflow](https://cloud.google.com/dataflow)는 완전 관리형 스트림 및 배치 데이터 처리 서비스입니다. Java 또는 Python으로 작성된 파이프라인을 지원하며, Apache Beam SDK를 기반으로 합니다.
+
+ClickHouse와 함께 Google Dataflow를 사용하는 주요 방법은 두 가지이며, 두 방법 모두 [`ClickHouseIO Apache Beam connector`](/ko/integrations/connectors/data-ingestion/etl-tools/apache-beam)를 활용합니다.
+다음과 같습니다.
+
+* [Java runner](#1-java-runner)
+* [미리 정의된 템플릿](#2-predefined-templates)
+
+<div id="1-java-runner">
+  ## Java runner
+</div>
+
+[Java runner](/ko/integrations/connectors/data-ingestion/GCP/google-dataflow/java-runner)를 사용하면 Apache Beam SDK `ClickHouseIO` 통합을 이용해 사용자 지정 Dataflow 파이프라인을 구현할 수 있습니다. 이 방식은 파이프라인 로직을 완전히 유연하게 제어할 수 있으므로, 특정 요구 사항에 맞게 ETL 프로세스를 조정할 수 있습니다.
+하지만 이 옵션을 사용하려면 Java 프로그래밍 지식과 Apache Beam 프레임워크에 대한 이해가 필요합니다.
+
+<div id="key-features">
+  ### 주요 기능
+</div>
+
+* 사용자 지정 범위가 넓습니다.
+* 복잡하거나 고급 사용 사례에 적합합니다.
+* 코딩이 필요하며 Beam API를 이해해야 합니다.
+
+<div id="2-predefined-templates">
+  ## 미리 정의된 템플릿
+</div>
+
+ClickHouse는 BigQuery에서 데이터를 일괄로 가져오거나 Pub/Sub에서 ClickHouse로 스트리밍 방식으로 수집하는 등 특정 사용 사례를 위해 설계된 [미리 정의된 템플릿](/ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates)을 제공합니다. 이러한 템플릿은 즉시 사용할 수 있으며 통합 과정을 간소화하므로, 코드 작성이 필요 없는 솔루션을 선호할 때 매우 적합한 선택지입니다.
+
+<div id="key-features">
+  ### 주요 기능
+</div>
+
+* Beam 코드를 작성할 필요가 없습니다.
+* 간단한 사용 사례는 빠르고 쉽게 설정할 수 있습니다.
+* 프로그래밍 경험이 많지 않아도 적합합니다.
+
+두 방식 모두 Google Cloud 및 ClickHouse 생태계와 완벽하게 호환되며, 기술 수준과 프로젝트 요구 사항에 따라 유연하게 선택할 수 있습니다.

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import pytest
-import logging
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -43,47 +42,41 @@ def stop_zk_connection(zk_conn):
 
 
 def test_server_restart(started_cluster):
-    try:
-        wait_nodes()
+    wait_nodes()
 
-        node.stop_clickhouse()
-        node.replace_in_config(
-            "/etc/clickhouse-server/config.d/check_node_acl_on_remove.xml", "1", "0"
-        )
-        node.start_clickhouse()
+    node.stop_clickhouse()
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/check_node_acl_on_remove.xml", "1", "0"
+    )
+    node.start_clickhouse()
 
-        def create_node_with_acl():
-            node_zk = get_fake_zk("node")
-            node_zk.add_auth("digest", "clickhouse:password")
+    def create_node_with_acl():
+        node_zk = get_fake_zk("node")
+        node_zk.add_auth("digest", "clickhouse:password")
 
-            if node_zk.exists("/test_acl_node"):
-                node_zk.delete("/test_acl_node")
-
-            acl = make_digest_acl("clickhouse", "password", all=True)
-            node_zk.create("/test_acl_node", b"test_data", acl=[acl])
-            stop_zk_connection(node_zk)
-
-        def delete_node():
-            node_zk = get_fake_zk("node")
+        if node_zk.exists("/test_acl_node"):
             node_zk.delete("/test_acl_node")
+
+        acl = make_digest_acl("clickhouse", "password", all=True)
+        node_zk.create("/test_acl_node", b"test_data", acl=[acl])
+        stop_zk_connection(node_zk)
+
+    def delete_node():
+        node_zk = get_fake_zk("node")
+        try:
+            node_zk.delete("/test_acl_node")
+        finally:
             stop_zk_connection(node_zk)
 
-        create_node_with_acl()
+    create_node_with_acl()
+    delete_node()
+    node.stop_clickhouse()
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/check_node_acl_on_remove.xml", "0", "1"
+    )
+    node.start_clickhouse()
+
+    create_node_with_acl()
+
+    with pytest.raises(NoAuthError):
         delete_node()
-        node.stop_clickhouse()
-        node.replace_in_config(
-            "/etc/clickhouse-server/config.d/check_node_acl_on_remove.xml", "0", "1"
-        )
-        node.start_clickhouse()
-
-        create_node_with_acl()
-
-        with pytest.raises(NoAuthError):
-            delete_node()
-    finally:
-        try:
-            stop_zk_connection(
-                node_zk,
-            )
-        except:
-            pass

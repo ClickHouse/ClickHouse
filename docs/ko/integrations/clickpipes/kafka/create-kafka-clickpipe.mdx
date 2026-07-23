@@ -1,0 +1,116 @@
+---
+sidebarTitle: '첫 번째 Kafka ClickPipe 생성하기'
+description: '첫 번째 Kafka ClickPipe를 생성하는 단계별 가이드입니다.'
+slug: /integrations/clickpipes/kafka/create-your-first-kafka-clickpipe
+title: '첫 번째 Kafka ClickPipe 생성하기'
+doc_type: 'guide'
+keywords: ['Kafka ClickPipe 생성', 'kafka', 'clickpipes', '데이터 소스', '설정 가이드']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 가이드에서는 첫 번째 Kafka ClickPipe를 만드는 방법을 안내합니다.
+
+Kafka ClickPipes는 ClickPipes UI를 사용해 수동으로 배포 및 관리할 수 있으며, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi)와 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포 및 관리할 수 있습니다.
+
+<Steps>
+  <Step>
+    ## 데이터 소스로 이동
+
+    왼쪽 메뉴에서 `Data Sources` 버튼을 선택한 다음 &quot;ClickPipe 설정&quot;을 클릭하세요.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="md" />
+  </Step>
+
+  <Step>
+    ## 데이터 소스 선택
+
+    목록에서 Kafka 데이터 소스를 선택하세요.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="데이터 소스 유형 선택" size="md" />
+  </Step>
+
+  <Step>
+    ## 데이터 소스 구성
+
+    ClickPipe 이름, 설명(선택 사항), 자격 증명, 기타 연결 정보를 입력하여 양식을 작성합니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="연결 정보 입력" size="md" />
+  </Step>
+
+  <Step>
+    ## 스키마 레지스트리 구성(선택 사항)
+
+    Avro 및 Protobuf 토픽에는 유효한 스키마가 필요합니다. 스키마 레지스트리 구성 방법에 대한 자세한 내용은 [스키마 레지스트리](/ko/integrations/clickpipes/kafka/schema-registries)를 참조하십시오.
+  </Step>
+
+  <Step>
+    ## Reverse Private Endpoint 구성(선택 사항)
+
+    ClickPipes가 AWS PrivateLink를 통해 Kafka 클러스터에 연결할 수 있도록 Reverse Private Endpoint를 구성하십시오.
+    자세한 내용은 [AWS PrivateLink documentation](/ko/integrations/clickpipes/aws-privatelink)을 참조하십시오.
+  </Step>
+
+  <Step>
+    ## SSH 터널링 구성(선택 사항)
+
+    Kafka 브로커에 공개적으로 접근할 수 없는 경우 SSH 터널링을 사용할 수 있습니다. ClickPipes는 직접 연결하는 대신 배스천 호스트(네트워크 내에 있으면서 공개적으로 접근 가능한 서버)로 SSH 연결을 설정한 다음, 이 호스트를 통해 프라이빗 네트워크의 Kafka 브로커로 트래픽을 전달합니다.
+
+    1. &quot;SSH Tunnel&quot; 토글을 활성화합니다.
+    2. SSH 연결 정보를 입력합니다.
+       * **SSH Host**: 배스천 호스트의 호스트명 또는 IP 주소입니다. 프라이빗 네트워크로 들어가는 게이트웨이 역할을 하는 공개 접근 가능한 서버입니다.
+       * **SSH Port**: 배스천 호스트의 SSH 포트입니다(기본값 `22`).
+       * **SSH User**: 배스천 호스트에서 인증에 사용할 사용자 이름입니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="SSH 터널 구성" size="md" />
+
+    3. 키 기반 인증을 사용하려면 &quot;Revoke and regenerate key pair&quot;를 클릭하여 새 키 쌍을 생성한 다음, 생성된 공개 키를 SSH 서버의 `~/.ssh/authorized_keys`에 복사합니다.
+    4. &quot;Verify Connection&quot;을 클릭하여 연결을 확인합니다.
+
+    <Note>
+      ClickPipes가 SSH 터널을 설정할 수 있도록 SSH 배스천 호스트의 방화벽 규칙에서 [ClickPipes IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 허용해야 합니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ## 토픽을 선택하세요
+
+    토픽을 선택하면 UI에 해당 토픽의 샘플 문서가 표시됩니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="토픽 선택" size="md" />
+  </Step>
+
+  <Step>
+    ## 대상 테이블 구성
+
+    다음 단계에서는 데이터를 새 ClickHouse 테이블에 수집할지, 기존 테이블을 재사용할지 선택할 수 있습니다. 화면의 안내에 따라 테이블 이름, 스키마(schema), 설정을 수정하십시오. 상단의 샘플 테이블에서 변경 사항을 실시간으로 미리 볼 수 있습니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="테이블, 스키마 및 설정 지정" size="md" />
+
+    제공된 컨트롤을 사용해 고급 설정도 사용자 지정할 수 있습니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="고급 설정 지정" size="md" />
+  </Step>
+
+  <Step>
+    ## 권한 구성
+
+    ClickPipes는 데이터를 대상 테이블에 쓰기 위한 전용 사용자를 생성합니다. 이 내부 사용자에 사용할 역할로는 사용자 지정 역할 또는 미리 정의된 역할 중 하나를 선택할 수 있습니다.
+
+    * `Full access`: 클러스터 전체에 대한 접근 권한입니다. 대상 테이블과 함께 Materialized View 또는 딕셔너리를 사용하는 경우 유용할 수 있습니다.
+    * `Only destination table`: 대상 테이블에 대한 `INSERT` 권한만 부여합니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="권한" size="md" />
+  </Step>
+
+  <Step>
+    ## 설정 완료
+
+    &quot;Create ClickPipe&quot;를 클릭하면 ClickPipe가 생성되어 실행되며, 이제 Data Sources 섹션에 표시됩니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="개요 보기" size="md" />
+  </Step>
+</Steps>

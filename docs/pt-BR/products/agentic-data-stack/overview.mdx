@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Visão geral'
+title: 'Agentic Data Stack'
+description: 'Analytics agêntica no ClickHouse: totalmente gerenciada no ClickHouse Cloud ou auto-hospedada como uma stack de código aberto com ClickHouse, o servidor MCP, LibreChat e Langfuse.'
+doc_type: 'landing-page'
+keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+A maneira mais fácil de usar analytics agêntico no ClickHouse é com [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents) no ClickHouse Cloud: totalmente gerenciado, sem infraestrutura para administrar. Os usuários fazem perguntas em linguagem natural, e um agente de IA responde consultando o banco de dados diretamente.
+
+Para hospedar por conta própria, o **Agentic Data Stack** é uma stack de código aberto e componível. Você mesmo a opera, conecta seus próprios modelos e mantém seu chat e seus dados em seu próprio ambiente. Ela é composta por [ClickHouse](/pt-BR/get-started/setup/install), o [servidor MCP do ClickHouse](/pt-BR/products/agentic-data-stack/components/mcp-server), [LibreChat](/pt-BR/products/agentic-data-stack/components/librechat) e [Langfuse](/pt-BR/products/agentic-data-stack/components/langfuse).
+
+<div id="what-is-agentic-analytics">
+  ## O que é analytics agêntica?
+</div>
+
+Na analytics agêntica, o modelo baseia suas respostas na execução de consultas sobre seus dados. Diante de uma pergunta, o agente inspeciona os bancos de dados e as tabelas disponíveis, decide quais consultas executar, faz essas consultas no ClickHouse e constrói uma resposta com base nos resultados. Ele pode refinar uma consulta, fazer uma consulta de acompanhamento ou encadear várias etapas. Quando uma consulta falha ou retorna algo inesperado, ele se adapta e tenta novamente em vez de parar.
+
+<div id="what-you-can-do">
+  ## O que você pode fazer
+</div>
+
+* **Fazer perguntas em linguagem natural** e obter respostas com base nos seus próprios dados.
+* **Criar agentes sem escrever código** dando instruções e ferramentas a um agente e depois reutilizando-o.
+* **Compartilhar agentes e conversas** como links de somente leitura, para que outras pessoas possam rastrear as consultas por trás de uma resposta.
+* **Gerar gráficos interativos e visualizações** a partir dos resultados de consultas dentro de uma conversa.
+* **Avaliar e melhorar respostas** pontuando as respostas no Langfuse com revisão humana ou um LLM como juiz e refinando seus prompts e agentes.
+
+<div id="architecture">
+  ## Como a stack se encaixa
+</div>
+
+<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Arquitetura do Agentic Data Stack: usuários interagem com o LibreChat, que se conecta a um LLM, ao ClickHouse por meio do servidor MCP e ao Langfuse para rastreamento" size="md" />
+
+Um usuário faz uma pergunta no LibreChat. O modelo planeja a resposta e, por meio do servidor MCP, chama ferramentas para explorar dados e executar consultas no ClickHouse. Os resultados retornam, e o agente formula a resposta. O Langfuse, baseado em OpenTelemetry, registra cada execução, do prompt à chamada de ferramenta e à resposta, permite avaliar os resultados automaticamente ou com revisão humana e acompanha qualidade, custo e latência.
+
+O servidor MCP do ClickHouse é baseado no [Model Context Protocol](https://modelcontextprotocol.io/), um padrão aberto, portanto funciona com qualquer cliente ou framework de agentes compatível com MCP, não apenas com o LibreChat. Consulte os [guias de MCP](/pt-BR/guides/use-cases/ai-ml/MCP) para clientes e bibliotecas de agentes.
+
+<div id="components">
+  ## Componentes
+</div>
+
+| Componente                    | Função                                                                   | Saiba mais                                                           |
+| ----------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| ClickHouse                    | O mecanismo analítico que o agente consulta                              | [Primeiros passos com o ClickHouse](/pt-BR/get-started/setup/install) |
+| servidor MCP do ClickHouse    | O padrão aberto que expõe o ClickHouse ao agente na forma de ferramentas | [servidor MCP](/pt-BR/products/agentic-data-stack/components/mcp-server)   |
+| LibreChat                     | A interface de chat e agentes com a qual os usuários interagem           | [LibreChat](/pt-BR/products/agentic-data-stack/components/librechat)       |
+| Langfuse                      | Observabilidade para cada prompt, chamada de ferramenta e resposta       | [Langfuse](/pt-BR/products/agentic-data-stack/components/langfuse)         |
+
+<div id="get-started">
+  ## Primeiros passos
+</div>
+
+Há duas maneiras de usar analytics agêntica no ClickHouse:
+
+* **Gerenciado (ClickHouse Cloud):** o caminho mais rápido, sem configuração. [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents) oferece chat hospedado e agentes sobre seus dados. Os componentes individuais também estão disponíveis de forma gerenciada: o [Remote MCP server](/pt-BR/products/cloud/features/ai-ml/remote-mcp) e o [Langfuse Cloud](https://cloud.langfuse.com).
+* **Autogerenciado (open source):** execute toda a stack por conta própria com [Docker Compose](/pt-BR/products/agentic-data-stack/docker-setup), conectando seus próprios modelos e mantendo seus dados no seu ambiente.
+
+Para experimentar a stack com conjuntos de dados públicos sem instalar nada, use o [AgentHouse](https://llm.clickhouse.com), a demo hospedada.
+
+<div id="related">
+  ## Relacionados
+</div>
+
+Outros recursos de IA de código aberto no ClickHouse:
+
+* [Geração de SQL com IA](/pt-BR/guides/use-cases/ai-ml/ai-powered-sql-generation): conversão de linguagem natural em SQL no ClickHouse Client e no clickhouse-local
+* [Busca vetorial com QBit](/pt-BR/guides/use-cases/ai-ml/vector-search): busca vetorial ajustável em tempo de execução

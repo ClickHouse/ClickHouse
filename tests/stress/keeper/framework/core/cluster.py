@@ -1,6 +1,5 @@
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import time
@@ -223,19 +222,12 @@ def _feature_flags_xml(flags):
     )
 
 
-def _coord_settings_xml(rocks_backend, overrides_xml=None):
+def _coord_settings_xml(overrides_xml=None):
     """Generate XML for coordination settings.
 
     Args:
-        rocks_backend: If True, enable RocksDB backend
         overrides_xml: Optional XML fragment or full <coordination_settings> block to merge
     """
-    rocks = (
-        "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
-        if rocks_backend
-        else ""
-    )
-
     settings = (
         "<async_replication>1</async_replication>"
         "<compress_logs>false</compress_logs>"
@@ -271,7 +263,7 @@ def _coord_settings_xml(rocks_backend, overrides_xml=None):
         "<shutdown_timeout>5000</shutdown_timeout>"
         f"{settings}"
         f"{overrides_content}"
-        f"{rocks}</coordination_settings>"
+        "</coordination_settings>"
     )
 
 
@@ -311,9 +303,6 @@ def _normalize_backend(backend):
 
 def _build_feature_flags(feature_flags):
     ff = feature_flags
-    # Do not allow experimental_use_rocksdb under <feature_flags>; it belongs to coordination_settings
-    ff.pop("experimental_use_rocksdb", None)
-    
     ff.setdefault("check_not_exists", "1")
     ff.setdefault("create_if_not_exists", "1")
     ff.setdefault("remove_recursive", "1")
@@ -531,9 +520,8 @@ class ClusterBuilder:
         feature_flags = dict(opts.get("feature_flags", {}))
         _build_feature_flags(feature_flags)
         feature_flags_xml = _feature_flags_xml(feature_flags)
-        # Always build base settings with backend support, merge overrides if provided
+        # Always build base settings, merge overrides if provided
         coord_settings = _coord_settings_xml(
-            backend_norm == "rocks",
             overrides_xml=opts.get("coord_overrides_xml"),
         )
 

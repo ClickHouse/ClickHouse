@@ -1,0 +1,14 @@
+<clickhouse>
+    <remote_servers>
+        <qr_cluster>
+            <shard>
+                <replica>
+                    <host>node_cluster</host>
+                    <port>9000</port>
+                    <user>cluster_user</user>
+                    <password>cluster_secret</password>
+                </replica>
+            </shard>
+        </qr_cluster>
+    </remote_servers>
+</clickhouse>

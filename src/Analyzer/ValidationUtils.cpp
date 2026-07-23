@@ -10,6 +10,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Storages/IStorage.h>
 
 #include <memory>
@@ -28,6 +29,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_DEEP_SUBQUERIES;
 }
 
 namespace
@@ -513,6 +515,31 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query tree is too big. Maximum: {}",
             max_size);
+}
+
+void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery_depth, size_t max_subquery_depth)
+{
+    if (!max_subquery_depth)
+        return;
+
+    size_t current_depth = initial_subquery_depth;
+    std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
+    nodes_to_process.emplace_back(node, false);
+
+    traverseQueryTree(node, Everything{},
+        [&current_depth, max_subquery_depth](auto & current_node)
+        {
+            if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
+                ++current_depth;
+            if (current_depth > max_subquery_depth)
+                throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
+        },
+        [&current_depth](const QueryTreeNodePtr & current_node)
+        {
+            if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
+                --current_depth;
+        });
+
 }
 
 void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)

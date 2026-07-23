@@ -1,0 +1,53 @@
+---
+title: 一般的なRBACクエリ
+description: "ユーザーに特定の権限を付与する際に役立つクエリ。"
+date: 2023-09-28
+tags: ['セキュリティと認証', 'Cloudの管理']
+keywords: ['RBAC', 'クエリ']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+以下は、ユーザーに特定の権限を付与する際によく使用されるクエリです。
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## 現在のユーザーと同じ権限を別のユーザーに付与するにはどうすればよいですか？
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## 現在のユーザーに付与されている権限に基づいて、ユーザーに特定の権限を付与するにはどうすればよいですか？
+</div>
+
+以下の例では、`another_user` は現在のユーザーが持つすべてのデータベースとテーブルに対して `SELECT` コマンドを実行できるようになります。
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## 現在のユーザーに付与されている権限に基づいて、特定のデータベースに対する特定の権限をユーザーに付与するにはどうすればよいですか？
+</div>
+
+以下の例では、`another_user` は `my_database` 内のすべてのテーブルに対して `INSERT` コマンドを実行できます。
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## `default`ユーザーを基に、特定のユーザーに同じすべての権限を付与するにはどうすればよいですか？
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```

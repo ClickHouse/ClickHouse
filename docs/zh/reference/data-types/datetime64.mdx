@@ -1,0 +1,136 @@
+---
+description: 'ClickHouse 中 DateTime64 数据类型的文档，该类型存储具有子秒级精度的时间戳'
+sidebarTitle: 'DateTime64'
+slug: /sql-reference/data-types/datetime64
+title: 'DateTime64'
+doc_type: 'reference'
+---
+
+可存储一个时间点，以日历日期和一天中的时间表示，并具有指定的子秒级精度
+
+时间粒度 (精度) ：10<sup>-precision</sup> 秒。有效范围：[ 0 : 9 ]。
+通常使用 3 (毫秒) 、6 (微秒) 和 9 (纳秒) 。
+
+**语法：**
+
+```sql
+DateTime64(precision, [timezone])
+```
+
+在内部，它将数据存储为自纪元开始 (1970-01-01 00:00:00 UTC) 以来的若干个 &#39;ticks&#39;，类型为 Int64。tick 的分辨率由 精度 参数决定。此外，`DateTime64` 类型还可以存储整个列统一的 时区，这会影响 `DateTime64` 类型的值以文本 format 显示的方式，以及将字符串形式指定的值 (&#39;2020-01-01 05:00:01.000&#39;) parse 的方式。时区 不存储在表的行中 (或结果集中) ，而是存储在列元数据中。详见 [DateTime](/zh/reference/data-types/datetime)。
+
+支持的值范围：[1900-01-01 00:00:00, 2299-12-31 23:59:59.999999999]
+
+小数点后的位数取决于 精度 参数。
+
+注意：最大值的 精度 为 8。如果使用 9 位数字 (纳秒) 的最大 精度，则 UTC 中支持的最大值为 `2262-04-11 23:47:16`。
+
+<div id="examples">
+  ## 示例
+</div>
+
+1. 创建一个包含 `DateTime64` 类型列的表，并向其中插入数据：
+
+```sql
+CREATE TABLE dt64
+(
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = MergeTree;
+```
+
+```sql
+-- 解析 DateTime
+-- - 从整数解析，将其解释为自 1970-01-01 起的毫秒数（因精度为 3），
+-- - 从小数解析，小数点前的部分表示秒数，小数点后的部分根据精度处理，
+-- - 从字符串解析。
+
+INSERT INTO dt64
+VALUES
+(1546300800123, 1),
+(1546300800.123, 2),
+('2019-01-01 00:00:00', 3);
+
+SELECT * FROM dt64;
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.123 │        2 │
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+```
+
+* 以整数形式插入 datetime 时，会将其视为按相应精度缩放的 Unix 时间戳 (UTC) 。`1546300800000` (精度 为 3) 表示 UTC 的 `'2019-01-01 00:00:00'`。但由于 `timestamp` 列指定了 `Asia/Istanbul` (UTC+3) 时区，因此在以字符串形式输出时，该值会显示为 `'2019-01-01 03:00:00'`。以十进制数形式插入 datetime 时，处理方式与整数类似，不同之处在于：小数点前的值是精确到秒 (含秒) 的 Unix 时间戳，小数点后的值会被视为 精度。
+* 以字符串形式插入 datetime 值时，会将其视为采用列时区。`'2019-01-01 00:00:00'` 会被视为采用 `Asia/Istanbul` 时区，并存储为 `1546290000000`。
+
+2. 过滤 `DateTime64` 值
+
+```sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+```
+
+与 `DateTime` 不同，`DateTime64` 类型的值不会自动由 `String` 转换而来。
+
+```sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.123 │        2 │
+└─────────────────────────┴──────────┘
+```
+
+与插入时不同，`toDateTime64` 函数会将所有值都按小数处理，因此精度需要
+在小数点后给出。
+
+3. 获取 `DateTime64` 类型值的时区：
+
+```sql
+SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
+```
+
+```text
+┌──────────────────column─┬─x──────────────────────────────┐
+│ 2023-06-05 00:09:52.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
+```
+
+4. 时区转换
+
+```sql
+SELECT
+toDateTime64(timestamp, 3, 'Europe/London') AS lon_time,
+toDateTime64(timestamp, 3, 'Asia/Istanbul') AS istanbul_time
+FROM dt64;
+```
+
+```text
+┌────────────────lon_time─┬───────────istanbul_time─┐
+│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+│ 2018-12-31 21:00:00.000 │ 2019-01-01 00:00:00.000 │
+└─────────────────────────┴─────────────────────────┘
+```
+
+**另请参阅**
+
+* [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
+* [日期和时间函数](/zh/reference/functions/regular-functions/date-time-functions)
+* [`date_time_input_format` 设置](/zh/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 设置](/zh/reference/settings/formats#date_time_output_format)
+* [`timezone` server 配置参数](/zh/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 设置](/zh/reference/settings/session-settings#session_timezone)
+* [日期和时间运算符](/zh/reference/operators/index#operators-for-working-with-dates-and-times)
+* [`Date` 数据类型](/zh/reference/data-types/date)
+* [`DateTime` 数据类型](/zh/reference/data-types/datetime)

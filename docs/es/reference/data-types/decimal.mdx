@@ -1,0 +1,134 @@
+---
+description: 'Documentación de los tipos de datos Decimal en ClickHouse, que proporcionan
+  aritmética de punto fijo con precisión configurable'
+sidebarTitle: 'Decimal'
+slug: /sql-reference/data-types/decimal
+title: 'Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S),
+  Decimal256(S)'
+doc_type: 'reference'
+---
+
+Números de punto fijo con signo que mantienen la precisión durante las operaciones de suma, resta y multiplicación. En la división, los dígitos menos significativos se descartan (no se redondean).
+
+<div id="parameters">
+  ## Parámetros
+</div>
+
+* P - precisión. Rango válido: [ 1 : 76 ]. Determina cuántos dígitos decimales puede tener el número (incluida la parte fraccionaria). De forma predeterminada, la precisión es 10.
+* S - escala. Rango válido: [ 0 : P ]. Determina cuántos dígitos decimales puede tener la parte fraccionaria.
+
+Decimal(P) es equivalente a Decimal(P, 0). Del mismo modo, la sintaxis Decimal es equivalente a Decimal(10, 0).
+
+Según el valor del parámetro P, Decimal(P, S) es sinónimo de:
+
+* P de [ 1 : 9 ] - Decimal32(S)
+* P de [ 10 : 18 ] - Decimal64(S)
+* P de [ 19 : 38 ] - Decimal128(S)
+* P de [ 39 : 76 ] - Decimal256(S)
+
+<div id="decimal-value-ranges">
+  ## Rangos de valores de Decimal
+</div>
+
+* Decimal(P, S) - ( -1 * 10^(P - S), 1 * 10^(P - S) )
+* Decimal32(S) - ( -1 * 10^(9 - S), 1 * 10^(9 - S) )
+* Decimal64(S) - ( -1 * 10^(18 - S), 1 * 10^(18 - S) )
+* Decimal128(S) - ( -1 * 10^(38 - S), 1 * 10^(38 - S) )
+* Decimal256(S) - ( -1 * 10^(76 - S), 1 * 10^(76 - S) )
+
+Por ejemplo, Decimal32(4) puede contener números entre -99999.9999 y 99999.9999 con un paso de 0.0001.
+
+<div id="internal-representation">
+  ## Representación interna
+</div>
+
+Internamente, los datos se representan como enteros normales con signo y con el ancho de bits correspondiente. Los rangos de valores reales que pueden almacenarse en memoria son algo mayores que los especificados anteriormente, y solo se comprueban al convertir a partir de una cadena.
+
+Como las CPU modernas no admiten de forma nativa enteros de 128 y 256 bits, las operaciones con Decimal128 y Decimal256 se emulan. Por lo tanto, Decimal128 y Decimal256 son significativamente más lentos que Decimal32/Decimal64.
+
+<div id="operations-and-result-type">
+  ## Operaciones y tipo de resultado
+</div>
+
+Las operaciones binarias sobre Decimal dan como resultado un tipo de resultado más amplio, independientemente del orden de los argumentos.
+
+* `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+* `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+* `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
+* `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
+
+Reglas para la escala:
+
+* suma, resta: S = max(S1, S2).
+* multiplicación: S = S1 + S2.
+* división: S = S1.
+
+Para operaciones similares entre Decimal y enteros, el resultado es un Decimal del mismo tamaño que el argumento.
+
+Las operaciones entre Decimal y Float32/Float64 no están definidas. Si las necesita, puede convertir explícitamente uno de los argumentos usando las funciones integradas toDecimal32, toDecimal64, toDecimal128 o toFloat32, toFloat64. Tenga en cuenta que el resultado perderá precisión y que la conversión de tipos es una operación computacionalmente costosa.
+
+Algunas funciones sobre Decimal devuelven el resultado como Float64 (por ejemplo, var o stddev). Los cálculos intermedios pueden seguir realizándose en Decimal, lo que puede dar lugar a resultados distintos entre entradas Float64 y Decimal con los mismos valores.
+
+<div id="overflow-checks">
+  ## Comprobaciones de desbordamiento
+</div>
+
+Durante los cálculos con Decimal, pueden producirse desbordamientos de enteros. Los dígitos sobrantes de la parte fraccionaria se descartan (no se redondean). Los dígitos sobrantes de la parte entera provocarán una excepción.
+
+<Warning>
+  La comprobación de desbordamiento no está implementada para Decimal128 y Decimal256. En caso de desbordamiento, se devuelve un resultado incorrecto; no se lanza ninguna excepción.
+</Warning>
+
+```sql
+SELECT toDecimal32(2, 4) AS x, x / 3
+```
+
+```text
+┌──────x─┬─divide(toDecimal32(2, 4), 3)─┐
+│ 2.0000 │                       0.6666 │
+└────────┴──────────────────────────────┘
+```
+
+```sql
+SELECT toDecimal32(4.2, 8) AS x, x * x
+```
+
+```text
+DB::Exception: Scale is out of bounds.
+```
+
+```sql
+SELECT toDecimal32(4.2, 8) AS x, 6 * x
+```
+
+```text
+DB::Exception: Decimal math overflow.
+```
+
+Las comprobaciones de desbordamiento ralentizan las operaciones. Si se sabe que no pueden producirse desbordamientos, tiene sentido desactivar estas comprobaciones con el ajuste `decimal_check_overflow`. Cuando las comprobaciones están desactivadas y se produce un desbordamiento, el resultado será incorrecto:
+
+```sql
+SET decimal_check_overflow = 0;
+SELECT toDecimal32(4.2, 8) AS x, 6 * x
+```
+
+```text
+┌──────────x─┬─multiply(6, toDecimal32(4.2, 8))─┐
+│ 4.20000000 │                     -17.74967296 │
+└────────────┴──────────────────────────────────┘
+```
+
+Las comprobaciones de desbordamiento se realizan no solo en las operaciones aritméticas, sino también al comparar valores:
+
+```sql
+SELECT toDecimal32(1, 8) < 100
+```
+
+```text
+DB::Exception: Can't compare.
+```
+
+**Véase también**
+
+* [isDecimalOverflow](/es/reference/functions/regular-functions/other-functions#isDecimalOverflow)
+* [countDigits](/es/reference/functions/regular-functions/other-functions#countDigits)

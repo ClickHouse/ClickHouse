@@ -1,0 +1,52 @@
+---
+slug: /use-cases/observability/clickstack/service-maps
+title: 'Mapas de servicios'
+sidebarTitle: 'Mapas de servicios'
+description: 'Visualiza las dependencias entre servicios y el flujo de solicitudes con los mapas de servicios de ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'mapas de servicios', 'topología', 'trazas', 'dependencias', 'trazado distribuido', 'observabilidad', 'grafo de solicitudes']
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+import { Video } from "/snippets/es/components/Video/Video.jsx";
+
+<BetaBadge />
+
+Los mapas de servicios muestran cómo interactúan tus servicios. ClickStack construye el grafo haciendo coincidir los spans del cliente (solicitudes salientes) con los spans del servidor (solicitudes entrantes) dentro de la misma traza, y reconstruye así el recorrido de la solicitud entre servicios.
+
+Haz clic en **Mapa de servicios** en el panel de navegación izquierdo para abrir el grafo completo. Los servicios aparecen una vez que hayas empezado a [ingestar datos de trazas](/es/clickstack/ingesting-data) con OpenTelemetry.
+
+<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="Mapa de servicios que muestra nodos de servicio y el flujo de solicitudes entre ellos" size="lg" />
+
+<div id="exploring-the-service-map">
+  ## Explorar el mapa de servicios
+</div>
+
+Cada nodo representa un servicio, identificado por el atributo de recurso `service.name`. Las conexiones (líneas discontinuas) enlazan servicios cuando un span de cliente en uno coincide con un span de servidor en otro. El tamaño del nodo refleja el volumen relativo de tráfico, y los nodos rojos indican servicios con errores en el intervalo de tiempo seleccionado.
+
+La barra de herramientas situada sobre el mapa le permite filtrar y ajustar la vista.
+
+**Selector de fuente** — filtre el mapa por una fuente de trazas específica (p. ej., &quot;ClickPy Traces&quot;).
+
+<Image img="/images/clickstack/service-maps/source-selector.webp" alt="Selector de fuente resaltado en la barra de herramientas del mapa de servicios" size="lg" />
+
+**Control deslizante de muestreo** — ajuste la tasa de muestreo para equilibrar rendimiento y precisión. Las tasas más bajas cargan más rápido en clusters de gran volumen.
+
+<Image img="/images/clickstack/service-maps/sampling.webp" alt="Control deslizante de muestreo resaltado en la barra de herramientas del mapa de servicios" size="lg" />
+
+**Selector de intervalo de fechas** — establezca la ventana temporal de los datos de trazas usados para crear el mapa.
+
+<Image img="/images/clickstack/service-maps/date-selector.webp" alt="Selector de intervalo de fechas resaltado en la barra de herramientas del mapa de servicios" size="lg" />
+
+Use los botones **+/-** en la esquina inferior izquierda del mapa o desplácese para acercar o alejar.
+
+<div id="trace-level-service-maps">
+  ## Mapas de servicios a nivel de traza
+</div>
+
+Al inspeccionar una traza individual, un mapa de servicios centrado muestra cómo esa solicitud específica pasó de un servicio a otro. Esto te permite ver la topología de una sola solicitud sin salir de la cascada de la traza.
+
+<Frame>
+  <Video src="/images/clickstack/service-maps/service-map-demo.mp4" />
+</Frame>

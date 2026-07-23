@@ -1,0 +1,100 @@
+---
+sidebarTitle: '추가 옵션'
+keywords: ['ClickHouse', 'python', '옵션', '설정']
+description: 'ClickHouse Connect의 추가 옵션'
+slug: /integrations/language-clients/python/additional-options
+title: '추가 옵션'
+doc_type: '참고'
+---
+
+ClickHouse Connect는 고급 활용 사례를 위한 다양한 추가 옵션을 제공합니다.
+
+<div id="global-settings">
+  ## 전역 설정
+</div>
+
+ClickHouse Connect의 동작을 전역적으로 제어하는 설정은 몇 개 되지 않습니다. 이러한 설정은 최상위 `common` 패키지에서 사용합니다:
+
+```python
+from clickhouse_connect import common
+
+common.set_setting('autogenerate_session_id', False)
+common.get_setting('invalid_setting_action')
+'drop'
+```
+
+<Note>
+  이러한 공통 설정 `autogenerate_session_id`, `product_name`, `readonly`는 `clickhouse_connect.get_client` 메서드로 클라이언트를 생성하기 전에 *반드시* 수정해야 합니다. 클라이언트를 생성한 후 이러한 설정을 변경해도 기존 클라이언트의 동작에는 영향을 주지 않습니다.
+</Note>
+
+현재 다음 전역 설정이 정의되어 있습니다:
+
+| Setting Name                                    | Default         | Options                                         | Description                                                                                                                                                                                           |
+| ----------------------------------------------- | --------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| autogenerate&#95;session&#95;id                 | True            | True, False                                     | 각 클라이언트 세션에 대해 새 UUID(1) 세션 ID를 자동 생성합니다(제공되지 않은 경우). 세션 ID가 제공되지 않으면(클라이언트 수준이든 쿼리 수준이든) ClickHouse가 각 쿼리마다 임의의 내부 ID를 생성합니다.                                                                        |
+| dict&#95;parameter&#95;format                   | &#39;json&#39;  | &#39;json&#39;, &#39;map&#39;                   | 매개변수화된 쿼리에서 Python 딕셔너리를 JSON 또는 ClickHouse 맵(Map) 구문으로 변환할지 제어합니다. `json`은 JSON 컬럼에 삽입할 때, `map`은 ClickHouse 맵 컬럼에 사용해야 합니다.                                                                         |
+| invalid&#95;setting&#95;action                  | &#39;error&#39; | &#39;drop&#39;, &#39;send&#39;, &#39;error&#39; | 유효하지 않거나 readonly 설정이 제공되었을 때(클라이언트 세션 또는 쿼리 수준) 수행할 동작입니다. `drop`이면 해당 설정을 무시하고, `send`이면 해당 설정을 ClickHouse로 전송하며, `error`이면 클라이언트 측 ProgrammingError가 발생합니다.                                        |
+| max&#95;connection&#95;age                      | 600             |                                                 | HTTP Keep Alive 연결을 열어 두거나 재사용할 최대 시간(초)입니다. 이렇게 하면 로드 밸런서/프록시 뒤에 있는 단일 ClickHouse 노드로 연결이 몰리는 현상을 방지할 수 있습니다. 기본값은 10분입니다.                                                                           |
+| product&#95;name                                |                 |                                                 | ClickHouse Connect를 사용하는 애플리케이션을 추적하기 위해 쿼리와 함께 ClickHouse로 전달되는 문자열입니다. 형식은 &lt;product name;&amp;gl/&lt;product version&gt;이어야 합니다.                                                                 |
+| readonly                                        | 0               | 0, 1                                            | 19.17 이전 버전에서 암묵적으로 사용되는 &quot;read&#95;only&quot; ClickHouse 설정입니다. 매우 오래된 ClickHouse 버전에서도 동작할 수 있도록 설정의 ClickHouse &quot;read&#95;only&quot; 값에 맞춰 지정할 수 있습니다.                                     |
+| send&#95;os&#95;user                            | True            | True, False                                     | 감지된 운영 체제 사용자를 ClickHouse로 전송되는 클라이언트 정보에 포함합니다(HTTP User-Agent 문자열).                                                                                                                                 |
+| send&#95;integration&#95;tags                   | True            | True, False                                     | 사용 중인 통합 라이브러리와 해당 버전(예: Pandas/SQLAlchemy 등)을 ClickHouse로 전송되는 클라이언트 정보에 포함합니다(HTTP User-Agent 문자열).                                                                                                 |
+| use&#95;protocol&#95;version                    | True            | True, False                                     | 클라이언트 프로토콜 버전을 사용합니다. 이는 `DateTime` 시간대 컬럼에 필요하지만 현재 버전의 chproxy와는 호환되지 않습니다.                                                                                                                         |
+| max&#95;error&#95;size                          | 1024            |                                                 | 클라이언트 오류 메시지에 반환되는 최대 문자 수입니다. 전체 ClickHouse 오류 메시지를 받으려면 이 설정에 0을 사용하십시오. 기본값은 1024자입니다.                                                                                                             |
+| http&#95;buffer&#95;size                        | 10MB            |                                                 | HTTP 스트리밍 쿼리에 사용되는 &quot;인메모리&quot; buffer의 크기(바이트)입니다.                                                                                                                                               |
+| preserve&#95;pandas&#95;datetime&#95;resolution | False           | True, False                                     | True이고 pandas 2.x를 사용하는 경우 datetime64/timedelta64 dtype 해상도(예: &#39;s&#39;, &#39;ms&#39;, &#39;us&#39;, &#39;ns&#39;)를 유지합니다. False이면(또는 pandas &lt;2.x인 경우) 호환성을 위해 나노초(&#39;ns&#39;) 해상도로 강제 변환합니다. |
+
+<div id="compression">
+  ## 압축
+</div>
+
+ClickHouse Connect는 쿼리 결과와 삽입 모두에 대해 lz4, zstd, brotli, gzip 압축을 지원합니다. 압축을 사용하면 일반적으로 네트워크 대역폭/전송 속도와 CPU 사용량(클라이언트와 서버 모두) 사이에서 절충이 발생한다는 점을 항상 염두에 두어야 합니다.
+
+압축된 데이터를 받으려면 ClickHouse 서버의 `enable_http_compression`이 1로 설정되어 있어야 하며, 또는 사용자가 쿼리별로 이 설정을 변경할 수 있는 권한을 가지고 있어야 합니다.
+
+압축은 `clickhouse_connect.get_client` 팩토리 메서드를 호출할 때 `compress` 매개변수로 제어합니다. 기본적으로 `compress`는 `True`로 설정되어 있으며, 이 경우 기본 압축 설정이 적용됩니다. `query`, `query_np`, `query_df` 클라이언트 메서드로 실행되는 쿼리의 경우, ClickHouse Connect는 `query` 클라이언트 메서드로 실행되는 쿼리(그리고 간접적으로 `query_np` 및 `query_df`)에 `lz4`, `zstd`, `br`(brotli 라이브러리가 설치된 경우), `gzip`, `deflate` 인코딩이 포함된 `Accept-Encoding` 헤더를 추가합니다. (대부분의 요청에서는 ClickHouse 서버가 `zstd`로 압축된 페이로드를 반환합니다.) 삽입의 경우, 기본적으로 ClickHouse Connect는 삽입 블록을 `lz4` 압축으로 압축하고 `Content-Encoding: lz4` HTTP 헤더를 전송합니다.
+
+`get_client`의 `compress` 매개변수는 `lz4`, `zstd`, `br`, `gzip` 중 하나의 특정 압축 방식으로 설정할 수도 있습니다. 그러면 해당 방식이 삽입과 쿼리 결과 모두에 사용됩니다(ClickHouse 서버가 지원하는 경우). 필요한 `zstd` 및 `lz4` 압축 라이브러리는 이제 ClickHouse Connect와 함께 기본 설치됩니다. `br`/brotli를 지정하는 경우에는 brotli 라이브러리를 별도로 설치해야 합니다.
+
+`raw*` 클라이언트 메서드는 클라이언트 구성에서 지정한 압축을 사용하지 않는다는 점에 유의하십시오.
+
+또한 `gzip` 압축은 데이터 압축과 압축 해제 모두에서 다른 대안보다 현저히 느리므로 사용하지 않는 것이 좋습니다.
+
+<div id="http-proxy-support">
+  ## HTTP 프록시 지원
+</div>
+
+ClickHouse Connect는 `urllib3` 라이브러리를 사용해 기본적인 HTTP 프록시 지원을 제공합니다. 표준 `HTTP_PROXY` 및 `HTTPS_PROXY` 환경 변수를 인식합니다. 이러한 환경 변수를 사용하면 `clickhouse_connect.get_client` 메서드로 생성된 모든 클라이언트에 적용된다는 점에 유의하십시오. 클라이언트별로 구성하려면 `get_client` 메서드의 `http_proxy` 또는 `https_proxy` 인수를 사용할 수도 있습니다. HTTP 프록시 지원 구현에 관한 자세한 내용은 [urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies) 문서를 참조하십시오.
+
+SOCKS 프록시를 사용하려면 `urllib3`의 `SOCKSProxyManager`를 `get_client`의 `pool_mgr` 인수로 전달하면 됩니다. 이 경우 PySocks 라이브러리를 직접 설치하거나 `urllib3` 의존성의 `[socks]` 옵션을 사용해 설치해야 합니다.
+
+<div id="old-json-data-type">
+  ## &quot;기존&quot; JSON 데이터 타입
+</div>
+
+실험적 `Object`(또는 `Object('json')`) 데이터 타입은 지원 중단 예정이므로 프로덕션 환경에서는 사용을 피해야 합니다. ClickHouse Connect는 이전 버전과의 호환성을 위해 이 데이터 타입에 대한 제한적인 지원을 계속 제공합니다. 다만 이 지원에는 &quot;top level&quot; 또는 &quot;parent&quot; JSON 값을 딕셔너리나 그에 준하는 형태로 반환하는 쿼리는 포함되지 않으며, 이러한 쿼리에서는 예외가 발생합니다.
+
+<div id="new-variantdynamicjson-datatypes-experimental-feature">
+  ## &quot;새&quot; Variant/Dynamic/JSON 데이터 타입(실험적 기능)
+</div>
+
+0.8.0 릴리스부터 `clickhouse-connect`는 새롭게 추가된(이 역시 실험적인) ClickHouse 타입인 Variant, Dynamic, JSON을 실험적으로 지원합니다.
+
+<div id="usage-notes">
+  ### 사용 시 참고 사항
+</div>
+
+* JSON 데이터는 Python 딕셔너리 또는 JSON 객체 `{}`를 포함하는 JSON 문자열 형태로 삽입할 수 있습니다. 그 밖의 JSON 데이터 형식은 지원되지 않습니다.
+* 이러한 타입에서 서브컬럼/경로를 사용하는 쿼리는 해당 서브컬럼의 타입을 반환합니다.
+* 다른 사용 시 참고 사항은 ClickHouse [문서](/ko/)를 참조하십시오.
+
+<div id="known-limitations">
+  ### 알려진 제한 사항
+</div>
+
+* 이러한 각 타입은 사용하기 전에 ClickHouse 설정에서 활성화해야 합니다.
+* &quot;새&quot; JSON 타입은 ClickHouse 24.8 릴리스부터 사용할 수 있습니다.
+* 내부 포맷 변경으로 인해 `clickhouse-connect`는 ClickHouse 24.7 릴리스부터 Variant 타입에서만 호환됩니다.
+* 반환되는 JSON 객체에는 `max_dynamic_paths` 개수만큼의 요소만 포함됩니다(기본값은 1024). 이 문제는 향후 릴리스에서 수정될 예정입니다.
+* `Dynamic` 컬럼에 대한 삽입은 항상 Python 값의 문자열 표현으로 처리됩니다. 이 문제는 https://github.com/ClickHouse/ClickHouse/issues/70395가 수정되면 향후 릴리스에서 해결될 예정입니다.
+* 새 타입 구현은 C 코드로 최적화되지 않았으므로, 더 단순하고 널리 사용되는 데이터 타입보다 성능이 다소 느릴 수 있습니다.

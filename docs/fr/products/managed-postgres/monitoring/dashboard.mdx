@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/monitoring/dashboard
+sidebarTitle: 'Tableau de bord'
+title: 'Tableau de bord de supervision de Managed Postgres'
+description: 'Tableau de bord intégré à Cloud Console pour les services Managed Postgres'
+keywords: ['managed postgres', 'supervision', 'tableau de bord', 'Cloud Console', 'CPU', 'mémoire', 'IOPS']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
+
+L’onglet **Monitoring** dans la barre latérale gauche d’une instance affiche
+des graphiques en temps réel de l’utilisation des ressources et de l’activité de la base de données sur la
+période sélectionnée.
+
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="Tableau de bord Monitoring affichant les IOPS, l’utilisation du CPU, la mémoire, le disque, le trafic réseau, la taille de la base de données, les connexions, le débit, les transactions, le taux de succès du cache et les interblocages" size="lg" border />
+
+<div id="panels">
+  ## Panneaux
+</div>
+
+Le tableau de bord regroupe les métriques dans les panneaux suivants :
+
+* **IOPS** — opérations de lecture et d’écriture sur disque par seconde
+* **Utilisation du CPU** — ventilée entre `user`, `system`, `iowait`, `softirq`,
+  et `steal`
+* **Utilisation de la mémoire** — mémoire utilisée, cache et tampons en pourcentage
+  du total
+* **Utilisation du disque** — espace du système de fichiers utilisé en pourcentage du stockage
+  alloué au service
+* **Trafic réseau** — octets reçus et transmis
+* **Taille de la base de données** — octets par base de données (y compris la base `postgres`
+  par défaut et toute base créée par l’utilisateur)
+* **Nombre de connexions** — connexions actives et inactives
+* **Débit des opérations** — fetches, insertions, mises à jour et suppressions par
+  seconde
+* **Transactions** — commits et rollbacks par seconde
+* **Taux de succès du cache** — pourcentage de lectures de blocs servies depuis le
+  cache tampon plutôt que depuis le disque
+* **Interblocages** — interblocages détectés par le serveur
+
+<div id="time-period">
+  ## Période
+</div>
+
+Utilisez le sélecteur **Période** pour choisir entre la dernière heure, le dernier jour,
+la dernière semaine ou une plage personnalisée.
+
+<div id="related">
+  ## Pages connexes
+</div>
+
+* [Endpoint Prometheus](/fr/products/managed-postgres/monitoring/prometheus) — collectez les mêmes métriques dans votre propre stack d’observabilité
+* [Référence des métriques](/fr/products/managed-postgres/monitoring/metrics) — liste complète des métriques avec leurs types et leurs labels

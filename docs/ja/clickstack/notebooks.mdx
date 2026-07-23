@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/notebooks
+title: 'ClickStackのAIノートブック'
+sidebarTitle: 'AIノートブック'
+description: 'ClickStack向けのAI調査ノートブック'
+doc_type: 'guide'
+keywords: ['clickstack', 'AIノートブック', '調査', 'オブザーバビリティ', 'HyperDX']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+AIノートブックは、AIエージェントと手動による分析を組み合わせた、ClickStack の対話型調査ツールです。問題を平易な言葉で説明すると、AIエージェントが代わってログ、トレース、メトリクスをクエリし、関連するデータ、チャート、要約を一連のタイルとして表示します。AI が生成した出力に加えて、独自のタイル (チャート、テーブル、検索、Markdown ノート) を追加することもでき、調査の完全な記録を作成できます。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="Visa cache full 障害を調査している AIノートブック" size="lg" />
+
+<Info>
+  **Managed ClickStack のみ**
+
+  AIノートブックは、Managed ClickStack デプロイメントでのみ利用できます。
+</Info>
+
+<div id="setup">
+  ## セットアップ
+</div>
+
+AIノートブックは現在、ClickHouse Cloud でベータ版として提供されています。AIモデルとプロバイダーは、プラットフォームによって自動的に管理されます。
+
+AIノートブックを使用する前に、次の点を確認してください。
+
+1. **Generative AI が有効** — チームの管理者が Generative AI の同意トグルを有効にする必要があります。詳しくは [Generative AI を有効にする](#enabling-generative-ai) を参照してください。
+2. **Notebook へのアクセス** — ご自身のロールに、Notebooks への読み取り/書き込み権限が必要です。
+
+有効にすると、適切なロールを持つすべてのユーザーの左側のサイドバーに **Notebooks** エントリが表示されます。
+
+<div id="enabling-generative-ai">
+  ## Generative AI を有効にする
+</div>
+
+ノートブック (およびその他の AI 機能) を使用するには、事前にチーム管理者が Generative AI の同意トグルを有効にしておく必要があります。
+
+1. **チーム設定 &gt; セキュリティポリシー** に移動します。
+2. **Generative AI** をオンにします。
+3. 同意ダイアログを確認し、同意します。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-ai-consent.webp" alt="チーム設定の Generative AI トグル" size="lg" />
+
+<div id="using-notebooks">
+  ## AIノートブックを使う
+</div>
+
+<div id="creating-a-notebook">
+  ### ノートブックの作成
+</div>
+
+1. 左側のサイドバーから **Notebooks** を選択します。
+2. **New Private Notebook** (自分にのみ表示) または **New Shared Notebook** (チーム内で表示) をクリックします。
+
+ノートブック一覧ページには、自分がアクセスできるすべてのノートブックが表示されます。名前やタグで絞り込んだり、**My Notebooks** と **All Notebooks** を切り替えたりできます。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-list.webp" alt="ノートブック一覧ページ" size="lg" />
+
+<div id="running-investigation">
+  ### AI調査の実行
+</div>
+
+ノートブックの下部に、調査したい内容を説明するプロンプトを入力します。たとえば、*&quot;過去1時間で checkout サービスのエラー率が急増したのはなぜですか？&quot;* のように入力します。
+
+**Send** を押すか、Enter キーを押します。AIエージェントは次のことを行います。
+
+1. 利用可能なデータソースを調べます。
+2. ログ、トレース、メトリクスに対して検索クエリと集計クエリを実行します。
+3. 思考プロセス、実行したクエリ、中間チャート、そして結論を含む最終サマリーを示す一連のタイルを生成します。
+
+各ステップはノートブック内でタイルとして表示されます。**Thought process** タイルには各クエリの背景にある推論が表示され、**Output** タイルにはエージェントの結論と必要に応じてチャートが含まれます。通常の AI チャットとは異なり、ノートブックでは各ステップで AI がどのデータを使っているかを正確に確認できます。そのため、推論を検証したり、見落としているかもしれない有望な手がかりを見つけたり、調査を別の方向に進めるために[ブランチ](#branching)したりできます。
+
+調査の実行中は、**Stop** をクリックしてキャンセルできます。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-tiles.webp" alt="AI が生成したタイルを含むノートブック" size="lg" />
+
+<div id="branching">
+  ### 調査を分岐する
+</div>
+
+AI が調査を進める中で、興味深い内容が現れた途中のステップに気づいても、エージェントがそのまま別の経路に進んでしまうことがあります。**分岐** を使うと、元の調査経路を失うことなく、その時点から別のプロンプトで再開できます。
+
+分岐を作成するには:
+
+1. 思考プロセスのタイルを展開し、**Restart from Here** をクリックします。
+2. ダイアログで、調査を新しい方向に導くよう修正したプロンプトを入力します。
+3. **Interrupt &amp; Create Branch** をクリックします。AI はその時点から新しい調査の分岐を開始します。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branch-modal.webp" alt="Create New Branch ダイアログ" size="md" />
+
+1 つのタイルに複数の分岐がある場合、タイルヘッダーに左右の矢印ボタンと、分岐の数を示すバッジ (例: **1/2**) が表示されます。矢印をクリックして分岐を切り替えます。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="タイル上の分岐ナビゲーション矢印と 1/2 バッジ" size="lg" />
+
+<div id="manual-tiles">
+  ### 手動タイルの追加
+</div>
+
+AI が生成したタイルに加えて、ノートブックの下部にあるボタンを使って独自の分析ブロックを追加できます。
+
+| Button       | Shortcut | Description                                                                        |
+| ------------ | -------- | ---------------------------------------------------------------------------------- |
+| **Search**   | `S`      | 検索ページと同等の、ログ/トレースの検索ビュー。                                                           |
+| **Chart**    | `L`      | [Dashboards](/ja/clickstack/features/dashboards/overview) と同じ可視化ビルダーを使用する、時系列の折れ線グラフ。 |
+| **Table**    | `T`      | 表形式の集計ビュー。                                                                         |
+| **Markdown** | `M`      | メモ、仮説、結論を記述するための自由形式のテキスト。                                                         |
+
+タイルを追加するとインライン編集モードで開き、データソース、フィルター、集計を設定できます。これは、[dashboard visualizations](/ja/clickstack/features/dashboards/overview#creating-visualizations) の作成時に使用するものと同じインターフェイスです。タイルを確定するには **Save** をクリックします。
+
+手動タイルは、現在のブランチで最後に表示されているタイルの下に追加されます。タイルの下端をドラッグすると、縦方向にサイズを変更できます。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp" alt="ノートブックの下部にある手動タイルのボタン" size="lg" />
+
+<Note>
+  AI による調査が現在実行中の場合、手動タイルを追加または編集すると、その調査はキャンセルされます。続行前に確認ダイアログが表示されます。
+</Note>
+
+<div id="sharing-organizing">
+  ### 共有と整理
+</div>
+
+* **プライベート / 共有** — ノートブックのヘッダーにあるロックアイコンを切り替えると、プライベート (自分のみ) と共有 (チームに表示される) を切り替えられます。この設定を変更できるのは、ノートブックの作成者だけです。
+* **タグ** — 一覧ページで簡単に絞り込めるよう、ノートブックにタグを追加できます。
+* **名前** — ノートブックのタイトルをクリックすると、名前を変更できます。無題のノートブックで調査を開始すると、AI が自動的に名前を提案します。
+
+<div id="custom-agent-context">
+  ### カスタムエージェントのコンテキスト
+</div>
+
+チーム管理者は、チームのすべての AI ノートブック調査に含める追加のコンテキストを設定できます。これは、システムアーキテクチャ、命名規則、既知の問題などの背景情報を AI に与えるのに役立ちます。
+
+これを設定するには:
+
+1. 左側のサイドバーから **Notebooks** に移動します。
+2. **Agent Settings** を開きます (チーム管理者のみ使用可能) 。
+3. カスタムコンテキスト (最大 50,000 文字) を入力して保存します。
+
+このコンテキストは、チーム全体のすべてのノートブック調査で、AI のシステムプロンプトに追加されます。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-agent-context.webp" alt="カスタムコンテキスト用のAgent Settingsパネル" size="lg" />

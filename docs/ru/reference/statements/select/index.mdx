@@ -1,0 +1,281 @@
+---
+description: 'Документация по запросу SELECT'
+sidebarTitle: 'SELECT'
+slug: /sql-reference/statements/select/
+title: 'Запрос SELECT'
+doc_type: 'reference'
+---
+
+Запросы `SELECT` используются для выборки данных. По умолчанию запрошенные данные возвращаются клиенту, а в сочетании с [INSERT INTO](/ru/reference/statements/insert-into) их можно направить в другую таблицу.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+[WITH expr_list(subquery)]
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
+[FROM [db.]table | (subquery) | table_function] [FINAL]
+[SAMPLE sample_coeff]
+[ARRAY JOIN ...]
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table [(alias1 [, alias2 ...])] (ON <expr_list>)|(USING <column_list>)
+[PREWHERE expr]
+[WHERE expr]
+[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
+[HAVING expr]
+[WINDOW window_expr_list]
+[QUALIFY expr]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[LIMIT [offset_value, ]n BY columns]
+[LIMIT [n, ]m] [WITH TIES]
+[SETTINGS ...]
+[UNION  ...]
+[INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
+[FORMAT format]
+```
+
+Все секции необязательны, за исключением обязательного списка выражений сразу после `SELECT`, о котором подробнее говорится [ниже](#select-clause).
+
+Особенности каждой необязательной секции описаны в отдельных разделах, перечисленных в том порядке, в котором они выполняются:
+
+* [конструкция WITH](/ru/reference/statements/select/with)
+* [секция SELECT](#select-clause)
+* [секция DISTINCT](/ru/reference/statements/select/distinct)
+* [секция FROM](/ru/reference/statements/select/from)
+* [предложение SAMPLE](/ru/reference/statements/select/sample)
+* [секция JOIN](/ru/reference/statements/select/join)
+* [секция PREWHERE](/ru/reference/statements/select/prewhere)
+* [предложение WHERE](/ru/reference/statements/select/where)
+* [секция WINDOW](/ru/reference/functions/window-functions/index)
+* [секция GROUP BY](/ru/reference/statements/select/group-by)
+* [предложение LIMIT BY](/ru/reference/statements/select/limit-by)
+* [секция HAVING](/ru/reference/statements/select/having)
+* [предложение QUALIFY](/ru/reference/statements/select/qualify)
+* [секция LIMIT](/ru/reference/statements/select/limit)
+* [секция OFFSET](/ru/reference/statements/select/offset)
+* [секция UNION](/ru/reference/statements/select/union)
+* [секция INTERSECT](/ru/reference/statements/select/intersect)
+* [оператор EXCEPT](/ru/reference/statements/select/except)
+* [Предложение INTO OUTFILE](/ru/reference/statements/select/into-outfile)
+* [предложение FORMAT](/ru/reference/statements/select/format)
+
+<div id="select-clause">
+  ## Секция SELECT
+</div>
+
+[Выражения](/ru/reference/syntax#expressions), указанные в секции `SELECT`, вычисляются после завершения всех операций в секциях, описанных выше. Эти выражения вычисляются так, как будто применяются к отдельным строкам результата. Если выражения в секции `SELECT` содержат агрегатные функции, ClickHouse обрабатывает агрегатные функции и выражения, используемые в качестве их аргументов, во время агрегации [GROUP BY](/ru/reference/statements/select/group-by).
+
+Если вы хотите включить в результат все столбцы, используйте символ звёздочки (`*`). Например: `SELECT * FROM ...`.
+
+<div id="dynamic-column-selection">
+  ### Динамический выбор столбцов
+</div>
+
+Динамический выбор столбцов (также известный как выражение COLUMNS) позволяет сопоставлять некоторые столбцы в результирующем наборе с [re2](https://en.wikipedia.org/wiki/RE2_\(software\)) с помощью регулярного выражения.
+
+```sql
+COLUMNS('regexp')
+```
+
+Например, рассмотрим таблицу:
+
+```sql
+CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
+```
+
+Следующий запрос выбирает данные из всех столбцов, в названии которых содержится символ `a`.
+
+```sql
+SELECT COLUMNS('a') FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+Выбранные столбцы возвращаются не в алфавитном порядке.
+
+В запросе можно использовать несколько выражений `COLUMNS` и применять к ним функции.
+
+Например:
+
+```sql
+SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
+│  1 │  1 │  1 │ Int8           │
+└────┴────┴────┴────────────────┘
+```
+
+Каждый столбец, возвращаемый выражением `COLUMNS`, передаётся в функцию как отдельный аргумент. Кроме того, в функцию можно передавать и другие аргументы, если она их поддерживает. Будьте осторожны при использовании функций. Если функция не поддерживает переданное ей количество аргументов, ClickHouse генерирует исключение.
+
+Например:
+
+```sql
+SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
+```
+
+```text
+Received exception from server (version 19.14.1):
+Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
+```
+
+В этом примере `COLUMNS('a')` возвращает два столбца: `aa` и `ab`. `COLUMNS('c')` возвращает столбец `bc`. Оператор `+` нельзя применить к 3 аргументам, поэтому ClickHouse генерирует исключение с соответствующим сообщением.
+
+Столбцы, соответствующие выражению `COLUMNS`, могут иметь разные типы данных. Если `COLUMNS` не соответствует ни одному столбцу и является единственным выражением в `SELECT`, ClickHouse генерирует исключение.
+
+<div id="select-columns-with-like-or-ilike">
+  #### Выбор столбцов с `LIKE` или `ILIKE`
+</div>
+
+Вы также можете выбирать столбцы, сопоставляя их имена с шаблоном после `*`, используя чувствительный к регистру `LIKE` или регистронезависимый `ILIKE`:
+
+```sql
+SELECT * ILIKE 'a%' FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+Шаблоны `LIKE` и `ILIKE` используют семантику `LIKE`, а не семантику регулярных выражений. Символ `%` соответствует любой последовательности символов, символ `_` — любому одиночному символу, а `\` экранирует `%`, `_` и `\`. Единственное различие между ними в том, что `LIKE` сопоставляет имена столбцов с учетом регистра, а `ILIKE` — без учета регистра. Например:
+
+```sql
+SELECT * ILIKE 'a_' FROM col_names
+```
+
+Запрос выбирает столбцы с двухсимвольными именами, начинающимися с `a`, например `aa` и `ab`.
+
+`* LIKE` и `* ILIKE` также поддерживают квалифицированные звёздочки и преобразователи столбцов:
+
+```sql
+SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
+```
+
+```text
+┌─aa─┐
+│  1 │
+└────┘
+```
+
+<div id="asterisk">
+  ### Звёздочка
+</div>
+
+Звёздочку можно поставить вместо выражения в любой части запроса. При разборе запроса она разворачивается в список всех столбцов таблицы (за исключением столбцов `MATERIALIZED` и `ALIAS`). Есть лишь несколько случаев, когда использование звёздочки оправдано:
+
+* При создании дампа таблицы.
+* Для таблиц, содержащих всего несколько столбцов, например системных таблиц.
+* Чтобы получить информацию о том, какие столбцы есть в таблице. В этом случае задайте `LIMIT 1`. Но лучше использовать запрос `DESC TABLE`.
+* Когда по небольшому числу столбцов выполняется жёсткая фильтрация с помощью `PREWHERE`.
+* В подзапросах (поскольку столбцы, не нужные для внешнего запроса, из подзапросов исключаются).
+
+Во всех остальных случаях мы не рекомендуем использовать звёздочку, поскольку это даёт только недостатки столбцовой СУБД без её преимуществ. Иными словами, использовать звёздочку не рекомендуется.
+
+<div id="extreme-values">
+  ### Экстремальные значения
+</div>
+
+Помимо результатов, можно также получить минимальные и максимальные значения в столбцах результата. Для этого установите значение настройки **extremes** в 1. Минимальные и максимальные значения вычисляются для числовых типов, дат и даты со временем. Для других столбцов выводятся значения по умолчанию.
+
+Вычисляются две дополнительные строки — с минимальными и максимальными значениями соответственно. Эти две дополнительные строки выводятся в [форматах](/ru/reference/formats/index) `XML`, `JSON*`, `TabSeparated*`, `CSV*`, `Vertical`, `Template` и `Pretty*` отдельно от остальных строк. Для других форматов они не выводятся.
+
+В форматах `JSON*` и `XML` экстремальные значения выводятся в отдельном поле &#39;extremes&#39;. В форматах `TabSeparated*`, `CSV*` и `Vertical` эта строка выводится после основного результата и после &#39;totals&#39;, если они есть. Перед ней выводится пустая строка (после остальных данных). В форматах `Pretty*` эта строка выводится в виде отдельной таблицы после основного результата и после `totals`, если они есть. В формате `Template` экстремальные значения выводятся в соответствии с указанным шаблоном.
+
+Экстремальные значения вычисляются для строк до `LIMIT`, но после `LIMIT BY`. Однако при использовании `LIMIT offset, size` строки до `offset` включаются в `extremes`. В потоковых запросах результат также может включать небольшое количество строк, прошедших через `LIMIT`.
+
+<div id="notes">
+  ### Примечания
+</div>
+
+Вы можете использовать синонимы (псевдонимы `AS`) в любой части запроса.
+
+В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать позиционные аргументы. Чтобы включить эту возможность, активируйте настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings#enable_positional_arguments). Тогда, например, `ORDER BY 1,2` будет сортировать строки таблицы сначала по первому, а затем по второму столбцу.
+
+<div id="implementation-details">
+  ## Подробности реализации
+</div>
+
+Если в запросе отсутствуют секции `DISTINCT`, `GROUP BY` и `ORDER BY`, а также подзапросы `IN` и `JOIN`, запрос будет полностью обрабатываться в потоковом режиме с использованием O(1) объёма оперативной памяти. В противном случае запрос может потреблять много оперативной памяти, если не заданы соответствующие ограничения:
+
+* `max_memory_usage`
+* `max_rows_to_group_by`
+* `max_rows_to_sort`
+* `max_rows_in_distinct`
+* `max_bytes_in_distinct`
+* `max_rows_in_set`
+* `max_bytes_in_set`
+* `max_rows_in_join`
+* `max_bytes_in_join`
+* `max_bytes_before_external_sort`
+* `max_bytes_ratio_before_external_sort`
+* `max_bytes_before_external_group_by`
+* `max_bytes_ratio_before_external_group_by`
+
+Дополнительные сведения см. в разделе «Настройки». Можно использовать внешнюю сортировку (с сохранением временных таблиц на диск) и внешнюю агрегацию.
+
+<div id="select-modifiers">
+  ## Модификаторы SELECT
+</div>
+
+В запросах `SELECT` можно использовать следующие модификаторы.
+
+| Modifier                                                   | Description                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`APPLY`](/ru/reference/statements/select/apply_modifier)     | Позволяет применить некоторую функцию к каждой строке, возвращаемой внешним табличным выражением запроса.                                                                                                                                                                                                                                                                                   |
+| [`EXCEPT`](/ru/reference/statements/select/except_modifier)   | Указывает имена одного или нескольких столбцов, которые нужно исключить из результата. Все совпадающие имена столбцов исключаются из вывода.                                                                                                                                                                                                                                                |
+| [`REPLACE`](/ru/reference/statements/select/replace_modifier) | Указывает один или несколько [псевдонимов выражений](/ru/reference/syntax#expression-aliases). Каждый псевдоним должен совпадать с именем столбца из оператора `SELECT *`. В итоговом списке столбцов столбец, совпадающий с псевдонимом, заменяется выражением из этого `REPLACE`. Этот модификатор не изменяет имена или порядок столбцов. Однако он может изменить значение и тип значения. |
+
+<div id="modifier-combinations">
+  ### Комбинации модификаторов
+</div>
+
+Каждый модификатор можно использовать отдельно или комбинировать с другими.
+
+**Примеры:**
+
+Использование одного и того же модификатора несколько раз.
+
+```sql
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
+```
+
+```response
+┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
+│                        2 │                        3 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+Использование нескольких модификаторов в одном запросе.
+
+```sql
+SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
+```
+
+```response
+┌─sum(plus(i, 1))─┬─sum(k)─┐
+│             222 │    347 │
+└─────────────────┴────────┘
+```
+
+<div id="settings-in-select-query">
+  ## SETTINGS в SELECT-запросе
+</div>
+
+Вы можете указать нужные настройки прямо в запросе `SELECT`. Значение настройки применяется только к этому запросу и после его выполнения сбрасывается до значения по умолчанию или предыдущего значения.
+
+О других способах задать настройки см. [здесь](/ru/concepts/features/configuration/settings/overview).
+
+Для логических настроек со значением `true` можно использовать сокращённый синтаксис, опустив присваивание значения. Если указано только имя настройки, ей автоматически присваивается значение `1` (`true`).
+
+**Пример**
+
+```sql
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
+```

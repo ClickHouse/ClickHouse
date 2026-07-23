@@ -1,0 +1,147 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/agno
+sidebarTitle: 'Intégrer Agno'
+title: 'Comment créer un agent IA avec Agno et le serveur MCP ClickHouse'
+description: 'Apprenez à créer un agent IA avec Agno et le serveur MCP ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Agno']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Dans ce guide, vous apprendrez à créer un [Agno](https://github.com/agno-agi/agno) AI Agent capable d’interagir avec le
+[SQL playground de ClickHouse](https://sql.clickhouse.com/) à l’aide du [serveur MCP ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Notebook d’exemple**
+
+  Cet exemple est disponible sous forme de notebook dans le [dépôt d’exemples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/agno/agno.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Python doit être installé sur votre système.
+* `pip` doit être installé sur votre système.
+* Vous aurez besoin d&#39;une clé API Anthropic, ou d&#39;une clé API d&#39;un autre fournisseur de LLM
+
+Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit à l&#39;aide d&#39;un script.
+
+<Steps>
+  <Step>
+    ## Installer des bibliothèques
+
+    Installez la bibliothèque Agno à l’aide des commandes suivantes :
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q agno
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## Configurer les identifiants
+
+    Ensuite, vous devrez indiquer votre clé API Anthropic :
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **Utiliser un autre fournisseur de LLM**
+
+      Si vous n&#39;avez pas de clé API Anthropic et souhaitez utiliser un autre fournisseur de LLM,
+      vous trouverez dans la [documentation Agno](https://docs.agno.com/concepts/models/introduction) les instructions pour configurer vos identifiants.
+    </Info>
+
+    Ensuite, définissez les identifiants nécessaires pour vous connecter au ClickHouse SQL playground :
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## Initialiser le serveur MCP et l’agent Agno
+
+    Configurez maintenant le serveur MCP ClickHouse pour qu’il utilise le ClickHouse SQL playground,
+    puis initialisez également notre agent Agno et posez-lui une question :
+
+    ```python
+    from agno.agent import Agent
+    from agno.tools.mcp import MCPTools
+    from agno.models.anthropic import Claude
+    ```
+
+    ```python
+    async with MCPTools(command="uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse", env=env, timeout_seconds=60) as mcp_tools:
+        agent = Agent(
+            model=Claude(id="claude-3-5-sonnet-20240620"),
+            markdown=True,
+            tools = [mcp_tools]
+        )
+    await agent.aprint_response("What's the most starred project in 2025?", stream=True)
+    ```
+
+    ```response title="Response"
+    ▰▱▱▱▱▱▱ Thinking...
+    ┏━ Message ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃                                                                                                                 ┃
+    ┃ What's the most starred project in 2025?                                                                        ┃
+    ┃                                                                                                                 ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ┏━ Tool Calls ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃                                                                                                                 ┃
+    ┃ • list_tables(database=github, like=%)                                                                          ┃
+    ┃ • run_select_query(query=SELECT                                                                                 ┃
+    ┃     repo_name,                                                                                                  ┃
+    ┃     SUM(count) AS stars_2025                                                                                    ┃
+    ┃ FROM github.repo_events_per_day                                                                                 ┃
+    ┃ WHERE event_type = 'WatchEvent'                                                                                 ┃
+    ┃     AND created_at >= '2025-01-01'                                                                              ┃
+    ┃     AND created_at < '2026-01-01'                                                                               ┃
+    ┃ GROUP BY repo_name                                                                                              ┃
+    ┃ ORDER BY stars_2025 DESC                                                                                        ┃
+    ┃ LIMIT 1)                                                                                                        ┃
+    ┃                                                                                                                 ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ┏━ Response (34.9s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃                                                                                                                 ┃
+    ┃ To answer your question about the most starred project in 2025, I'll need to query the ClickHouse database.     ┃
+    ┃ However, before I can do that, I need to gather some information and make sure we're looking at the right data. ┃
+    ┃ Let me check the available databases and tables first.Thank you for providing the list of databases. I can see  ┃
+    ┃ that there's a "github" database, which is likely to contain the information we're looking for. Let's check the ┃
+    ┃ tables in this database.Now that we have information about the tables in the github database, we can query the  ┃
+    ┃ relevant data to answer your question about the most starred project in 2025. We'll use the repo_events_per_day ┃
+    ┃ table, which contains daily event counts for each repository, including star events (WatchEvents).              ┃
+    ┃                                                                                                                 ┃
+    ┃ Let's create a query to find the most starred project in 2025:Based on the query results, I can answer your     ┃
+    ┃ question about the most starred project in 2025:                                                                ┃
+    ┃                                                                                                                 ┃
+    ┃ The most starred project in 2025 was deepseek-ai/DeepSeek-R1, which received 84,962 stars during that year.     ┃
+    ┃                                                                                                                 ┃
+    ┃ This project, DeepSeek-R1, appears to be an AI-related repository from the DeepSeek AI organization. It gained  ┃
+    ┃ significant attention and popularity among the GitHub community in 2025, earning the highest number of stars    ┃
+    ┃ for any project during that year.                                                                               ┃
+    ┃                                                                                                                 ┃
+    ┃ It's worth noting that this data is based on the GitHub events recorded in the database, and it represents the  ┃
+    ┃ stars (WatchEvents) accumulated specifically during the year 2025. The total number of stars for this project   ┃
+    ┃ might be higher if we consider its entire lifespan.                                                             ┃
+    ┃                                                                                                                 ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ```
+  </Step>
+</Steps>

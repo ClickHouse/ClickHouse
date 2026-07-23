@@ -1,0 +1,194 @@
+---
+description: 'Documentação sobre funções de machine learning'
+sidebarTitle: 'Machine Learning'
+slug: /sql-reference/functions/machine-learning-functions
+title: 'Funções de machine learning'
+doc_type: 'reference'
+---
+
+<div id="evalmlmethod">
+  ## evalMLMethod
+</div>
+
+A previsão com modelos de regressão ajustados usa a função `evalMLMethod`. Veja o link em `linearRegression`.
+
+<div id="stochasticlinearregression">
+  ## stochasticLinearRegression
+</div>
+
+A função de agregação [stochasticLinearRegression](/pt-BR/reference/functions/aggregate-functions/stochasticLinearRegression) implementa o método de descida estocástica do gradiente usando um modelo linear e a função de perda MSE. Usa `evalMLMethod` para fazer previsões em novos dados.
+
+<div id="stochasticlogisticregression">
+  ## stochasticLogisticRegression
+</div>
+
+A função de agregação [stochasticLogisticRegression](/pt-BR/reference/functions/aggregate-functions/stochasticLogisticRegression) implementa o método de descida de gradiente estocástico para o problema de classificação binária. Usa `evalMLMethod` para fazer previsões com novos dados.
+
+<div id="naivebayesclassifier">
+  ## naiveBayesClassifier
+</div>
+
+Classifica o texto de entrada usando um modelo Naive Bayes com n-gramas e Laplace smoothing. O modelo deve ser configurado no ClickHouse antes de ser usado.
+
+**Sintaxe**
+
+```sql
+naiveBayesClassifier(model_name, input_text);
+```
+
+**Argumentos**
+
+* `model_name` — Nome do modelo pré-configurado. [String](/pt-BR/reference/data-types/string)
+  O modelo deve estar definido nos arquivos de configuração do ClickHouse (veja abaixo).
+* `input_text` — Texto a ser classificado. [String](/pt-BR/reference/data-types/string)
+  A entrada é processada exatamente como foi fornecida (com maiúsculas/minúsculas e pontuação preservadas).
+
+**Valor retornado**
+
+* ID da classe prevista como um inteiro sem sinal. [UInt32](/pt-BR/reference/data-types/int-uint)
+  Os IDs de classe correspondem às categorias definidas durante a criação do modelo.
+
+**Exemplo**
+
+Classifique um texto com um modelo de detecção de idioma:
+
+```sql
+SELECT naiveBayesClassifier('language', 'How are you?');
+```
+
+```response
+┌─naiveBayesClassifier('language', 'How are you?')─┐
+│ 0                                                │
+└──────────────────────────────────────────────────┘
+```
+
+*O resultado `0` pode representar inglês, enquanto `1` pode indicar francês — o significado das classes depende dos seus dados de treinamento.*
+
+***
+
+<div id="implementation-details">
+  ### Detalhes de implementação
+</div>
+
+**Algoritmo**
+Utiliza o algoritmo de classificação Naive Bayes com [suavização de Laplace](https://en.wikipedia.org/wiki/Additive_smoothing) para lidar com n-gramas não observados, com base nas probabilidades de n-gramas descritas [neste documento](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+
+**Principais recursos**
+
+* Suporta n-gramas de qualquer tamanho
+* Três modos de tokenização:
+  * `byte`: Opera sobre bytes brutos. Cada byte é um token.
+  * `codepoint`: Opera sobre valores escalares Unicode decodificados de UTF‑8. Cada ponto de código é um token.
+  * `token`: Separa por sequências de espaços em branco Unicode (regex \s+). Os tokens são substrings sem espaços em branco; a pontuação faz parte do token se estiver adjacente (por exemplo, &quot;you?&quot; é um único token).
+
+***
+
+<div id="model-configuration">
+  ### Configuração do modelo
+</div>
+
+Você pode encontrar [aqui](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models) um exemplo de código-fonte para criar um modelo Naive Bayes para detecção de idioma.
+
+Além disso, [aqui](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models) estão disponíveis modelos de exemplo e seus respectivos arquivos de configuração.
+
+Veja abaixo um exemplo de configuração para um modelo Naive Bayes no ClickHouse:
+
+```xml
+<clickhouse>
+    <nb_models>
+        <model>
+            <name>sentiment</name>
+            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
+            <n>2</n>
+            <mode>token</mode>
+            <alpha>1.0</alpha>
+            <priors>
+                <prior>
+                    <class>0</class>
+                    <value>0.6</value>
+                </prior>
+                <prior>
+                    <class>1</class>
+                    <value>0.4</value>
+                </prior>
+            </priors>
+        </model>
+    </nb_models>
+</clickhouse>
+```
+
+**Parâmetros de Configuração**
+
+| Parâmetro  | Descrição                                                                                                                           | Exemplo                                                  | Padrão             |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------ |
+| **name**   | Identificador exclusivo do modelo                                                                                                   | `language_detection`                                     | *Obrigatório*      |
+| **path**   | Caminho completo para o binário do modelo                                                                                           | `/etc/clickhouse-server/config.d/language_detection.bin` | *Obrigatório*      |
+| **mode**   | Método de tokenização:<br />- `byte`: Sequências de bytes<br />- `codepoint`: Caracteres Unicode<br />- `token`: Tokens de palavras | `token`                                                  | *Obrigatório*      |
+| **n**      | Tamanho do n-grama (modo `token`):<br />- `1`=palavra única<br />- `2`=pares de palavras<br />- `3`=trios de palavras               | `2`                                                      | *Obrigatório*      |
+| **alpha**  | Fator de suavização de Laplace usado durante a classificação para lidar com n-gramas que não aparecem no modelo                     | `0.5`                                                    | `1.0`              |
+| **priors** | Probabilidades das classes (% de documentos pertencentes a uma classe)                                                              | 60% classe 0, 40% classe 1                               | Distribuição igual |
+
+**Guia de Treinamento do Modelo**
+
+**Formato do Arquivo**
+Em formato legível por humanos, para `n=1` e o modo `token`, o modelo pode se parecer com isto:
+
+```text
+<class_id> <n-gram> <count>
+0 excellent 15
+1 refund 28
+```
+
+Para `n=3` e o modo `codepoint`, pode ser assim:
+
+```text
+<class_id> <n-gram> <count>
+0 exc 15
+1 ref 28
+```
+
+O formato legível para humanos não é usado diretamente pelo ClickHouse; ele deve ser convertido para o formato binário descrito abaixo.
+
+**Detalhes do formato binário**
+Cada n-gram é armazenado da seguinte forma:
+
+1. `class_id` de 4 bytes (UInt, little-endian)
+2. comprimento, em bytes, do `n-gram` de 4 bytes (UInt, little-endian)
+3. bytes brutos do `n-gram`
+4. `count` de 4 bytes (UInt, little-endian)
+
+**Requisitos de pré-processamento**
+Antes de o modelo ser criado a partir do corpus de documentos, os documentos precisam ser pré-processados para extrair n-grams de acordo com os valores especificados de `mode` e `n`. As etapas a seguir descrevem esse pré-processamento:
+
+1. **Adicione marcadores de delimitação no início e no fim de cada documento com base no modo de tokenização:**
+
+   * **Byte**: `0x01` (início), `0xFF` (fim)
+   * **Codepoint**: `U+10FFFE` (início), `U+10FFFF` (fim)
+   * **Token**: `<s>` (início), `</s>` (fim)
+
+   *Observação:* `(n - 1)` tokens são adicionados tanto no início quanto no fim do documento.
+
+2. **Exemplo para `n=3` no modo `token`:**
+
+   * **Documento:** `"ClickHouse is fast"`
+   * **Processado como:** `<s> <s> ClickHouse is fast </s> </s>`
+   * **Trigramas gerados:**
+     * `<s> <s> ClickHouse`
+     * `<s> ClickHouse is`
+     * `ClickHouse is fast`
+     * `is fast </s>`
+     * `fast </s> </s>`
+
+Para simplificar a criação de modelos para os modos `byte` e `codepoint`, pode ser conveniente primeiro tokenizar o documento em tokens (uma lista de `byte`s para o modo `byte` e uma lista de `codepoint`s para o modo `codepoint`). Em seguida, acrescente `n - 1` tokens de início no início e `n - 1` tokens de fim no final do documento. Por fim, gere os n-gramas e grave-os no arquivo serializado.
+
+***
+
+{/* 
+  O conteúdo interno das tags abaixo é substituído, no momento da compilação do framework de documentação, por 
+  documentação gerada a partir de system.functions. Não modifique nem remova as tags.
+  Veja: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+{/*AUTOGENERATED_END*/}

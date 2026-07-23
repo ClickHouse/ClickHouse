@@ -1,0 +1,244 @@
+---
+slug: /use-cases/data-lake/rest-catalog
+sidebarTitle: 'catalogue REST'
+title: 'catalogue REST'
+description: 'Dans ce guide, nous vous montrons comment interroger
+ vos données avec ClickHouse et le catalogue REST.'
+keywords: ['REST', 'Tabular', 'lac de données', 'Iceberg']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<Note>
+  L’intégration avec le catalogue REST fonctionne uniquement avec les tables Iceberg.
+  Cette intégration prend en charge AWS S3 ainsi que d’autres fournisseurs de stockage cloud.
+</Note>
+
+ClickHouse prend en charge l’intégration avec plusieurs catalogues (Unity, Glue, REST, Polaris, etc.). Ce guide vous accompagne pas à pas pour interroger vos données à l’aide de ClickHouse et de la spécification [catalogue REST](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml/).
+
+Le catalogue REST est une spécification d’API normalisée pour les catalogues Iceberg, prise en charge par différentes plateformes, notamment :
+
+* **Environnements de développement locaux** (avec des configurations docker-compose)
+* **Services managés** comme Tabular.io
+* Implémentations **auto-hébergées** de catalogue REST
+
+<Note>
+  Cette fonctionnalité étant en bêta, vous devez l’activer avec :
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## Configuration d’un environnement de développement local
+</div>
+
+Pour le développement et les tests en local, vous pouvez utiliser une configuration de catalogue REST conteneurisée. Cette approche est idéale pour l’apprentissage, le prototypage et les environnements de développement.
+
+<div id="local-prerequisites">
+  ### Prérequis
+</div>
+
+1. **Docker and Docker Compose** : assurez-vous que Docker est installé et en cours d’exécution.
+2. **Exemple de configuration** : vous pouvez utiliser différentes configurations docker-compose (voir Autres images Docker ci-dessous).
+
+<div id="setting-up-local-rest-catalog">
+  ### Configuration d’un catalogue REST local
+</div>
+
+Vous pouvez utiliser diverses implémentations conteneurisées de catalogue REST, comme **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)**, qui fournit un environnement complet Spark + Iceberg + catalogue REST avec docker-compose, ce qui en fait une solution idéale pour tester les intégrations Iceberg.
+
+**Étape 1 :** Créez un nouveau dossier dans lequel exécuter l’exemple, puis créez un fichier `docker-compose.yml` contenant la configuration de [Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io).
+
+**Étape 2 :** Ensuite, créez un fichier `docker-compose.override.yml` et ajoutez-y la configuration du conteneur ClickHouse suivante :
+
+```yaml
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    container_name: clickhouse
+    user: '0:0'  # Ensures root permissions
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    volumes:
+      - ./clickhouse:/var/lib/clickhouse
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
+    networks:
+      - iceberg_net
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DO_NOT_CHOWN=1
+      - CLICKHOUSE_PASSWORD=
+```
+
+**Étape 3 :** Exécutez la commande suivante pour démarrer les services :
+
+```bash
+docker compose up
+```
+
+**Étape 4 :** Attendez que tous les services soient prêts. Vous pouvez consulter les logs :
+
+```bash
+docker-compose logs -f
+```
+
+<Note>
+  La configuration du catalogue REST nécessite que les données d’exemple soient d’abord chargées dans les tables Iceberg. Assurez-vous que l’environnement Spark a bien créé et alimenté les tables avant d’essayer de les interroger via ClickHouse. La disponibilité des tables dépend de la configuration `docker-compose` utilisée et des scripts de chargement des données d’exemple.
+</Note>
+
+<div id="connecting-to-local-rest-catalog">
+  ### Se connecter au REST Catalog local
+</div>
+
+Connectez-vous à votre conteneur ClickHouse :
+
+```bash
+docker exec -it clickhouse clickhouse-client
+```
+
+Créez ensuite la connexion de base de données au REST catalog :
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE demo
+ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
+SETTINGS 
+    catalog_type = 'rest', 
+    storage_endpoint = 'http://minio:9000/lakehouse', 
+    warehouse = 'demo'
+```
+
+<div id="querying-rest-catalog-tables-using-clickhouse">
+  ## Interroger les tables du catalogue REST avec ClickHouse
+</div>
+
+Maintenant que la connexion est établie, vous pouvez commencer à interroger les tables via le catalogue REST. Par exemple :
+
+```sql
+USE demo;
+
+SHOW TABLES;
+```
+
+Si votre installation inclut des données d’exemple (comme le jeu de données des taxis), vous devriez voir des tables telles que :
+
+```response
+┌─name──────────┐
+│ default.taxis │
+└───────────────┘
+```
+
+<Note>
+  Si vous ne voyez aucune table, cela signifie généralement que :
+
+  1. L’environnement Spark n’a pas encore créé les tables d’exemple
+  2. Le service de catalogue REST n’est pas encore entièrement initialisé
+  3. Le chargement des données d’exemple n’est pas encore terminé
+
+  Vous pouvez consulter les logs de Spark pour suivre la progression de la création des tables :
+
+  ```bash
+  docker-compose logs spark
+  ```
+</Note>
+
+Pour interroger une table (si elle est disponible) :
+
+```sql
+SELECT count(*) FROM `default.taxis`;
+```
+
+```response
+┌─count()─┐
+│ 2171187 │
+└─────────┘
+```
+
+<Info>
+  **Backticks obligatoires**
+
+  Les backticks sont obligatoires, car ClickHouse ne prend pas en charge plusieurs espaces de noms.
+</Info>
+
+Pour inspecter le DDL de la table :
+
+```sql
+SHOW CREATE TABLE `default.taxis`;
+```
+
+```response
+┌─statement─────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE demo.`default.taxis`                                                             │
+│ (                                                                                             │
+│     `VendorID` Nullable(Int64),                                                               │
+│     `tpep_pickup_datetime` Nullable(DateTime64(6)),                                           │
+│     `tpep_dropoff_datetime` Nullable(DateTime64(6)),                                          │
+│     `passenger_count` Nullable(Float64),                                                      │
+│     `trip_distance` Nullable(Float64),                                                        │
+│     `RatecodeID` Nullable(Float64),                                                           │
+│     `store_and_fwd_flag` Nullable(String),                                                    │
+│     `PULocationID` Nullable(Int64),                                                           │
+│     `DOLocationID` Nullable(Int64),                                                           │
+│     `payment_type` Nullable(Int64),                                                           │
+│     `fare_amount` Nullable(Float64),                                                          │
+│     `extra` Nullable(Float64),                                                                │
+│     `mta_tax` Nullable(Float64),                                                              │
+│     `tip_amount` Nullable(Float64),                                                           │
+│     `tolls_amount` Nullable(Float64),                                                         │
+│     `improvement_surcharge` Nullable(Float64),                                                │
+│     `total_amount` Nullable(Float64),                                                         │
+│     `congestion_surcharge` Nullable(Float64),                                                 │
+│     `airport_fee` Nullable(Float64)                                                           │
+│ )                                                                                             │
+│ ENGINE = Iceberg('http://minio:9000/lakehouse/warehouse/default/taxis/', 'admin', '[HIDDEN]') │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Chargement des données de votre lac de données vers ClickHouse
+</div>
+
+Si vous devez charger des données à partir du catalogue REST dans ClickHouse, commencez par créer une table locale dans ClickHouse :
+
+```sql
+CREATE TABLE taxis
+(
+    `VendorID` Int64,
+    `tpep_pickup_datetime` DateTime64(6),
+    `tpep_dropoff_datetime` DateTime64(6),
+    `passenger_count` Float64,
+    `trip_distance` Float64,
+    `RatecodeID` Float64,
+    `store_and_fwd_flag` String,
+    `PULocationID` Int64,
+    `DOLocationID` Int64,
+    `payment_type` Int64,
+    `fare_amount` Float64,
+    `extra` Float64,
+    `mta_tax` Float64,
+    `tip_amount` Float64,
+    `tolls_amount` Float64,
+    `improvement_surcharge` Float64,
+    `total_amount` Float64,
+    `congestion_surcharge` Float64,
+    `airport_fee` Float64
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(tpep_pickup_datetime)
+ORDER BY (VendorID, tpep_pickup_datetime, PULocationID, DOLocationID);
+```
+
+Chargez ensuite les données de votre table du catalogue REST à l’aide d’un `INSERT INTO SELECT` :
+
+```sql
+INSERT INTO taxis 
+SELECT * FROM demo.`default.taxis`;
+```

@@ -1,0 +1,34 @@
+---
+description: '一時的なMergeテーブルを作成します。構造は、基になるテーブルのカラムのユニオンを使用し、共通の型を導出して決定されます。'
+sidebarTitle: 'merge'
+slug: /sql-reference/table-functions/merge
+title: 'merge'
+doc_type: 'reference'
+---
+
+一時的な[Merge](/ja/reference/engines/table-engines/special/merge)テーブルを作成します。
+テーブルスキーマは、基になるテーブルのカラムのユニオンを使用し、共通の型を導出して決定されます。
+[Merge](/ja/reference/engines/table-engines/special/merge)テーブルエンジンと同じ仮想カラムを使用できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+merge(['db_name',] 'tables_regexp')
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| 引数              | 説明                                                                                                                                                                                        |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db_name`       | 設定可能な値 (省略可。デフォルトは `currentDatabase()`) :<br />    - データベース名<br />    - データベース名の文字列を返す定数式 (例: `currentDatabase()`) <br />    - `REGEXP(expression)`。ここで `expression` は DB 名にマッチさせるための正規表現 |
+| `tables_regexp` | 指定した DB 内のテーブル名、または指定した複数の DB 内のテーブル名にマッチさせるための正規表現です。                                                                                                                                    |
+
+<div id="related">
+  ## 関連情報
+</div>
+
+* [Merge](/ja/reference/engines/table-engines/special/merge) テーブルエンジン

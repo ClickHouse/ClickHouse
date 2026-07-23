@@ -535,7 +535,7 @@ def test_doget_cmd_select_invalid_format():
 
     ticket = flight.Ticket(b"SELECT * FROM mytable FORMAT JSON")
     try:
-        reader = client.do_get(ticket, options)
+        client.do_get(ticket, options)
         assert False, "Expected to fail because of a wrong format but succeeded"
     except flight.FlightServerError as e:
         assert "Invalid format, only 'Arrow' format is supported" in str(e)

@@ -3,6 +3,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -108,7 +109,11 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
 
-    auto text_index = MergeTreeIndexFactory::instance().get(index_desc);
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
+
+    auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 
@@ -126,11 +131,56 @@ void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeTextIndex>(
-        {
-            .description = "Reads the dictionary of a text index from a MergeTree table. Returns tokens with their posting list metadata.",
-            .examples = {{"mergeTreeTextIndex", "SELECT * FROM mergeTreeTextIndex(currentDatabase(), my_table, my_text_index)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
-        },
+        {.description = R"DOCS_MD(
+Represents the dictionary of a text index in MergeTree tables.
+Returns tokens with their posting list metadata.
+It can be used for introspection.
+
+## Syntax {#syntax}
+
+```sql
+mergeTreeTextIndex(database, table, index_name)
+```
+
+## Arguments {#arguments}
+
+| Argument     | Description                                |
+|--------------|--------------------------------------------|
+| `database`   | The database name to read text index from. |
+| `table`      | The table name to read text index from.    |
+| `index_name` | The text index to read from.               |
+
+## Returned value {#returned_value}
+
+A table object with tokens and their posting list metadata.
+
+## Usage Example {#usage-example}
+
+```sql title="Query"
+CREATE TABLE tab
+(
+    id UInt64,
+    s String,
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab SELECT number, concatWithSeparator(' ', 'apple', 'banana') FROM numbers(500);
+INSERT INTO tab SELECT 500 + number, concatWithSeparator(' ', 'cherry', 'date') FROM numbers(500);
+
+SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
+```
+
+```text title="Response"
+   ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
+1. │ all_1_1_0 │ apple  │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+2. │ all_1_1_0 │ banana │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+3. │ all_2_2_0 │ cherry │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+   └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true}
     );
 }

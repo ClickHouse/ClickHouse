@@ -1,0 +1,141 @@
+---
+description: 'Предоставляет табличный интерфейс только для чтения к таблицам Apache Paimon,
+  хранящимся в Amazon S3, Azure, HDFS или локально.'
+sidebarTitle: 'paimon'
+slug: /sql-reference/table-functions/paimon
+title: 'paimon'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimon-table-function">
+  # Табличная функция paimon
+</div>
+
+<ExperimentalBadge />
+
+Предоставляет табличный интерфейс только для чтения для таблиц Apache [Paimon](https://paimon.apache.org/), хранящихся в Amazon S3, Azure, HDFS или локально.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFS(path_to_table, [,format] [,compression_method])
+
+paimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+Описание аргументов соответствует описанию аргументов табличных функций `s3`, `azureBlobStorage`, `HDFS` и `file`.
+`format` обозначает формат файлов данных в таблице Paimon.
+
+Для `paimonS3` можно использовать необязательный параметр `extra_credentials`, чтобы передать `role_arn` для доступа на основе ролей в ClickHouse Cloud. Шаги по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
+
+<div id="returned-value">
+  ### Возвращаемое значение
+</div>
+
+Таблица с указанной структурой для чтения данных из указанной таблицы Paimon.
+
+<div id="defining-a-named-collection">
+  ## Определение именованной коллекции
+</div>
+
+Ниже приведён пример настройки именованной коллекции для хранения URL и учётных данных:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
+DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="aliases">
+  ## Псевдонимы
+</div>
+
+Табличная функция `paimon` теперь — псевдоним `paimonS3`.
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
+
+<div id="data-types-supported">
+  ## Поддерживаемые типы данных
+</div>
+
+| Тип данных Paimon                 | Тип данных ClickHouse     |
+| --------------------------------- | ------------------------- |
+| BOOLEAN                           | Int8                      |
+| TINYINT                           | Int8                      |
+| SMALLINT                          | Int16                     |
+| INTEGER                           | Int32                     |
+| BIGINT                            | Int64                     |
+| FLOAT                             | Float32                   |
+| DOUBLE                            | Float64                   |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                    |
+| DATE                              | Date                      |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
+| CHAR                              | FixedString(1)            |
+| BINARY(n)                         | FixedString(n)            |
+| DECIMAL(P,S)                      | Decimal(P,S)              |
+| ARRAY                             | Array                     |
+| MAP                               | Map                       |
+
+<div id="partition-supported">
+  ## Поддерживаемые ключи партиционирования
+</div>
+
+Типы данных, поддерживаемые в ключах партиционирования Paimon:
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Табличная функция cluster для Paimon](/ru/reference/functions/table-functions/paimonCluster)

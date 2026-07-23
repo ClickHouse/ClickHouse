@@ -1,0 +1,500 @@
+---
+alias: []
+description: 'Documentação do formato Native'
+input_format: true
+keywords: ['Native']
+output_format: true
+slug: /interfaces/formats/Native
+title: 'Native'
+doc_type: 'reference'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+A especificação oficial completa do formato `Native` está disponível [aqui](/pt-BR/reference/interfaces/specs/NativeFormat), e a especificação complementar do protocolo `Native` — o protocolo TCP wire que o transporta — está disponível [aqui](/pt-BR/reference/interfaces/specs/NativeProtocol).
+
+<Note>
+  Ambas as especificações foram geradas por LLMs a partir do código-fonte do ClickHouse. O código continua sendo a principal fonte de referência: quando a especificação e o código divergem, o código está correto.
+</Note>
+
+O formato `Native` é o formato mais eficiente do ClickHouse porque é de fato &quot;colunar&quot;,
+ou seja, não converte colunas em linhas.
+
+Nesse formato, os dados são gravados e lidos em [blocos](/pt-BR/resources/develop-contribute/introduction/architecture#block), em formato binário.
+Para cada bloco, são registrados, um após o outro, o número de linhas, o número de colunas, os nomes e tipos das colunas e as partes das colunas no bloco.
+
+Esse é o formato usado na interface nativa para a interação entre servidores, no cliente de linha de comando e em clientes C++.
+
+<Tip>
+  Você pode usar esse formato para gerar rapidamente dumps que só podem ser lidos pelo SGBD ClickHouse.
+  Talvez não seja prático trabalhar diretamente com esse formato.
+</Tip>
+
+<div id="data-types-wire-format">
+  ## Formato wire dos tipos de dados
+</div>
+
+Os dados são enviados via wire em formato colunar, o que significa que cada coluna é enviada separadamente,
+e todos os valores de uma coluna são enviados juntos como um único array.
+
+Cada coluna em um bloco contém um cabeçalho semelhante a [RowBinaryWithNamesAndTypes](/pt-BR/reference/formats/RowBinary/RowBinaryWithNamesAndTypes).
+
+<Note>
+  Ao usar o protocolo binário TCP nativo (ou quando o endpoint HTTP recebe `?client_protocol_version=<n>`),
+  uma estrutura `BlockInfo` é gravada antes das contagens de colunas e linhas. Os exemplos nesta seção usam
+  a interface HTTP simples, sem versão de protocolo, o que omite `BlockInfo`.
+</Note>
+
+<div id="block-structure">
+  ### Estrutura do bloco
+</div>
+
+A consulta a seguir retorna duas colunas, `number` e `str`, com três linhas:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3" > out.bin
+```
+
+Os dados de saída cabem em um único bloco do ClickHouse e terão esta aparência:
+
+```js
+const data = new Uint8Array([
+  // --- Cabeçalho do Bloco ---
+  0x02,                   // 2 colunas
+  0x03,                   // 3 linhas
+  // -- Cabeçalho da Coluna 1 --
+  0x06,                   // LEB128 - nome da coluna 'number' tem 6 bytes
+  0x6e, 0x75, 0x6d,       
+  0x62, 0x65, 0x72,       // nome da coluna: 'number'
+  0x06,                   // LEB128 - tipo da coluna 'UInt64' tem 6 bytes
+  0x55, 0x49, 0x6e,
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 0 como UInt64
+  0x01, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 1 como UInt64
+  0x02, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 2 como UInt64
+  0x03,                   // LEB128 - nome da coluna 'str' tem 3 bytes
+  0x73, 0x74, 0x72,       // nome da coluna: 'str'
+  0x06,                   // LEB128 - tipo da coluna 'String' tem 6 bytes
+  0x53, 0x74, 0x72, 
+  0x69, 0x6e, 0x67,       // 'String'
+  0x01,                   // LEB128 - a string tem 1 byte
+  0x30,                   // '0' como String
+  0x01,                   // LEB128 - a string tem 1 byte
+  0x31,                   // '1' como String
+  0x01,                   // LEB128 - a string tem 1 byte
+  0x32,                   // '2' como String
+])
+```
+
+<div id="multiple-blocks">
+  ### Múltiplos blocos
+</div>
+
+No entanto, em muitos casos, os dados não cabem em um único bloco, e o ClickHouse os enviará em vários blocos.
+Considere a seguinte consulta, que busca duas linhas com o tamanho do bloco reduzido para forçar a divisão dos dados em uma linha por bloco:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str                FROM system.numbers LIMIT 2                 SETTINGS max_block_size=1" \  > out.bin
+```
+
+A saída:
+
+```js
+const data = new Uint8Array([
+ 
+  // ----- Bloco 1 ----- 
+  0x02,                   // 2 colunas
+  0x01,                   // 1 linha
+  0x06,                   // LEB128 - nome da coluna 'number' tem 6 bytes
+  0x6E, 0x75, 0x6D, 
+  0x62, 0x65, 0x72,       // nome da coluna: 'number' 
+  0x06,                   // LEB128 - tipo da coluna 'UInt64' tem 6 bytes
+  0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34,       // 'UInt64' 
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 0 como UInt64
+  0x03,                   // LEB128 - nome da coluna 'str' tem 3 bytes
+  0x73, 0x74, 0x72,       // nome da coluna: 'str'
+  0x06,                   // LEB128 - tipo da coluna 'String' tem 6 bytes
+  0x53, 0x74, 0x72, 
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - a string tem 1 byte
+  0x30,                   // '0' como String
+  
+  // ----- Bloco 2 -----
+  0x02,                   // 2 colunas
+  0x01,                   // 1 linha
+  0x06,                   // LEB128 - nome da coluna 'number' tem 6 bytes
+  0x6E, 0x75, 0x6D,  
+  0x62, 0x65, 0x72,       // nome da coluna: 'number'
+  0x06,                   // LEB128 - tipo da coluna 'UInt64' tem 6 bytes
+  0x55, 0x49, 0x6E,  
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x01, 0x00, 0x00, 0x00,  
+  0x00, 0x00, 0x00, 0x00, // 1 como UInt64
+  0x03,                   // LEB128 - nome da coluna 'str' tem 3 bytes
+  0x73, 0x74, 0x72,       // nome da coluna: 'str'
+  0x06,                   // LEB128 - tipo da coluna 'String' tem 6 bytes
+  0x53, 0x74, 0x72,  
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - a string tem 1 byte
+  0x31,                   // '1' como String
+]);
+```
+
+<div id="simple-data-types">
+  ### Tipos de dados simples
+</div>
+
+O formato wire de um valor individual de um dos tipos de dados mais simples é semelhante ao de `RowBinary`/`RowBinaryWithNamesAndTypes`.
+A lista completa de tipos que correspondem a essa descrição inclui:
+
+* (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+* Float32, Float64
+* Bool
+* String
+* FixedString(N)
+* Date
+* Date32
+* DateTime
+* DateTime64
+* IPv4
+* IPv6
+* UUID
+
+Consulte as descrições dos tipos acima em [&quot;formato wire dos tipos de dados do RowBinary&quot;](/pt-BR/reference/formats/RowBinary/RowBinary#data-types-wire-format) para obter mais detalhes.
+
+<div id="complex-data-types">
+  ### Tipos de dados complexos
+</div>
+
+A codificação dos tipos abaixo é diferente da de `RowBinary` e `RowBinaryWithNamesAndTypes`.
+
+* Nullable
+* LowCardinality
+* Array
+* Map
+* Variant
+* Dynamic
+* JSON
+
+<div id="nullable">
+  #### Nullable
+</div>
+
+No formato `Native`, uma coluna Nullable terá uma quantidade de bytes igual ao número de linhas no bloco antes dos dados propriamente ditos. Cada um desses bytes indica se o valor é `NULL` ou não. Por exemplo, com esta consulta, cada número ímpar será `NULL`:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, number, NULL) :: Nullable(UInt64) AS maybe_null                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+A saída será assim:
+
+```js
+const data = new Uint8Array([
+  // --- Cabeçalho do Bloco ---
+  0x01,                         // LEB128 - 1 coluna
+  0x05,                         // LEB128 - 5 linhas
+  
+  // -- Cabeçalho da Coluna --
+  0x0A,                         // LEB128 - nome da coluna tem 10 bytes
+  0x6D, 0x61, 0x79, 0x62, 0x65, 
+  0x5F, 0x6E, 0x75, 0x6C, 0x6C, // nome da coluna: 'maybe_null'
+  
+  0x10,                         // LEB128 - tipo da coluna tem 16 bytes
+  0x4E, 0x75, 0x6C, 0x6C, 
+  0x61, 0x62, 0x6C, 0x65, 
+  0x28, 0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34, 0x29,       // tipo da coluna: 'Nullable(UInt64)'
+  
+  // -- Máscara Nullable --
+  0x00,                         // Linha 0 é NOT NULL
+  0x01,                         // Linha 1 é NULL
+  0x00,                         // Linha 2 é NOT NULL
+  0x01,                         // Linha 3 é NULL
+  0x00,                         // Linha 4 é NOT NULL
+  
+  // -- Valores UInt64 --
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // Linha 0: 0 como UInt64
+
+  // mesmo que ainda possa existir um valor válido para este número
+  // no bloco, ele deve ser retornado como NULL ao usuário!
+  0x01, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // Linha #1: NULL
+  
+  0x02, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // Linha #2: 2 como UInt64
+  
+  0x03, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // Linha #3: NULL, semelhante à Linha #1
+  
+  0x04, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // Linha #4: 4 como UInt64
+]);
+```
+
+Funciona de forma semelhante com `Nullable(String)`. O indicador de nulo sempre vem do byte da máscara de nulabilidade —
+um valor de máscara `0x01` significa que a linha é `NULL`, independentemente do conteúdo da string. Para linhas `NULL`,
+a string subjacente é armazenada como uma string vazia (comprimento LEB128 `0`). Observe que uma string vazia não `NULL`
+também tem comprimento LEB128 `0`; portanto, apenas o byte da máscara distingue os dois casos. Por exemplo, a seguinte consulta:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, toString(number), NULL) :: Nullable(String) AS maybe_str                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+A saída será assim:
+
+```js
+const data = new Uint8Array([
+  // --- Cabeçalho do bloco ---
+  0x01, // LEB128 - 1 coluna
+  0x05, // LEB128 - 5 linhas
+
+  // -- Cabeçalho da coluna --
+  0x09, // LEB128 - nome da coluna tem 9 bytes
+  0x6d,
+  0x61,
+  0x79,
+  0x62,
+  0x65,
+  0x5f,
+  0x73,
+  0x74,
+  0x72, // nome da coluna: 'maybe_str'
+
+  0x10, // LEB128 - tipo da coluna tem 16 bytes
+  0x4e,
+  0x75,
+  0x6c,
+  0x6c,
+  0x61,
+  0x62,
+  0x6c,
+  0x65,
+  0x28,
+  0x53,
+  0x74,
+  0x72,
+  0x69,
+  0x6e,
+  0x67,
+  0x29, // tipo da coluna: 'Nullable(String)'
+
+  // -- Máscara Nullable --
+  0x00, // Linha 0 é NOT NULL
+  0x01, // Linha 1 é NULL
+  0x00, // Linha 2 é NOT NULL
+  0x01, // Linha 3 é NULL
+  0x00, // Linha 4 é NOT NULL
+
+  // -- Valores String --
+  0x01,
+  0x30, // Linha 0: LEB128 == 1, '0' como String
+  0x00, // Linha 1: LEB128 == 0, NULL
+  0x01,
+  0x32, // Linha 2: LEB128 == 1, '2' como String
+  0x00, // Linha 3: LEB128 == 0, NULL
+  0x01,
+  0x34, // Linha 4: LEB128 == 1, '4' como String
+])
+```
+
+<div id="lowcardinality">
+  #### LowCardinality
+</div>
+
+Diferentemente do [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#lowcardinality), em que `LowCardinality` é transparente, o formato Native usa uma codificação colunar baseada em dicionário. Uma coluna é codificada com um prefixo de versão, seguido de um dicionário de valores únicos e de um array de índices inteiros nesse dicionário.
+
+<Note>
+  Uma coluna pode ser definida como `LowCardinality(Nullable(T))`, mas não é possível defini-la como `Nullable(LowCardinality(T))` — isso sempre resultará em um erro do servidor.
+</Note>
+
+O prefixo de versão é um `UInt64(LE)` com valor `1`, gravado uma vez por coluna. Em seguida, por bloco, é gravado o seguinte:
+
+* `UInt64(LE)` — campo de bits `IndexesSerializationType`. Os bits 0–7 codificam a largura do índice (0 = UInt8, 1 = UInt16, 2 = UInt32, 3 = UInt64). O bit 8 (`NeedGlobalDictionaryBit`) nunca é definido no formato Native (o servidor gera uma exceção se ele for encontrado). O bit 9 indica que há chaves adicionais de dicionário. O bit 10 indica que o dicionário deve ser reinicializado.
+* `UInt64(LE)` — número de chaves do dicionário, seguido pelas chaves serializadas em lote usando a codificação do tipo interno.
+* `UInt64(LE)` — número de linhas, seguido pelos valores de índice serializados em lote usando a largura UInt apropriada.
+
+O dicionário sempre contém um valor padrão no índice 0 (por exemplo, string vazia para `String`, 0 para tipos numéricos). Para `LowCardinality(Nullable(T))`, o índice 0 representa `NULL`, e as chaves são serializadas sem o wrapper `Nullable`.
+
+Por exemplo, `LowCardinality(String)` com 5 linhas `['foo', 'bar', 'baz', 'foo', 'bar']`:
+
+```text
+// Prefixo de versão
+01 00 00 00 00 00 00 00    // UInt64(LE) = 1
+
+// IndexesSerializationType: índices UInt8, possui chaves, atualizar dicionário
+00 06 00 00 00 00 00 00    // UInt64(LE) = 0x0600
+
+04 00 00 00 00 00 00 00    // 4 chaves do dicionário
+00                          // chave 0: "" (padrão)
+03 66 6f 6f                 // chave 1: "foo"
+03 62 61 72                 // chave 2: "bar"
+03 62 61 7a                 // chave 3: "baz"
+
+05 00 00 00 00 00 00 00    // 5 linhas
+01 02 03 01 02              // índices → "foo", "bar", "baz", "foo", "bar"
+```
+
+Com `LowCardinality(Nullable(String))`, o índice 0 é `NULL`:
+
+```text
+01 00 00 00 00 00 00 00    // versão
+00 06 00 00 00 00 00 00    // IndexesSerializationType
+03 00 00 00 00 00 00 00    // 3 chaves
+00                          // chave 0: NULL
+00                          // chave 1: "" (padrão)
+03 79 65 73                 // chave 2: "yes"
+05 00 00 00 00 00 00 00    // 5 linhas
+02 00 02 00 02              // índices → "yes", NULL, "yes", NULL, "yes"
+```
+
+<div id="array">
+  #### Array
+</div>
+
+Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#array), em que cada array é precedido por uma contagem de elementos em LEB128, o formato Native codifica arrays como dois subfluxos colunares:
+
+* N offsets cumulativos `UInt64` (little-endian, 8 bytes cada). A linha `i` tem `offset[i] - offset[i-1]` elementos, com `offset[-1]` implicitamente igual a 0.
+* Todos os elementos aninhados de todas as linhas, serializados em bloco de forma contígua.
+
+Por exemplo, `Array(UInt32)` com 3 linhas `[[0, 10], [1, 11], [2, 12]]`:
+
+```text
+// Deslocamentos
+02 00 00 00 00 00 00 00    // 2 (linha 0: 2 elementos)
+04 00 00 00 00 00 00 00    // 4 (linha 1: 2 elementos)
+06 00 00 00 00 00 00 00    // 6 (linha 2: 2 elementos)
+
+// Valores UInt32 aninhados (6 no total)
+00 00 00 00                 // 0
+0a 00 00 00                 // 10
+01 00 00 00                 // 1
+0b 00 00 00                 // 11
+02 00 00 00                 // 2
+0c 00 00 00                 // 12
+```
+
+Um array vazio tem o mesmo offset da linha anterior. Por exemplo, `Array(String)` com 4 linhas `[[], ['0'], ['0','1'], ['0','1','2']]`:
+
+```text
+00 00 00 00 00 00 00 00    // 0 (vazio)
+01 00 00 00 00 00 00 00    // 1
+03 00 00 00 00 00 00 00    // 3
+06 00 00 00 00 00 00 00    // 6
+01 30                       // "0"
+01 30                       // "0"
+01 31                       // "1"
+01 30                       // "0"
+01 31                       // "1"
+01 32                       // "2"
+```
+
+<div id="map">
+  #### Map
+</div>
+
+Um `Map(K, V)` é codificado como `Array(Tuple(K, V))` — offsets do array seguidos por todas as chaves e, em seguida, todos os valores. Isso difere de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#map), em que chaves e valores são intercalados em cada entrada.
+
+Por exemplo, `Map(String, UInt64)` com 3 linhas `[{'a':0,'b':10}, {'a':1,'b':11}, {'a':2,'b':12}]`:
+
+```text
+// Deslocamentos do array
+02 00 00 00 00 00 00 00    // 2
+04 00 00 00 00 00 00 00    // 4
+06 00 00 00 00 00 00 00    // 6
+
+// Todas as chaves (6 Strings)
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+
+// Todos os valores (6 UInt64s)
+00 00 00 00 00 00 00 00    // 0
+0a 00 00 00 00 00 00 00    // 10
+01 00 00 00 00 00 00 00    // 1
+0b 00 00 00 00 00 00 00    // 11
+02 00 00 00 00 00 00 00    // 2
+0c 00 00 00 00 00 00 00    // 12
+```
+
+<div id="variant">
+  #### Variant
+</div>
+
+Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#variant), em que cada linha traz seu próprio byte discriminante seguido do valor inline, o formato Native separa os discriminantes dos dados.
+
+<Warning>
+  Assim como no RowBinary, os tipos na definição são sempre ordenados alfabeticamente, e o discriminante é o índice nessa lista ordenada. `0xFF` (255) representa `NULL`.
+</Warning>
+
+Uma coluna `Variant` é codificada da seguinte forma:
+
+* Prefixo do modo dos discriminantes `UInt64(LE)` (`0` = BASIC, `1` = COMPACT). A saída do formato Native normalmente usa BASIC (`0`); o modo COMPACT pode aparecer ao ler dados armazenados com `use_compact_variant_discriminators_serialization` ativado.
+* N discriminantes `UInt8`, um por linha.
+* Os dados de cada tipo variante em uma coluna em bloco separada, contendo apenas as linhas correspondentes, na ordem dos discriminantes.
+
+Por exemplo, `Variant(String, UInt32)` com 5 linhas `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']` (ordenado: `String` = 0, `UInt32` = 1):
+
+```text
+00 00 00 00 00 00 00 00    // modo de discriminadores = BASIC
+01 00 ff 01 00              // UInt32, String, NULL, UInt32, String
+
+// String (2 valores, linhas 1 e 4)
+05 68 65 6c 6c 6f          // "hello"
+05 68 65 6c 6c 6f          // "hello"
+
+// UInt32 (2 valores, linhas 0 e 3)
+00 00 00 00                 // 0
+03 00 00 00                 // 3
+```
+
+<div id="dynamic">
+  #### Dynamic
+</div>
+
+Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#dynamic), em que cada valor é autodescritivo (prefixo do tipo + valor), o formato Native serializa `Dynamic` como um prefixo de estrutura seguido de uma coluna [Variant](#variant).
+
+O prefixo de estrutura contém uma versão de serialização `UInt64(LE)`, seguida pelo número de tipos dinâmicos (como VarUInt) e, então, pelos nomes dos tipos como strings. Na versão V1, a contagem de tipos é gravada duas vezes por compatibilidade. Os dados que vêm na sequência formam uma coluna `Variant` cuja lista de tipos inclui os tipos dinâmicos e um tipo interno `SharedVariant`, ordenados alfabeticamente.
+
+Por exemplo, `Dynamic` com 5 linhas `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']`:
+
+```text
+// Prefixo de estrutura (V1)
+01 00 00 00 00 00 00 00    // versão = V1
+02                          // num tipos (V1 escreve duas vezes)
+02                          // num tipos
+06 53 74 72 69 6e 67       // "String"
+06 55 49 6e 74 33 32       // "UInt32"
+
+// Dados Variant: Variant(SharedVariant, String, UInt32)
+// discriminantes: SharedVariant=0, String=1, UInt32=2
+00 00 00 00 00 00 00 00    // modo de discriminante = BASIC
+02 01 ff 02 01              // UInt32, String, NULL, UInt32, String
+// SharedVariant: 0 valores
+05 68 65 6c 6c 6f          // String: "hello"
+05 68 65 6c 6c 6f          // String: "hello"
+00 00 00 00                 // UInt32: 0
+03 00 00 00                 // UInt32: 3
+```
+
+<div id="json">
+  #### JSON
+</div>
+
+Ao contrário do [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#json), em que cada linha é autodescritiva com nomes de caminhos e valores, o formato Native serializa `JSON` em uma estrutura colunar. A codificação é complexa e depende da versão: consiste em um prefixo de estrutura com a versão de serialização, nomes de caminhos dinâmicos e o layout de dados compartilhados, seguido por caminhos tipados (cada um como uma coluna em bloco), caminhos dinâmicos (cada um como uma coluna [Dynamic](#dynamic)) e dados compartilhados para caminhos de overflow.
+
+Para uma interoperabilidade mais simples, considere usar a configuração `output_format_native_write_json_as_string=1`, que serializa colunas JSON como strings simples de texto JSON (uma `String` por linha).

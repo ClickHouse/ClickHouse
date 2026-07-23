@@ -18,7 +18,7 @@ packaging==24.1
 pip==26.0.1
 pipdeptree==2.23.0
 Pygments==2.20.0
-PyJWT==2.10.1
+PyJWT==2.13.0
 pyparsing==2.4.7
 pytz==2023.4
 PyYAML==6.0.1

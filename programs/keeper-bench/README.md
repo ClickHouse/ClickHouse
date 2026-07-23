@@ -73,6 +73,10 @@ Optional:
 
 - `--setup-nodes-snapshot-path` to build/update initial snapshot state inferred from expected replay outcomes.
 
+### Storage mode (`--storage`)
+
+Instead of a full Keeper cluster, runs only the KeeperStorage component, inside the keeper-bench process. Measures performance of just the storage and its request processing, without Raft, network, and request dispatch. `connections` configuration is not needed. Workload is generated the same way as in Generated mode.
+
 ## Configuration file
 
 Config can be YAML or XML.

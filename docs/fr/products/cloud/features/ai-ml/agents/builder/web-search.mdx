@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Web search'
+slug: /cloud/features/ai-ml/agents/builder/web-search
+title: 'Web search'
+description: 'Outil externe de recherche sur le Web pour ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'web search']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge />
+
+Web search permet à un agent de récupérer des informations sur le Web public au cours d’une conversation. Utilisez-le pour les questions dont la réponse doit être à jour — versions récentes, documentation hébergée en dehors de votre service, ou vérification rapide auprès d’une source de référence.
+
+<div id="enable-it">
+  ## Activez-la
+</div>
+
+Dans l’Agent Builder, activez **Web Search** dans la section **Capabilities**. Une fois cette option activée, l’agent détermine quand effectuer une recherche en fonction de la question de l’utilisateur et de ses instructions. La recherche s’exécute, les résultats sont récupérés, puis le contenu le plus pertinent est réinjecté dans le contexte du modèle.
+
+<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="Panneau Capabilities avec la section Web Search mise en évidence, montrant la case à cocher Web Search" size="sm" />
+
+<div id="how-a-search-round-works">
+  ## Comment fonctionne un cycle de recherche
+</div>
+
+Chaque recherche se déroule en trois étapes, gérées pour vous dans Cloud :
+
+1. **Recherche** - la requête de l’agent est envoyée à un fournisseur de recherche, qui renvoie une liste d’URL candidates.
+2. **Scraping** - les pages pertinentes sont récupérées et le texte utile en est extrait.
+3. **Rerank** - un reranker attribue un score aux résultats afin que le modèle voie d’abord les plus utiles.
+
+La réponse de l’agent cite les URL qu’il a effectivement utilisées.
+
+<div id="when-to-use-it">
+  ## Quand l’utiliser
+</div>
+
+* Consultez des notes de version ou des changelogs qui ne se trouvent pas dans votre service.
+* Vérifiez une information à partir d’une source que le modèle ne connaît peut-être pas.
+* Importez dans la conversation un article de blog public ou une page de documentation publique pour l’analyser.
+
+Évitez-le pour les questions auxquelles il est possible de répondre à partir de vos données ou des connaissances propres du modèle. Chaque cycle de recherche ajoute de la latence.

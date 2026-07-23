@@ -1,0 +1,98 @@
+---
+description: '使用 curl 安装脚本快速安装 ClickHouse'
+keywords: ['ClickHouse', '安装', '快速', 'curl']
+sidebarTitle: '快速安装'
+slug: /install/quick-install
+title: '快速安装'
+hide_title: true
+doc_type: 'guide'
+---
+
+如果你不需要在生产环境中安装 ClickHouse，可以使用 curl 运行安装脚本。该脚本会自动为你的操作系统选择合适的可执行文件。
+
+<Steps>
+  <Step>
+    ## 使用 curl 安装 ClickHouse
+
+    运行以下命令，下载适用于你的操作系统的单个可执行文件。
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    在 Linux 和 macOS 上，这还会将 [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
+    安装到 `~/.local/bin` (并创建一个 `chctl` 符号链接) ，这样你就可以管理本地的 ClickHouse
+    版本和服务器。
+
+    如果只想安装 `clickhouse` 可执行文件而不安装 `clickhousectl`，请设置
+    `CLICKHOUSE_ONLY=1`：
+
+    ```bash
+    curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
+    ```
+
+    <Note>
+      对于 Mac 用户：如果你遇到“无法验证该可执行文件的开发者”的错误，请参阅[这里](/zh/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos)。
+    </Note>
+  </Step>
+
+  <Step>
+    ## 启动 clickhouse-local
+
+    `clickhouse-local` 允许你使用 ClickHouse 强大的 SQL 语法处理本地和远程文件，
+    且无需任何配置。表数据存储在临时位置，这意味着在 `clickhouse-local`
+    重启后，之前创建的表将不再可用。
+
+    运行以下命令以启动 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)：
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## 启动 clickhouse-server
+
+    如果你希望持久化数据，就需要运行 `clickhouse-server`。你可以
+    使用以下命令启动 ClickHouse 服务器：
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## 启动 clickhouse-client
+
+    在服务器启动后，打开一个新的终端窗口并运行以下命令，
+    启动 `clickhouse-client`：
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    你将看到类似如下内容：
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    表数据存储在当前目录中，并且在 ClickHouse 服务器重启后
+    仍然可用。如有需要，你可以将
+    `-C config.xml` 作为附加命令行参数传递给 `./clickhouse server`，
+    并在配置文件中提供更多配置。所有可用的配置项都记录在[这里](/zh/reference/settings/server-settings/settings)以及
+    [示例配置文件
+    模板](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)中。
+
+    现在，你已经可以开始向 ClickHouse 发送 SQL 命令了！
+
+    <Tip>
+      [快速入门](/zh/get-started/setup/install)将引导你完成创建表和插入数据的步骤。
+    </Tip>
+  </Step>
+</Steps>

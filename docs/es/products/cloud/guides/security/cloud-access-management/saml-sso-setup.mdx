@@ -1,0 +1,377 @@
+---
+sidebarTitle: 'Configuración de SAML SSO'
+slug: /cloud/security/saml-setup
+title: 'Configuración de SAML SSO'
+description: 'Cómo configurar SAML SSO en ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP', 'Okta', 'Google']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+ClickHouse Cloud admite el inicio de sesión único (SSO) a través de Security Assertion Markup Language (SAML). Esto le permite iniciar sesión de forma segura en su organización de ClickHouse Cloud autenticándose con su proveedor de identidad (IdP).
+
+Admitimos SSO iniciado por el proveedor de servicios, múltiples organizaciones que usan conexiones independientes y aprovisionamiento just-in-time. También admitimos el [aprovisionamiento SCIM](/es/products/cloud/guides/security/cloud-access-management/scim-setup) en private preview, con soporte para Okta. Aún no admitimos la correspondencia de atributos.
+
+Los clientes que habilitan integraciones SAML también pueden designar el rol predeterminado que se asignará a los nuevos usuarios y ajustar la configuración del tiempo de espera de sesión.
+
+<div id="before-you-begin">
+  ## Antes de empezar
+</div>
+
+Necesitarás permisos de administrador en tu IdP, la capacidad de añadir un registro TXT a la configuración DNS de tu dominio y el rol de **Admin** en tu organización de ClickHouse Cloud. Te recomendamos configurar un **enlace directo a tu organización** además de tu conexión SAML para simplificar el proceso de inicio de sesión. Cada IdP lo gestiona de forma diferente. A continuación, te explicamos cómo hacerlo en tu IdP.
+
+<div id="how-to-configure-your-idp">
+  ## Cómo configurar el IdP
+</div>
+
+<div id="steps">
+  ### Pasos
+</div>
+
+<Steps>
+  <Step>
+    ### Acceda a la configuración de la organización
+
+    Haga clic en el nombre de su organización, en la esquina inferior izquierda, y seleccione Detalles de la organización.
+  </Step>
+
+  <Step>
+    ### Habilite el inicio de sesión único con SAML
+
+    Haga clic en el interruptor situado junto a `Enable SAML single sign-on`. Deje esta pantalla abierta, ya que tendrá que volver a consultarla varias veces durante el proceso de configuración.
+
+    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="Iniciar la configuración de SAML" force />
+  </Step>
+
+  <Step>
+    ### Cree una aplicación en su proveedor de identidad
+
+    Cree una aplicación en su proveedor de identidad y copie en la configuración de este los valores que aparecen en la pantalla `Enable SAML single sign-on`. Para obtener más información sobre este paso, consulte a continuación el proveedor de identidad correspondiente.
+
+    * [Configurar Okta SAML](#configure-okta-saml)
+    * [Configurar Google SAML](#configure-google-saml)
+    * [Configurar Azure (Microsoft) SAML](#configure-azure-microsoft-saml)
+    * [Configurar Duo SAML](#configure-duo-saml)
+
+    <Tip>
+      ClickHouse no admite el inicio de sesión iniciado por el proveedor de identidad. Para facilitar el acceso de sus usuarios a ClickHouse Cloud, cree un marcador para ellos con este formato de URL de inicio de sesión: `https://console.clickhouse.cloud/?connection={orgId}`, donde `{orgID}` es el ID de su organización en la página de detalles de la organización.
+    </Tip>
+
+    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Crear una aplicación en el proveedor de identidad" force />
+  </Step>
+
+  <Step>
+    ### Agrega la URL de metadatos a tu configuración de SAML
+
+    Obtén la `Metadata URL` de tu proveedor de SAML. Vuelve a ClickHouse Cloud, haz clic en `Next: Provide metadata URL` y pega la URL en el cuadro de texto.
+
+    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="Agrega la URL de metadatos" force />
+  </Step>
+
+  <Step>
+    ### Obtener el código de verificación del dominio
+
+    Haz clic en `Next: Verify your domains`. Introduce tu dominio en el cuadro de texto y haz clic en `Check domain`. El sistema generará un código de verificación aleatorio para que lo añadas a un registro TXT con tu proveedor de DNS.
+
+    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="Añadir dominio para verificar" force />
+  </Step>
+
+  <Step>
+    ### Verifica tu dominio
+
+    Crea un registro TXT con tu proveedor de DNS. Copia `TXT record name` en el campo Nombre del registro TXT de tu proveedor de DNS. Copia `Value` en el campo Contenido de tu proveedor de DNS. Haz clic en `Verify and Finish` para completar el proceso.
+
+    <Note>
+      La actualización y verificación del registro DNS pueden tardar varios minutos. Puedes salir de la página de configuración y volver más tarde para completar el proceso sin tener que empezar de nuevo.
+    </Note>
+
+    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="Verifica tu dominio" force />
+  </Step>
+
+  <Step>
+    ### Actualizar el rol predeterminado y el tiempo de espera de la sesión
+
+    Una vez completada la configuración de SAML, puede establecer los roles predeterminados que se asignarán a todos los usuarios cuando inicien sesión, así como ajustar la configuración del tiempo de espera de la sesión. Para consultar la lista de roles del sistema disponibles que pueden asignarse, revise [Console roles and permissions](/es/products/cloud/reference/security/console-roles).
+  </Step>
+
+  <Step>
+    ### Configure su usuario administrador
+
+    <Note>
+      Los usuarios configurados con un método de autenticación diferente se conservarán hasta que un administrador de su organización los elimine.
+    </Note>
+
+    Para asignar su primer usuario administrador mediante SAML:
+
+    1. Cierre sesión en [ClickHouse Cloud](https://console.clickhouse.cloud).
+    2. En su proveedor de identidad, asigne el usuario administrador a las aplicaciones de ClickHouse.
+    3. Pida al usuario que inicie sesión a través de https://console.clickhouse.cloud/?connection={orgId} (URL de acceso directo). Esto puede hacerse mediante un marcador que haya creado en los pasos anteriores. El usuario no aparecerá en ClickHouse Cloud hasta que inicie sesión por primera vez.
+    4. Si el rol predeterminado de SAML es distinto de Admin, es posible que el usuario tenga que cerrar sesión y volver a iniciarla con su método de autenticación original para actualizar el rol del nuevo usuario de SAML.
+       * Para cuentas de correo electrónico + contraseña, use `https://console.clickhouse.cloud/?with=email`.
+       * Para inicios de sesión sociales, haga clic en el botón correspondiente (**Continuar con Google** o **Continuar con Microsoft**)
+
+    <Note>
+      `email` en `?with=email` anterior es el valor literal del parámetro, no un marcador de posición
+    </Note>
+
+    5. Cierre sesión una vez más y vuelva a iniciarla mediante la URL de acceso directo para completar el último paso que figura a continuación.
+
+    <Tip>
+      Para reducir los pasos, puede establecer inicialmente el rol predeterminado de SAML en `Admin`. Cuando se asigne el administrador en su proveedor de identidad e inicie sesión por primera vez, podrá cambiar el rol predeterminado por otro valor.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### Eliminar otros métodos de autenticación
+
+    Elimine todos los usuarios que utilicen un método distinto de SAML para completar la integración y restrinja el acceso únicamente a los usuarios que provengan de la conexión de su proveedor de identidad.
+  </Step>
+</Steps>
+
+<div id="configure-okta-saml">
+  ### Configurar Okta SAML
+</div>
+
+Debes configurar dos integraciones de aplicaciones en Okta para cada organización de ClickHouse: una aplicación SAML y una aplicación de marcador que contenga tu enlace directo.
+
+<Accordion title="1. Crear un grupo para gestionar el acceso">
+  1. Inicia sesión en tu instancia de Okta como **Administrator**.
+
+  2. Selecciona **Groups** en el lado izquierdo.
+
+  3. Haz clic en **Add group**.
+
+  4. Introduce un nombre y una descripción para el grupo. Este grupo se usará para mantener sincronizados a los usuarios entre la aplicación SAML y la aplicación de marcador relacionada.
+
+  5. Haz clic en **Save**.
+
+  6. Haz clic en el nombre del grupo que creaste.
+
+  7. Haz clic en **Assign people** para asignar los usuarios a los que quieres dar acceso a esta organización de ClickHouse.
+</Accordion>
+
+<Accordion title="2. Crear una aplicación de marcador para que los usuarios inicien sesión sin problemas">
+  1. Selecciona **Applications** en el lado izquierdo y, a continuación, selecciona la subsección **Applications**.
+
+  2. Haz clic en **Browse App Catalog**.
+
+  3. Busca y selecciona **Bookmark App**.
+
+  4. Haz clic en **Add integration**.
+
+  5. Selecciona una etiqueta para la aplicación.
+
+  6. Introduce la URL como `https://console.clickhouse.cloud/?connection={organizationid}`
+
+  7. Ve a la pestaña **Assignments** y añade el grupo que creaste anteriormente.
+</Accordion>
+
+<Accordion title="3. Crear una aplicación SAML para habilitar la conexión">
+  1. Selecciona **Applications** en el lado izquierdo y, a continuación, selecciona la subsección **Applications**.
+
+  2. Haz clic en **Create App Integration**.
+
+  3. Selecciona SAML 2.0 y haz clic en **Next**.
+
+  4. Introduce un nombre para tu aplicación, marca la casilla junto a **Don&#39;t display application icon to users** y, a continuación, haz clic en **Next**.
+
+  5. Usa los siguientes valores para completar la pantalla de configuración de SAML.
+
+     | Field                                      | Value                                             |
+     | ------------------------------------------ | ------------------------------------------------- |
+     | URL de inicio de sesión único              | Copia la Single Sign-On URL de la consola         |
+     | URI de audiencia (ID de entidad del SP)    | Copia el Service Provider Entity ID de la consola |
+     | RelayState predeterminado                  | Déjalo en blanco                                  |
+     | Formato del ID de nombre                   | Sin especificar                                   |
+     | username de la aplicación                  | Correo electrónico                                |
+     | Actualizar el username de la aplicación al | Crear y actualizar                                |
+
+  6. Introduce la siguiente declaración de atributos.
+
+     | Name  | Name format | Value      |
+     | ----- | ----------- | ---------- |
+     | email | Basic       | user.email |
+
+  7. Haz clic en **Next**.
+
+  8. Introduce la información solicitada en la pantalla **Feedback** y haz clic en **Finish**.
+
+  9. Ve a la pestaña **Assignments** y añade el grupo que creaste anteriormente.
+
+  10. En la pestaña **Sign On** de tu nueva aplicación, haz clic en el botón **Copy metadata URL**.
+
+  11. Vuelve a [Añadir la metadata URL a tu configuración de SAML](#add-metadata-url) para continuar con el proceso.
+</Accordion>
+
+<div id="configure-google-saml">
+  ### Configurar SAML de Google
+</div>
+
+Configurarás una aplicación SAML en Google para cada organización y, si usas multi-org SSO, deberás proporcionar a tus usuarios el enlace directo (`https://console.clickhouse.cloud/?connection={organizationId}`) para que lo guarden en sus marcadores.
+
+<Accordion title="Crear una aplicación web de Google">
+  1. Ve a la consola de administración de Google (admin.google.com).
+
+  <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Aplicación SAML de Google" force />
+
+  2. Haz clic en **Apps** y luego, en el panel izquierdo, en **Web and mobile apps**.
+
+  3. Haz clic en **Add app** en el menú superior y luego selecciona **Add custom SAML app**.
+
+  4. Introduce un nombre para la aplicación y haz clic en **Continue**.
+
+  5. Copia la metadata URL y guárdala en algún lugar.
+
+  6. Introduce la ACS URL y el Entity ID que aparecen a continuación.
+
+     | Field     | Value                                                |
+     | --------- | ---------------------------------------------------- |
+     | ACS URL   | Copia la Single Sign-On URL desde la consola         |
+     | Entity ID | Copia el Service Provider Entity ID desde la consola |
+
+  7. Marca la casilla **Signed response**.
+
+  8. Selecciona **EMAIL** como Name ID Format y deja Name ID como **Basic Information &gt; Primary email.**
+
+  9. Haz clic en **Continue**.
+
+  10. Introduce la siguiente correspondencia de atributos:
+
+  | Field             | Value         |
+  | ----------------- | ------------- |
+  | Basic information | Primary email |
+  | App attributes    | email         |
+
+  13. Haz clic en **Finish**.
+
+  14. Para habilitar la aplicación, haz clic en **OFF** para todos y cambia la configuración a **ON** para todos. También puedes limitar el acceso a grupos o unidades organizativas seleccionando las opciones del lado izquierdo de la pantalla.
+
+  15. Vuelve a [Agregar la metadata URL a tu configuración de SAML](#add-metadata-url) para continuar con el proceso.
+</Accordion>
+
+<div id="configure-azure-microsoft-saml">
+  ### Configurar Azure (Microsoft) SAML
+</div>
+
+Azure (Microsoft) SAML también puede aparecer como Azure Active Directory (AD) o Microsoft Entra.
+
+<Accordion title="Crear una aplicación Enterprise en Azure">
+  Configurará una integración de aplicación con una URL de inicio de sesión independiente para cada organización.
+
+  1. Inicie sesión en el centro de administración de Microsoft Entra.
+
+  2. Vaya a **Applications &gt; Enterprise** applications en la barra lateral izquierda.
+
+  3. Haga clic en **New application** en el menú superior.
+
+  4. Haga clic en **Create your own application** en el menú superior.
+
+  5. Introduzca un nombre y seleccione **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**; luego, haga clic en **Create**.
+
+     <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Aplicación de Azure fuera de la galería" force />
+
+  6. Haga clic en **Users and groups** en la barra lateral izquierda y asigne los usuarios.
+
+  7. Haga clic en **Single sign-on** en la barra lateral izquierda.
+
+  8. Haga clic en **SAML**.
+
+  9. Use la siguiente configuración para completar la pantalla Basic SAML Configuration.
+
+     | Campo                                      | Valor                                                           |
+     | ------------------------------------------ | --------------------------------------------------------------- |
+     | Identifier (Entity ID)                     | Copie el Service Provider Entity ID desde la consola            |
+     | Reply URL (Assertion Consumer Service URL) | Copie la Single Sign-On URL desde la consola                    |
+     | Sign on URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
+     | Relay State                                | En blanco                                                       |
+     | Logout URL                                 | En blanco                                                       |
+
+  10. Agregue (A) o actualice (U) lo siguiente en Attributes &amp; Claims:
+
+      | Nombre del claim                     | Formato       | Atributo de origen |
+      | ------------------------------------ | ------------- | ------------------ |
+      | (U) Unique User Identifier (Name ID) | Email address | user.mail          |
+      | (A) email                            | Basic         | user.mail          |
+      | (U) /identity/claims/name            | Omitted       | user.mail          |
+
+      <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="Atributos y claims" force />
+
+  11. Copie la metadata URL y vuelva a [Agregar la metadata URL a su configuración de SAML](#add-metadata-url) para continuar con el proceso.
+</Accordion>
+
+<div id="configure-duo-saml">
+  ### Configurar SAML de Duo
+</div>
+
+<Accordion title="Crear un proveedor de servicios SAML genérico para Duo">
+  1. Siga las instrucciones de [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic).
+
+  2. Use la siguiente asignación de atributos de Bridge:
+
+     | Atributo de Bridge              | Atributo de ClickHouse |
+     | :------------------------------ | :--------------------- |
+     | Dirección de correo electrónico | email                  |
+
+  3. Use los siguientes valores para actualizar su aplicación de Cloud en Duo:
+
+     | Campo                                              | Valor                                                           |
+     | :------------------------------------------------- | :-------------------------------------------------------------- |
+     | Entity ID                                          | Copie el Service Provider Entity ID de la consola               |
+     | URL del Assertion Consumer Service (ACS)           | Copie la Single Sign-On URL de la consola                       |
+     | URL de inicio de sesión del proveedor de servicios | `https://console.clickhouse.cloud/?connection={organizationid}` |
+
+  4. Copie la metadata URL y vuelva a [Agregar la metadata URL a su configuración de SAML](#add-metadata-url) para continuar con el proceso.
+</Accordion>
+
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
+
+<div id="user-management-with-saml-sso">
+  ### Gestión de usuarios con SAML SSO
+</div>
+
+Para obtener más información sobre cómo administrar los permisos de los usuarios y restringir el acceso únicamente a las conexiones SAML, consulta [Manage cloud users](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users).
+
+<div id="service-provider-initiated-sso">
+  ### SSO iniciado por el proveedor de servicios
+</div>
+
+Solo utilizamos SSO iniciado por el proveedor de servicios. Esto significa que los usuarios van a `https://console.clickhouse.cloud` e introducen su dirección de correo electrónico para ser redirigidos al IdP y autenticarse. Los usuarios que ya se hayan autenticado a través de su IdP pueden usar el enlace directo para iniciar sesión automáticamente en su organización sin introducir su dirección de correo electrónico en la página de inicio de sesión.
+
+<div id="multi-org-sso">
+  ### Multi-org SSO
+</div>
+
+ClickHouse Cloud admite Multi-org SSO al proporcionar una conexión distinta para cada organización. Usa el enlace directo (`https://console.clickhouse.cloud/?connection={organizationid}`) para iniciar sesión en la organización correspondiente. Asegúrate de cerrar sesión en una organización antes de iniciar sesión en otra.
+
+<Note>
+  Si no quieres que se redirija a una organización a los usuarios con el dominio de tu empresa cuando ingresen una dirección de correo electrónico en https://console.clickhouse.cloud, envía una solicitud al equipo de soporte para actualizar manualmente tu configuración de SSO y eliminar este comportamiento.
+</Note>
+
+<div id="additional-information">
+  ## Información adicional
+</div>
+
+La seguridad es nuestra máxima prioridad en lo que respecta a la autenticación. Por este motivo, tomamos algunas decisiones al implementar SSO que debe conocer.
+
+* **Solo procesamos flujos de autenticación iniciados por el proveedor de servicios.** Los usuarios deben ir a `https://console.clickhouse.cloud` e introducir una dirección de correo electrónico para ser redirigidos a su proveedor de identidad. Se proporcionan instrucciones para añadir una aplicación de marcador o un acceso directo, de modo que sus usuarios no tengan que recordar la URL.
+
+* **No vinculamos automáticamente las cuentas con SSO y sin SSO.** Es posible que vea varias cuentas de sus usuarios en su lista de usuarios de ClickHouse aunque utilicen la misma dirección de correo electrónico.
+
+<div id="troubleshooting-common-issues">
+  ## Resolución de problemas comunes
+</div>
+
+| Error                                                                                                                                                                     | Causa                                                                                                | Solución                                                                                                                                                                                                                                                                           |
+| :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Podría haber una configuración incorrecta en el sistema o una interrupción del servicio                                                                                   | Inicio de sesión iniciado por el proveedor de identidad                                              | Para resolver este error, intenta usar el enlace directo `https://console.clickhouse.cloud/?connection={organizationid}`. Sigue las instrucciones de tu proveedor de identidad indicadas arriba para convertirlo en el método de inicio de sesión predeterminado para tus usuarios |
+| Se te redirige a tu proveedor de identidad y luego de vuelta a la página de inicio de sesión                                                                              | El proveedor de identidad no tiene configurada la correspondencia del atributo de correo electrónico | Sigue las instrucciones de tu proveedor de identidad indicadas arriba para configurar el atributo de correo electrónico del usuario y vuelve a iniciar sesión                                                                                                                      |
+| El usuario no está asignado a esta aplicación                                                                                                                             | El usuario no ha sido asignado a la aplicación de ClickHouse en el proveedor de identidad            | Asigna el usuario a la aplicación en el proveedor de identidad y vuelve a iniciar sesión                                                                                                                                                                                           |
+| Tienes varias organizaciones de ClickHouse integradas con SAML SSO y siempre inicias sesión en la misma organización, independientemente del enlace o la tarjeta que uses | Sigues con la sesión iniciada en la primera organización                                             | Cierra sesión y luego inicia sesión en la otra organización                                                                                                                                                                                                                        |
+| La URL muestra brevemente `access denied`                                                                                                                                 | Tu dominio de correo electrónico no coincide con el dominio que tenemos configurado                  | Ponte en contacto con el soporte para obtener ayuda para resolver este error                                                                                                                                                                                                       |

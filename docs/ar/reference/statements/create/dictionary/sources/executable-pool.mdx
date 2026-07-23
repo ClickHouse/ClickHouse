@@ -1,0 +1,68 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-pool
+title: 'مصدر قاموس Executable Pool'
+sidebarTitle: 'Executable Pool'
+description: 'هيّئ Executable Pool كمصدر قاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+يتيح Executable Pool تحميل البيانات من مجموعة من العمليات.
+ولا يعمل هذا المصدر مع تخطيطات القواميس التي تحتاج إلى تحميل جميع البيانات من المصدر.
+
+يعمل Executable Pool إذا كان القاموس [مخزّنًا](/ar/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) باستخدام أحد التخطيطات التالية:
+
+* `cache`
+* `complex_key_cache`
+* `ssd_cache`
+* `complex_key_ssd_cache`
+* `direct`
+* `complex_key_direct`
+
+ينشئ Executable Pool مجموعة من العمليات باستخدام الأمر المحدد ويُبقيها قيد التشغيل إلى أن تنتهي. يجب أن يقرأ البرنامج البيانات من STDIN ما دامت متاحة، وأن يرسل النتيجة إلى STDOUT. ويمكنه انتظار كتلة البيانات التالية على STDIN. لن يغلق ClickHouse ‏STDIN بعد معالجة كتلة بيانات، بل سيمرّر كتلة أخرى من البيانات عند الحاجة. يجب أن يكون السكربت التنفيذي مهيأً لطريقة معالجة البيانات هذه — أي ينبغي أن يراقب STDIN وأن يفرّغ البيانات إلى STDOUT مبكرًا.
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE_POOL(
+        command 'while read key; do printf "$key\tData for key $key\n"; done'
+        format 'TabSeparated'
+        pool_size 10
+        max_command_execution_time 10
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <source>
+        <executable_pool>
+            <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+            <format>TabSeparated</format>
+            <pool_size>10</pool_size>
+            <max_command_execution_time>10<max_command_execution_time>
+            <implicit_key>false</implicit_key>
+        </executable_pool>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+حقول الإعداد:
+
+| الإعداد                       | الوصف                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`                     | المسار المطلق إلى الملف التنفيذي، أو اسم الملف (إذا كان دليل البرنامج موجودًا في `PATH`).                                                                                                                                                                                                                                                                                                                     |
+| `format`                      | تنسيق الملف. جميع التنسيقات الموصوفة في [Formats](/ar/reference/formats/index) مدعومة.                                                                                                                                                                                                                                                                                                                           |
+| `pool_size`                   | حجم المجموعة. إذا تم تحديد `0` لقيمة `pool_size`، فلن تكون هناك قيود على حجم المجموعة. القيمة الافتراضية هي `16`.                                                                                                                                                                                                                                                                                             |
+| `command_termination_timeout` | يجب أن يحتوي السكربت التنفيذي على حلقة read-write رئيسية. بعد إتلاف القاموس، يُغلق الـ pipe، ويكون لدى الملف التنفيذي `command_termination_timeout` ثانية للتوقف قبل أن يرسل ClickHouse إشارة SIGTERM إلى العملية الفرعية. تُحدَّد القيمة بالثواني. القيمة الافتراضية هي `10`. اختياري.                                                                                                                       |
+| `max_command_execution_time`  | الحد الأقصى لوقت تنفيذ أمر السكربت التنفيذي لمعالجة كتلة بيانات. تُحدَّد القيمة بالثواني. القيمة الافتراضية هي `10`. اختياري.                                                                                                                                                                                                                                                                                 |
+| `command_read_timeout`        | مهلة قراءة البيانات من stdout الخاص بالأمر، بالمللي ثانية. القيمة الافتراضية `10000`. اختياري.                                                                                                                                                                                                                                                                                                                |
+| `command_write_timeout`       | مهلة كتابة البيانات إلى stdin الخاص بالأمر، بالمللي ثانية. القيمة الافتراضية `10000`. اختياري.                                                                                                                                                                                                                                                                                                                |
+| `implicit_key`                | يمكن لملف المصدر التنفيذي أن يعيد القيم فقط، ويُحدَّد التطابق مع المفاتيح المطلوبة ضمنيًا بحسب ترتيب الصفوف في النتيجة. القيمة الافتراضية هي `false`. اختياري.                                                                                                                                                                                                                                                |
+| `execute_direct`              | إذا كانت قيمة `execute_direct` = `1`، فسيُبحث عن `command` داخل مجلد user&#95;scripts المحدد بواسطة [user&#95;scripts&#95;path](/ar/reference/settings/server-settings/settings#user_scripts_path). ويمكن تحديد وسائط إضافية للسكربت باستخدام فاصل مسافات. مثال: `script_name arg1 arg2`. وإذا كانت قيمة `execute_direct` = `0`، فسيتم تمرير `command` كوسيط إلى `bin/sh -c`. القيمة الافتراضية هي `1`. اختياري. |
+| `send_chunk_header`           | يتحكم فيما إذا كان سيتم إرسال عدد الصفوف قبل إرسال كتلة من البيانات إلى العملية. القيمة الافتراضية هي `false`. اختياري.                                                                                                                                                                                                                                                                                       |
+
+لا يمكن تهيئة مصدر القاموس هذا إلا عبر إعدادات XML. تم تعطيل إنشاء القواميس ذات المصدر التنفيذي عبر DDL، وإلا فسيكون مستخدم قاعدة البيانات قادرًا على تنفيذ أي ملف تنفيذي عشوائي على عقدة ClickHouse.

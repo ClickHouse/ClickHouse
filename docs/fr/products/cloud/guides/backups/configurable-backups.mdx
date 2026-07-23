@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Configurer la planification des sauvegardes'
+slug: /cloud/manage/backups/configurable-backups
+description: 'Guide expliquant comment configurer les sauvegardes'
+title: 'Configurer la planification des sauvegardes'
+keywords: ['sauvegardes', 'sauvegardes cloud', 'restauration']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="Sauvegardes configurables" linking_verb_are="True" />
+
+Pour configurer la planification des sauvegardes d’un service, accédez à l’onglet **Settings** de la console, puis cliquez sur **Modifier la configuration des sauvegardes**.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurer les paramètres de sauvegarde" border />
+
+Un onglet s’ouvre alors à droite, dans lequel vous pouvez sélectionner les valeurs de rétention, de fréquence et d’heure de début. Vous devrez enregistrer les paramètres choisis pour qu’ils prennent effet.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Sélectionner la rétention et la fréquence des sauvegardes" border />
+
+<Note>
+  L’heure de début et la fréquence sont mutuellement exclusives. L’heure de début prévaut.
+</Note>
+
+<Note>
+  Modifier la planification des sauvegardes peut entraîner des frais mensuels de stockage plus élevés, car certaines sauvegardes peuvent ne pas être couvertes par les sauvegardes par défaut du service. Voir [&quot;Comprendre le coût des sauvegardes&quot;](/fr/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

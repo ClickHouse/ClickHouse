@@ -1,0 +1,13 @@
+---
+title: 简介
+---
+
+<PrivatePreviewBadge />
+
+<Note>
+  你可以在[这里](https://clickhouse.com/cloud/clickpipes/bigquery-connector)加入私有预览候补名单。
+</Note>
+
+BigQuery ClickPipe 提供了一种完全托管且具备高弹性的方式，可将 BigQuery 中的数据摄取到 ClickHouse Cloud。在私有预览阶段，它支持 **initial load** 复制方法，帮助你批量加载 BigQuery 数据集，以便进行探索和原型验证。未来将支持 **CDC (变更数据捕获)&#x20;**；在此之前，我们建议你在 initial load 完成后，使用 [Google Cloud Storage ClickPipe](/zh/integrations/clickpipes/object-storage/google-cloud-storage/overview) 持续将 BigQuery 导出的数据同步到 ClickHouse Cloud。
+
+BigQuery ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式进行部署和管理。

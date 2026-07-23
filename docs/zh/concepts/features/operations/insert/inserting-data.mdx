@@ -1,0 +1,295 @@
+---
+title: '向 ClickHouse 插入数据'
+description: '如何向 ClickHouse 插入数据'
+keywords: ['INSERT', '批次插入']
+sidebarTitle: '向 ClickHouse 插入数据'
+slug: /guides/inserting-data
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="inserting-into-clickhouse-vs-oltp-databases">
+  ## 向 ClickHouse 插入数据与向 OLTP 数据库插入数据的区别
+</div>
+
+作为一种 OLAP (联机分析处理) 数据库，ClickHouse 针对高性能和可扩展性进行了优化，理论上可以实现每秒插入数百万行。
+这得益于高度并行化的架构与高效的列式压缩相结合，但代价是牺牲了即时一致性。
+更具体地说，ClickHouse 针对只追加 (append-only) 操作进行了优化，并且仅提供最终一致性保证。
+
+相比之下，Postgres 等 OLTP 数据库专门针对具有完整 ACID 合规性的事务型插入进行了优化，从而确保强一致性和可靠性。
+PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要维护数据的多个版本。
+这类事务一次通常只涉及少量行，但由于为保证可靠性而引入了较大的额外开销，因此会限制插入性能。
+
+为了在保持强一致性保证的同时实现高插入性能，在向 ClickHouse 插入数据时，你应遵循下面介绍的简单规则。
+遵循这些规则将有助于避免用户初次使用 ClickHouse 时经常遇到的问题，以及避免试图照搬适用于 OLTP 数据库的插入策略所带来的问题。
+
+<div id="best-practices-for-inserts">
+  ## 插入的最佳实践
+</div>
+
+<div id="insert-in-large-batch-sizes">
+  ### 按较大的批次插入
+</div>
+
+默认情况下，发送到 ClickHouse 的每次插入，都会让 ClickHouse 立即创建一个存储分片，其中包含本次插入的数据以及其他需要存储的元数据。
+因此，相比发送更多次、但每次数据量更小的插入，减少插入次数并让每次插入包含更多数据，可以减少所需的写入次数。
+通常，我们建议每次以较大的批次插入数据，至少 1,000 行，理想情况下为 10,000 到 100,000 行。
+(更多详情见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)。)
+
+如果无法做到大批次插入，请使用下文介绍的异步插入。
+
+<div id="ensure-consistent-batches-for-idempotent-retries">
+  ### 确保批次一致，以实现幂等重试
+</div>
+
+默认情况下，向 ClickHouse 执行的插入是同步且幂等的 (即多次执行同一插入操作，与执行一次的效果相同) 。
+对于 MergeTree 引擎家族的表，ClickHouse 默认会自动[对插入进行去重](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time)。
+
+这意味着在以下情况下，插入仍然具备良好的容错性：
+
+* 1. 如果接收数据的节点出现问题，插入查询会超时 (或返回更具体的错误) ，并且不会收到确认。
+* 2. 如果节点已将数据写入，但由于网络中断，确认无法返回给查询发送方，发送方会收到超时或网络错误。
+
+从客户端的角度来看，(i) 和 (ii) 往往很难区分。不过，在这两种情况下，都可以立即重试未获确认的插入。
+只要重试的插入查询包含相同的数据且顺序一致，如果原始插入 (虽未获确认) 实际上已成功，ClickHouse 就会自动忽略这次重试插入。
+
+<div id="insert-to-a-mergetree-table-or-a-distributed-table">
+  ### 插入到 MergeTree 表或分布式表
+</div>
+
+我们建议直接插入到 MergeTree (或 Replicated 表) 中；如果数据已分片，则在一组节点之间对这些请求做负载均衡，并设置 `internal_replication=true`。
+这样 ClickHouse 就会将数据复制到各个分片中任意可用的副本，并确保数据最终一致。
+
+如果客户端侧负载均衡不方便，也可以通过[分布式表](/zh/reference/engines/table-engines/special/distributed)进行插入，由它将写入分发到各个节点。同样，建议设置 `internal_replication=true`。
+但需要注意的是，这种方式性能会稍差一些，因为写入必须先在包含分布式表的节点上本地执行，然后再发送到各个分片。
+
+<div id="use-asynchronous-inserts-for-small-batches">
+  ### 对小批次使用异步插入
+</div>
+
+在某些场景下，客户端侧批处理并不可行，例如在可观测性场景中，有数百甚至数千个单一用途的 agent 持续发送日志、指标、链路追踪等数据。
+在这种情况下，实时传输这些数据对于尽快发现问题和异常至关重要。
+此外，被观测系统还可能出现事件突增；如果尝试在客户端侧缓冲可观测性数据，这可能导致内存占用激增及相关问题。
+如果无法插入大批次数据，则可以使用 [异步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) 将批处理交给 ClickHouse。
+
+启用异步插入后，数据会先写入缓冲区，然后再按下图所示分 3 步写入数据库存储：
+
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+
+启用异步插入后，ClickHouse 会：
+
+(1) 异步接收插入查询。
+(2) 先将查询中的数据写入内存缓冲区。
+(3) 仅在下一次缓冲区刷新时，对数据进行排序并将其作为一个分片写入数据库存储。
+
+在缓冲区刷新之前，来自同一客户端或其他客户端的其他异步插入查询数据也可以被收集到该缓冲区中。
+因此，由缓冲区刷新生成的分片可能包含多个异步插入查询的数据。
+总体而言，这种机制将数据批处理从客户端侧转移到了服务端 (ClickHouse 实例) 。
+
+<Note>
+  请注意，在数据刷新到数据库存储之前，这些数据无法被查询检索到，并且缓冲区刷新行为是可配置的。
+
+  有关如何配置异步插入的完整说明，请参见[这里](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)；更深入的介绍请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
+</Note>
+
+<div id="use-official-clickhouse-clients">
+  ### 使用官方 ClickHouse 客户端
+</div>
+
+ClickHouse 为最常用的编程语言提供了客户端。
+这些客户端经过优化，可确保插入操作正确执行，并原生支持异步插入：例如，可像 [Go client](/zh/integrations/language-clients/go/clickhouse-api#async-insert) 那样直接支持；也可以在查询、用户或连接级别的设置中启用后间接支持。
+
+有关可用 ClickHouse 客户端和驱动程序的完整列表，请参阅[客户端和驱动程序](/zh/concepts/features/interfaces/cli)。
+
+<div id="prefer-the-native-format">
+  ### 优先使用 Native 格式
+</div>
+
+ClickHouse 在插入 (以及查询) 时支持多种[输入格式](/zh/reference/formats/index)。
+这与 OLTP 数据库有很大不同，也让从外部来源加载数据变得更加容易，尤其是在结合使用[表函数](/zh/reference/functions/table-functions/index)以及从磁盘文件加载数据的能力时。
+这些格式非常适合临时性的数据加载和数据工程任务。
+
+对于希望获得最佳插入性能的应用，你应使用 [Native](/zh/reference/formats/Native) 格式进行插入。
+大多数客户端 (如 Go 和 Python) 都支持这种格式，并且由于该格式本身就是列式的，因此可确保服务器只需做极少量的处理。
+这样一来，将数据转换为列式格式的责任就转移到了客户端。这对于高效扩缩容插入能力非常重要。
+
+或者，如果更倾向于行格式，也可以使用 [RowBinary 格式](/zh/reference/formats/RowBinary/RowBinary) (Java client 使用的就是这种格式) ——它通常比 Native 格式更容易编写。
+与 [JSON](/zh/reference/formats/JSON/JSON) 等其他行格式相比，它在压缩、网络开销和服务器处理方面通常都更高效。
+如果你的写入吞吐量较低，并且希望快速集成，也可以考虑 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow) 格式。但要注意，这种格式会让 ClickHouse 在解析时产生额外的 CPU 开销。
+
+<div id="use-the-http-interface">
+  ### 使用 HTTP 接口
+</div>
+
+与许多传统数据库不同，ClickHouse 支持 HTTP 接口。
+你可以使用它以以上任意格式插入和查询数据。
+与 ClickHouse 的原生协议相比，这通常是更合适的选择，因为它便于通过负载均衡器轻松切换流量。
+我们预计，相比原生协议，插入性能只会有细微差异，因为原生协议的额外开销略低。
+现有客户端通常使用这两种协议中的一种 (在某些情况下也会同时使用两种，例如 Go 客户端) 。
+原生协议也更便于跟踪查询进度。
+
+更多详情，请参阅 [HTTP Interface](/zh/concepts/features/interfaces/http)。
+
+<div id="basic-example">
+  ## 基本示例
+</div>
+
+您可以在 ClickHouse 中使用熟悉的 `INSERT INTO TABLE` 命令。下面我们将一些数据插入到之前在快速入门指南[“在 ClickHouse 中创建表”](/zh/get-started/quickstarts/creating-tables)里创建的表中。
+
+```sql
+INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!',                                 now(),       -1.0    ),
+    (102, 'Insert a lot of rows per batch',                     yesterday(), 1.41421 ),
+    (102, 'Sort your data based on your commonly-used queries', today(),     2.718   ),
+    (101, 'Granules are the smallest chunks of data read',      now() + 5,   3.14159 )
+```
+
+为验证是否成功，我们将运行以下 `SELECT` 查询：
+
+```sql
+SELECT * FROM helloworld.my_first_table
+```
+
+返回结果如下：
+
+```response
+user_id message                                             timestamp           metric
+101         Hello, ClickHouse!                                  2024-11-13 20:01:22     -1
+101         Granules are the smallest chunks of data read           2024-11-13 20:01:27 3.14159
+102         Insert a lot of rows per batch                          2024-11-12 00:00:00 1.41421
+102         Sort your data based on your commonly-used queries  2024-11-13 00:00:00     2.718
+```
+
+<div id="loading-data-from-postgres">
+  ## 从 Postgres 加载数据
+</div>
+
+如需从 Postgres 加载数据，可以使用：
+
+* `ClickPipes`，这是一款专为 PostgreSQL 数据库复制设计的 ETL 工具。在以下两种环境中均可用：
+  * ClickHouse Cloud - 可通过 ClickPipes 中的[托管摄取服务](/zh/integrations/clickpipes/postgres/index)使用。
+  * 自管理 - 可通过 [PeerDB 开源项目](https://github.com/PeerDB-io/peerdb)使用。
+* [PostgreSQL 表引擎](/zh/integrations/connectors/data-sources/postgres#using-the-postgresql-table-engine) 可像前面的示例那样直接读取数据。如果基于已知水位线 (例如时间戳) 的批次复制已足够，或者这是一次性迁移，这种方式通常比较合适。此方法可扩展到数千万行。对于需要迁移更大数据集的用户，建议考虑使用多个请求，每个请求处理一部分数据。可以为每部分数据使用暂存表，再将其分区移动到最终表中。这样一来，如果请求失败，也可以重试。有关这种批量加载策略的更多细节，请参见此处。
+* 可以将数据从 PostgreSQL 导出为 CSV 格式。然后可使用表函数从本地文件或通过对象存储将其插入 ClickHouse。
+
+<Info>
+  **需要帮助插入大型数据集吗？**
+
+  如果你在向 ClickHouse Cloud 导入数据时，需要协助插入大型数据集，或遇到任何错误，请通过 support@clickhouse.com 联系我们，我们很乐意提供帮助。
+</Info>
+
+<div id="inserting-data-from-command-line">
+  ## 从命令行插入数据
+</div>
+
+**前置条件**
+
+* 你已[安装](/zh/get-started/setup/install) ClickHouse
+* `clickhouse-server` 正在运行
+* 你可访问已安装 `wget`、`zcat` 和 `curl` 的终端
+
+在本示例中，你将看到如何使用处于批次模式的 `clickhouse-client`，从命令行将一个 CSV 文件插入 ClickHouse。有关使用处于批次模式的 `clickhouse-client` 通过命令行插入数据的更多信息和示例，请参阅 [“批次模式”](/zh/concepts/features/interfaces/client#batch-mode)。
+
+本示例将使用 [Hacker News dataset](/zh/get-started/sample-datasets/hacker-news)，其中包含 2800 万行 Hacker News 数据。
+
+<Steps>
+  <Step>
+    ### 下载 CSV
+
+    运行以下命令，从我们的公开 S3 bucket 下载该数据集的 CSV 版本：
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    这个压缩文件大小为 4.6 GB，包含 2800 万行，下载大约需要 5 到 10 分钟。
+  </Step>
+
+  <Step>
+    ### 创建表
+
+    在 `clickhouse-server` 运行时，你可以使用处于批次模式的 `clickhouse-client`，通过命令行直接按以下 schema 创建一个空表：
+
+    ```bash
+    clickhouse-client <<'_EOF'
+    CREATE TABLE hackernews(
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    _EOF
+    ```
+
+    如果没有报错，就表示该表已成功创建。在上面的命令中，heredoc 分隔符 (`_EOF`) 使用了单引号，以防止发生任何插值。如果不加单引号，就需要对列名两侧的反引号进行转义。
+  </Step>
+
+  <Step>
+    ### 从命令行插入数据
+
+    接下来，运行下面的命令，将你之前下载的文件中的数据插入表中：
+
+    ```bash
+    zcat < hacknernews.csv.gz | ./clickhouse client --query "INSERT INTO hackernews FORMAT CSV"
+    ```
+
+    由于数据是压缩的，因此需要先使用 `gzip`、`zcat` 或类似工具对文件进行解压，然后再将解压后的数据通过管道传给 `clickhouse-client`，并配合相应的 `INSERT` 语句和 `FORMAT`。
+
+    <Note>
+      当使用处于交互模式的 `clickhouse-client` 插入数据时，可以让 ClickHouse 在插入时通过 `COMPRESSION` 子句代为处理解压。ClickHouse 可以根据文件扩展名自动检测压缩类型，也可以显式指定。
+
+      此时，插入查询如下所示：
+
+      ```bash
+      clickhouse-client --query "INSERT INTO hackernews FROM INFILE 'hacknernews.csv.gz' COMPRESSION 'gzip' FORMAT CSV;"
+      ```
+    </Note>
+
+    数据插入完成后，你可以运行以下命令查看 `hackernews` 表中的行数：
+
+    ```bash
+    clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackernews"
+    28.74 million
+    ```
+  </Step>
+
+  <Step>
+    ### 使用 curl 通过命令行插入数据
+
+    在前面的步骤中，你先使用 `wget` 将 CSV 文件下载到本地机器。你也可以用一条命令直接从远程 URL 插入数据。
+
+    运行以下命令，清空 `hackernews` 表中的数据，这样你就可以再次插入数据，而无需先下载到本地机器这一步中间操作：
+
+    ```bash
+    clickhouse-client --query "TRUNCATE hackernews"
+    ```
+
+    现在运行：
+
+    ```bash
+    curl https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz | zcat | clickhouse-client --query "INSERT INTO hackernews FORMAT CSV"
+    ```
+
+    现在你可以再次运行与前面相同的命令，以验证数据是否已重新插入：
+
+    ```bash
+    clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackernews"
+    28.74 million
+    ```
+  </Step>
+</Steps>

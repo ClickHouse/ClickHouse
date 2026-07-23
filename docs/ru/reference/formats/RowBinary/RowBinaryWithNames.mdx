@@ -1,0 +1,41 @@
+---
+description: 'Документация по формату RowBinaryWithNames'
+input_format: true
+keywords: ['RowBinaryWithNames']
+output_format: true
+slug: /interfaces/formats/RowBinaryWithNames
+title: 'RowBinaryWithNames'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/ru/common-row-binary-format-settings.mdx';
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Аналогично формату [`RowBinary`](/ru/reference/formats/RowBinary/RowBinary), но с добавленным заголовком:
+
+* число столбцов (N), закодированное в [`LEB128`](https://en.wikipedia.org/wiki/LEB128);
+* N значений `String`, задающих имена столбцов.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+<RowBinaryFormatSettings />
+
+<Note>
+  * Если параметр [`input_format_with_names_use_header`](/ru/reference/settings/formats#input_format_with_names_use_header) установлен в `1`,
+    столбцы из входных данных будут сопоставляться со столбцами таблицы по именам, а столбцы с неизвестными именами будут пропущены.
+  * Если параметр [`input_format_skip_unknown_fields`](/ru/reference/settings/formats#input_format_skip_unknown_fields) установлен в `1`.
+    В противном случае будет пропущена первая строка.
+</Note>

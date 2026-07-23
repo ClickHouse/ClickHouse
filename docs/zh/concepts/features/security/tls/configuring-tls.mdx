@@ -1,0 +1,686 @@
+---
+slug: /guides/sre/tls/configuring-tls
+sidebarTitle: '配置 TLS'
+title: '配置 TLS'
+description: '本指南提供一组简单且精简的设置，用于将 ClickHouse 配置为使用 OpenSSL 证书验证连接。'
+keywords: ['SSL 配置', 'TLS 设置', 'OpenSSL 证书', '安全连接', 'SRE 指南']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<SelfManaged />
+
+本指南介绍如何以简单、最少的配置，让 ClickHouse 使用 OpenSSL 证书验证连接。为便于演示，这里会创建自签名的证书颁发机构 (CA) 证书和密钥，以及节点证书，并使用适当的配置建立连接。
+
+<Note>
+  TLS 的实现较为复杂，需要综合考虑许多选项，才能确保部署既安全又稳健。本教程仅提供基础内容和基本 TLS 配置示例。请与你们的 PKI/安全团队协作，为你的组织生成正确的证书。
+
+  如需入门概览，请参阅这篇[证书使用基础教程](https://ubuntu.com/server/docs/security-certificates)。
+</Note>
+
+<Steps>
+  <Step>
+    ## 创建 ClickHouse 部署
+
+    本指南基于 Ubuntu 20.04 编写，且 ClickHouse 是在以下主机上通过 DEB 软件包 (使用 apt) 安装的。域名为 `marsnet.local`：
+
+    | Host      | IP Address    |
+    | --------- | ------------- |
+    | `chnode1` | 192.168.1.221 |
+    | `chnode2` | 192.168.1.222 |
+    | `chnode3` | 192.168.1.223 |
+
+    <Note>
+      有关如何安装 ClickHouse 的更多信息，请参阅[快速入门](/zh/get-started/setup/install)。
+    </Note>
+  </Step>
+
+  <Step>
+    ## 创建 TLS 证书
+
+    <Note>
+      自签名证书仅用于演示，不应在生产环境中使用。应创建证书签名请求，并由组织进行签名，再使用将在设置中配置的 CA 证书链进行验证。不过，这些步骤可用于配置和测试相关设置，之后再替换为实际使用的证书。
+    </Note>
+
+    1. 生成一个将用于新 CA 的私钥：
+       ```bash
+       openssl genrsa -out marsnet_ca.key 2048
+       ```
+
+    2. 生成一个新的自签名 CA 证书。以下命令将创建一个新证书，该证书将使用 CA 私钥为其他证书签名：
+       ```bash
+       openssl req -x509 -subj "/CN=marsnet.local CA" -nodes -key marsnet_ca.key -days 1095 -out marsnet_ca.crt
+       ```
+
+    <Note>
+      将私钥和 CA 证书备份到集群外的安全位置。生成节点证书后，应从集群节点中删除该私钥。
+    </Note>
+
+    3. 验证新 CA 证书的内容：
+       ```bash
+       openssl x509 -in marsnet_ca.crt -text
+       ```
+
+    4. 为每个节点创建证书签名请求 (CSR) 并生成私钥：
+       ```bash
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1" -addext "subjectAltName = DNS:chnode1.marsnet.local,IP:192.168.1.221" -keyout chnode1.key -out chnode1.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode2" -addext "subjectAltName = DNS:chnode2.marsnet.local,IP:192.168.1.222" -keyout chnode2.key -out chnode2.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode3" -addext "subjectAltName = DNS:chnode3.marsnet.local,IP:192.168.1.223" -keyout chnode3.key -out chnode3.csr
+       ```
+
+    5. 使用 CSR 和 CA 创建新的证书与私钥对：
+       ```bash
+       openssl x509 -req -in chnode1.csr -out chnode1.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode2.csr -out chnode2.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode3.csr -out chnode3.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       ```
+
+    6. 验证证书中的 subject 和签发方：
+       ```bash
+       openssl x509 -in chnode1.crt -text -noout
+       ```
+
+    7. 检查新证书是否可通过 CA 证书验证：
+       ```bash
+       openssl verify -CAfile marsnet_ca.crt chnode1.crt
+       chnode1.crt: OK
+       ```
+  </Step>
+
+  <Step>
+    ## 创建并配置用于存储证书和密钥的目录
+
+    <Note>
+      这一步必须在每个节点上执行。请在每台主机上使用相应的证书和密钥。
+    </Note>
+
+    1. 在每个节点上，创建一个 ClickHouse 可访问目录中的文件夹。建议使用默认配置目录 (例如 `/etc/clickhouse-server`) ：
+       ```bash
+       mkdir /etc/clickhouse-server/certs
+       ```
+
+    2. 将 CA 证书、节点证书以及与各节点对应的密钥复制到新的 certs 目录中。
+
+    3. 更新所有者和权限，使 ClickHouse 能够读取这些证书：
+
+       ```bash
+       chown clickhouse:clickhouse -R /etc/clickhouse-server/certs
+       chmod 600 /etc/clickhouse-server/certs/*
+       chmod 755 /etc/clickhouse-server/certs
+       ll /etc/clickhouse-server/certs
+       ```
+
+       ```response
+       total 20
+       drw-r--r-- 2 clickhouse clickhouse 4096 Apr 12 20:23 ./
+       drwx------ 5 clickhouse clickhouse 4096 Apr 12 20:23 ../
+       -rw------- 1 clickhouse clickhouse  997 Apr 12 20:22 chnode1.crt
+       -rw------- 1 clickhouse clickhouse 1708 Apr 12 20:22 chnode1.key
+       -rw------- 1 clickhouse clickhouse 1131 Apr 12 20:23 marsnet_ca.crt
+       ```
+  </Step>
+
+  <Step>
+    ## 使用 ClickHouse Keeper 配置基础版集群环境
+
+    在此部署环境中，每个节点均使用以下 ClickHouse Keeper 配置。每台服务器都有其独立的 `<server_id>`。 (例如，节点 `chnode1` 对应 `<server_id>1</server_id>`，其余节点以此类推。)
+
+    <Note>
+      ClickHouse Keeper 建议使用 `9281` 端口。不过，该端口可配置；如果此端口在当前环境中已被其他应用占用，可改为其他端口。
+
+      有关所有选项的完整说明，请访问 https://clickhouse.com/docs/operations/clickhouse-keeper/
+    </Note>
+
+    1. 在 ClickHouse server 的 `config.xml` 文件中，在 `<clickhouse>` 标签内添加以下内容
+
+    <Note>
+      对于生产环境，建议在 `config.d` 目录中使用单独的 `.xml` 配置文件。
+      更多信息请参见 https://clickhouse.com/docs/operations/configuration-files/
+    </Note>
+
+    ```xml
+    <keeper_server>
+        <tcp_port_secure>9281</tcp_port_secure>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <secure>true</secure>
+            <server>
+                <id>1</id>
+                <hostname>chnode1.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>chnode2.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>chnode3.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+    ```
+
+    <Note>
+      当 ClickHouse Keeper 作为嵌入式组件运行在 ClickHouse server 中时 (如上所示) ，Keeper 会使用 [在 ClickHouse 节点上配置 TLS 接口](#5-configure-tls-interfaces-on-clickhouse-nodes) 中 OpenSSL 部分定义的 server OpenSSL 配置。如果将 ClickHouse Keeper 作为独立进程运行，则必须在 Keeper 配置文件中添加 `<openSSL>` 部分，并使用相同的 CA 证书以及节点证书/密钥设置。有关详细信息，请参阅下方的 [为独立运行的 ClickHouse Keeper 配置 OpenSSL](#configure-openssl-for-standalone-clickhouse-keeper)。
+    </Note>
+
+    2. 取消所有节点上 Keeper 设置的注释并更新，然后将 `<secure>` 标志设为 1：
+       ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode2.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode3.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+       </zookeeper>
+       ```
+
+    3. 在 `chnode1` 和 `chnode2` 上更新并添加以下集群设置。`chnode3` 将用作 ClickHouse Keeper 的仲裁节点。
+
+    <Note>
+      对于此配置，仅配置了一个示例集群。测试用的示例集群必须删除或注释掉；如果存在正在测试的现有集群，则必须更新端口并添加 `<secure>` 选项。如果在安装时或在 `users.xml` 文件中，`default` 用户最初被配置了密码，则必须设置 `<user` 和 `<password>`。
+    </Note>
+
+    以下将创建一个集群，该集群在两台服务器上各有一个分片副本 (每个节点一个) 。
+
+    ```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+    ```
+
+    4. 定义宏配置值，以便创建用于测试的 ReplicatedMergeTree 表。在 `chnode1` 上：
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_1</replica>
+       </macros>
+       ```
+
+       在 `chnode2` 上：
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_2</replica>
+       </macros>
+       ```
+  </Step>
+
+  <Step>
+    ## 在 ClickHouse 节点上配置 TLS 接口
+
+    以下设置需要在 ClickHouse server 的 `config.xml` 中配置：
+
+    1. 为部署设置显示名称 (可选) ：
+       ```xml
+       <display_name>clickhouse</display_name>
+       ```
+
+    2. 将 ClickHouse 设置为监听外部端口：
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
+
+    3. 在每个节点上配置 `https` 端口，并禁用 `http` 端口：
+       ```xml
+       <https_port>8443</https_port>
+       {/*<http_port>8123</http_port>*/}
+       ```
+
+    4. 在每个节点上配置 ClickHouse Native 安全 TCP 端口，并禁用默认的非安全端口：
+       ```xml
+       <tcp_port_secure>9440</tcp_port_secure>
+       {/*<tcp_port>9000</tcp_port>*/}
+       ```
+
+    5. 在每个节点上配置 `interserver https` 端口，并禁用默认的非安全端口：
+       ```xml
+       <interserver_https_port>9010</interserver_https_port>
+       {/*<interserver_http_port>9009</interserver_http_port>*/}
+       ```
+
+    6. 使用证书和路径配置 OpenSSL
+
+    <Note>
+      每个文件名和路径都必须更新为与当前配置的节点相匹配。
+      例如，在 `chnode2` 主机上进行配置时，应将 `<certificateFile>` 条目更新为 `chnode2.crt`。
+    </Note>
+
+    ```xml
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/certs/chnode1.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/chnode1.key</privateKeyFile>
+            <verificationMode>relaxed</verificationMode>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>relaxed</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+    ```
+
+    如需了解更多信息，请访问[此页面](/zh/reference/settings/server-settings/settings#openssl)
+
+    7. 在每个节点上为 gRPC 配置 TLS：
+
+       ```xml
+       <grpc>
+           <enable_ssl>1</enable_ssl>
+           <ssl_cert_file>/etc/clickhouse-server/certs/chnode1.crt</ssl_cert_file>
+           <ssl_key_file>/etc/clickhouse-server/certs/chnode1.key</ssl_key_file>
+           <ssl_require_client_auth>true</ssl_require_client_auth>
+           <ssl_ca_cert_file>/etc/clickhouse-server/certs/marsnet_ca.crt</ssl_ca_cert_file>
+           <transport_compression_type>none</transport_compression_type>
+           <transport_compression_level>0</transport_compression_level>
+           <max_send_message_size>-1</max_send_message_size>
+           <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
+       </grpc>
+       ```
+
+       如需了解更多信息，请访问 https://clickhouse.com/docs/interfaces/grpc/
+
+    8. 在至少一个节点上配置 ClickHouse client，使其在自身的 `config.xml` 文件中通过 TLS 建立连接 (默认位于 `/etc/clickhouse-client/`) ：
+       ```xml
+       <openSSL>
+           <client>
+               <loadDefaultCAFile>false</loadDefaultCAFile>
+               <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+               <cacheSessions>true</cacheSessions>
+               <disableProtocols>sslv2,sslv3</disableProtocols>
+               <preferServerCiphers>true</preferServerCiphers>
+               <invalidCertificateHandler>
+                   <name>RejectCertificateHandler</name>
+               </invalidCertificateHandler>
+           </client>
+       </openSSL>
+       ```
+
+    9. 禁用 MySQL 和 PostgreSQL 的默认模拟端口：
+       ```xml
+       {/*mysql_port>9004</mysql_port*/}
+       {/*postgresql_port>9005</postgresql_port*/}
+       ```
+  </Step>
+
+  <Step>
+    ## 测试
+
+    1. 逐个启动所有节点：
+       ```bash
+       service clickhouse-server start
+       ```
+
+    2. 确认安全端口已启动并正在监听，每个节点上的输出应与以下示例类似：
+
+       ```bash
+       root@chnode1:/etc/clickhouse-server# netstat -ano | grep tcp
+       ```
+
+       ```response
+       tcp        0      0 0.0.0.0:9010            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:8443            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9440            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9281            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 192.168.1.221:33046     192.168.1.222:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:42730     192.168.1.223:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:51952     192.168.1.222:9281      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:22        192.168.1.210:49801     ESTABLISHED keepalive (6618.05/0/0)
+       tcp        0     64 192.168.1.221:22        192.168.1.210:59195     ESTABLISHED on (0.24/0/0)
+       tcp6       0      0 :::22                   :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 :::9444                 :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.222:59046     ESTABLISHED off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.223:41976     ESTABLISHED off (0.00/0/0)
+       ```
+
+       | ClickHouse 端口 | 描述                        |
+       | ------------- | ------------------------- |
+       | 8443          | HTTPS 接口                  |
+       | 9010          | 服务器间 HTTPS 端口             |
+       | 9281          | ClickHouse Keeper 安全端口    |
+       | 9440          | 安全的 native TCP 协议端口       |
+       | 9444          | ClickHouse Keeper Raft 端口 |
+
+    3. 检查 ClickHouse Keeper 的健康状态
+       常见的 [4 字母命令 (4lW) ](/zh/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) 在未启用 TLS 时无法直接通过 `echo` 使用，以下说明如何用 `openssl` 执行这些命令。
+       * 使用 `openssl` 启动一个交互式会话
+
+    ```bash
+    openssl s_client -connect chnode1.marsnet.local:9281
+    ```
+
+    ```response
+    CONNECTED(00000003)
+    depth=0 CN = chnode1
+    verify error:num=20:unable to get local issuer certificate
+    verify return:1
+    depth=0 CN = chnode1
+    verify error:num=21:unable to verify the first certificate
+    verify return:1
+    ---
+    Certificate chain
+     0 s:CN = chnode1
+       i:CN = marsnet.local CA
+    ---
+    Server certificate
+    -----BEGIN CERTIFICATE-----
+    MIICtDCCAZwCFD321grxU3G5pf6hjitf2u7vkusYMA0GCSqGSIb3DQEBCwUAMBsx
+    ...
+    ```
+
+    * 在 OpenSSL 会话中执行 4LW 命令
+
+      ```bash
+      mntr
+      ```
+
+      ```response highlight={9,15,24}
+      ---
+      Post-Handshake New Session Ticket arrived:
+      SSL-Session:
+          Protocol  : TLSv1.3
+      ...
+      read R BLOCK
+      zk_version      v22.7.3.5-stable-e140b8b5f3a5b660b6b576747063fd040f583cf3
+      zk_avg_latency  0
+      zk_max_latency  4087
+      zk_min_latency  0
+      zk_packets_received     4565774
+      zk_packets_sent 4565773
+      zk_num_alive_connections        2
+      zk_outstanding_requests 0
+      zk_server_state leader
+      zk_znode_count  1087
+      zk_watch_count  26
+      zk_ephemerals_count     12
+      zk_approximate_data_size        426062
+      zk_key_arena_size       258048
+      zk_latest_snapshot_size 0
+      zk_open_file_descriptor_count   187
+      zk_max_file_descriptor_count    18446744073709551615
+      zk_followers    2
+      zk_synced_followers     1
+      closed
+      ```
+
+    4. 使用 `--secure` 参数和 TLS 端口启动 ClickHouse 客户端：
+       ```bash
+       root@chnode1:/etc/clickhouse-server# clickhouse-client --user default --password ClickHouse123! --port 9440 --secure --host chnode1.marsnet.local
+       ClickHouse client version 22.3.3.44 (official build).
+       Connecting to chnode1.marsnet.local:9440 as user default.
+       Connected to ClickHouse server version 22.3.3 revision 54455.
+
+       clickhouse :)
+       ```
+
+    5. 使用 `https` 接口登录位于 `https://chnode1.marsnet.local:8443/play` 的 Play UI。
+
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="配置 TLS" size="md" border />
+
+    <Note>
+      浏览器会显示证书不受信任，因为这是从工作站访问的，而这些证书并不在客户端机器的根 CA 存储中。
+      如果使用由公共证书颁发机构或企业 CA 签发的证书，则应显示为受信任。
+    </Note>
+
+    6. 创建一个复制表：
+
+       ```sql
+       clickhouse :) CREATE TABLE repl_table ON CLUSTER cluster_1S_2R
+                   (
+                       id UInt64,
+                       column1 Date,
+                       column2 String
+                   )
+                   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/default/repl_table', '{replica}' )
+                   ORDER BY (id);
+       ```
+
+       ```response
+       ┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+       │ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+       │ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+       └───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+       ```
+
+    7. 在 `chnode1` 上添加几条记录：
+       ```sql
+       INSERT INTO repl_table
+       (id, column1, column2)
+       VALUES
+       (1,'2022-04-01','abc'),
+       (2,'2022-04-02','def');
+       ```
+
+    8. 通过查看 `chnode2` 上的数据行来验证复制：
+
+       ```sql
+       SELECT * FROM repl_table
+       ```
+
+       ```response
+       ┌─id─┬────column1─┬─column2─┐
+       │  1 │ 2022-04-01 │ abc     │
+       │  2 │ 2022-04-02 │ def     │
+       └────┴────────────┴─────────┘
+       ```
+  </Step>
+</Steps>
+
+<div id="configure-openssl-for-standalone-clickhouse-keeper">
+  ## 为独立运行的 ClickHouse Keeper 配置 OpenSSL
+</div>
+
+当 ClickHouse Keeper 以独立进程方式运行时 (而不是嵌入在 ClickHouse server 中) ，必须在 Keeper 配置文件中单独配置 OpenSSL 证书和相关设置。否则，Keeper 将无法为客户端通信 (`tcp_port_secure`) 或 Keeper 节点之间的 Raft 复制建立安全连接。
+
+将以下 `<openSSL>` 部分添加到每个节点上的独立运行的 ClickHouse Keeper 配置文件中：
+
+<Note>
+  必须将每个文件名更新为与其所在节点匹配。
+  例如，在 `chnode2` 主机上配置时，将 `<certificateFile>` 条目更新为 `chnode2.crt`。
+</Note>
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/chnode1.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/chnode1.key</privateKeyFile>
+        <verificationMode>relaxed</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>relaxed</verificationMode>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+`<server>` 部分用于通过安全的 Keeper 端口 (`tcp_port_secure`) 接收客户端传入连接。`<client>` 部分用于在 Raft 复制期间建立 Keeper 节点之间的出站连接。
+
+<Note>
+  上述证书路径使用 `/etc/clickhouse-keeper/certs/`，这是独立部署 Keeper 时的典型路径。如果你通过其他路径安装了 Keeper，请相应调整。证书本身与在[步骤 2](#2-create-tls-certificates)中创建的证书相同。
+</Note>
+
+<div id="openssl-verification-modes">
+  ## OpenSSL 验证模式和证书处理器
+</div>
+
+`<openSSL>` 配置支持多种 `<verificationMode>` 和 `<invalidCertificateHandler>` 选项，用于控制 ClickHouse 如何验证 TLS 证书。这些设置适用于 clickhouse-server、clickhouse-client 以及独立运行的 ClickHouse Keeper。
+
+<div id="verification-modes">
+  ### 验证模式
+</div>
+
+在 `<openSSL>` 的 `<server>` 或 `<client>` 部分中设置 `<verificationMode>`：
+
+| 模式        | 描述                                                          |
+| --------- | ----------------------------------------------------------- |
+| `none`    | 不进行证书验证。连接会被加密，但不会检查对端的身份。仅用于测试。                            |
+| `relaxed` | 如果提供了对端证书，则验证该证书；但如果未提供证书，也不会失败。                            |
+| `once`    | 在服务端，仅在初始握手时验证客户端证书，并跳过重新协商。在客户端，其行为与 `relaxed` 相同。         |
+| `strict`  | 要求提供对端证书并进行完整验证。如果证书缺失、已过期，或不是由受信任的 CA 签发，连接将失败。建议在生产环境中使用。 |
+
+<div id="invalid-certificate-handlers">
+  ### 无效证书处理器
+</div>
+
+在 `<openSSL>` 的 `<server>` 或 `<client>` 部分中设置 `<invalidCertificateHandler>`。该处理程序用于确定证书验证失败时如何处理。在服务器端，它控制对无效客户端证书的响应；在客户端，它控制对无效服务器证书的响应。
+
+| 处理程序                       | 说明                       |
+| -------------------------- | ------------------------ |
+| `RejectCertificateHandler` | 如果证书无效，则拒绝连接。这是默认且推荐的设置。 |
+| `AcceptCertificateHandler` | 即使证书无效，也接受连接。仅用于测试。      |
+
+<div id="disabling-certificate-verification">
+  ### 示例：禁用证书验证
+</div>
+
+<Warning>
+  禁用证书验证会取消 TLS 身份检查，使连接面临中间人攻击的风险。仅应在隔离的开发或测试环境中使用此配置。
+</Warning>
+
+如需完全跳过证书验证 (例如在测试环境中使用自签名证书时) ，请将 `verificationMode` 设置为 `none`，并使用 `AcceptCertificateHandler`。
+
+对于 `clickhouse-client`，你也可以使用 `--accept-invalid-certificate` CLI 标志，该标志会自动应用这两项设置。
+
+**clickhouse-client** (`/etc/clickhouse-client/config.xml`)：
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**clickhouse-server** (`config.xml` 或 `config.d/` 中的某个文件) 。`<server>` 部分仍然需要证书和密钥路径，因为即使服务器不验证客户端证书，也必须向客户端提供自己的证书：
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-server/certs/server.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/certs/server.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**独立运行的 ClickHouse Keeper** (Keeper 配置文件) ：
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/keeper.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/keeper.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="summary">
+  ## 总结
+</div>
+
+本文重点介绍了如何为 ClickHouse 环境配置 TLS。生产环境中的具体设置会因需求不同而有所差异，例如证书验证级别、协议、密码套件等。不过，相信你现在已经对配置和建立安全连接所需的步骤有了较为清晰的认识。

@@ -1,0 +1,187 @@
+---
+description: '원격 MySQL 서버의 데이터베이스에 연결하고, ClickHouse와 MySQL 간에 데이터를 주고받기 위해
+  `INSERT` 및 `SELECT` 쿼리를 수행할 수 있습니다.'
+sidebarTitle: 'MySQL'
+slug: /engines/database-engines/mysql
+title: 'MySQL'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="mysql-database-engine">
+  # MySQL 데이터베이스 엔진
+</div>
+
+<CloudNotSupportedBadge />
+
+원격 MySQL 서버의 데이터베이스에 연결하고, ClickHouse와 MySQL 간에 데이터를 주고받기 위해 `INSERT` 및 `SELECT` 쿼리를 수행할 수 있습니다.
+
+`MySQL` 데이터베이스 엔진은 쿼리를 MySQL 서버로 전달하므로 `SHOW TABLES`나 `SHOW CREATE TABLE` 같은 작업을 수행할 수 있습니다.
+
+다음 쿼리는 수행할 수 없습니다.
+
+* `RENAME`
+* `CREATE TABLE`
+* `ALTER`
+
+<div id="creating-a-database">
+  ## 데이터베이스 생성
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
+```
+
+**엔진 매개변수**
+
+* `host:port` — MySQL 서버 주소입니다.
+* `database` — 원격 데이터베이스 이름입니다.
+* `user` — MySQL 사용자 이름입니다.
+* `password` — 사용자 비밀번호입니다.
+
+**설정**
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+MySQL 프로토콜 connection에 대해 zlib 압축을 활성화합니다. `1`로 설정하면 ClickHouse가 MySQL 서버에 프로토콜 수준의 압축을 요청합니다.
+
+기본값: `0`.
+
+예시:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="data_types-support">
+  ## 데이터 타입 지원
+</div>
+
+| MySQL                            | ClickHouse                                       |
+| -------------------------------- | ------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/ko/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/ko/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/ko/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/ko/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ko/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/ko/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/ko/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/ko/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/ko/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/ko/reference/data-types/float)           |
+| DATE                             | [Date](/ko/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/ko/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/ko/reference/data-types/fixedstring) |
+
+그 외의 모든 MySQL 데이터 타입은 [String](/ko/reference/data-types/string)으로 변환됩니다.
+
+[Nullable](/ko/reference/data-types/nullable)을 지원합니다.
+
+<div id="global-variables-support">
+  ## 전역 변수 지원
+</div>
+
+호환성을 높이기 위해 전역 변수는 MySQL 방식인 `@@identifier`로 참조할 수 있습니다.
+
+지원되는 변수는 다음과 같습니다:
+
+* `version`
+* `max_allowed_packet`
+
+<Note>
+  현재로서는 이 변수들이 스텁일 뿐이며 실제로 대응되는 항목은 없습니다.
+</Note>
+
+예시:
+
+```sql
+SELECT @@version;
+```
+
+<div id="examples-of-use">
+  ## 사용 예시
+</div>
+
+MySQL의 테이블:
+
+```text
+mysql> USE test;
+Database changed
+
+mysql> CREATE TABLE `mysql_table` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from mysql_table;
++------+-----+
+| int_id | value |
++------+-----+
+|      1 |     2 |
++------+-----+
+1 row in set (0,00 sec)
+```
+
+ClickHouse의 데이터베이스로, MySQL 서버와 데이터를 주고받습니다:
+
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+```
+
+```sql
+SHOW DATABASES
+```
+
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+
+```sql
+SHOW TABLES FROM mysql_db
+```
+
+```text
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+```sql
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```

@@ -1,0 +1,137 @@
+---
+title: Configurar a ingestão gerenciada
+---
+
+<img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
+
+Selecione &quot;Start Ingestion&quot; e será solicitado que você escolha uma fonte de ingestão. O Managed ClickStack oferece suporte a OpenTelemetry e [Vector](https://vector.dev/) como suas principais fontes de ingestão. No entanto, os usuários também podem enviar dados diretamente para o ClickHouse em um schema próprio usando qualquer uma das [integrações compatíveis com o ClickHouse Cloud](/pt-BR/integrations/home).
+
+<img src="/images/clickstack/getting-started/select_source.webp" alt="" />
+
+<Info>
+  **OpenTelemetry recomendado**
+
+  Recomendamos fortemente o uso do OpenTelemetry como formato de ingestão.
+  Ele oferece a experiência mais simples e otimizada, com schemas prontos para uso projetados especificamente para funcionar com eficiência no ClickStack.
+</Info>
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    Para enviar dados do OpenTelemetry para o Managed ClickStack, recomenda-se usar um OpenTelemetry Collector. O collector atua como um gateway que recebe dados do OpenTelemetry das suas aplicações (e de outros collectors) e os encaminha para o ClickHouse Cloud.
+
+    Se você ainda não tiver um em execução, inicie um collector usando as etapas abaixo. Se você já tiver collectors em execução, também disponibilizamos um exemplo de configuração.
+
+    ### Inicie um collector
+
+    O conteúdo a seguir presume o caminho recomendado: usar a **distribuição ClickStack do OpenTelemetry Collector**, que inclui processamento adicional e é otimizada especificamente para o ClickHouse Cloud. Se você quiser usar seu próprio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors)
+
+    Para começar rapidamente, copie e execute o comando Docker mostrado.
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    Esse comando já deve incluir suas credenciais de conexão preenchidas.
+
+    <Info>
+      **Implantação em produção**
+
+      Embora esse comando use o usuário `default` para se conectar ao Managed ClickStack, você deve criar um usuário dedicado ao [colocar em produção](/pt-BR/clickstack/managing/production#create-a-database-ingestion-user-managed) e ajustar sua configuração.
+    </Info>
+
+    Executar esse único comando inicia o ClickStack collector com endpoints OTLP expostos nas portas 4317 (gRPC) e 4318 (HTTP). Se você já tiver instrumentação e agentes do OpenTelemetry, poderá começar imediatamente a enviar dados de telemetria para esses endpoints.
+
+    ### Configurar collectors existentes
+
+    Também é possível configurar seus próprios OpenTelemetry Collectors existentes ou usar sua própria distribuição do collector.
+
+    <Info>
+      **Exportador ClickHouse obrigatório**
+
+      Se você estiver usando sua própria distribuição, por exemplo a [imagem contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib), verifique se ela inclui o [exportador ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+    </Info>
+
+    Para isso, fornecemos um exemplo de configuração do OpenTelemetry Collector que usa o exportador ClickHouse com as definições apropriadas e expõe receivers OTLP. Essa configuração corresponde às interfaces e ao comportamento esperados pela distribuição ClickStack.
+
+    <ExampleOTelConfig />
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    Para mais detalhes sobre como configurar collectors do OpenTelemetry, consulte [&quot;Ingestão com OpenTelemetry.&quot;](/pt-BR/clickstack/ingesting-data/opentelemetry)
+
+    ### Iniciar ingestão (opcional)
+
+    Se você tiver aplicações ou infraestrutura existentes para instrumentar com OpenTelemetry, acesse os guias relevantes vinculados na UI.
+
+    Para instrumentar suas aplicações e coletar traces e logs, use os [SDKs compatíveis para a sua linguagem](/pt-BR/clickstack/ingesting-data/sdks/index), que enviam dados ao seu OpenTelemetry Collector, atuando como gateway para ingestão no Managed ClickStack.
+
+    Os logs podem ser [coletados usando OpenTelemetry Collectors](/pt-BR/clickstack/integration-examples/host-logs) executados no modo agent, encaminhando dados para o mesmo collector. Para monitoramento de Kubernetes, siga o [guia dedicado](/pt-BR/clickstack/integration-examples/kubernetes). Para outras integrações, consulte nossos [guias de início rápido](/pt-BR/clickstack/integration-examples/index).
+
+    ### Dados de demonstração
+
+    Como alternativa, se você não tiver dados existentes, experimente um dos nossos conjuntos de dados de exemplo.
+
+    * [Conjunto de dados de exemplo](/pt-BR/clickstack/example-datasets/sample-data) - Carregue um conjunto de dados de exemplo da nossa demonstração pública. Diagnostique um problema simples.
+    * [Arquivos locais e métricas](/pt-BR/clickstack/example-datasets/local-data) - Carregue arquivos locais e monitore o sistema no OSX ou Linux usando um OTel collector local.
+
+    <br />
+  </Tab>
+
+  <Tab title="Vector">
+    [Vector](https://vector.dev) é um pipeline de dados de observabilidade de alto desempenho e independente de fornecedor, especialmente popular para ingestão de logs devido à sua flexibilidade e ao baixo consumo de recursos.
+
+    Ao usar o Vector com o ClickStack, os usuários são responsáveis por definir seus próprios esquemas. Esses esquemas podem seguir as convenções do OpenTelemetry, mas também podem ser totalmente personalizados, representando estruturas de eventos definidas pelo usuário.
+
+    <Info>
+      **Timestamp obrigatório**
+
+      O único requisito rígido do Managed ClickStack é que os dados incluam uma **coluna de timestamp** (ou um campo de tempo equivalente), que pode ser declarada ao configurar a fonte de dados na UI do ClickStack.
+    </Info>
+
+    O conteúdo a seguir pressupõe que você tenha uma instância do Vector em execução, pré-configurada com pipelines de ingestão e enviando dados.
+
+    ### Criar um banco de dados e uma tabela
+
+    O Vector exige que uma tabela e um esquema sejam definidos antes da ingestão de dados.
+
+    Primeiro, crie um banco de dados. Isso pode ser feito por meio do [console do ClickHouse Cloud](/pt-BR/products/cloud/features/sql-console-features/sql-console).
+
+    Por exemplo, crie um banco de dados para logs:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS logs
+    ```
+
+    Em seguida, crie uma tabela cujo esquema corresponda à estrutura dos seus dados de log. O exemplo abaixo considera um formato clássico de log de acesso do Nginx:
+
+    ```sql
+    CREATE TABLE logs.nginx_logs
+    (
+        `time_local` DateTime,
+        `remote_addr` IPv4,
+        `remote_user` LowCardinality(String),
+        `request` String,
+        `status` UInt16,
+        `body_bytes_sent` UInt64,
+        `http_referer` String,
+        `http_user_agent` String,
+        `http_x_forwarded_for` LowCardinality(String),
+        `request_time` Float32,
+        `upstream_response_time` Float32,
+        `http_host` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+    ```
+
+    Sua tabela deve corresponder ao schema de saída produzido pelo Vector. Ajuste o schema conforme necessário para seus dados, seguindo as [práticas recomendadas de schema](/pt-BR/concepts/best-practices/select-data-type).
+
+    Recomendamos fortemente que você entenda como as [chaves primárias](/pt-BR/concepts/core-concepts/primary-indexes) funcionam no ClickHouse e escolha uma chave de ordenação com base nos seus padrões de acesso. Consulte as orientações [específicas do ClickStack](/pt-BR/clickstack/managing/performance-tuning#choosing-a-primary-key) sobre como escolher uma chave primária.
+
+    Depois que a tabela existir, copie o snippet de configuração exibido. Ajuste a entrada para consumir seus pipelines existentes, bem como a tabela de destino e o banco de dados, se necessário. As credenciais devem vir pré-preenchidas.
+
+    <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
+
+    Para ver mais exemplos de ingestão de dados com o Vector, consulte [&quot;Ingestão com o Vector&quot;](/pt-BR/clickstack/ingesting-data/vector) ou a [documentação do sink ClickHouse do Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) para opções avançadas.
+
+    <br />
+  </Tab>
+</Tabs>

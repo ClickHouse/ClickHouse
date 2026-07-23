@@ -1,0 +1,126 @@
+---
+description: 'Amazon S3의 Delta Lake 테이블에 읽기 전용 테이블과 유사한 인터페이스를
+  제공합니다.'
+sidebarTitle: 'deltaLake'
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
+doc_type: 'reference'
+---
+
+Amazon S3, Azure Blob Storage 또는 로컬에 마운트된 파일 시스템의 [Delta Lake](https://github.com/delta-io/delta) 테이블에 대해 테이블과 유사한 인터페이스를 제공하며, 읽기와 쓰기를 모두 지원합니다(v25.10부터).
+
+<div id="syntax">
+  ## 구문
+</div>
+
+`deltaLake`는 호환성 유지를 위해 지원되는 `deltaLakeS3`의 별칭입니다.
+
+```sql
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+deltaLakeLocal(path, [,format])
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+이 테이블 함수의 인수는 `s3`, `azureBlobStorage`, `HDFS`, `file` 테이블 함수의 인수와 각각 동일합니다.
+`format` 인수는 Delta Lake 테이블의 데이터 파일 포맷을 나타냅니다.
+
+선택적 `extra_credentials` 매개변수는 ClickHouse Cloud에서 역할 기반 접근을 위한 `role_arn`을 전달하는 데 사용할 수 있습니다. 구성 단계는 [Secure S3](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+지정된 Delta Lake 테이블에서 데이터를 읽거나 쓰는 데 사용할 수 있는, 지정된 구조의 테이블을 반환합니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="reading-data">
+  ### 데이터 읽기
+</div>
+
+`https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`에 있는 스토리지의 테이블이 있다고 가정하겠습니다.
+ClickHouse에서 이 테이블의 데이터를 읽으려면 다음을 실행하십시오.
+
+```sql title="Query"
+SELECT
+    URL,
+    UserAgent
+FROM deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/')
+WHERE URL IS NOT NULL
+LIMIT 2
+```
+
+```response title="Response"
+┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
+│ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
+│ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
+└───────────────────────────────────────────────────────────────────────┴───────────┘
+```
+
+<div id="inserting-data">
+  ### 데이터 삽입
+</div>
+
+`s3://ch-docs-s3-bucket/people_10k/`의 S3 스토리지에 있는 테이블을 예로 들어 보겠습니다.
+테이블에 데이터를 삽입하려면 먼저 실험 기능을 활성화하세요:
+
+```sql title="Query"
+SET allow_experimental_delta_lake_writes=1
+```
+
+다음과 같이 작성합니다:
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
+```
+
+```response title="Response"
+Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
+
+Ok.
+
+1 row in set. Elapsed: 3.426 sec.
+```
+
+테이블을 다시 조회해 삽입이 정상적으로 수행되었는지 확인할 수 있습니다:
+
+```sql title="Query"
+SELECT *
+FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
+WHERE (firstname = 'John') AND (lastname = 'Smith')
+```
+
+```response title="Response"
+Query id: 65032944-bed6-4d45-86b3-a71205a2b659
+
+   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
+1. │ 10001 │ John      │ Smith    │ Male   │  30 │
+   └───────┴───────────┴──────────┴────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_path` — 파일 경로입니다. 유형: `LowCardinality(String)`.
+* `_file` — 파일 이름입니다. 유형: `LowCardinality(String)`.
+* `_size` — 파일 크기(바이트)입니다. 유형: `Nullable(UInt64)`. 파일 크기를 알 수 없으면 값은 `NULL`입니다.
+* `_time` — 파일의 마지막 수정 시간입니다. 유형: `Nullable(DateTime)`. 시간을 알 수 없으면 값은 `NULL`입니다.
+* `_etag` — 파일의 etag입니다. 유형: `LowCardinality(String)`. etag를 알 수 없으면 값은 `NULL`입니다.
+
+<div id="related">
+  ## 관련
+</div>
+
+* [DeltaLake 엔진](/ko/reference/engines/table-engines/integrations/deltalake)
+* [DeltaLake 클러스터 테이블 함수](/ko/reference/functions/table-functions/deltalakeCluster)

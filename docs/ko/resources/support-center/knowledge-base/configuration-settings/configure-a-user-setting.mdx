@@ -1,0 +1,66 @@
+---
+title: ClickHouse에서 사용자별 설정을 구성하는 방법
+description: "`SET` 및 `ALTER USER` 명령을 사용하여 ClickHouse에서 개별 쿼리, 클라이언트 세션 또는 특정 사용자에 대한 설정을 정의하는 방법을 알아봅니다."
+date: 2023-03-01
+tags: ['설정']
+keywords: ['SET', 'ALTER', '사용자', '쿼리', '세션']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 소개
+</div>
+
+사용 사례와 설정을 적용해 둘 기간에 따라 ClickHouse에서 사용자 설정을 정의하는 방법은 여러 가지가 있습니다. 몇 가지 시나리오를 살펴보겠습니다...
+
+<div id="configure-a-setting-for-a-single-query">
+  ## 단일 쿼리에 설정 구성하기
+</div>
+
+`SELECT` 쿼리에는 원하는 수만큼 설정을 정의할 수 있는 `SETTINGS` 절을 포함할 수 있습니다. 이 설정은 해당 쿼리에만 적용됩니다. 예시는 다음과 같습니다:
+
+```sql
+SELECT *
+FROM my_table
+SETTINGS max_threads = 8;
+```
+
+이 쿼리의 최대 스레드 수는 8입니다.
+
+<div id="configure-a-setting-for-a-session">
+  ## 세션에 대한 설정 구성
+</div>
+
+`SET` 절을 사용하면 클라이언트 세션이 유지되는 동안 적용될 설정을 정의할 수 있습니다. 이는 임시 테스트를 수행하거나, 몇 개의 쿼리에만 설정을 적용하고 그보다 오래 유지하지 않으려는 경우에 유용합니다.
+
+```sql
+SET max_threads = 8;
+
+SELECT *
+FROM my_table;
+```
+
+<div id="configure-a-setting-for-a-particular-user">
+  ## 특정 사용자에 대한 설정 지정
+</div>
+
+특정 사용자 한 명에게만 적용되는 설정을 정의하려면 `ALTER USER`를 사용합니다. 예시는 다음과 같습니다:
+
+```sql
+ALTER USER my_user_name SETTINGS max_threads = 8;
+```
+
+클라이언트에서 로그아웃했다가 다시 로그인한 후 `getSetting` 함수를 사용하여 정상적으로 작동하는지 확인할 수 있습니다:
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+<Note>
+  이런 방식으로 설정을 지정하면 해당 사용자의 현재 설정이 덮어써집니다. 즉, 사용자에게 다른 설정이 적용되어 있었더라도 `ALTER USER` 문에서 이를 지정하지 않으면 해당 설정은 사라집니다.
+
+  기존 설정을 유지하려면 대신 `ALTER USER ... MODIFY SETTING ...`을 사용하십시오
+</Note>

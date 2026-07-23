@@ -1,0 +1,289 @@
+---
+slug: /guides/sizing-and-hardware-recommendations
+sidebarTitle: 'التحجيم وتوصيات الأجهزة'
+title: 'التحجيم وتوصيات الأجهزة'
+description: 'يناقش هذا الدليل توصياتنا العامة بشأن الأجهزة، وقدرات المعالجة، والذاكرة، وإعدادات الأقراص لمستخدمي الإصدار مفتوح المصدر.'
+doc_type: 'guide'
+keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفضل الممارسات', 'الأداء']
+---
+
+يناقش هذا الدليل توصياتنا العامة بشأن الأجهزة، وقدرات المعالجة، والذاكرة، وإعدادات الأقراص لمستخدمي الإصدار مفتوح المصدر. إذا كنت ترغب في تبسيط إعدادك، فنوصي باستخدام [ClickHouse Cloud](https://clickhouse.com/cloud)، إذ إنها تتوسع تلقائيًا وتتكيف مع أحمال العمل لديك مع تقليل التكاليف المرتبطة بإدارة البنية التحتية.
+
+يعتمد تكوين مجموعة ClickHouse لديك بدرجة كبيرة على حالة الاستخدام الخاصة بتطبيقك وأنماط أحمال العمل. عند تخطيط معمارية نظامك، يجب أن تأخذ العوامل التالية في الاعتبار:
+
+* التزامن (الطلبات في الثانية)
+* معدل النقل (الصفوف المعالجة في الثانية)
+* حجم البيانات
+* سياسة الاحتفاظ بالبيانات
+* تكاليف الأجهزة
+* تكاليف الصيانة
+
+<div id="disk">
+  ## القرص
+</div>
+
+تعتمد أنواع الأقراص التي ينبغي استخدامها مع ClickHouse على حجم البيانات ومتطلبات زمن الاستجابة أو معدل النقل.
+
+<div id="optimizing-for-performance">
+  ### تحسين الأداء
+</div>
+
+لزيادة الأداء إلى أقصى حد، نوصي بإرفاق [وحدات تخزين SSD ذات IOPS مخصّصة مسبقًا من AWS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/provisioned-iops.html) مباشرةً، أو الخيار المكافئ من موفّر السحابة الذي تستخدمه، لما يوفّره ذلك من تحسين لعمليات IO.
+
+<div id="optimizing-for-storage-costs">
+  ### تحسين تكاليف التخزين
+</div>
+
+لخفض التكاليف، يمكنك استخدام [وحدات تخزين EBS ذات أغراض عامة من نوع SSD](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose.html).
+
+يمكنك أيضًا اعتماد تخزين متدرج باستخدام أقراص SSD وHDD ضمن [معمارية hot/warm/cold](/ar/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture). أو يمكنك استخدام [AWS S3](https://aws.amazon.com/s3/) للتخزين بهدف فصل الحوسبة عن التخزين. يُرجى الاطلاع على دليلنا لاستخدام ClickHouse مفتوح المصدر مع فصل الحوسبة عن التخزين [هنا](/ar/guides/oss/deployment-and-scaling/separation-storage-compute). ويكون فصل الحوسبة عن التخزين متاحًا افتراضيًا في ClickHouse Cloud.
+
+<div id="cpu">
+  ## CPU
+</div>
+
+<div id="which-cpu-should-i-use">
+  ### ما نوع CPU الذي ينبغي أن أستخدمه؟
+</div>
+
+يعتمد نوع CPU المناسب على نمط استخدامك. وبوجه عام، فإن التطبيقات التي تتضمن عددًا كبيرًا من الاستعلامات المتزامنة والمتكررة، أو التي تعالج كميات أكبر من البيانات، أو التي تستخدم UDFs كثيفة الحوسبة، ستحتاج إلى عدد أكبر من أنوية CPU.
+
+**التطبيقات ذات زمن الاستجابة المنخفض أو الموجّهة للعملاء**
+
+بالنسبة إلى متطلبات زمن الاستجابة في حدود عشرات المللي ثانية، مثل أعباء العمل الموجّهة للعملاء، نوصي باستخدام [فئة i3](https://aws.amazon.com/ec2/instance-types/i3/) أو [فئة i4i](https://aws.amazon.com/ec2/instance-types/i4i/) من AWS، أو العروض المكافئة من موفر السحابة لديك، لأنها مُحسّنة لعمليات IO.
+
+**التطبيقات عالية التزامن**
+
+بالنسبة إلى أعباء العمل التي تحتاج إلى تحسين التزامن (أكثر من 100 استعلام في الثانية)، نوصي باستخدام [سلسلة C المحسّنة للحوسبة](https://aws.amazon.com/ec2/instance-types/#Compute_Optimized) من AWS أو العرض المكافئ من موفر السحابة لديك.
+
+**حالة استخدام مستودعات البيانات**
+
+بالنسبة إلى أعباء عمل مستودعات البيانات والاستعلامات التحليلية المخصصة، نوصي باستخدام [سلسلة R](https://aws.amazon.com/ec2/instance-types/#Memory_Optimized) من AWS أو العرض المكافئ من موفر السحابة لديك، لأنها مُحسّنة للذاكرة.
+
+***
+
+<div id="what-should-cpu-utilization-be">
+  ### ما النسبة المناسبة لاستخدام CPU؟
+</div>
+
+لا توجد نسبة قياسية مستهدفة لاستخدام CPU في ClickHouse. استخدم أداة مثل [iostat](https://linux.die.net/man/1/iostat) لقياس متوسط استخدام CPU، ثم اضبط حجم خوادمك وفقًا لذلك للتعامل مع الارتفاعات المفاجئة في حركة المرور. ومع ذلك، في حالات استخدام التحليلات أو مستودعات البيانات التي تتضمن استعلامات آنية، ينبغي أن تستهدف استخدام CPU بين 10% و20%.
+
+<div id="how-many-cpu-cores-should-i-use">
+  ### كم عدد أنوية CPU التي ينبغي أن أستخدمها؟
+</div>
+
+يعتمد عدد أنوية CPU التي ينبغي أن تستخدمها على عبء العمل لديك. ومع ذلك، نوصي عمومًا بنسب الذاكرة إلى نواة CPU التالية استنادًا إلى نوع CPU لديك:
+
+* **[M-type](https://aws.amazon.com/ec2/instance-types/) (حالات الاستخدام العامة):** نسبة ذاكرة إلى نواة CPU تبلغ 4 GB:1
+* **[R-type](https://aws.amazon.com/ec2/instance-types/#Memory_Optimized) (حالات استخدام مستودعات البيانات):** نسبة ذاكرة إلى نواة CPU تبلغ 8 GB:1
+* **[C-type](https://aws.amazon.com/ec2/instance-types/#Compute_Optimized) (حالات الاستخدام المحسّنة للحوسبة):** نسبة ذاكرة إلى نواة CPU تبلغ 2 GB:1
+
+على سبيل المثال، عند استخدام وحدات CPU من النوع M، نوصي بتخصيص 100GB من الذاكرة لكل 25 نواة CPU. ولتحديد مقدار الذاكرة المناسب لتطبيقك، من الضروري إجراء profiling لاستخدام الذاكرة. يمكنك قراءة [هذا الدليل حول استكشاف مشكلات الذاكرة وإصلاحها](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues) أو استخدام [لوحة observability المدمجة](/ar/guides/oss/deployment-and-scaling/monitoring/monitoring) لمراقبة ClickHouse.
+
+<div id="memory">
+  ## الذاكرة
+</div>
+
+كما هو الحال مع اختيارك لـ CPU، فإن اختيارك لنسبة الذاكرة إلى التخزين ونسبة الذاكرة إلى CPU يعتمد على حالة الاستخدام لديك.
+
+يعتمد الحجم المطلوب من RAM عمومًا على:
+
+* مدى تعقيد الاستعلامات.
+* مقدار البيانات التي تُعالَج في الاستعلامات.
+
+ومع ذلك، وبوجه عام، كلما زادت الذاكرة المتاحة لديك، زادت سرعة تنفيذ استعلاماتك.
+إذا كانت حالة الاستخدام لديك حساسة من ناحية التكلفة، فقد تكفي كميات أقل من الذاكرة، إذ يمكن تمكين الإعدادات ([`max_bytes_before_external_group_by`](/ar/reference/settings/session-settings#max_bytes_before_external_group_by) و[`max_bytes_before_external_sort`](/ar/reference/settings/session-settings#max_bytes_before_external_sort)) للسماح بترحيل البيانات إلى القرص، لكن تجدر الإشارة إلى أن ذلك قد يؤثر بشكل كبير في أداء الاستعلامات.
+
+<div id="what-should-the-memory-to-storage-ratio-be">
+  ### ما نسبة الذاكرة إلى التخزين التي ينبغي اعتمادها؟
+</div>
+
+بالنسبة إلى أحجام البيانات الصغيرة، تكون نسبة الذاكرة إلى التخزين 1:1 مقبولة، لكن يجب ألا تقل الذاكرة الإجمالية عن 8GB.
+
+بالنسبة إلى حالات الاستخدام التي تتطلب فترات احتفاظ طويلة بالبيانات أو تتعامل مع أحجام بيانات كبيرة، نوصي بنسبة ذاكرة إلى تخزين تتراوح بين 1:100 و1:130. على سبيل المثال، 100GB من RAM لكل نسخة متماثلة إذا كنت تخزّن 10TB من البيانات.
+
+بالنسبة إلى حالات الاستخدام التي تتطلب وصولًا متكررًا، مثل أعباء العمل الموجّهة للعملاء، نوصي باستخدام ذاكرة أكبر، بنسبة ذاكرة إلى تخزين تتراوح بين 1:30 و1:50.
+
+<div id="replicas">
+  ## النسخ المتماثلة
+</div>
+
+نوصي بوجود ثلاث نسخ متماثلة على الأقل لكل شارد (أو نسختين متماثلتين مع [Amazon EBS](https://aws.amazon.com/ebs/)). بالإضافة إلى ذلك، نوصي بالتحجيم الرأسي لجميع النسخ المتماثلة قبل إضافة نسخ متماثلة أخرى (التحجيم الأفقي).
+
+لا يطبّق ClickHouse التجزئة تلقائيًا، كما أن إعادة تجزئة مجموعة بياناتك ستتطلب موارد حوسبة كبيرة. لذلك، نوصي عمومًا باستخدام أكبر خادم متاح لتجنّب الاضطرار إلى إعادة تجزئة بياناتك مستقبلًا.
+
+ننصح باستخدام [ClickHouse Cloud](https://clickhouse.com/cloud)، إذ يتوسّع تلقائيًا ويتيح لك التحكّم بسهولة في عدد النسخ المتماثلة بما يناسب حالة الاستخدام لديك.
+
+<div id="example-configurations-for-large-workloads">
+  ## تهيئات نموذجية لأعباء العمل الكبيرة
+</div>
+
+تعتمد تهيئات ClickHouse بدرجة كبيرة على المتطلبات المحددة لتطبيقك. يُرجى [التواصل مع فريق المبيعات](https://clickhouse.com/company/contact?loc=docs-sizing-and-hardware-recommendations) إذا كنت ترغب في أن نساعدك على تحسين معمارية نظامك من حيث التكلفة والأداء.
+
+ولتقديم إرشادات (لا توصيات)، فيما يلي أمثلة على تهيئات يستخدمها مستخدمو ClickHouse في بيئات الإنتاج:
+
+<div id="fortune-500-b2b-saas">
+  ### شركة SaaS للأعمال من Fortune 500
+</div>
+
+<table>
+  <tr>
+    <td col="2"><strong><em>التخزين</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>حجم البيانات الجديدة شهريًا</strong></td>
+    <td>30TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>إجمالي التخزين (مضغوط)</strong></td>
+    <td>540TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>الاحتفاظ بالبيانات</strong></td>
+    <td>18 شهرًا</td>
+  </tr>
+
+  <tr>
+    <td><strong>سعة القرص لكل عقدة</strong></td>
+    <td>25TB</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>CPU</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>التزامن</strong></td>
+    <td>أكثر من 200 استعلام متزامن</td>
+  </tr>
+
+  <tr>
+    <td><strong>عدد النسخ المتماثلة (بما في ذلك زوج التوافر العالي)</strong></td>
+    <td>44</td>
+  </tr>
+
+  <tr>
+    <td><strong>vCPU لكل عقدة</strong></td>
+    <td>62</td>
+  </tr>
+
+  <tr>
+    <td><strong>إجمالي vCPU</strong></td>
+    <td>2700</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>الذاكرة</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>إجمالي RAM</strong></td>
+    <td>11TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>RAM لكل نسخة متماثلة</strong></td>
+    <td>256GB</td>
+  </tr>
+
+  <tr>
+    <td><strong>نسبة RAM إلى vCPU</strong></td>
+    <td>4 GB:1</td>
+  </tr>
+
+  <tr>
+    <td><strong>نسبة RAM إلى القرص</strong></td>
+    <td>1:50</td>
+  </tr>
+</table>
+
+<div id="fortune-500-telecom-operator-for-a-logging-use-case">
+  ### شركة اتصالات من قائمة Fortune 500 لحالة استخدام التسجيل
+</div>
+
+<table>
+  <tr>
+    <td col="2"><strong><em>التخزين</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>حجم بيانات السجلات الشهري</strong></td>
+    <td>4860TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>إجمالي التخزين (مضغوط)</strong></td>
+    <td>608TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>الاحتفاظ بالبيانات</strong></td>
+    <td>30 يومًا</td>
+  </tr>
+
+  <tr>
+    <td><strong>سعة القرص لكل عقدة</strong></td>
+    <td>13TB</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>CPU</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>عدد النسخ المتماثلة (بما في ذلك زوج التوافر العالي)</strong></td>
+    <td>38</td>
+  </tr>
+
+  <tr>
+    <td><strong>vCPU لكل عقدة</strong></td>
+    <td>42</td>
+  </tr>
+
+  <tr>
+    <td><strong>إجمالي vCPU</strong></td>
+    <td>1600</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>الذاكرة</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>إجمالي RAM</strong></td>
+    <td>10TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>RAM لكل نسخة متماثلة</strong></td>
+    <td>256GB</td>
+  </tr>
+
+  <tr>
+    <td><strong>نسبة RAM إلى vCPU</strong></td>
+    <td>6 GB:1</td>
+  </tr>
+
+  <tr>
+    <td><strong>نسبة RAM إلى القرص</strong></td>
+    <td>1:60</td>
+  </tr>
+</table>
+
+<div id="further-reading">
+  ## قراءات إضافية
+</div>
+
+فيما يلي مقالات مدوّنة منشورة حول معماريات من شركات تستخدم ClickHouse مفتوح المصدر:
+
+* [Cloudflare](https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/?utm_source=linkedin\&utm_medium=social\&utm_campaign=blog)
+* [eBay](https://innovation.ebayinc.com/tech/engineering/ou-online-analytical-processing/)
+* [GitLab](https://handbook.gitlab.com/handbook/engineering/development/ops/monitor/observability/#clickhouse-datastore)
+* [Lyft](https://eng.lyft.com/druid-deprecation-and-clickhouse-adoption-at-lyft-120af37651fd)
+* [MessageBird](https://clickhouse.com/blog/how-messagebird-uses-clickhouse-to-monitor-the-delivery-of-billions-of-messages)
+* [Microsoft](https://clickhouse.com/blog/self-service-data-analytics-for-microsofts-biggest-web-properties)
+* [Uber](https://www.uber.com/en-ES/blog/logging/)
+* [Zomato](https://blog.zomato.com/building-a-cost-effective-logging-platform-using-clickhouse-for-petabyte-scale)

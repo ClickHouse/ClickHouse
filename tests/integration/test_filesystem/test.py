@@ -24,7 +24,7 @@ def started_cluster():
         node.exec_in_container(
             [
                 "mkdir",
-                f"/var/lib/clickhouse/user_files/yes",
+                "/var/lib/clickhouse/user_files/yes",
             ]
         )
 

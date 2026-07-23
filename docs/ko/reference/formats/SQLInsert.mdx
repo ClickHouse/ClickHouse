@@ -1,0 +1,52 @@
+---
+alias: []
+description: 'SQLInsert 포맷에 대한 문서'
+input_format: false
+keywords: ['SQLInsert']
+output_format: true
+slug: /interfaces/formats/SQLInsert
+title: 'SQLInsert'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✗  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+데이터를 일련의 `INSERT INTO table (columns...) VALUES (...), (...) ...;` SQL 문으로 출력합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+예시:
+
+```sql
+SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
+```
+
+```sql
+INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
+INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
+INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
+INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
+INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
+```
+
+이 포맷으로 출력된 데이터를 읽을 때는 [MySQLDump](/ko/reference/formats/MySQLDump) 입력 형식을 사용할 수 있습니다.
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+| 설정                                                                                                                           | 설명                                 | 기본값       |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------- |
+| [`output_format_sql_insert_max_batch_size`](/ko/reference/settings/formats#output_format_sql_insert_max_batch_size)             | 하나의 INSERT 문에 포함할 수 있는 최대 행 수입니다.  | `65505`   |
+| [`output_format_sql_insert_table_name`](/ko/reference/settings/formats#output_format_sql_insert_table_name)                     | 출력 INSERT 쿼리의 테이블 이름입니다.           | `'table'` |
+| [`output_format_sql_insert_include_column_names`](/ko/reference/settings/formats#output_format_sql_insert_include_column_names) | INSERT 쿼리에 컬럼 이름을 포함합니다.           | `true`    |
+| [`output_format_sql_insert_use_replace`](/ko/reference/settings/formats#output_format_sql_insert_use_replace)                   | INSERT 대신 REPLACE 문을 사용합니다.        | `false`   |
+| [`output_format_sql_insert_quote_names`](/ko/reference/settings/formats#output_format_sql_insert_quote_names)                   | 컬럼 이름을 &quot;&#96;&quot; 문자로 감쌉니다. | `true`    |

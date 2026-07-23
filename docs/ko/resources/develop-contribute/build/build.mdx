@@ -1,0 +1,252 @@
+---
+description: 'Linux 시스템에서 소스 코드로 ClickHouse를 빌드하는 단계별 가이드'
+sidebarTitle: 'Linux에서 빌드'
+slug: /development/build
+title: 'Linux에서 ClickHouse를 빌드하는 방법'
+doc_type: 'guide'
+---
+
+<Info>
+  **이 빌드 가이드는 ClickHouse 자체를 수정하는 기여자를 위한 안내서입니다.**
+
+  ClickHouse 소스 코드를 변경하지 않는다면 [Quick Start](/ko/get-started/setup/install)에 설명된 대로 사전 구축된 ClickHouse를 설치할 수 있습니다.
+</Info>
+
+ClickHouse는 다음 플랫폼에서 빌드할 수 있습니다.
+
+* x86&#95;64
+* AArch64
+* PowerPC 64 LE (실험적)
+* s390/x (실험적)
+* RISC-V 64 (실험적)
+
+<div id="assumptions">
+  ## 전제 조건
+</div>
+
+다음 튜토리얼은 Ubuntu Linux를 기준으로 작성되었지만, 필요한 부분을 적절히 변경하면 다른 Linux 배포판에서도 사용할 수 있습니다.
+개발에 권장되는 최소 Ubuntu 버전은 24.04 LTS입니다.
+
+이 튜토리얼은 ClickHouse 리포지토리와 모든 서브모듈을 로컬에 체크아웃해 두었다고 가정합니다.
+
+<div id="install-prerequisites">
+  ## 필수 구성 요소 설치
+</div>
+
+먼저, 일반 [필수 구성 요소 문서](/ko/resources/develop-contribute/introduction/developer-instruction)를 확인하십시오.
+
+ClickHouse는 빌드에 CMake와 Ninja를 사용합니다.
+
+선택 사항으로, 이미 컴파일된 객체 파일을 빌드에 재사용할 수 있도록 ccache를 설치할 수 있습니다.
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+```
+
+<div id="install-the-clang-compiler">
+  ## Clang 컴파일러 설치
+</div>
+
+Ubuntu/Debian에 Clang을 설치하려면 [여기](https://apt.llvm.org/)에서 제공하는 LLVM의 자동 설치 스크립트를 사용하십시오.
+
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
+```
+
+다른 Linux 배포판에서는 LLVM의 [미리 빌드된 패키지](https://releases.llvm.org/download.html)를 설치할 수 있는지 확인하세요.
+
+2026년 2월 기준으로 Clang 21 이상이 필요합니다.
+GCC 및 기타 컴파일러는 지원되지 않습니다.
+
+<div id="install-the-rust-compiler-optional">
+  ## Rust 컴파일러 설치(선택 사항)
+</div>
+
+<Note>
+Rust는 ClickHouse의 선택적 의존성입니다.
+Rust가 설치되어 있지 않으면 ClickHouse의 일부 기능은 컴파일에 포함되지 않습니다.
+</Note>
+
+먼저 공식 [Rust 문서](https://www.rust-lang.org/tools/install)의 안내에 따라 `rustup`을 설치합니다.
+
+C++ 의존성과 마찬가지로 ClickHouse는 정확히 어떤 항목이 설치되는지 제어하고, `crates.io` registry와 같은 타사 서비스에 의존하지 않기 위해 벤더링을 사용합니다.
+
+릴리스 모드에서는 일반적으로 최신 rustup 툴체인 버전이면 이러한 의존성과 함께 동작하지만, 새니타이저를 활성화할 계획이라면 CI에서 사용하는 것과 정확히 동일한 `std`에 맞는 버전을 사용해야 합니다(이 경우 크레이트를 벤더링함):
+
+```bash
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
+rustup component add rust-src
+```
+
+<div id="build-clickhouse">
+## ClickHouse 빌드
+</div>
+
+모든 빌드 아티팩트를 포함하는 별도의 디렉터리 `build`를 `ClickHouse` 내부에 생성하는 것을 권장합니다:
+
+```sh
+mkdir build
+cd build
+```
+
+서로 다른 빌드 유형에 따라 여러 디렉터리(예: `build_release`, `build_debug` 등)를 둘 수 있습니다.
+
+선택 사항: 여러 컴파일러 버전이 설치되어 있다면 사용할 컴파일러를 정확히 지정할 수 있습니다.
+
+```sh
+export CC=clang-21
+export CXX=clang++-21
+```
+
+개발용으로는 디버그 빌드를 권장합니다.
+릴리스 빌드와 비교하면 컴파일러 최적화 수준(`-O`)이 더 낮아 디버깅이 더 수월합니다.
+또한 `LOGICAL_ERROR` 유형의 내부 예외는 정상적으로 처리되지 않고 즉시 크래시가 발생합니다.
+
+```sh
+cmake -D CMAKE_BUILD_TYPE=Debug ..
+```
+
+<Note>
+`gdb`와 같은 디버거를 사용하려면 위 명령에 `-D DEBUG_O_LEVEL="0"`를 추가해 모든 컴파일러 최적화를 비활성화하십시오. 이러한 최적화는 `gdb`가 변수를 확인하거나 접근하는 데 방해가 될 수 있습니다.
+</Note>
+
+빌드하려면 `ninja`를 실행하십시오:
+
+```sh
+ninja clickhouse
+```
+
+모든 바이너리(유틸리티 및 테스트 포함)를 빌드하려면 매개변수 없이 ninja를 실행하세요:
+
+```sh
+ninja
+```
+
+매개변수 `-j`를 사용해 병렬 빌드 작업 수를 조절할 수 있습니다:
+
+```sh
+ninja -j 1 clickhouse
+```
+
+<Note>
+`clickhouse-server`, `clickhouse-client` 및 이와 유사한 바이너리는 빌드 완료 후 `clickhouse` 실행 파일을 가리키는 `programs/` 디렉터리의 심볼릭 링크입니다.
+</Note>
+
+<Tip>
+CMake는 위 명령어에 대한 단축 구문을 제공합니다.
+
+```sh
+cmake -S . -B build  # 빌드 구성, 리포지토리 최상위 디렉터리에서 실행
+cmake --build build  # 컴파일
+```
+</Tip>
+
+<div id="running-the-clickhouse-executable">
+  ## ClickHouse 실행 파일 실행하기
+</div>
+
+빌드가 성공적으로 완료되면 실행 파일은 `ClickHouse/<build_dir>/programs/`에서 찾을 수 있습니다:
+
+ClickHouse 서버는 현재 디렉터리에서 설정 파일 `config.xml`을 찾습니다.
+또는 명령줄에서 `-C`를 사용해 설정 파일을 지정할 수 있습니다.
+
+`clickhouse-client`로 ClickHouse 서버에 연결하려면 다른 터미널을 열고 `ClickHouse/build/programs/`로 이동한 다음 `./clickhouse client`를 실행하세요.
+
+macOS 또는 FreeBSD에서 `Connection refused` 메시지가 표시되면 호스트 주소 `127.0.0.1`을 지정해 보세요:
+
+```bash
+clickhouse client --host 127.0.0.1
+```
+
+<div id="advanced-options">
+  ## 고급 옵션
+</div>
+
+<div id="minimal-build">
+  ### 최소 빌드
+</div>
+
+타사 라이브러리에서 제공하는 기능이 필요하지 않다면 빌드 속도를 더 높일 수 있습니다.
+
+```sh
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+문제가 발생하면 직접 해결해야 합니다 ...
+
+Rust는 인터넷 연결이 필요합니다. Rust 지원을 비활성화하려면:
+
+```sh
+cmake -DENABLE_RUST=OFF
+```
+
+<div id="running-the-clickhouse-executable-1">
+  ### ClickHouse 실행 파일 실행하기
+</div>
+
+시스템에 설치된 운영 환경용 ClickHouse 바이너리를 컴파일한 ClickHouse 바이너리로 교체할 수 있습니다.
+이렇게 하려면 공식 웹사이트의 안내에 따라 시스템에 ClickHouse를 설치하십시오.
+그런 다음, 다음을 실행하십시오:
+
+```bash
+sudo service clickhouse-server stop
+sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
+sudo service clickhouse-server start
+```
+
+`clickhouse-client`, `clickhouse-server` 등은 공용 `clickhouse` 실행 파일에 대한 심볼릭 링크라는 점에 유의하십시오.
+
+시스템에 설치된 ClickHouse 패키지의 구성 파일을 사용해 사용자 지정으로 빌드한 ClickHouse 실행 파일을 실행할 수도 있습니다:
+
+```bash
+sudo service clickhouse-server stop
+sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+<div id="building-on-any-linux">
+  ### 모든 Linux에서 빌드하기
+</div>
+
+OpenSUSE Tumbleweed에 필요한 패키지를 설치합니다:
+
+```bash
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+Fedora Rawhide에서 필수 구성 요소를 설치합니다:
+
+```bash
+sudo yum update
+sudo yum --nogpg install git cmake make clang python3 ccache lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+<div id="building-in-docker">
+  ### Docker에서 빌드하기
+</div>
+
+다음을 사용하면 CI와 유사한 환경에서 로컬에서 원하는 빌드를 실행할 수 있습니다:
+
+```bash
+python -m ci.praktika run "BUILD_JOB_NAME"
+```
+
+여기서 BUILD&#95;JOB&#95;NAME은 CI 보고서에 표시된 job 이름입니다. 예: &quot;Build (arm&#95;release)&quot;, &quot;Build (amd&#95;debug)&quot;
+
+이 명령은 필요한 모든 종속성이 포함된 적절한 Docker image `clickhouse/binary-builder`를 pull한 다음,
+그 안에서 빌드 스크립트 `./ci/jobs/build_clickhouse.py`를 실행합니다.
+
+빌드 출력은 `./ci/tmp/`에 생성됩니다.
+
+이 방식은 AMD 및 ARM 아키텍처 모두에서 작동하며, `requests` 모듈을 사용할 수 있는 Python과 Docker 외에는 추가 종속성이 필요하지 않습니다.

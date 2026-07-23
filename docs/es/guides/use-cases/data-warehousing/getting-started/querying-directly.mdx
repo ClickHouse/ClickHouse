@@ -1,0 +1,352 @@
+---
+title: 'Consulta directa de formatos de tabla abiertos'
+sidebarTitle: 'Consulta directa'
+slug: /use-cases/data-lake/getting-started/querying-directly
+description: 'Use las funciones de tabla de ClickHouse para leer tablas de Iceberg, Delta Lake, Hudi y Paimon en almacenamiento de objetos sin ninguna configuración previa.'
+toc_max_heading_level: 2
+keywords: ['lago de datos', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'funciones de tabla']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+ClickHouse proporciona funciones de tabla para consultar datos almacenados en formatos de tabla abiertos directamente en el almacenamiento de objetos. No es necesario conectarse a un catálogo externo: los datos se consultan in situ, de forma similar a como AWS Athena lee desde S3.
+
+Se especifican directamente en la llamada a la función la ruta de almacenamiento y las credenciales, y ClickHouse se encarga del resto. Toda la sintaxis y las funciones de ClickHouse SQL están disponibles, y las consultas se benefician de la ejecución en paralelo de ClickHouse y de su [eficiente lector nativo de Parquet](https://clickhouse.com/blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics).
+
+<Info>
+  **Servidor, local o chDB**
+
+  Los pasos de esta guía pueden ejecutarse con una instalación existente de ClickHouse server. Para consultas ad hoc, también puede usar [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local) y completar el mismo flujo de trabajo sin ejecutar un servidor. Con pequeños ajustes, el proceso también puede realizarse con la distribución embebida de ClickHouse, [chDB](/es/products/chdb/index).
+</Info>
+
+Los siguientes ejemplos usan el dataset [hits](/es/get-started/sample-datasets/star-schema) almacenado en cada formato de lakehouse en S3. Para cada formato de lakehouse, existen funciones específicas para cada proveedor de almacenamiento de objetos.
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    La función de tabla [`iceberg`](/es/reference/functions/table-functions/iceberg) (alias de `icebergS3`) lee tablas Iceberg directamente desde el almacenamiento de objetos. Existen variantes para cada backend de almacenamiento: `icebergS3`, `icebergAzure`, `icebergHDFS` e `icebergLocal`.
+
+    **Sintaxis de ejemplo:**
+
+    ```sql
+    icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    icebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **Compatibilidad con GCS**
+
+      La variante S3 de las funciones puede usarse con Google Cloud Storage (GCS).
+    </Info>
+
+    **Ejemplo:**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 millones
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 millones
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.375 sec. Processed 100.00 million rows, 9.98 GB (29.63 million rows/s., 2.96 GB/s.)
+    Peak memory usage: 10.48 GiB.
+    ```
+
+    ### Variante de clúster
+
+    La función [`icebergS3Cluster`](/es/reference/functions/table-functions/icebergCluster) distribuye las lecturas entre múltiples nodos en un clúster de ClickHouse. El nodo iniciador establece conexiones con todos los nodos y distribuye los archivos de datos de forma dinámica. Cada nodo worker solicita y procesa tareas hasta que todos los archivos han sido leídos. `icebergCluster` es un alias de `icebergS3Cluster`. También existen variantes para Azure ([`icebergAzureCluster`](/es/reference/functions/table-functions/icebergCluster)) y HDFS ([`icebergHDFSCluster`](/es/reference/functions/table-functions/icebergCluster)).
+
+    **Sintaxis de ejemplo:**
+
+    ```sql
+    icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    -- icebergCluster es un alias de icebergS3Cluster
+
+    icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    **Ejemplo (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3Cluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/'
+    )
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### Motor de tabla
+
+    Como alternativa al uso de la función de tabla en cada consulta, puede crear una tabla persistente mediante el [motor de tabla `Iceberg`](/es/reference/engines/table-engines/integrations/iceberg). Los datos siguen residiendo en object storage y se leen bajo demanda; no se copia ningún dato en ClickHouse. La ventaja es que la definición de tabla se almacena en ClickHouse y puede compartirse entre usuarios y sesiones sin que cada usuario tenga que especificar la ruta de almacenamiento ni las credenciales. Existen variantes del motor para cada backend de almacenamiento: `IcebergS3` (o el alias `Iceberg`), `IcebergAzure`, `IcebergHDFS` e `IcebergLocal`.
+
+    Tanto el motor de tabla como la función de tabla admiten [caché de datos](/es/reference/engines/table-engines/integrations/iceberg#data-cache), utilizando el mismo mecanismo de caché que los motores de almacenamiento S3, AzureBlobStorage y HDFS. Además, un [caché de metadatos](/es/reference/engines/table-engines/integrations/iceberg#metadata-cache) almacena en memoria la información de los archivos de manifiesto, lo que reduce las lecturas repetidas de metadatos de Iceberg. Este caché está habilitado de forma predeterminada mediante la configuración `use_iceberg_metadata_files_cache`.
+
+    **Sintaxis de ejemplo:**
+
+    El motor de tabla `Iceberg` es un alias de `IcebergS3`.
+
+    ```sql
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **Compatibilidad con GCS**
+
+      La variante S3 del motor de tabla puede utilizarse con Google Cloud Storage (GCS).
+    </Info>
+
+    **Ejemplo:**
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 2.737 sec. Processed 100.00 million rows, 9.98 GB (36.53 million rows/s., 3.64 GB/s.)
+    Peak memory usage: 10.53 GiB.
+    ```
+
+    Para ver las funcionalidades compatibles, incluidas la poda de particiones, la evolución de esquemas, el viaje en el tiempo, el almacenamiento en caché y más, consulte la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix#format-support). Para obtener la referencia completa, consulte la documentación de la [función de tabla `iceberg`](/es/reference/functions/table-functions/iceberg) y del [motor de tabla `Iceberg`](/es/reference/engines/table-engines/integrations/iceberg).
+  </Tab>
+
+  <Tab title="Delta Lake">
+    La función de tabla [`deltaLake`](/es/reference/functions/table-functions/deltalake) (alias de `deltaLakeS3`) lee tablas Delta Lake desde el almacenamiento de objetos. Existen variantes para otros backends: `deltaLakeAzure` y `deltaLakeLocal`.
+
+    **Sintaxis de ejemplo:**
+
+    ```sql
+    deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+    deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    deltaLakeLocal(path, [,format])
+    ```
+
+    <Info>
+      **Compatibilidad con GCS**
+
+      La variante S3 de las funciones se puede usar con Google Cloud Storage (GCS).
+    </Info>
+
+    **Ejemplo:**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 millones
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 millones
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.878 sec. Processed 100.00 million rows, 14.82 GB (25.78 million rows/s., 3.82 GB/s.)
+    Peak memory usage: 9.16 GiB.
+    ```
+
+    ### Variante de clúster
+
+    La función [`deltaLakeCluster`](/es/reference/functions/table-functions/deltalakeCluster) distribuye las lecturas entre múltiples nodos de un ClickHouse cluster. El nodo initiator envía data files dinámicamente a los nodos worker para su procesamiento en paralelo. `deltaLakeS3Cluster` es un alias de `deltaLakeCluster`. También está disponible una variante de Azure ([`deltaLakeAzureCluster`](/es/reference/functions/table-functions/deltalakeCluster)).
+
+    **Sintaxis de ejemplo:**
+
+    ```sql
+    deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    -- deltaLakeS3Cluster es un alias de deltaLakeCluster
+
+    deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    <Info>
+      **Compatibilidad con GCS**
+
+      La variante S3 de las funciones puede usarse con Google Cloud Storage (GCS).
+    </Info>
+
+    **Ejemplo (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLakeCluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/'
+    )
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### Motor de tabla
+
+    Como alternativa al uso de la función de tabla en cada consulta, puede crear una tabla persistente mediante el [motor de tabla `DeltaLake`](/es/reference/engines/table-engines/integrations/deltalake) si utiliza almacenamiento compatible con S3. Los datos siguen residiendo en el almacenamiento de objetos y se leen bajo demanda; no se copia ningún dato en ClickHouse. La ventaja es que la definición de la tabla se almacena en ClickHouse y puede compartirse entre usuarios y sesiones sin necesidad de que cada usuario especifique la ruta de almacenamiento ni las credenciales.
+
+    Tanto el motor de tabla como la función de tabla admiten [caché de datos](/es/reference/engines/table-engines/integrations/deltalake#data-cache), usando el mismo mecanismo de caché que los motores de almacenamiento S3, AzureBlobStorage y HDFS.
+
+    **Sintaxis de ejemplo:**
+
+    ```sql
+    CREATE TABLE delta_table
+        ENGINE = DeltaLake(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    <Info>
+      **Compatibilidad con GCS**
+
+      Este motor de tabla puede utilizarse con Google Cloud Storage (GCS).
+    </Info>
+
+    **Ejemplo:**
+
+    ```sql
+    CREATE TABLE hits_delta
+        ENGINE = DeltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+
+    SELECT
+        URL,
+        count() AS cnt
+    FROM hits_delta
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.608 sec. Processed 100.00 million rows, 14.82 GB (27.72 million rows/s., 4.11 GB/s.)
+    Peak memory usage: 9.27 GiB.
+    ```
+
+    Para conocer las funcionalidades compatibles, incluidos los backends de almacenamiento, el caching y más, consulte la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix#format-support). Para obtener la referencia completa, consulte la documentación de la [función de tabla `deltaLake`](/es/reference/functions/table-functions/deltalake) y del [motor de tabla `DeltaLake`](/es/reference/engines/table-engines/integrations/deltalake).
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    La función de tabla [`hudi`](/es/reference/functions/table-functions/hudi) lee tablas Hudi de S3.
+
+    **Sintaxis:**
+
+    ```sql
+    hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### Variante para clúster
+
+    La función [`hudiCluster`](/es/reference/functions/table-functions/hudiCluster) distribuye las lecturas entre varios nodos de un clúster de ClickHouse. El nodo iniciador asigna dinámicamente los archivos de datos a los nodos de trabajo para su procesamiento en paralelo.
+
+    ```sql
+    hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### Motor de tabla
+
+    Como alternativa a usar la función de tabla en cada consulta, puede crear una tabla persistente con el [motor de tabla `Hudi`](/es/reference/engines/table-engines/integrations/hudi). Los datos siguen residiendo en el almacenamiento de objetos y se leen bajo demanda; no se copia ningún dato en ClickHouse. La ventaja es que la definición de la tabla se almacena en ClickHouse y puede compartirse entre usuarios y sesiones sin que cada usuario tenga que especificar la ruta de almacenamiento y las credenciales.
+
+    **Sintaxis:**
+
+    ```sql
+    CREATE TABLE hudi_table
+        ENGINE = Hudi(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    Para conocer las funcionalidades compatibles, incluidos los backends de almacenamiento y otras opciones, consulte la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix#format-support). Para consultar la referencia completa, vea la documentación de la [función de tabla `hudi`](/es/reference/functions/table-functions/hudi) y del [motor de tabla `Hudi`](/es/reference/engines/table-engines/integrations/hudi).
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    <ExperimentalBadge />
+
+    La [función de tabla `paimon`](/es/reference/functions/table-functions/paimon) (alias de `paimonS3`) lee tablas de Paimon desde el almacenamiento de objetos. Hay variantes para cada tipo de almacenamiento: `paimonS3`, `paimonAzure`, `paimonHDFS` y `paimonLocal`.
+
+    **Sintaxis:**
+
+    ```sql
+    paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+
+    paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFS(path_to_table, [,format] [,compression_method])
+
+    paimonLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    ### Variante de clúster
+
+    La función [`paimonS3Cluster`](/es/reference/functions/table-functions/paimonCluster) distribuye la lectura entre varios nodos de un clúster de ClickHouse. El nodo iniciador asigna dinámicamente los archivos de datos a los nodos de trabajo para su procesamiento en paralelo. `paimonCluster` es un alias de `paimonS3Cluster`. También existen variantes para Azure ([`paimonAzureCluster`](/es/reference/functions/table-functions/paimonCluster)) y HDFS ([`paimonHDFSCluster`](/es/reference/functions/table-functions/paimonCluster)).
+
+    ```sql
+    paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    -- paimonCluster es un alias de paimonS3Cluster
+
+    paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+    ```
+
+    ### Motor de tabla
+
+    Actualmente, Paimon no tiene un motor de tabla específico en ClickHouse. Use las funciones de tabla anteriores para consultar las tablas de Paimon.
+
+    Para ver las funcionalidades compatibles, incluidos los backends de almacenamiento, consulte la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix#format-support). Para obtener la referencia completa, consulte la documentación de la [función de tabla `paimon`](/es/reference/functions/table-functions/paimon).
+  </Tab>
+</Tabs>

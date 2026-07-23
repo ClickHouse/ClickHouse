@@ -1,0 +1,68 @@
+---
+sidebarTitle: 'Prompts'
+slug: /cloud/features/ai-ml/agents/prompts
+title: 'Prompts'
+description: 'مكتبة Prompts المحفوظة في ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+مكتبة Prompts هي مكان لحفظ الموجّهات المكتوبة بلغة طبيعية وإعادة استخدامها عندما تجد نفسك تكتبها مرارًا. اعتبرها بمثابة مقتطفات لحقل إدخال الدردشة — وهي مفيدة عندما يتكرر السؤال التحليلي نفسه أو تعليمات التنسيق نفسها في محادثات مختلفة.
+
+<div id="create-a-prompt">
+  ## إنشاء موجّه
+</div>
+
+افتح لوحة **Prompts** من أيقونة **Prompts** في شريط التنقل الأيسر، ثم انقر على زر **+** لفتح نموذج **Create Prompt**. املأ الحقول التالية:
+
+* **Prompt Name** (مطلوب) - الاسم الذي يظهر في أداة الاختيار. احرص على أن يكون وصفيًا: *&quot;المستخدمون النشطون أسبوعيًا حسب المنطقة&quot;* أفضل من *&quot;WAU&quot;*.
+* **Text** (مطلوب) - النص الفعلي الذي سيُدرج في حقل الإدخال.
+* **Special variables** - انقر على زر **Special variables** لإدراج عناصر نائبة، أو اكتب مباشرةً علامات بالنمط `{{name}}`. ستطلب منك أداة الاختيار إدخال القيم قبل الإدراج.
+* **Category** و**Description** و**Command** (اختيارية) - لتنظيم المكتبة، وعرض نص المعاينة في أداة الاختيار، وإنشاء اختصار للاستدعاء السريع.
+
+ثم انقر على **Create Prompt** في أسفل اليمين.
+
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="لوحة Prompts مع تمييز زر + على اليسار وفتح نموذج Create Prompt على اليمين، ويعرض حقول Prompt Name وText وCategory وSpecial variables وDescription وCommand، مع زر Create Prompt" size="lg" />
+
+<div id="use-a-prompt">
+  ## استخدام موجّه
+</div>
+
+في لوحة Prompts، افتح قائمة **...** في بطاقة موجّه واختر **Preview**:
+
+<Image img="/images/cloud/agent-builder/prompts/preview.webp" alt="لوحة Prompts مع تحديد موجّه، وظهور تفاصيله على اليمين، وقائمة سياقية تعرض خياري Preview وEdit" size="lg" />
+
+تعرض المعاينة نص موجّه إلى جانب المؤلف والتاريخ. انقر على **Use Prompt** لإدراج المحتوى في حقل الإدخال. إذا كان موجّه يحتوي على متغيرات، فاملأها أولًا.
+
+<Image img="/images/cloud/agent-builder/prompts/use-prompt-modal.webp" alt="نافذة منبثقة لمعاينة موجّه تعرض عنوان موجّه، والمؤلف، والتاريخ، والمحتوى، وزر Use Prompt" size="md" />
+
+<div id="share-prompts">
+  ## مشاركة Prompts
+</div>
+
+بشكل افتراضي، يكون `موجّه` خاصًا بالشخص الذي أنشأه. ويمكن للمالك تغيير مستوى ظهور `موجّه` إلى:
+
+* **مستخدمون أو مجموعات محددة** - يمكن لأي شخص تعيّنه العثور على `موجّه` واستخدامه.
+* **على مستوى المؤسسة بالكامل** - يمكن لجميع المستخدمين في مؤسسة ClickHouse Cloud التابعة لك العثور عليه واستخدامه.
+
+تستخدم Prompts نموذج الأذونات نفسه المستخدم مع agents. للاطلاع على المصفوفة الكاملة للأدوار وما يمكن لكل دور فعله، راجع [المشاركة وإمكانية
+الوصول](/ar/products/cloud/features/ai-ml/agents/sharing-and-access).
+
+<div id="prompts-vs-skills-vs-instructions">
+  ## ‏Prompts مقابل Skills مقابل التعليمات
+</div>
+
+تضيف Prompts وSkills وتعليمات الوكيل جميعها نصًا إلى النموذج، لكنها تختلف من حيث الجهة التي تُفعّلها ومدى استمرارها.
+
+* **Prompts** - نص تُدخله بنفسك في حقل الإدخال، وتعدّله في كل مرة.
+* **[Skills](/ar/products/cloud/features/ai-ml/agents/builder/skills)** - مجموعات من التعليمات يحمّلها الوكيل تلقائيًا عندما يرى أنها مناسبة للمهمة.
+* **تعليمات الوكيل** - الـsystem prompt الدائم للوكيل، ويُطبَّق على كل محادثة.
+
+استخدم prompt عندما تريد إعادة استخدام صياغة معيّنة مع الحفاظ على تحكّمك في الألفاظ في كل مرة. واستخدم skill عندما تريد من الوكيل تطبيق
+الإرشادات نفسها باستمرار على نوع معيّن من المهام من دون الحاجة إلى كتابتها. واستخدم تعليمات الوكيل عندما ينبغي أن يستمر هذا السلوك طوال
+مدة عمل الوكيل.

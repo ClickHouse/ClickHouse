@@ -1,0 +1,118 @@
+---
+sidebarTitle: 'Быстрый старт'
+slug: /integrations/grafana
+description: 'Введение в работу с ClickHouse в Grafana'
+title: 'Плагин источника данных ClickHouse для Grafana'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/'
+keywords: ['Grafana', 'визуализация данных', 'панель мониторинга', 'плагин', 'источник данных']
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_native.mdx';
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+С Grafana вы можете просматривать все свои данные и делиться ими через панели мониторинга.
+Для подключения к ClickHouse Grafana требуется плагин, который легко установить через интерфейс Grafana.
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/bRce9xWiqQM"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="1-gather-your-connection-details">
+  ## 1. Соберите сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2-making-a-read-only-user">
+  ## 2. Создание пользователя только для чтения
+</div>
+
+При подключении ClickHouse к инструменту визуализации данных, например Grafana, рекомендуется создать пользователя только для чтения, чтобы защитить данные от нежелательных изменений.
+
+Grafana не проверяет безопасность запросов. Запросы могут содержать любой SQL-оператор, включая `DELETE` и `INSERT`.
+
+Чтобы настроить пользователя только для чтения, выполните следующие действия:
+
+1. Создайте профиль пользователя `readonly`, следуя руководству [Создание пользователей и ролей в ClickHouse](/ru/concepts/features/security/access-rights).
+2. Убедитесь, что у пользователя `readonly` достаточно прав для изменения настройки `max_execution_time`, необходимой для [клиента clickhouse-go](https://github.com/ClickHouse/clickhouse-go).
+3. Если вы используете общедоступный экземпляр ClickHouse, не рекомендуется задавать `readonly=2` в профиле `readonly`. Вместо этого оставьте `readonly=1` и установите для `max_execution_time` тип ограничения [changeable&#95;in&#95;readonly](/ru/concepts/features/configuration/settings/constraints-on-settings), чтобы разрешить изменение этой настройки.
+
+<div id="3--install-the-clickhouse-plugin-for-grafana">
+  ## 3.  Установите плагин ClickHouse для Grafana
+</div>
+
+Прежде чем Grafana сможет подключиться к ClickHouse, необходимо установить соответствующий плагин Grafana. Если вы уже вошли в Grafana, выполните следующие действия:
+
+1. На странице **Connections** на боковой панели выберите вкладку **Add new connection**.
+
+2. Найдите **ClickHouse** и нажмите на подписанный плагин от Grafana Labs:
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="Выберите плагин ClickHouse на странице Connections" border />
+
+3. На следующем экране нажмите кнопку **Install**:
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="Установите плагин ClickHouse" border />
+
+<div id="4-define-a-clickhouse-data-source">
+  ## 4. Настройте источник данных ClickHouse
+</div>
+
+1. После завершения установки нажмите кнопку **Add new data source**. (Источник данных также можно добавить на вкладке **Data sources** на странице **Connections**.)
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="Создать источник данных ClickHouse" border />
+
+2. Прокрутите страницу вниз и найдите тип источника данных **ClickHouse** или воспользуйтесь строкой поиска на странице **Add data source**. Выберите источник данных **ClickHouse** — откроется следующая страница:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="Страница конфигурации подключения" border />
+
+3. Введите настройки сервера и учетные данные. Основные параметры:
+
+* **Server host address:** имя хоста вашего сервиса ClickHouse.
+* **Server port:** порт вашего сервиса ClickHouse. Он зависит от конфигурации сервера и используемого протокола.
+* **Protocol**: протокол, используемый для подключения к вашему сервису ClickHouse.
+* **Secure connection**: включите этот параметр, если вашему серверу требуется защищенное подключение.
+* **Username** и **Password**: введите учетные данные пользователя ClickHouse. Если вы еще не настраивали пользователей, попробуйте использовать `default` в качестве имени пользователя. Рекомендуется [настроить пользователя только для чтения](#2-making-a-read-only-user).
+
+Дополнительные параметры см. в документации [конфигурация плагина](/ru/integrations/connectors/data-visualization/grafana/config).
+
+4. Нажмите кнопку **Save &amp; test**, чтобы проверить, может ли Grafana подключиться к вашему сервису ClickHouse. Если все прошло успешно, вы увидите сообщение **Data source is working**:
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Выберите Save & test" border />
+
+<div id="5-next-steps">
+  ## 5. Следующие шаги
+</div>
+
+Ваш источник данных теперь готов к использованию! Подробнее о том, как составлять запросы с помощью [конструктора запросов](/ru/integrations/connectors/data-visualization/grafana/query-builder), см. в документации.
+
+Подробнее о конфигурации см. в разделе [конфигурация плагина](/ru/integrations/connectors/data-visualization/grafana/config).
+
+Если вам нужна дополнительная информация, которой нет в этой документации, посетите [репозиторий плагина на GitHub](https://github.com/grafana/clickhouse-datasource).
+
+<div id="upgrading-plugin-versions">
+  ## Обновление версий плагина
+</div>
+
+Начиная с v4, конфигурации и запросы можно обновлять по мере выхода новых версий.
+
+Конфигурации и запросы из v3 мигрируются в v4 при открытии. Хотя старые конфигурации и панели мониторинга загружаются в v4, результаты миграции не сохраняются, пока вы снова не сохраните их в новой версии. Если при открытии старой конфигурации/запроса возникнут какие-либо проблемы, отмените изменения и [сообщите о проблеме на GitHub](https://github.com/grafana/clickhouse-datasource/issues).
+
+Плагин не может откатиться к предыдущим версиям, если конфигурация/запрос были созданы в более новой версии.

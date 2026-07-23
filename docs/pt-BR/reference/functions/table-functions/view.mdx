@@ -1,0 +1,73 @@
+---
+description: 'Transforma uma subconsulta em uma tabela. A função implementa views.'
+sidebarTitle: 'view'
+slug: /sql-reference/table-functions/view
+title: 'view'
+doc_type: 'reference'
+---
+
+Transforma uma subconsulta em uma tabela. A função implementa views (consulte [CREATE VIEW](/pt-BR/reference/statements/create/view)). A tabela resultante não armazena dados; ela armazena apenas a consulta `SELECT` especificada. Ao consultar a tabela, o ClickHouse executa a consulta e remove do resultado todas as colunas desnecessárias.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+view(subquery)
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+* `subquery` — consulta `SELECT`.
+
+<div id="returned_value">
+  ## Valor retornado
+</div>
+
+* Uma tabela.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Tabela de entrada:
+
+```text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM view(SELECT name FROM months);
+```
+
+```text title="Response"
+┌─name─────┐
+│ January  │
+│ February │
+│ March    │
+│ April    │
+└──────────┘
+```
+
+Você pode usar a função `view` como parâmetro das funções de tabela [remote](/pt-BR/reference/functions/table-functions/remote) e [cluster](/pt-BR/reference/functions/table-functions/cluster):
+
+```sql title="Query"
+SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
+```
+
+```sql title="Query"
+SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
+```
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [Motor de tabela View](/pt-BR/reference/engines/table-engines/special/view)

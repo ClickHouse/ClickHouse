@@ -1,0 +1,67 @@
+---
+title: "Gestion d’un service ClickHouse Cloud avec l’API et cURL"
+description: "Découvrez comment démarrer, arrêter et redémarrer un service ClickHouse Cloud à l’aide des points de terminaison de l’API et de commandes cURL."
+date: 2023-06-07
+tags: ['Gestion du Cloud', 'Outils et utilitaires']
+keywords: ['cURL', 'Gérer le Cloud', 'API ClickHouse']
+---
+
+<div id="how-to-start-stop-and-resume-a-cloud-service-using-the-clickhouse-api-and-curl">
+  ## Comment démarrer, arrêter et redémarrer un service Cloud à l’aide de l’API ClickHouse et de cURL
+</div>
+
+<div id="question">
+  ## Question
+</div>
+
+Comment démarrer, arrêter et redémarrer un service ClickHouse Cloud à l’aide de points de terminaison de l’API ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+1. Pour réveiller/réactiver un service Cloud à partir d’un état inactif, vous pouvez envoyer un ping à l’instance :
+
+```bash
+curl -X GET https://abc123.us-west-2.aws.clickhouse.cloud:8443/ping
+```
+
+2. Pour arrêter un service Cloud, utilisez l’endpoint `/state` avec la commande `stop`. La syntaxe est la suivante :
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/<org_uuid>/services/<service_uuid>/state -u <key_id>:<key_secret> -H "Content-Type: application/json" -d ''{"command": "<stop|start>"}''
+```
+
+Par exemple, la commande suivante arrête le service `2e2124ca-c5ac-459d-a6f2-abc123549d2a` :
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/123abcd0-e9b5-4f55-9e42-0fb04392445c/services/2e2124ca-c5ac-459d-a6f2-abc123549d2a/state -u abc123:ABC123 -H "Content-Type: application/json" -d '{"command": "stop"}'
+```
+
+Le résultat ressemble à :
+
+```response
+{"result":{"id":"2e2124ca-c5ac-459d-a6f2-abc123549d2a","name":"mars-s3","provider":"aws","regionId":"us-west-2","state":"stopping","endpoints":[{"protocol":"nativesecure","host":"abc123.us-west-2.aws.clickhouse.cloud","port":9440},{"protocol":"https","host":"abc123ntrb.us-west-2.aws.clickhouse.cloud","port":8443}],"tier":"production","idleScaling":true,"idleTimeoutMinutes":5,"minTotalMemoryGb":24,"maxTotalMemoryGb":48,"ipAccessList":[{"source":"[0.0.0.0/0](http://0.0.0.0/0)","description":"Anywhere"}],"createdAt":"2022-10-21T18:46:31Z"},"status":200}%
+```
+
+3. Pour redémarrer le service, utilisez la commande `start` :
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/123abcd0-e9b5-4f55-9e42-0fb04392445c/services/2e2124ca-c5ac-459d-a6f2-abc123549d2a/state -u abc123:ABC123 -H "Content-Type: application/json" -d '{"command": "start"}'
+```
+
+<Note>
+  Voici les différents états dans lesquels un service peut se trouver :
+
+  ```
+  "state":"stopping"
+  "state":"stopped"
+  "state":"starting"
+  "state":"running"
+  "state":"idle"
+  ```
+</Note>
+
+<Note>
+  Un service Cloud **&quot;idle&quot;** est considéré comme démarré ; une commande `start` ne le relancera donc pas et ne le sortira pas de cet état. Utilisez l’endpoint `ping` indiqué à l’étape 1 pour réactiver un service.
+</Note>

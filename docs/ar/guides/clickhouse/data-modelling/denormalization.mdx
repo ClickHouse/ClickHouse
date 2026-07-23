@@ -1,0 +1,420 @@
+---
+slug: /data-modeling/denormalization
+title: 'إلغاء تطبيع البيانات'
+description: 'كيفية استخدام إلغاء التطبيع لتحسين أداء الاستعلامات'
+keywords: ['إلغاء تطبيع البيانات', 'إلغاء التطبيع', 'تحسين الاستعلامات']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يُعد إلغاء تطبيع البيانات في ClickHouse أسلوبًا يعتمد على استخدام الجداول المسطّحة للمساعدة في تقليل زمن استجابة الاستعلام إلى الحد الأدنى من خلال تجنّب عمليات JOIN.
+
+<div id="comparing-normalized-vs-denormalized-schemas">
+  ## مقارنة المخططات المُطبَّعة مقابل المخططات منزوعة التطبيع
+</div>
+
+تنطوي إلغاء التطبيع على عكس عملية التطبيع عمدًا لتحسين أداء قاعدة البيانات بما يلائم أنماط استعلام محددة. في قواعد البيانات المُطبَّعة، تُقسَّم البيانات إلى جداول مترابطة متعددة لتقليل التكرار وضمان تكامل البيانات. وتُعيد إلغاء التطبيع إدخال التكرار من خلال دمج الجداول، وتكرار البيانات، وإضافة الحقول المحسوبة إلى جدول واحد أو إلى عدد أقل من الجداول، ما يعني عمليًا نقل أي عمليات ربط من وقت الاستعلام إلى وقت الإدراج.
+
+تقلل هذه العملية الحاجة إلى عمليات ربط معقدة وقت الاستعلام، ويمكن أن تسرّع عمليات القراءة بشكل كبير، مما يجعلها مثالية للتطبيقات ذات متطلبات القراءة العالية والاستعلامات المعقدة. ومع ذلك، قد تزيد من تعقيد عمليات الكتابة والصيانة، إذ يجب تمرير أي تغييرات على البيانات المكررة إلى جميع المواضع التي تظهر فيها للحفاظ على الاتساق.
+
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="إلغاء التطبيع في ClickHouse" />
+
+<br />
+
+من الأساليب الشائعة التي شاع استخدامها مع حلول NoSQL إلغاء تطبيع البيانات عند غياب دعم `JOIN`، وذلك عبر تخزين جميع الإحصاءات أو الصفوف المرتبطة داخل صف أصلي على هيئة أعمدة وكائنات متداخلة. على سبيل المثال، في مخطط نموذجي لمدونة، يمكننا تخزين جميع `Comments` باعتبارها `Array` من الكائنات ضمن المنشورات المقابلة لها.
+
+<div id="when-to-use-denormalization">
+  ## متى تستخدم إلغاء التطبيع
+</div>
+
+بشكل عام، نوصي بإلغاء التطبيع في الحالات التالية:
+
+* أزِل إلغاء التطبيع عن الجداول التي نادرًا ما تتغير، أو التي يمكن فيها تحمّل تأخير قبل إتاحة البيانات للاستعلامات التحليلية، أي عندما يمكن إعادة تحميل البيانات بالكامل على شكل دفعة.
+* تجنّب إلغاء التطبيع في العلاقات متعدد-إلى-متعدد، لأن ذلك قد يؤدي إلى الحاجة إلى تحديث عدد كبير من الصفوف إذا تغيّر صف واحد في المصدر.
+* تجنّب إلغاء التطبيع في العلاقات عالية الكاردينالية. فإذا كان كل صف في جدول ما يرتبط بآلاف الإدخالات في جدول آخر، فسيتعيّن تمثيلها على شكل `Array` — إما من نوع بدائي أو `Tuple`. وبوجه عام، لا يُنصح عادةً بالمصفوفات التي تحتوي على أكثر من 1000 `Tuple`.
+* بدلًا من إلغاء التطبيع لجميع الأعمدة على هيئة كائنات متداخلة، فكّر في إلغاء التطبيع لإحصائية واحدة فقط باستخدام العروض المادية (انظر أدناه).
+
+ليس من الضروري إلغاء التطبيع لكل المعلومات، بل فقط للمعلومات الأساسية التي تحتاج إلى الوصول إليها بشكل متكرر.
+
+يمكن تنفيذ عملية إلغاء التطبيع إما في ClickHouse أو في المصدر الأصلي، مثلًا باستخدام [Apache Flink](/ar/integrations/connectors/data-ingestion/apache-flink).
+
+<div id="avoid-denormalization-on-frequently-updated-data">
+  ## تجنّب إلغاء التطبيع للبيانات التي تُحدَّث بشكل متكرر
+</div>
+
+بالنسبة إلى ClickHouse، يُعد إلغاء التطبيع أحد الخيارات العديدة التي يمكنك استخدامها لتحسين أداء الاستعلامات، لكن ينبغي استخدامه بحذر. إذا كانت البيانات تُحدَّث بشكل متكرر وتحتاج إلى التحديث بشكل شبه فوري، فينبغي تجنّب هذا النهج. استخدمه إذا كان الجدول الرئيسي يعتمد إلى حد كبير على الإلحاق فقط، أو إذا كان يمكن إعادة تحميله دوريًا على شكل دفعة، مثلًا يوميًا.
+
+ويواجه هذا النهج تحديًا رئيسيًا يتمثل في أداء الكتابة وتحديث البيانات. وبشكل أكثر تحديدًا، ينقل إلغاء التطبيع فعليًا مسؤولية ربط البيانات من وقت تنفيذ الاستعلام إلى وقت الاستيعاب. وبينما يمكن أن يؤدي ذلك إلى تحسين كبير في أداء الاستعلامات، فإنه يزيد من تعقيد الاستيعاب، ويعني أن مسارات البيانات تحتاج إلى إعادة إدراج صف في ClickHouse إذا تغيّر أيٌّ من الصفوف التي استُخدمت في تكوينه. وقد يعني هذا أن تغيير صف واحد في المصدر قد يستلزم تحديث عدد كبير من الصفوف في ClickHouse. وفي المخططات المعقدة، حيث تكون الصفوف قد تكوّنت من عمليات JOIN معقدة، فإن تغيير صف واحد في مكوّن متداخل ضمن عملية JOIN قد يعني احتمال الحاجة إلى تحديث ملايين الصفوف.
+
+وغالبًا ما يكون تحقيق ذلك في الوقت الفعلي غير عملي، ويتطلب جهدًا هندسيًا كبيرًا، وذلك بسبب تحديين:
+
+1. تشغيل عبارات JOIN الصحيحة عند تغيّر صف في جدول. ومن المثالي ألّا يؤدي ذلك إلى تحديث جميع الكائنات المرتبطة بعملية JOIN، بل فقط تلك التي تأثرت. ويتطلب تعديل عمليات JOIN لتطبيق عامل تصفية على الصفوف الصحيحة بكفاءة، وتحقيق ذلك في ظل معدل نقل مرتفع، أدوات خارجية أو جهدًا هندسيًا.
+2. يجب إدارة تحديثات الصفوف في ClickHouse بعناية، مما يضيف مزيدًا من التعقيد.
+
+<br />
+
+لذلك، تكون عملية التحديث على شكل دفعات أكثر شيوعًا، حيث يُعاد تحميل جميع الكائنات التي خضعت لإلغاء التطبيع بشكل دوري.
+
+<div id="practical-cases-for-denormalization">
+  ## حالات عملية لإلغاء التطبيع
+</div>
+
+لنستعرض بعض الأمثلة العملية التي قد يكون فيها إلغاء التطبيع خيارًا منطقيًا، وأخرى تكون فيها المقاربات البديلة أكثر ملاءمة.
+
+لنفترض وجود جدول `Posts` جرى بالفعل إلغاء تطبيعه بإحصاءات مثل `AnswerCount` و`CommentCount` — إذ تُوفَّر البيانات المصدر بهذا الشكل. لكن عمليًا، قد نرغب في تطبيع هذه المعلومات، لأنها على الأرجح ستكون عرضة لتغييرات متكررة. كما أن كثيرًا من هذه الأعمدة متاح أيضًا عبر جداول أخرى؛ فعلى سبيل المثال، تتوفر تعليقات المنشور من خلال العمود `PostId` والجدول `Comments`. ولأغراض هذا المثال، نفترض أن المنشورات يُعاد تحميلها ضمن عملية مجمّعة.
+
+وسنقتصر هنا على إلغاء تطبيع الجداول الأخرى إلى `Posts`، لأننا نعدّه جدولنا الرئيسي لأغراض التحليلات. وقد يكون إلغاء التطبيع في الاتجاه المعاكس مناسبًا أيضًا لبعض الاستعلامات، مع انطباق الاعتبارات نفسها المذكورة أعلاه.
+
+*في كل مثال من الأمثلة التالية، افترض وجود استعلام يتطلب استخدام الجدولين معًا في عملية join.*
+
+<div id="posts-and-votes">
+  ### Posts and Votes
+</div>
+
+تُمثَّل Votes المرتبطة بـ Posts في جداول منفصلة. ويظهر أدناه المخطط المُحسَّن لذلك، إلى جانب أمر insert المستخدم لتحميل البيانات:
+
+```sql
+CREATE TABLE votes
+(
+        `Id` UInt32,
+        `PostId` Int32,
+        `VoteTypeId` UInt8,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.272 sec. Processed 238.98 million rows, 2.13 GB (9.10 million rows/s., 80.97 MB/s.)
+```
+
+للوهلة الأولى، قد تبدو هذه مرشحة لإلغاء التطبيع في جدول Posts. لكن هذا النهج ينطوي على بعض التحديات.
+
+تُضاف التصويتات إلى المنشورات بوتيرة متكررة. ورغم أن المعدل لكل منشور قد ينخفض بمرور الوقت، يوضح الاستعلام التالي أن لدينا نحو 40 ألف تصويت في الساعة على امتداد 30 ألف منشور.
+
+```sql
+SELECT round(avg(c)) AS avg_votes_per_hr, round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+        SELECT
+        toStartOfHour(CreationDate) AS hr,
+        count() AS c,
+        uniq(PostId) AS posts
+        FROM votes
+        GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│               41759 │         33322 │
+└──────────────────┴──────────────────┘
+```
+
+يمكن معالجة ذلك بالمعالجة على دفعات إذا كان بالإمكان تحمّل بعض التأخير، لكن ذلك لا يزال يتطلب منا التعامل مع التحديثات ما لم نُعِد تحميل جميع المنشورات دوريًا (وهو أمر يُستبعَد أن يكون مرغوبًا).
+
+والأكثر إشكالًا أن بعض المنشورات لديها عدد مرتفع للغاية من عمليات التصويت:
+
+```sql
+SELECT PostId, concat('https://stackoverflow.com/questions/', PostId) AS url, count() AS c
+FROM votes
+GROUP BY PostId
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌───PostId─┬─url──────────────────────────────────────────┬─────c─┐
+│ 11227902 │ https://stackoverflow.com/questions/11227902 │ 35123 │
+│   927386 │ https://stackoverflow.com/questions/927386   │ 29090 │
+│ 11227809 │ https://stackoverflow.com/questions/11227809 │ 27475 │
+│   927358 │ https://stackoverflow.com/questions/927358   │ 26409 │
+│  2003515 │ https://stackoverflow.com/questions/2003515  │ 25899 │
+└──────────┴──────────────────────────────────────────────┴───────┘
+```
+
+الملاحظة الرئيسية هنا هي أن إحصاءات التصويت المجمّعة لكل منشور تكفي لمعظم التحليلات، ولا نحتاج إلى إلغاء التطبيع لكل معلومات التصويت. على سبيل المثال، يمثّل العمود `Score` حاليًا إحصائية من هذا النوع، أي إجمالي الأصوات المؤيدة مطروحًا منه الأصوات المعارضة. ومن الناحية المثالية، نحتاج فقط إلى استرجاع هذه الإحصاءات في وقت الاستعلام من خلال عملية بحث بسيطة (راجع [القواميس](/ar/concepts/features/dictionaries/index)).
+
+<div id="users-and-badges">
+  ### Users وBadges
+</div>
+
+لننظر الآن إلى `Users` و`Badges`:
+
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="مخطط Users وBadges" />
+
+<p />
+
+نُدرج البيانات أولًا باستخدام الأمر التالي:
+
+<p />
+
+```sql
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` LowCardinality(String),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `DisplayName` String,
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `AboutMe` String,
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32,
+    `WebsiteUrl` String,
+    `Location` LowCardinality(String),
+    `AccountId` Int32
+)
+ENGINE = MergeTree
+ORDER BY (Id, CreationDate)
+```
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.229 sec. Processed 22.48 million rows, 1.36 GB (857.21 thousand rows/s., 51.99 MB/s.)
+```
+
+```sql
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
+```
+
+رغم أن المستخدمين قد يحصلون على الأوسمة بوتيرة متكررة، فمن غير المرجح أن تكون هذه مجموعة بيانات نحتاج إلى تحديثها أكثر من مرة يوميًا. العلاقة بين الأوسمة والمستخدمين هي علاقة واحد إلى متعدد. ربما يمكننا ببساطة إلغاء تطبيع الأوسمة وإضافتها إلى المستخدمين في صورة قائمة من Tuples؟ ورغم أن ذلك ممكن، فإن إجراء تحقق سريع للتأكد من أكبر عدد من الأوسمة لكل مستخدم يشير إلى أن هذا ليس الخيار الأمثل:
+
+```sql
+SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌─UserId─┬─────c─┐
+│  22656 │ 19334 │
+│   6309 │ 10516 │
+│ 100297 │  7848 │
+│ 157882 │  7574 │
+│  29407 │  6512 │
+└────────┴───────┘
+```
+
+من غير الواقعي على الأرجح إلغاء تطبيع 19 ألف كائن في صف واحد. وقد يكون من الأفضل ترك هذه العلاقة على شكل جداول منفصلة أو إضافة إحصاءات إليها.
+
+> قد نرغب في إلغاء تطبيع إحصاءات من جدول Badges إلى جدول Users، مثل عدد الشارات. ونتناول مثالًا كهذا عند استخدام القواميس لهذه المجموعة من البيانات وقت الإدراج.
+
+<div id="posts-and-postlinks">
+  ### Posts وPostLinks
+</div>
+
+يربط `PostLinks` بين عناصر `Posts` التي يعتبرها المستخدمون ذات صلة أو مكررة. يوضّح الاستعلام التالي البنية وأمر التحميل:
+
+```sql
+CREATE TABLE postlinks
+(
+  `Id` UInt64,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `PostId` Int32,
+  `RelatedPostId` Int32,
+  `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
+)
+ENGINE = MergeTree
+ORDER BY (PostId, RelatedPostId)
+
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 4.726 sec. Processed 6.55 million rows, 129.70 MB (1.39 million rows/s., 27.44 MB/s.)
+```
+
+يمكننا التأكد من عدم وجود أي منشورات تحتوي على عدد مفرط من الروابط بما يمنع إلغاء التطبيع:
+
+```sql
+SELECT PostId, count() AS c
+FROM postlinks
+GROUP BY PostId
+ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌───PostId─┬───c─┐
+│ 22937618 │ 125 │
+│  9549780 │ 120 │
+│  3737139 │ 109 │
+│ 18050071 │ 103 │
+│ 25889234 │  82 │
+└──────────┴─────┘
+```
+
+وبالمثل، لا تُعدّ عمليات الربط هذه أحداثًا كثيرة الحدوث:
+
+```sql
+SELECT
+  round(avg(c)) AS avg_votes_per_hr,
+  round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+  SELECT
+  toStartOfHour(CreationDate) AS hr,
+  count() AS c,
+  uniq(PostId) AS posts
+  FROM postlinks
+  GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│                54 │                    44     │
+└──────────────────┴──────────────────┘
+```
+
+سنستخدم هذا مثالًا على إلغاء التطبيع فيما يلي.
+
+<div id="simple-statistic-example">
+  ### مثال بسيط على إحصائية
+</div>
+
+في معظم الحالات، يتطلب إلغاء التطبيع إضافة عمود واحد أو قيمة إحصائية واحدة إلى صف أساسي. على سبيل المثال، قد نرغب فقط في إثراء منشوراتنا بعدد المنشورات المكررة، ولا نحتاج سوى إلى إضافة عمود.
+
+```sql
+CREATE TABLE posts_with_duplicate_count
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `DuplicatePosts` UInt16
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+لتعبئة هذا الجدول، نستخدم عبارة `INSERT INTO SELECT` لإجراء JOIN بين إحصائية التكرار وبيانات posts لدينا.
+
+```sql
+INSERT INTO posts_with_duplicate_count SELECT
+    posts.*,
+    DuplicatePosts
+FROM posts AS posts
+LEFT JOIN
+(
+    SELECT PostId, countIf(LinkTypeId = 'Duplicate') AS DuplicatePosts
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+<div id="exploiting-complex-types-for-one-to-many-relationships">
+  ### استغلال الأنواع المعقدة للعلاقات من واحد إلى متعدد
+</div>
+
+لتنفيذ إلغاء التطبيع، نحتاج غالبًا إلى الاستفادة من الأنواع المعقدة. إذا كانت هناك علاقة واحد إلى واحد يجري إلغاء تطبيعها، مع عدد قليل من الأعمدة، فيمكنك ببساطة إضافة هذه القيم كصفوف بأنواعها الأصلية كما هو موضح أعلاه. ومع ذلك، يكون هذا غالبًا غير مرغوب فيه مع الكائنات الأكبر حجمًا، كما أنه غير ممكن في العلاقات من واحد إلى متعدد.
+
+في حالات الكائنات المعقدة أو العلاقات من واحد إلى متعدد، يمكنك استخدام:
+
+* Named Tuples - تتيح تمثيل بنية مرتبطة كمجموعة من الأعمدة.
+* Array(Tuple) أو Nested - مصفوفة من Named Tuples، وتُعرف أيضًا باسم Nested، بحيث يمثّل كل إدخال كائنًا. وينطبق ذلك على العلاقات من واحد إلى متعدد.
+
+كمثال، نوضح أدناه كيفية إجراء إلغاء التطبيع لـ `PostLinks` ضمن `Posts`.
+
+يمكن أن يحتوي كل منشور على عدد من الروابط إلى منشورات أخرى كما هو موضح سابقًا في مخطط `PostLinks`. وباستخدام النوع Nested، يمكننا تمثيل هذه المنشورات المرتبطة والمكررة كما يلي:
+
+```sql
+SET flatten_nested=0
+CREATE TABLE posts_with_links
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+   `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+> لاحظ استخدام الإعداد `flatten_nested=0`. نوصي بتعطيل تسطيح البيانات المتداخلة.
+
+يمكننا تنفيذ عملية إلغاء التطبيع هذه باستخدام استعلام `INSERT INTO SELECT` مع `OUTER JOIN`:
+
+```sql
+INSERT INTO posts_with_links
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+```response
+0 rows in set. Elapsed: 155.372 sec. Processed 66.37 million rows, 76.33 GB (427.18 thousand rows/s., 491.25 MB/s.)
+Peak memory usage: 6.98 GiB.
+```
+
+> لاحظ الزمن هنا. لقد تمكّنا من إلغاء تطبيع 66 مليون صف خلال نحو دقيقتين. وكما سنرى لاحقًا، فهذه عملية يمكننا جدولة تشغيلها.
+
+لاحظ استخدام دوال `groupArray` لطيّ `PostLinks` إلى مصفوفة واحدة لكل `PostId` قبل الربط. ثم تُرشَّح هذه المصفوفة إلى قائمتين فرعيتين: `LinkedPosts` و`DuplicatePosts`، مع استبعاد أي نتائج فارغة ناتجة عن الربط الخارجي أيضًا.
+
+يمكننا اختيار بعض الصفوف للاطّلاع على بنيتنا الجديدة بعد إلغاء التطبيع:
+
+```sql
+SELECT LinkedPosts, DuplicatePosts
+FROM posts_with_links
+WHERE (length(LinkedPosts) > 2) AND (length(DuplicatePosts) > 0)
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+LinkedPosts:    [('2017-04-11 11:53:09.583',3404508),('2017-04-11 11:49:07.680',3922739),('2017-04-11 11:48:33.353',33058004)]
+DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',33058004)]
+```
+
+<div id="orchestrating-and-scheduling-denormalization">
+  ## تنظيم وجدولة إلغاء التطبيع
+</div>
+
+<div id="batch">
+  ### المعالجة الدُفعية
+</div>
+
+يتطلب الاستفادة من إلغاء التطبيع عملية تحويل يمكن تنفيذها وتنسيقها من خلالها.
+
+لقد أوضحنا أعلاه كيف يمكن استخدام ClickHouse لإجراء هذا التحويل بعد تحميل البيانات عبر `INSERT INTO SELECT`. وهذا مناسب لعمليات التحويل الدُفعية الدورية.
+
+لدى المستخدمين عدة خيارات لتنسيق ذلك في ClickHouse، بافتراض أن عملية تحميل دُفعية دورية مقبولة:
+
+* **[العروض المادية القابلة للتحديث](/ar/concepts/features/materialized-views/refreshable-materialized-view)** - يمكن استخدام العروض المادية القابلة للتحديث لجدولة استعلام بشكل دوري مع إرسال النتائج إلى الجدول الهدف. وعند تنفيذ الاستعلام، يضمن العرض تحديث الجدول الهدف ذريًا. ويوفر ذلك وسيلة أصلية في ClickHouse لجدولة هذا العمل.
+* **أدوات خارجية** - استخدام أدوات مثل [dbt](https://www.getdbt.com/) و[Airflow](https://airflow.apache.org/) لجدولة التحويل بشكل دوري. ويضمن [تكامل ClickHouse مع dbt](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index) تنفيذ ذلك ذريًا، مع إنشاء إصدار جديد من الجدول الهدف ثم تبديله ذريًا مع الإصدار الذي يستقبل الاستعلامات (عبر الأمر [EXCHANGE](/ar/reference/statements/exchange)).
+
+<div id="streaming">
+  ### التدفّق
+</div>
+
+قد ترغب أيضًا في تنفيذ ذلك خارج ClickHouse، قبل الإدراج، باستخدام تقنيات التدفّق مثل [Apache Flink](/ar/integrations/connectors/data-ingestion/apache-flink). أو يمكن استخدام [العروض المادية](/ar/concepts/features/materialized-views/cascading-materialized-views) التزايدية لتنفيذ هذه العملية عند إدراج البيانات.

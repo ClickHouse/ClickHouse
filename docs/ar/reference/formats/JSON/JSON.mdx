@@ -1,0 +1,118 @@
+---
+alias: []
+description: 'وثائق تنسيق JSON'
+input_format: true
+keywords: ['JSON']
+output_format: true
+slug: /interfaces/formats/JSON
+title: 'JSON'
+doc_type: 'reference'
+---
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✔       | ✔       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يقرأ تنسيق `JSON` البيانات ويُخرجها بتنسيق JSON.
+
+يعيد تنسيق `JSON` ما يلي:
+
+| المعلَمة                     | الوصف                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meta`                       | أسماء الأعمدة وأنواعها.                                                                                                                                                                                                                                                                                                                            |
+| `data`                       | جداول البيانات.                                                                                                                                                                                                                                                                                                                                    |
+| `rows`                       | العدد الإجمالي للصفوف الناتجة.                                                                                                                                                                                                                                                                                                                     |
+| `rows_before_limit_at_least` | الحد الأدنى التقديري لعدد الصفوف التي كانت ستظهر لولا LIMIT. لا يُخرج هذا إلا إذا كان الاستعلام يحتوي على LIMIT. ويُحتسب هذا التقدير من كتل البيانات التي تمت معالجتها في query pipeline قبل مرحلة تطبيق الحد، لكن قد تُستبعَد لاحقًا بواسطة هذه المرحلة. وإذا لم تصل الكتل أصلًا إلى مرحلة تطبيق الحد في query pipeline، فلن تدخل في هذا التقدير. |
+| `statistics`                 | إحصاءات مثل `elapsed` و`rows_read` و`bytes_read`.                                                                                                                                                                                                                                                                                                  |
+| `totals`                     | القيم الإجمالية (عند استخدام WITH TOTALS).                                                                                                                                                                                                                                                                                                         |
+| `extremes`                   | القيم القصوى (عند ضبط extremes على 1).                                                                                                                                                                                                                                                                                                             |
+
+يتوافق تنسيق `JSON` مع JavaScript. ولضمان ذلك، تُفلَت بعض المحارف بشكل إضافي:
+
+* يُفلَت الخط المائل `/` على هيئة `\/`
+* تُفلَت فواصل الأسطر البديلة `U+2028` و`U+2029`، التي تسبب مشكلات في بعض المتصفحات، على هيئة `\uXXXX`.
+* تُفلَت محارف التحكم ASCII: إذ تُستبدل backspace وform feed وline feed وcarriage return وhorizontal tab بـ `\b` و`\f` و`\n` و`\r` و`\t`، وكذلك البايتات المتبقية ضمن النطاق 00-1F باستخدام متتاليات `\uXXXX`.
+* تُحوَّل متتاليات UTF-8 غير الصالحة إلى محرف الاستبدال � بحيث يتكون النص الناتج من متتاليات UTF-8 صالحة.
+
+وللتوافق مع JavaScript، تُحاط الأعداد الصحيحة Int64 وUInt64 بعلامات اقتباس مزدوجة افتراضيًا.
+ولإزالة علامات الاقتباس، يمكنك ضبط مَعلَمة configuration [`output_format_json_quote_64bit_integers`](/ar/reference/settings/formats#output_format_json_quote_64bit_integers) على `0`.
+
+يدعم ClickHouse القيمة [NULL](/ar/reference/syntax)، والتي تُعرض على أنها `null` في خرج JSON. ولتمكين قيم `+nan` و`-nan` و`+inf` و`-inf` في الخرج، اضبط [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats#output_format_json_quote_denormals) على `1`.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+مثال:
+
+```sql
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "num": 42,
+                        "str": "hello",
+                        "arr": [0,1]
+                },
+                {
+                        "num": 43,
+                        "str": "hello",
+                        "arr": [0,1,2]
+                },
+                {
+                        "num": 44,
+                        "str": "hello",
+                        "arr": [0,1,2,3]
+                }
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001137687,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+بالنسبة إلى تنسيق الإدخال JSON، إذا كان الإعداد [`input_format_json_validate_types_from_metadata`](/ar/reference/settings/formats#input_format_json_validate_types_from_metadata) مضبوطًا على `1`،
+فستُقارَن الأنواع الواردة في البيانات الوصفية ضمن بيانات الإدخال بأنواع الأعمدة المقابلة في الجدول.
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* تنسيق [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)
+* الإعداد [output&#95;format&#95;json&#95;array&#95;of&#95;rows](/ar/reference/settings/formats#output_format_json_array_of_rows)

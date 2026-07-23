@@ -1,0 +1,1509 @@
+---
+slug: /guides/sre/keeper/clickhouse-keeper
+
+sidebarTitle: 'ClickHouse Keeper 구성'
+keywords: ['Keeper', 'ZooKeeper', 'clickhouse-keeper']
+description: 'ClickHouse Keeper 또는 clickhouse-keeper는 ZooKeeper를 대체하며 복제와 조정 기능을 제공합니다.'
+title: 'ClickHouse Keeper'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+ClickHouse Keeper는 데이터 [복제](/ko/reference/engines/table-engines/mergetree-family/replication) 및 [분산 DDL](/ko/reference/statements/distributed-ddl) 쿼리 실행을 위한 조정 시스템입니다. ClickHouse Keeper는 ZooKeeper와 호환됩니다.
+
+<div id="implementation-details">
+  ### 구현 세부 정보
+</div>
+
+ZooKeeper는 널리 알려진 초기 오픈소스 조정 시스템 중 하나입니다. Java로 구현되어 있으며, 단순하면서도 강력한 데이터 모델을 갖추고 있습니다. ZooKeeper의 조정 알고리즘인 ZooKeeper Atomic Broadcast(ZAB)는 각 ZooKeeper 노드가 읽기를 로컬에서 처리하므로 읽기에 대해 선형화 가능성 보장을 제공하지 않습니다. ZooKeeper와 달리 ClickHouse Keeper는 C++로 작성되었으며 [RAFT 알고리즘](https://raft.github.io/) [구현체](https://github.com/eBay/NuRaft)를 사용합니다. 이 알고리즘은 읽기와 쓰기 모두에 대해 선형화 가능성을 제공하며, 여러 언어로 작성된 다양한 오픈소스 구현체가 있습니다.
+
+기본적으로 ClickHouse Keeper는 ZooKeeper와 동일한 보장을 제공합니다. 즉, 쓰기는 선형화 가능하고 읽기는 비선형화입니다. 또한 호환되는 클라이언트-서버 프로토콜을 제공하므로, 표준 ZooKeeper 클라이언트는 모두 ClickHouse Keeper와 상호 작용하는 데 사용할 수 있습니다. 스냅샷과 로그의 포맷은 ZooKeeper와 호환되지 않지만, `clickhouse-keeper-converter` 도구를 사용하면 ZooKeeper 데이터를 ClickHouse Keeper 스냅샷으로 변환할 수 있습니다. ClickHouse Keeper의 interserver 프로토콜도 ZooKeeper와 호환되지 않으므로, ZooKeeper / ClickHouse Keeper 혼합 cluster는 구성할 수 없습니다.
+
+ClickHouse Keeper는 [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl)와 동일한 방식으로 액세스 제어 목록(ACL)을 지원합니다. ClickHouse Keeper는 동일한 권한 집합을 지원하며, 기본 제공 스킴도 완전히 동일합니다. `world`, `auth`, `digest`입니다. `digest` 인증 스킴은 `username:password` 쌍을 사용하며, 비밀번호는 Base64로 인코딩됩니다.
+
+<Note>
+  외부 통합은 지원되지 않습니다.
+</Note>
+
+<div id="configuration">
+  ### 구성
+</div>
+
+ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse 서버의 내부 구성 요소로 사용할 수 있습니다. 두 경우 모두 구성은 거의 동일한 `.xml` 파일로 정의됩니다.
+
+<div id="keeper-configuration-settings">
+  #### Keeper 구성 설정
+</div>
+
+기본 ClickHouse Keeper 구성 태그는 `<keeper_server>`이며, 다음 매개변수를 사용합니다:
+
+| 매개변수                                | 설명                                                                                                                                                                         | 기본값                                                                                                          |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `tcp_port`                          | 클라이언트가 연결하는 포트입니다.                                                                                                                                                         | `2181`                                                                                                       |
+| `tcp_port_secure`                   | 클라이언트와 keeper-server 간 SSL 연결에 사용하는 보안 포트입니다.                                                                                                                              | -                                                                                                            |
+| `server_id`                         | 고유한 서버 id입니다. ClickHouse Keeper 클러스터의 각 참여자는 고유한 번호(1, 2, 3...)를 가져야 합니다.                                                                                                  | -                                                                                                            |
+| `log_storage_path`                  | coordination logs의 경로입니다. ZooKeeper와 마찬가지로 로그는 부하가 적은 노드에 저장하는 것이 좋습니다.                                                                                                    | -                                                                                                            |
+| `snapshot_storage_path`             | coordination snapshots의 경로입니다.                                                                                                                                             | -                                                                                                            |
+| `enable_reconfiguration`            | [`reconfig`](#reconfiguration)를 통해 클러스터를 동적으로 재구성할 수 있도록 활성화합니다.                                                                                                           | `False`                                                                                                      |
+| `max_memory_usage_soft_limit`       | Keeper의 최대 memory usage에 대한 바이트 단위 소프트 리밋입니다.                                                                                                                              | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                               |
+| `max_memory_usage_soft_limit_ratio` | `max_memory_usage_soft_limit`가 설정되지 않았거나 0으로 설정된 경우, 이 값을 사용해 기본 소프트 리밋을 결정합니다.                                                                                            | `0.9`                                                                                                        |
+| `cgroups_memory_observer_wait_time` | `max_memory_usage_soft_limit`가 설정되지 않았거나 `0`으로 설정된 경우, 물리 메모리 양을 관찰하기 위해 이 인터벌을 사용합니다. 메모리 양이 변경되면 `max_memory_usage_soft_limit_ratio`를 기준으로 Keeper의 메모리 소프트 리밋을 다시 계산합니다. | `15`                                                                                                         |
+| `http_control`                      | [HTTP 제어](#http-control) 인터페이스의 구성입니다.                                                                                                                                | -                                                                                                            |
+| `digest_enabled`                    | 실시간 데이터 일관성 검사를 활성화합니다.                                                                                                                                                    | `True`                                                                                                       |
+| `create_snapshot_on_exit`           | 종료 시 스냅샷을 생성합니다.                                                                                                                                                           | -                                                                                                            |
+| `hostname_checks_enabled`           | 클러스터 구성에 대해 호스트명 유효성 검사를 활성화합니다(예: 원격 endpoints와 함께 localhost를 사용하는 경우).                                                                                                   | `True`                                                                                                       |
+| `four_letter_word_white_list`       | 4lw 명령의 화이트리스트입니다.                                                                                                                                                          | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
+| `enable_ipv6`                       | IPv6를 활성화합니다.                                                                                                                                                              | `True`                                                                                                       |
+
+그 밖의 일반적인 매개변수는 ClickHouse 서버 구성(`listen_host`, `logger` 등)에서 상속됩니다.
+
+<div id="internal-coordination-settings">
+  #### 내부 조정 설정
+</div>
+
+내부 조정 설정은 `<keeper_server>.<coordination_settings>` 섹션에 있으며, 다음 매개변수가 있습니다:
+
+| Parameter                          | Description                                                                                                                       | Default          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`             | 단일 클라이언트 작업의 타임아웃(ms)                                                                                                             | `10000`          |
+| `min_session_timeout_ms`           | 클라이언트 세션의 최소 타임아웃(ms)                                                                                                             | `10000`          |
+| `session_timeout_ms`               | 클라이언트 세션의 최대 타임아웃(ms)                                                                                                             | `100000`         |
+| `dead_session_check_period_ms`     | ClickHouse Keeper가 종료된 세션을 확인하고 제거하는 주기(ms)                                                                                       | `500`            |
+| `heart_beat_interval_ms`           | ClickHouse Keeper 리더가 팔로워에게 heartbeat를 보내는 주기(ms)                                                                                 | `500`            |
+| `election_timeout_lower_bound_ms`  | 팔로워가 이 인터벌 동안 리더로부터 heartbeat를 받지 못하면 리더 선출을 시작할 수 있습니다. `election_timeout_upper_bound_ms`보다 작거나 같아야 합니다. 이상적으로는 두 값이 같지 않아야 합니다. | `1000`           |
+| `election_timeout_upper_bound_ms`  | 팔로워가 이 인터벌 동안 리더로부터 heartbeat를 받지 못하면 리더 선출을 반드시 시작해야 합니다.                                                                        | `2000`           |
+| `rotate_log_storage_interval`      | 하나의 파일에 저장할 로그 레코드 수입니다.                                                                                                          | `100000`         |
+| `reserved_log_items`               | compaction 전에 보관할 조정 로그 레코드 수입니다.                                                                                                 | `100000`         |
+| `snapshot_distance`                | ClickHouse Keeper가 새 스냅샷을 생성하는 주기입니다(로그의 레코드 수 기준).                                                                               | `100000`         |
+| `snapshots_to_keep`                | 유지할 스냅샷 수입니다.                                                                                                                     | `3`              |
+| `stale_log_gap`                    | 리더가 팔로워를 오래된 상태로 판단하고 로그 대신 스냅샷을 보내는 임계값입니다.                                                                                      | `10000`          |
+| `fresh_log_gap`                    | 노드가 최신 상태로 간주되는 기준입니다.                                                                                                            | `200`            |
+| `max_requests_batch_size`          | 요청 수 기준으로 RAFT에 전송되기 전 Batch의 최대 크기입니다.                                                                                           | `100`            |
+| `force_sync`                       | 조정 로그에 쓸 때마다 `fsync`를 호출합니다.                                                                                                      | `true`           |
+| `quorum_reads`                     | 읽기 요청을 전체 RAFT 합의를 거치는 쓰기처럼 실행하며, 속도는 유사합니다.                                                                                      | `false`          |
+| `raft_logs_level`                  | 조정 관련 텍스트 로깅 수준입니다(trace, debug 등).                                                                                               | `system default` |
+| `auto_forwarding`                  | 팔로워가 쓰기 요청을 리더로 전달할 수 있도록 허용합니다.                                                                                                  | `true`           |
+| `shutdown_timeout`                 | 내부 연결이 종료되고 셧다운이 완료될 때까지 기다리는 시간(ms)입니다.                                                                                          | `5000`           |
+| `startup_timeout`                  | 지정된 타임아웃 내에 서버가 다른 쿼럼 참여자에 연결하지 못하면 종료됩니다(ms).                                                                                    | `30000`          |
+| `async_replication`                | 비동기 복제를 활성화합니다. 더 나은 성능을 제공하면서도 모든 읽기 및 쓰기 보장은 유지됩니다. 이전 버전과의 호환성이 깨지지 않도록 기본적으로 비활성화되어 있습니다.                                     | `false`          |
+| `latest_logs_cache_size_threshold` | 최신 log entries에 대한 인메모리 캐시의 최대 총 크기입니다.                                                                                           | `1GiB`           |
+| `commit_logs_cache_size_threshold` | 커밋에 다음으로 필요한 log entries에 대한 인메모리 캐시의 최대 총 크기입니다.                                                                                 | `500MiB`         |
+| `disk_move_retries_wait_ms`        | 파일을 디스크 간에 이동하는 중 실패가 발생했을 때, 재시도 사이에 대기하는 시간입니다.                                                                                 | `1000`           |
+| `disk_move_retries_during_init`    | 초기화 중 파일을 디스크 간에 이동하다 실패가 발생했을 때의 재시도 횟수입니다.                                                                                      | `100`            |
+| `experimental_use_rocksdb`         | rocksdb를 백엔드 저장소로 사용합니다.                                                                                                          | `0`              |
+
+쿼럼 구성은 `<keeper_server>.<raft_configuration>` 섹션에 있으며, 서버 설명을 포함합니다.
+
+전체 쿼럼에 대한 유일한 매개변수는 `secure`이며, 쿼럼 참여자 간 통신에 암호화된 연결을 활성화합니다. 노드 간 내부 통신에 SSL 연결이 필요하면 이 매개변수를 `true`로 설정할 수 있으며, 그렇지 않으면 지정하지 않아도 됩니다.
+
+각 `<server>`의 주요 매개변수는 다음과 같습니다:
+
+* `id` — 쿼럼의 서버 식별자입니다.
+* `hostname` — 이 서버가 배치된 호스트명입니다.
+* `port` — 이 서버가 연결을 수신하는 포트입니다.
+* `can_become_leader` — 서버를 `learner`로 설정하려면 `false`로 지정합니다. 생략하면 값은 `true`입니다.
+
+<Note>
+  ClickHouse Keeper 클러스터의 토폴로지가 변경되는 경우(예: 서버 교체)에는 `server_id`와 `hostname`의 매핑을 일관되게 유지하고, 서로 다른 서버에 기존 `server_id`를 뒤섞어 사용하거나 재사용하지 않도록 하십시오(예: ClickHouse Keeper 배포에 자동화 스크립트를 사용할 경우 이런 일이 발생할 수 있습니다).
+
+  Keeper 인스턴스의 호스트가 변경될 수 있다면 원시 IP 주소 대신 호스트명을 정의하여 사용하는 것을 권장합니다. 호스트명을 변경하는 것은 서버를 제거한 뒤 다시 추가하는 것과 같으며, 경우에 따라 이렇게 하지 못할 수도 있습니다(예: 쿼럼을 충족할 만큼 Keeper 인스턴스가 충분하지 않은 경우).
+</Note>
+
+<Note>
+  `async_replication`은 이전 버전과의 호환성이 깨지는 것을 방지하기 위해 기본적으로 비활성화되어 있습니다. 클러스터의 모든 Keeper 인스턴스가 `async_replication`을 지원하는 버전(v23.9+)으로 실행 중이라면, 단점 없이 성능을 개선할 수 있으므로 활성화하는 것을 권장합니다.
+</Note>
+
+3개의 노드로 구성된 쿼럼에 대한 구성 예시는 `test_keeper_` 접두사가 있는 [통합 테스트](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration)에서 확인할 수 있습니다. 서버 #1의 예시 구성은 다음과 같습니다:
+
+```xml
+<keeper_server>
+    <tcp_port>2181</tcp_port>
+    <server_id>1</server_id>
+    <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+    <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+    <coordination_settings>
+        <operation_timeout_ms>10000</operation_timeout_ms>
+        <session_timeout_ms>30000</session_timeout_ms>
+        <raft_logs_level>trace</raft_logs_level>
+    </coordination_settings>
+
+    <raft_configuration>
+        <server>
+            <id>1</id>
+            <hostname>zoo1</hostname>
+            <port>9234</port>
+        </server>
+        <server>
+            <id>2</id>
+            <hostname>zoo2</hostname>
+            <port>9234</port>
+        </server>
+        <server>
+            <id>3</id>
+            <hostname>zoo3</hostname>
+            <port>9234</port>
+        </server>
+    </raft_configuration>
+</keeper_server>
+```
+
+<div id="how-to-run">
+  ### 실행 방법
+</div>
+
+ClickHouse Keeper는 ClickHouse 서버 패키지에 포함되어 있으므로 `/etc/your_path_to_config/clickhouse-server/config.xml`에 `<keeper_server>` 구성을 추가한 다음 평소처럼 ClickHouse 서버를 시작하면 됩니다. standalone ClickHouse Keeper를 실행하려면 다음과 같이 비슷한 방식으로 시작할 수 있습니다:
+
+```bash
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
+```
+
+심볼릭 링크(`clickhouse-keeper`)가 없으면 해당 링크를 생성하거나, `clickhouse`의 인수로 `keeper`를 지정할 수 있습니다:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
+```
+
+<div id="four-letter-word-commands">
+  ### 네 글자 명령어
+</div>
+
+ClickHouse Keeper는 ZooKeeper와 거의 동일한 4lw 명령도 제공합니다. 각 명령은 `mntr`, `stat` 등과 같이 네 글자로 이루어집니다. 그중 몇 가지 유용한 명령은 다음과 같습니다. `stat`는 서버와 연결된 클라이언트에 대한 일반 정보를 제공하고, `srvr`는 서버에 대한 추가 상세 정보를 제공하며, `cons`는 연결에 대한 추가 상세 정보를 제공합니다.
+
+4lw 명령에는 `four_letter_word_white_list`라는 화이트리스트 구성이 있으며, 기본값은 `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`입니다.
+
+클라이언트 포트에서 telnet 또는 nc를 사용해 ClickHouse Keeper에 명령을 보낼 수 있습니다.
+
+```bash
+echo mntr | nc localhost 9181
+```
+
+다음은 자세한 4lw 명령입니다:
+
+* `ruok`: 서버가 오류 없는 상태로 실행 중인지 테스트합니다. 실행 중이면 서버는 `imok`로 응답합니다. 그렇지 않으면 전혀 응답하지 않습니다. `imok` 응답이 반드시 서버가 쿼럼에 참여했다는 뜻은 아니며, 서버 프로세스가 활성 상태이고 지정된 클라이언트 포트에 바인딩되어 있다는 의미일 뿐입니다. 쿼럼 관련 상태와 클라이언트 연결 정보에 대한 자세한 내용은 &quot;stat&quot;를 사용하십시오.
+
+```response
+imok
+```
+
+* `mntr`: 클러스터 상태를 모니터링하는 데 활용할 수 있는 변수 목록을 출력합니다.
+
+```response
+zk_version      v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     68
+zk_packets_sent 68
+zk_num_alive_connections        1
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  4
+zk_watch_count  1
+zk_ephemerals_count     0
+zk_approximate_data_size        723
+zk_open_file_descriptor_count   310
+zk_max_file_descriptor_count    10240
+zk_followers    0
+zk_synced_followers     0
+```
+
+* `srvr`: 서버의 모든 세부 정보를 표시합니다.
+
+```response
+ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+Latency min/avg/max: 0/0/0
+Received: 2
+Sent : 2
+Connections: 1
+Outstanding: 0
+Zxid: 34
+Mode: leader
+Node count: 4
+```
+
+* `stat`: server 및 연결된 클라이언트의 간략한 정보를 나열합니다.
+
+```response
+ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+Clients:
+ 192.168.1.1:52852(recved=0,sent=0)
+ 192.168.1.1:52042(recved=24,sent=48)
+Latency min/avg/max: 0/0/0
+Received: 4
+Sent : 4
+Connections: 1
+Outstanding: 0
+Zxid: 36
+Mode: leader
+Node count: 4
+```
+
+* `srst`: server 통계를 재설정합니다. 이 명령은 `srvr`, `mntr`, `stat` 명령의 결과에 영향을 줍니다.
+
+```response
+Server stats reset.
+```
+
+* `conf`: 현재 사용 중인 구성의 세부 정보를 출력합니다.
+
+```response
+server_id=1
+tcp_port=2181
+four_letter_word_white_list=*
+log_storage_path=./coordination/logs
+snapshot_storage_path=./coordination/snapshots
+max_requests_batch_size=100
+session_timeout_ms=30000
+operation_timeout_ms=10000
+dead_session_check_period_ms=500
+heart_beat_interval_ms=500
+election_timeout_lower_bound_ms=1000
+election_timeout_upper_bound_ms=2000
+reserved_log_items=1000000000000000
+snapshot_distance=10000
+auto_forwarding=true
+shutdown_timeout=5000
+startup_timeout=240000
+raft_logs_level=information
+snapshots_to_keep=3
+rotate_log_storage_interval=100000
+stale_log_gap=10000
+fresh_log_gap=200
+max_requests_batch_size=100
+quorum_reads=false
+force_sync=false
+compress_logs=true
+compress_snapshots_with_zstd_format=true
+configuration_change_tries_count=20
+```
+
+* `cons`: 이 서버에 연결된 모든 클라이언트의 전체 연결/세션 세부 정보를 나열합니다. 수신/전송된 패킷 수, 세션 ID, 작업 지연 시간, 마지막으로 수행한 작업 등의 정보를 포함합니다...
+
+```response
+ 192.168.1.1:52163(recved=0,sent=0,sid=0xffffffffffffffff,lop=NA,est=1636454787393,to=30000,lzxid=0xffffffffffffffff,lresp=0,llat=0,minlat=0,avglat=0,maxlat=0)
+ 192.168.1.1:52042(recved=9,sent=18,sid=0x0000000000000001,lop=List,est=1636454739887,to=30000,lcxid=0x0000000000000005,lzxid=0x0000000000000005,lresp=1636454739892,llat=0,minlat=0,avglat=0,maxlat=0)
+```
+
+* `crst`: 모든 연결의 연결/세션 통계를 재설정합니다.
+
+```response
+Connection stats reset.
+```
+
+* `envi`: 서버 실행 환경의 세부 정보를 출력합니다
+
+```response
+Environment:
+clickhouse.keeper.version=v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+host.name=ZBMAC-C02D4054M.local
+os.name=Darwin
+os.arch=x86_64
+os.version=19.6.0
+cpu.count=12
+user.name=root
+user.home=/Users/JackyWoo/
+user.dir=/Users/JackyWoo/project/jd/clickhouse/cmake-build-debug/programs/
+user.tmp=/var/folders/b4/smbq5mfj7578f2jzwn602tt40000gn/T/
+```
+
+* `dirs`: 스냅샷과 log file의 전체 크기를 바이트 단위로 표시합니다
+
+```response
+snapshot_dir_size: 0
+log_dir_size: 3875
+```
+
+* `isro`: server가 읽기 전용 모드로 실행 중인지 확인합니다. 읽기 전용 모드이면 `ro`로, 아니면 `rw`로 응답합니다.
+
+```response
+rw
+```
+
+* `wchs`: 서버의 watch에 대한 간단한 정보를 보여줍니다.
+
+```response
+1 connections watching 1 paths
+Total watches:1
+```
+
+* `wchc`: 서버의 watch에 대한 자세한 정보를 세션별로 나열합니다. 이 명령은 관련된 watch(경로)와 함께 세션(연결) 목록을 출력합니다. watch 수에 따라 이 작업은 비용이 많이 들 수 있으므로(서버 성능에 영향을 줄 수 있음) 주의해서 사용하십시오.
+
+```response
+0x0000000000000001
+    /clickhouse/task_queue/ddl
+```
+
+* `wchp`: server의 watch에 대한 상세 정보를 경로별로 나열합니다. 관련 session이 연결된 경로(znode) 목록을 출력합니다. watch 수에 따라 이 작업은 비용이 많이 들 수 있으므로(즉, server 성능에 영향을 줄 수 있으므로) 주의해서 사용하십시오.
+
+```response
+/clickhouse/task_queue/ddl
+    0x0000000000000001
+```
+
+* `dump`: 현재 남아 있는 세션과 임시 노드를 나열합니다. 이 명령은 리더에서만 작동합니다.
+
+```response
+Sessions dump (2):
+0x0000000000000001
+0x0000000000000002
+Sessions with Ephemerals (1):
+0x0000000000000001
+ /clickhouse/task_queue/ddl
+```
+
+* `csnp`: 스냅샷 생성 작업을 예약합니다. 성공하면 예약된 스냅샷의 마지막으로 커밋된 로그 인덱스를 반환하고, 실패하면 `Failed to schedule snapshot creation task.`를 반환합니다. `lgif` 명령을 사용하면 스냅샷이 완료되었는지 확인할 수 있습니다.
+
+```response
+100
+```
+
+* `lgif`: Keeper 로그 정보입니다. `first_log_idx` : 로그 저장소의 첫 번째 로그 인덱스, `first_log_term` : 첫 번째 로그 term, `last_log_idx` : 로그 저장소의 마지막 로그 인덱스, `last_log_term` : 마지막 로그 term, `last_committed_log_idx` : 상태 머신의 마지막 커밋된 로그 인덱스, `leader_committed_log_idx` : 현재 기준으로 본 leader의 커밋된 로그 인덱스, `target_committed_log_idx` : 커밋되어야 하는 대상 로그 인덱스, `last_snapshot_idx` : 마지막 스냅샷에서 가장 큰 커밋된 로그 인덱스.
+
+```response
+first_log_idx   1
+first_log_term  1
+last_log_idx    101
+last_log_term   1
+last_committed_log_idx  100
+leader_committed_log_idx    101
+target_committed_log_idx    101
+last_snapshot_idx   50
+```
+
+* `rqld`: 새로운 리더가 되도록 요청합니다. 요청이 전송되면 `Sent leadership request to leader.`를 반환하고, 전송되지 않으면 `Failed to send leadership request to leader.`를 반환합니다. 노드가 이미 리더인 경우에도 결과는 요청이 전송된 경우와 같습니다.
+
+```response
+Sent leadership request to leader.
+```
+
+* `ftfl`: 모든 기능 플래그 목록과 Keeper 인스턴스에서 각 플래그의 활성화 여부를 표시합니다.
+
+```response
+filtered_list   1
+multi_read  1
+check_not_exists    0
+```
+
+* `ydld`: 리더 역할을 넘기고 팔로어가 되도록 요청합니다. 요청을 받은 서버가 리더인 경우, 먼저 쓰기 작업을 일시 중지하고 후임자(현재 리더는 후임자가 될 수 없음)가 최신 로그를 모두 따라잡을 때까지 기다린 다음 리더 자리에서 물러납니다. 후임자는 자동으로 선택됩니다. 요청이 전송되면 `Sent yield leadership request to leader.`를, 요청이 전송되지 않으면 `Failed to send yield leadership request to leader.`를 반환합니다. 노드가 이미 팔로어인 경우에도 결과는 요청이 전송되었을 때와 동일합니다.
+
+```response
+Sent yield leadership request to leader.
+```
+
+* `pfev`: 수집된 모든 이벤트의 값을 반환합니다. 각 이벤트에 대해 이벤트 이름, 이벤트 값, 그리고 이벤트 설명을 반환합니다.
+
+```response
+FileOpen        62      Number of files opened.
+Seek    4       Number of times the 'lseek' function was called.
+ReadBufferFromFileDescriptorRead        126     Number of reads (read/pread) from a file descriptor. Does not include sockets.
+ReadBufferFromFileDescriptorReadFailed  0       Number of times the read (read/pread) from a file descriptor have failed.
+ReadBufferFromFileDescriptorReadBytes   178846  Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.
+WriteBufferFromFileDescriptorWrite      7       Number of writes (write/pwrite) to a file descriptor. Does not include sockets.
+WriteBufferFromFileDescriptorWriteFailed        0       Number of times the write (write/pwrite) to a file descriptor have failed.
+WriteBufferFromFileDescriptorWriteBytes 153     Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.
+FileSync        2       Number of times the F_FULLFSYNC/fsync/fdatasync function was called for files.
+DirectorySync   0       Number of times the F_FULLFSYNC/fsync/fdatasync function was called for directories.
+FileSyncElapsedMicroseconds     12756   Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for files.
+DirectorySyncElapsedMicroseconds        0       Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for directories.
+ReadCompressedBytes     0       Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).
+CompressedReadBufferBlocks      0       Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).
+CompressedReadBufferBytes       0       Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).
+AIOWrite        0       Number of writes with Linux or FreeBSD AIO interface
+AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interface
+...
+```
+
+<div id="http-control">
+  ### HTTP 제어
+</div>
+
+ClickHouse Keeper는 레플리카가 트래픽을 수신할 준비가 되었는지 확인할 수 있도록 HTTP 인터페이스를 제공합니다. [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes)와 같은 Cloud 환경에서 사용할 수 있습니다.
+
+`/ready` 엔드포인트를 활성화하는 구성 예시:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <http_control>
+            <port>9182</port>
+            <readiness>
+                <endpoint>/ready</endpoint>
+            </readiness>
+        </http_control>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="feature-flags">
+  ### 기능 플래그
+</div>
+
+Keeper는 ZooKeeper 및 해당 클라이언트와 완전히 호환되지만, clickhouse client에서 사용할 수 있는 고유한 기능과 요청 유형도 일부 제공합니다.
+이러한 기능은 하위 호환되지 않는 변경 사항을 일으킬 수 있으므로, 대부분 기본적으로 비활성화되어 있으며 `keeper_server.feature_flags` 설정으로 활성화할 수 있습니다.
+모든 기능은 명시적으로 비활성화할 수 있습니다.
+Keeper 클러스터에서 새 기능을 활성화하려는 경우, 먼저 클러스터의 모든 Keeper 인스턴스를 해당 기능을 지원하는 버전으로 업데이트한 다음, 기능 자체를 활성화하는 것을 권장합니다.
+
+`multi_read`를 비활성화하고 `check_not_exists`를 활성화하는 기능 플래그 설정 예시는 다음과 같습니다:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <feature_flags>
+            <multi_read>0</multi_read>
+            <check_not_exists>1</check_not_exists>
+        </feature_flags>
+    </keeper_server>
+</clickhouse>
+```
+
+다음 기능을 사용할 수 있습니다:
+
+| 기능                     | 설명                                                                                           | 기본값 |
+| ---------------------- | -------------------------------------------------------------------------------------------- | --- |
+| `multi_read`           | 다중 읽기 요청을 지원합니다                                                                              | `1` |
+| `filtered_list`        | 노드 유형(ephemeral 또는 persistent)에 따라 결과를 필터링하는 목록 요청을 지원합니다                                    | `1` |
+| `check_not_exists`     | 노드가 존재하지 않음을 확인하는 `CheckNotExists` 요청을 지원합니다                                                 | `1` |
+| `create_if_not_exists` | 노드가 존재하지 않을 경우 생성하는 `CreateIfNotExists` 요청을 지원합니다. 이미 존재하는 경우에는 변경 사항이 적용되지 않으며 `ZOK`가 반환됩니다 | `1` |
+| `remove_recursive`     | 해당 노드와 그 하위 트리를 함께 제거하는 `RemoveRecursive` 요청을 지원합니다                                          | `1` |
+
+<Note>
+  일부 기능 플래그는 버전 25.7부터 기본적으로 활성화되어 있습니다.
+  Keeper를 25.7+로 업그레이드하는 권장 방법은 먼저 버전 24.9+로 업그레이드하는 것입니다.
+</Note>
+
+<div id="migration-from-zookeeper">
+  ### ZooKeeper에서 마이그레이션
+</div>
+
+ZooKeeper에서 ClickHouse Keeper로 원활하게 마이그레이션하는 것은 불가능합니다. ZooKeeper 클러스터를 중지하고 데이터를 변환한 다음 ClickHouse Keeper를 시작해야 합니다. `clickhouse-keeper-converter` 도구는 ZooKeeper 로그와 스냅샷을 ClickHouse Keeper 스냅샷으로 변환합니다. 이 도구를 사용하려면 ZooKeeper 3.4 이상이 필요합니다.
+
+<div id="pre-migration-preparation">
+  #### 마이그레이션 전 준비
+</div>
+
+마이그레이션을 진행하려면 데이터 수집을 중단해야 합니다. 시작하기 전에 유지 관리 기간을 계획하세요.
+
+ZooKeeper를 중지하기 전에 coordination 메타데이터를 변경하는 ClickHouse 백그라운드 작업을 중지하세요. 예:
+
+```sql
+SYSTEM STOP MERGES;
+```
+
+마이그레이션 전에 비교용 메트릭을 기록해 두어 이후에 일관성을 검증할 수 있도록 하십시오.
+
+<div id="migration-steps">
+  #### 마이그레이션 단계
+</div>
+
+1. 모든 ClickHouse 노드로의 데이터 수집을 중지합니다.
+
+2. 모든 ClickHouse 노드에서 모든 백그라운드 작업을 중지합니다([위](#pre-migration-preparation) 참고).
+
+3. 모든 ZooKeeper 노드를 중지합니다.
+
+4. 선택 사항이지만 권장됩니다. ZooKeeper 리더 노드를 찾은 다음, 시작했다가 다시 중지합니다. 이렇게 하면 변환 전에 ZooKeeper가 일관된 스냅샷을 디스크에 기록하도록 할 수 있습니다.
+
+5. 리더 노드에서 `clickhouse-keeper-converter`를 실행합니다. 전체 ClickHouse 실행 파일이 설치되어 있다면 대신 `keeper-converter` 하위 명령(`clickhouse keeper-converter`)을 사용합니다. 둘 다 사용할 수 없으면 [실행 파일을 다운로드](/ko/getting-started/quick-start/oss#install-clickhouse)합니다.
+
+```bash
+clickhouse-keeper-converter \
+  --zookeeper-logs-dir /var/lib/zookeeper/version-2 \
+  --zookeeper-snapshots-dir /var/lib/zookeeper/version-2 \
+  --output-dir /path/to/clickhouse/keeper/snapshots
+```
+
+6. 스냅샷을 모든 ClickHouse Keeper 노드에 복사합니다. 어떤 노드라도 시작되기 전에 모든 노드에 스냅샷이 있어야 합니다. 스냅샷 없이 노드가 시작되면 빈 상태로 스스로 리더로 선출될 수 있습니다.
+
+7. 새 Keeper 클러스터를 가리키도록 ClickHouse 구성을 업데이트합니다.
+
+8. 모든 노드에서 ClickHouse Keeper를 시작한 다음 ClickHouse를 다시 시작합니다.
+
+9. 일관성이 유지되는지 확인할 수 있도록 메트릭을 마이그레이션 전 기준선과 비교합니다.
+
+10. 백그라운드 작업을 재개하고 데이터 수집을 다시 시작합니다.
+
+<div id="consolidating-multiple-zookeeper-clusters">
+  #### 여러 ZooKeeper 클러스터 통합
+</div>
+
+여러 ZooKeeper 클러스터를 운영 중인 경우(예: 세그먼트 그룹마다 하나씩), 이를 단일 ClickHouse Keeper 클러스터로 통합할 수 있습니다. 공식 `clickhouse-keeper-converter` 도구는 일대일 변환(하나의 ZooKeeper 클러스터를 하나의 Keeper 스냅샷으로 변환)만 지원하므로, 통합하려면 여러 스냅샷을 머지할 수 있도록 컨버터의 소스 코드를 수정해야 합니다.
+
+1. 각 ZooKeeper 클러스터에서 `clickhouse-keeper-converter`를 개별적으로 실행하고, 각 출력은 서로 다른 디렉터리에 기록합니다.
+2. 스냅샷 파일을 순차적으로 역직렬화합니다. 머지할 때는 서로 다른 원본 클러스터의 네임스페이스 사이에서 노드 ID 충돌이 발생하지 않도록 `numChildren` 값을 다시 계산합니다.
+3. 머지된 출력을 대상 ClickHouse Keeper 스냅샷 디렉터리에 기록합니다.
+
+<div id="handling-encryption-and-acls">
+  #### 암호화 및 ACL 처리
+</div>
+
+ClickHouse Keeper는 ZooKeeper와 동일한 ACL 방식(`world`, `auth`, `digest`)을 지원합니다. 변환 과정에서 ACL을 처리하는 방법은 ZooKeeper 구성에 따라 달라집니다.
+
+* **완전히 암호화되었거나 전혀 암호화되지 않은 경우**: 직접 변환하십시오. 컨버터가 기존 ACL 정보를 그대로 유지합니다.
+* **부분적으로 암호화된 경우**: 변환하기 전에 슈퍼 관리자 계정을 설정하고, 영향을 받는 경로에서 `setAcl -R`로 ACL을 제거하십시오. 변환한 후 필요하면 ClickHouse Keeper에서 암호화를 다시 활성화하십시오.
+
+<div id="verifying-the-migration">
+  #### 마이그레이션 검증
+</div>
+
+ClickHouse Keeper를 시작하고 ClickHouse를 다시 시작한 후, 마이그레이션이 성공했는지 확인하기 위해 핵심 메트릭을 마이그레이션 전 기준값과 비교하십시오.
+
+여러 ZooKeeper cluster를 통합할 때는 다음을 구분해야 합니다:
+
+* **공통 경로**: 여러 소스 cluster에 동일한 데이터로 존재하는 경로입니다. 병합된 출력에서는 이러한 경로를 중복 제거해야 합니다.
+* **구분 경로**: 특정 cluster에만 존재하는 경로입니다(예: 각 세그먼트 그룹의 `/clickhouse/tables` 아래). 이러한 경로는 올바른 소스의 것을 유지해야 합니다.
+
+비교를 위해 대규모 ZooKeeper 트리를 직접 순회하지 마십시오. 대신 변환 중에 변환된 모든 경로를 파일로 출력하십시오.
+
+<div id="post-migration-tuning">
+  #### 마이그레이션 후 튜닝
+</div>
+
+마이그레이션 후에는 더 큰 클러스터 또는 더 높은 처리량에 맞춰 다음 설정을 조정하는 것이 좋습니다.
+
+| 설정                                    | 기본값     | 권장값     | 참고                                      |
+| ------------------------------------- | ------- | ------- | --------------------------------------- |
+| `max_requests_batch_size`             | `100`   | `10000` | 파트 수가 많거나 세그먼트가 많은 클러스터에서는 값을 늘리십시오     |
+| `force_sync`                          | `true`  | `false` | 비동기 로그 쓰기는 처리량을 향상시킵니다                  |
+| `compress_logs`                       | `false` | `true`  | 디스크 I/O를 줄이기 위해 Raft 로그 파일을 압축합니다       |
+| `compress_snapshots_with_zstd_format` | `true`  | —       | 기본적으로 이미 활성화되어 있으며 zstd 포맷으로 스냅샷을 압축합니다 |
+
+이 설정은 [Keeper 구성](#internal-coordination-settings)의 `coordination_settings` 아래에서 설정합니다.
+
+<div id="recovering-after-losing-quorum">
+  ### 쿼럼을 잃은 후 복구하기
+</div>
+
+ClickHouse Keeper는 Raft를 사용하므로 클러스터 크기에 따라 일정 수의 노드 장애를 허용할 수 있습니다.
+예를 들어 3개 노드 클러스터에서는 1개 노드에만 장애가 발생한 경우 계속 정상적으로 작동합니다.
+
+클러스터 구성은 동적으로 변경할 수 있지만 몇 가지 제한이 있습니다. 재구성 역시 Raft에 의존하므로
+클러스터에 노드를 추가하거나 제거하려면 쿼럼이 필요합니다. 클러스터에서 너무 많은 노드를 동시에 잃었고, 해당 노드들을 다시 시작할 방법도 없다면
+Raft는 작동을 멈추고 일반적인 방식으로는 클러스터를 재구성할 수 없게 됩니다.
+
+그럼에도 ClickHouse Keeper에는 단 1개의 노드만으로 클러스터를 강제로 재구성할 수 있는 복구 모드가 있습니다.
+이 방법은 노드를 다시 시작할 수 없거나 동일한 엔드포인트에서 새 인스턴스를 시작할 수 없는 경우에만 최후의 수단으로 사용해야 합니다.
+
+계속 진행하기 전에 반드시 알아둘 중요한 사항은 다음과 같습니다.
+
+* 장애가 발생한 노드가 다시 클러스터에 연결될 수 없도록 하십시오.
+* 단계에서 지정되기 전까지는 새 노드를 시작하지 마십시오.
+
+위 사항을 모두 확인한 후 다음을 수행하십시오.
+
+1. 새 리더로 사용할 Keeper 노드 1개를 선택합니다. 이 노드의 데이터가 전체 클러스터에 사용되므로, 가장 최신 상태를 가진 노드를 사용하는 것이 좋습니다.
+2. 다른 작업을 하기 전에 선택한 노드의 `log_storage_path` 및 `snapshot_storage_path` 폴더를 백업하십시오.
+3. 사용할 모든 노드에서 클러스터를 재구성합니다.
+4. 선택한 노드에 네 글자 명령 `rcvr`를 보내 노드를 복구 모드로 전환하거나, 선택한 노드의 Keeper 인스턴스를 중지한 뒤 `--force-recovery` 인수와 함께 다시 시작합니다.
+5. 새 노드에서 Keeper 인스턴스를 하나씩 시작하고, 다음 노드를 시작하기 전에 `mntr`가 `zk_server_state`에 대해 `follower`를 반환하는지 확인하십시오.
+6. 복구 모드에서는 리더 노드가 새 노드들과 쿼럼을 이룰 때까지 `mntr` 명령에 대해 오류 메시지를 반환하며, 클라이언트와 팔로워의 모든 요청을 거부합니다.
+7. 쿼럼이 형성되면 리더 노드는 정상 동작 모드로 돌아가 모든 요청을 수락합니다. `mntr`로 이를 확인하면 `zk_server_state`에 대해 `leader`를 반환해야 합니다.
+
+<div id="using-disks-with-keeper">
+  ## Keeper와 디스크 함께 사용하기
+</div>
+
+Keeper는 스냅샷, 로그 파일, 상태 파일 저장에 사용할 수 있는 [외부 디스크](/ko/concepts/features/configuration/server-config/storing-data)의 일부를 지원합니다.
+
+지원되는 디스크 유형은 다음과 같습니다.
+
+* s3&#95;plain
+* s3
+* local
+
+다음은 구성에 포함된 디스크 정의 예시입니다.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <log_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/logs/</path>
+            </log_local>
+            <log_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/logs/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </log_s3_plain>
+            <snapshot_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/snapshots/</path>
+            </snapshot_local>
+            <snapshot_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/snapshots/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </snapshot_s3_plain>
+            <state_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/state/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </state_s3_plain>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+로그에 디스크를 사용하려면 `keeper_server.log_storage_disk` 설정을 디스크 이름으로 지정해야 합니다.
+스냅샷에 디스크를 사용하려면 `keeper_server.snapshot_storage_disk` 설정을 디스크 이름으로 지정해야 합니다.
+추가로, 최신 로그에는 `keeper_server.latest_log_storage_disk`를, 최신 스냅샷에는 `keeper_server.latest_snapshot_storage_disk`를 사용할 수 있습니다.
+이 경우 새 로그나 스냅샷이 생성되면 Keeper가 파일을 올바른 디스크로 자동 이동합니다.
+상태 파일에 디스크를 사용하려면 `keeper_server.state_storage_disk` 설정을 디스크 이름으로 지정해야 합니다.
+
+디스크 간 파일 이동은 안전하며, 전송 도중 Keeper가 중지되더라도 데이터가 손실될 위험은 없습니다.
+파일이 새 디스크로 완전히 이동하기 전까지는 기존 디스크에서 삭제되지 않습니다.
+
+`keeper_server.coordination_settings.force_sync`가 `true`로 설정된 Keeper는 (`true`가 기본값) 모든 타입의 디스크에서 일부 보장 사항을 충족할 수 없습니다.
+현재 영속적 동기화를 지원하는 것은 `local` 타입 디스크뿐입니다.
+`force_sync`를 사용하는 경우 `latest_log_storage_disk`를 사용하지 않으면 `log_storage_disk`는 `local` 디스크여야 합니다.
+`latest_log_storage_disk`를 사용하는 경우에는 이것이 항상 `local` 디스크여야 합니다.
+`force_sync`를 비활성화하면 모든 타입의 디스크를 어떤 구성에서든 사용할 수 있습니다.
+
+Keeper 인스턴스에 사용할 수 있는 스토리지 구성 예시는 다음과 같습니다:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <log_storage_disk>log_s3_plain</log_storage_disk>
+        <latest_log_storage_disk>log_local</latest_log_storage_disk>
+
+        <snapshot_storage_disk>snapshot_s3_plain</snapshot_storage_disk>
+        <latest_snapshot_storage_disk>snapshot_local</latest_snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>
+```
+
+이 인스턴스는 최신 로그를 제외한 모든 로그를 `log_s3_plain` 디스크에 저장하며, 최신 로그는 `log_local` 디스크에 저장됩니다.
+스냅샷에도 동일한 방식이 적용됩니다. 최신 스냅샷을 제외한 모든 스냅샷은 `snapshot_s3_plain`에 저장되며, 최신 스냅샷은 `snapshot_local` 디스크에 저장됩니다.
+
+<div id="changing-disk-setup">
+  ### 디스크 설정 변경
+</div>
+
+<Warning>
+  새 디스크 설정을 적용하기 전에 모든 Keeper 로그와 스냅샷를 수동으로 백업하십시오.
+</Warning>
+
+계층형 디스크 설정이 정의되어 있으면(최신 파일에 별도 디스크를 사용하는 경우), Keeper는 시작 시 파일을 올바른 디스크로 자동 이동하려고 시도합니다.
+이전과 동일한 보장이 적용됩니다. 파일이 새 디스크로 완전히 이동되기 전까지는 기존 디스크에서 삭제되지 않으므로, 여러 번 재시작해도
+안전합니다.
+
+파일을 완전히 새로운 디스크로 이동해야 하거나(또는 2개 디스크 설정에서 단일 디스크 설정으로 전환해야 하는 경우), `keeper_server.old_snapshot_storage_disk`와 `keeper_server.old_log_storage_disk`를 여러 개 정의할 수 있습니다.
+
+다음 구성은 이전의 2개 디스크 설정에서 완전히 새로운 단일 디스크 설정으로 전환하는 방법을 보여줍니다:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <old_log_storage_disk>log_local</old_log_storage_disk>
+        <old_log_storage_disk>log_s3_plain</old_log_storage_disk>
+        <log_storage_disk>log_local2</log_storage_disk>
+
+        <old_snapshot_storage_disk>snapshot_s3_plain</old_snapshot_storage_disk>
+        <old_snapshot_storage_disk>snapshot_local</old_snapshot_storage_disk>
+        <snapshot_storage_disk>snapshot_local2</snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>
+```
+
+시작 시 모든 로그 file이 `log_local` 및 `log_s3_plain`에서 `log_local2` 디스크로 이동됩니다.
+또한 모든 스냅샷 file이 `snapshot_local` 및 `snapshot_s3_plain`에서 `snapshot_local2` 디스크로 이동됩니다.
+
+<div id="configuring-logs-cache">
+  ## 로그 캐시 구성
+</div>
+
+디스크에서 읽는 데이터 양을 최소화하기 위해 Keeper는 로그 항목을 메모리에 캐시합니다.
+요청이 크면 로그 항목이 메모리를 과도하게 차지할 수 있으므로 캐시되는 로그의 양에는 상한이 있습니다.
+이 제한은 다음 두 가지 설정으로 제어됩니다.
+
+* `latest_logs_cache_size_threshold` - 캐시에 저장되는 최신 로그의 총 크기
+* `commit_logs_cache_size_threshold` - 다음 커밋에 필요한 후속 로그의 총 크기
+
+기본값이 너무 크면 이 두 설정 값을 낮춰 메모리 사용량을 줄일 수 있습니다.
+
+<Note>
+  `pfev` 명령을 사용하면 각 캐시와 파일에서 읽은 로그 양을 확인할 수 있습니다.
+  또한 Prometheus 엔드포인트의 메트릭을 사용해 두 캐시의 현재 크기를 추적할 수 있습니다.
+</Note>
+
+<div id="prometheus">
+  ## Prometheus
+</div>
+
+Keeper는 [Prometheus](https://prometheus.io)에서 스크레이핑할 수 있도록 메트릭 데이터를 노출할 수 있습니다.
+
+설정:
+
+* `endpoint` – Prometheus server가 메트릭을 스크레이핑할 HTTP endpoint입니다. &#39;/&#39;로 시작해야 합니다.
+* `port` – `endpoint`에 사용할 포트입니다.
+* `metrics` – [system.metrics](/ko/reference/system-tables/metrics) 테이블의 메트릭을 노출할지 지정하는 플래그입니다.
+* `events` – [system.events](/ko/reference/system-tables/events) 테이블의 메트릭을 노출할지 지정하는 플래그입니다.
+* `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출할지 지정하는 플래그입니다.
+
+**예시**
+
+```xml highlight={5-11}
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+</clickhouse>
+```
+
+확인하세요(`127.0.0.1`을 ClickHouse 서버의 IP 주소 또는 호스트명으로 바꾸세요):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+ClickHouse Cloud의 [Prometheus 통합](/ko/products/cloud/features/monitoring/prometheus)도 함께 참조하십시오.
+
+<div id="clickhouse-keeper-user-guide">
+  ## ClickHouse Keeper 사용자 가이드
+</div>
+
+이 가이드는 분산 작업을 테스트하는 방법에 대한 예시와 함께 ClickHouse Keeper를 구성하는 데 필요한 간단한 최소 설정을 제공합니다. 이 예시는 Linux에서 3개의 노드를 사용해 수행합니다.
+
+<div id="1-configure-nodes-with-keeper-settings">
+  ### 1. Keeper 설정으로 노드 구성하기
+</div>
+
+1. 3개의 호스트(`chnode1`, `chnode2`, `chnode3`)에 ClickHouse 인스턴스 3개를 설치합니다. (ClickHouse 설치에 관한 자세한 내용은 [Quick Start](/ko/get-started/setup/install)를 참조하십시오.)
+
+2. 각 노드에 네트워크 인터페이스를 통해 외부와 통신할 수 있도록 다음 항목을 추가합니다.
+   ```xml
+   <listen_host>0.0.0.0</listen_host>
+   ```
+
+3. 다음 ClickHouse Keeper 구성을 3대의 서버 모두에 추가하고, 각 서버의 `<server_id>` 설정값을 서버에 맞게 업데이트하십시오. 예를 들어 `chnode1`은 `1`, `chnode2`는 `2`로 설정합니다.
+
+   ```xml
+   <keeper_server>
+       <tcp_port>9181</tcp_port>
+       <server_id>1</server_id>
+       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+       <coordination_settings>
+           <operation_timeout_ms>10000</operation_timeout_ms>
+           <session_timeout_ms>30000</session_timeout_ms>
+           <raft_logs_level>warning</raft_logs_level>
+       </coordination_settings>
+
+       <raft_configuration>
+           <server>
+               <id>1</id>
+               <hostname>chnode1.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>2</id>
+               <hostname>chnode2.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>3</id>
+               <hostname>chnode3.domain.com</hostname>
+               <port>9234</port>
+           </server>
+       </raft_configuration>
+   </keeper_server>
+   ```
+
+   위에서 사용한 기본 설정은 다음과 같습니다:
+
+   | 매개변수                      | 설명                                         | 예시                                |
+   | ------------------------- | ------------------------------------------ | --------------------------------- |
+   | tcp&#95;port              | ClickHouse Keeper 클라이언트가 사용할 포트            | ZooKeeper의 2181에 해당하는 기본 포트 9181  |
+   | server&#95;id             | raft 구성에서 사용하는 각 ClickHouse Keeper 서버의 식별자 | 1                                 |
+   | coordination&#95;settings | timeout 등의 매개변수를 지정하는 섹션                   | timeouts: 10000, log level: trace |
+   | server                    | 참여하는 서버의 정의                                | 각 서버 정의 목록                        |
+   | raft&#95;configuration    | keeper cluster의 각 서버에 대한 설정                | 각 서버의 server 및 settings           |
+   | id                        | Keeper 서비스용 서버의 숫자 ID                      | 1                                 |
+   | hostname                  | keeper cluster에 있는 각 서버의 호스트명, IP 또는 FQDN  | `chnode1.domain.com`              |
+   | port                      | 서버 간 Keeper 연결에 사용할 수신 포트                  | 9234                              |
+
+4. Zookeeper 컴포넌트를 활성화합니다. ClickHouse Keeper 엔진을 사용합니다:
+
+   ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode2.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode3.domain.com</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+   ```
+
+   다음은 위에서 사용한 기본 설정입니다:
+
+   | 매개변수 | 설명                                       | 예시                   |
+   | ---- | ---------------------------------------- | -------------------- |
+   | node | ClickHouse Keeper 연결을 위한 노드 목록           | 각 서버별 설정 항목          |
+   | host | 각 ClickHouse Keeper 노드의 호스트명, IP 또는 FQDN | `chnode1.domain.com` |
+   | port | ClickHouse Keeper 클라이언트 포트               | 9181                 |
+
+5. ClickHouse를 다시 시작하고 각 Keeper 인스턴스가 실행 중인지 확인합니다. 각 서버에서 다음 명령을 실행하십시오. `ruok` 명령은 Keeper가 실행 중이며 정상 상태이면 `imok`를 반환합니다:
+   ```bash
+   # echo ruok | nc localhost 9181; echo
+   imok
+   ```
+
+6. `system` 데이터베이스에는 ClickHouse Keeper 인스턴스의 세부 정보가 들어 있는 `zookeeper`라는 테이블(table)이 있습니다. 이 테이블을 살펴보겠습니다:
+
+   ```sql
+   SELECT *
+   FROM system.zookeeper
+   WHERE path IN ('/', '/clickhouse')
+   ```
+
+   테이블은 다음과 같습니다:
+
+   ```response
+   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+   ```
+
+<div id="2--configure-a-cluster-in-clickhouse">
+  ### 2.  ClickHouse에서 클러스터 구성하기
+</div>
+
+1. 2개의 세그먼트와 2개 노드에 각각 레플리카 1개만 있는 단순한 클러스터를 구성해 보겠습니다. 세 번째 노드는 ClickHouse Keeper 요구 사항의 쿼럼을 충족하는 데 사용됩니다. `chnode1` 및 `chnode2`의 구성을 업데이트하십시오. 다음 클러스터는 각 노드에 1개의 세그먼트를 정의하므로 총 2개의 세그먼트가 되며 복제는 없습니다. 이 예시에서는 일부 데이터는 한 노드에, 나머지 데이터는 다른 노드에 저장됩니다:
+
+   ```xml
+       <remote_servers>
+           <cluster_2S_1R>
+               <shard>
+                   <replica>
+                       <host>chnode1.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+               <shard>
+                   <replica>
+                       <host>chnode2.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+           </cluster_2S_1R>
+       </remote_servers>
+   ```
+
+   | 매개변수     | 설명                                   | 예시                   |
+   | -------- | ------------------------------------ | -------------------- |
+   | shard    | 클러스터 정의에 포함된 레플리카 목록                 | 각 세그먼트의 레플리카 목록      |
+   | replica  | 각 레플리카에 대한 설정 목록                     | 각 레플리카의 설정 항목        |
+   | host     | 레플리카 세그먼트를 호스팅할 서버의 호스트명, IP 또는 FQDN | `chnode1.domain.com` |
+   | port     | 네이티브 TCP 프로토콜로 통신할 때 사용하는 포트         | 9000                 |
+   | user     | 클러스터 인스턴스에 인증할 때 사용할 사용자 이름          | default              |
+   | password | 클러스터 인스턴스 연결을 허용하도록 정의된 사용자의 비밀번호    | `ClickHouse123!`     |
+
+2. ClickHouse를 다시 시작하고 클러스터가 생성되었는지 확인하십시오:
+
+   ```sql
+   SHOW clusters;
+   ```
+
+   다음과 같이 클러스터가 표시되어야 합니다:
+
+   ```response
+   ┌─cluster───────┐
+   │ cluster_2S_1R │
+   └───────────────┘
+   ```
+
+<div id="3-create-and-test-distributed-table">
+  ### 3. 분산 테이블 생성 및 테스트
+</div>
+
+1. `chnode1`에서 ClickHouse client를 사용해 새 클러스터에 새 데이터베이스를 생성합니다. `ON CLUSTER` 절을 사용하면 두 노드 모두에 데이터베이스가 자동으로 생성됩니다.
+   ```sql
+   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+   ```
+
+2. `db1` 데이터베이스에 새 테이블을 생성합니다. 여기서도 `ON CLUSTER`를 사용하면 두 노드 모두에 테이블이 생성됩니다.
+   ```sql
+   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+   (
+       `id` UInt64,
+       `column1` String
+   )
+   ENGINE = MergeTree
+   ORDER BY column1
+   ```
+
+3. `chnode1` 노드에 행 2개를 추가합니다:
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (1, 'abc'),
+       (2, 'def')
+   ```
+
+4. `chnode2` 노드에도 행 2개를 추가합니다:
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (3, 'ghi'),
+       (4, 'jkl')
+   ```
+
+5. 각 노드에서 `SELECT` 문을 실행하면 해당 노드에 있는 데이터만 표시됩니다. 예를 들어 `chnode1`에서는 다음과 같습니다:
+
+   ```sql
+   SELECT *
+   FROM db1.table1
+   ```
+
+   ```response
+   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+
+   2 rows in set. Elapsed: 0.006 sec.
+   ```
+
+   `chnode2`에서는 다음과 같습니다:
+
+6. ```sql
+   SELECT *
+   FROM db1.table1
+   ```
+
+   ```response
+   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+   ```
+
+7. 두 세그먼트의 데이터를 나타내는 `Distributed` 테이블을 생성할 수 있습니다. `Distributed` 테이블 엔진을 사용하는 테이블은 자체 데이터를 저장하지 않지만, 여러 서버에 대해 분산 쿼리 처리를 수행할 수 있게 해줍니다. 읽기는 모든 세그먼트로 전송되며, 쓰기는 여러 세그먼트에 분산할 수 있습니다. `chnode1`에서 다음 쿼리를 실행합니다:
+   ```sql
+   CREATE TABLE db1.dist_table (
+       id UInt64,
+       column1 String
+   )
+   ENGINE = Distributed(cluster_2S_1R,db1,table1)
+   ```
+
+8. `dist_table`을 쿼리하면 두 세그먼트의 데이터 4개 행이 모두 반환됩니다:
+
+   ```sql
+   SELECT *
+   FROM db1.dist_table
+   ```
+
+   ```response
+   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+
+   4 rows in set. Elapsed: 0.018 sec.
+   ```
+
+<div id="summary">
+  ### 요약
+</div>
+
+이 가이드에서는 ClickHouse Keeper를 사용해 클러스터를 설정하는 방법을 설명했습니다. ClickHouse Keeper를 사용하면 클러스터를 구성하고, 세그먼트 전반에 걸쳐 복제할 수 있는 분산 테이블을 정의할 수 있습니다.
+
+<div id="configuring-clickhouse-keeper-with-unique-paths">
+  ## 고유한 경로를 사용하여 ClickHouse Keeper 구성하기
+</div>
+
+<SelfManaged />
+
+<div id="description">
+  ### 설명
+</div>
+
+이 문서에서는 내장 `{uuid}` 매크로 설정을 사용해
+ClickHouse Keeper 또는 ZooKeeper에 고유한 항목을 생성하는 방법을 설명합니다. 고유한
+경로를 사용하면 테이블을 자주 생성하고 삭제할 때 유용합니다.
+경로를 만들 때마다 해당 경로에 새로운 `uuid`가 사용되므로
+Keeper 가비지 컬렉션이 경로 항목을 제거할 때까지 몇 분씩 기다릴 필요가 없기
+때문입니다. 경로는 절대 재사용되지 않습니다.
+
+<div id="example-environment">
+  ### 예시 환경
+</div>
+
+3개 노드로 구성된 클러스터로, 세 노드 모두에 ClickHouse Keeper를
+구성하고 그중 두 노드에 ClickHouse를 구성합니다. 이렇게 하면
+ClickHouse Keeper는 3개 노드(타이브레이커 노드 포함)로 구성되고,
+하나의 ClickHouse 세그먼트는 2개의 레플리카로 이루어집니다.
+
+| node                    | description                   |
+| ----------------------- | ----------------------------- |
+| `chnode1.marsnet.local` | 데이터 노드 - 클러스터 `cluster_1S_2R` |
+| `chnode2.marsnet.local` | 데이터 노드 - 클러스터 `cluster_1S_2R` |
+| `chnode3.marsnet.local` | ClickHouse Keeper 타이브레이커 노드   |
+
+클러스터 구성 예시:
+
+```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+```
+
+<div id="procedures-to-set-up-tables-to-use-uuid">
+  ### 테이블에서 `{uuid}`를 사용하도록 설정하는 절차
+</div>
+
+1. 각 서버에서 매크로를 설정합니다
+   server 1의 예시:
+
+```xml
+    <macros>
+        <shard>1</shard>
+        <replica>replica_1</replica>
+    </macros>
+```
+
+<Note>
+  `shard` 및 `replica` 매크로는 정의하지만 `{uuid}`는 여기서 정의하지 않는다는 점에 유의하십시오. `{uuid}`는 내장값이므로 별도로 정의할 필요가 없습니다.
+</Note>
+
+2. 데이터베이스 생성
+
+```sql
+CREATE DATABASE db_uuid
+      ON CLUSTER 'cluster_1S_2R'
+      ENGINE Atomic;
+```
+
+```response
+CREATE DATABASE db_uuid ON CLUSTER cluster_1S_2R
+ENGINE = Atomic
+
+Query id: 07fb7e65-beb4-4c30-b3ef-bd303e5c42b5
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+3. 매크로와 `{uuid}`를 사용해 클러스터에 테이블을 생성합니다
+
+```sql
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}' )
+   ORDER BY (id);
+```
+
+```response
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}')
+ORDER BY id
+
+Query id: 8f542664-4548-4a02-bd2a-6f2c973d0dc4
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+4. 분산 테이블 생성
+
+```sql
+CREATE TABLE db_uuid.dist_uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = Distributed('cluster_1S_2R', 'db_uuid', 'uuid_table1' );
+```
+
+```response
+CREATE TABLE db_uuid.dist_uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = Distributed('cluster_1S_2R', 'db_uuid', 'uuid_table1')
+
+Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+<div id="testing">
+  ### 테스트
+</div>
+
+1. 첫 번째 노드(예: `chnode1`)에 데이터를 삽입합니다.
+
+```sql
+INSERT INTO db_uuid.uuid_table1
+   ( id, column1)
+   VALUES
+   ( 1, 'abc');
+```
+
+```response
+INSERT INTO db_uuid.uuid_table1 (id, column1) FORMAT Values
+
+Query id: 0f178db7-50a6-48e2-9a1b-52ed14e6e0f9
+
+Ok.
+
+1 row in set. Elapsed: 0.033 sec.
+```
+
+2. 두 번째 노드(예: `chnode2`)에 데이터를 삽입합니다
+
+```sql
+INSERT INTO db_uuid.uuid_table1
+   ( id, column1)
+   VALUES
+   ( 2, 'def');
+```
+
+```response
+INSERT INTO db_uuid.uuid_table1 (id, column1) FORMAT Values
+
+Query id: edc6f999-3e7d-40a0-8a29-3137e97e3607
+
+Ok.
+
+1 row in set. Elapsed: 0.529 sec.
+```
+
+3. 분산 테이블을 사용해 레코드 보기
+
+```sql
+SELECT * FROM db_uuid.dist_uuid_table1;
+```
+
+```response
+SELECT *
+FROM db_uuid.dist_uuid_table1
+
+Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+<div id="alternatives">
+  ### 대안
+</div>
+
+매크로와 `{uuid}`를 사용해 기본 복제 경로를 미리 정의할 수 있습니다.
+
+1. 각 노드에서 테이블 기본값 설정
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/db_uuid/{uuid}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+```
+
+<Tip>
+  특정 데이터베이스에 노드를 사용하는 경우 각 노드에 매크로 `{database}`를 정의할 수도 있습니다.
+</Tip>
+
+2. 명시적 매개변수 없이 테이블을 생성합니다:
+
+```sql
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = ReplicatedMergeTree
+   ORDER BY (id);
+```
+
+```response
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree
+ORDER BY id
+
+Query id: ab68cda9-ae41-4d6d-8d3b-20d8255774ee
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+2 rows in set. Elapsed: 1.175 sec.
+```
+
+3. 기본 구성의 설정이 사용되었는지 확인합니다
+
+```sql
+SHOW CREATE TABLE db_uuid.uuid_table1;
+```
+
+```response
+SHOW CREATE TABLE db_uuid.uuid_table1
+
+CREATE TABLE db_uuid.uuid_table1
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}')
+ORDER BY id
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+<div id="troubleshooting">
+  ### 문제 해결
+</div>
+
+테이블 정보와 UUID를 확인하는 예시 명령:
+
+```sql
+SELECT * FROM system.tables
+WHERE database = 'db_uuid' AND name = 'uuid_table1';
+```
+
+위 테이블의 UUID를 사용해 ZooKeeper에 있는 테이블 정보를 가져오는 예시 명령
+
+```sql
+SELECT * FROM system.zookeeper
+WHERE path = '/clickhouse/tables/1/db_uuid/9e8a3cc2-0dec-4438-81a7-c3e63ce2a1cf/replicas';
+```
+
+<Note>
+  데이터베이스는 `Atomic`이어야 합니다. 이전 버전에서 업그레이드하는 경우
+  `default` 데이터베이스는 `Ordinary` 유형일 가능성이 높습니다.
+</Note>
+
+확인 방법:
+
+예를 들어,
+
+```sql
+SELECT name, engine FROM system.databases WHERE name = 'db_uuid';
+```
+
+```response
+SELECT
+    name,
+    engine
+FROM system.databases
+WHERE name = 'db_uuid'
+
+Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
+
+┌─name────┬─engine─┐
+│ db_uuid │ Atomic │
+└─────────┴────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+<div id="reconfiguration">
+  ## ClickHouse Keeper 동적 구성 변경
+</div>
+
+<SelfManaged />
+
+<div id="description">
+  ### 설명
+</div>
+
+`keeper_server.enable_reconfiguration`이 활성화되어 있으면 ClickHouse Keeper는 동적 클러스터 재구성을 위해 ZooKeeper의 [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
+명령을 부분적으로 지원합니다.
+
+<Note>
+  이 설정이 비활성화되어 있으면 레플리카의 `raft_configuration`
+  섹션을 수동으로 수정하여 클러스터를 재구성할 수 있습니다. 변경 사항은 리더만 적용하므로 모든 레플리카의 파일을 수정해야 합니다.
+  또는 ZooKeeper 호환 클라이언트에서 `reconfig` 쿼리를 보낼 수도 있습니다.
+</Note>
+
+가상 노드 `/keeper/config`에는 마지막으로 커밋된 클러스터 구성이 다음 형식으로 저장됩니다:
+
+```text
+server.id = server_host:server_port[;server_type][;server_priority]
+server.id2 = ...
+...
+```
+
+* 각 서버 항목은 줄바꿈으로 구분됩니다.
+* `server_type`은 `participant` 또는 `learner`입니다([learner](https://github.com/eBay/NuRaft/blob/master/docs/readonly_member.md)는 리더 선출에 참여하지 않습니다).
+* `server_priority`는 [리더 선출 시 어떤 노드를 우선할지](https://github.com/eBay/NuRaft/blob/master/docs/leader_election_priority.md)를 나타내는 0 이상의 정수입니다.
+  우선순위가 0이면 서버는 리더가 되지 않습니다.
+
+예시:
+
+```sql
+:) get /keeper/config
+server.1=zoo1:9234;participant;1
+server.2=zoo2:9234;participant;1
+server.3=zoo3:9234;participant;1
+```
+
+`reconfig` 명령을 사용하여 새 서버를 추가하고, 기존 서버를 제거하거나 기존 서버의
+우선순위를 변경할 수 있습니다. 다음은 예시입니다(`clickhouse-keeper-client` 사용):
+
+```bash
+# 새 서버 두 개 추가
+reconfig add "server.5=localhost:123,server.6=localhost:234;learner"
+# 다른 서버 두 개 제거
+reconfig remove "3,4"
+# 기존 서버 우선순위를 8로 변경
+reconfig add "server.5=localhost:5123;participant;8"
+```
+
+다음은 `kazoo` 예시입니다:
+
+```python
+# 새 서버 두 개를 추가하고 기존 서버 두 개를 제거
+reconfig(joining="server.5=localhost:123,server.6=localhost:234;learner", leaving="3,4")
+
+# 기존 서버의 우선순위를 8로 변경
+reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
+```
+
+`joining`의 서버는 위에서 설명한 서버 포맷이어야 합니다. 서버 항목은 쉼표로 구분해야 합니다.
+새 서버를 추가할 때는 `server_priority`(기본값은 1)와 `server_type`(기본값은
+`participant`)을 생략할 수 있습니다.
+
+기존 서버 우선순위를 변경하려면 대상 우선순위와 함께 해당 서버를 `joining`에 추가하십시오.
+서버의 host, port, type은 기존 서버 구성과 동일해야 합니다.
+
+서버는 `joining`과 `leaving`에 나타나는 순서대로 추가 및 제거됩니다.
+`joining`의 모든 업데이트는 `leaving`의 업데이트보다 먼저 처리됩니다.
+
+Keeper 재구성 구현에는 몇 가지 주의 사항이 있습니다:
+
+* 증분 재구성만 지원됩니다. 비어 있지 않은 `new_members`가 포함된 요청은 거부됩니다.
+
+  ClickHouse Keeper 구현은 멤버십을 동적으로 변경하기 위해 NuRaft API를 사용합니다. NuRaft는
+  한 번에 단일 서버를 추가하거나 단일 서버를 제거하는 방식만 지원합니다. 즉, 구성의 각 변경
+  (`joining`의 각 항목, `leaving`의 각 항목)은 각각 별도로 결정되어야 합니다. 따라서 일괄
+  재구성은 최종 사용자에게 오해를 줄 수 있으므로 제공되지 않습니다.
+
+  서버 type(participant/learner) 변경도 NuRaft에서 지원하지 않으므로 불가능합니다.
+  이를 수행할 수 있는 유일한 방법은 서버를 제거한 뒤 다시 추가하는 것이지만, 이 역시 오해를 줄 수 있습니다.
+
+* 반환된 `znodestat` 값은 사용할 수 없습니다.
+
+* `from_version` 필드는 사용되지 않습니다. `from_version`이 설정된 모든 요청은 거부됩니다.
+  이는 `/keeper/config`가 가상 노드이기 때문입니다. 즉, 영구 저장소에 저장되지 않고
+  각 요청마다 지정된 노드 구성으로 즉시 생성됩니다.
+  이렇게 결정한 이유는 NuRaft가 이미 이 구성을 저장하고 있으므로 데이터를 중복 저장하지 않기 위해서입니다.
+
+* ZooKeeper와 달리, `sync` 명령을 제출해 클러스터 재구성이 완료될 때까지 기다릴 방법은 없습니다.
+  새 구성은 *결국* 적용되지만, 적용 시점은 보장되지 않습니다.
+
+* `reconfig` 명령은 여러 이유로 실패할 수 있습니다. 클러스터 상태를 확인하여 업데이트가
+  적용되었는지 확인할 수 있습니다.
+
+<div id="converting-a-single-node-keeper-into-a-cluster">
+  ## 단일 노드 Keeper를 클러스터로 변환하기
+</div>
+
+경우에 따라 실험적 Keeper 노드를 클러스터로 확장해야 할 수 있습니다. 다음은 3개 노드 클러스터에서 이를 단계별로 수행하는 방법입니다.
+
+* **중요**: 새 노드는 현재 쿼럼보다 작은 batches로 추가해야 합니다. 그렇지 않으면 새 노드들끼리 리더를 선출할 수 있습니다. 이 예시에서는 노드를 하나씩 추가합니다.
+* 기존 Keeper 노드에서는 `keeper_server.enable_reconfiguration` 구성 매개변수가 활성화되어 있어야 합니다.
+* Keeper 클러스터의 새로운 전체 구성으로 두 번째 노드를 시작합니다.
+* 시작된 후 [`reconfig`](#reconfiguration)를 사용해 노드 1에 추가합니다.
+* 이제 세 번째 노드를 시작한 다음 [`reconfig`](#reconfiguration)를 사용해 추가합니다.
+* `clickhouse-server` 구성에 새 Keeper 노드를 추가하고, 변경 사항을 적용하기 위해 다시 시작합니다.
+* 노드 1의 raft 구성을 업데이트하고, 필요하면 다시 시작합니다.
+
+과정을 충분히 익히는 데 도움이 되도록 [sandbox 리포지토리](https://github.com/ClickHouse/keeper-extend-cluster)를 제공합니다.
+
+<div id="unsupported-features">
+  ## 지원되지 않는 기능
+</div>
+
+ClickHouse Keeper는 ZooKeeper와의 완전한 호환성을 목표로 하지만, 아직 구현되지 않은 기능이 일부 있습니다(현재도 개발이 진행 중입니다):
+
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\))는 `Stat` 객체 반환을 지원하지 않습니다
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\))는 [TTL](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/CreateMode.html#PERSISTENT_WITH_TTL)을 지원하지 않습니다
+* [`addWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#addWatch\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.AddWatchMode\))는 [`PERSISTENT`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/AddWatchMode.html#PERSISTENT) watch에서 작동하지 않습니다
+* [`removeWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeWatches\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.Watcher.WatcherType,boolean\)) 및 [`removeAllWatches`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeAllWatches\(java.lang.String,org.apache.zookeeper.Watcher.WatcherType,boolean\))는 지원되지 않습니다
+* `setWatches`는 지원되지 않습니다
+* [`CONTAINER`](https://zookeeper.apache.org/doc/r3.5.1-alpha/api/org/apache/zookeeper/CreateMode.html) 유형 znode 생성은 지원되지 않습니다
+* [`SASL authentication`](https://cwiki.apache.org/confluence/display/ZOOKEEPER/Zookeeper+and+SASL)은 지원되지 않습니다

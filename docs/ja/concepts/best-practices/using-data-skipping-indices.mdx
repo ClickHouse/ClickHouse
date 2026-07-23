@@ -1,0 +1,269 @@
+---
+slug: /best-practices/use-data-skipping-indices-where-appropriate
+sidebarTitle: 'データスキッピングインデックス'
+title: 'データスキッピングインデックスを適切に使用する'
+description: 'データスキッピングインデックスをいつどのように使用すべきかを説明するページ'
+keywords: ['データスキッピングインデックス', 'スキップ索引']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+データスキッピングインデックスは、これまでのベストプラクティス、つまり型の最適化、適切な主キーの選定、materialized view の活用をすでに行ったうえで検討すべきです。スキップ索引に不慣れな場合は、まずは[このガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)から始めるとよいでしょう。
+
+この種の索引は、仕組みを理解したうえで慎重に使えば、クエリパフォーマンスの向上に役立ちます。
+
+ClickHouse には、**データスキッピングインデックス**と呼ばれる強力な仕組みがあり、クエリ実行時にスキャンするデータ量を大幅に削減できます。特に、特定のフィルタ条件に対して主キーが有効に機能しない場合に効果を発揮します。行ベースのセカンダリ索引 (B-tree など) に依存する従来のデータベースとは異なり、ClickHouse はカラム指向ストアであり、そのような構造を支える形で行の位置を保持していません。その代わりにスキップ索引を使用し、クエリのフィルタ条件に一致しないことが確実なデータブロックの読み取りを回避します。
+
+スキップ索引は、データブロックに関するメタデータ (最小値/最大値、値の集合、Bloom filter 表現など) を保存し、クエリ実行時にこのメタデータを使って、どのデータブロックを完全にスキップできるかを判断します。これらは [MergeTree family](/ja/reference/engines/table-engines/mergetree-family/mergetree) のテーブルエンジンでのみ利用でき、式、索引タイプ、名前、および各索引対象ブロックのサイズを定義するグラニュラリティを指定して定義します。これらの索引はテーブルデータとともに保存され、クエリのフィルタが索引式に一致すると参照されます。
+
+データスキッピングインデックスにはいくつかの種類があり、それぞれ異なる種類のクエリやデータ分布に適しています。
+
+* **minmax**: ブロックごとに式の最小値と最大値を追跡します。緩やかにソートされたデータに対する範囲クエリに最適です。
+* **set(N)**: 各ブロックについて、指定したサイズ N までの値の集合を追跡します。ブロックごとのカーディナリティが低いカラムで効果的です。
+* **text**: トークン化された文字列データに対して転置索引を構築し、高効率かつ決定論的な全文検索を可能にします。近似的な Bloom filter ベースの方式ではなく、正確なトークン検索とスケーラブルな複数語検索が求められる自然言語テキストや大きな自由形式テキストのカラムに推奨されます。
+* **bloom&#95;filter**: 値がブロック内に存在するかどうかを確率的に判定し、集合への包含に対する高速な近似フィルタリングを可能にします。多数の中からまれな値を見つける、いわゆる “needle in a haystack” のようなクエリの最適化に効果的です。
+* **tokenbf&#95;v1 / ngrambf&#95;v1**: *(非推奨)* 文字列内のトークンや文字シーケンスを検索するために設計された特殊な Bloom filter の派生で、特にログデータやテキスト検索のユースケースで有用です。ClickHouse バージョン &gt;= 26.2 では、テキスト索引の導入により非推奨となりました。
+
+強力な機能ではありますが、スキップ索引は注意して使用する必要があります。十分な数のデータブロックを除外できる場合にのみ効果があり、クエリやデータ構造が適していない場合は、かえってオーバーヘッドになることがあります。ブロック内に一致する値が 1 つでも存在すれば、そのブロック全体を読み取らなければなりません。
+
+**スキップ索引を効果的に活用できるかどうかは、多くの場合、索引対象カラムとテーブルの主キーとの強い相関、または類似した値がまとまるようにデータを挿入できるかどうかに左右されます。**
+
+一般に、データスキッピングインデックスは、適切な主キー設計と型の最適化を確実に行ったうえで適用するのが最善です。特に次のような場合に有用です。
+
+* 全体としては高カーディナリティだが、ブロック内では低カーディナリティのカラム。
+* 検索上重要なまれな値 (例: エラーコード、特定の ID) 。
+* 非主キーカラムに対するフィルタリングが局所的な分布で発生するケース。
+
+常に以下を実施してください。
+
+1. 実データと現実的なクエリでスキップ索引をテストしてください。異なる索引タイプやグラニュラリティ値を試してください。
+2. 索引の有効性を確認するため、send&#95;logs&#95;level=&#39;trace&#39; や `EXPLAIN indexes=1` などを使って影響を評価してください。
+3. 必ず索引サイズと、それがグラニュラリティによってどのように影響を受けるかを評価してください。グラニュラリティサイズを小さくすると、多くの場合、より多くのグラニュールをフィルタできるようになり、スキャン量が減るため、ある程度まではパフォーマンスが向上します。ただし、グラニュラリティを小さくするほど索引サイズは大きくなるため、パフォーマンスが低下する場合もあります。さまざまなグラニュラリティのデータポイントで、パフォーマンスと索引サイズを測定してください。これは Bloom filter 索引では特に重要です。
+
+<p />
+
+**適切に使えば、スキップ索引は大幅な性能向上をもたらしますが、やみくもに使うと不要なコストを増やしかねません。**
+
+データスキッピングインデックス のより詳しいガイドは[こちら](/ja/reference/statements/alter/skipping-index)を参照してください。
+
+<div id="example">
+  ## 例
+</div>
+
+次の最適化されたテーブルを見てみましょう。このテーブルにはStack Overflowのデータが格納されており、投稿ごとに1行のレコードが含まれています。
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+このテーブルは、投稿タイプと日付でフィルタリングおよび集計するクエリに最適化されています。2009年以降に公開された、閲覧数1,000万件超の投稿数を集計する場合を考えてみましょう。
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
+```
+
+このクエリはプライマリインデックスを使用して一部の行 (およびgranule) を除外できます。ただし、上記のレスポンスと以下の `EXPLAIN indexes = 1` が示すとおり、大部分の行は依然として読み取る必要があります。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+LIMIT 1
+```
+
+```response
+┌─explain──────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                        │
+│   Limit (preliminary LIMIT (without OFFSET))                     │
+│     Aggregating                                                  │
+│       Expression (Before GROUP BY)                               │
+│         Expression                                               │
+│           ReadFromMergeTree (stackoverflow.posts)                │
+│           Indexes:                                               │
+│             MinMax                                               │
+│               Keys:                                              │
+│                 CreationDate                                     │
+│               Condition: (CreationDate in ('1230768000', +Inf))  │
+│               Parts: 123/128                                     │
+│               Granules: 8513/8545                                │
+│             Partition                                            │
+│               Keys:                                              │
+│                 toYear(CreationDate)                             │
+│               Condition: (toYear(CreationDate) in [2009, +Inf))  │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+│             PrimaryKey                                           │
+│               Keys:                                              │
+│                 toDate(CreationDate)                             │
+│               Condition: (toDate(CreationDate) in [14245, +Inf)) │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+└──────────────────────────────────────────────────────────────────┘
+
+25 rows in set. Elapsed: 0.070 sec.
+```
+
+簡単な分析から、予想通り `ViewCount` は `CreationDate` (主キー) と相関付けられることがわかります。投稿が存在する期間が長いほど、閲覧される機会も多くなるためです。
+
+```sql
+SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
+```
+
+したがって、これはデータスキッピングインデックスとして自然な選択です。数値型であることを踏まえると、minmax 索引が適しています。索引は次の `ALTER TABLE` コマンドで追加します。最初に追加し、その後「マテリアライズ」します。
+
+```sql
+ALTER TABLE stackoverflow.posts
+  (ADD INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1);
+
+ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
+```
+
+この索引は、テーブルの初期作成時に追加することもできました。minmax 索引を DDL の一部として定義したスキーマは次のとおりです。
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC'),
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --ここにインデックス
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+次のアニメーションは、例のテーブルに対して minmax スキッピング索引がどのように構築されるかを示したもので、テーブル内の各行ブロック (granule) ごとに `ViewCount` の最小値と最大値を追跡しています。
+
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="スキッピング索引の構築" />
+
+先ほどのクエリを再度実行すると、パフォーマンスが大幅に改善されていることがわかります。スキャンされた行数が減っている点に注目してください。
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 39.11 thousand rows, 321.39 KB (3.40 million rows/s., 27.93 MB/s.)
+```
+
+`EXPLAIN indexes = 1` を実行すると、索引が使用されていることを確認できます。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   Aggregating                                                      │
+│     Expression (Before GROUP BY)                                   │
+│       Expression                                                   │
+│         ReadFromMergeTree (stackoverflow.posts)                    │
+│         Indexes:                                                   │
+│           MinMax                                                   │
+│             Keys:                                                  │
+│               CreationDate                                         │
+│             Condition: (CreationDate in ('1230768000', +Inf))      │
+│             Parts: 123/128                                         │
+│             Granules: 8513/8545                                    │
+│           Partition                                                │
+│             Keys:                                                  │
+│               toYear(CreationDate)                                 │
+│             Condition: (toYear(CreationDate) in [2009, +Inf))      │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               toDate(CreationDate)                                 │
+│             Condition: (toDate(CreationDate) in [14245, +Inf))     │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           Skip                                                     │
+│             Name: view_count_idx                                   │
+│             Description: minmax GRANULARITY 1                      │
+│             Parts: 5/123                                           │
+│             Granules: 23/8513                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.211 sec.
+```
+
+この例のクエリにある `ViewCount` &gt; 10,000,000 という述語に一致し得ないすべての行ブロックを、minmaxスキッピング索引がどのように除外するかを示すアニメーションも掲載しています。
+
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="スキッピング索引の使用" />
+
+<div id="related-docs">
+  ## 関連ドキュメント
+</div>
+
+* [データスキッピングインデックスのガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)
+* [データスキッピングインデックスの例](/ja/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [データスキッピングインデックスの操作](/ja/reference/statements/alter/skipping-index)
+* [システムテーブルの情報](/ja/reference/system-tables/data_skipping_indices)

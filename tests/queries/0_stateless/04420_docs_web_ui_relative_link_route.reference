@@ -1,0 +1,5 @@
+ClickHouse <span class="accent">Reference</span>
+const DOCS_SECTION_ROUTE = {
+'data-types': '/sql-reference/data-types',
+const DOCS_ROUTE_ROOTS = new Set([
+1

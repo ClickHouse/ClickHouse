@@ -1,0 +1,62 @@
+---
+title: Éviter OPTIMIZE FINAL
+---
+
+Les tables ClickHouse utilisant le **moteur MergeTree** stockent les données sur disque sous forme de **parts immuables**, créées à chaque insertion de données.
+
+Chaque insertion crée une nouvelle part contenant des fichiers de colonnes triés et compressés, ainsi que des métadonnées telles que des index et des checksums. Pour une description détaillée de la structure des parts et de la manière dont elles sont formées, nous vous recommandons ce [guide](/fr/concepts/core-concepts/parts).
+
+Au fil du temps, des processus d’arrière-plan fusionnent les petites parts en parts plus grandes afin de réduire la fragmentation et d’améliorer les performances des requêtes.
+
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Fusions simples" />
+
+Même s’il peut être tentant de déclencher manuellement cette fusion à l’aide de :
+
+```sql
+OPTIMIZE TABLE <table> FINAL;
+```
+
+**il faut éviter l’opération `OPTIMIZE FINAL` dans la plupart des cas**, car elle lance
+des opérations gourmandes en ressources qui peuvent affecter les performances du cluster.
+
+<Info>
+  **OPTIMIZE FINAL vs FINAL**
+
+  `OPTIMIZE FINAL` n&#39;est pas la même chose que `FINAL`, dont l’utilisation est parfois nécessaire
+  pour obtenir des résultats sans doublons, notamment avec `ReplacingMergeTree`. En général,
+  `FINAL` peut être utilisé sans problème si vos requêtes appliquent des filtres sur les mêmes colonnes que celles
+  de votre clé primaire.
+</Info>
+
+<div id="why-avoid">
+  ## Pourquoi l’éviter ?
+</div>
+
+<div id="its-expensive">
+  ### C&#39;est coûteux
+</div>
+
+L&#39;exécution de `OPTIMIZE FINAL` force ClickHouse à fusionner **toutes** les active parts en **une seule part**, même si des fusions importantes ont déjà eu lieu. Cela implique :
+
+1. **Décompresser** toutes les parts
+2. **Fusionner** les données
+3. **Les recomprimer**
+4. **Écrire** la part finale sur disque ou dans le stockage objet
+
+Ces étapes sont **très gourmandes en CPU et en E/S** et peuvent fortement solliciter votre système, en particulier avec de grands volumes de données.
+
+<div id="it-ignores-safety-limits">
+  ### Il ignore les garde-fous de sécurité
+</div>
+
+Normalement, ClickHouse évite de fusionner des parts de plus de ~150 Go (paramétrable via [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)). Mais `OPTIMIZE FINAL` **ignore ce garde-fou**, ce qui signifie :
+
+* Il peut tenter de fusionner **plusieurs parts de 150 Go** en une seule part énorme
+* Cela peut entraîner des **temps de fusion très longs**, une **forte pression sur la mémoire** ou même des **erreurs de mémoire insuffisante**
+* Ces grosses parts peuvent ensuite devenir difficiles à fusionner davantage : les tentatives de fusion ultérieures échouent alors pour les raisons indiquées ci-dessus. Lorsque des fusions sont nécessaires pour garantir un comportement correct au moment de la requête, cela peut avoir des conséquences indésirables, comme [l’accumulation de doublons dans un ReplacingMergeTree](/fr/concepts/features/operations/insert/deduplication#using-replacingmergetree-for-upserts), ce qui dégrade les performances au moment de la requête.
+
+<div id="let-background-merges-do-the-work">
+  ## Laissez les fusions en arrière-plan faire le travail
+</div>
+
+ClickHouse effectue déjà des fusions en arrière-plan intelligentes pour optimiser le stockage et l’efficacité des requêtes. Elles sont incrémentales, s’adaptent aux ressources disponibles et respectent les seuils configurés. Sauf si vous avez un besoin très spécifique (par exemple, finaliser les données avant de figer une table ou de les exporter), **mieux vaut laisser ClickHouse gérer lui-même les fusions**.
