@@ -132,7 +132,6 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << delim
                 << "FORMAT" << " " << format;
-
             if (!infile && compression)
                 ostr
                     << " "
@@ -146,7 +145,6 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << delim
                 << "FORMAT" << " " << format;
-
             if (!infile && compression)
                 ostr
                     << " "
