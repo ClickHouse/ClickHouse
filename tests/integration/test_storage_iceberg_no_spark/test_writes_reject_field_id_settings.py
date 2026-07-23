@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.iceberg_utils import (
@@ -63,20 +65,22 @@ def test_writes_reject_field_id_settings(
 
     # A user-issued ATTACH query with a full table definition introduces a
     # fresh definition just like CREATE, so it is rejected the same way.
-    instance.query(f"DETACH TABLE {ok_table}")
+    attach_table = make_table_name("attach")
+    attach_uuid = str(uuid.uuid4())
     error = instance.query_and_get_error(
         f"""
-        ATTACH TABLE {ok_table} (x Int32)
+        ATTACH TABLE {attach_table} UUID '{attach_uuid}' (x Int32)
         ENGINE=IcebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{ok_table}', format=Parquet)
         SETTINGS output_format_parquet_auto_assign_field_ids = 1, iceberg_format_version = {format_version}
         """
     )
     assert "BAD_ARGUMENTS" in error
     assert "column-id mapping" in error
-    assert instance.query(f"EXISTS TABLE {ok_table}") == "0\n"
+    assert instance.query(f"EXISTS TABLE {attach_table}") == "0\n"
 
     # A short ATTACH replays the definition stored in this server's metadata,
     # which was already validated at CREATE time, so it keeps working.
+    instance.query(f"DETACH TABLE {ok_table}")
     instance.query(f"ATTACH TABLE {ok_table}")
     assert instance.query(f"SELECT * FROM {ok_table} ORDER BY ALL") == "1\n2\n"
 
