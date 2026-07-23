@@ -13,16 +13,17 @@ ORDER BY tuple()
 SETTINGS
     allow_experimental_text_index_phrase_search = 1,
     index_granularity = 1,
+    min_bytes_for_wide_part = 0,
     packed_skip_index_max_bytes = 0,
-    text_index_max_memory_usage_before_flush = 1048576,
+    text_index_max_memory_usage_before_flush = 114688,
     text_index_max_processed_tokens_before_flush = 1000000000;
 
-INSERT INTO text_index_flush_memory SELECT 'token' FROM numbers(1000000);
+INSERT INTO text_index_flush_memory SELECT 'token' FROM numbers(1024);
 
 ALTER TABLE text_index_flush_memory
     ADD INDEX idx s TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1);
 ALTER TABLE text_index_flush_memory
-    MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, max_block_size = 1000;
+    MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, max_block_size = 512;
 
 SYSTEM FLUSH LOGS part_log;
 
