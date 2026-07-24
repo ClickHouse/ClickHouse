@@ -23,10 +23,10 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 Postgres 12 ou posterior
 
 <div id="enable-logical-replication">
-  ## Habilitar replicação lógica
+  ## Habilitar a replicação lógica
 </div>
 
-**Você não precisa** seguir as etapas abaixo se a configuração `cloudsql. logical_decoding` estiver ativada. Em geral, essa configuração já está predefinida se você estiver migrando de outra ferramenta de replicação de dados.
+**Você não precisa** seguir as etapas abaixo se a configuração `cloudsql. logical_decoding` estiver ativada. Em geral, essa configuração já vem pré-configurada se você estiver migrando de outra ferramenta de replicação de dados.
 
 1. Clique no botão **Edit** na página Overview.
 
@@ -34,7 +34,7 @@ Postgres 12 ou posterior
 
 2. Vá para Flags e altere `cloudsql.logical_decoding` para on. Essa alteração exigirá a reinicialização do servidor Postgres.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="Altere cloudsql.logical_decoding para on" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="Alterar cloudsql.logical_decoding para on" size="lg" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="Reiniciar servidor" size="lg" border />
 
@@ -82,7 +82,7 @@ Conecte-se ao Cloud SQL Postgres usando o usuário admin e execute os comandos a
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-A publicação `clickpipes` conterá o conjunto de eventos de alteração gerados pelas tabelas especificadas e, posteriormente, será usada para a ingestão do fluxo de replicação.
+A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 [//]: # "TODO Add SSH Tunneling"
 
@@ -100,7 +100,7 @@ Siga as etapas abaixo para adicionar os IPs do ClickPipes à sua rede.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Seção Connections no Cloud SQL" size="lg" border />
 
-2. Vá para a subseção **Networking**
+2. Vá para a subseção Networking
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Subseção Networking no Cloud SQL" size="lg" border />
 
