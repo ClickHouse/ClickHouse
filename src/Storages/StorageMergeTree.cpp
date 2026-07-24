@@ -1721,11 +1721,32 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// Reserve memory for the merge's input/output IO buffers up front, so that scheduling
             /// many merges at once (for example right after a mutation produces many parts) cannot
             /// oversubscribe memory once all of them start allocating buffers.
-            /// The destination disk is not chosen yet (CurrentlyMergingPartsTagger does that below),
-            /// so guess it from the source parts for the admission check and correct it afterwards.
-            const bool output_on_remote_disk = std::any_of(
-                future_part->parts.begin(), future_part->parts.end(),
-                [](const auto & part) { return part->isStoredOnRemoteDisk(); });
+            /// The destination disk is not chosen yet (CurrentlyMergingPartsTagger does that below), and
+            /// the admission check must not under-price a merge whose result MAY land on object storage:
+            /// TTL move rules and multi-volume storage policies can pick a remote destination even when
+            /// every source part is local, and the disk-corrected reservation below happens only after the
+            /// merge is committed to run. Selections of different tables are serialized only by each
+            /// table's own mutex, so with a cheaper local-source admission guess several tables could pass
+            /// tryReserve concurrently and then all upgrade themselves to the real remote estimate,
+            /// pushing the reserved total past the soft limit - exactly the remote-writer burst the
+            /// reservation exists to prevent. Admit against the worst case over the disks this table's
+            /// storage policy can write to: remote whenever any policy disk is remote, sized by the
+            /// largest multipart write buffers among the remote disks (a zero ceiling - every remote disk
+            /// is e.g. HDFS without multipart buffers - correctly degrades to the local per-stream
+            /// estimate). The tagger's actual disk choice below then only keeps or lowers the reservation.
+            bool output_may_be_on_remote_disk = false;
+            std::optional<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memory;
+            for (const auto & disk : getStoragePolicy()->getDisks())
+            {
+                if (!disk->isRemote())
+                    continue;
+                output_may_be_on_remote_disk = true;
+                const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk);
+                if (!admission_write_buffer_memory)
+                    admission_write_buffer_memory.emplace();
+                admission_write_buffer_memory->guaranteed = std::max(admission_write_buffer_memory->guaranteed, disk_write_buffer_memory.guaranteed);
+                admission_write_buffer_memory->ceiling = std::max(admission_write_buffer_memory->ceiling, disk_write_buffer_memory.ceiling);
+            }
 
             /// Estimate the reservation against the same context the merge will actually run under: a copy of
             /// the background context with the merge query settings applied (MergePlainMergeTreeTask builds the
@@ -1735,8 +1756,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             merge_context->makeQueryContextForMerge(*getSettings());
 
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, merge_context, *getSettings(), output_on_remote_disk,
-                /*remote_write_buffer_memory=*/ std::nullopt, deduplicate, cleanup);
+                *future_part, metadata_snapshot, merge_context, *getSettings(), output_may_be_on_remote_disk,
+                admission_write_buffer_memory, deduplicate, cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1769,18 +1790,19 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
             auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
-            /// The tagger has now chosen the actual destination disk, which may differ from the guess above
-            /// because of TTL move rules, JBOD balancing, or multi-volume storage policies, and whose
-            /// object-storage write buffer sizes come from the disk configuration rather than the merge
-            /// context. Redo the reservation with the correct write buffer sizes whenever the output is on a
-            /// remote disk (to reflect that disk's own multipart upload ceiling - or its absence: a remote
-            /// disk like HDFS has no multipart upload buffers and gets the local per-stream estimate) or the
-            /// local/remote guess was wrong. At this point the merge is already committed to run, so reserve
-            /// unconditionally (as the replicated path does): the corrected reservation still throttles
-            /// selection of further merges.
+            /// The tagger has now chosen the actual destination disk. Redo the reservation with that disk's
+            /// own write buffer sizes whenever the output is on a remote disk (its multipart upload sizing
+            /// can be smaller than the worst case over the policy's remote disks the admission used - or
+            /// absent: a remote disk like HDFS has no multipart upload buffers and gets the local
+            /// per-stream estimate) or when the admission priced a possible remote destination the tagger
+            /// did not pick (a local destination re-estimates at the local price). Since the admission
+            /// check already used the worst case over the disks this table can write to, this correction
+            /// only keeps or lowers the reservation; the merge is already committed to run at this point,
+            /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
+            /// throttles selection of further merges.
             const DiskPtr actual_disk = tagger->reserved_space->getDisk();
             const bool actual_output_on_remote_disk = actual_disk->isRemote();
-            if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_on_remote_disk)
+            if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_may_be_on_remote_disk)
             {
                 memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
                     CompactionStatistics::estimateNeededMemoryForMerge(
