@@ -41,6 +41,7 @@ static struct InitFiu
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -59,6 +60,7 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_backup_keeper_session_expired_always) \
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
@@ -88,6 +90,7 @@ static struct InitFiu
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(cache_filesystem_failure_non_errno) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
@@ -179,6 +182,7 @@ static struct InitFiu
     ONCE(iceberg_writes_cleanup) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_fail_before_writing_metadata) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
@@ -191,6 +195,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_after_zero_copy_lock) \
+    PAUSEABLE(merge_tree_background_task_marked_for_deletion) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
@@ -245,7 +251,8 @@ static struct InitFiu
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    REGULAR(replicated_database_status_finished_node_missing)
+    REGULAR(replicated_database_status_finished_node_missing) \
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
 
 namespace FailPoints
 {

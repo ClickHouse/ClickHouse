@@ -1,5 +1,85 @@
 [
   {
+    "source": "/guides/oss/deployment-and-scaling",
+    "destination": "/guides/oss/deployment-and-scaling/terminology"
+  },
+  {
+    "source": "/guides/oss/deployment-and-scaling/index",
+    "destination": "/guides/oss/deployment-and-scaling/terminology"
+  },
+  {
+    "source": "/integrations/clickpipes/kinesis/index",
+    "destination": "/integrations/clickpipes/kinesis/overview"
+  },
+  {
+    "source": "/integrations/clickpipes/pubsub/index",
+    "destination": "/integrations/clickpipes/pubsub/overview"
+  },
+  {
+    "source": "/products/cloud/reference/billing/marketplace",
+    "destination": "/products/cloud/reference/billing/marketplace/overview"
+  },
+  {
+    "source": "/products/cloud/reference/billing/marketplace/index",
+    "destination": "/products/cloud/reference/billing/marketplace/overview"
+  },
+  {
+    "source": "/get-started/migrate/postgres",
+    "destination": "/get-started/migrate/postgres/overview"
+  },
+  {
+    "source": "/get-started/migrate/postgres/index",
+    "destination": "/get-started/migrate/postgres/overview"
+  },
+  {
+    "source": "/products/cloud/features/admin-features/api",
+    "destination": "/products/cloud/features/admin-features/api/api-overview"
+  },
+  {
+    "source": "/products/cloud/features/admin-features/api/index",
+    "destination": "/products/cloud/features/admin-features/api/api-overview"
+  },
+  {
+    "source": "/products/cloud/reference/billing",
+    "destination": "/products/cloud/reference/billing/billing-overview"
+  },
+  {
+    "source": "/products/cloud/reference/billing/index",
+    "destination": "/products/cloud/reference/billing/billing-overview"
+  },
+  {
+    "source": "/reference/system-tables",
+    "destination": "/reference/system-tables/overview"
+  },
+  {
+    "source": "/reference/system-tables/index",
+    "destination": "/reference/system-tables/overview"
+  },
+  {
+    "source": "/engines/table-engines/special/materializedview",
+    "destination": "/concepts/features/materialized-views"
+  },
+  {
+    "source": "/getting-started/example-datasets/opensky",
+    "destination": "/get-started/sample-datasets"
+  },
+  {
+    "source": "/integrations/language-clients/nodejs",
+    "destination": "/integrations/language-clients/js/index"
+  },
+  {
+    "source": "/manage/security/compliance-and-certification",
+    "destination": "/products/cloud/reference/security/compliance-overview"
+  },
+  {
+    "source": "/observability/clickstack",
+    "destination": "/clickstack/overview"
+  },
+  {
+    "source": "/sql-reference/statements/alter/statistic",
+    "destination": "/reference/statements/alter/statistics"
+  },
+  {
     "source": "/category/changelog",
     "destination": "/resources/changelogs/oss/2026"
   },
@@ -1482,7 +1562,7 @@
   },
   {
     "source": "/cloud/manage",
-    "destination": "/products/cloud/features/admin-features/api"
+    "destination": "/products/cloud/features/admin-features/api/api-overview"
   },
   {
     "source": "/cloud/manage/api/api-overview",
@@ -1538,7 +1618,7 @@
   },
   {
     "source": "/cloud/manage/billing",
-    "destination": "/products/cloud/reference/billing"
+    "destination": "/products/cloud/reference/billing/billing-overview"
   },
   {
     "source": "/cloud/manage/billing/overview",
@@ -1558,7 +1638,7 @@
   },
   {
     "source": "/cloud/manage/cloud-api",
-    "destination": "/products/cloud/features/admin-features/api"
+    "destination": "/products/cloud/features/admin-features/api/api-overview"
   },
   {
     "source": "/cloud/manage/cloud-tiers",
@@ -1574,7 +1654,7 @@
   },
   {
     "source": "/cloud/manage/hyperdx",
-    "destination": "/products/cloud/features/sql-console-features/hyperdx"
+    "destination": "/products/cloud/features/sql-console-features/clickstack"
   },
   {
     "source": "/cloud/manage/jan-2025-faq",
@@ -1586,7 +1666,7 @@
   },
   {
     "source": "/cloud/manage/jan-2025-faq/billing",
-    "destination": "/products/cloud/reference/billing"
+    "destination": "/products/cloud/reference/billing/billing-overview"
   },
   {
     "source": "/cloud/manage/jan-2025-faq/new-tiers",
@@ -1610,7 +1690,7 @@
   },
   {
     "source": "/cloud/manage/marketplace/",
-    "destination": "/products/cloud/reference/billing/marketplace"
+    "destination": "/products/cloud/reference/billing/marketplace/overview"
   },
   {
     "source": "/cloud/manage/monitor/advanced-dashboard",
@@ -1786,7 +1866,7 @@
   },
   {
     "source": "/cloud/marketplace",
-    "destination": "/products/cloud/reference/billing/marketplace"
+    "destination": "/products/cloud/reference/billing/marketplace/overview"
   },
   {
     "source": "/cloud/marketplace/marketplace-billing",
@@ -2354,7 +2434,7 @@
   },
   {
     "source": "/deployment-guides/index",
-    "destination": "/guides/oss/deployment-and-scaling"
+    "destination": "/guides/oss/deployment-and-scaling/terminology"
   },
   {
     "source": "/deployment-guides/parallel-replicas",
@@ -3690,7 +3770,7 @@
   },
   {
     "source": "/guides/manage-and-deploy-index",
-    "destination": "/guides/oss/deployment-and-scaling"
+    "destination": "/guides/oss/deployment-and-scaling/terminology"
   },
   {
     "source": "/guides/replacing-merge-tree",
@@ -3918,7 +3998,7 @@
   },
   {
     "source": "/integrations/c",
-    "destination": "/integrations/language-clients/c"
+    "destination": "/integrations/language-clients/c/index"
   },
   {
     "source": "/integrations/cassandra",
@@ -3942,7 +4022,7 @@
   },
   {
     "source": "/integrations/clickpipes/kinesis-index",
-    "destination": "/integrations/clickpipes/kinesis"
+    "destination": "/integrations/clickpipes/kinesis/overview"
   },
   {
     "source": "/integrations/clickpipes/mongodb/add_table",
@@ -4070,7 +4150,7 @@
   },
   {
     "source": "/integrations/clickpipes/pubsub-index",
-    "destination": "/integrations/clickpipes/pubsub"
+    "destination": "/integrations/clickpipes/pubsub/overview"
   },
   {
     "source": "/integrations/clickpipes/secure-kinesis",
@@ -4398,39 +4478,39 @@
   },
   {
     "source": "/integrations/go",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/choosing-a-client",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/clickhouse-api",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/database-sql-api",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/installation",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/introduction",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/performance-tips",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/intro",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/google-dataflow/dataflow",
@@ -4506,7 +4586,7 @@
   },
   {
     "source": "/integrations/java",
-    "destination": "/integrations/language-clients/java"
+    "destination": "/integrations/language-clients/java/index"
   },
   {
     "source": "/integrations/java/client-v2",
@@ -4526,7 +4606,7 @@
   },
   {
     "source": "/integrations/javascript",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/integrations/jdbc",
@@ -4654,31 +4734,31 @@
   },
   {
     "source": "/integrations/language-clients/java/r2dbc",
-    "destination": "/integrations/language-clients/java"
+    "destination": "/integrations/language-clients/java/index"
   },
   {
     "source": "/integrations/language-clients/javascript",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/integrations/language-clients/python/driver-api",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/inserts",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/intro",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/options",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/queries",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/lightdash",
@@ -4838,7 +4918,7 @@
   },
   {
     "source": "/integrations/python",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/qstudio",
@@ -4894,7 +4974,7 @@
   },
   {
     "source": "/integrations/rust",
-    "destination": "/integrations/language-clients/rust"
+    "destination": "/integrations/language-clients/rust/index"
   },
   {
     "source": "/integrations/s3",
@@ -5030,7 +5110,7 @@
   },
   {
     "source": "/integrations/zingdata",
-    "destination": "/integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse"
+    "destination": "/integrations/connectors/data-visualization"
   },
   {
     "source": "/interfaces",
@@ -5050,7 +5130,7 @@
   },
   {
     "source": "/interfaces/cpp",
-    "destination": "/integrations/language-clients/cpp"
+    "destination": "/integrations/language-clients/cpp/index"
   },
   {
     "source": "/interfaces/csharp",
@@ -5462,7 +5542,7 @@
   },
   {
     "source": "/interfaces/go",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/interfaces/grpc",
@@ -5478,7 +5558,7 @@
   },
   {
     "source": "/interfaces/javascript",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/interfaces/jdbc",
@@ -5510,7 +5590,7 @@
   },
   {
     "source": "/interfaces/python",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/interfaces/schema-inference",
@@ -26838,7 +26918,7 @@
   },
   {
     "source": "/migrations/postgresql",
-    "destination": "/get-started/migrate/postgres"
+    "destination": "/get-started/migrate/postgres/overview"
   },
   {
     "source": "/migrations/postgresql/appendix",
@@ -26942,7 +27022,7 @@
   },
   {
     "source": "/operations",
-    "destination": "/guides/oss/deployment-and-scaling"
+    "destination": "/guides/oss/deployment-and-scaling/terminology"
   },
   {
     "source": "/operations/access-rights",
@@ -27258,7 +27338,7 @@
   },
   {
     "source": "/operations/system-tables/",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/operations/system-tables/aggregate_function_combinators",
@@ -27946,7 +28026,7 @@
   },
   {
     "source": "/operations/system_tables",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/operations/table_engines",
@@ -40433,6 +40513,10 @@
     "destination": "/reference/functions/table-functions/dictionary"
   },
   {
+    "source": "/sql-reference/table-functions/eval",
+    "destination": "/reference/functions/table-functions/eval"
+  },
+  {
     "source": "/sql-reference/table-functions/file",
     "destination": "/reference/functions/table-functions/file"
   },
@@ -41082,79 +41166,79 @@
   },
   {
     "source": "/system_tables",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.asynchronous_metrics",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.clusters",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.columns",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.databases",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.dictionaries",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.events",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.functions",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.merges",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.metrics",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.numbers",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.numbers_mt",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.one",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.parts",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.processes",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.replicas",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.settings",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.tables",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/system_tables/system.zookeeper",
-    "destination": "/reference/system-tables"
+    "destination": "/reference/system-tables/overview"
   },
   {
     "source": "/table_engines/replication",
@@ -52479,5 +52563,17 @@
   {
     "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-12",
     "destination": "/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "source": "/interfaces/web-ui-pinned-columns",
+    "destination": "/concepts/features/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "source": "/sql-reference/statements/check-database",
+    "destination": "/reference/statements/check-database"
+  },
+  {
+    "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes",
+    "destination": "/reference/statements/create/dictionary/layouts/naive-bayes"
   }
 ]
