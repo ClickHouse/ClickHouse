@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
 
 Omniは、公式のClickHouseデータソースを使用して、ClickHouse Cloudまたはオンプレミス環境のデプロイメントに接続できます。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続情報を収集する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ClickHouse データソースを作成する" id="2-create-a-clickhouse-data-source">
+    Admin -&gt; Connections に移動し、右上の &quot;Add Connection&quot; ボタンをクリックします。
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. ClickHouse データソースを作成する
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Connections セクションで Add Connection ボタンが表示されている Omni の管理インターフェイス" border />
 
-Admin -&gt; Connections に移動し、右上の「Add Connection」ボタンをクリックします。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Connections セクションの Add Connection ボタンを示す Omni の管理インターフェイス" border />
+    `ClickHouse` を選択し、フォームに認証情報を入力します。
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="認証情報入力用フォームのフィールドが表示されている、ClickHouse 用 Omni 接続設定インターフェイス" border />
 
-`ClickHouse` を選択し、フォームに認証情報を入力します。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="認証情報の入力フィールドが表示された、ClickHouse 用の Omni 接続設定インターフェイス" border />
-
-<br />
-
-これで、Omni で ClickHouse のデータをクエリして可視化できます。
+    これで、Omni から ClickHouse のデータをクエリして可視化できるようになります。
+  </Step>
+</Steps>

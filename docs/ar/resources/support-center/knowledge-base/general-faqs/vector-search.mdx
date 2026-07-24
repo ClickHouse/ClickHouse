@@ -25,51 +25,47 @@ keywords: ['البحث المتجهي']
 
 إليك دليل عملي سريعًا حول كيفية استخدام ClickHouse للبحث المتجهي.
 
-<div id="1-create-embeddings">
-  ## 1. أنشئ التضمينات
-</div>
+<Steps>
+  <Step title="إنشاء التضمينات">
+    يجب تحويل بياناتك (المستندات أو الصور أو البيانات المنظَّمة) إلى *تضمينات*. نوصي بإنشاء التضمينات باستخدام [واجهة برمجة تطبيقات OpenAI Embeddings](https://platform.openai.com/docs/api-reference/embeddings) أو باستخدام مكتبة بايثون مفتوحة المصدر [SentenceTransformers](https://www.sbert.net/).
 
-يجب تحويل بياناتك (المستندات أو الصور أو البيانات المنظَّمة) إلى *تضمينات*. نوصي بإنشاء التضمينات باستخدام [واجهة برمجة تطبيقات OpenAI Embeddings](https://platform.openai.com/docs/api-reference/embeddings) أو مكتبة بايثون مفتوحة المصدر [SentenceTransformers](https://www.sbert.net/).
+    يمكنك اعتبار التضمين مصفوفة كبيرة من الأعداد ذات الفاصلة العائمة تمثل بياناتك. [اطلع على هذا الدليل من OpenAI لمعرفة المزيد عن التضمينات](https://developers.openai.com/api/docs/guides/embeddings).
+  </Step>
 
-يمكنك اعتبار التضمين مصفوفة كبيرة من أعداد ذات فاصلة عائمة تمثل بياناتك. [اطّلع على هذا الدليل من OpenAI لمعرفة المزيد عن التضمينات](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings).
+  <Step title="تخزين التضمينات">
+    بمجرد إنشاء التضمينات، تحتاج إلى تخزينها في ClickHouse. يجب تخزين كل تضمين في صف منفصل، ويمكن أن يتضمن بيانات وصفية لأغراض التصفية أو التجميع أو التحليلات. إليك مثالًا على جدول يمكنه تخزين الصور مع التسميات التوضيحية:
 
-<div id="2-store-the-embeddings">
-  ## 2. تخزين التضمينات
-</div>
+    ```sql
+    CREATE TABLE images
+    (
+    	`_file` LowCardinality(String),
+    	`caption` String,
+    	`image_embedding` Array(Float32)
+    )
+    ENGINE = MergeTree;
+    ```
+  </Step>
 
-بمجرد إنشاء التضمينات، تحتاج إلى تخزينها في ClickHouse. يجب تخزين كل تضمين في صف منفصل، ويمكن أن يتضمن بيانات وصفية لأغراض التصفية أو التجميع أو التحليلات. فيما يلي مثال على جدول يمكنه تخزين الصور مع التعليقات التوضيحية:
+  <Step title="البحث عن تضمينات ذات صلة">
+    لنفترض أنك تريد البحث عن صور للكلاب في مجموعة البيانات لديك. يمكنك استخدام دالة مسافة مثل `cosineDistance` لأخذ تضمين لصورة كلب والبحث عن الصور ذات الصلة:
 
-```sql
-CREATE TABLE images
-(
-	`_file` LowCardinality(String),
-	`caption` String,
-	`image_embedding` Array(Float32)
-)
-ENGINE = MergeTree;
-```
+    ```sql
+    SELECT
+        _file,
+    	caption,
+    	cosineDistance(
+            -- تضمين لصورة الكلب "المدخلة"
+            [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+            image_embedding
+        ) AS score
+    FROM images
+    ORDER BY score ASC
+    LIMIT 10
+    ```
 
-<div id="3-search-for-related-embeddings">
-  ## 3. ابحث عن تضمينات ذات صلة
-</div>
-
-لنفترض أنك تريد البحث عن صور للكلاب في مجموعة البيانات الخاصة بك. يمكنك استخدام دالة مسافة مثل `cosineDistance` لأخذ تضمين لصورة كلب ثم البحث عن صور ذات صلة:
-
-```sql
-SELECT
-    _file,
-	caption,
-	cosineDistance(
-        -- An embedding of your "input" dog picture
-        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
-        image_embedding
-    ) AS score
-FROM images
-ORDER BY score ASC
-LIMIT 10
-```
-
-يعرض هذا الاستعلام أسماء `_file` و`caption` لأكثر 10 صور يُرجَّح ارتباطها بصورة الكلب التي قدّمتها.
+    يعيد هذا الاستعلام أسماء `_file` و`caption` لأفضل 10 صور يُرجَّح أن تكون الأكثر صلة بصورة الكلب التي قدمتها.
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## للمزيد من القراءة
