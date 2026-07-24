@@ -24,33 +24,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFe
 管理者は、一度に複数のユーザーを招待し、招待時に1つ以上のロールを割り当てることができます。
 
 <Steps>
-  <Step>
-    ### 組織設定にアクセスし、`Users and roles` を選択する
-
+  <Step title="組織設定にアクセスし、`Users and roles` を選択する" id="users-and-roles-1">
     サービスページで組織名を選択します。ポップアップメニューから `Users and roles` を選択します。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 左上の `Invite members` を選択する
-
+  <Step title="左上の `Invite members` を選択する" id="invite-members">
     左上の `Invite members` ボタンをクリックします。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 新しいメンバーのメールアドレスを入力し、ロールを割り当てる
-
+  <Step title="新しいメンバーのメールアドレスを入力し、ロールを割り当てる" id="add-email-and-roles">
     招待画面の上部にメールアドレスを入力します。ユーザーに割り当てるロールを1つ以上選択します。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### `Send invites` をクリックする
-
+  <Step title={<>`Send invites` をクリックする</>} id="send-invites">
     画面下部の `Send invites` をクリックします。ユーザーにはメールが送信され、そのメールから組織に参加できます。招待の承諾について詳しくは、[Manage my account](/ja/products/cloud/guides/security/cloud-access-management/manage-my-account)を参照してください。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -82,33 +74,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFe
 Admin ロールが割り当てられているユーザーは、いつでも他のユーザーの権限を更新できます。
 
 <Steps>
-  <Step>
-    ### 組織設定にアクセスして `Users and roles` を選択する
-
+  <Step title="組織設定にアクセスして `Users and roles` を選択する" id="users-and-roles-2">
     サービスページで、組織名を選択します。ポップアップメニューから `Users and roles` メニュー項目を選択します。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 更新するユーザーを選択し、Edit を選択する
-
+  <Step title="更新するユーザーを選択し、Edit を選択する" id="select-user-to-update">
     アクセスを変更するユーザーの行の末尾にあるメニューを選択します。ポップアップメニューから `Edit` を選択します。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 権限を更新する
-
+  <Step title="権限を更新する" id="update-permissions">
     `Roles` ボックスをクリックしてメニューを展開します。チェックボックスを選択して、そのユーザーにロールを追加または削除します。ロールと関連する権限の一覧については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles) を参照してください。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 変更を保存する
-
+  <Step title="変更を保存する" id="save-changes">
     タブの下部にある `Save changes` ボタンをクリックして変更を保存します。
   </Step>
 </Steps>

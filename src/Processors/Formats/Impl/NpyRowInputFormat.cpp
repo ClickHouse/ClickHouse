@@ -485,10 +485,13 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
     if (read_rows >= header.shape[0])
         return false;
 
-    /// For non-zero element sizes, check eof to detect truncated files.
-    /// For zero-size elements (|S0, <U0), the data section is empty and
-    /// eof is expected — rows are produced based on the row counter alone.
-    if (header.numpy_type->getSize() != 0 && in->eof())
+    /// Check eof only when the current row requires data bytes. Rows with zero-size
+    /// elements or a zero inner dimension are represented without a data section.
+    bool row_requires_data_bytes = header.numpy_type->getSize() != 0;
+    for (size_t i = 1; i != header.shape.size(); ++i)
+        row_requires_data_bytes = row_requires_data_bytes && header.shape[i] != 0;
+
+    if (row_requires_data_bytes && in->eof())
         return false;
 
     ++read_rows;
