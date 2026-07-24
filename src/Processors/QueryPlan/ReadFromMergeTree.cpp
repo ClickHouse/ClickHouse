@@ -4967,7 +4967,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
     };
     // This code is executed only if there is no parts to read, so the parameter values don't really matter
     std::ignore = extension.sendInitialRequest(
-        get_coordination_mode(), /*ranges=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
+        get_coordination_mode(), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     return true;
 }
 
