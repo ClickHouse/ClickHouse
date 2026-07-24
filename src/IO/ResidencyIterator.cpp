@@ -148,8 +148,6 @@ VectorWithMemoryTracking<GeometryEntry> ResolutionFold::finish()
     {
         auto & acc = accs[i];
         flushCell(acc);
-        if (acc.resident.empty() && acc.cells.empty())
-            continue;
 
         GeometryEntry entry;
         entry.tier = traits[i].tier;

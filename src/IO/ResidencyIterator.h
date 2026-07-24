@@ -68,6 +68,16 @@ public:
 
     ByteRange span() const { return probed_span; }
 
+    /// Hand over the probed tier's view - the hit readers (pinning their
+    /// segments) and the probed miss entries - to become the plan's held
+    /// buffers. `lookAt` keeps working (the walk owns copies of the ranges),
+    /// but the readers travel with the view.
+    CacheViewPtr takeView(size_t tier_idx)
+    {
+        chassert(tier_idx < tiers.size());
+        return std::move(tiers[tier_idx].view);
+    }
+
 private:
     struct Classified
     {
@@ -110,7 +120,9 @@ public:
 
     void add(const ChainResolution & r);
 
-    /// Entries in chain order - the shape of `CoverageMap::entries`.
+    /// One entry per tier, positional with the traits (an entry with nothing
+    /// resident and nothing to fill stays empty - the caller drops or skips
+    /// it, as the batch fold drops empty views).
     VectorWithMemoryTracking<GeometryEntry> finish();
 
 private:

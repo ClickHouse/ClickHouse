@@ -277,7 +277,7 @@ private:
         ICacheProvider * provider = nullptr;
         /// The tier's plan-state object: hit readers (pinning resident segments)
         /// and miss cells, upgraded in place with write buffers for the cells the
-        /// plan fills (`extractMissesAndOpenWriters`).
+        /// plan fills (the prune+upgrade step of `observeAndSchedule`).
         CacheViewPtr view;
     };
 
@@ -680,22 +680,6 @@ private:
     /// held plan to EOF. Unknown-size sources learn EOF via a short read and keep
     /// replanning.
     bool planReachesEnd() const;
-
-    /// Translate ONE tier's `planResidencyView` into its 1:1
-    /// `GeometryEntry`/`PlanTier`. `extractResidentRuns` records the tier's
-    /// hits (clamped to the plan span) and folds them into `upper_hits` - the
-    /// prune input for the slower tiers that follow. `extractMissesAndOpenWriters`
-    /// PRUNES miss cells fully covered by `upper_hits` (the union of faster tiers'
-    /// hits - that range already lives upstream) via `CacheView::dropMiss`,
-    /// records the survivors in the geometry, and has the provider UPGRADE
-    /// them with write buffers in place (populatable tiers only).
-    static void extractResidentRuns(
-        const CacheView & view, ByteRange plan_range,
-        GeometryEntry & geom_entry, IntervalSet & upper_hits);
-    static void extractMissesAndOpenWriters(
-        ICacheProvider & cache, CacheView & view,
-        const StoredObject & object, size_t object_file_offset,
-        const IntervalSet & upper_hits, GeometryEntry & geom_entry);
 
     /// Pin the partial segment under `frontier` from the first held write
     /// buffer whose `range` contains it and whose `pin` is non-null. Empty

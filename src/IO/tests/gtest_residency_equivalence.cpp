@@ -328,7 +328,13 @@ public:
             pos = res.range.end();
         }
         EXPECT_EQ(pos, span.end()) << "strides must tile the span exactly";
-        return fold.finish();
+
+        auto slots = fold.finish();
+        VectorWithMemoryTracking<GeometryEntry> entries;
+        for (auto & e : slots)
+            if (!e.resident.empty() || !e.aligned_miss.empty())
+                entries.push_back(std::move(e));
+        return entries;
     }
 
     /// The equivalence gate: iterated fold vs the live executor's plan geometry

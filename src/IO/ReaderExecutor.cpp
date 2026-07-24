@@ -1,4 +1,5 @@
 #include <IO/ReaderExecutor.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/FetchMachineRunner.h>
 #include <IO/LocalFetchMachineRunner.h>
@@ -2462,33 +2463,52 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan = std::move(empty);
         return;
     }
-    /// ONE FLAT residency probe over the bounded target span, every tier x
-    /// object-piece, fastest tier first (the geometry pass consumes cache-major so
-    /// `upper_hits` prunes the slower tiers). A tier's miss CELLS may extend past
-    /// the span in both directions (the provider clamps them to the object end
-    /// only): the overhang is FILL-ONLY work carried by the schedule's cell
-    /// closure (`fillRegion`) - never served span - so the unprobed overhang needs
-    /// no residency knowledge and no second probe. Cell segmentation is
-    /// probe-range-independent (virgin holes tile on the absolute grid; existing
-    /// segments report their true extents), so one span-sized probe per tier is
-    /// the whole observation.
-    struct ProbeView
+    /// ONE observation over the bounded target span: per object-piece, the chain
+    /// iterator probes every tier (read-only, fastest first) and a forward
+    /// `lookAt` walk folds the per-position resolutions into the per-tier
+    /// geometry - resident runs plus the miss cells surviving the faster-tier
+    /// prune. A tier's miss CELLS may extend past the span in both directions
+    /// (the provider clamps them to the object end only): the overhang is
+    /// FILL-ONLY work carried by the schedule's cell closure (`fillRegion`) -
+    /// never served span - so the unprobed overhang needs no residency knowledge
+    /// and no second probe. Cell segmentation is probe-range-independent (virgin
+    /// holes tile on the absolute grid; existing segments report their true
+    /// extents), so one span-sized observation per piece is the whole story.
+    VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
+    for (const auto & cache : caches)
+        traits.push_back(ResolutionFold::TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
+
+    struct PieceWalk
     {
-        size_t cache_idx;
         StoredObject object;
         size_t object_file_offset;
-        CacheViewPtr view;
+        std::unique_ptr<ResidencyIterator> iterator;
+        /// Per-tier fold results, positional with `caches`.
+        VectorWithMemoryTracking<GeometryEntry> folded;
     };
-    VectorWithMemoryTracking<ProbeView> work;
-    for (size_t ci = 0; ci < caches.size(); ++ci)
+    VectorWithMemoryTracking<PieceWalk> pieces;
     {
         size_t piece_file_start = plan_range.offset;
         for (const auto & pr : offset_map.map(plan_range))
         {
-            work.push_back(ProbeView{
-                ci, pr.object, piece_file_start - pr.object_offset,
-                caches[ci]->planResidencyView(
-                    pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size})});
+            PieceWalk piece;
+            piece.object = pr.object;
+            piece.object_file_offset = piece_file_start - pr.object_offset;
+            const ByteRange piece_span{piece_file_start, pr.size};
+            piece.iterator = std::make_unique<ResidencyIterator>(
+                caches, piece.object, piece.object_file_offset, piece_span);
+
+            ResolutionFold fold(traits, piece_span);
+            size_t pos = piece_span.offset;
+            while (pos < piece_span.end())
+            {
+                const auto res = piece.iterator->lookAt(pos);
+                fold.add(res);
+                pos = res.range.end();
+            }
+            piece.folded = fold.finish();
+
+            pieces.push_back(std::move(piece));
             piece_file_start += pr.size;
         }
     }
@@ -2496,36 +2516,51 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     geom->plan_end = plan_range.end();
     ReadPlan plan;
 
-    /// Each (tier x piece) view is translated by the two extract helpers into a 1:1
-    /// `GeometryEntry`/`PlanTier` pair (pushed BOTH-or-NEITHER, so
-    /// `geometry()->entries` and `tiers` stay positionally aligned - `residentAt`'s
-    /// entry index maps into `tiers`). `caches` is fastest-first, so `upper_hits`
-    /// (the running union of already-processed, faster tiers' hits) lets a slower
-    /// tier PRUNE the miss cells a faster tier already holds. The streaming
-    /// `covered` guard in the serve path re-establishes the same priority when
-    /// serving.
-    IntervalSet upper_hits;
-    for (auto & pv : work)
+    /// Each (tier x piece) observation becomes a 1:1 `GeometryEntry`/`PlanTier`
+    /// pair (pushed BOTH-or-NEITHER, so `geometry()->entries` and `tiers` stay
+    /// positionally aligned - `residentAt`'s entry index maps into `tiers`), in
+    /// cache-major fastest-first order. The fold's prune is applied to the held
+    /// view - the pruned cells lose their entries before `openWriteBuffers`
+    /// upgrades the survivors in place (`[CF-plan-rebuild]`) - while a bypass
+    /// tier keeps its probed miss entries untouched (never written, no fetch or
+    /// write target). Records that are neither resident nor a populatable gap
+    /// are dropped - nothing to read or write; a kept view's hit read buffers
+    /// pin the resident segments and its upgraded miss entries hold the write
+    /// buffers.
+    for (size_t ci = 0; ci < caches.size(); ++ci)
     {
-        auto & cache = caches[pv.cache_idx];
-        auto view = std::move(pv.view);
-
-        GeometryEntry geom_entry;
-        geom_entry.tier = cache->tier();
-        geom_entry.whole_cell = cache->fillsWholeCell();
-        PlanTier plan_tier;
-        plan_tier.provider = cache.get();
-
-        extractResidentRuns(*view, plan_range, geom_entry, upper_hits);
-        extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry);
-
-        /// Drop records that are neither resident nor a populatable gap — nothing to
-        /// read or write. Otherwise keep the view: its hit read buffers pin the
-        /// resident segments and its upgraded miss entries hold the write buffers.
-        if (!geom_entry.resident.empty() || !geom_entry.aligned_miss.empty())
+        for (auto & piece : pieces)
         {
+            GeometryEntry & folded = piece.folded[ci];
+            if (folded.resident.empty() && folded.aligned_miss.empty())
+                continue;
+
+            CacheViewPtr view = piece.iterator->takeView(ci);
+            if (caches[ci]->populatesOnMiss())
+            {
+                const auto & kept = folded.aligned_miss;
+                size_t k = 0;
+                for (size_t i = 0; i < view->misses().size();)
+                {
+                    const ByteRange cell = view->misses()[i].range;
+                    const bool keep = k < kept.size() && kept[k].offset == cell.offset && kept[k].size == cell.size;
+                    if (keep)
+                    {
+                        ++i;
+                        ++k;
+                    }
+                    else
+                        view->dropMiss(i);
+                }
+                chassert(k == kept.size());
+                if (!view->misses().empty())
+                    caches[ci]->openWriteBuffers(piece.object, piece.object_file_offset, *view);
+            }
+
+            PlanTier plan_tier;
+            plan_tier.provider = caches[ci].get();
             plan_tier.view = std::move(view);
-            geom->entries.push_back(std::move(geom_entry));
+            geom->entries.push_back(std::move(folded));
             plan.tiers.push_back(std::move(plan_tier));
         }
     }
@@ -2632,57 +2667,6 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         want = std::min(want, physical_end - physical_start);
     }
     return ByteRange{physical_start, want};
-}
-
-void ReaderExecutor::extractResidentRuns(
-    const CacheView & view, ByteRange plan_range,
-    GeometryEntry & geom_entry, IntervalSet & upper_hits)
-{
-    /// Each clamped run also folds into `upper_hits` - the prune input for the SLOWER
-    /// tiers that follow (the pass is cache-major, fastest first). Folding before this
-    /// tier's own miss extraction is a no-op on it: hits and misses tile the probed
-    /// range disjointly, so a non-empty miss cell is never fully covered by its own
-    /// tier's hits.
-    for (const auto & hit : view.hits())
-    {
-        /// Hits are cell-aligned and may overhang the plan span (the page tier's
-        /// block ceiling; the disk provider clamps to the probed range itself).
-        /// Clamp both edges to the span: the geometry never exceeds the probed
-        /// span - streaming never reads behind the cursor, and territory past
-        /// `plan_end` was never probed in the other tiers.
-        const size_t lo = std::max(hit.range.offset, plan_range.offset);
-        const size_t hi = std::min(hit.range.end(), plan_range.end());
-        if (lo < hi)
-        {
-            geom_entry.resident.push_back(ByteRange{lo, hi - lo});
-            upper_hits.add(ByteRange{lo, hi - lo});
-        }
-    }
-}
-
-void ReaderExecutor::extractMissesAndOpenWriters(
-    ICacheProvider & cache, CacheView & view,
-    const StoredObject & object, size_t object_file_offset,
-    const IntervalSet & upper_hits, GeometryEntry & geom_entry)
-{
-    /// A bypass tier is never written, so it has no fetch/write target.
-    if (!cache.populatesOnMiss())
-        return;
-
-    /// PRUNE any miss cell fully covered by a faster tier (`upper_hits`): the data
-    /// already lives upstream, so this tier needs no writer for it. Then UPGRADE the
-    /// survivors in place (`[CF-plan-rebuild]`): one `getOrSet` per cell, owned by
-    /// the view for the plan's life, so promotion/backfill only ever write into
-    /// already-open buffers. Cell ranges stay UNCLAMPED to the plan span (only
-    /// object-end-clamped inside the provider), so the cell extent drives both the
-    /// fetch and the over-read bound.
-    for (size_t i = view.misses().size(); i > 0; --i)
-        if (upper_hits.subtract(view.misses()[i - 1].range).empty())
-            view.dropMiss(i - 1);  /// fully covered by a faster tier
-    for (const auto & miss : view.misses())
-        geom_entry.aligned_miss.push_back(miss.range);
-    if (!view.misses().empty())
-        cache.openWriteBuffers(object, object_file_offset, view);
 }
 
 CacheWriter::CacheSegmentPin ReaderExecutor::writerPinAt(size_t frontier) const
