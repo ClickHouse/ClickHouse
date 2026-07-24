@@ -58,7 +58,8 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
 
     /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
-    auto first_column_file = getFileNameForColumn(columns.front());
+    const auto & part_columns = getColumns();
+    auto first_column_file = getFileNameForColumn(part_columns.front());
     if (first_column_file)
         preferred_order.push_back(*first_column_file + getMarksFileExtension());
 
@@ -75,7 +76,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     }
 
     /// Move all marks for the rest of columns before all data files.
-    for (auto column_it = std::next(columns.begin()); column_it != columns.end(); ++column_it)
+    for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
     {
         auto column_file = getFileNameForColumn(*column_it);
         if (column_file)
