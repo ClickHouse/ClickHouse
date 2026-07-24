@@ -16,6 +16,10 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 <Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="نظرة عامة على PrivateLink" background="white" />
 
+<Warning>
+  يدعم Azure Private Link فقط الاتصالات التي تبدأ من Azure VNet لديك إلى ClickHouse Cloud. ولا يمكن استخدامه للاتصالات التي تبدأ من ClickHouse Cloud إلى الخدمات الموجودة في VNet لديك، مثل قاعدة بيانات خاصة.
+</Warning>
+
 تدعم Azure الاتصال عبر المناطق المختلفة من خلال Private Link. يتيح لك ذلك إنشاء اتصالات بين شبكات VNet الموجودة في مناطق مختلفة نُشرت فيها خدمات ClickHouse لديك.
 
 <Note>
@@ -51,7 +55,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
   ### الخيار 1: وحدة تحكم ClickHouse Cloud
 </div>
 
-في وحدة تحكم ClickHouse Cloud، افتح الخدمة التي تريد الاتصال بها عبر PrivateLink، ثم افتح قائمة **Settings**. انقر على زر **Set up private endpoint**. دوّن `Service name` و`DNS name`، إذ سيُستخدمان عند إعداد Private Link.
+في وحدة تحكم ClickHouse Cloud، افتح الخدمة التي تريد الاتصال بها عبر PrivateLink، ثم افتح قائمة **Settings**. انقر على زر **إعداد Private Endpoint**. دوّن `Service name` و`DNS name`، إذ سيُستخدمان عند إعداد Private Link.
 
 <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="نقاط النهاية الخاصة" border />
 
@@ -109,73 +113,73 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 في هذا القسم، سننشئ Private Endpoint في Azure. يمكنك استخدام Azure Portal أو Terraform.
 
 <div id="option-1-using-azure-portal-to-create-a-private-endpoint-in-azure">
-  ### الخيار 1: استخدام Azure Portal لإنشاء Private Endpoint في Azure
+  ### الخيار 1: استخدام Azure Portal لإنشاء نقطة نهاية خاصة في Azure
 </div>
 
 في Azure Portal، افتح **Private Link Center → Private Endpoints**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="فتح Azure Private Center" border />
+<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="افتح Azure Private Center" border />
 
-افتح مربع حوار إنشاء Private Endpoint بالنقر على زر **Create**.
+افتح مربع حوار إنشاء **Private Endpoint** بالنقر على الزر **Create**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="فتح Azure Private Center" border />
+<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="افتح Azure Private Center" border />
 
 ***
 
 في الشاشة التالية، حدِّد الخيارات التالية:
 
-* **Subscription** / **Resource Group**: يُرجى اختيار اشتراك Azure ومجموعة الموارد الخاصة بـ Private Endpoint.
-* **Name**: عيِّن اسمًا لـ **Private Endpoint**.
-* **Region**: اختر المنطقة التي توجد فيها شبكة VNet المنشورة التي ستتصل بـ ClickHouse Cloud عبر Private Link.
+* **Subscription** / **Resource Group**: يُرجى اختيار اشتراك Azure ومجموعة الموارد الخاصة بـ **Private Endpoint**.
+* **Name**: عيّن اسمًا لـ **Private Endpoint**.
+* **Region**: اختر المنطقة التي توجد فيها شبكة VNet المنشورة والتي ستتصل بـ ClickHouse Cloud عبر Private Link.
 
-بعد إكمال الخطوات أعلاه، انقر على زر **Next: Resource**.
+بعد إكمال الخطوات أعلاه، انقر على الزر **Next: Resource**.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="إنشاء الإعدادات الأساسية لـ Private Endpoint" border />
+<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="إنشاء أساسيات Private Endpoint" border />
 
 ***
 
 حدِّد الخيار **Connect to an Azure resource by resource ID or alias**.
 
-بالنسبة إلى **Resource ID or alias**، استخدم `endpointServiceId` الذي حصلت عليه من خطوة [الحصول على الاسم المستعار لاتصال Azure في Private Link](#obtain-azure-connection-alias-for-private-link).
+بالنسبة إلى **Resource ID or alias**، استخدم `endpointServiceId` الذي حصلت عليه من خطوة [الحصول على الاسم المستعار لاتصال Azure لـ Private Link](#obtain-azure-connection-alias-for-private-link).
 
-انقر على زر **Next: Virtual Network**.
+انقر على الزر **Next: Virtual Network**.
 
 <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="تحديد مورد Private Endpoint" border />
 
 ***
 
 * **Virtual network**: اختر شبكة VNet التي تريد ربطها بـ ClickHouse Cloud باستخدام Private Link
-* **Subnet**: اختر الشبكة الفرعية التي سيُنشأ فيها Private Endpoint
+* **Subnet**: اختر الشبكة الفرعية التي سيتم فيها إنشاء **Private Endpoint**
 
 اختياري:
 
-* **Application security group**: يمكنك إرفاق ASG بـ Private Endpoint واستخدامه في مجموعات أمان الشبكة لتصفية حركة مرور الشبكة من Private Endpoint وإليه.
+* **Application security group**: يمكنك إرفاق ASG بـ **Private Endpoint** واستخدامه في **Network Security Groups** لتصفية حركة مرور الشبكة من وإلى **Private Endpoint**.
 
-انقر على زر **Next: DNS**.
+انقر على الزر **Next: DNS**.
 
 <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="تحديد الشبكة الظاهرية لـ Private Endpoint" border />
 
-انقر على زر **Next: Tags**.
+انقر على الزر **Next: Tags**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="تهيئة DNS لـ Private Endpoint" border />
+<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="إعداد DNS لـ Private Endpoint" border />
 
-اختياريًا، يمكنك إرفاق tags بـ Private Endpoint.
+اختياريًا، يمكنك إرفاق tags بـ **Private Endpoint**.
 
-انقر على زر **Next: Review + create**.
+انقر على الزر **Next: Review + create**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="Tags الخاصة بـ Private Endpoint" border />
+<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="علامات Private Endpoint" border />
 
-أخيرًا، انقر على زر **Create**.
+أخيرًا، انقر على الزر **Create**.
 
 <Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="مراجعة Private Endpoint" border />
 
-ستكون **Connection status** لـ Private Endpoint الذي تم إنشاؤه في حالة **Pending**. وستتغير إلى حالة **Approved** بمجرد إضافة Private Endpoint هذا إلى allow list الخاصة بالخدمة.
+ستكون **Connection status** الخاصة بـ **Private Endpoint** التي تم إنشاؤها في حالة **Pending**. وستتغير إلى حالة **Approved** بمجرد إضافة **Private Endpoint** هذه إلى allow list الخاصة بالخدمة.
 
-افتح network interface المرتبطة بـ Private Endpoint وانسخ **Private IPv4 address** ‏(10.0.0.4 في هذا المثال)، إذ ستحتاج إلى هذه المعلومة في الخطوات التالية.
+افتح **network interface** المرتبطة بـ **Private Endpoint** وانسخ **Private IPv4 address** ‏(10.0.0.4 في هذا المثال)، إذ ستحتاج إلى هذه المعلومة في الخطوات التالية.
 
 <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="عنوان IP لـ Private Endpoint" border />
 
@@ -254,7 +258,7 @@ resource "azurerm_private_dns_zone" "clickhouse_cloud_private_link_zone" {
 
 **الخيار 1: باستخدام Azure Portal**
 
-1. افتح مجموعة الموارد `MyAzureResourceGroup` وحدد المنطقة الخاصة `${region_code}.privatelink.azure.clickhouse.cloud`.
+1. افتح مجموعة الموارد `MyAzureResourceGroup` وحدد منطقة Private DNS `${region_code}.privatelink.azure.clickhouse.cloud`.
 2. حدد + Record set.
 3. في Name، اكتب `*`.
 4. في IP Address، اكتب عنوان IP الظاهر لـ Private Endpoint.

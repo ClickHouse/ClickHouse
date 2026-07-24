@@ -42,15 +42,15 @@ El tipo de consulta también determina qué panel se utiliza al visualizar los d
 
 El tipo de consulta más flexible es la consulta de tabla. Sirve como opción general para los demás constructores de consultas, diseñados para manejar consultas simples y de agregación.
 
-| Field        | Description                                                                                                                                                                                                                 |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Builder Mode | Las consultas simples excluyen Aggregates y Group By, mientras que las consultas de agregación incluyen estas opciones.                                                                                                     |
-| Columna      | Las columnas seleccionadas. En este campo se puede escribir Raw SQL para permitir funciones y alias de columnas.                                                                                                            |
+| Field        | Description                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Builder Mode | Las consultas simples excluyen Aggregates y Group By, mientras que las consultas de agregación incluyen estas opciones.                                                                                                        |
+| Columna      | Las columnas seleccionadas. En este campo se puede escribir Raw SQL para permitir funciones y alias de columnas.                                                                                                               |
 | Aggregates   | Una lista de [funciones de agregación](/es/reference/functions/aggregate-functions/index). Permite definir valores personalizados para la función y la columna. Solo es visible en el modo Aggregate.                          |
 | Group By     | Una lista de expresiones [GROUP BY](/es/reference/statements/select/group-by). Solo es visible en el modo Aggregate.                                                                                                           |
-| Order By     | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                                                 |
+| ORDER BY     | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                                                 |
 | Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá. Algunas visualizaciones pueden requerir que se establezca en `0` para mostrar todos los datos. |
-| Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                               |
+| Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                  |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Ejemplo de consulta de tabla con agregación" border />
 
@@ -100,10 +100,10 @@ El tipo de consulta de series temporales es similar a [tabla](#table), pero se c
 
 Ambas vistas son prácticamente iguales, con estas diferencias principales:
 
-* Un campo *tiempo* específico.
-* En Aggregate mode, se aplica automáticamente una macro de intervalo de tiempo junto con un Group By para el campo tiempo.
-* En Aggregate mode, el campo &quot;columna&quot; se oculta.
-* Se añaden automáticamente un filtro de rango temporal y Order By para el campo **tiempo**.
+* Un campo *Tiempo* específico.
+* En Aggregate mode, se aplica automáticamente una macro de intervalo de tiempo junto con un Group By para el campo Tiempo.
+* En Aggregate mode, el campo &quot;Columns&quot; se oculta.
+* Se añaden automáticamente un filtro de rango temporal y ORDER BY para el campo **Tiempo**.
 
 <Warning>
   **¿Faltan datos en tu visualización?**
@@ -113,16 +113,16 @@ Ambas vistas son prácticamente iguales, con estas diferencias principales:
   Prueba a eliminar la cláusula `LIMIT` estableciéndola en `0` (si tu conjunto de datos lo permite).
 </Warning>
 
-| Campo        | Descripción                                                                                                                                                                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Builder Mode | Las consultas simples excluyen Aggregates y Group By, mientras que las consultas agregadas incluyen estas opciones.                                                                                                                              |
-| Tiempo       | La columna de tiempo principal de la consulta. Mostrará tipos de datos temporales, pero también permite valores y funciones personalizados.                                                                                                      |
-| Columna      | Las columnas seleccionadas. En este campo se puede escribir Raw SQL para permitir funciones y alias de columna. Solo es visible en Simple mode.                                                                                                  |
+| Campo        | Descripción                                                                                                                                                                                                                                         |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | Las consultas simples excluyen Aggregates y Group By, mientras que las consultas de agregación incluyen estas opciones.                                                                                                                             |
+| Tiempo       | La columna de tiempo principal de la consulta. Mostrará tipos de datos temporales, pero también permite valores y funciones personalizados.                                                                                                         |
+| Columns      | Las columnas seleccionadas. En este campo se puede escribir Raw SQL para permitir funciones y alias de columna. Solo es visible en Simple mode.                                                                                                     |
 | Aggregates   | Una lista de [funciones de agregación](/es/reference/functions/aggregate-functions/index). Permite valores personalizados para la función y la columna. Solo es visible en Aggregate mode.                                                          |
 | Group By     | Una lista de expresiones [GROUP BY](/es/reference/statements/select/group-by). Solo es visible en Aggregate mode.                                                                                                                                   |
-| Order By     | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                                                                      |
+| ORDER BY     | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                                                                      |
 | Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá; esto se recomienda para algunos conjuntos de datos de series temporales a fin de mostrar la visualización completa. |
-| Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                                    |
+| Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                                       |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Consulta de series temporales de ejemplo" border />
 
@@ -158,8 +158,8 @@ El tipo de consulta de trazas admite [enlaces de datos](#data-links).
 | Duration Unit             | La unidad de tiempo utilizada para la duración. Nanosegundos de forma predeterminada. La unidad seleccionada se convertirá a un valor de coma flotante en milisegundos, tal como requiere Grafana.       |
 | Columna de Tags           | Tags del span. Exclúyela si no usas un esquema basado en OTel, ya que espera un tipo de columna Map específico.                                                                                          |
 | Columna de Service Tags   | Tags del servicio. Exclúyela si no usas un esquema basado en OTel, ya que espera un tipo de columna Map específico.                                                                                      |
-| Order By                  | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                              |
-| Limit                     | Agrega una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se excluirá, pero esto no se recomienda para conjuntos de datos de trazas grandes.     |
+| ORDER BY                  | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                           |
+| límite                    | Agrega una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se excluirá, pero esto no se recomienda para conjuntos de datos de trazas grandes.  |
 | Filtros                   | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                            |
 | Trace ID                  | El Trace ID por el que filtrar. Solo se usa en el modo Trace ID y al abrir un [enlace de datos](#data-links) de Trace ID.                                                                                |
 
@@ -168,17 +168,17 @@ El tipo de consulta de trazas admite [enlaces de datos](#data-links).
 Este tipo de consulta mostrará los datos con la vista de tabla para el modo Búsqueda de trazas y con el panel de trazas para el modo Trace ID.
 
 <div id="sql-editor">
-  ## SQL Editor
+  ## Editor SQL
 </div>
 
-Para las consultas que sean demasiado complejas para el constructor de consultas, puede usar el SQL Editor.
+Para las consultas demasiado complejas para el constructor de consultas, puede usar el SQL Editor.
 Esto le da control total sobre la consulta, ya que le permite escribir y ejecutar ClickHouse SQL directamente.
 
-El SQL Editor se puede abrir seleccionando &quot;SQL Editor&quot; en la parte superior del editor de consultas.
+El editor SQL se puede abrir seleccionando &quot;SQL Editor&quot; en la parte superior del editor de consultas.
 
 Las [funciones macro](#macros) también se pueden usar en este modo.
 
-Puede cambiar entre tipos de consulta para obtener la visualización que mejor se adapte a su consulta.
+Puede alternar entre tipos de consulta para obtener la visualización que mejor se adapte a su consulta.
 Este cambio también surte efecto en la vista de dashboard, especialmente con datos de series temporales.
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Ejemplo de consulta SQL sin formato" border />
@@ -188,7 +188,7 @@ Este cambio también surte efecto en la vista de dashboard, especialmente con da
 </div>
 
 Los [enlaces de datos](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
-de Grafana pueden usarse para enlazar con nuevas consultas.
+de Grafana pueden usarse para enlazar a nuevas consultas.
 Esta función se ha habilitado en el plugin de ClickHouse para enlazar una traza con los logs y viceversa. Funciona mejor con OpenTelemetry configurado tanto para logs como para trazas en la [configuración de la fuente de datos](/es/integrations/connectors/data-visualization/grafana/config#opentelemetry)
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
@@ -219,7 +219,7 @@ Al incluir una columna de ID de traza, los enlaces &quot;**Ver traza**&quot; y &
 
 Con los enlaces de datos disponibles, puedes abrir trazas y logs con el ID de traza proporcionado.
 
-&quot;**View Trace**&quot; abrirá un panel dividido con la traza, y &quot;**View Logs**&quot; abrirá una consulta de logs filtrada por el ID de traza.
+&quot;**Ver traza**&quot; abrirá un panel dividido con la traza, y &quot;**Ver logs**&quot; abrirá una consulta de logs filtrada por el ID de traza.
 Si se hace clic en el enlace desde un dashboard en lugar de la vista Explore, el enlace se abrirá en una pestaña nueva de la vista Explore.
 
 Es necesario tener valores predeterminados configurados tanto para [logs](/es/integrations/connectors/data-visualization/grafana/config#logs) como para [traces](/es/integrations/connectors/data-visualization/grafana/config#traces) al cambiar entre tipos de consulta (de logs a trazas y de trazas a logs). Los valores predeterminados no son necesarios al abrir un enlace del mismo tipo de consulta, ya que basta con copiar la consulta.
