@@ -9,10 +9,12 @@ keywords: ['Kafka', 'محرك جدول']
 doc_type: 'guide'
 ---
 
+{/*مُنشأ تلقائيًا_START*/}
+
 import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <Tip>
-  إذا كنت تستخدم ClickHouse Cloud، فنوصي باستخدام [ClickPipes](/ar/integrations/clickpipes/home) بدلاً منه. يوفّر ClickPipes دعماً أصيلاً للاتصالات عبر الشبكات الخاصة، مع إمكانية توسيع نطاق إدخال البيانات وموارد المجموعة بشكل مستقل، إلى جانب مراقبة شاملة لبثّ بيانات Kafka إلى ClickHouse.
+  إذا كنت تستخدم ClickHouse Cloud، فنوصي باستخدام [ClickPipes](/ar/integrations/clickpipes/home) بدلاً منه. يوفّر ClickPipes دعماً أصيلاً للاتصالات عبر الشبكات الخاصة، مع إمكانية توسيع نطاق إدخال البيانات وموارد العنقود بشكل مستقل، إلى جانب مراقبة شاملة لبثّ بيانات Kafka إلى ClickHouse.
 </Tip>
 
 * نشر تدفقات البيانات أو الاشتراك فيها.
@@ -69,7 +71,8 @@ SETTINGS
 المعلمات الاختيارية:
 
 * `kafka_security_protocol` - البروتوكول المستخدم للتواصل مع الوسطاء. القيم الممكنة: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-* `kafka_sasl_mechanism` - آلية SASL المستخدمة للمصادقة. القيم الممكنة: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - آلية SASL المستخدمة للمصادقة. القيم الممكنة: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - منطقة AWS لمصادقة MSK IAM. تُكتشَف تلقائيًا من عنوان الـ broker إذا لم يتم تحديدها. حدِّدها صراحةً عند استخدام الأسماء المستعارة لـ PrivateLink أو أسماء مضيفات DNS مخصّصة لا تتضمن معلومات المنطقة. القيمة الافتراضية: فارغة (اكتشاف تلقائي).
 * `kafka_sasl_username` - اسم مستخدم SASL للاستخدام مع الآليتين `PLAIN` و `SASL-SCRAM-..`.
 * `kafka_sasl_password` - كلمة مرور SASL للاستخدام مع الآليتين `PLAIN` و `SASL-SCRAM-..`.
 * `kafka_schema` — معلمة يجب استخدامها إذا كانت الصيغة تتطلب تعريف مخطط. على سبيل المثال، يتطلب [Cap&#39;n Proto](https://capnproto.org/) مسار ملف المخطط واسم الكائن الجذر `schema.capnp:Message`.
@@ -105,7 +108,7 @@ SETTINGS
 أمثلة:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
@@ -113,7 +116,7 @@ SETTINGS
 
   SELECT * FROM queue LIMIT 5;
 
-  CREATE TABLE queue2 (
+CREATE TABLE queue2 (
     timestamp UInt64,
     level String,
     message String
@@ -123,7 +126,7 @@ SETTINGS
                             kafka_format = 'JSONEachRow',
                             kafka_num_consumers = 4;
 
-  CREATE TABLE queue3 (
+CREATE TABLE queue3 (
     timestamp UInt64,
     level String,
     message String
@@ -141,7 +144,7 @@ SETTINGS
 
   ```sql
   Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-        [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+        [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size, kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
   ```
 </details>
 
@@ -168,20 +171,28 @@ SETTINGS
 عندما ينضم `MATERIALIZED VIEW` إلى الـ محرك، يبدأ في جمع البيانات في الخلفية. يتيح لك ذلك الاستمرار في تلقي الرسائل من Kafka وتحويلها إلى الـ تنسيق المطلوب باستخدام `SELECT`.
 يمكن لجدول Kafka واحد أن يحتوي على أي عدد تريده من العرض المادي. وهي لا تقرأ البيانات من جدول Kafka مباشرةً، بل تتلقى سجلات جديدة (على هيئة blocks). وبهذه الطريقة يمكنك الكتابة إلى عدة جداول بمستويات مختلفة من التفصيل (مع التجميع - aggregation أو بدونه).
 
-مثال:
+مثال، باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections) لتخزين معلمات الاتصال:
 
 ```sql
+  CREATE NAMED COLLECTION kafka_creds AS
+    kafka_broker_list = 'localhost:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group1',
+    kafka_format = 'JSONEachRow';
+
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
+  ) ENGINE = Kafka(kafka_creds);
 
   CREATE TABLE daily (
     day Date,
     level String,
     total UInt64
-  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+  ) ENGINE = SummingMergeTree
+  PARTITION BY toYYYYMM(day)
+  ORDER BY (day, level);
 
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
@@ -195,8 +206,8 @@ SETTINGS
 لإيقاف تلقي بيانات الـ موضوع أو لتغيير منطق التحويل، افصل العرض المادي:
 
 ```sql
-  DETACH TABLE consumer;
-  ATTACH TABLE consumer;
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
 ```
 
 إذا كنت تريد تغيير الجدول الهدف باستخدام `ALTER`، فنوصي بتعطيل العرض المادي لتجنب حدوث أي تعارض بين الجدول الهدف والبيانات التي ينتجها العرض.
@@ -208,7 +219,7 @@ SETTINGS
 على غرار GraphiteMergeTree، يدعم محرك Kafka التهيئة الموسَّعة باستخدام ملف إعدادات ClickHouse. هناك مفتاحا تهيئة يمكنك استخدامهما: مفتاح عام (ضمن `<kafka>`) ومفتاح على مستوى الـموضوع (ضمن `<kafka><kafka_topic>`). تُطبَّق التهيئة العامة أولًا، ثم تُطبَّق التهيئة على مستوى الـموضوع (إن وُجدت).
 
 ```xml
-  <kafka>
+<kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <statistics_interval_ms>3000</statistics_interval_ms>
@@ -244,10 +255,120 @@ SETTINGS
             <retry_backoff_ms>400</retry_backoff_ms>
         </kafka_topic>
     </producer>
-  </kafka>
+</kafka>
 ```
 
 للاطلاع على قائمة بخيارات التهيئة المتاحة، راجع [مرجع تكوين librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). استخدم الشرطة السفلية (`_`) بدلًا من النقطة في تكوين ClickHouse. على سبيل المثال، ستُكتب `check.crcs=true` على النحو التالي: `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-aws-msk-iam">
+  ### مصادقة AWS MSK IAM
+</div>
+
+<Note>
+  تتطلب مصادقة AWS MSK IAM أن يكون ClickHouse مبنيًا مع تفعيل دعم AWS S3.
+</Note>
+
+يدعم AWS MSK المصادقة المستندة إلى IAM، مما يتيح الاتصال بعناقيد Kafka باستخدام بيانات اعتماد AWS بدلًا من إدارة أسماء مستخدمين وكلمات مرور منفصلة.
+
+**الإعداد الأساسي:**
+
+عيّن `kafka_sasl_mechanism = 'AWS_MSK_IAM'` في إعدادات الجدول:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+تُستخرج منطقة AWS تلقائيًا من نقطة نهاية الوسيط باستخدام مطابقة الأنماط:
+
+* MSK المُوفَّر: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* MSK Serverless: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC Endpoint: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**بيانات اعتماد AWS:**
+
+تُحمَّل بيانات الاعتماد دائمًا من `~/.aws/credentials` و`~/.aws/config` (ملفات التعريف الخاصة بـ AWS) عند توفّرها. ولتمكين ملفات تعريف مثيلات EC2 أيضًا، ومتغيرات البيئة (`AWS_ACCESS_KEY_ID`، وغيرها)، وأدوار مهام ECS، وغيرها من مصادر بيانات الاعتماد التلقائية، أضِف ما يلي إلى تهيئة الخادم لديك:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+لا يمكن تهيئة هذا الإعداد إلا من قِبل مسؤولي الخادم. القيمة الافتراضية: `false`.
+
+**PrivateLink وDNS المخصّص:**
+
+عند استخدام الأسماء المستعارة لـ PrivateLink أو أسماء مضيف DNS مخصّصة لا تتضمّن معلومات المنطقة، حدِّد منطقة AWS صراحةً:
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**أذونات IAM:**
+
+أذونات المستهلك (لقراءة الرسائل):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+أذونات المُنتِج (لكتابة الرسائل):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### دعم Kerberos
@@ -261,9 +382,9 @@ SETTINGS
 ```xml
 <!-- Kerberos-aware Kafka -->
 <kafka>
-  <security_protocol>SASL_PLAINTEXT</security_protocol>
-  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+<security_protocol>SASL_PLAINTEXT</security_protocol>
+<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
 </kafka>
 ```
 
@@ -355,8 +476,8 @@ INSERT INTO kafka_out VALUES
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
-  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
-  kafka_replica_name = '{replica}'
+kafka_keeper_path = '/clickhouse/{database}/{uuid}',
+kafka_replica_name = '{replica}'
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 
@@ -374,3 +495,5 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 * [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/ar/reference/system-tables/kafka_consumers)
+
+{/*AUTOGENERATED_END*/}

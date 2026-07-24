@@ -8,10 +8,6 @@ doc_type: 'reference'
 
 import DeprecatedBadge from "/snippets/ko/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
-<div id="functions-for-working-with-uuids">
-  # UUID를 처리하는 함수
-</div>
-
 <div id="uuidv7-generation">
   ## UUIDv7 생성
 </div>
@@ -266,53 +262,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<div id="dateTime64ToSnowflake">
-  ## dateTime64ToSnowflake
-</div>
-
-도입 버전: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  이 함수는 더 이상 사용이 권장되지 않으며, 설정 [`allow_deprecated_snowflake_conversion_functions`](/ko/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions)이 활성화된 경우에만 사용할 수 있습니다.
-  이 함수는 향후 제거될 예정입니다.
-
-  대신 [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID) 함수를 사용하십시오.
-</Warning>
-
-[DateTime64](/ko/reference/data-types/datetime64)를 지정된 시각에 해당하는 첫 번째 [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID)로 변환합니다.
-
-**구문**
-
-```sql
-dateTime64ToSnowflake(value)
-```
-
-**인수**
-
-* `value` — 시간이 포함된 날짜 및 시간 값입니다. [`DateTime64`](/ko/reference/data-types/datetime64)
-
-**반환 값**
-
-입력 값을 해당 시점의 첫 번째 Snowflake ID로 변환한 값을 반환합니다. [`Int64`](/ko/reference/data-types/int-uint)
-
-**예시**
-
-**사용 예시**
-
-```sql title=Query
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-```response title=Response
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dateTime64ToSnowflakeID">
@@ -348,51 +299,6 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 
 ```response title=Response
 6832626394434895872
-```
-
-<div id="dateTimeToSnowflake">
-  ## dateTimeToSnowflake
-</div>
-
-도입 버전: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  이 함수는 더 이상 사용이 권장되지 않으며, 설정 [`allow_deprecated_snowflake_conversion_functions`](/ko/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions)이 활성화된 경우에만 사용할 수 있습니다.
-  이 함수는 향후 어느 시점에 제거될 예정입니다.
-
-  대신 [dateTimeToSnowflakeID](#dateTimeToSnowflakeID) 함수를 사용하십시오.
-</Warning>
-
-[DateTime](/ko/reference/data-types/datetime) 값을 지정된 시점의 첫 번째 [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID)로 변환합니다.
-
-**구문**
-
-```sql
-dateTimeToSnowflake(value)
-```
-
-**인수**
-
-* `value` — 날짜 및 시간. [`DateTime`](/ko/reference/data-types/datetime)
-
-**반환 값**
-
-입력 값을 해당 시점의 첫 번째 Snowflake ID로 반환합니다. [`Int64`](/ko/reference/data-types/int-uint)
-
-**예시**
-
-**사용 예시**
-
-```sql title=Query
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-```response title=Response
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -444,6 +350,10 @@ UUID 구조, 카운터 관리, 동시성 보장에 대한 자세한 내용은 [&
   2025년 9월 기준으로 버전 7 UUID는 초안 상태이며, 향후 내부 레이아웃이 변경될 수 있습니다.
 </Note>
 
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -468,8 +378,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **동일한 타임스탬프에 여러 UUID**
@@ -498,7 +408,11 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 
 함수 `generateSnowflakeID`는 동시에 실행되는 모든 스레드와 쿼리 전반에서 함수가 호출될 때마다 타임스탬프 내 카운터 필드가 단조 증가하도록 보장합니다.
 
-구현 세부 사항은 [&quot;Snowflake ID generation&quot;](#snowflake-id-generation) 섹션을 참조하십시오.
+구현 세부 사항은 [&quot;Snowflake ID 생성&quot;](#snowflake-id-generation) 섹션을 참조하십시오.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -566,6 +480,10 @@ SELECT generateSnowflakeID('expr', 1);
 
 [버전 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](/ko/reference/data-types/uuid)를 생성합니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -620,6 +538,10 @@ UUID 구조, 카운터 관리, 동시성 보장에 관한 자세한 내용은 [&
 
 <Note>
   2025년 9월 기준으로 버전 7 UUID는 초안 상태이며, 향후 레이아웃이 변경될 수 있습니다.
+</Note>
+
+<Note>
+  이 함수는 비결정적입니다. 즉, 같은 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
 </Note>
 
 **구문**
@@ -740,98 +662,6 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 └─────────────────────┘
 ```
 
-<div id="snowflakeToDateTime">
-  ## snowflakeToDateTime
-</div>
-
-도입 버전: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  이 함수는 더 이상 권장되지 않으며, 설정 [`allow_deprecated_snowflake_conversion_functions`](/ko/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions)이 활성화된 경우에만 사용할 수 있습니다.
-  이 함수는 향후 제거될 예정입니다.
-
-  대신 [`snowflakeIDToDateTime`](#snowflakeIDToDateTime) 함수를 사용하십시오.
-</Warning>
-
-[Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID)에서 타임스탬프 구성 요소를 [DateTime](/ko/reference/data-types/datetime) 형식으로 추출합니다.
-
-**구문**
-
-```sql
-snowflakeToDateTime(value[, time_zone])
-```
-
-**인수**
-
-* `value` — Snowflake ID. [`Int64`](/ko/reference/data-types/int-uint)
-* `time_zone` — 선택 사항입니다. [시간대](/ko/reference/settings/server-settings/settings#timezone). 함수는 `time_string`을 해당 시간대에 따라 파싱합니다. [`String`](/ko/reference/data-types/string)
-
-**반환 값**
-
-`value`의 타임스탬프 구성 요소를 반환합니다. [`DateTime`](/ko/reference/data-types/datetime)
-
-**예시**
-
-**사용 예시**
-
-```sql title=Query
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-<div id="snowflakeToDateTime64">
-  ## snowflakeToDateTime64
-</div>
-
-도입 버전: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  이 함수는 지원 중단되었으며, 설정 [`allow_deprecated_snowflake_conversion_functions`](/ko/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions)이 활성화된 경우에만 사용할 수 있습니다.
-  이 함수는 향후 어느 시점에 제거될 수 있습니다.
-
-  대신 [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64) 함수를 사용하십시오.
-</Warning>
-
-[Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID)의 타임스탬프 부분을 [DateTime64](/ko/reference/data-types/datetime64) 포맷으로 추출합니다.
-
-**구문**
-
-```sql
-snowflakeToDateTime64(value[, time_zone])
-```
-
-**인수**
-
-* `value` — Snowflake ID. [`Int64`](/ko/reference/data-types/int-uint)
-* `time_zone` — 선택 사항입니다. [시간대](/ko/reference/settings/server-settings/settings#timezone)입니다. 함수는 `time_string`을 해당 시간대에 따라 해석합니다. [`String`](/ko/reference/data-types/string)
-
-**반환 값**
-
-`value`의 타임스탬프 구성 요소를 반환합니다. [`DateTime64(3)`](/ko/reference/data-types/datetime64)
-
-**예시**
-
-**사용 예시**
-
-```sql title=Query
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
 <div id="toUUIDOrDefault">
   ## toUUIDOrDefault
 </div>
@@ -867,8 +697,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **변환이 실패하면 기본 UUID를 반환합니다**
@@ -879,8 +709,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrNull">

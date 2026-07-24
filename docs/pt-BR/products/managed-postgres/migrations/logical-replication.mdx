@@ -133,7 +133,7 @@ CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
   ### Crie uma assinatura no banco de dados ClickHouse Managed Postgres de destino
 </div>
 
-Em seguida, conecte-se ao seu banco de dados ClickHouse Managed Postgres de destino e crie uma assinatura que se conecte à publication no banco de dados de origem.
+Em seguida, conecte-se ao seu banco de dados ClickHouse Managed Postgres de destino e crie uma assinatura que se conecte à publicação no banco de dados de origem.
 
 ```sql
 CREATE SUBSCRIPTION demo_rds_subscription
@@ -141,7 +141,7 @@ CONNECTION 'postgresql://<user>:<password>@<host>:<port>/<database>'
 PUBLICATION <pub_name_you_entered_above>;
 ```
 
-Isso criará automaticamente um replication slot no banco de dados de origem e iniciará a replicação dos dados das tabelas especificadas para o banco de dados de destino. Dependendo do volume de dados, esse processo pode levar algum tempo.
+Isso criará automaticamente um slot de replicação no banco de dados de origem e iniciará a replicação dos dados das tabelas especificadas para o banco de dados de destino. Dependendo do volume de dados, esse processo pode levar algum tempo.
 
 No nosso caso, após configurar a assinatura, os dados começaram a fluir:
 
@@ -159,9 +159,9 @@ As novas linhas inseridas no banco de dados de origem agora serão replicadas pa
 * Dependendo do seu caso de uso, talvez você queira configurar monitoramento e alertas para o processo de replicação.
 
 <div id="migration-pgdump-pg-restore-next-steps">
-  ## Próximas etapas
+  ## Próximos passos
 </div>
 
-Parabéns! Você migrou com sucesso seu banco de dados PostgreSQL para o ClickHouse Managed Postgres usando `pg_dump` e `pg_restore`. Agora, está tudo pronto para explorar os recursos do Managed Postgres e sua integração com o ClickHouse. Aqui está um guia de início rápido de 10 minutos para ajudar você a começar:
+Parabéns! Você migrou com sucesso seu banco de dados PostgreSQL para o ClickHouse Managed Postgres usando `pg_dump` e `pg_restore`. Agora, você já pode explorar os recursos do Managed Postgres e sua integração com o ClickHouse. Aqui está um guia de início rápido de 10 minutos para ajudar você a começar:
 
 * [Guia de início rápido do Managed Postgres](/pt-BR/products/managed-postgres/quickstart)

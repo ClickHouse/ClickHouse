@@ -35,15 +35,11 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 </div>
 
 <Steps>
-  <Step>
-    ### 收集 ClickHouse 连接详细信息
-
+  <Step title="收集 ClickHouse 连接详细信息" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ### Apify 前置条件
-
+  <Step title="Apify 前置条件" id="2-apify-prerequisites">
     你还需要：
 
     * 一个 [Apify 账户](https://console.apify.com/sign-up) (提供免费层级) 。
@@ -51,23 +47,19 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
     * 在本地安装 Node.js 18+ (用于 JavaScript 示例) 。
   </Step>
 
-  <Step>
-    ### 安装依赖
-
-    安装 Apify JavaScript client 和 ClickHouse JavaScript 客户端：
+  <Step title="安装依赖" id="3-install-dependencies">
+    安装 Apify JavaScript 客户端 和 ClickHouse JavaScript 客户端：
 
     ```bash
     npm install apify-client @clickhouse/client
     ```
 
     <Note>
-      Apify 还提供 [Python client](https://docs.apify.com/api/client/python)。如果你更习惯使用 Python，请通过 pip 安装 `apify-client`，并使用 [clickhouse-connect](/zh/integrations/language-clients/python/index) 连接 ClickHouse。
+      Apify 还提供 [Python 客户端](https://docs.apify.com/api/client/python)。如果你更习惯使用 Python，请通过 pip 安装 `apify-client`，并使用 [clickhouse-connect](/zh/integrations/language-clients/python/index) 连接 ClickHouse。
     </Note>
   </Step>
 
-  <Step>
-    ### 在 ClickHouse 中创建目标表
-
+  <Step title="在 ClickHouse 中创建目标表" id="4-create-a-target-table">
     创建一个用于存放抓取数据的表。schema 取决于你使用的 Actor。下面的示例针对一个产品抓取 Actor 使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)：
 
     ```sql
@@ -84,9 +76,7 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
     ```
   </Step>
 
-  <Step>
-    ### 拉取 Apify dataset 并加载到 ClickHouse
-
+  <Step title="拉取 Apify dataset 并加载到 ClickHouse" id="5-fetch-and-load">
     以下脚本会拉取一次 Apify Actor 运行的结果，并将其插入 ClickHouse：
 
     ```javascript
@@ -124,9 +114,7 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
     </Tip>
   </Step>
 
-  <Step>
-    ### 使用 webhooks 实现自动化
-
+  <Step title="使用 webhooks 实现自动化" id="6-automate-with-webhooks">
     与其手动运行脚本，不如将该管道自动化，这样每次 Actor 完成时，数据都会自动加载到 ClickHouse：
 
     1. 在 [Apify Console](https://console.apify.com/) 中，进入你的 Actor 并打开 **Integrations** 选项卡。
@@ -163,7 +151,7 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
   ### 性能
 </div>
 
-对于通过 JavaScript 客户端进行的高吞吐量插入，请参阅[性能优化建议](/zh/integrations/language-clients/js#tips-for-performance-optimizations)。应将多行数据合并为较大的批次插入，而不要一次只插入一行；如果不适合在客户端进行批处理，可考虑使用[异步插入](/zh/concepts/features/operations/insert/asyncinserts)。
+对于通过 JavaScript 客户端进行的高吞吐量插入，请参阅[性能优化建议](/zh/integrations/language-clients/js/index#tips-for-performance-optimizations)。应将多行数据合并为较大的批次插入，而不要一次只插入一行；如果不适合在客户端进行批处理，可考虑使用[异步插入](/zh/concepts/features/operations/insert/asyncinserts)。
 
 <div id="security">
   ### 安全
@@ -179,6 +167,6 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 * [Apify API 参考文档](https://docs.apify.com/api/v2)
 * [Apify JavaScript 客户端](https://docs.apify.com/api/client/js)
 * [Apify Python 客户端](https://docs.apify.com/api/client/python)
-* [Apify Store (现成的 Actors) ](https://apify.com/store)
+* [Apify Store (现成的 Actors)](https://apify.com/store)
 * [Apify 集成概览](https://docs.apify.com/platform/integrations)
-* [ClickHouse JavaScript 客户端](/zh/integrations/language-clients/js)
+* [ClickHouse JavaScript 客户端](/zh/integrations/language-clients/js/index)
