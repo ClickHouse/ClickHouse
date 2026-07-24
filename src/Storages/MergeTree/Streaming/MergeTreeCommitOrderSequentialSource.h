@@ -31,8 +31,7 @@ public:
         Names user_requested_columns_,
         size_t requested_num_streams_,
         UInt64 max_block_size_,
-        MergeTreeBoundsSubscriptionPtr subscription_,
-        MergeTreeCursor starting_positions_);
+        MergeTreeBoundsSubscriptionPtr subscription_);
 
     String getName() const override { return "MergeTreeCommitOrderSequentialSource"; }
 
@@ -57,7 +56,7 @@ private:
     const LoggerPtr log;
 
     /// Runtime information
-    MergeTreeCursor last_emitted_positions;
+    std::map<String, PartitionCursor> last_emitted_positions;
 
     Processors current_sub_pipeline;
     std::unique_ptr<QueryPlanResourceHolder> current_resources;
