@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -74,7 +75,21 @@ void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_c
             ordered_columns.push_back(pk_col->column);
         }
         else
-            ordered_columns.push_back(col.type->createColumnConstWithDefaultValue(1));
+        {
+            /// A default-valued constant cannot be built for columns that hold no
+            /// data (e.g. the ColumnSet placeholder of an IN predicate that
+            /// INTERPOLATE keeps alive in the header): IColumnDummy::insert throws.
+            /// The virtual row's non-sort-key columns are never read, so reuse the
+            /// header's own placeholder resized to one row.
+            const IColumn * nested = col.column.get();
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(nested))
+                nested = &col_const->getDataColumn();
+
+            if (nested && nested->isDummy())
+                ordered_columns.push_back(col.column->cloneResized(1));
+            else
+                ordered_columns.push_back(col.type->createColumnConstWithDefaultValue(1));
+        }
     }
 
     chunk.setColumns(ordered_columns, 1);
