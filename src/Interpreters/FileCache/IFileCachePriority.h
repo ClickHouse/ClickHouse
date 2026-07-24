@@ -28,23 +28,53 @@ struct CacheUsageStatGuard;
 struct CacheUsage;
 using CacheUsagePtr = std::shared_ptr<CacheUsage>;
 
+struct FileCacheUsageStat
+{
+    size_t size = 0;
+    size_t elements = 0;
+    /// Client weight for proportional cache sharing (0 if not set).
+    UInt64 weight = 0;
+};
+
 struct FileCacheUsageCounters
 {
     std::atomic<size_t> size = 0;
     std::atomic<size_t> elements = 0;
+    std::atomic<size_t> entry_references = 0;
+    std::atomic<bool> valid = true;
 
     void add(size_t size_delta, size_t elements_delta) noexcept;
     void sub(size_t size_delta, size_t elements_delta) noexcept;
 };
 
+class FileCacheUsageCountersHandle
+{
+public:
+    FileCacheUsageCountersHandle() = default;
+    FileCacheUsageCountersHandle(const FileCacheUsageCountersHandle & other) noexcept;
+    FileCacheUsageCountersHandle(FileCacheUsageCountersHandle && other) noexcept;
+    FileCacheUsageCountersHandle & operator=(const FileCacheUsageCountersHandle &) = delete;
+    FileCacheUsageCountersHandle & operator=(FileCacheUsageCountersHandle &&) = delete;
+    ~FileCacheUsageCountersHandle();
+
+    explicit operator bool() const { return counters != nullptr; }
+    FileCacheUsageCounters * operator->() const { return counters; }
+
+private:
+    friend class FileCacheUsageTracker;
+    explicit FileCacheUsageCountersHandle(FileCacheUsageCounters * counters_) noexcept;
+
+    FileCacheUsageCounters * counters = nullptr;
+};
+
 class FileCacheUsageTracker
 {
 public:
-    FileCacheUsageCounters * getOrSet(const String & user_id);
-    std::unordered_map<String, std::pair<size_t, size_t>> snapshot() const;
+    FileCacheUsageCountersHandle getOrCreate(const String & user_id);
+    std::unordered_map<String, FileCacheUsageStat> snapshot();
 
 private:
-    mutable std::mutex mutex;
+    std::mutex mutex;
     std::unordered_map<String, std::unique_ptr<FileCacheUsageCounters>> usage_by_user;
 };
 using FileCacheUsageTrackerPtr = std::shared_ptr<FileCacheUsageTracker>;
@@ -88,9 +118,8 @@ public:
         const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        /// Non-owning pointer into `FileCacheUsageTracker`. The tracker never erases counters
-        /// and is retained by the priority until after its entries are destroyed.
-        FileCacheUsageCounters * const usage_counters;
+        /// Retains the corresponding counters while this entry can update them.
+        const FileCacheUsageCountersHandle usage_counters;
 
         std::string toString(const std::string & prefix = "") const;
 
@@ -126,14 +155,8 @@ public:
             size_t offset_,
             size_t size_,
             KeyMetadataPtr key_metadata_,
-            FileCacheUsageCounters * usage_counters_ = nullptr,
+            FileCacheUsageCountersHandle usage_counters_ = {},
             State initial_state = State::Active);
-        Entry(
-            const Key & key_,
-            size_t offset_,
-            size_t size_,
-            KeyMetadataPtr key_metadata_,
-            State initial_state);
         Entry(const Entry & other);
 
         State getState() const { return state.load(); }
@@ -425,13 +448,7 @@ public:
     /// lock. Returns the number of pending entries removed. Driven by FileCache's cleanup task.
     virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
-    struct UsageStat
-    {
-        size_t size = 0;
-        size_t elements = 0;
-        /// Client weight for proportional cache sharing (0 if not set).
-        UInt64 weight = 0;
-    };
+    using UsageStat = FileCacheUsageStat;
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
     class HoldSpace;
@@ -525,11 +542,11 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    FileCacheUsageCounters * getOrSetUsageCounters(const UserID & user_id) const
+    FileCacheUsageCountersHandle getOrCreateUsageCounters(const UserID & user_id) const
     {
         if (queue_type != QueueType::Main || !usage_tracker)
-            return nullptr;
-        return usage_tracker->getOrSet(user_id);
+            return {};
+        return usage_tracker->getOrCreate(user_id);
     }
 
     static void addTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)

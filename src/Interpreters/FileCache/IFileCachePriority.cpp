@@ -14,41 +14,97 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+bool checkedSub(std::atomic<size_t> & value, size_t delta) noexcept
+{
+    size_t current = value.load(std::memory_order_relaxed);
+    while (current >= delta)
+    {
+        if (value.compare_exchange_weak(current, current - delta, std::memory_order_relaxed))
+            return true;
+    }
+    return false;
+}
+}
+
 void FileCacheUsageCounters::add(size_t size_delta, size_t elements_delta) noexcept
 {
+    if (!valid.load(std::memory_order_acquire))
+        return;
+
     size.fetch_add(size_delta, std::memory_order_relaxed);
     elements.fetch_add(elements_delta, std::memory_order_relaxed);
 }
 
 void FileCacheUsageCounters::sub(size_t size_delta, size_t elements_delta) noexcept
 {
-    const size_t previous_size = size.fetch_sub(size_delta, std::memory_order_relaxed);
-    const size_t previous_elements = elements.fetch_sub(elements_delta, std::memory_order_relaxed);
-    chassert(previous_size >= size_delta);
-    chassert(previous_elements >= elements_delta);
+    if (!valid.load(std::memory_order_acquire))
+        return;
+
+    if (!checkedSub(size, size_delta) || !checkedSub(elements, elements_delta))
+        valid.store(false, std::memory_order_release);
 }
 
-FileCacheUsageCounters * FileCacheUsageTracker::getOrSet(const String & user_id)
+FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(FileCacheUsageCounters * counters_) noexcept
+    : counters(counters_)
+{
+    counters->entry_references.fetch_add(1, std::memory_order_relaxed);
+}
+
+FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(const FileCacheUsageCountersHandle & other) noexcept
+    : counters(other.counters)
+{
+    if (counters)
+        counters->entry_references.fetch_add(1, std::memory_order_relaxed);
+}
+
+FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(FileCacheUsageCountersHandle && other) noexcept
+    : counters(other.counters)
+{
+    other.counters = nullptr;
+}
+
+FileCacheUsageCountersHandle::~FileCacheUsageCountersHandle()
+{
+    if (counters)
+        counters->entry_references.fetch_sub(1, std::memory_order_release);
+}
+
+FileCacheUsageCountersHandle FileCacheUsageTracker::getOrCreate(const String & user_id)
 {
     std::lock_guard lock(mutex);
     auto [it, inserted] = usage_by_user.try_emplace(user_id);
     if (inserted)
         it->second = std::make_unique<FileCacheUsageCounters>();
-    return it->second.get();
+    return FileCacheUsageCountersHandle(it->second.get());
 }
 
-std::unordered_map<String, std::pair<size_t, size_t>> FileCacheUsageTracker::snapshot() const
+std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
 {
     std::lock_guard lock(mutex);
-    std::unordered_map<String, std::pair<size_t, size_t>> result;
+    std::unordered_map<String, FileCacheUsageStat> result;
     result.reserve(usage_by_user.size());
-    for (const auto & [user_id, usage] : usage_by_user)
+    for (auto it = usage_by_user.begin(); it != usage_by_user.end();)
     {
-        result.emplace(
-            user_id,
-            std::pair{
-                usage->size.load(std::memory_order_relaxed),
-                usage->elements.load(std::memory_order_relaxed)});
+        const auto & [user_id, usage] = *it;
+        if (!usage->valid.load(std::memory_order_acquire))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
+
+        const size_t size = usage->size.load(std::memory_order_relaxed);
+        const size_t elements = usage->elements.load(std::memory_order_relaxed);
+        const size_t entry_references = usage->entry_references.load(std::memory_order_acquire);
+        if (entry_references == 0)
+        {
+            if (size != 0 || elements != 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
+
+            it = usage_by_user.erase(it);
+            continue;
+        }
+
+        result.emplace(user_id, FileCacheUsageStat{.size = size, .elements = elements});
+        ++it;
     }
     return result;
 }
@@ -63,24 +119,14 @@ IFileCachePriority::Entry::Entry(
     size_t offset_,
     size_t size_,
     KeyMetadataPtr key_metadata_,
-    FileCacheUsageCounters * usage_counters_,
+    FileCacheUsageCountersHandle usage_counters_,
     State initial_state)
     : key(key_)
     , offset(offset_)
     , key_metadata(key_metadata_)
     , size(size_)
-    , usage_counters(usage_counters_)
+    , usage_counters(std::move(usage_counters_))
     , state(initial_state)
-{
-}
-
-IFileCachePriority::Entry::Entry(
-    const Key & key_,
-    size_t offset_,
-    size_t size_,
-    KeyMetadataPtr key_metadata_,
-    State initial_state)
-    : Entry(key_, offset_, size_, std::move(key_metadata_), nullptr, initial_state)
 {
 }
 
@@ -125,11 +171,7 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
 {
     if (!usage_tracker)
         return {};
-
-    std::unordered_map<std::string, UsageStat> result;
-    for (const auto & [user_id, usage] : usage_tracker->snapshot())
-        result.emplace(user_id, UsageStat{.size = usage.first, .elements = usage.second});
-    return result;
+    return usage_tracker->snapshot();
 }
 
 void IFileCachePriority::removeEntries(

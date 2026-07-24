@@ -127,7 +127,7 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
             offset,
             size,
             key_metadata,
-            getOrSetUsageCounters(key_metadata->origin->user_id)),
+            getOrCreateUsageCounters(key_metadata->origin->user_id)),
         lock,
         state_lock));
 }

@@ -87,6 +87,13 @@ def test_filesystem_cache_usage_metrics(start_cluster):
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
     assert metric_value("filesystem_cache_size_bytes") == 0
     assert metric_value("filesystem_cache_elements") == 0
+    remaining_series = int(node.query(
+        f"SELECT count() "
+        f"FROM system.dimensional_metrics "
+        f"WHERE metric IN ('filesystem_cache_size_bytes', 'filesystem_cache_elements') "
+        f"AND labels['cache_name'] = '{CACHE_NAME}'"
+    ).strip())
+    assert remaining_series == 0
 
 
 SHARED_ALIAS_A = "shared_alias_a"

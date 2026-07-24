@@ -3257,6 +3257,36 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
     ASSERT_EQ(get_usage(split_priority, user_a.user_id).elements, 0);
 }
 
+TEST_F(FileCacheTest, UsageTrackerReclaimsInactiveUsers)
+{
+    FileCacheUsageTracker tracker;
+
+    {
+        auto counters = tracker.getOrCreate("active_zero_size_user");
+        auto usage = tracker.snapshot();
+        ASSERT_TRUE(usage.contains("active_zero_size_user"));
+        EXPECT_EQ(usage.at("active_zero_size_user").size, 0);
+        EXPECT_EQ(usage.at("active_zero_size_user").elements, 0);
+
+        counters->add(10, 1);
+        counters->sub(10, 1);
+    }
+
+    EXPECT_TRUE(tracker.snapshot().empty());
+}
+
+TEST_F(FileCacheTest, UsageTrackerDetectsUnderflow)
+{
+    FileCacheUsageTracker tracker;
+    auto counters = tracker.getOrCreate("underflow_user");
+    counters->add(10, 1);
+    counters->sub(11, 1);
+
+    EXPECT_EQ(counters->size.load(std::memory_order_relaxed), 10);
+    EXPECT_EQ(counters->elements.load(std::memory_order_relaxed), 1);
+    EXPECT_THROW(tracker.snapshot(), DB::Exception);
+}
+
 TEST_F(FileCacheTest, SLRUDowngradeMetric)
 {
     ServerUUID::setRandomForUnitTests();

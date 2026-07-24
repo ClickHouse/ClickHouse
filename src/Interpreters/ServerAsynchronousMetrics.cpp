@@ -229,10 +229,9 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             {
                 for (const auto & [user_id, usage] : cache->getUsageStatPerClient())
                 {
-                    const auto labels = FilesystemCacheUsageLabels{cache->getName(), user_id};
-                    current_usage_labels.insert(labels);
-                    filesystem_cache_size_bytes.withLabels({labels.first, labels.second}).set(usage.size);
-                    filesystem_cache_elements.withLabels({labels.first, labels.second}).set(usage.elements);
+                    current_usage_labels.emplace(cache->getName(), user_id);
+                    filesystem_cache_size_bytes.withLabels({cache->getName(), user_id}).set(usage.size);
+                    filesystem_cache_elements.withLabels({cache->getName(), user_id}).set(usage.elements);
                 }
             }
         }
@@ -241,8 +240,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         {
             if (!current_usage_labels.contains(labels))
             {
-                filesystem_cache_size_bytes.withLabels({labels.first, labels.second}).set(0);
-                filesystem_cache_elements.withLabels({labels.first, labels.second}).set(0);
+                filesystem_cache_size_bytes.removeLabels({labels.first, labels.second});
+                filesystem_cache_elements.removeLabels({labels.first, labels.second});
             }
         }
         previous_filesystem_cache_usage_labels = std::move(current_usage_labels);

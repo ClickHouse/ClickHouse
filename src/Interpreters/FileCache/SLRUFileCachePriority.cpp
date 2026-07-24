@@ -185,7 +185,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         offset,
         size,
         key_metadata,
-        getOrSetUsageCounters(key_metadata->origin->user_id));
+        getOrCreateUsageCounters(key_metadata->origin->user_id));
     return std::make_shared<SLRUIterator>(
         this,
         is_protected
@@ -211,7 +211,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
         offset,
         size,
         key_metadata,
-        getOrSetUsageCounters(key_metadata->origin->user_id));
+        getOrCreateUsageCounters(key_metadata->origin->user_id));
     return std::make_shared<SLRUIterator>(
         this,
         is_protected
