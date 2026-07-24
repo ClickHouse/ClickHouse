@@ -362,8 +362,19 @@ BlockIO InterpreterSystemQuery::execute()
     {
         if (query.table)
         {
+            const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
             String dictionary_name = query.database ? query.getDatabase() + "." + query.getTable() : query.getTable();
-            auto qualified_name = getContext()->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, getContext());
+            auto qualified_name = external_dictionaries_loader.qualifyDictionaryNameWithDatabase(dictionary_name, getContext());
+
+            /// `qualifyDictionaryNameWithDatabase` only fills the database when this server can
+            /// resolve the dictionary locally. On a coordinator/gateway node that enqueues the
+            /// `ON CLUSTER` DDL but does not itself host the dictionary the name would stay bare,
+            /// and each worker would re-resolve it against its own default database instead of the
+            /// initiator's current one. So, unless it is an XML dictionary (which is referenced by
+            /// a bare name), stamp the current database explicitly to preserve the initiator's context.
+            if (qualified_name.database.empty() && !external_dictionaries_loader.has(qualified_name.table))
+                qualified_name.database = getContext()->getCurrentDatabase();
+
             query.setDatabase(qualified_name.database);
             query.setTable(qualified_name.table);
         }

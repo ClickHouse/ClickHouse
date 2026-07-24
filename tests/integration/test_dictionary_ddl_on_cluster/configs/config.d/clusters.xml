@@ -24,5 +24,27 @@
             </replica>
         </shard>
     </cluster>
+    <!-- A cluster that does not contain ch1, so ch1 can act as a gateway that enqueues
+         ON CLUSTER DDL without hosting the target dictionary itself. -->
+    <worker_cluster>
+        <shard>
+            <replica>
+                <host>ch2</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>ch3</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>ch4</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </worker_cluster>
 </remote_servers>
 </clickhouse>
