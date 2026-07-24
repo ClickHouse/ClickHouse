@@ -103,7 +103,7 @@ commit) the tool prints a `SHA: <40-hex-sha>` line — read it and set `$SHA` to
 characters. For a **PR URL** the tool prints a multi-report summary without a `SHA:` line;
 extract `$SHA` from the `?sha=<hex>` query-string parameter in any `🔗 Report:` URL printed in
 the summary, or re-run with `--report N` on the relevant job to get single-report output that
-does print `SHA:`. Either way, `$SHA` is always a concrete commit hash, never a PR-number fallback. Then create the
+does print `SHA:`. For a **direct `result_*.json` S3 URL** (e.g. `https://s3.amazonaws.com/clickhouse-test-reports/PRs/111528/<sha>/result_fast_test_arm_darwin.json`) the tool also prints a `SHA:` line extracted from the URL path. Either way, `$SHA` is always a concrete commit hash, never a PR-number fallback. Then create the
 working directory:
 
 ```bash
@@ -139,6 +139,10 @@ drill via the CIDB link or the full artifact (step 4).
   after listing reports (run the tool with no `--failed` to see the index).
 - Record the PR number and the exact failed **test names** as they appear — the names must
   match `checks.test_name` for step 3 (and feed the issue search in step 2).
+- **Job-level failures** are printed as `⚙️ JOB: <job name>` (instead of `❌ FAIL:`). These are
+  synthetic entries — the job name is **not** a real `checks.test_name` value. Skip the
+  `checks.test_name` history lookup in step 3 for them; go directly to step 4 (artifact download)
+  to find the root cause from logs and harness output.
 - Record the **count** of failed tests. The cheap steps (2–3) always run over all of them, but
   a large count changes how step 3 scopes the expensive deep-dive — see "Scope the deep-dive".
 

@@ -311,6 +311,7 @@ function parseTestResults(jsonData) {
         name: jsonData.name || 'Job',
         status: jsonData.status,
         duration: jsonData.duration || 0,
+        jobLevel: true,
       };
       if (jsonData.info) test.info = jsonData.info;
       if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
@@ -370,12 +371,18 @@ function parseTestResults(jsonData) {
         name: jsonData.name || 'Job',
         status: jsonData.status,
         duration: jsonData.duration || 0,
+        jobLevel: true,
       };
       if (jsonData.info) test.info = jsonData.info;
       if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
       applyExtToTest(test, jsonData.ext);
       tests.push(test);
-    } else if (jsonData.info && jsonData.info.trim() && !tests.some(t => t.info === jsonData.info) && !/^Failures:\s/.test(jsonData.info)) {
+    } else if (
+      jsonData.info && jsonData.info.trim() &&
+      !tests.some(t => t.info === jsonData.info) &&
+      !/^Failures:\s/.test(jsonData.info) &&
+      !/^Failed:\s/.test(jsonData.info)
+    ) {
       // Root has additional error context (e.g. "Test execution was interrupted") not captured
       // by any failing leaf. Synthesize an aggregate entry so the interrupt context is visible
       // alongside the normal test failures.
@@ -384,6 +391,7 @@ function parseTestResults(jsonData) {
         status: jsonData.status,
         duration: jsonData.duration || 0,
         info: jsonData.info,
+        jobLevel: true,
       };
       if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
       applyExtToTest(test, jsonData.ext);
@@ -528,6 +536,27 @@ function childReportUrlsForFailedJobs(topLevelUrl, jsonData) {
 }
 
 /**
+ * Return the per-job report URL for every job in a workflow-index, regardless of status.
+ * Used by --report N to let the user pick any concrete job from a workflow-index URL.
+ */
+function allChildReportUrls(topLevelUrl, jsonData) {
+  const jobs = (jsonData && Array.isArray(jsonData.results)) ? jsonData.results : [];
+  return jobs.map(j => topLevelUrl.replace(/&name_1=[^&]*/, '') + `&name_1=${encodeURIComponent(j.name)}`);
+}
+
+/**
+ * Return true when a URL is a concrete job report (name_1 present, or name_0 is not a
+ * workflow-level aggregator). Workflow-index URLs (name_0=PR|MasterCI|REF|master with no
+ * name_1) return false so they can be filtered out before --report N selection.
+ */
+function isConcreteJobUrl(u) {
+  const m = u.match(/[?&]name_0=([^&]+)/);
+  if (!m) return true;
+  const name0 = decodeURIComponent(m[1]);
+  return !/^(PR|MasterCI|REF|master)$/i.test(name0) || /[?&]name_1=/.test(u);
+}
+
+/**
  * Render a set of report URLs as a multi-report summary (one row per report, failures under each).
  * Shared by the GitHub-PR path and the direct top-level-index path.
  */
@@ -627,7 +656,7 @@ async function renderMultiReport(ciUrls, options) {
     // the sole report (otherwise skip it to avoid duplicating the nested job reports).
     if (failed.length > 0 && options.failedOnly && (!result.isPRLevel || onlyPRLevel)) {
       for (const test of failed) {
-        console.log(`      ❌ FAIL: ${test.name}`);
+        console.log(test.jobLevel ? `      ⚙️ JOB: ${test.name}` : `      ❌ FAIL: ${test.name}`);
         if (test.labels && test.labels.length > 0) {
           console.log(`         🏷️  labels: ${test.labels.join(', ')}`);
         }
@@ -692,6 +721,16 @@ async function fetchReport(inputUrl, options = {}) {
           }
           if (childUrls.length > 0) {
             console.log(`Top-level PR report is an index — descending into ${childUrls.length} failed job report(s).`);
+          } else {
+            // No failures (all-green PR): expand to ALL concrete children so the display list
+            // and --report N indices are consistent with each other.
+            const allChildren = allChildReportUrls(topLevelUrl, top.jsonData).filter(isConcreteJobUrl);
+            if (allChildren.length > 0) {
+              for (const childUrl of allChildren) {
+                if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
+              }
+              console.log(`Top-level PR report is all-green — expanded into ${allChildren.length} concrete job report(s).`);
+            }
           }
         } catch (e) {
           console.log(`Note: could not expand the top-level PR report into job reports (${e.message}); showing job-level failures only.`);
@@ -701,12 +740,7 @@ async function fetchReport(inputUrl, options = {}) {
       // Remove workflow-index entries (name_0=PR|MasterCI|REF|master with no name_1) so that
       // --report N and the displayed numbering only count concrete job reports, not the
       // top-level aggregation URL that would be mishandled as a concrete job when selected.
-      const concreteUrls = ciUrls.filter(u => {
-        const m = u.match(/[?&]name_0=([^&]+)/);
-        if (!m) return true;
-        const name0 = decodeURIComponent(m[1]);
-        return !/^(PR|MasterCI|REF|master)$/i.test(name0) || /[?&]name_1=/.test(u);
-      });
+      const concreteUrls = ciUrls.filter(isConcreteJobUrl);
       if (concreteUrls.length > 0) ciUrls.splice(0, ciUrls.length, ...concreteUrls);
 
       console.log(`Found ${ciUrls.length} CI report(s)\n`);
@@ -745,6 +779,12 @@ async function fetchReport(inputUrl, options = {}) {
       // Direct JSON URL - fetch it directly
       if (!options.isSingleReport) {
         console.log(`Fetching JSON directly: ${inputUrl}\n`);
+        // Extract SHA from the URL path (e.g. .../PRs/<pr>/<40-hex-sha>/result_*.json)
+        // and print it for consistency with the HTML-URL path.
+        const shaInPath = inputUrl.match(/\/([0-9a-f]{40})\//i);
+        if (shaInPath) {
+          console.log(`SHA: ${shaInPath[1]}\n`);
+        }
       }
       const jsonText = await fetchUrl(inputUrl, options.credentials);
       jsonData = JSON.parse(jsonText);
@@ -771,9 +811,26 @@ async function fetchReport(inputUrl, options = {}) {
       // JOB (e.g. name_0=Stateless tests (...)) — those must stay on the single-report path below,
       // so gate on the workflow name, not merely nameParams.length.
       const isWorkflowIndex = /^(PR|MasterCI|REF|master)$/i.test(nameParams[0]);
-      if (isWorkflowIndex && nameParams.length === 1 && !options.isSingleReport && !options.reportIndex) {
+      if (isWorkflowIndex && nameParams.length === 1 && !options.isSingleReport) {
         const topJson = JSON.parse(await fetchUrl(jsonUrl, options.credentials));
-        const childUrls = childReportUrlsForFailedJobs(inputUrl, topJson);
+
+        // Build the display list once — shared by both the summary and --report N selection.
+        // Use failed concrete children only (UX: show what matters). Fall back to all concrete
+        // children when there are no failures (all-passed scenario) so --report N still works.
+        const failedChildren = childReportUrlsForFailedJobs(inputUrl, topJson);
+        const allConcreteChildren = allChildReportUrls(inputUrl, topJson).filter(isConcreteJobUrl);
+        const displayList = failedChildren.length > 0 ? failedChildren : allConcreteChildren;
+
+        if (options.reportIndex) {
+          const idx = parseInt(options.reportIndex) - 1;
+          if (idx < 0 || idx >= displayList.length) {
+            throw new Error(`Invalid report index. Choose 1-${displayList.length}`);
+          }
+          console.log(`Found ${displayList.length} CI report(s)\n`);
+          console.log(`Fetching report #${options.reportIndex}...\n`);
+          return await fetchReport(displayList[idx], { ...options, reportIndex: undefined });
+        }
+
         if (options.downloadLogs) {
           const failedNames = (topJson.results || []).filter(j => isFailureStatus(j.status)).map(j => j.name);
           throw new Error(
@@ -782,8 +839,9 @@ async function fetchReport(inputUrl, options = {}) {
             `&name_1=<job>. Failed jobs: ${failedNames.join(', ') || '(none)'}.`
           );
         }
-        console.log(`Top-level '${nameParams[0]}' index — expanding into ${childUrls.length} failed job report(s).\n`);
-        return await renderMultiReport([inputUrl, ...childUrls], options);
+        const listDesc = failedChildren.length > 0 ? `${displayList.length} failed` : `all ${displayList.length}`;
+        console.log(`Top-level '${nameParams[0]}' index — expanding into ${listDesc} job report(s).\n`);
+        return await renderMultiReport(displayList, options);
       }
 
       // Fetch name_0 JSON data, and name_1 separately if present (matching json.html behavior)
@@ -887,7 +945,7 @@ async function fetchReport(inputUrl, options = {}) {
     if (failed.length > 0) {
       console.log('--- Failures ---');
       for (const test of failed) {
-        console.log(`❌ FAIL  ${test.name}  (${test.duration}s)`);
+        console.log(test.jobLevel ? `⚙️ JOB  ${test.name}  (${test.duration}s)` : `❌ FAIL  ${test.name}  (${test.duration}s)`);
         if (test.labels && test.labels.length > 0) {
           console.log(`   🏷️  labels: ${test.labels.join(', ')}`);
         }
@@ -1067,4 +1125,8 @@ Examples:
   await fetchReport(url, options);
 }
 
-main().catch(console.error);
+if (require.main === module) {
+  main().catch(console.error);
+} else {
+  module.exports = { parseTestResults, isFailureStatus, applyExtToTest };
+}
