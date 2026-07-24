@@ -47,8 +47,8 @@ Each method returns a `StreamContext` that must be opened with a `with` statemen
 ### Data blocks {#data-blocks}
 ClickHouse Connect processes all data from the primary `query` method as a stream of blocks received from the ClickHouse server. These blocks are transmitted in the custom "Native" format to and from ClickHouse. A "block" is simply a sequence of columns of binary data, where each column contains an equal number of data values of the specified data type. (As a columnar database, ClickHouse stores this data in a similar form.) The size of a block returned from a query is governed by two user settings that can be set at several levels (user profile, user, session, or query). They're:
 
-- [max_block_size](/reference/settings/session-settings#max_block_size) -- Maximum block size in rows.
-- [preferred_block_size_bytes](/reference/settings/session-settings#preferred_block_size_bytes) -- Preferred block size in bytes.
+- [max_block_size](/reference/settings/session-settings/max#max_block_size) -- Maximum block size in rows.
+- [preferred_block_size_bytes](/reference/settings/session-settings/preferred#preferred_block_size_bytes) -- Preferred block size in bytes.
 
 Regardless of `preferred_block_size_bytes`, a block will not exceed `max_block_size` rows. The actual size can be smaller and should not be treated as stable.
 
