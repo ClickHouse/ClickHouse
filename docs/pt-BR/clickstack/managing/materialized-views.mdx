@@ -25,10 +25,10 @@ O ClickStack pode aproveitar [visões materializadas incrementais (IMV)](/pt-BR/
 </Note>
 
 <div id="what-are-incremental-materialized-views">
-  ## O que são views materializadas incrementais
+  ## O que são visões materializadas incrementais
 </div>
 
-Views materializadas incrementais permitem transferir o custo de computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` significativamente mais rápidas.
+Visões materializadas incrementais permitem transferir o custo de computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` significativamente mais rápidas.
 
 Ao contrário de bancos de dados transacionais como o Postgres, uma visão materializada no ClickHouse não é um snapshot armazenado. Em vez disso, ela funciona como um trigger que executa uma consulta sobre blocos de dados à medida que eles são inseridos em uma tabela de origem. A saída dessa consulta é gravada em uma tabela de destino separada. À medida que dados adicionais são inseridos, novos resultados parciais são anexados e mesclados à tabela de destino. O resultado mesclado equivale a executar a agregação sobre todo o conjunto de dados original.
 
@@ -38,7 +38,7 @@ As visões materializadas no ClickHouse são atualizadas continuamente à medida
 
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de visão materializada" />
 
-Views materializadas incrementais computam apenas as alterações na visão à medida que novos dados chegam, transferindo a computação para o momento da inserção. Como o ClickHouse é altamente otimizado para ingestão, o custo incremental de manter a visão para cada bloco inserido é pequeno em relação à economia obtida durante a execução das consultas. O custo de computar a agregação é amortizado ao longo das inserções, em vez de ser pago repetidamente a cada leitura. Portanto, consultar os resultados pré-agregados é muito menos custoso do que recomputá-los, resultando em menor custo operacional e desempenho quase em tempo real para visualizações que consomem esses dados, mesmo em escala de petabytes.
+Visões materializadas incrementais computam apenas as alterações na visão à medida que novos dados chegam, transferindo a computação para o momento da inserção. Como o ClickHouse é altamente otimizado para ingestão, o custo incremental de manter a visão para cada bloco inserido é pequeno em relação à economia obtida durante a execução das consultas. O custo de computar a agregação é amortizado ao longo das inserções, em vez de ser pago repetidamente a cada leitura. Portanto, consultar os resultados pré-agregados é muito menos custoso do que recomputá-los, resultando em menor custo operacional e desempenho quase em tempo real para visualizações que consomem esses dados, mesmo em escala de petabytes.
 
 Esse modelo difere fundamentalmente de sistemas que recompõem visões inteiras a cada atualização ou dependem de atualizações agendadas. Para uma explicação mais aprofundada de como visões materializadas funcionam e como criá-las, consulte o guia indicado acima.
 
@@ -55,7 +55,7 @@ Cada visão materializada introduz uma sobrecarga adicional no momento da inser�
 </Note>
 
 Antes de prosseguir, recomendamos que você se familiarize mais a fundo com visões materializadas no ClickHouse.
-Consulte nosso guia sobre [Views materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para mais detalhes.
+Consulte nosso guia sobre [Visões materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para mais detalhes.
 
 <div id="selecting-visualizatons-for-acceleration">
   ## Selecionando visualizações para aceleração
@@ -226,25 +226,19 @@ Depois de criadas no ClickHouse, as visões materializadas devem ser registradas
 As visões materializadas devem ser registradas na **fonte** do HyperDX que corresponde à **tabela de origem original** da qual a visão foi derivada.
 
 <Steps>
-  <Step>
-    #### Edite a fonte
-
+  <Step title="Edite a fonte" id="edit-the-source">
     Navegue até a **fonte** relevante no HyperDX e abra a caixa de diálogo **Editar configuração**. Role até a seção de visões materializadas.
 
     <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Editar fontes" />
   </Step>
 
-  <Step>
-    #### Adicione a visão materializada
-
+  <Step title="Adicione a visão materializada" id="add-the-materialized-view">
     Selecione **Adicionar visão materializada** e, em seguida, escolha o banco de dados e a tabela de destino que dão suporte à visão materializada.
 
     <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Editar fontes" />
   </Step>
 
-  <Step>
-    #### Selecione as métricas
-
+  <Step title="Selecione as métricas" id="select-metrics">
     Na maioria dos casos, as colunas de timestamp, dimensão e métrica serão inferidas automaticamente. Caso contrário, especifique-as manualmente.
 
     Para métricas, você deve mapear:
@@ -257,22 +251,18 @@ As visões materializadas devem ser registradas na **fonte** do HyperDX que corr
     <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Selecionar métricas" />
   </Step>
 
-  <Step>
-    #### Selecione a granularidade de tempo
-
+  <Step title="Selecione a granularidade de tempo" id="select-time-granularity">
     Selecione a **granularidade de tempo** da visão materializada, por exemplo, um minuto.
 
     <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Selecionar granularidade de tempo" />
   </Step>
 
-  <Step>
-    #### Selecione a data mínima
-
+  <Step title="Selecione a data mínima" id="specify-the-minimum-date">
     Especifique a data mínima para a qual a visão materializada contém dados. Isso representa o timestamp mais antigo disponível na visão e, em geral, corresponde ao momento em que a visão foi criada, supondo que a ingestão tenha sido contínua.
 
     <Note>
-      As visões materializadas **não passam por backfill automaticamente** quando são criadas, portanto conterão apenas linhas geradas a partir de dados inseridos após a criação.
-      Um guia completo sobre backfilling de visões materializadas pode ser encontrado em [&quot;Carga retroativa de dados.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
+      As visões materializadas **não são preenchidas retroativamente automaticamente** quando são criadas, portanto conterão apenas linhas geradas a partir de dados inseridos após a criação.
+      Um guia completo sobre preenchimento retroativo de visões materializadas pode ser encontrado em [&quot;Carga retroativa de dados.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
     <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Selecionar tempo mínimo" />
@@ -284,9 +274,7 @@ As visões materializadas devem ser registradas na **fonte** do HyperDX que corr
     ```
   </Step>
 
-  <Step>
-    #### Salve a fonte
-
+  <Step title="Salve a fonte" id="save-the-source">
     Salve a configuração da fonte.
 
     <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Salvar fonte" />
@@ -299,7 +287,7 @@ Depois que uma visão materializada é registrada, ela é usada automaticamente 
   ### Verificando a aceleração em dashboards e visualizações
 </div>
 
-É importante lembrar que visões materializadas incrementais contêm apenas dados inseridos **depois que a visão materializada foi criada**. Elas não recebem backfill automaticamente, o que as mantém leves e baratas de manter. Por esse motivo, os usuários precisam especificar explicitamente o intervalo de tempo válido de uma visão materializada ao registrá-la.
+É importante lembrar que visões materializadas incrementais contêm apenas dados inseridos **depois que a visão materializada foi criada**. Elas não são preenchidas retroativamente automaticamente, o que as mantém leves e baratas de manter. Por esse motivo, os usuários precisam especificar explicitamente o intervalo de tempo válido de uma visão materializada ao registrá-la.
 
 <Note>
   O ClickStack só usará uma visão materializada se o timestamp mínimo dela for menor ou igual ao início do intervalo de tempo da consulta, garantindo que a visão materializada contenha todos os dados necessários. Embora as consultas sejam divididas internamente em subconsultas com base em tempo, as visões materializadas são aplicadas à consulta inteira ou não são aplicadas. Melhorias futuras podem permitir o uso seletivo de visões materializadas em subconsultas elegíveis.
@@ -481,9 +469,7 @@ Como discutido anteriormente, visões materializadas incrementais não passam po
 Essa abordagem é mais adequada para **conjuntos de dados menores** ou **consultas de agregação relativamente leves**, em que o backfill completo pode ser concluído em um tempo razoável sem esgotar os recursos do cluster. Em geral, ela é apropriada quando a consulta de backfill pode ser executada em minutos, ou no máximo em algumas horas, e quando aumentos temporários no uso de CPU e de I/O são aceitáveis. Para conjuntos de dados maiores ou agregações mais custosas, considere, em vez disso, as abordagens de backfill incremental ou em blocos abaixo.
 
 <Steps>
-  <Step>
-    ##### Determine a cobertura atual da VIEW
-
+  <Step title="Determine a cobertura atual da VIEW" id="determine-current-coverage-of-view">
     Antes de tentar qualquer backfill, primeiro determine quais dados a VIEW materializada já contém. Isso é feito consultando o timestamp mínimo presente na tabela de destino:
 
     ```sql
@@ -494,9 +480,7 @@ Essa abordagem é mais adequada para **conjuntos de dados menores** ou **consult
     Esse timestamp representa o ponto mais antigo a partir do qual a VIEW pode atender às consultas. Qualquer consulta do ClickStack que solicite dados anteriores a esse timestamp recorrerá à tabela base.
   </Step>
 
-  <Step>
-    ##### Decida se o backfill é necessário
-
+  <Step title="Decida se o backfill é necessário" id="decide-whether-backfilling-is-neccessary">
     Na maioria das implantações do ClickStack, as consultas se concentram em dados recentes, como as últimas 24 horas. Nesses casos, VIEWs recém-criadas se tornam totalmente utilizáveis pouco depois da criação, e o backfill é desnecessário.
 
     Se o timestamp retornado na etapa anterior for antigo o suficiente para os seus casos de uso, nenhum backfill será necessário. O backfill só deve ser considerado quando:
@@ -506,9 +490,7 @@ Essa abordagem é mais adequada para **conjuntos de dados menores** ou **consult
     * O tamanho do conjunto de dados e o custo da agregação tornam o backfill viável.
   </Step>
 
-  <Step>
-    ##### Faça o backfill dos dados históricos ausentes
-
+  <Step title="Faça o backfill dos dados históricos ausentes" id="backfill-missing-historical-data">
     Se o backfill for necessário, preencha a tabela de destino da VIEW materializada para timestamps anteriores ao mínimo atual usando a consulta da VIEW, modificada para ler apenas dados mais antigos do que o timestamp registrado acima. Como a tabela de destino usa AggregatingMergeTree, a consulta de backfill **deve inserir estados de agregação, não valores finais**.
 
     <Warning>
@@ -542,24 +524,22 @@ Essa abordagem é mais adequada para **conjuntos de dados menores** ou **consult
 </Steps>
 
 <div id="incremental-backfill-null-table">
-  #### Backfill incremental usando uma tabela Null
+  #### Preenchimento retroativo incremental usando uma tabela Null
 </div>
 
-Para datasets maiores ou consultas de agregação mais intensivas em recursos, um backfill direto com um único `INSERT INTO SELECT` pode ser impraticável ou inseguro. Nesses casos, recomenda-se uma abordagem de **backfill incremental**. Esse método reflete mais de perto como as visões materializadas incrementais normalmente funcionam, processando os dados em blocos gerenciáveis em vez de agregar todo o dataset histórico de uma vez.
+Para datasets maiores ou consultas de agregação mais intensivas em recursos, um preenchimento retroativo direto com um único `INSERT INTO SELECT` pode ser impraticável ou inseguro. Nesses casos, recomenda-se uma abordagem de **preenchimento retroativo incremental**. Esse método reflete mais de perto como as visões materializadas incrementais normalmente funcionam, processando os dados em blocos gerenciáveis em vez de agregar todo o dataset histórico de uma vez.
 
 Essa abordagem é apropriada quando:
 
-* A consulta de backfill levaria muitas horas para ser executada.
+* A consulta de preenchimento retroativo levaria muitas horas para ser executada.
 * O pico de uso de memória de uma agregação completa é alto demais.
-* Você quer controlar com precisão o consumo de CPU e memória durante o backfill.
+* Você quer controlar com precisão o consumo de CPU e memória durante o preenchimento retroativo.
 * Você precisa de um processo mais resiliente, que possa ser reiniciado com segurança em caso de interrupção.
 
 A ideia central é usar uma [**tabela Null**](/pt-BR/reference/engines/table-engines/special/null) como buffer de ingestão. Embora a tabela Null não armazene dados, quaisquer visões materializadas vinculadas a ela ainda serão executadas, permitindo que os estados de agregação sejam calculados incrementalmente à medida que os dados passam por ela.
 
 <Steps>
-  <Step>
-    ##### Criar uma tabela Null para backfill
-
+  <Step title="Criar uma tabela Null para preenchimento retroativo" id="create-null-table">
     Crie uma tabela Null leve que contenha apenas as colunas necessárias para a agregação da visão materializada. Isso minimiza a E/S e o uso de memória.
 
     ```sql
@@ -574,9 +554,7 @@ A ideia central é usar uma [**tabela Null**](/pt-BR/reference/engines/table-eng
     ```
   </Step>
 
-  <Step>
-    ##### Vincular uma visão materializada à tabela Null
-
+  <Step title="Vincular uma visão materializada à tabela Null" id="attach-mv-to-null-table">
     Em seguida, crie uma visão materializada sobre a tabela Null que tenha como destino a mesma tabela de agregação usada pela sua visão materializada primária.
 
     ```sql
@@ -601,9 +579,7 @@ A ideia central é usar uma [**tabela Null**](/pt-BR/reference/engines/table-eng
     Essa visão materializada será executada de forma incremental à medida que linhas forem inseridas na tabela Null, produzindo estados de agregação em pequenos blocos.
   </Step>
 
-  <Step>
-    ##### Fazer o backfill dos dados incrementalmente
-
+  <Step title="Fazer o preenchimento retroativo dos dados incrementalmente" id="incremental-backfill">
     Por fim, insira os dados históricos na tabela Null. A visão materializada processará os dados bloco por bloco, emitindo estados de agregação na tabela de destino sem persistir as linhas brutas.
 
     ```sql
@@ -622,10 +598,10 @@ A ideia central é usar uma [**tabela Null**](/pt-BR/reference/engines/table-eng
     Como os dados são processados incrementalmente, o uso de memória permanece limitado e previsível, aproximando-se bastante do comportamento normal de ingestão.
 
     <Note>
-      Para maior segurança, considere direcionar a visão materializada de backfill para uma tabela de destino temporária (por exemplo, `otel_traces_1m_v2`). Quando o backfill for concluído com sucesso, [as partições podem ser movidas](/pt-BR/reference/statements/alter/partition#move-partition-to-table) para a tabela de destino primária, por exemplo, `ALTER TABLE otel_traces_1m_v2 MOVE PARTITION '2026-01-02' TO otel_traces_1m`. Isso facilita a recuperação caso o backfill seja interrompido ou falhe devido a limites de recursos.
+      Para maior segurança, considere direcionar a visão materializada de preenchimento retroativo para uma tabela de destino temporária (por exemplo, `otel_traces_1m_v2`). Quando o preenchimento retroativo for concluído com sucesso, [as partições podem ser movidas](/pt-BR/reference/statements/alter/partition#move-partition-to-table) para a tabela de destino primária, por exemplo, `ALTER TABLE otel_traces_1m_v2 MOVE PARTITION '2026-01-02' TO otel_traces_1m`. Isso facilita a recuperação caso o preenchimento retroativo seja interrompido ou falhe devido a limites de recursos.
     </Note>
 
-    Para mais detalhes sobre como ajustar esse processo, incluindo melhorar o desempenho de insert e reduzir e controlar o uso de recursos, consulte [&quot;Backfilling.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#tuning-performance--resources)
+    Para mais detalhes sobre como ajustar esse processo, incluindo melhorar o desempenho de insert e reduzir e controlar o uso de recursos, consulte [&quot;Preenchimento retroativo.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#tuning-performance--resources)
   </Step>
 </Steps>
 

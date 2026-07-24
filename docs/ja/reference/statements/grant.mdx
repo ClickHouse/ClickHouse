@@ -191,6 +191,7 @@ ClickHouse における権限の階層は以下のとおりです。
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ ClickHouse における権限の階層は以下のとおりです。
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ ClickHouse における権限の階層は以下のとおりです。
 この階層がどのように扱われるかの例:
 
 * `ALTER` 権限には、ほかのすべての `ALTER*` 権限が含まれます。
-* `ALTER CONSTRAINT` には、`ALTER ADD CONSTRAINT` 権限と `ALTER DROP CONSTRAINT` 権限が含まれます。
+* `ALTER CONSTRAINT` には、`ALTER ADD CONSTRAINT` 権限、`ALTER DROP CONSTRAINT` 権限、`ALTER MODIFY CONSTRAINT` 権限が含まれます。
 
 権限は異なるレベルで適用されます。レベルがわかると、その権限に対して使用できる構文もわかります。
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`。レベル: `GROUP`。別名: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`。レベル: `TABLE`。別名: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`。レベル: `TABLE`。別名: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`。レベル: `TABLE`。別名: `MODIFY CONSTRAINT`
   * `ALTER TTL`。レベル: `TABLE`。別名: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`。レベル: `TABLE`。別名: `MATERIALIZE TTL`
   * `ALTER SETTINGS`。レベル: `TABLE`。別名: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 この階層の扱い方の例:
 
 * `ALTER` 権限には、他のすべての `ALTER*` 権限が含まれます。
-* `ALTER CONSTRAINT` には、`ALTER ADD CONSTRAINT` と `ALTER DROP CONSTRAINT` の権限が含まれます。
+* `ALTER CONSTRAINT` には、`ALTER ADD CONSTRAINT`、`ALTER DROP CONSTRAINT`、`ALTER MODIFY CONSTRAINT` の権限が含まれます。
 
 **注記**
 
@@ -628,7 +631,7 @@ GRANT CLUSTER ON *.* TO <username>
     * `SYSTEM DROP UNCOMPRESSED CACHE`。レベル: `GLOBAL`。別名: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`。レベル: `GROUP`
     * `SYSTEM RELOAD CONFIG`。レベル: `GLOBAL`。別名: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`。レベル: `GLOBAL`。別名: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`。レベル: `GLOBAL`。別名: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`。レベル: `GLOBAL`。別名: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`。レベル: `TABLE`。別名: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`。レベル: `TABLE`。別名: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -643,6 +646,8 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM FLUSH`。レベル: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`。レベル: `TABLE`。別名: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`。レベル: `GLOBAL`。別名: `FLUSH LOGS`
+
+`SYSTEM UNLOAD DICTIONARY` および `SYSTEM UNLOAD DICTIONARIES` コマンドは `SYSTEM RELOAD DICTIONARY` 権限を使用するため、`SYSTEM RELOAD DICTIONARY` を持つユーザーは Dictionary をアンロードすることもできます。
 
 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 権限は、`SYSTEM RELOAD DICTIONARY ON *.*` 権限により暗黙的に付与されます。
 
@@ -776,9 +781,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`。別名: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`。別名: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-ユーザーに [dictGet](/ja/reference/functions/regular-functions/ext-dict-functions#dictGet)、[dictHas](/ja/reference/functions/regular-functions/ext-dict-functions#dictHas)、[dictGetHierarchy](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)、[dictIsIn](/ja/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 関数の実行を許可します。
+ユーザーに [dictGet](/ja/reference/functions/regular-functions/ext-dict-functions#dictGet)、[dictHas](/ja/reference/functions/regular-functions/ext-dict-functions#dictHas)、[dictGetHierarchy](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)、[dictGetRoot](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetRoot)、[dictGetChildren](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetChildren)、[dictGetDescendants](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants)、[dictIsIn](/ja/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 関数の実行を許可します。
 
 権限レベル: `DICTIONARY`。
 
