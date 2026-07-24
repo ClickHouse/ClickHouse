@@ -24,10 +24,9 @@ SELECT 'no_prewhere_leak';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM t_chain_hint WHERE hex(sipHash64(a)) < hex(b) AND hex(b) < 'Z')
     WHERE explain LIKE '%Prewhere filter column%' AND explain LIKE '%sipHash64%';
 
--- Results are identical with the hint mode, the plain mode, and the optimization disabled.
+-- Results are identical with the optimization enabled and disabled.
 SELECT 'results';
-SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain_as_index_hint = 1;
-SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain_as_index_hint = 0;
+SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain = 1;
 SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain = 0;
 
 -- A derived comparison that contradicts an existing condition is added as a plain condition,
@@ -37,13 +36,4 @@ SELECT count() FROM t_chain_hint WHERE a < b AND b < 5 AND a > 10;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a < b AND b < 5 AND a > 10)
     WHERE explain LIKE '%function_name: indexHint%';
 
--- The old behavior stays reachable: plain derived conjuncts, no hints.
-SELECT 'plain_mode';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain_as_index_hint = 0)
-    WHERE explain LIKE '%function_name: indexHint%';
-
 DROP TABLE t_chain_hint;
-
--- `optimize_and_compare_chain_as_index_hint` was introduced in 26.8, so `compatibility` set to an
--- earlier version must restore the previous behavior with plain derived conditions.
-SELECT value FROM system.settings WHERE name = 'optimize_and_compare_chain_as_index_hint' SETTINGS compatibility = '26.7';

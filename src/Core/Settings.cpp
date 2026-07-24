@@ -7964,10 +7964,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 - cross to inner join optimization
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
-Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`. The derived comparisons are added as `indexHint` conditions when `optimize_and_compare_chain_as_index_hint` is enabled.
-)", 0) \
-    DECLARE(Bool, optimize_and_compare_chain_as_index_hint, true, R"(
-Add the comparisons derived by `optimize_and_compare_chain` wrapped in `indexHint` instead of as plain conditions. A derived comparison never filters rows beyond the original chain, so as a plain condition it only costs per-row evaluation, and PREWHERE can even pick an expensive derived expression and compute it on every row. Wrapped in `indexHint`, the comparison still participates in index analysis (primary key, partition key, skipping indexes) and prunes the read set, while execution treats it as constant `1`. Derived comparisons that contradict an existing condition are added as plain conditions in either mode, so the `AND` still folds to `false`.
+Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. The derived comparisons are wrapped in `indexHint`: they participate in index analysis (primary key, partition key, skipping indexes) and prune the read set, but cost nothing per row and do not affect PREWHERE. Derived comparisons that contradict an existing condition are added as plain conditions, so the `AND` folds to `false`.
 )", 0) \
     DECLARE(Bool, optimize_redundant_comparisons, true, R"(
 Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.

@@ -26,7 +26,6 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
-    extern const SettingsBool optimize_and_compare_chain_as_index_hint;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
 }
@@ -2339,8 +2338,7 @@ private:
                             ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
                             auto add_result = addComparisonFilter(
                                 derived_conjunct_filters, left.first, std::move(derived_filter), true, getContext());
-                            if (add_result == AddComparisonFilterResult::ALWAYS_FALSE
-                                || !getSettings()[Setting::optimize_and_compare_chain_as_index_hint])
+                            if (add_result == AddComparisonFilterResult::ALWAYS_FALSE)
                             {
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
