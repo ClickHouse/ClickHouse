@@ -92,7 +92,7 @@ public:
     /// with this filter would have read no granules from the part.
     static bool canExcludePartByIndexAnalysis(
         const MergeTreeData::DataPartPtr & part,
-        const ActionsDAGWithInversionPushDown & filter_dag,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context,
         LoggerPtr log);

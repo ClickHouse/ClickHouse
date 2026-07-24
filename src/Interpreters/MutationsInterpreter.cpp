@@ -282,7 +282,7 @@ try
     if (!predicate_node)
         return false;
 
-    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, context, /*boolean_context=*/true);
+    auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate_node, context, /*boolean_context=*/true);
 
     static const LoggerPtr log = getLogger("MutationsInterpreter");
     return MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(part, inverted_dag, metadata_snapshot, context, log);
