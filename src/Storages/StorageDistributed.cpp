@@ -1842,16 +1842,20 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     /// Whether the remote engine's modification hash can be validated by this probe at all. The probe is a
     /// separate query on the shard, so it can only observe hashes derived from server-side state that any
     /// query sees consistently: the `MergeTree` family (monotonic data/metadata versions), `Memory`,
-    /// `Log`, `TinyLog` and `StripeLog` (monotonic in-memory versions), and `URL` (a single resource with
-    /// a strong `ETag`).
+    /// `Log`, `TinyLog` and `StripeLog` (monotonic in-memory versions).
     /// It must NOT accept a hash whose consistency relies on a query-local capture that only the reading
     /// query's own context holds: for listing-based object storage (`S3`, `AzureBlobStorage`, `HDFS`, ...)
     /// `getModificationHash` validates the read against the object set the query actually consumed
     /// (`QueryConsumedObjectSets`), and a fresh probe would silently fall back to re-listing, reopening the
     /// listing `A -> B -> A` membership race the capture closes (an object appears, is read, and disappears
     /// between the two probes). Wrapper engines (`Merge`, `Distributed`) can reach such tables transitively
-    /// on the shard, where the same fallback would happen out of our sight. So accept only engines known to
-    /// be probe-consistent and fail closed for everything else (including engines this server does not
+    /// on the shard, where the same fallback would happen out of our sight. `URL` is excluded for the same
+    /// reason even though a plain HTTP(S) `URL` hash (a single resource with a strong `ETag`) would be
+    /// probe-consistent: the unified `URL` engine dispatches recognized non-HTTP schemes
+    /// (`URL('s3://...')`, `URL('az://...')`, `URL('hdfs://...')`) to listing-based object storage while
+    /// still reporting `URL` as its engine name, so the name alone cannot tell the probe-consistent HTTP
+    /// variant from a delegated object-storage one on the shard. So accept only engines known to be
+    /// probe-consistent and fail closed for everything else (including engines this server does not
     /// know - the shard may run a different version).
     auto engine_hash_is_probe_consistent = [](const String & engine)
     {
@@ -1859,8 +1863,7 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
             || engine == "Memory"
             || engine == "Log"
             || engine == "TinyLog"
-            || engine == "StripeLog"
-            || engine == "URL";
+            || engine == "StripeLog";
     };
 
     RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);

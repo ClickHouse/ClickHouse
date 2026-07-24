@@ -12,8 +12,11 @@
 # lists {a}, the shard read consumes {a, b}, b disappears, and the post-probe lists {a} again, so the
 # initiator could keep a stale query-cache entry or a stale REFRESH ... IF CHANGED source hash. Wrapper
 # engines (Merge, Distributed) can reach such tables transitively on the shard, out of the initiator's
-# sight. The probe must therefore only accept engines whose hash is probe-consistent (the MergeTree
-# family, Memory, Log, TinyLog, StripeLog, URL) and fail closed for everything else.
+# sight. The same holds for URL: the unified URL engine dispatches recognized non-HTTP schemes
+# (URL('s3://...'), ...) to listing-based object storage while still reporting URL as its engine name, so
+# the name alone cannot tell the probe-consistent HTTP variant from a delegated object-storage one. The
+# probe must therefore only accept engines whose hash is probe-consistent (the MergeTree family, Memory,
+# Log, TinyLog, StripeLog) and fail closed for everything else.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

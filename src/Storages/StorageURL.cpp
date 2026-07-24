@@ -2369,6 +2369,22 @@ public:
         return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
     }
 
+    /// Forward the delegate's change-detection contract. `StorageProxy` does not forward
+    /// `getModificationHash`, so without this override the wrapper would fall back to the `IStorage`
+    /// default (nullopt) and a dispatched table (`URL('s3://...')`, `URL('az://...')`, ...) would opt out
+    /// of `system.tables.modification_hash` and the consistency features built on it
+    /// (`query_cache_use_only_when_data_was_not_changed`, `REFRESH ... IF CHANGED`) that the delegate
+    /// backends implement. Compute the hash on the delegate's own metadata snapshot: `alter` is forwarded
+    /// to the delegate, so the delegate's columns and per-lifetime metadata version (both folded into the
+    /// hash) track the table's current metadata, and the delegate was constructed with this table's
+    /// `StorageID`, so the identity folded into the hash and the consumed-object-set lookup key (see
+    /// `QueryConsumedObjectSets`) match the read path, which also goes through the delegate.
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr context) const override
+    {
+        auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
+        return nested->getModificationHash(nested->getStorageSnapshot(nested_metadata, context), context);
+    }
+
     /// Keep the persisted syntax as `URL(...)`, but materialize the `url_base`-resolved URL into the
     /// stored arguments. Otherwise a relative reference resolved via `url_base` (e.g.
     /// `URL('data.csv')` with `SET url_base = 'file://.../'`) would persist without a scheme and, after
