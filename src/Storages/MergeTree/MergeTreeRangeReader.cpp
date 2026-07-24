@@ -1770,6 +1770,14 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         Block additional_columns = block;
 
+        /// Carry over columns projected out at earlier steps: they may still be needed to evaluate
+        /// defaults of columns that are missing in the part and read later in the chain.
+        for (const auto & col : result.additional_columns)
+        {
+            if (!additional_columns.has(col.name))
+                additional_columns.insert(col);
+        }
+
         if (prewhere_info->actions)
         {
             const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
