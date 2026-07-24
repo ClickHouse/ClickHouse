@@ -38,6 +38,12 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             if (limit_step->withTies())
                 return;
 
+            /// `always_read_till_end` (e.g. exact `rows_before_limit_at_least`) reads sources to completion so
+            /// LimitTransform can count every row reaching it; skipped granules would never be counted, so the
+            /// count would underreport by exactly the skipped rows.
+            if (limit_step->alwaysReadTillEnd())
+                return;
+
             /// A preliminary LIMIT (no offset) only truncates the tail; walk past it to the real offset.
             if (limit_step->getOffset() == 0)
                 continue;
@@ -52,9 +58,17 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             return;
         }
 
-        /// Sorting and pure expressions preserve the leading rows; anything else may change the row set.
-        if (typeid_cast<SortingStep *>(step) || typeid_cast<ExpressionStep *>(step))
+        /// Sorting preserves the leading rows. An Expression does too, unless it contains an arrayJoin, which
+        /// expands rows and makes the offset count post-expansion rows rather than source rows.
+        if (typeid_cast<SortingStep *>(step))
             continue;
+
+        if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
+        {
+            if (expression_step->getExpression().hasArrayJoin())
+                return;
+            continue;
+        }
 
         return;
     }
