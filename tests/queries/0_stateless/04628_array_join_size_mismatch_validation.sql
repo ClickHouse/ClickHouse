@@ -1,8 +1,11 @@
--- Tags: no-random-settings
 -- Regression test for issue #111747: count()/projection over a multi-array ARRAY JOIN with
 -- mismatched per-row array sizes must throw SIZES_OF_ARRAYS_DONT_MATCH, exactly like SELECT *.
 -- Previously the unused sibling arrays were pruned before execution, so the size check was skipped
 -- and the query silently returned a result that matched no valid materialization.
+
+-- The size check is enforced by the analyzer pass in aligned mode only.
+SET enable_analyzer = 1;
+SET enable_unaligned_array_join = 0;
 
 DROP TABLE IF EXISTS t_mismatch;
 CREATE TABLE t_mismatch (id UInt32, a Array(String), b Array(String), c Array(String)) ENGINE = MergeTree ORDER BY id;

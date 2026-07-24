@@ -414,8 +414,8 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
 
         /// Whole unused ARRAY JOIN expressions must NOT be removed: a multi-expression aligned
         /// ARRAY JOIN validates that all joined arrays have equal per-row sizes only at execution
-        /// (ArrayJoinResultIterator), so dropping an unused sibling would skip that check. Unused
-        /// nested() subcolumns are still pruned below; nested() validates the retained arguments.
+        /// (ArrayJoinResultIterator), so dropping an unused sibling would skip that check and let
+        /// count()/projections over mismatched arrays silently succeed (issue #111747).
 
         /// Prune unused nested() subcolumn arguments.
         for (auto & join_expr : join_expressions)
