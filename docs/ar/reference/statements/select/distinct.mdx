@@ -1,0 +1,118 @@
+---
+description: 'توثيق لعبارة DISTINCT'
+sidebarTitle: 'DISTINCT'
+slug: /sql-reference/statements/select/distinct
+title: 'عبارة DISTINCT'
+doc_type: 'reference'
+---
+
+إذا تم تحديد `SELECT DISTINCT`، فلن تبقى في نتيجة الاستعلام إلا الصفوف المميزة. وبذلك، لن يبقى من بين جميع مجموعات الصفوف المتطابقة تمامًا في النتيجة سوى صف واحد فقط.
+
+يمكنك تحديد قائمة الأعمدة التي يجب أن تكون قيمها مميزة: `SELECT DISTINCT ON (column1, column2,...)`. وإذا لم يتم تحديد الأعمدة، فستُؤخذ جميعها في الاعتبار.
+
+لننظر إلى الجدول:
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+استخدام `DISTINCT` من دون تحديد أعمدة:
+
+```sql
+SELECT DISTINCT * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+استخدام `DISTINCT` مع أعمدة محددة:
+
+```sql
+SELECT DISTINCT ON (a,b) * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+<div id="distinct-and-order-by">
+  ## DISTINCT و ORDER BY
+</div>
+
+يدعم ClickHouse استخدام العبارتين `DISTINCT` و `ORDER BY` على أعمدة مختلفة ضمن استعلام واحد. وتُنفَّذ العبارة `DISTINCT` قبل العبارة `ORDER BY`.
+
+انظر إلى الجدول التالي:
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+اختيار البيانات:
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b ASC;
+```
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+اختيار البيانات باستخدام اتجاه فرز مختلف:
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b DESC;
+```
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+تم اقتطاع الصف `2, 4` قبل الفرز.
+
+ضع هذه الخصوصية التنفيذية في الحسبان عند برمجة الاستعلامات.
+
+<div id="null-processing">
+  ## معالجة NULL
+</div>
+
+تعمل `DISTINCT` مع [NULL](/ar/reference/syntax#null) كما لو أن `NULL` قيمة محددة، وكأن `NULL==NULL`. وبعبارة أخرى، لا تظهر في نتائج `DISTINCT` التركيبات المختلفة التي تتضمن `NULL` إلا مرة واحدة فقط. وهذا يختلف عن طريقة التعامل مع `NULL` في معظم السياقات الأخرى.
+
+<div id="alternatives">
+  ## بدائل
+</div>
+
+يمكن الحصول على النتيجة نفسها بتطبيق [GROUP BY](/ar/reference/statements/select/group-by) على نفس مجموعة القيم المحددة في عبارة `SELECT`، من دون استخدام أي دوال تجميع. لكن توجد بعض الفروق مقارنةً بنهج `GROUP BY`:
+
+* يمكن تطبيق `DISTINCT` مع `GROUP BY` في الوقت نفسه.
+* عند حذف [ORDER BY](/ar/reference/statements/select/order-by) وتحديد [LIMIT](/ar/reference/statements/select/limit)، يتوقف الاستعلام فورًا بعد قراءة العدد المطلوب من الصفوف المختلفة.
+* تُخرَج كتل البيانات أثناء معالجتها، من دون انتظار اكتمال تنفيذ الاستعلام بالكامل.

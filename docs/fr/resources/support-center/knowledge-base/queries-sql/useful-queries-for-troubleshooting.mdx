@@ -1,0 +1,598 @@
+---
+date: 2023-03-17
+title: Requêtes utiles pour le dépannage
+description: Une série de requêtes utiles pour le dépannage de ClickHouse, notamment pour surveiller la taille des tables, les requêtes de longue durée et les erreurs.
+tags: ['Paramètres']
+keywords: ['Requêtes utiles']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="useful-queries-for-troubleshooting">
+  ## Requêtes utiles pour le dépannage
+</div>
+
+Sans ordre particulier, voici quelques requêtes utiles pour dépanner ClickHouse et comprendre ce qui se passe.
+
+Nous avons également un excellent article de blog avec quelques [requêtes essentielles pour surveiller ClickHouse](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse).
+
+<div id="view-which-settings-have-been-changed-from-the-default">
+  ## Afficher les paramètres modifiés par rapport aux valeurs par défaut
+</div>
+
+```sql
+SELECT
+    name,
+    value
+FROM system.settings
+WHERE changed
+```
+
+<div id="get-the-size-of-all-your-tables">
+  ## Connaître la taille de toutes vos tables
+</div>
+
+```sql
+SELECT table,
+    formatReadableSize(sum(bytes)) as size
+    FROM system.parts
+    WHERE active
+GROUP BY table
+```
+
+La réponse ressemble à ceci :
+
+```response
+┌─table───────────┬─size──────┐
+│ stat            │ 38.89 MiB │
+│ customers       │ 525.00 B  │
+│ my_sparse_table │ 40.73 MiB │
+│ crypto_prices   │ 32.18 MiB │
+│ hackernews      │ 6.23 GiB  │
+└─────────────────┴───────────┘
+```
+
+<div id="row-count-and-average-day-size-of-your-table">
+  ## Nombre de lignes et taille quotidienne moyenne de votre table
+</div>
+
+```sql
+SELECT
+    table,
+    formatReadableSize(size) AS size,
+    rows,
+    days,
+    formatReadableSize(avgDaySize) AS avgDaySize
+FROM
+(
+    SELECT
+        table,
+        sum(bytes) AS size,
+        sum(rows) AS rows,
+        min(min_date) AS min_date,
+        max(max_date) AS max_date,
+        max_date - min_date AS days,
+        size / (max_date - min_date) AS avgDaySize
+    FROM system.parts
+    WHERE active
+    GROUP BY table
+    ORDER BY rows DESC
+)
+```
+
+<div id="compression-columns-percentage-as-well-as-the-size-of-primary-index-in-memory">
+  ## Taux de compression par colonne ainsi que taille de l’index primaire en mémoire
+</div>
+
+Vous pouvez voir le niveau de compression de vos données par colonne. Cette requête renvoie également la taille de vos index primaires en mémoire — une information utile, car les index primaires doivent tenir en mémoire.
+
+```sql
+SELECT
+    parts.*,
+    columns.compressed_size,
+    columns.uncompressed_size,
+    columns.compression_ratio,
+    columns.compression_percentage
+FROM
+(
+    SELECT
+        table,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        round(sum(data_compressed_bytes) / sum(data_uncompressed_bytes), 3) AS compression_ratio,
+        round(100 - ((sum(data_compressed_bytes) * 100) / sum(data_uncompressed_bytes)), 3) AS compression_percentage
+    FROM system.columns
+    GROUP BY table
+) AS columns
+RIGHT JOIN
+(
+    SELECT
+        table,
+        sum(rows) AS rows,
+        max(modification_time) AS latest_modification,
+        formatReadableSize(sum(bytes)) AS disk_size,
+        formatReadableSize(sum(primary_key_bytes_in_memory)) AS primary_keys_size,
+        any(engine) AS engine,
+        sum(bytes) AS bytes_size
+    FROM system.parts
+    WHERE active
+    GROUP BY
+        database,
+        table
+) AS parts ON columns.table = parts.table
+ORDER BY parts.bytes_size DESC
+```
+
+<div id="number-of-queries-sent-by-client-in-the-last-10-minutes">
+  ## Nombre de requêtes envoyées par le client au cours des 10 dernières minutes
+</div>
+
+N&#39;hésitez pas à augmenter ou à réduire l&#39;intervalle dans la fonction `toIntervalMinute(10)` :
+
+```sql
+SELECT
+    client_name,
+    count(),
+    query_kind,
+    toStartOfMinute(event_time) AS event_time_m
+FROM system.query_log
+WHERE (type = 'QueryStart') AND (event_time > (now() - toIntervalMinute(10)))
+GROUP BY
+    event_time_m,
+    client_name,
+    query_kind
+ORDER BY
+    event_time_m DESC,
+    count() ASC
+```
+
+<div id="number-of-parts-in-each-partition">
+  ## Nombre de parts de chaque partition
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    partition_id,
+    count()
+FROM system.parts
+WHERE active
+GROUP BY
+    database,
+    table,
+    partition_id
+```
+
+<div id="finding-long-running-queries">
+  ## Identifier les requêtes de longue durée
+</div>
+
+Cela peut aider à repérer les requêtes bloquées :
+
+```sql
+SELECT
+    elapsed,
+    initial_user,
+    client_name,
+    hostname(),
+    query_id,
+    query
+FROM clusterAllReplicas(default, system.processes)
+ORDER BY elapsed DESC
+```
+
+En utilisant l’identifiant de requête de la requête en cours d’exécution la plus problématique, nous pouvons obtenir une trace de pile utile pour le débogage.
+
+```
+SET allow_introspection_functions=1;
+
+SELECT
+    arrayStringConcat(
+        arrayMap(
+            x,
+            y -> concat(x, ': ', y),
+            arrayMap(x -> addressToLine(x), trace),
+            arrayMap(x -> demangle(addressToSymbol(x)), trace)
+        ),
+        '\n'
+    ) as trace
+FROM
+    system.stack_trace
+WHERE
+    query_id = '0bb6e88b-9b9a-4ffc-b612-5746c859e360';
+```
+
+<div id="view-the-most-recent-errors">
+  ## Consulter les erreurs les plus récentes
+</div>
+
+```
+SELECT *
+FROM system.errors
+ORDER BY last_error_time DESC
+```
+
+La réponse ressemble à ceci :
+
+```response
+┌─name──────────────────┬─code─┬─value─┬─────last_error_time─┬─last_error_message──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─last_error_trace─┬─remote─┐
+│ UNKNOWN_TABLE         │   60 │     3 │ 2023-03-14 01:02:35 │ Table system.stack_trace doesn't exist                                                                                                              │ []               │      0 │
+│ BAD_GET               │  170 │     1 │ 2023-03-14 00:58:55 │ Requested cluster 'default' not found                                                                                                               │ []               │      0 │
+│ UNKNOWN_IDENTIFIER    │   47 │     1 │ 2023-03-14 00:49:12 │ Missing columns: 'parts.table' 'table' while processing query: 'table = parts.table', required columns: 'table' 'parts.table' 'table' 'parts.table' │ []               │      0 │
+│ NO_ELEMENTS_IN_CONFIG │  139 │     2 │ 2023-03-14 00:42:11 │ Certificate file is not set.                                                                                                                        │ []               │      0 │
+└───────────────────────┴──────┴───────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴────────┘
+```
+
+<div id="top-10-queries-that-are-using-the-most-cpu-and-memory">
+  ## Top 10 des requêtes qui consomment le plus de CPU et de mémoire
+</div>
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    formatReadableSize(memory_usage) AS memory,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'UserTimeMicroseconds')] AS userCPU,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM system.query_log
+ORDER BY memory_usage DESC
+LIMIT 10
+```
+
+<Note>
+  Une même requête peut être consignée sur plusieurs lignes avec des valeurs `query_id` différentes — les requêtes secondaires distribuées et les étapes internes des vues ont `is_initial_query = 0`. Filtrez sur `is_initial_query = 1` (ou `query_id = initial_query_id`) pour voir les requêtes telles qu’elles ont été soumises, et notez que les valeurs internes de `query_id` attribuées par ClickHouse peuvent inclure un libellé comme `queryView...`. Consultez la [référence `query_log`](/fr/reference/system-tables/query_log) pour plus de détails.
+</Note>
+
+<div id="how-much-disk-space-are-my-projection-using">
+  ## Combien d’espace disque utilisent mes projections
+</div>
+
+```sql
+SELECT
+    name,
+    parent_name,
+    formatReadableSize(bytes_on_disk) AS bytes,
+    formatReadableSize(parent_bytes_on_disk) AS parent_bytes,
+    bytes_on_disk / parent_bytes_on_disk AS ratio
+FROM system.projection_parts
+```
+
+<div id="show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases">
+  ## Afficher l’espace de stockage sur disque, le nombre de parts, le nombre de lignes dans system.parts et les marks pour l’ensemble des bases de données
+</div>
+
+```sql
+SELECT
+    database,
+    table,
+    partition,
+    count() AS parts,
+    formatReadableSize(sum(bytes_on_disk)) AS bytes_on_disk,
+    formatReadableQuantity(sum(rows)) AS rows,
+    sum(marks) AS marks
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    database,
+    table,
+    partition
+ORDER BY database ASC
+```
+
+<div id="list-details-of-recently-written-new-parts">
+  ## Lister les détails des nouvelles parts écrites récemment
+</div>
+
+Ces détails incluent notamment leur date de création, leur taille, leur nombre de lignes, etc. :
+
+```sql
+SELECT
+    modification_time,
+    rows,
+    formatReadableSize(bytes_on_disk),
+    *
+FROM clusterAllReplicas(default, system.parts)
+WHERE (database = 'default') AND active AND (level = 0)
+ORDER BY modification_time DESC
+LIMIT 100
+```
+
+<div id="cluster-wide-monitoring-queries">
+  ## Requêtes de surveillance à l’échelle du cluster
+</div>
+
+Les requêtes suivantes sont utiles pour surveiller les clusters ClickHouse. Elles utilisent `clusterAllReplicas()` pour agréger les données de tous les nœuds.
+
+<Note>
+  Ces requêtes partent du principe que votre cluster s’appelle `default`. Si votre cluster porte un autre nom, remplacez `'default'` et `default` par le nom réel de votre cluster.
+</Note>
+
+<div id="avg-new-parts-per-minute-and-second">
+  ### Nombre moyen de nouvelles part créées par minute et par seconde (sur la dernière heure)
+</div>
+
+```sql
+WITH
+    PER_MINUTE AS
+    (
+    SELECT
+        toStartOfInterval(modification_time, toIntervalMinute(1)) AS t,
+        count() AS new_part_count
+    FROM
+        clusterAllReplicas(default, merge(system, '^parts'))
+    WHERE
+        (database = 'default') AND
+        (table = 'your_table') AND
+        (active = true) AND
+        (level = 0) AND
+        (modification_time >= (now() - toIntervalHour(1)))
+    GROUP BY
+        t
+    ORDER BY
+        t ASC
+    SETTINGS skip_unavailable_shards = 1
+    )
+SELECT
+    AVG(new_part_count) AS new_parts_per_minute,
+    new_parts_per_minute / 60 AS new_parts_per_second
+FROM
+    PER_MINUTE
+```
+
+Remplacez `'your_table'` par le nom exact de la table que vous souhaitez surveiller.
+
+<div id="cpu-and-memory-intensive-queries-cluster-wide">
+  ### Requêtes gourmandes en CPU et en mémoire (à l’échelle du cluster)
+</div>
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    formatReadableSize(memory_usage) AS memory,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'UserTimeMicroseconds')] AS userCPU,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+ORDER BY memory_usage DESC
+LIMIT 10
+```
+
+<div id="merges-in-progress-with-eta">
+  ### Fusions en cours avec estimation du temps restant
+</div>
+
+Cette requête affiche les fusions en cours sur le cluster, avec une estimation du temps restant avant leur achèvement :
+
+```sql
+SELECT
+    hostName(),
+    database,
+    table,
+    round(elapsed, 0) AS elapsed_seconds,
+    round(progress, 4) AS progress_ratio,
+    formatReadableTimeDelta((elapsed / progress) - elapsed) AS estimated_time_remaining,
+    num_parts,
+    result_part_name
+FROM clusterAllReplicas(default, merge(system, '^merges'))
+ORDER BY (elapsed / progress) - elapsed ASC
+```
+
+<div id="most-common-queries-by-normalized-hash">
+  ### Requêtes les plus fréquentes par hachage normalisé
+</div>
+
+Identifiez les requêtes exécutées le plus fréquemment (utile pour déterminer quelles requêtes optimiser) :
+
+```sql
+SELECT
+    normalizedQueryHash(query) AS query_hash,
+    count() AS execution_count,
+    any(query) AS example_query
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 1
+GROUP BY normalizedQueryHash(query)
+ORDER BY execution_count DESC
+LIMIT 20
+```
+
+<div id="error-counts-by-event-type-and-date">
+  ### Nombre d’erreurs par type d’événement et par date
+</div>
+
+Analysez les erreurs de création de parts dans l’ensemble du cluster :
+
+```sql
+SELECT
+    event_date,
+    event_type,
+    table,
+    error,
+    COUNT() AS error_count
+FROM clusterAllReplicas(default, merge(system, '^part_log'))
+WHERE database = 'default'
+GROUP BY
+    event_date,
+    event_type,
+    error,
+    table
+ORDER BY
+    event_date DESC,
+    error_count DESC
+```
+
+<div id="number-of-tables-by-node">
+  ### Nombre de tables par nœud
+</div>
+
+Vérifiez la répartition des tables entre les nœuds du cluster :
+
+```sql
+SELECT
+    hostName() AS host,
+    count() AS table_count
+FROM clusterAllReplicas('default', merge(system, '^tables'))
+WHERE database = 'default'
+GROUP BY hostName()
+ORDER BY table_count DESC
+```
+
+<div id="check-for-async-insert-operations">
+  ### Vérifier les opérations d’insertion asynchrones
+</div>
+
+Surveillez l’activité des insertions asynchrones :
+
+```sql
+SELECT
+    event_date,
+    count() AS total_count,
+    sum(if(query LIKE '%async%', 1, 0)) AS async_count,
+    sum(if(query LIKE '%INSERT%', 1, 0)) AS insert_count
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 7
+GROUP BY event_date
+ORDER BY event_date DESC
+```
+
+<div id="parts-and-merges-analysis">
+  ## Analyse des parts et des fusions
+</div>
+
+<div id="currently-active-parts-by-table">
+  ### Parts actuellement actives par table
+</div>
+
+Consultez le nombre de parts actives par table dans l’ensemble du cluster :
+
+```sql
+SELECT
+    database,
+    table,
+    count() AS part_count,
+    formatReadableSize(sum(bytes_on_disk)) AS total_size
+FROM clusterAllReplicas(default, system.parts)
+WHERE active = 1 AND database = 'default'
+GROUP BY database, table
+ORDER BY part_count DESC
+```
+
+<div id="partitions-with-too-many-parts">
+  ### Partitions avec trop de parts
+</div>
+
+Identifiez les partitions qui peuvent avoir trop de parts (ce qui peut affecter les performances des requêtes) :
+
+```sql
+SELECT
+    database,
+    table,
+    partition,
+    count() AS part_count,
+    formatReadableSize(sum(bytes_on_disk)) AS total_size
+FROM clusterAllReplicas(default, system.parts)
+WHERE active = 1
+GROUP BY database, table, partition
+HAVING part_count > 100
+ORDER BY part_count DESC
+```
+
+<div id="detached-parts">
+  ### Parts détachées
+</div>
+
+Vérifiez s&#39;il existe des parts détachées pouvant nécessiter une analyse :
+
+```sql
+SELECT
+    database,
+    table,
+    partition_id,
+    name,
+    reason,
+    count()
+FROM clusterAllReplicas(default, system.detached_parts)
+GROUP BY database, table, partition_id, name, reason
+ORDER BY database, table
+```
+
+<div id="system-information-queries">
+  ## Requêtes d&#39;information système
+</div>
+
+<div id="cluster-wide-memory-usage-by-node">
+  ### Utilisation de la mémoire par nœud à l’échelle du cluster
+</div>
+
+Surveillez la consommation de mémoire sur l’ensemble des nœuds :
+
+```sql
+SELECT
+    hostName() AS host,
+    formatReadableSize(max(memory_usage)) AS peak_memory,
+    formatReadableSize(avg(memory_usage)) AS avg_memory,
+    formatReadableSize(min(memory_usage)) AS min_memory
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 1
+GROUP BY hostName()
+ORDER BY peak_memory DESC
+```
+
+<div id="running-queries-on-the-cluster">
+  ### Exécuter des requêtes sur le cluster
+</div>
+
+Vérifiez quelles requêtes sont actuellement en cours d’exécution :
+
+```sql
+SELECT
+    hostName() AS host,
+    initial_user,
+    query_id,
+    elapsed,
+    read_rows,
+    formatReadableSize(memory_usage) AS memory_usage,
+    normalizedQueryHash(query) AS query_hash
+FROM clusterAllReplicas(default, system.processes)
+ORDER BY elapsed DESC
+```
+
+<div id="modified-settings-from-defaults">
+  ### Paramètres modifiés par rapport aux valeurs par défaut
+</div>
+
+Voici les paramètres qui ont été modifiés par rapport aux valeurs par défaut :
+
+```sql
+SELECT
+    hostName() AS host,
+    name,
+    value
+FROM clusterAllReplicas(default, system.settings)
+WHERE changed = 1
+ORDER BY hostName(), name
+```
+
+<div id="replication-queue-status">
+  ### État de la file d’attente de réplication
+</div>
+
+Pour les tables répliquées, vérifiez la file d’attente de réplication :
+
+```sql
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    count() AS queue_size,
+    sum(if(is_currently_executing = 1, 1, 0)) AS executing_count
+FROM clusterAllReplicas(default, system.replication_queue)
+GROUP BY hostName(), database, table
+HAVING queue_size > 0
+ORDER BY queue_size DESC
+```

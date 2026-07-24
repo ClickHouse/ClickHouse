@@ -1,0 +1,210 @@
+---
+slug: /guides/developer/dynamic-column-selection
+sidebarTitle: 'Selección dinámica de columnas'
+title: 'Selección dinámica de columnas'
+description: 'Utiliza lenguajes de consulta alternativos en ClickHouse'
+doc_type: 'guide'
+keywords: ['selección dinámica de columnas', 'expresiones regulares', 'modificador APPLY', 'consultas avanzadas', 'guía para desarrolladores']
+---
+
+La [selección dinámica de columnas](/es/reference/statements/select/index#dynamic-column-selection) es una funcionalidad potente, aunque poco utilizada, de ClickHouse que permite seleccionar columnas mediante expresiones regulares en lugar de nombrar cada columna individualmente. También se pueden aplicar funciones a las columnas coincidentes con el modificador `APPLY`, lo que la hace especialmente útil para tareas de análisis y transformación de datos.
+
+Aprenderemos a usar esta funcionalidad con ayuda del [conjunto de datos de taxis de Nueva York](/es/get-started/sample-datasets/nyc-taxi), que también puede encontrarse en el [Playground de ClickHouse SQL](https://sql.clickhouse.com?query=LS0gRGF0YXNldCBjb250YWluaW5nIHRheGkgcmlkZSBkYXRhIGluIE5ZQyBmcm9tIDIwMDkuIE1vcmUgaW5mbyBoZXJlOiBodHRwczovL2NsaWNraG91c2UuY29tL2RvY3MvZW4vZ2V0dGluZy1zdGFydGVkL2V4YW1wbGUtZGF0YXNldHMvbnljLXRheGkKU0VMRUNUICogRlJPTSBueWNfdGF4aS50cmlwcyBMSU1JVCAxMDA).
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/moabRqqHNo4?si=jgmInV-u3UxtLvMS" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen />
+</Frame>
+
+<div id="selecting-columns">
+  ## Selección de columnas que coinciden con un patrón
+</div>
+
+Empecemos con un caso habitual: seleccionar solo las columnas que contienen `_amount` del conjunto de datos de taxis de NYC. En lugar de escribir manualmente el nombre de cada columna, podemos usar la expresión `COLUMNS` con una expresión regular:
+
+```sql
+FROM nyc_taxi.trips
+SELECT COLUMNS('.*_amount')
+LIMIT 10;
+```
+
+> [Prueba esta consulta en el Playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudCcpCkZST00gbnljX3RheGkudHJpcHMKTElNSVQgMTA7\&run_query=true)
+
+Esta consulta devuelve las 10 primeras filas, pero solo de las columnas cuyos nombres coinciden con el patrón `.*_amount` (cualquier carácter seguido de &quot;&#95;amount&quot;).
+
+```text
+    ┌─fare_amount─┬─tip_amount─┬─tolls_amount─┬─total_amount─┐
+ 1. │           9 │          0 │            0 │          9.8 │
+ 2. │           9 │          0 │            0 │          9.8 │
+ 3. │         3.5 │          0 │            0 │          4.8 │
+ 4. │         3.5 │          0 │            0 │          4.8 │
+ 5. │         3.5 │          0 │            0 │          4.3 │
+ 6. │         3.5 │          0 │            0 │          4.3 │
+ 7. │         2.5 │          0 │            0 │          3.8 │
+ 8. │         2.5 │          0 │            0 │          3.8 │
+ 9. │           5 │          0 │            0 │          5.8 │
+10. │           5 │          0 │            0 │          5.8 │
+    └─────────────┴────────────┴──────────────┴──────────────┘
+```
+
+Supongamos que también queremos devolver columnas que contengan los términos `fee` o `tax`.
+Podemos actualizar la expresión regular para incluirlos:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax')
+FROM nyc_taxi.trips
+ORDER BY rand() 
+LIMIT 3;
+```
+
+> [Prueba esta consulta en el playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykKRlJPTSBueWNfdGF4aS50cmlwcwpPUkRFUiBCWSByYW5kKCkgCkxJTUlUIDM7\&run_query=true)
+
+```text
+   ┌─fare_amount─┬─mta_tax─┬─tip_amount─┬─tolls_amount─┬─ehail_fee─┬─total_amount─┐
+1. │           5 │     0.5 │          1 │            0 │         0 │          7.8 │
+2. │        12.5 │     0.5 │          0 │            0 │         0 │         13.8 │
+3. │         4.5 │     0.5 │       1.66 │            0 │         0 │         9.96 │
+   └─────────────┴─────────┴────────────┴──────────────┴───────────┴──────────────┘
+```
+
+<div id="selecting-multiple-patterns">
+  ## Seleccionar varios patrones
+</div>
+
+Podemos combinar varios patrones de columnas en una sola consulta:
+
+```sql
+SELECT 
+    COLUMNS('.*_amount'),
+    COLUMNS('.*_date.*')
+FROM nyc_taxi.trips
+LIMIT 5;
+```
+
+> [Prueba esta consulta en el Playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIAogICAgQ09MVU1OUygnLipfYW1vdW50JyksCiAgICBDT0xVTU5TKCcuKl9kYXRlLionKQpGUk9NIG55Y190YXhpLnRyaXBzCkxJTUlUIDU7\&run_query=true)
+
+```text
+   ┌─fare_amount─┬─tip_amount─┬─tolls_amount─┬─total_amount─┬─pickup_date─┬─────pickup_datetime─┬─dropoff_date─┬────dropoff_datetime─┐
+1. │           9 │          0 │            0 │          9.8 │  2001-01-01 │ 2001-01-01 00:01:48 │   2001-01-01 │ 2001-01-01 00:15:47 │
+2. │           9 │          0 │            0 │          9.8 │  2001-01-01 │ 2001-01-01 00:01:48 │   2001-01-01 │ 2001-01-01 00:15:47 │
+3. │         3.5 │          0 │            0 │          4.8 │  2001-01-01 │ 2001-01-01 00:02:08 │   2001-01-01 │ 2001-01-01 01:00:02 │
+4. │         3.5 │          0 │            0 │          4.8 │  2001-01-01 │ 2001-01-01 00:02:08 │   2001-01-01 │ 2001-01-01 01:00:02 │
+5. │         3.5 │          0 │            0 │          4.3 │  2001-01-01 │ 2001-01-01 00:02:26 │   2001-01-01 │ 2001-01-01 00:04:49 │
+   └─────────────┴────────────┴──────────────┴──────────────┴─────────────┴─────────────────────┴──────────────┴─────────────────────┘
+```
+
+<div id="applying-functions">
+  ## Aplicar funciones a todas las columnas
+</div>
+
+También podemos usar el modificador [`APPLY`](/es/reference/statements/select/index) para aplicar funciones a todas las columnas.
+Por ejemplo, si quisiéramos encontrar el valor máximo de cada una de esas columnas, podríamos ejecutar la siguiente consulta:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(max)
+FROM nyc_taxi.trips;
+```
+
+> [Prueba esta consulta en el Playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkobWF4KQpGUk9NIG55Y190YXhpLnRyaXBzOw\&run_query=true)
+
+```text
+   ┌─max(fare_amount)─┬─max(mta_tax)─┬─max(tip_amount)─┬─max(tolls_amount)─┬─max(ehail_fee)─┬─max(total_amount)─┐
+1. │           998310 │     500000.5 │       3950588.8 │           7999.92 │           1.95 │         3950611.5 │
+   └──────────────────┴──────────────┴─────────────────┴───────────────────┴────────────────┴───────────────────┘
+```
+
+O quizá prefiramos ver el promedio:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg)
+FROM nyc_taxi.trips
+```
+
+> [Prueba esta consulta en el Playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkoYXZnKQpGUk9NIG55Y190YXhpLnRyaXBzOw\&run_query=true)
+
+```text
+   ┌─avg(fare_amount)─┬───────avg(mta_tax)─┬────avg(tip_amount)─┬──avg(tolls_amount)─┬──────avg(ehail_fee)─┬──avg(total_amount)─┐
+1. │ 11.8044154834777 │ 0.4555942672733423 │ 1.3469850969211845 │ 0.2256511991414463 │ 3.37600560437412e-9 │ 14.423323722271563 │
+   └──────────────────┴────────────────────┴────────────────────┴────────────────────┴─────────────────────┴────────────────────┘
+```
+
+Esos valores tienen demasiadas cifras decimales, pero por suerte podemos solucionarlo encadenando funciones. En este caso, aplicaremos la función avg, seguida de la función round:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg) APPLY(round)
+FROM nyc_taxi.trips;
+```
+
+> [Pruebe esta consulta en el playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkoYXZnKSBBUFBMWShyb3VuZCkKRlJPTSBueWNfdGF4aS50cmlwczs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount))─┬─round(avg(mta_tax))─┬─round(avg(tip_amount))─┬─round(avg(tolls_amount))─┬─round(avg(ehail_fee))─┬─round(avg(total_amount))─┐
+1. │                      12 │                   0 │                      1 │                        0 │                     0 │                       14 │
+   └─────────────────────────┴─────────────────────┴────────────────────────┴──────────────────────────┴───────────────────────┴──────────────────────────┘
+```
+
+Pero eso redondea los promedios a números enteros. Si queremos redondearlos a, por ejemplo, 2 decimales, también podemos hacerlo. Además de aceptar funciones, el modificador `APPLY` acepta una lambda, lo que nos da la flexibilidad de hacer que la función round redondee nuestros valores medios a 2 decimales:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg) APPLY(x -> round(x, 2))
+FROM nyc_taxi.trips;
+```
+
+> [Pruebe esta consulta en el playground de SQL](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkgYXZnIEFQUExZIHggLT4gcm91bmQoeCwgMikKRlJPTSBueWNfdGF4aS50cmlwcw\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(mta_tax), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(tolls_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(total_amount), 2)─┐
+1. │                       11.8 │                   0.46 │                      1.35 │                        0.23 │                        0 │                       14.42 │
+   └────────────────────────────┴────────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────────────────┴─────────────────────────────┘
+```
+
+<div id="replacing-columns">
+  ## Reemplazar columnas
+</div>
+
+Hasta aquí, todo bien. Pero supongamos que queremos ajustar uno de los valores y dejar los demás tal como están. Por ejemplo, quizá queramos duplicar el importe total y dividir el impuesto MTA entre 1.1. Podemos hacerlo con el modificador [`REPLACE`](/es/reference/statements/select/index), que sustituye una columna sin modificar las demás.
+
+```sql
+FROM nyc_taxi.trips 
+SELECT 
+  COLUMNS('.*_amount|fee|tax')
+  REPLACE(
+    total_amount*2 AS total_amount,
+    mta_tax/1.1 AS mta_tax
+  ) 
+  APPLY(avg)
+  APPLY(col -> round(col, 2));
+```
+
+> [Pruebe esta consulta en el Playground de SQL](https://sql.clickhouse.com?query=RlJPTSBueWNfdGF4aS50cmlwcyAKU0VMRUNUIAogIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykKICBSRVBMQUNFKAogICAgdG90YWxfYW1vdW50KjIgQVMgdG90YWxfYW1vdW50LAogICAgbXRhX3RheC8xLjEgQVMgbXRhX3RheAogICkgCiAgQVBQTFkoYXZnKQogIEFQUExZKGNvbCAtPiByb3VuZChjb2wsIDIpKTs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(di⋯, 1.1)), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(tolls_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(mu⋯nt, 2)), 2)─┐
+1. │                       11.8 │                     0.41 │                      1.35 │                        0.23 │                        0 │                    28.85 │
+   └────────────────────────────┴──────────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────────────────┴──────────────────────────┘
+```
+
+<div id="excluding-columns">
+  ## Excluir columnas
+</div>
+
+También podemos excluir un campo con el modificador [`EXCEPT`](/es/reference/statements/select/index). Por ejemplo, para quitar la columna `tolls_amount`, escribiríamos la siguiente consulta:
+
+```sql
+FROM nyc_taxi.trips 
+SELECT 
+  COLUMNS('.*_amount|fee|tax') EXCEPT(tolls_amount)
+  REPLACE(
+    total_amount*2 AS total_amount,
+    mta_tax/1.1 AS mta_tax
+  ) 
+  APPLY(avg)
+  APPLY(col -> round(col, 2));
+```
+
+> [Prueba esta consulta en el Playground de SQL](https://sql.clickhouse.com?query=RlJPTSBueWNfdGF4aS50cmlwcyAKU0VMRUNUIAogIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgRVhDRVBUKHRvbGxzX2Ftb3VudCkKICBSRVBMQUNFKAogICAgdG90YWxfYW1vdW50KjIgQVMgdG90YWxfYW1vdW50LAogICAgbXRhX3RheC8xLjEgQVMgbXRhX3RheAogICkgCiAgQVBQTFkoYXZnKQogIEFQUExZKGNvbCAtPiByb3VuZChjb2wsIDIpKTs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(di⋯, 1.1)), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(mu⋯nt, 2)), 2)─┐
+1. │                       11.8 │                     0.41 │                      1.35 │                        0 │                    28.85 │
+   └────────────────────────────┴──────────────────────────┴───────────────────────────┴──────────────────────────┴──────────────────────────┘
+```

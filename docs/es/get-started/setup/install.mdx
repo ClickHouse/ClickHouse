@@ -1,0 +1,56 @@
+---
+description: 'Instalar ClickHouse'
+keywords: ['ClickHouse', 'instalar', 'primeros pasos', 'inicio rápido']
+sidebarTitle: 'Instalar'
+slug: /install
+title: 'Guía de instalación'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/es/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="/es/get-started/setup/cloud" cta="Ver guía">
+  Empieza a crear al instante sin tener que dimensionar ni escalar tu clúster. ClickHouse Cloud se encarga del dimensionamiento, el escalado
+  , la seguridad, la fiabilidad y las actualizaciones.
+</Card>
+
+<br />
+
+Si prefieres gestionarlo por tu cuenta, selecciona una de las opciones open-source de ClickHouse que aparecen a continuación.
+Usa el script de instalación rápida o la CLI `clickhousectl` para una configuración local, o instala
+ClickHouse Server desde paquetes o binarios para un despliegue en producción.
+
+<h3 className="install-group-heading">Desarrollo local</h3>
+
+<p className="install-group-description">
+  Ejecuta ClickHouse en tu propio equipo para desarrollar, probar y experimentar.
+  La instalación rápida te proporciona un único binario enseguida, o usa clickhousectl
+  para instalar y gestionar versiones y servidores locales.
+</p>
+
+<Columns cols={4}>
+  <Card title="Instalación rápida" icon="/images/install/linux.svg" href="/es/get-started/setup/self-managed/quick-install" />
+
+  <Card title="clickhousectl (CLI)" icon="terminal" href="/es/get-started/setup/self-managed/clickhousectl" />
+
+  <Card title="Docker" icon="/images/install/docker.svg" href="/es/get-started/setup/self-managed/docker" />
+
+  <Card title="Compilación desde código fuente" icon="code" href="/es/get-started/setup/self-managed/advanced" />
+</Columns>
+
+<h3 className="install-group-heading">Servidor de producción</h3>
+
+<p className="install-group-description">
+  Instala ClickHouse Server desde paquetes o binarios para una
+  implementación de larga duración en tu propia infraestructura.
+</p>
+
+<Columns cols={4}>
+  <Card title="Debian/Ubuntu" icon="/images/install/DebianUbuntu.svg" href="/es/get-started/setup/self-managed/debian-ubuntu" />
+
+  <Card title="Redhat" icon="/images/install/redhat.svg" href="/es/get-started/setup/self-managed/redhat" />
+
+  <Card title="NixOS" icon="/images/install/nixos.svg" href="/es/get-started/setup/self-managed/nixos" />
+
+  <Card title="Otros Linux" icon="/images/install/linux.svg" href="/es/get-started/setup/self-managed/other-linux" />
+</Columns>

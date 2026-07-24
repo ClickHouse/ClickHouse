@@ -44,9 +44,9 @@ protected:
 private:
     static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
-    /// return true if has new data
+    /// returns the number of new (distinct) rows in the chunk
     template <typename Method>
-    bool buildFilter(
+    size_t buildFilter(
         Method & method,
         const ColumnRawPtrs & key_columns,
         const ColumnRawPtrs & clearing_hint_columns,
@@ -69,6 +69,9 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     UInt64 limit_hint;
+    /// Total number of rows emitted so far. The clearable set is reset on every new sort prefix,
+    /// so its size reflects only the current run and cannot be used to enforce the limits.
+    size_t total_output_rows = 0;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;

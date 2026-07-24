@@ -1,0 +1,80 @@
+---
+slug: /cloud/managed-postgres/clickhouse-integration
+sidebarTitle: 'ClickHouse integration'
+title: 'ClickHouse integration'
+description: '기본 제공되는 CDC 기능을 사용해 Postgres 데이터를 ClickHouse로 복제합니다'
+keywords: ['postgres', 'clickhouse integration', 'cdc', '복제', 'clickpipes', '데이터 동기화']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
+
+모든 Managed Postgres 인스턴스에는 각 ClickHouse 서비스로 데이터를 복제할 수 있는 CDC 기능이 기본 제공됩니다. 이를 통해 Postgres 인스턴스의 데이터 일부 또는 전체를 ClickHouse로 옮기고, Postgres에서 발생한 데이터 변경 사항을 ClickHouse에 지속적으로 거의 실시간에 가깝게 반영할 수 있습니다. 이 기능은 내부적으로 [ClickPipes](/ko/integrations/clickpipes/home)를 기반으로 동작합니다.
+
+이 기능에 액세스하려면 Postgres 인스턴스의 사이드바에서 **ClickHouse Integration**을 클릭하십시오.
+
+<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="사이드바에 통합 옵션이 표시된 ClickHouse integration 랜딩 페이지" size="md" border />
+
+<Note>
+  계속 진행하기 전에 Postgres 서비스에 ClickPipes 서비스가 액세스할 수 있는지 확인하십시오. 기본적으로는 가능하지만, IP 액세스를 제한한 경우 **ClickHouse 서비스**가 위치한 리전에 따라 [이](/ko/integrations/clickpipes/home#list-of-static-ips) 목록에 있는 일부 원본 IP의 액세스를 허용해야 할 수 있습니다.
+</Note>
+
+ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭하십시오.
+
+<Steps>
+  <Step title="복제 서비스 구성" id="configure-replication-service">
+    Fill in the 복제 settings:
+
+    * **Integration name**: A name for this ClickPipe
+    * **ClickHouse 서비스**: Select an existing ClickHouse Cloud service or create a new one
+    * **Postgres database**: The source database to replicate from
+    * **복제 method**: Choose one of:
+      * **Initial load + CDC**: Import existing data and keep tables updated with new changes (recommended)
+      * **Initial load only**: One-time snapshot of existing data with no ongoing updates
+      * **CDC only**: Skip the initial snapshot and only capture new changes going forward
+
+    <Image img="/images/managed-postgres/replication-service-step.webp" alt="Replication service configuration showing integration name, destination service, and replication method options" size="md" border />
+
+    Click **Next** to proceed.
+  </Step>
+
+  <Step title="Configure 복제 settings" id="replication-settings">
+    Fine-tune how data is replicated:
+
+    * **Sync interval (seconds)**: How often changes are pulled from Postgres (default: 60)
+    * **Parallel threads for initial load**: Number of threads used during the initial snapshot (default: 4)
+    * **Pull batch size**: Number of rows fetched per batch during 복제 (default: 100000)
+    * **Snapshot number of rows per partition**: Rows per partition during the initial snapshot (default: 100000)
+    * **Snapshot number of tables in parallel**: How many tables are snapshotted concurrently (default: 1)
+
+    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="Replication settings step showing sync interval, parallel threads, pull batch size, and snapshot configuration options" size="md" border />
+
+    Click **Next** to proceed.
+  </Step>
+
+  <Step title="Select tables to replicate" id="select-tables">
+    Choose a destination database and select which tables to replicate:
+
+    * **Destination database**: Select an existing ClickHouse database or create a new one
+    * **Prefix default destination table names with schema name**: Adds the Postgres schema as a prefix to avoid naming conflicts
+    * **Preserve NULL values from source**: Maintains NULL values instead of converting to type defaults. 이 설정은 파이프의 모든 테이블에 적용되며, 파이프를 만든 후에는 변경할 수 없습니다.
+    * **Remove deleted rows during merges**: For [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, physically removes deleted rows during background merges
+
+    Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.
+
+    <Image img="/images/managed-postgres/select-tables-step.webp" alt="Select tables step showing database selection, 복제 options, and table picker grouped by schema" size="md" border />
+
+    Click **Replicate data to ClickHouse** to start the 복제.
+  </Step>
+
+  <Step title="Monitor your ClickPipe" id="monitor-clickpipe">
+    Once the ClickPipe starts, you&#39;ll see it listed in the same menu. The initial snapshot of all data may take some time depending on the size of your tables.
+
+    <Image img="/images/managed-postgres/integration-running.webp" alt="ClickHouse integration list showing a running ClickPipe with its destination service and status" size="md" border />
+
+    Click on the integration name to view detailed status, monitor progress, view errors, and manage the ClickPipe. See [Lifecycle of a Postgres ClickPipe](/ko/integrations/clickpipes/postgres/lifecycle) to understand the different states your ClickPipe may be in.
+  </Step>
+</Steps>

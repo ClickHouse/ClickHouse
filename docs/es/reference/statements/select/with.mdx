@@ -1,0 +1,560 @@
+---
+description: 'Documentación de la cláusula WITH'
+sidebarTitle: 'WITH'
+slug: /sql-reference/statements/select/with
+title: 'Cláusula WITH'
+doc_type: 'reference'
+---
+
+ClickHouse admite expresiones de tabla comunes ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), expresiones escalares comunes y consultas recursivas.
+
+<div id="common-table-expressions">
+  ## Expresiones de tabla comunes
+</div>
+
+Las expresiones de tabla comunes representan subconsultas con nombre.
+Se puede hacer referencia a ellas por su nombre en cualquier parte de una consulta `SELECT` donde se permita una expresión de tabla.
+Se puede hacer referencia a las subconsultas con nombre dentro del ámbito de la consulta actual o de los ámbitos de las subconsultas hijas.
+
+Cada referencia a una expresión de tabla común en consultas `SELECT` siempre se sustituye por la subconsulta de su definición si la CTE no está definida explícitamente como materializada (consulte [Expresiones de tabla comunes materializadas](#materialized-common-table-expressions)).
+La recursión se evita ocultando la CTE actual del proceso de resolución de identificadores.
+
+Tenga en cuenta que las CTE no garantizan los mismos resultados en todos los lugares donde se usan, porque la consulta se vuelve a ejecutar en cada caso.
+
+<div id="common-table-expressions-syntax">
+  ### Sintaxis
+</div>
+
+```sql
+WITH <identifier> AS [MATERIALIZED] <subquery expression>
+```
+
+<div id="common-table-expressions-example">
+  ### Ejemplo
+</div>
+
+Un ejemplo de cuándo se vuelve a ejecutar una subconsulta:
+
+```sql
+WITH cte_numbers AS
+(
+    SELECT
+        num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT
+    count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers)
+```
+
+Si las CTE devolvieran exactamente los resultados y no solo un fragmento de código, siempre verías `1000000`
+
+Sin embargo, como hacemos referencia a `cte_numbers` dos veces, se generan números aleatorios cada vez y, por lo tanto, vemos resultados aleatorios distintos, `280501, 392454, 261636, 196227`, y así sucesivamente...
+
+<div id="materialized-common-table-expressions">
+  ## Expresiones de tabla comunes materializadas
+</div>
+
+De forma predeterminada, ClickHouse expande en línea la subconsulta de una CTE en cada punto en el que se hace referencia a ella, volviéndola a ejecutar cada vez.
+Agregar la palabra clave `MATERIALIZED` indica a ClickHouse que ejecute la subconsulta de la CTE **exactamente una vez**, almacene los resultados en una tabla temporal y resuelva todas las referencias a partir de esa tabla.
+Esto resulta especialmente útil cuando se hace referencia a la misma CTE varias veces en una consulta (p. ej., en autouniones o en varias subconsultas `IN`), porque el cálculo subyacente solo se realiza una vez.
+
+<Note>
+  Las CTE materializadas son una característica **experimental**.
+  Requieren que el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) y la configuración `enable_materialized_cte` estén habilitados.
+</Note>
+
+<div id="common-table-expressions-syntax">
+  ### Sintaxis
+</div>
+
+```sql
+WITH <identifier> AS MATERIALIZED (<subquery>)
+SELECT ...
+```
+
+<div id="materialized-cte-when-to-use">
+  ### Cuándo usar
+</div>
+
+Los CTE materializados son más útiles cuando:
+
+* Se hace referencia al mismo CTE **más de una vez** en una consulta.
+  Sin `MATERIALIZED`, cada referencia vuelve a ejecutar la subconsulta de forma independiente.
+* El CTE contiene funciones **no deterministas** como `generateRandom`.
+  La materialización garantiza que todas las referencias vean los mismos datos.
+* El CTE implica **cálculos costosos** (agregaciones, joins, escaneos grandes) que no deberían repetirse.
+
+<Tip>
+  Si un CTE materializado solo se referencia una vez, ClickHouse lo integra automáticamente como una subconsulta normal para evitar una sobrecarga innecesaria.
+</Tip>
+
+<div id="materialized-common-table-expressions-examples">
+  ### Ejemplos
+</div>
+
+**Ejemplo 1:** Autounión en una CTE materializada
+
+Sin `MATERIALIZED`, ambos lados de la unión ejecutarían la subconsulta de forma independiente.
+Con `MATERIALIZED`, la tabla se escanea una sola vez y ambos lados de la unión leen de la misma tabla temporal.
+
+```sql
+SET enable_materialized_cte = 1;
+
+CREATE TABLE users (uid Int16, name String, age Int16) ENGINE = Memory;
+INSERT INTO users VALUES (1231, 'John', 33), (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+
+WITH
+    a AS MATERIALIZED (SELECT * FROM users WHERE name = 'Alice')
+SELECT count() FROM a AS l JOIN a AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       1 │
+└─────────┘
+```
+
+**Ejemplo 2:** Resultados deterministas con funciones no deterministas
+
+Las CTE normales con `generateRandom` producen resultados distintos en cada referencia.
+Materializar la CTE garantiza la consistencia:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH cte_numbers AS MATERIALIZED
+(
+    SELECT num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers);
+```
+
+Como ambas referencias leen de los mismos datos materializados, el resultado siempre es `1000000`.
+
+**Ejemplo 3:** Encadenamiento de CTE materializadas
+
+Las CTE materializadas pueden hacer referencia a otras CTE materializadas.
+ClickHouse resuelve las dependencias y las materializa en el orden adecuado:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    a AS MATERIALIZED (SELECT uid, name FROM users),
+    b AS MATERIALIZED (SELECT uid FROM a)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+El orden de las definiciones de las CTE no importa: se permiten las referencias adelantadas.
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    b AS MATERIALIZED (SELECT uid FROM a),
+    a AS MATERIALIZED (SELECT uid FROM users)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<div id="materialized-cte-restrictions">
+  ### Restricciones
+</div>
+
+* **Se requiere una configuración experimental**: La configuración `enable_materialized_cte` debe estar habilitada.
+* **Se requiere el analizador**: Los CTE materializados solo funcionan con el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) habilitado (`enable_analyzer = 1`).
+* **No compatible con `RECURSIVE`**: No se permite combinar las palabras clave `MATERIALIZED` y `RECURSIVE`, y ello da lugar a una excepción `UNSUPPORTED_METHOD`.
+* **Los CTE correlacionados no están permitidos**: Un CTE materializado no puede hacer referencia a columnas de ámbitos externos de la consulta.
+
+<div id="common-scalar-expressions">
+  ## Expresiones escalares comunes
+</div>
+
+ClickHouse le permite declarar alias para expresiones escalares arbitrarias en la cláusula `WITH`.
+Las expresiones escalares comunes pueden usarse en cualquier parte de la consulta.
+
+<Note>
+  Si una expresión escalar común hace referencia a algo distinto de un literal constante, puede dar lugar a la presencia de [variables libres](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
+  ClickHouse resuelve cualquier identificador en el ámbito más cercano posible, lo que significa que las variables libres pueden hacer referencia a entidades inesperadas en caso de conflictos de nombres o dar lugar a una subconsulta correlacionada.
+  Se recomienda definir CSE como una [función lambda](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (solo es posible con el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) habilitado), vinculando todos los identificadores usados para lograr un comportamiento más predecible en la resolución de los identificadores de la expresión.
+</Note>
+
+<div id="common-table-expressions-syntax">
+  ### Sintaxis
+</div>
+
+```sql
+WITH <expression> AS <identifier>
+```
+
+<div id="materialized-common-table-expressions-examples">
+  ### Ejemplos
+</div>
+
+**Ejemplo 1:** Uso de una expresión constante a modo de &quot;variable&quot;
+
+```sql
+WITH '2019-08-01 15:23:00' AS ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound;
+```
+
+**Ejemplo 2:** Uso de funciones de orden superior para acotar los identificadores
+
+```sql
+WITH
+    '.txt' as extension,
+    (id, extension) -> concat(lower(id), extension) AS gen_name
+SELECT gen_name('test', '.sql') as file_name;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**Ejemplo 3:** Uso de funciones de orden superior con variables libres
+
+Las siguientes consultas de ejemplo muestran que los identificadores sin vincular se resuelven como una entidad en el ámbito más cercano.
+Aquí, `extension` no está vinculado en el cuerpo de la función lambda `gen_name`.
+Aunque `extension` se define como `'.txt'` como una expresión escalar común en el ámbito de la definición y el uso de `generated_names`, se resuelve como una columna de la tabla `extension_list`, porque está disponible en la subconsulta `generated_names`.
+
+```sql
+CREATE TABLE extension_list
+(
+    extension String
+)
+ORDER BY extension
+AS SELECT '.sql';
+
+WITH
+    '.txt' as extension,
+    generated_names as (
+        WITH
+            (id) -> concat(lower(id), extension) AS gen_name
+        SELECT gen_name('test') as file_name FROM extension_list
+    )
+SELECT file_name FROM generated_names;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**Ejemplo 4:** Excluir de la lista de columnas de la cláusula SELECT el resultado de una expresión `sum(bytes)`
+
+```sql
+WITH sum(bytes) AS s
+SELECT
+    formatReadableSize(s),
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY s;
+```
+
+**Ejemplo 5:** Uso de los resultados de una subconsulta escalar
+
+```sql
+/* este ejemplo devuelve el TOP 10 de las tablas más grandes */
+WITH
+    (
+        SELECT sum(bytes)
+        FROM system.parts
+        WHERE active
+    ) AS total_disk_usage
+SELECT
+    (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10;
+```
+
+**Ejemplo 6:** Reutilizar una expresión en una subconsulta
+
+```sql
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
+SELECT * FROM test1;
+```
+
+<div id="recursive-queries">
+  ## Consultas recursivas
+</div>
+
+El modificador opcional `RECURSIVE` permite que una consulta `WITH` haga referencia a sus propios resultados. Ejemplo:
+
+**Ejemplo:** Sumar los enteros del 1 al 100
+
+```sql
+WITH RECURSIVE test_table AS (
+    SELECT 1 AS number
+UNION ALL
+    SELECT number + 1 FROM test_table WHERE number < 100
+)
+SELECT sum(number) FROM test_table;
+```
+
+```text
+┌─sum(number)─┐
+│        5050 │
+└─────────────┘
+```
+
+<Note>
+  Los CTE recursivos dependen del [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer), introducido en la versión **`24.3`**. Si usas la versión **`24.3+`** y aparece una excepción **`(UNKNOWN_TABLE)`** o **`(UNSUPPORTED_METHOD)`**, esto sugiere que el analizador está deshabilitado en tu instancia, rol o perfil. Para activar el analizador, habilita la configuración **`allow_experimental_analyzer`** o actualiza la configuración **`compatibility`** a una versión más reciente.
+  A partir de la versión `24.8`, el analizador se ha promovido completamente a producción, y la configuración `allow_experimental_analyzer` ha pasado a llamarse `enable_analyzer`.
+</Note>
+
+La forma general de una consulta `WITH` recursiva consta siempre de un término no recursivo, luego `UNION ALL` y, después, un término recursivo, donde solo el término recursivo puede contener una referencia a la propia salida de la consulta. Una consulta CTE recursiva se ejecuta de la siguiente manera:
+
+1. Evaluar el término no recursivo. Colocar el resultado de la consulta del término no recursivo en una tabla de trabajo temporal.
+2. Mientras la tabla de trabajo no esté vacía, repetir estos pasos:
+   1. Evaluar el término recursivo, sustituyendo la autorreferencia recursiva por el contenido actual de la tabla de trabajo. Colocar el resultado de la consulta del término recursivo en una tabla intermedia temporal.
+   2. Reemplazar el contenido de la tabla de trabajo por el de la tabla intermedia y, a continuación, vaciar la tabla intermedia.
+
+Las consultas recursivas suelen usarse para trabajar con datos jerárquicos o con estructura de árbol. Por ejemplo, podemos escribir una consulta que recorra un árbol:
+
+**Ejemplo:** Recorrido de árbol
+
+Primero, creemos la tabla del árbol:
+
+```sql
+DROP TABLE IF EXISTS tree;
+CREATE TABLE tree
+(
+    id UInt64,
+    parent_id Nullable(UInt64),
+    data String
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tree VALUES (0, NULL, 'ROOT'), (1, 0, 'Child_1'), (2, 0, 'Child_2'), (3, 1, 'Child_1_1');
+```
+
+Podemos recorrer esos árboles con una consulta como la siguiente:
+
+**Ejemplo:** Recorrido del árbol
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree;
+```
+
+```text
+┌─id─┬─parent_id─┬─data──────┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │
+│  1 │         0 │ Child_1   │
+│  2 │         0 │ Child_2   │
+│  3 │         1 │ Child_1_1 │
+└────┴───────────┴───────────┘
+```
+
+<div id="search-order">
+  ### Orden de búsqueda
+</div>
+
+Para crear un orden de recorrido en profundidad, calculamos, para cada fila de resultado, un Array de filas que ya hemos visitado:
+
+**Ejemplo:** Recorrido de árbol en profundidad
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data, [t.id] AS path
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data, arrayConcat(path, [t.id])
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree ORDER BY path;
+```
+
+```text
+┌─id─┬─parent_id─┬─data──────┬─path────┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │
+│  1 │         0 │ Child_1   │ [0,1]   │
+│  3 │         1 │ Child_1_1 │ [0,1,3] │
+│  2 │         0 │ Child_2   │ [0,2]   │
+└────┴───────────┴───────────┴─────────┘
+```
+
+Para crear un recorrido en anchura, el enfoque estándar consiste en añadir una columna que registre la profundidad de la búsqueda:
+
+**Ejemplo:** Recorrido del árbol en anchura
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data, [t.id] AS path, toUInt64(0) AS depth
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data, arrayConcat(path, [t.id]), depth + 1
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree ORDER BY depth;
+```
+
+```text
+┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
+│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │    0 │ Child_1   │ [0,1]   │     1 │
+│  2 │    0 │ Child_2   │ [0,2]   │     1 │
+│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴──────┴───────────┴─────────┴───────┘
+```
+
+<div id="cycle-detection">
+  ### Detección de ciclos
+</div>
+
+Primero, vamos a crear la tabla del grafo:
+
+```sql
+DROP TABLE IF EXISTS graph;
+CREATE TABLE graph
+(
+    from UInt64,
+    to UInt64,
+    label String
+) ENGINE = MergeTree ORDER BY (from, to);
+
+INSERT INTO graph VALUES (1, 2, '1 -> 2'), (1, 3, '1 -> 3'), (2, 3, '2 -> 3'), (1, 4, '1 -> 4'), (4, 5, '4 -> 5');
+```
+
+Podemos recorrer ese grafo con una consulta como esta:
+
+**Ejemplo:** Recorrido del grafo sin detección de ciclos
+
+```sql
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label FROM graph g
+    UNION ALL
+    SELECT g.from, g.to, g.label
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to
+)
+SELECT DISTINCT * FROM search_graph ORDER BY from;
+```
+
+```text
+┌─from─┬─to─┬─label──┐
+│    1 │  4 │ 1 -> 4 │
+│    1 │  2 │ 1 -> 2 │
+│    1 │  3 │ 1 -> 3 │
+│    2 │  3 │ 2 -> 3 │
+│    4 │  5 │ 4 -> 5 │
+└──────┴────┴────────┘
+```
+
+Pero, si añadimos un ciclo a ese grafo, la consulta anterior fallará con el error `Maximum recursive CTE evaluation depth`:
+
+```sql
+INSERT INTO graph VALUES (5, 1, '5 -> 1');
+
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label FROM graph g
+UNION ALL
+    SELECT g.from, g.to, g.label
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to
+)
+SELECT DISTINCT * FROM search_graph ORDER BY from;
+```
+
+```text
+Code: 306. DB::Exception: Received from localhost:9000. DB::Exception: Maximum recursive CTE evaluation depth (1000) exceeded, during evaluation of search_graph AS (SELECT from, to, label FROM graph AS g UNION ALL SELECT g.from, g.to, g.label FROM graph AS g, search_graph AS sg WHERE g.from = sg.to). Consider raising max_recursive_cte_evaluation_depth setting.: While executing RecursiveCTESource. (TOO_DEEP_RECURSION)
+```
+
+El método estándar para gestionar los ciclos consiste en calcular un Array con los nodos ya visitados:
+
+**Ejemplo:** Recorrido de grafos con detección de ciclos
+
+```sql
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label, false AS is_cycle, [tuple(g.from, g.to)] AS path FROM graph g
+UNION ALL
+    SELECT g.from, g.to, g.label, has(path, tuple(g.from, g.to)), arrayConcat(sg.path, [tuple(g.from, g.to)])
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to AND NOT is_cycle
+)
+SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
+```
+
+```text
+┌─from─┬─to─┬─label──┬─is_cycle─┬─path──────────────────────┐
+│    1 │  4 │ 1 -> 4 │ true     │ [(1,4),(4,5),(5,1),(1,4)] │
+│    4 │  5 │ 4 -> 5 │ true     │ [(4,5),(5,1),(1,4),(4,5)] │
+│    5 │  1 │ 5 -> 1 │ true     │ [(5,1),(1,4),(4,5),(5,1)] │
+└──────┴────┴────────┴──────────┴───────────────────────────┘
+```
+
+<div id="infinite-queries">
+  ### Consultas infinitas
+</div>
+
+También es posible usar consultas CTE recursivas infinitas si la consulta externa usa `LIMIT`:
+
+**Ejemplo:** Consulta CTE recursiva infinita
+
+```sql
+WITH RECURSIVE test_table AS (
+    SELECT 1 AS number
+UNION ALL
+    SELECT number + 1 FROM test_table
+)
+SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
+```
+
+```text
+┌─sum(number)─┐
+│        5050 │
+└─────────────┘
+```
+
+<div id="trailing-comma">
+  ## Coma final
+</div>
+
+Se permite una coma después del último elemento de la cláusula `WITH`:
+
+```sql
+WITH
+    (SELECT sum(number) FROM numbers(10)) AS total,
+    total * 2 AS doubled,
+SELECT total, doubled;
+```

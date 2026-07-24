@@ -1,0 +1,21 @@
+---
+title: '¿ClickHouse admite JOIN distribuidos?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse admite JOIN distribuidos'
+doc_type: 'reference'
+keywords: ['distributed', 'join']
+---
+
+Sí, ClickHouse admite joins distribuidos en un clúster.
+
+Cuando los datos están colocados conjuntamente en el clúster (por ejemplo, si el join se realiza mediante el identificador de usuario, que también es una clave de sharding), ClickHouse ofrece una forma de realizar el join sin mover datos por la red.
+
+Cuando los datos no están colocados conjuntamente, ClickHouse permite un broadcast join, en el que partes de los datos combinados se distribuyen entre los nodos del clúster.
+
+A partir de 2025, ClickHouse no realiza shuffle joins, lo que significa que ninguno de los lados del join se redistribuye por la red del clúster según las claves del join.
+
+<Tip>
+  Para obtener información más general sobre joins en ClickHouse, consulta la página de la [&quot;cláusula JOIN&quot;](/es/reference/statements/select/join#supported-types-of-join).
+</Tip>

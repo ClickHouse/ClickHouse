@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
@@ -22,6 +23,7 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -41,6 +43,7 @@ namespace Setting
 extern const SettingsBool fsync_metadata;
 extern const SettingsUInt64 max_parser_backtracks;
 extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
 }
 namespace ErrorCodes
 {
@@ -51,8 +54,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int QUERY_IS_TOO_LARGE;
     extern const int THERE_IS_NO_QUERY;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int FAULT_INJECTED;
+}
+namespace FailPoints
+{
+    extern const char database_catalog_throw_on_table_shutdown[];
+    extern const char database_catalog_throw_on_table_prepare_shutdown[];
 }
 namespace
 {
@@ -137,6 +147,30 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (storage.ttl_table && primary_key.has_value())
         TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
 }
+}
+
+void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context)
+{
+    /// Temporary tables have no on-disk metadata, so the max_query_size check does not apply.
+    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return;
+
+    size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+    if (!max_query_size)
+        return;
+
+    auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
+    applyMetadataChangesToCreateQuery(ast, metadata, context);
+    auto statement = getObjectDefinitionFromCreateQuery(ast);
+
+    if (statement.size() > max_query_size)
+        throw Exception(
+            ErrorCodes::QUERY_IS_TOO_LARGE,
+            "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
+            "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
+            table_id.getNameForLogs(),
+            statement.size(),
+            max_query_size);
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
@@ -564,15 +598,56 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
+    /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
+    /// references this catalog holds on every table: the UUID -> storage mapping keeps the storage
+    /// (and this database) alive otherwise, so it would be destroyed only when DatabaseCatalog is
+    /// destroyed at process exit - after the Poco logger registry and the static thread pools are
+    /// already gone, which aborts. Remember the first error and rethrow it after the cleanup.
+    std::exception_ptr first_error;
+
+    /// The prepare phase can throw too: e.g. StorageReplicatedMergeTree::flushAndPrepareForShutdown
+    /// catches preparation failures, sets an immediate deadline and rethrows. Keep going so the
+    /// cleanup below still runs for every table.
     for (const auto & kv : tables_snapshot)
     {
-        kv.second->flushAndPrepareForShutdown();
+        auto table_id = kv.second->getStorageID();
+        try
+        {
+            fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+            {
+                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
+            });
+            kv.second->flushAndPrepareForShutdown();
+        }
+        catch (...)
+        {
+            if (!first_error)
+                first_error = std::current_exception();
+            tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
+        }
     }
 
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();
-        kv.second->flushAndShutdown();
+        try
+        {
+            fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
+            {
+                /// Test-only: emulate a table flushAndShutdown that throws (e.g. a ZooKeeper timeout).
+                /// Skip predefined databases so only the user table under test triggers it.
+                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id.getNameForLogs());
+            });
+            kv.second->flushAndShutdown();
+        }
+        catch (...)
+        {
+            if (!first_error)
+                first_error = std::current_exception();
+            tryLogCurrentException(log, fmt::format("Failed to shut down table {}", table_id.getNameForLogs()));
+        }
         if (table_id.hasUUID())
         {
             chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
@@ -580,9 +655,14 @@ void DatabaseWithOwnTablesBase::shutdown()
         }
     }
 
-    std::lock_guard lock(mutex);
-    tables.clear();
-    snapshot_detached_tables.clear();
+    {
+        std::lock_guard lock(mutex);
+        tables.clear();
+        snapshot_detached_tables.clear();
+    }
+
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()

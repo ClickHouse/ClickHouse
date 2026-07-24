@@ -32,7 +32,7 @@ for `MVTEncodeGeom` and `ST_AsMVT` for `MVTEncode`.
 ## MVTEncodeGeom {#mvtencodegeom}
 
 Projects a geometry given in geographic coordinates (longitude/latitude) into the tile-local pixel space of the
-slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, clips it to the tile, snaps it to the integer pixel grid,
+slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, snaps it to the integer pixel grid, clips it to the tile,
 and returns the tile-space geometry.
 
 The projection is Web Mercator over the full `UInt32` coordinate range. The returned coordinates have their origin at the
@@ -43,6 +43,10 @@ Tile format, so the result feeds directly into `MVTEncode`. Coordinates are roun
 When `clip` is enabled (the default), the geometry is clipped to the tile expanded by `buffer` pixels (the range
 `[-buffer, extent + buffer]` on each axis); geometry that falls entirely outside becomes `NULL`. This is the analogue of
 PostGIS `ST_AsMVTGeom`.
+
+Polygon coordinates are bounded to a `2^30` window before validation — exactly the pixel span of the whole world at
+`zoom` 18 and `extent` 4096 — so for realistic tiles geometry is validated but never clipped, and the bound only
+affects geometry placed at extreme `zoom` or `extent` values.
 
 The output geometry type depends on the input: a `Point` returns a `Point`; a `LineString` or `MultiLineString` returns a
 `MultiLineString`; a `Ring`, `Polygon` or `MultiPolygon` returns a `MultiPolygon` (clipping may split a geometry into
@@ -306,21 +310,3 @@ for large tables, extend the inner query as shown in [Clustering](#clustering) a
 ## Limitations {#limitations}
 
 - The Web Mercator projection clamps latitude to `±85.05112878°` and does not handle antimeridian-crossing inputs.
-
-- **Polygon clipping does not guarantee MVT-valid output.** Clipping fixes ring orientation and closure but not self-intersections. A self-intersecting ("bow-tie") ring is therefore not repaired: depending on how it meets the tile it is either emitted unchanged (still invalid) or dropped to `NULL`. For example, a bow-tie that lies entirely within the tile is dropped, while the same four corners wound as a simple ring are kept:
-
-```sql
--- self-intersecting ring -> dropped (NULL)
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
--- simple ring, same four corners -> kept
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
-```
-
-- **Geometry is clipped before it is rounded to the integer pixel grid.** PostGIS snaps geometry to the integer pixel grid first and clips second; `MVTEncodeGeom` clips first (on the floating-point projected coordinates) and rounds second. Near a tile edge this can drop a coordinate that would otherwise have rounded onto the boundary pixel. For example, with `buffer = 0` a point just east of the tile edge is clipped, even though it rounds to the edge pixel `4096` that a round-first approach would keep:
-
-```sql
--- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
--- the same point projected without clipping rounds onto the edge pixel:
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
-```

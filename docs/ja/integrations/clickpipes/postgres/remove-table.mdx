@@ -1,0 +1,33 @@
+---
+title: 'ClickPipeから特定のテーブルを削除する'
+description: 'ClickPipeから特定のテーブルを削除する'
+sidebarTitle: 'テーブルを削除'
+slug: /integrations/clickpipes/postgres/removing_tables
+doc_type: 'guide'
+keywords: ['ClickPipes', 'Postgres', 'CDC（変更データキャプチャ）', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+場合によっては、Postgres ClickPipe から特定のテーブルを除外するのが有効です。たとえば、分析ワークロードで不要なテーブルであれば、スキップすることで ClickHouse のストレージコストやレプリケーションコストを削減できます。
+
+<div id="remove-tables-steps">
+  ## 特定のテーブルを除外する手順
+</div>
+
+最初のステップは、パイプからそのテーブルを除外することです。これは次の手順で行えます。
+
+1. パイプを[一時停止](/ja/integrations/clickpipes/postgres/pause-and-resume)します。
+2. Edit Table Settings をクリックします。
+3. 対象のテーブルを探します。検索バーで検索すると見つけられます。
+4. 選択済みのチェックボックスをクリックして、テーブルの選択を解除します。
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. Update をクリックします。
+6. 更新が正常に完了すると、**メトリクス** タブのステータスが **Running** になります。このテーブルは、この ClickPipe では今後レプリケートされません。

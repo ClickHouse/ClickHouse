@@ -19,6 +19,7 @@ ExpressionTransform::ExpressionTransform(
     SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, expression_->getActionsDAG())), false)
     , expression(std::move(expression_))
+    , input_positions(expression->getInputPositions(*header_))
     , updater(std::move(updater_))
 {
 }
@@ -26,14 +27,22 @@ ExpressionTransform::ExpressionTransform(
 void ExpressionTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
-
-    chunk.setColumns(block.getColumns(), num_rows);
-
+    /// The statistics updater needs the full output Block, so fall back to the block-based path when it is set.
     if (updater)
+    {
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
+        chunk.setColumns(block.getColumns(), num_rows);
         updater->recordOutputChunk(chunk, block);
+        return;
+    }
+
+    /// Fast path: run positionally against the fixed input header, avoiding per-chunk Block name-index work.
+    auto columns = expression->executeOnColumns(
+        chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, [this]() { return isCancelled(); });
+
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 void ExpressionTransform::onCancel() noexcept

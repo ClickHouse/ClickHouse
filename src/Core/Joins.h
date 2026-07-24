@@ -144,7 +144,8 @@ enum class JoinOrderAlgorithm : uint8_t
 {
     GREEDY = 0,
     DPSIZE,
-    DPHYP,
+    DPSUB,
+    DPHYP
 };
 
 const char * toString(JoinOrderAlgorithm join_order_algorithm);

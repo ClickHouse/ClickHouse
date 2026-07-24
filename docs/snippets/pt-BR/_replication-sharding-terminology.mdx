@@ -1,0 +1,25 @@
+---
+title: Terminologia de replicação e sharding
+---
+
+<div id="terminology">
+  ## Terminologia
+</div>
+
+<div id="replica">
+  ### Réplica
+</div>
+
+Uma cópia dos dados. O ClickHouse sempre tem pelo menos uma cópia dos seus dados e, portanto, o número mínimo de **réplicas** é um. Esse é um detalhe importante: talvez você não esteja acostumado a considerar a cópia original dos seus dados como uma réplica, mas esse é o termo usado no código e na documentação do ClickHouse. Adicionar uma segunda réplica dos seus dados oferece tolerância a falhas.
+
+<div id="shard">
+  ### Shard
+</div>
+
+Um subconjunto de dados. O ClickHouse sempre tem pelo menos um shard para os seus dados; portanto, se você não dividir os dados entre vários servidores, eles ficarão armazenados em um único shard. Distribuir os dados entre vários servidores pode ser útil para dividir a carga quando você excede a capacidade de um único servidor. O servidor de destino é determinado pela **chave de sharding** e é definido quando você cria a tabela distribuída. A chave de sharding pode ser aleatória ou derivada da saída de uma [função hash](/pt-BR/reference/functions/regular-functions/hash-functions). Os exemplos de implantação que envolvem sharding usarão `rand()` como chave de sharding e trarão mais informações sobre quando e como escolher uma chave de sharding diferente.
+
+<div id="distributed-coordination">
+  ### Coordenação distribuída
+</div>
+
+O ClickHouse Keeper fornece o sistema de coordenação para a replicação de dados e a execução de consultas de DDL distribuído. O ClickHouse Keeper é compatível com o Apache ZooKeeper.

@@ -1,0 +1,58 @@
+{
+  "groups": [
+    {
+      "group": "Cloud",
+      "pages": [
+        "ar/resources/changelogs/cloud/2026",
+        {
+          "group": "الأرشيف",
+          "pages": [
+            "ar/resources/changelogs/cloud/archive/2025",
+            "ar/resources/changelogs/cloud/archive/2024",
+            "ar/resources/changelogs/cloud/archive/2023",
+            "ar/resources/changelogs/cloud/archive/2022"
+          ]
+        },
+        "ar/resources/changelogs/cloud/release-status",
+        {
+          "group": "سجل تغييرات إصدارات قاعدة بيانات Cloud",
+          "pages": [
+            "ar/resources/changelogs/cloud/release-notes/26_02",
+            "ar/resources/changelogs/cloud/release-notes/25_12",
+            "ar/resources/changelogs/cloud/release-notes/25_10",
+            "ar/resources/changelogs/cloud/release-notes/25_08",
+            "ar/resources/changelogs/cloud/release-notes/25_06",
+            "ar/resources/changelogs/cloud/release-notes/25_04",
+            "ar/resources/changelogs/cloud/release-notes/24_12",
+            "ar/resources/changelogs/cloud/release-notes/24_10",
+            "ar/resources/changelogs/cloud/release-notes/24_08",
+            "ar/resources/changelogs/cloud/release-notes/24_06",
+            "ar/resources/changelogs/cloud/release-notes/24_05",
+            "ar/resources/changelogs/cloud/release-notes/24_02"
+          ],
+          "root": "ar/resources/changelogs/cloud/release-notes-index"
+        }
+      ],
+      "root": "ar/resources/changelogs/cloud/index"
+    },
+    {
+      "group": "مُدار ذاتيًا",
+      "pages": [
+        "ar/resources/changelogs/oss/2026",
+        "ar/resources/changelogs/oss/2025",
+        "ar/resources/changelogs/oss/2024",
+        "ar/resources/changelogs/oss/2023",
+        "ar/resources/changelogs/oss/2022",
+        "ar/resources/changelogs/oss/2021",
+        "ar/resources/changelogs/oss/2020",
+        "ar/resources/changelogs/oss/2019",
+        "ar/resources/changelogs/oss/2018",
+        "ar/resources/changelogs/oss/2017",
+        "ar/resources/changelogs/security-changelog"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-changelogs.svg",
+  "item": "سجلات التغييرات",
+  "root": "ar/resources/changelogs/cloud/2026"
+}

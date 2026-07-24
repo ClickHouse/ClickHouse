@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'Too many parts'
+doc_type: 'guide'
+keywords: [
+  'clickhouse too many parts',
+  'ошибка too many parts',
+  'clickhouse пакетирование вставок',
+  'проблема взрывного роста частей',
+  'производительность слияний в clickhouse',
+  'оптимизация пакетных вставок',
+  'асинхронные вставки clickhouse',
+  'проблемы мелких вставок',
+  'управление частями в clickhouse',
+  'оптимизация производительности вставок',
+  'стратегия пакетирования в clickhouse',
+  'шаблоны вставки в базу данных'
+]
+title: 'Уроки: проблема Too many parts'
+description: 'Решения и способы предотвращения Too many parts'
+---
+
+*Это руководство — часть подборки выводов, собранных на встречах сообщества. Больше практических решений и полезных наблюдений можно найти в [подборке по конкретным проблемам](/ru/resources/support-center/tips-and-tricks/community-wisdom).*
+*Нужны дополнительные советы по оптимизации производительности? Ознакомьтесь с руководством сообщества [Оптимизация производительности](/ru/resources/support-center/tips-and-tricks/performance-optimization).*
+
+<div id="understanding-the-problem">
+  ## Понимание проблемы
+</div>
+
+ClickHouse выдаёт ошибку &quot;Too many parts&quot;, чтобы предотвратить серьёзную деградацию производительности. Небольшие части создают сразу несколько проблем: запросы выполняются медленнее, потому что во время их обработки приходится читать и сливать больше файлов; растёт использование памяти, так как для каждой части нужно хранить метаданные в памяти; снижается эффективность сжатия, поскольку маленькие блоки данных сжимаются хуже; увеличиваются накладные расходы на ввод-вывод из-за большего числа файловых дескрипторов и операций seek; кроме того, фоновые слияния замедляются, из-за чего у планировщика слияний становится больше работы.
+
+**Связанная документация**
+
+* [Движок MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree)
+* [Части](/ru/concepts/core-concepts/parts)
+* [Системная таблица частей](/ru/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## Выявляйте проблему заранее
+</div>
+
+Этот запрос отслеживает фрагментацию таблиц, анализируя количество и размеры частей во всех активных таблицах. Он выявляет таблицы с чрезмерным количеством или слишком маленьким размером частей, которым может потребоваться оптимизация merge. Регулярно используйте его, чтобы обнаруживать проблемы с фрагментацией до того, как они скажутся на производительности запросов.
+
+```sql runnable editable
+-- Задание: замените на реальные имена базы данных и таблицы для использования в продакшене
+-- Эксперимент: скорректируйте пороговые значения количества частей (1000, 500, 100) в соответствии с вашей системой
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## Видео
+</div>
+
+* [Быстрые, параллельные и согласованные асинхронные вставки в ClickHouse](https://www.youtube.com/watch?v=AsMPEfN5QtM) - Сотрудник команды ClickHouse объясняет async inserts и проблему Too many parts
+* [ClickHouse в промышленной эксплуатации в больших масштабах](https://www.youtube.com/watch?v=liTgGiTuhJE) - Практические стратегии батчинга из опыта платформ обсервабилити

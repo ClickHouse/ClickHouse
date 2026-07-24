@@ -1,0 +1,290 @@
+---
+description: 'توثيق OPTIMIZE'
+sidebarTitle: 'OPTIMIZE'
+slug: /sql-reference/statements/optimize
+title: 'عبارة OPTIMIZE'
+doc_type: 'مرجع'
+---
+
+يحاول هذا الاستعلام بدء عملية دمج غير مجدولة لأجزاء البيانات في الجداول. لاحظ أننا نوصي عمومًا بعدم استخدام `OPTIMIZE TABLE ... FINAL` (راجع [هذه الوثائق](/ar/concepts/best-practices/avoid-optimize-final))، لأن حالة استخدامه مخصصة للأغراض الإدارية، لا للعمليات اليومية.
+
+<Note>
+  لا يمكن لـ `OPTIMIZE` إصلاح الخطأ `Too many parts`.
+</Note>
+
+**الصياغة**
+
+```sql
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
+```
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+استعلام `OPTIMIZE` مدعوم لعائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك [materialized views](/ar/reference/statements/create/view#materialized-view)) ومحركات [Buffer](/ar/reference/engines/table-engines/special/buffer). أما محركات الجداول الأخرى فلا يدعمها النظام.
+
+عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) مضبوطًا على `2`) أو على النسخة المتماثلة الحالية (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) مضبوطًا على `1`).
+
+* إذا لم يُجرِ `OPTIMIZE` عملية دمج لأي سبب، فلن يُخطر العميل بذلك. لتمكين الإشعارات، استخدم الإعداد [optimize&#95;throw&#95;if&#95;noop](/ar/reference/settings/session-settings#optimize_throw_if_noop).
+* إذا حددت `PARTITION`، فلن يُحسَّن إلا القسم المحدد. [كيفية تعيين partition expression](/ar/reference/statements/alter/partition#how-to-set-partition-expression).
+* إذا حددت `FINAL` أو `FORCE`، فستُنفَّذ عملية التحسين حتى إذا كانت جميع البيانات موجودة بالفعل في جزء واحد. يمكنك التحكم في هذا السلوك باستخدام [optimize&#95;skip&#95;merged&#95;partitions](/ar/reference/settings/session-settings#optimize_skip_merged_partitions). كذلك، يُفرَض الدمج حتى إذا كانت هناك عمليات دمج متزامنة قيد التنفيذ.
+* إذا حددت `DEDUPLICATE`، فستُزال الصفوف المتطابقة تمامًا (ما لم تُحدَّد عبارة BY) (تُقارَن جميع الأعمدة)، وهذا مفيد فقط مع محرك MergeTree.
+
+يمكنك تحديد مدة الانتظار (بالثواني) لكي تنفّذ النسخ المتماثلة غير النشطة استعلامات `OPTIMIZE` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+
+<Note>
+  إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
+</Note>
+
+<div id="dry-run">
+  ## DRY RUN
+</div>
+
+يحاكي بند `DRY RUN` دمج الأجزاء المحددة من دون تثبيت النتيجة. ويُكتب الجزء المدموج في موقع مؤقت، ثم يُتحقَّق منه ويُتخلَّص منه بعد ذلك. وتبقى الأجزاء الأصلية وبيانات الجدول من دون تغيير.
+
+يفيد ذلك في:
+
+* اختبار صحة الدمج عبر إصدارات ClickHouse.
+* إعادة إنتاج الأخطاء المرتبطة بالدمج بصورة حتمية.
+* قياس أداء الدمج.
+
+لا يُدعَم `DRY RUN` إلا للجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). ويُشترط استخدام الكلمة المفتاحية `PARTS` مع قائمة بأسماء الأجزاء. ويجب أن تكون جميع الأجزاء المحددة موجودة ونشطة وتنتمي إلى القسم نفسه.
+
+لا يتوافق `DRY RUN` مع `FINAL` و`PARTITION`. ويمكن دمجه مع `DEDUPLICATE` (مع تحديد اختياري للأعمدة) و`CLEANUP` (لجداول `ReplacingMergeTree`).
+
+**الصياغة**
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+افتراضيًا، يُتحقَّق من الجزء المدموج الناتج بأسلوب مشابه لاستعلام [`CHECK TABLE`](/ar/reference/statements/check-table). ويخضع هذا السلوك للإعداد [optimize&#95;dry&#95;run&#95;check&#95;part](/ar/reference/settings/session-settings#optimize_dry_run_check_part) (مفعّل افتراضيًا). ويؤدي تعطيله إلى تخطي التحقق، ما قد يكون مفيدًا لاختبار أداء عملية الدمج نفسها.
+
+**مثال**
+
+```sql
+CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
+INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
+
+-- Simulate merging using two parts
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
+
+-- Simulate merging with deduplication
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
+
+-- Parts and data remain unchanged after DRY RUN
+SELECT name, rows FROM system.parts
+WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
+ORDER BY name;
+```
+
+```response
+┌─name────────┬─rows─┐
+│ all_1_1_0   │    2 │
+│ all_2_2_0   │    2 │
+└─────────────┴──────┘
+```
+
+<div id="by-expression">
+  ## تعبير BY
+</div>
+
+إذا كنت تريد إجراء إزالة التكرار على مجموعة مخصّصة من الأعمدة بدلًا من جميع الأعمدة، فيمكنك تحديد قائمة الأعمدة صراحةً أو استخدام أي مزيج من تعبيرات [`*`](/ar/reference/statements/select/index#asterisk) و[`COLUMNS`](/ar/reference/statements/select/index#select-clause) و[`EXCEPT`](/ar/reference/statements/select/except_modifier). ويجب أن تتضمن قائمة الأعمدة المكتوبة صراحةً أو الموسَّعة ضمنيًا جميع الأعمدة المحددة في تعبير ترتيب الصفوف (أي كلًّا من المفتاح الأساسي ومفتاح الفرز) وتعبير التقسيم (مفتاح التقسيم).
+
+<Note>
+  لاحظ أن `*` يتصرف تمامًا كما في `SELECT`: لا تُستخدم الأعمدة [MATERIALIZED](/ar/reference/statements/create/view#materialized-view) و[ALIAS](/ar/reference/statements/create/table#alias) في التوسعة.
+
+  كما يُعدّ من الأخطاء تحديد قائمة أعمدة فارغة، أو كتابة تعبير ينتج عنه قائمة أعمدة فارغة، أو إجراء إزالة التكرار باستخدام عمود `ALIAS`.
+</Note>
+
+**الصياغة**
+
+```sql
+OPTIMIZE TABLE table DEDUPLICATE; -- all columns
+OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
+OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT (colX, colY);
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex');
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (colX, colY);
+```
+
+**أمثلة**
+
+لننظر إلى الجدول التالي:
+
+```sql title="Query"
+CREATE TABLE example (
+    primary_key Int32,
+    secondary_key Int32,
+    value UInt32,
+    partition_key UInt32,
+    materialized_value UInt32 MATERIALIZED 12345,
+    aliased_value UInt32 ALIAS 2,
+    PRIMARY KEY primary_key
+) ENGINE=MergeTree
+PARTITION BY partition_key
+ORDER BY (primary_key, secondary_key);
+```
+
+```sql title="Query"
+INSERT INTO example (primary_key, secondary_key, value, partition_key)
+VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```sql title="Response"
+
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+تُنفَّذ جميع الأمثلة التالية على هذه الحالة، التي تضم 5 صفوف.
+
+<div id="deduplicate">
+  #### `DEDUPLICATE`
+</div>
+
+عندما لا تُحدَّد الأعمدة المستخدمة لإزالة التكرار، تُؤخذ جميعها في الحسبان. ولا يُزال الصف إلا إذا كانت جميع القيم في كل الأعمدة مساويةً للقيم المناظرة في الصف السابق:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-">
+  #### `DEDUPLICATE BY *`
+</div>
+
+عندما تُحدَّد الأعمدة ضمنيًا، يُزال التكرار من الجدول استنادًا إلى جميع الأعمدة التي ليست `ALIAS` أو `MATERIALIZED`. وبالنظر إلى الجدول أعلاه، فهذه هي الأعمدة `primary_key` و`secondary_key` و`value` و`partition_key`:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by--except">
+  #### `DEDUPLICATE BY * EXCEPT`
+</div>
+
+أزل التكرار بحسب جميع الأعمدة التي ليست `ALIAS` أو `MATERIALIZED`، مع استبعاد `value` صراحةً: أعمدة `primary_key` و`secondary_key` و`partition_key`.
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-list-of-columns">
+  #### `DEDUPLICATE BY <list of columns>`
+</div>
+
+أزل التكرار صراحةً استنادًا إلى الأعمدة `primary_key` و`secondary_key` و`partition_key`:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-columnsregex">
+  #### `DEDUPLICATE BY COLUMNS(<regex>)`
+</div>
+
+أزل التكرار استنادًا إلى جميع الأعمدة التي تطابق تعبيرًا نمطيًا: الأعمدة `primary_key` و`secondary_key` و`partition_key`:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
