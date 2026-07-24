@@ -140,10 +140,18 @@ void MergeTreeDeduplicationLog::load()
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
-        /// Can happen in case we have unfinished log
-        if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+        /// written record (see `ensureWriter`). Opening it eagerly here would add a phantom blob to the
+        /// log file on object storages when the table is shut down without writing any record: finalizing
+        /// an empty `WriteMode::Append` buffer registers the blob in the metadata without uploading any
+        /// object, and a subsequent load would fail to read it (e.g. with `NoSuchKey` on S3).
     }
+}
+
+void MergeTreeDeduplicationLog::ensureWriter()
+{
+    if (!current_writer)
+        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 }
 
 size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
@@ -277,7 +285,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    chassert(current_writer != nullptr);
+    ensureWriter();
 
     for (const auto & block_id : block_ids)
     {
@@ -315,7 +323,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
-    chassert(current_writer != nullptr);
+    ensureWriter();
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -366,9 +374,8 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
 
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+    /// written record (see `ensureWriter` and the comment in `load`).
 }
 
 
