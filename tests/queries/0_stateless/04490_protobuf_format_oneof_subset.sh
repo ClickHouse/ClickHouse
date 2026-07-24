@@ -108,16 +108,15 @@ CREATE TABLE oneof_empty_no_zero_04490 ( type Enum8('nothing'=1) ) Engine=MergeT
 INSERT INTO oneof_empty_no_zero_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
 EOF
 
-# (i) Unsupported shape: when the message contains only empty-message oneof branches and the
-#     table keeps only the presence column, `Enum8('unknown'=0)` is still insufficient today.
-#     No empty branch gets a wrapper, so serializer construction fails with
-#     NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS.
+# (i) Presence-only shape with only the omitted marker 0: all-empty oneof branches are still kept
+#     in the tree, but they are reflected as omitted because their tags are not listed in the Enum.
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_empty_only_zero_04490;
-SELECT '>> empty_only_omitted_marker_not_supported';
+SELECT '>> empty_only_omitted_marker_is_supported';
 CREATE TABLE oneof_empty_only_zero_04490 ( type Enum8('unknown'=0) ) Engine=MergeTree ORDER BY tuple();
-INSERT INTO oneof_empty_only_zero_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle; -- { clientError NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS }
+INSERT INTO oneof_empty_only_zero_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle;
+SELECT type FROM oneof_empty_only_zero_04490 FORMAT TSV;
 EOF
 
 # (j) The `Enum8('unknown'=0)` limitation is specific to the presence-only shape above. If the
@@ -150,7 +149,7 @@ EOF
 # (l) If a branch has a materializable nested payload column, the synthetic oneof-only fallback
 #     must not steal it. Here `buy.vendor_name` is present, so `tbuy` must fill both
 #     `payment_details='buy'` and `buy_vendor_name`, while `tsell` still has no payload columns
-#     and therefore falls back to `omitted`.
+#     but its known branch tag must still be preserved as `sell`.
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_transaction_partial_materialization_04490;
