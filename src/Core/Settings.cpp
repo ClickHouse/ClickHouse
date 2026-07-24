@@ -8264,6 +8264,14 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
+    DECLARE(UniqueKeyProbeImplementation, unique_key_probe_implementation, UniqueKeyProbeImplementation::Auto, R"(
+Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
+baseline exists, so `auto` and `simple` both resolve to it.
+
+Reserved: this setting has no effect yet — the value is not read until the UNIQUE KEY INSERT
+write path that constructs the probe is wired up. Declared now so the lever ships with the
+implementation.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
@@ -8789,6 +8797,9 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// Dumps profile events to column of type Map(String, String)
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
+    /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
+    std::map<String, String> changedToMap() const;
+
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
@@ -8887,6 +8898,22 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     }
 
     offsets.push_back(offsets.back() + size);
+}
+
+std::map<String, String> SettingsImpl::changedToMap() const
+{
+    std::map<String, String> result;
+
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); ++i)
+        if (accessor.isValueChanged(*this, i))
+            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+
+    for (const auto & custom : custom_settings_map)
+        if (custom.second.changed)
+            result.emplace(custom.first, custom.second.toString());
+
+    return result;
 }
 
 void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
@@ -9206,6 +9233,11 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
 {
     impl->dumpToMapColumn(column, changed_only);
+}
+
+std::map<String, String> Settings::changedToMap() const
+{
+    return impl->changedToMap();
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)

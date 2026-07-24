@@ -437,6 +437,8 @@
     M(UniqueKeyIndexCacheHits, "Number of times an entry has been found in the UNIQUE KEY index cache, so we didn't have to load an SST block.", ValueType::Number) \
     M(UniqueKeyIndexCacheMisses, "Number of times an entry has not been found in the UNIQUE KEY index cache, so we had to load an SST block from disk.", ValueType::Number) \
     M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + copy-via-`writeFile` in `finalizeToStorage`. Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
+    M(UniqueKeyLoadTimeSSTRebuildCount, "Number of UNIQUE KEY parts whose `unique_key_index.sst` was rebuilt at load time after the crash-before-flush window.", ValueType::Number) \
+    M(UniqueKeyLoadTimeSSTRebuildMicroseconds, "Total time spent rebuilding `unique_key_index.sst` at load time (sequential read of UK columns + SST write).", ValueType::Microseconds) \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.", ValueType::Number) \
@@ -1775,6 +1777,19 @@ void Counters::reset()
 Counters::Snapshot::Snapshot()
     : counters_holder(new Count[num_counters] {})
 {}
+
+Counters::Snapshot::Snapshot(const Snapshot & other)
+    : counters_holder(new Count[num_counters] {})
+{
+    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
+}
+
+Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
+{
+    Snapshot tmp(other);
+    counters_holder = std::move(tmp.counters_holder);
+    return *this;
+}
 
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {

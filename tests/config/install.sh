@@ -229,6 +229,10 @@ if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
 fi
 
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/replicated_access_storage.xml $DEST_SERVER_PATH/config.d/
+fi
+
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
 function is_openssl_fips_build()
 {

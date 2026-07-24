@@ -1112,16 +1112,30 @@ def get_all_server_pids():
 
 
 def is_asan_build(args):
-    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
-    try:
-        result = clickhouse_execute(
-            args,
-            "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)",
-        )
-        return result != b"0"
-    except Exception:
-        # If we can't query the server, check environment variable as fallback.
-        return bool(os.environ.get("ASAN_OPTIONS"))
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections.
+
+    Use the build flags collected at startup rather than a live query. This function gates
+    `print_c_stacktraces`, which runs precisely when the server is hung or dead, so a live
+    query would throw. If the flags were never collected (server never started), read the bit
+    from the binary via `clickhouse local` instead of trusting `ASAN_OPTIONS`, which is
+    exported on some runners (e.g. macOS) even for non-ASan builds and would wrongly report
+    ASan and suppress the lldb backtraces.
+    """
+    build_flags = getattr(args, "build_flags", None)
+    if build_flags is not None:
+        return BuildFlags.ADDRESS in build_flags
+    # Build flags not collected yet (server never started, e.g. the startup-failure
+    # hung-check path). Read the ASan bit straight from the binary via `clickhouse
+    # local`, which is independent of server state. ASAN_OPTIONS is not a usable
+    # signal here: the fast macOS runners export it even for non-ASan builds.
+    binary = getattr(args, "binary", "clickhouse")
+    local = find_clickhouse_command(binary, "local")
+    out = shell_get_output(
+        f"{local} --query \"SELECT count() FROM system.build_options "
+        f"WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)\"",
+        timeout=60,
+    )
+    return out.strip() not in ("", "0")
 
 
 def print_c_stacktraces(args) -> None:
