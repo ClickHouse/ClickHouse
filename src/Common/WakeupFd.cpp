@@ -33,7 +33,7 @@ WakeupFd::WakeupFd()
 #ifdef DEBUG_OR_SANITIZER_BUILD
     for (int which : {0, 1})
     {
-        struct stat st;
+        struct stat st{};
         if (0 != fstat(pipe.fds_rw[which], &st))
             throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot fstat wakeup pipe");
         ends[which] = {static_cast<UInt64>(st.st_dev), static_cast<UInt64>(st.st_ino)};
@@ -59,7 +59,7 @@ void WakeupFd::validate(int which) const
             fd,
             flags);
 
-    struct stat st;
+    struct stat st{};
     if (0 != fstat(fd, &st))
         throw ErrnoException(ErrorCodes::LOGICAL_ERROR, "Cannot fstat wakeup pipe {} end (fd {})", side, fd);
     if (!S_ISFIFO(st.st_mode) || static_cast<UInt64>(st.st_dev) != ends[which].dev || static_cast<UInt64>(st.st_ino) != ends[which].ino)
