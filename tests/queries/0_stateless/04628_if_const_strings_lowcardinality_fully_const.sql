@@ -3,7 +3,9 @@ SET optimize_if_transform_strings_to_enum = 0;
 
 SELECT 'Fully constant expressions stay String (no LowCardinality for constants)';
 SELECT if(1, 'x', 'y') AS res, toTypeName(res);
-SELECT if(0, 'x', NULL) AS res, toTypeName(res);
+-- Note: a typed NULL is used because with a bare `NULL` the old analyzer folds `if` with a constant
+-- condition into the raw `NULL` literal, so `toTypeName` would differ between analyzers.
+SELECT if(0, 'x', CAST(NULL AS Nullable(String))) AS res, toTypeName(res);
 SELECT multiIf(0, 'a', 1, 'b', 'c') AS res, toTypeName(res);
 SELECT multiIf(0, 'a', 1, NULL, 'c') AS res, toTypeName(res);
 SELECT transform('US', ['US', 'DE'], ['United States', 'Germany'], 'Unknown') AS res, toTypeName(res);
