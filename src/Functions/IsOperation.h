@@ -6,7 +6,6 @@ namespace DB
 /// These classes should be present in DB namespace (cannot place them into namelesspace)
 template <typename> struct AbsImpl;
 template <typename> struct BitCountImpl;
-template <typename> struct IntExp2Impl;
 template <typename> struct NegateImpl;
 template <typename> struct SignImpl;
 template <typename, typename> struct PlusImpl;
@@ -20,7 +19,6 @@ template <typename, typename> struct DivideIntegralOrNullImpl;
 template <typename, typename> struct LeastBaseImpl;
 template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
-template <typename, typename> struct ModuloLegacyImpl;
 template <typename, typename> struct ModuloOrNullImpl;
 template <typename, typename> struct PositiveModuloImpl;
 template <typename, typename> struct PositiveModuloOrNullImpl;
@@ -29,7 +27,6 @@ template <typename, typename> struct NotEqualsOp;
 template <typename, typename> struct LessOrEqualsOp;
 template <typename, typename> struct GreaterOrEqualsOp;
 template <typename, typename> struct BitHammingDistanceImpl;
-template <typename, typename> struct MidpointImpl;
 
 template <template <typename, typename> typename Op1, template <typename, typename> typename Op2>
 struct IsSameOperation
@@ -63,19 +60,17 @@ struct IsOperation
     static constexpr bool int_div_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
     static constexpr bool int_div_or_null = IsSameOperation<Op, DivideIntegralOrNullImpl>::value;
     static constexpr bool modulo = IsSameOperation<Op, ModuloImpl>::value;
-    static constexpr bool modulo_legacy = IsSameOperation<Op, ModuloLegacyImpl>::value;
     static constexpr bool modulo_or_null = IsSameOperation<Op, ModuloOrNullImpl>::value;
     static constexpr bool positive_modulo = IsSameOperation<Op, PositiveModuloImpl>::value;
     static constexpr bool positive_modulo_or_null = IsSameOperation<Op, PositiveModuloOrNullImpl>::value;
     static constexpr bool least = IsSameOperation<Op, LeastBaseImpl>::value;
     static constexpr bool greatest = IsSameOperation<Op, GreatestBaseImpl>::value;
-    static constexpr bool midpoint = IsSameOperation<Op, MidpointImpl>::value;
 
     static constexpr bool bit_hamming_distance = IsSameOperation<Op, BitHammingDistanceImpl>::value;
 
     static constexpr bool division = div_floating || int_div || int_div_or_zero || modulo || positive_modulo;
     // NOTE: allow_decimal should not fully contain `division` because of divInt
-    static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest || midpoint;
+    static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest;
     static constexpr bool division_or_null = modulo_or_null || positive_modulo_or_null || int_div_or_null || div_floating_or_null;
 };
 

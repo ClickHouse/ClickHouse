@@ -88,12 +88,6 @@ public:
         return configuration_wrapper.cluster_config->get_servers().size();
     }
 
-    ClusterConfigPtr getClusterConfig() const
-    {
-        std::lock_guard lock(configuration_wrapper_mutex);
-        return configuration_wrapper.cluster_config;
-    }
-
     /// Read all log entries in log store from the begging and return latest config (with largest log_index)
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
@@ -112,7 +106,7 @@ private:
     struct KeeperConfigurationWrapper
     {
         /// Our port
-        int port = -1;
+        int port;
         /// Our config
         KeeperServerConfigPtr config;
         /// Password to access keeper

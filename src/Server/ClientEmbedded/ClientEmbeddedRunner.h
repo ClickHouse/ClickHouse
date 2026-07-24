@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <atomic>
 #include <memory>
 
@@ -11,7 +13,7 @@
 namespace DB
 {
 
-// Runs embedded client in a dedicated thread, passes descriptors, checks its state
+// Runs embedded client in dedicated thread, passes descriptors, checks its state
 class ClientEmbeddedRunner
 {
 public:
@@ -51,3 +53,5 @@ private:
 };
 
 }
+
+#endif

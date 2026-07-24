@@ -2,8 +2,8 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
-#include <Core/Field.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -27,85 +27,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-StorageFile::FileSource parseFileSourceFromStringArray(const Array & sources, const ContextPtr & context)
-{
-    if (sources.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function 'file' must contain at least one path");
-
-    StorageFile::FileSource result;
-    bool is_first_source = true;
-    bool has_different_formats = false;
-    for (const auto & source_field : sources)
-    {
-        if (source_field.getType() != Field::Types::String)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "All elements of the first argument of table function 'file' must have type String, got {}",
-                fieldTypeToString(source_field.getType()));
-
-        auto source = StorageFile::FileSource::parse(source_field.safeGet<String>(), context);
-        if (source.archive_info)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Array source for table function 'file' does not support archive path syntax");
-
-        result.paths.insert(result.paths.end(), source.paths.begin(), source.paths.end());
-        result.total_bytes_to_read += source.total_bytes_to_read;
-
-        if (is_first_source)
-        {
-            result.format_from_filenames = source.format_from_filenames;
-            is_first_source = false;
-        }
-        else if (result.format_from_filenames != source.format_from_filenames)
-        {
-            has_different_formats = true;
-        }
-    }
-
-    if (has_different_formats)
-        result.format_from_filenames = {};
-
-    /// Array sources are supported only for reading, even if the array contains a single path.
-    result.with_globs = true;
-    if (!result.paths.empty())
-        result.path_for_partitioned_write = result.paths.front();
-
-    return result;
-}
-
-}
-
 void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
 {
-    const auto * literal = arg->as<ASTLiteral>();
-    if (!literal)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The first argument of table function '{}' must be a path, an array of paths, or a file descriptor",
-            getName());
-
-    auto type = literal->value.getType();
-    if (type == Field::Types::Array)
-    {
-        if (getName() != name)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be a path, not an array", getName());
-
-        filename = arg->formatForErrorMessage();
-        file_source = parseFileSourceFromStringArray(literal->value.safeGet<Array>(), context);
-        return;
-    }
-
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        file_source = StorageFile::FileSource::parse(filename, context);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
         return;
     }
 
+    const auto * literal = arg->as<ASTLiteral>();
+    auto type = literal->value.getType();
     if (type == Field::Types::String)
     {
         filename = literal->value.safeGet<String>();
@@ -116,7 +48,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         else if (filename == "stderr")
             fd = STDERR_FILENO;
         else
-            file_source = StorageFile::FileSource::parse(filename, context);
+            StorageFile::parseFileSource(
+                std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -126,20 +59,18 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be path or file descriptor", getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
 }
 
 std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
-
-    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
-    return file_source->format_from_filenames;
+    return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
 StoragePtr TableFunctionFile::getStorage(
-    const String & /*source*/,
+    const String & source,
     const String & format_,
     const ColumnsDescription & columns,
     ContextPtr global_context,
@@ -159,13 +90,13 @@ StoragePtr TableFunctionFile::getStorage(
         ConstraintsDescription{},
         String{},
         global_context->getSettingsRef()[Setting::rename_files_after_processing],
+        path_to_archive,
     };
 
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
-    return std::make_shared<StorageFile>(*file_source, args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -174,16 +105,26 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     {
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
+        size_t total_bytes_to_read = 0;
 
-        chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
+        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        Strings paths;
+        std::optional<StorageFile::ArchiveInfo> archive_info;
+        if (path_to_archive.empty())
+            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        else
+            archive_info
+                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
         ColumnsDescription columns;
         if (format == "auto")
-            columns = StorageFile::getTableStructureAndFormatFromFile(file_source->paths, compression_method, std::nullopt, context, file_source->archive_info).first;
+            columns = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
         else
-            columns = StorageFile::getTableStructureFromFile(format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info);
+            columns = StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
 
-        auto sample_path = file_source->paths.empty() ? String{} : file_source->paths.front();
+        auto sample_path = paths.empty() ? String{} : paths.front();
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
             columns,
@@ -200,264 +141,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>({.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/reference/functions/table-functions/s3) table function. Use `file` when working with local files, and `s3` when working with buckets in object storage such as S3, GCS, or MinIO.
-
-The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.
-
-## Syntax {#syntax}
-
-```sql
-file([path_to_archive ::] path [,format] [,structure] [,compression])
-```
-
-For `SELECT` queries, `path` can also be an expression that returns an `Array(String)`:
-
-```sql
-file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
-```
-
-## Arguments {#arguments}
-
-| Parameter         | Description                                                                                                                                                                                                                                                                                                   |
-|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `path`            | The relative path to the file from [user_files_path](/reference/settings/server-settings/settings#user_files_path), or an `Array(String)` of paths in `SELECT` queries. Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
-| `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
-| `format`          | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                |
-| `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
-| `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
-
-<Tip>
-When the `structure` argument is omitted, ClickHouse infers the schema from the format itself.
-Different formats produce different default column names and types.
-To see the schema for a specific format, use [`DESC`](/reference/statements/describe-table) with the [`format`](/reference/functions/table-functions/format) table function.
-
-For example:
-
-```sql
-DESC format(LineAsString, 'Hello\nWorld')
-```
-
-```response
-┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ line │ String │              │                    │         │                  │                │
-└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-</Tip>
-
-## Returned value {#returned_value}
-
-A table for reading or writing data in a file.
-
-## Examples for Writing to a File {#examples-for-writing-to-a-file}
-
-### Write to a TSV file {#write-to-a-tsv-file}
-
-```sql
-INSERT INTO TABLE FUNCTION
-file('test.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
-VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
-```
-
-As a result, the data is written into the file `test.tsv`:
-
-```bash
-# cat /var/lib/clickhouse/user_files/test.tsv
-1    2    3
-3    2    1
-1    3    2
-```
-
-### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
-
-If you specify a `PARTITION BY` expression when inserting data into a table function of type `file`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
-
-```sql
-INSERT INTO TABLE FUNCTION
-file('test_{_partition_id}.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
-PARTITION BY column3
-VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
-```
-
-As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, and `test_3.tsv`.
-
-```bash
-# cat /var/lib/clickhouse/user_files/test_1.tsv
-3    2    1
-
-# cat /var/lib/clickhouse/user_files/test_2.tsv
-1    3    2
-
-# cat /var/lib/clickhouse/user_files/test_3.tsv
-1    2    3
-```
-
-## Examples for Reading from a File {#examples-for-reading-from-a-file}
-
-### SELECT from a CSV file {#select-from-a-csv-file}
-
-First, set `user_files_path` in the server configuration and prepare a file `test.csv`:
-
-```bash
-$ grep user_files_path /etc/clickhouse-server/config.xml
-    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
-
-$ cat /var/lib/clickhouse/user_files/test.csv
-    1,2,3
-    3,2,1
-    78,43,45
-```
-
-Then, read data from `test.csv` into a table and select its first two rows:
-
-```sql
-SELECT * FROM
-file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
-LIMIT 2;
-```
-
-```text
-┌─column1─┬─column2─┬─column3─┐
-│       1 │       2 │       3 │
-│       3 │       2 │       1 │
-└─────────┴─────────┴─────────┘
-```
-
-### Inserting data from a file into a table {#inserting-data-from-a-file-into-a-table}
-
-```sql
-INSERT INTO FUNCTION
-file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
-VALUES (1, 2, 3), (3, 2, 1);
-```
-```sql
-SELECT * FROM
-file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
-```
-
-```text
-┌─column1─┬─column2─┬─column3─┐
-│       1 │       2 │       3 │
-│       3 │       2 │       1 │
-└─────────┴─────────┴─────────┘
-```
-
-Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
-
-```sql
-SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
-```
-
-## Globs in path {#globs-in-path}
-
-Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
-directory and does not use globs, a `*` will be implicitly added to the path so
-all the files in the directory are selected.
-
-- `*` — Represents arbitrarily many characters except `/` but including the empty string.
-- `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
-- `{N..M}` — Represents any number `>= N` and `<= M`.
-- `**` - Represents all files inside a folder recursively.
-
-Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) and [hdfs](/reference/functions/table-functions/hdfs) table functions.
-
-## Examples {#examples}
-
-**Example**
-
-Suppose there are these files with the following relative paths:
-
-- `some_dir/some_file_1`
-- `some_dir/some_file_2`
-- `some_dir/some_file_3`
-- `another_dir/some_file_1`
-- `another_dir/some_file_2`
-- `another_dir/some_file_3`
-
-Query the total number of rows in all files:
-
-```sql
-SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32');
-```
-
-An alternative path expression which achieves the same:
-
-```sql
-SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
-```
-
-Query the total number of rows in `some_dir` using the implicit `*`:
-
-```sql
-SELECT count(*) FROM file('some_dir', 'TSV', 'name String, value UInt32');
-```
-
-<Note>
-If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-</Note>
-
-**Example**
-
-Query the total number of rows in files named `file000`, `file001`, ... , `file999`:
-
-```sql
-SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
-```
-
-**Example**
-
-Query the total number of rows from all files inside directory `big_dir/` recursively:
-
-```sql
-SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
-```
-
-**Example**
-
-Query the total number of rows from all files `file002` inside any folder in directory `big_dir/` recursively:
-
-```sql
-SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
-```
-
-## Virtual Columns {#virtual-columns}
-
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-
-## use_hive_partitioning setting {#hive-style-partitioning}
-
-When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path.
-
-**Example**
-
-Use virtual column, created with Hive-style partitioning
-
-```sql
-SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
-```
-
-## Settings {#settings}
-
-| Setting                                                                                                            | Description                                                                                                                                                                 |
-|--------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [engine_file_empty_if_not_exists](/reference/settings/session-settings#engine_file_empty_if_not_exists)                   | allows to select empty data from a file that doesn't exist. Disabled by default.                                                                                            |
-| [engine_file_truncate_on_insert](/reference/settings/session-settings#engine_file_truncate_on_insert)                     | allows to truncate file before insert into it. Disabled by default.                                                                                                         |
-| [engine_file_allow_create_multiple_files](/reference/settings/session-settings#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
-| [engine_file_skip_empty_files](/reference/settings/session-settings#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
-| [storage_file_read_method](/reference/settings/session-settings#engine_file_empty_if_not_exists)                          | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
-
-## Related {#related}
-
-- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-- [Rename files after processing](/reference/settings/session-settings#rename_files_after_processing)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+    factory.registerFunction<TableFunctionFile>();
 }
 
 }

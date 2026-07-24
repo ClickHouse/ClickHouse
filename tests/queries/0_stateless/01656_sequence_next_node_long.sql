@@ -1,4 +1,4 @@
--- Tags: long, no-azure-blob-storage
+-- Tags: long
 
 SET allow_experimental_funnel_functions = 1;
 

@@ -1,5 +1,0 @@
-user_id	UInt64					
-password_hash	String					
-number	UInt64					
-x	UInt32					
-secret	String					
