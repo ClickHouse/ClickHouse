@@ -35,77 +35,69 @@ picture-in-picture"
   </Frame>
 </div>
 
-<div id="1-gather-your-connection-details">
-  ## 1. 연결 정보 확인
-</div>
+<Steps>
+  <Step title="연결 세부 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="읽기 전용 사용자 만들기" id="2-making-a-read-only-user">
+    Grafana와 같은 데이터 시각화 도구에 ClickHouse를 연결할 때는 원치 않는 수정으로부터 데이터를 보호하기 위해 읽기 전용 사용자를 만드는 것이 좋습니다.
 
-<div id="2-making-a-read-only-user">
-  ## 2. 읽기 전용 사용자 만들기
-</div>
+    Grafana는 쿼리가 안전한지 검증하지 않습니다. 쿼리에는 `DELETE` 및 `INSERT`를 포함한 모든 SQL 문이 포함될 수 있습니다.
 
-Grafana와 같은 데이터 시각화 도구에 ClickHouse를 연결할 때는 원치 않는 수정으로부터 데이터를 보호하기 위해 읽기 전용 사용자를 만드는 것이 좋습니다.
+    읽기 전용 사용자를 구성하려면 다음 단계를 따르십시오:
 
-Grafana는 쿼리가 안전한지 검증하지 않습니다. 쿼리에는 `DELETE` 및 `INSERT`를 포함한 모든 SQL 문이 들어갈 수 있습니다.
+    1. [ClickHouse에서 Users and roles 생성](/ko/concepts/features/security/access-rights) 가이드를 따라 `readonly` 사용자 프로필을 생성합니다.
+    2. `readonly` 사용자에게 내부적으로 사용되는 [clickhouse-go client](https://github.com/ClickHouse/clickhouse-go)에서 필요한 `max_execution_time` 설정을 수정할 수 있는 충분한 권한이 있는지 확인합니다.
+    3. Public ClickHouse instance를 사용 중이라면 `readonly` 프로필에 `readonly=2`를 설정하는 것은 권장되지 않습니다. 대신 `readonly=1`을 유지하고 `max_execution_time`의 제약 조건 유형을 [changeable&#95;in&#95;readonly](/ko/concepts/features/configuration/settings/constraints-on-settings)로 설정하여 이 설정을 수정할 수 있도록 하십시오.
+  </Step>
 
-읽기 전용 사용자를 구성하려면 다음 단계를 따르세요:
+  <Step title="Grafana용 ClickHouse 플러그인 설치" id="3--install-the-clickhouse-plugin-for-grafana">
+    Grafana가 ClickHouse에 연결하려면 먼저 적절한 Grafana 플러그인을 설치해야 합니다. Grafana에 로그인한 상태라고 가정하고 다음 단계를 따르십시오:
 
-1. [ClickHouse에서 사용자 및 역할 만들기](/ko/concepts/features/security/access-rights) 가이드를 따라 `readonly` 사용자 프로필을 생성합니다.
-2. `readonly` 사용자에게 내부 [clickhouse-go client](https://github.com/ClickHouse/clickhouse-go)에서 필요로 하는 `max_execution_time` 설정을 변경할 수 있는 충분한 권한이 있는지 확인합니다.
-3. 공개 ClickHouse 인스턴스를 사용하는 경우 `readonly` 프로필에서 `readonly=2`를 설정하는 것은 권장되지 않습니다. 대신 `readonly=1`로 두고, 이 설정을 변경할 수 있도록 `max_execution_time`의 제약 조건 유형을 [changeable&#95;in&#95;readonly](/ko/concepts/features/configuration/settings/constraints-on-settings)로 설정합니다.
+    1. 사이드바의 **Connections** 페이지에서 **Add new connection** 탭을 선택합니다.
 
-<div id="3--install-the-clickhouse-plugin-for-grafana">
-  ## 3. Grafana용 ClickHouse 플러그인 설치
-</div>
+    2. **ClickHouse**를 검색한 다음 Grafana Labs의 signed 플러그인을 클릭합니다:
 
-Grafana가 ClickHouse에 연결하려면 먼저 적절한 Grafana 플러그인을 설치해야 합니다. Grafana에 로그인한 상태라고 가정하고, 다음 단계를 따르십시오:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="Connections 페이지에서 ClickHouse 플러그인 선택" border />
 
-1. 사이드바의 **Connections** 페이지에서 **Add new connection** 탭을 선택합니다.
+    3. 다음 화면에서 **Install** 버튼을 클릭합니다:
 
-2. **ClickHouse**를 검색한 다음, Grafana Labs에서 서명한 플러그인을 클릭합니다:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="ClickHouse 플러그인 설치" border />
+  </Step>
 
-   <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="Connections 페이지에서 ClickHouse 플러그인 선택" border />
+  <Step title="ClickHouse 데이터 소스 정의" id="4-define-a-clickhouse-data-source">
+    1. 설치가 완료되면 **Add new data source** 버튼을 클릭합니다. (**Connections** 페이지의 **Data sources** 탭에서도 데이터 소스를 추가할 수 있습니다.)
 
-3. 다음 화면에서 **Install** 버튼을 클릭합니다:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="ClickHouse 데이터 소스 생성" border />
 
-   <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="ClickHouse 플러그인 설치" border />
+    2. 아래로 스크롤해 **ClickHouse** 데이터 소스 유형을 찾거나, **Add data source** 페이지의 검색창에서 검색할 수 있습니다. **ClickHouse** 데이터 소스를 선택하면 다음 페이지가 표시됩니다:
 
-<div id="4-define-a-clickhouse-data-source">
-  ## 4. ClickHouse 데이터 소스 정의
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="연결 구성 페이지" border />
 
-1. 설치가 완료되면 **Add new data source** 버튼을 클릭합니다. (**Connections** 페이지의 **Data sources** 탭에서도 데이터 소스를 추가할 수 있습니다.)
+    3. 서버 설정과 자격 증명을 입력합니다. 주요 설정은 다음과 같습니다:
 
-   <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="ClickHouse 데이터 소스 생성" border />
+    * **Server host address:** ClickHouse 서비스의 호스트명입니다.
+    * **Server port:** ClickHouse 서비스의 포트입니다. 서버 구성과 프로토콜에 따라 달라집니다.
+    * **Protocol**: ClickHouse 서비스에 연결할 때 사용하는 프로토콜입니다.
+    * **Secure connection**: 서버에서 보안 연결이 필요한 경우 활성화합니다.
+    * **Username** and **Password**: ClickHouse 사용자 자격 증명을 입력합니다. 아직 사용자를 구성하지 않았다면 사용자 이름으로 `default`를 사용해 보십시오. [읽기 전용 사용자 구성](#2-making-a-read-only-user)을 권장합니다.
 
-2. 아래로 스크롤해 **ClickHouse** 데이터 소스 유형을 찾거나, **Add data source** 페이지의 검색창에서 검색할 수 있습니다. **ClickHouse** 데이터 소스를 선택하면 다음 페이지가 표시됩니다:
+    추가 설정은 [플러그인 구성](/ko/integrations/connectors/data-visualization/grafana/config) 문서를 확인하십시오.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="연결 구성 페이지" border />
+    4. **Save &amp; test** 버튼을 클릭하여 Grafana가 ClickHouse 서비스에 연결할 수 있는지 확인합니다. 연결에 성공하면 **Data source is working** 메시지가 표시됩니다:
 
-3. 서버 설정과 자격 증명을 입력합니다. 주요 설정은 다음과 같습니다:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Save & test 선택" border />
+  </Step>
 
-* **Server host address:** ClickHouse 서비스의 호스트명입니다.
-* **Server port:** ClickHouse 서비스의 포트입니다. 서버 구성과 프로토콜에 따라 달라집니다.
-* **Protocol**: ClickHouse 서비스에 연결할 때 사용하는 프로토콜입니다.
-* **Secure connection**: 서버에서 보안 연결이 필요한 경우 활성화합니다.
-* **Username** and **Password**: ClickHouse 사용자 자격 증명을 입력합니다. 아직 사용자를 구성하지 않았다면 사용자 이름으로 `default`를 사용해 보십시오. [읽기 전용 사용자 구성](#2-making-a-read-only-user)을 권장합니다.
+  <Step title="다음 단계" id="5-next-steps">
+    이제 데이터 소스를 사용할 준비가 되었습니다! [query builder](/ko/integrations/connectors/data-visualization/grafana/query-builder)를 사용해 쿼리를 작성하는 방법을 자세히 알아보십시오.
 
-추가 설정은 [플러그인 구성](/ko/integrations/connectors/data-visualization/grafana/config) 문서를 확인하십시오.
+    구성에 대한 자세한 내용은 [플러그인 구성](/ko/integrations/connectors/data-visualization/grafana/config) 문서를 확인하십시오.
 
-4. **Save &amp; test** 버튼을 클릭하여 Grafana가 ClickHouse 서비스에 연결할 수 있는지 확인합니다. 연결에 성공하면 **Data source is working** 메시지가 표시됩니다:
-
-   <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Save & test 선택" border />
-
-<div id="5-next-steps">
-  ## 5. 다음 단계
-</div>
-
-이제 데이터 소스를 사용할 수 있습니다! [쿼리 빌더](/ko/integrations/connectors/data-visualization/grafana/query-builder)를 사용해 쿼리를 작성하는 방법을 자세히 알아보세요.
-
-구성에 대한 자세한 내용은 [플러그인 구성](/ko/integrations/connectors/data-visualization/grafana/config) 문서를 참조하세요.
-
-이 문서에 없는 추가 정보가 필요하면 [GitHub의 플러그인 리포지토리](https://github.com/grafana/clickhouse-datasource)를 확인하세요.
+    이 문서에 포함되지 않은 추가 정보를 찾고 있다면 [GitHub의 플러그인 리포지토리](https://github.com/grafana/clickhouse-datasource)를 확인하십시오.
+  </Step>
+</Steps>
 
 <div id="upgrading-plugin-versions">
   ## 플러그인 버전 업그레이드

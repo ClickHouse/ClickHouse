@@ -14,23 +14,23 @@ keywords: ['Parquet', 'S3 バケット']
   ## S3 バケット からの Parquet ファイルの取り込み
 </div>
 
-以下では、S3 table engine を使用して Parquet ファイルを読み取る際の基本をいくつか説明します。
+以下では、S3 テーブルエンジン を使用して Parquet ファイルを読み取る際の基本をいくつか説明します。
 
 * IAM サービスユーザー用の access key と secret key を作成します。
   通常のログインユーザーは MFA ポリシーが設定されている場合があるため、たいてい使用できません。
 
-* ポリシーの権限を設定し、サービスユーザーが bucket とフォルダーにアクセスできるようにします。
+* ポリシーの権限を設定し、サービスユーザーがバケット とフォルダーにアクセスできるようにします。
 
 以下は非常にシンプルな例で、実際のデータに適用する前に、Parquet ファイルへのアクセスが正しく行えるかどうかをテストするために使えます。
 
-ユーザーと bucket の作成例が必要な場合は、最初の 2 つのセクション (create user と create bucket) を参照してください:
-https://clickhouse.com/docs/guides/sre/configuring-s3-for-clickhouse-use/
+ユーザーとバケット の作成例が必要な場合は、最初の 2 つのセクション (create user と create bucket) を参照してください:
+[S3 と ClickHouse の統合](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
 
 私はこのサンプルファイルを使用しました: https://github.com/Teradata/kylo/tree/master/samples/sample-data/parquet
-これをテスト用 bucket にアップロードしました
+これをテスト用バケット にアップロードしました
 
-bucket には、次のようなポリシーを設定できます:
- (必要に応じて調整してください。これは権限がかなり広く許可されていますが、テストには役立ちます。必要に応じて権限を絞り込んでください) 
+バケット には、次のようなポリシーを設定できます:
+(必要に応じて調整してください。これは権限がかなり広く許可されていますが、テストには役立ちます。必要に応じて権限を絞り込んでください))
 
 ```
 {

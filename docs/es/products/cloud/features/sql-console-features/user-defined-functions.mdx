@@ -76,9 +76,7 @@ En este ejemplo, crearemos la misma función ejecutable simple definida por el u
 Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y la configuraremos desde la UI.
 
 <Steps>
-  <Step>
-    ### Crear el archivo de Python
-
+  <Step title="Crear el archivo de Python" id="create-python-file">
     Crea un nuevo archivo `main.py` localmente:
 
     ```python
@@ -107,9 +105,7 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
     </Note>
   </Step>
 
-  <Step>
-    ### Empaquetar dependencias y archivos locales
-
+  <Step title="Empaquetar dependencias y archivos locales" id="bundle-dependencies">
     Para incluir los paquetes de dependencias y cualquier archivo local adicional (como archivos wheel, archivos de configuración o archivos de datos), colóquelos en el mismo directorio que `main.py` y `requirements.txt`. Al crear el archivo ZIP, incluya todos los archivos:
 
     ```bash
@@ -145,9 +141,7 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
     </Warning>
   </Step>
 
-  <Step>
-    ### Crear una UDF desde la UI
-
+  <Step title="Crear una UDF desde la UI" id="create-udf-via-ui">
     1. En la página principal de Cloud Console, haz clic en el nombre de tu organización en el menú de la esquina inferior izquierda.
     2. Selecciona **Funciones definidas por el usuario** en el menú.
     3. En la página de funciones definidas por el usuario, haz clic en **Configurar una UDF**. Se abrirá un panel de configuración a la derecha de la pantalla.
@@ -165,9 +159,7 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
         * Cuando se complete, el estado cambia a **deployed**.
   </Step>
 
-  <Step>
-    ### Prueba tu UDF
-
+  <Step title="Prueba tu UDF" id="test-your-udf">
     1. vuelve a la página de inicio de la SQL Console haciendo clic en **Settings - volver a la vista de tu servicio** en la esquina superior izquierda de la página
     2. haz clic en **SQL Console** en el menú de la izquierda
     3. escribe la siguiente consulta:
@@ -183,9 +175,7 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
     ```
   </Step>
 
-  <Step>
-    ### Crear una nueva versión
-
+  <Step title="Crear una nueva versión" id="create-new-version">
     Para cambiar el código de una UDF, crea una nueva versión. El panel **Edit** solo gestiona a qué servicios está asignada una UDF; cargar un archivo allí no reemplazará el código desplegado.
 
     1. En la página principal de Cloud Console, haz clic en el nombre de tu organización en el menú de la esquina inferior izquierda.

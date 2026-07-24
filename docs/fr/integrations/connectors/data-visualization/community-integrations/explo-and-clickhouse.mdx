@@ -35,98 +35,90 @@ Dans ce guide, vous allez connecter vos données depuis ClickHouse à Explo et v
   Si vous n&#39;avez pas de jeu de données sur lequel travailler, vous pouvez en ajouter un à partir des exemples. Ce guide utilise le jeu de données [UK Price Paid](/fr/get-started/sample-datasets/uk-price-paid), vous pouvez donc choisir celui-ci. Vous pouvez en consulter plusieurs autres dans cette même catégorie de la documentation.
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. Rassemblez vos informations de connexion
-</div>
+<Steps>
+  <Step title="Rassemblez vos informations de connexion" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Connectez Explo à ClickHouse" id="2--connect-explo-to-clickhouse">
+    1. Créez un compte Explo.
 
-<div id="2--connect-explo-to-clickhouse">
-  ## 2.  Connecter Explo à ClickHouse
-</div>
+    2. Cliquez sur l&#39;onglet **Données** d&#39;Explo dans la barre latérale gauche.
 
-1. Créez un compte Explo.
+    <Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Onglet Données" border />
 
-2. Cliquez sur l’onglet **Data** d’Explo dans la barre latérale de gauche.
+    3. Cliquez sur **Connecter une source de données** en haut à droite.
 
-<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Onglet Data" border />
+    <Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connecter une source de données" border />
 
-3. Cliquez sur **Connect Data Source** en haut à droite.
+    4. Renseignez les informations sur la page **Premiers pas**
 
-<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+    <Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Premiers pas" border />
 
-4. Renseignez les informations sur la page **Getting Started**
+    5. Sélectionnez **ClickHouse**
 
-<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+    <Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
 
-5. Sélectionnez **ClickHouse**
+    6. Saisissez vos **identifiants ClickHouse**.
 
-<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+    <Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Identifiants" border />
 
-6. Saisissez vos **identifiants ClickHouse**.
+    7. Configurez **Sécurité**
 
-<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Identifiants" border />
+    <Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Sécurité" border />
 
-7. Configurez **Security**
+    8. Dans ClickHouse, autorisez les IP d&#39;Explo.
+       `54.211.43.19, 52.55.98.121, 3.214.169.94, et 54.156.141.148`
+  </Step>
 
-<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+  <Step title="Créer un tableau de bord" id="3-create-a-dashboard">
+    1. Accédez à l&#39;onglet **Tableau de bord** dans la barre de navigation de gauche.
 
-8. Dans ClickHouse, **ajoutez les adresses IP d’Explo à la liste blanche**.
-   `54.211.43.19, 52.55.98.121, 3.214.169.94 et 54.156.141.148`
+    <Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Tableau de bord" border />
 
-<div id="3-create-a-dashboard">
-  ## 3. Créer un tableau de bord
-</div>
+    2. Cliquez sur **Créer un tableau de bord** dans le coin supérieur droit et donnez un nom à votre tableau de bord. Vous avez maintenant créé un tableau de bord !
 
-1. Accédez à l’onglet **Dashboard** dans la barre de navigation de gauche.
+    <Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Créer un tableau de bord" border />
 
-<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Dashboard" border />
+    3. Vous devriez maintenant voir un écran similaire à celui-ci :
 
-2. Cliquez sur **Create Dashboard** dans le coin supérieur droit, puis donnez un nom à votre tableau de bord. Votre tableau de bord est maintenant créé !
+    <Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Tableau de bord Explo" border />
+  </Step>
 
-<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Create Dashboard" border />
+  <Step title="Exécuter une requête SQL" id="4-run-a-sql-query">
+    1. Récupérez le nom de votre table dans la barre latérale de droite, sous le titre de votre schéma. Vous devez ensuite saisir la commande suivante dans votre éditeur de jeu de données :
+       `SELECT * FROM YOUR_TABLE_NAME
+       LIMIT 100`
 
-3. Vous devriez maintenant voir un écran semblable à celui-ci :
+    <Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Tableau de bord Explo" border />
 
-<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+    2. Cliquez maintenant sur **Run**, puis accédez à l&#39;onglet d&#39;aperçu pour voir vos données.
 
-<div id="4-run-a-sql-query">
-  ## 4. Exécuter une requête SQL
-</div>
+    <Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Tableau de bord Explo" border />
+  </Step>
 
-1. Repérez le nom de votre table dans la barre latérale droite, sous le titre de votre schéma. Saisissez ensuite la commande suivante dans votre éditeur de jeu de données :
-   `SELECT * FROM YOUR_TABLE_NAME
-   LIMIT 100`
+  <Step title="Créer un graphique" id="5-build-a-chart">
+    1. Depuis la gauche, faites glisser l&#39;icône du graphique en barres sur l&#39;écran.
 
-<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+    <Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Tableau de bord Explo" border />
 
-2. Cliquez maintenant sur Run, puis ouvrez l’onglet Preview pour voir vos données.
+    2. Sélectionnez le jeu de données. Vous devriez maintenant voir un écran comme celui-ci :
 
-<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+    <Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Tableau de bord Explo" border />
 
-<div id="5-build-a-chart">
-  ## 5. Créer un graphique
-</div>
+    3. Renseignez **county** sur l&#39;axe X et **Price** dans la section de l&#39;axe Y, comme suit :
 
-1. Depuis le panneau de gauche, faites glisser l’icône de l’histogramme sur l’écran.
+    <Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Tableau de bord Explo" border />
 
-<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+    4. Remplacez ensuite l&#39;agrégation par **AVG**.
 
-2. Sélectionnez le jeu de données. Vous devriez maintenant voir un écran comme celui-ci :
+    <Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Tableau de bord Explo" border />
 
-<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+    5. Vous obtenez maintenant le prix moyen des logements par comté !
 
-3. Renseignez **county** sur l’axe X et **Price** dans la section de l’axe Y, comme suit :
-
-<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
-
-4. Changez ensuite l’agrégation en **AVG**.
-
-<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
-
-5. Nous avons maintenant le prix moyen des logements, ventilé par comté !
-
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+    <Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Tableau de bord Explo" />
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## En savoir plus

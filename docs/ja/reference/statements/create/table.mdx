@@ -449,6 +449,14 @@ ClickHouse は、汎用コーデックと専用コーデックをサポートし
 
 高い圧縮レベルは、一度圧縮して何度も展開するような非対称なシナリオで有効です。レベルが高いほど圧縮率は向上しますが、その分CPU使用量も増加します。
 
+<div id="zxc">
+  #### ZXC
+</div>
+
+`ZXC[(level)]` — `level` を設定可能な非対称の [`zxc` 圧縮アルゴリズム](https://github.com/hellobertrand/zxc)。指定可能なレベル: [1, 7]。デフォルトレベル: 3。
+
+`ZXC` は、圧縮速度を犠牲にする代わりに、非常に高速な展開を実現し、圧縮率は `LZ4` と `ZSTD` の中間です。一度圧縮して何度も展開する用途に適しており、最新の ARM コアでは最速で展開されます。レベルが高いほど圧縮率は向上しますが、圧縮は遅くなり、展開は引き続き高速です。
+
 <div id="zstd_qat">
   #### 廃止された: ZSTD_QAT
 </div>
@@ -497,10 +505,16 @@ ClickHouse は、汎用コーデックと専用コーデックをサポートし
 
 <ExperimentalBadge />
 
-`ALP()` — 小数のスケーリングに基づく、浮動小数点データ向けの適応型可逆圧縮です。ALP は各値を 10 のべき乗による正確なスケーリング済み整数として表現し、得られた整数を Frame-of-Reference とビットパッキングで圧縮します。正確に表現できない値は、生の例外値として保存されます。小数に由来する数値 (例: 測定値、通貨) で特に効果を発揮します。`Float32` と `Float64` をサポートします。詳細は、[ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334) を参照してください。
+`ALP(variant)` — 浮動小数点データ向けの適応型可逆圧縮です。`Float32` と `Float64` をサポートします。詳細は [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334) を参照してください。
+
+このコーデックは、省略可能な variant 引数を受け付けます。
+
+* `ALP()` または `ALP(AUTO)` (デフォルト)  — 推定される圧縮サイズに基づいて STD を使用し、必要に応じて RD にフォールバックします。
+* `ALP(STD)` — 標準の ALP バリアントです。各値を 10 のべき乗を使った正確なスケーリング整数として表現し、得られた整数を Frame-of-Reference とビットパッキングで圧縮します。表現できない値は生の例外として保存されます。10 進数に由来する数値 (たとえば測定値や価格) に最適です。
+* `ALP(RD)` — Real Doubles バリアントです。各値のビットパターンを再解釈し、高位部分 (符号 + 指数 + 上位の仮数ビット) と低位部分に分割します。高位部分は Dictionary エンコードされ (最大 8 エントリ) 、低位部分はビットパッキングされます。多くの値で上位ビットが共通している場合に最適です。
 
 <Note>
-  この コーデック は Experimental であり、使用するには `SET allow_experimental_codecs = 1` の設定が必要です。
+  このコーデックは Experimental であり、使用するには `SET allow_experimental_codecs = 1` を設定する必要があります。
 </Note>
 
 <div id="fpc">
@@ -508,6 +522,18 @@ ClickHouse は、汎用コーデックと専用コーデックをサポートし
 </div>
 
 `FPC(level, float_size)` - 2 種類の予測器のうち、より適した方を使ってシーケンス内の次の浮動小数点値を繰り返し予測し、実際の値と予測値の XOR を取り、その結果に対して先頭のゼロを圧縮します。Gorilla と同様に、変化が緩やかな一連の浮動小数点値を格納する場合に効率的です。64 ビット値 (double) では FPC は Gorilla より高速ですが、32 ビット値では結果が異なる場合があります。指定可能な `level` の値は 1～28 で、デフォルト値は 12 です。指定可能な `float_size` の値は 4、8 で、type が Float の場合のデフォルト値は `sizeof(type)` です。それ以外のすべての場合は 4 です。アルゴリズムの詳細については、[High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) を参照してください。
+
+<div id="sz3">
+  #### SZ3
+</div>
+
+<ExperimentalBadge />
+
+`SZ3` または `SZ3(algorithm, error_bound_mode, error_bound)` - Float32、Float64、Array(Float32)、または Array(Float64) 型のカラム向けの、非可逆ながら誤差境界が保証された コーデック ([SZ3 Lossy Compressor](https://szcompressor.org/)) です。Arrayカラムでは、すべての配列の長さが同じ場合に最も高い圧縮効果が得られます (この場合、固定幅ベクトルとして圧縮されます) 。長さの異なる配列もサポートされますが、その場合はフラットな値の数列として圧縮されます。Mapカラムには適用できません。非可逆圧縮によってキーが破損するためです。`algorithm` に指定できる値は `ALGO_LORENZO_REG`、`ALGO_INTERP_LORENZO`、`ALGO_INTERP` です。`error_bound_mode` に指定できる値は `ABS`、`REL`、`PSNR`、`ABS_AND_REL` です。引数 `error_bound` は最大誤差で、型は Float64 です。
+
+<Note>
+  この コーデック は実験的機能であり、使用するには `SET allow_experimental_codecs = 1` の設定が必要です。
+</Note>
 
 <div id="t64">
   #### T64

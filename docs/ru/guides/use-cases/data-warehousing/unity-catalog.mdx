@@ -15,7 +15,11 @@ import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse поддерживает интеграцию с несколькими каталогами (Unity, Glue, Polaris и т. д.). В этом руководстве показано, как выполнять запросы к данным, управляемым Databricks, с помощью ClickHouse и [Unity Catalog](https://www.databricks.com/product/unity-catalog).
 
-Databricks поддерживает несколько форматов данных для своей lakehouse-платформы. С помощью ClickHouse вы можете выполнять запросы к таблицам Unity Catalog в форматах Delta и Iceberg.
+Databricks поддерживает несколько форматов данных для своей lakehouse-платформы. С помощью ClickHouse вы можете выполнять запросы к таблицам Delta и Iceberg в Unity Catalog, использующим внешние хранилища.
+
+<Note>
+  Unity Catalog не предоставляет [выдачу учетных данных](https://docs.databricks.com/aws/en/external-access/credential-vending) для таблиц Delta Lake или Iceberg, хранящихся в [управляемом хранилище Databricks](https://docs.databricks.com/aws/en/data-governance/unity-catalog/managed-versus-external). ClickHouse использует выдачу учетных данных для чтения данных таблиц из Unity Catalog.
+</Note>
 
 <Note>
   Поскольку эта возможность является экспериментальной, вам потребуется включить ее с помощью:
@@ -60,7 +64,7 @@ SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type 
   ### Чтение из Iceberg
 </div>
 
-Чтобы получить доступ к управляемым таблицам Iceberg:
+Чтобы получить доступ к внешним таблицам Iceberg:
 
 ```sql
 CREATE DATABASE unity
