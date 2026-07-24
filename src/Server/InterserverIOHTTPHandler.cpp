@@ -15,6 +15,7 @@
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/String.h>
+#include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <shared_mutex>
@@ -28,18 +29,43 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
 }
 
+namespace
+{
+
+/// Extract the `endpoint` query parameter from the request URI. Unlike the `HTMLForm` used in
+/// `processQuery`, this does not read the request body, so it is safe to call before the body is
+/// consumed. All interserver clients pass `endpoint` as a URI query parameter.
+String getEndpointNameFromURI(const HTTPServerRequest & request)
+{
+    const Poco::URI uri(request.getURI());
+    for (const auto & [key, value] : uri.getQueryParameters())
+        if (key == "endpoint")
+            return value;
+    return {};
+}
+
+}
+
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
     /// A `Bearer` credential is a per-endpoint credential, not a server-wide interserver one.
-    /// Defer it to the target endpoint's `authenticate` (which validates it, or rejects it by
-    /// default), instead of rejecting it here as "not Basic".
+    /// Defer it to the target endpoint's `authenticate` only when that endpoint opts into bearer
+    /// authentication. Otherwise fall through to the shared credential check below, so an
+    /// unsupported bearer request is rejected exactly as any other non-Basic scheme was before
+    /// this hook existed: before the endpoint is resolved, and without disclosing endpoint
+    /// existence or endpoint-specific authentication results.
     if (request.hasCredentials())
     {
         String scheme;
         String info;
         request.getCredentials(scheme, info);
         if (Poco::icompare(scheme, "Bearer") == 0)
-            return {"", true};
+        {
+            const String endpoint_name = getEndpointNameFromURI(request);
+            const auto endpoint = server.context()->getInterserverIOHandler().tryGetEndpoint(endpoint_name);
+            if (endpoint && endpoint->acceptsBearerAuth())
+                return {"", true};
+        }
     }
 
     auto server_credentials = server.context()->getInterserverCredentials();

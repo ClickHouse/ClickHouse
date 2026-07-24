@@ -15,11 +15,12 @@ namespace ErrorCodes
 
 void InterserverIOEndpoint::authenticate(const HTTPServerRequest & request) const
 {
-    /// `InterserverIOHTTPHandler::checkAuthentication` validates the server-wide interserver
-    /// credentials (HTTP Basic) but defers a `Bearer` credential to the target endpoint. An
-    /// endpoint that does not implement bearer authentication must reject it here, otherwise
-    /// presenting a bearer token would bypass the interserver credentials entirely. Basic and
-    /// no-credential requests were already accepted by the shared check, so they pass.
+    /// `InterserverIOHTTPHandler::checkAuthentication` defers a `Bearer` credential to the target
+    /// endpoint only when the endpoint's `acceptsBearerAuth` returns true; an endpoint that does
+    /// not accept bearer never reaches this default for a bearer request. This default is the
+    /// safety net for that contract: reject a `Bearer` credential so an endpoint that neither
+    /// overrides `acceptsBearerAuth` nor `authenticate` can never be entered with a bearer token.
+    /// Basic and no-credential requests were already validated by the shared check, so they pass.
     if (!request.hasCredentials())
         return;
 
