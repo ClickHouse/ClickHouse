@@ -32,16 +32,25 @@ std::vector<std::string> splitPathComponents(const std::string & path)
 
 }
 
+bool globSelectorSpansPathComponents(const std::string & glob_path)
+{
+    for (const auto & segment : splitPathComponents(glob_path))
+    {
+        if (std::count(segment.begin(), segment.end(), '{') != std::count(segment.begin(), segment.end(), '}'))
+            return true;
+    }
+    return false;
+}
+
 std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path)
 {
     auto glob_segments = splitPathComponents(glob_path);
 
     /// If a '{...}' selector spans a '/', the per-component split is not meaningful: descend always.
-    for (const auto & segment : glob_segments)
-    {
-        if (std::count(segment.begin(), segment.end(), '{') != std::count(segment.begin(), segment.end(), '}'))
-            return [](const std::string &) { return true; };
-    }
+    /// Callers must not enable the parallel walk for such globs (see `globSelectorSpansPathComponents`) —
+    /// an unconditional descend degrades to one listing request per directory; this is only a safety net.
+    if (globSelectorSpansPathComponents(glob_path))
+        return [](const std::string &) { return true; };
 
     if (glob_segments.empty())
         return [](const std::string &) { return true; };

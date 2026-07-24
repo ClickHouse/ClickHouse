@@ -756,6 +756,30 @@ TEST(ObjectStorageParallelListing, MixedHierarchicalAndFlat)
     assertCompleteForAllParallelism(s3, "m/", expectedUnder(s3, "m/"));
 }
 
+TEST(ObjectStorageParallelListing, CrossComponentSelectorStaysOnSerialIterator)
+{
+    /// A '{...}' selector that spans '/' cannot be pruned per path component: `makeShouldDescendPredicate`
+    /// degrades to an unconditional descend (one listing request per directory), so `GlobIterator` must
+    /// keep such globs on the serial iterator, exactly like the recursive wildcard "**". This locks the
+    /// detection the gate relies on, so this glob shape cannot silently route back through the delimiter
+    /// walker.
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/{a/b,c/d}/*.csv"));
+    EXPECT_TRUE(globSelectorSpansPathComponents("{a/b,c}/x"));
+    EXPECT_TRUE(globSelectorSpansPathComponents("root/{a,b/c}"));
+
+    EXPECT_FALSE(globSelectorSpansPathComponents("root/{a,b}/*.csv"));
+    EXPECT_FALSE(globSelectorSpansPathComponents("root/{1..10}/x"));
+    EXPECT_FALSE(globSelectorSpansPathComponents("root/*/x"));
+    EXPECT_FALSE(globSelectorSpansPathComponents("root/plain/file.csv"));
+
+    /// The predicate's safety net for the shape (unreachable when callers gate on the helper above):
+    /// descend everywhere, never prune, so the walk stays correct even if misused.
+    auto should_descend = makeShouldDescendPredicate("root/{a/b,c/d}/*.csv");
+    EXPECT_TRUE(should_descend("root/a/"));
+    EXPECT_TRUE(should_descend("root/unrelated/"));
+    EXPECT_TRUE(should_descend("root/a/b/very/deep/"));
+}
+
 TEST(ObjectStorageParallelListing, Pruning)
 {
     FakeS3 s3;

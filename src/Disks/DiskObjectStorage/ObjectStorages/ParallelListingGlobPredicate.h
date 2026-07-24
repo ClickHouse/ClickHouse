@@ -6,6 +6,13 @@
 namespace DB
 {
 
+/// Returns true when a '{...}' selector in `glob_path` spans a '/' (e.g. `root/{a/b,c/d}/*.csv`), i.e.
+/// some '/'-separated segment has unbalanced braces. Such globs cannot be pruned per path component, so
+/// the predicate built by `makeShouldDescendPredicate` degrades to an unconditional descend — one listing
+/// request per directory. Callers must keep such globs on the serial iterator, like the recursive
+/// wildcard "**".
+bool globSelectorSpansPathComponents(const std::string & glob_path);
+
 /// Builds the predicate used by the parallel listing walk (`ObjectStorageParallelListingIterator`) to
 /// decide whether a discovered "directory" (a common prefix, always ending with '/') can possibly
 /// contain — or itself be — a key matching `glob_path`, so that whole non-matching subtrees are pruned

@@ -1571,13 +1571,14 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const size_t parallelism = std::min(list_object_parallelism, MAX_LIST_OBJECT_PARALLELISM);
 
         /// List the matching files in parallel by walking the "directory" tree (the common prefixes
-        /// formed by the '/' delimiter), unless disabled or the path uses the recursive wildcard "**"
-        /// (which can match across '/', so it cannot be pruned per directory level and would degrade
-        /// to one request per directory).
+        /// formed by the '/' delimiter), unless disabled or the path cannot be pruned per directory
+        /// level and would degrade to one request per directory: the recursive wildcard "**" and
+        /// '{...}' selectors spanning '/' (e.g. `root/{a/b,c/d}/*.csv`) both match across '/'.
         const bool use_parallel_listing =
             parallelism > 1
             && object_storage->supportsDelimitedListingFromPrefix(key_prefix)
-            && key_with_globs.path.find("**") == std::string::npos;
+            && key_with_globs.path.find("**") == std::string::npos
+            && !globSelectorSpansPathComponents(key_with_globs.path);
 
         if (use_parallel_listing)
         {
