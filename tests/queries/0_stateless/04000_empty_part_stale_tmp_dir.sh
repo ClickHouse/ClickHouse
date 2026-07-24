@@ -23,8 +23,9 @@ CREATE TABLE t_empty_part_stale_tmp (a Int32) ENGINE = MergeTree() PARTITION BY 
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_empty_part_stale_tmp SELECT number FROM numbers(60)"
 
 # DROP PARTITION covers the dropped parts with a new empty part. The failpoint fires inside
-# claimTemporaryPartDirectory (for every claimed temporary directory, so also for the empty part
-# created here) and injects a pre-existing temporary directory, simulating a stale leftover from
+# `reclaimStaleTemporaryPartDirectory` (for every claimed temporary directory that may have a
+# leftover, so also for the empty part created here) and injects a pre-existing temporary
+# directory, simulating a stale leftover from
 # a previously interrupted DROP/DETACH/MOVE/REPLACE PARTITION (the part was promoted to PreActive
 # with a deferred rename and then rolled back, leaving tmp_empty_<part> on disk). Previously
 # `createEmptyPart` failed with the LOGICAL_ERROR exception "New empty part is about to materialize

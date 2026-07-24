@@ -3837,6 +3837,20 @@ void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, con
     if (!temporary_parts.contains(part_dir_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: the name is not claimed", part_dir_name);
 
+    /// For testing: simulate a stale leftover directory of a previously interrupted operation. The
+    /// dummy file makes the directory non-empty, so the removal below exercises reclaiming a
+    /// non-empty directory. Claims that declare the name collision-free are excluded automatically:
+    /// they never call the reclaim, so no leftover is injected for them (injecting one would simulate
+    /// an impossible state and leave the directory unreclaimed).
+    fiu_do_on(FailPoints::claim_inject_stale_part_dir,
+    {
+        auto injected_part_dir = fs::path(relative_data_path) / part_dir_name;
+        disk->createDirectories(injected_part_dir);
+        auto out = disk->writeFile(injected_part_dir / "stale_dummy_file.txt");
+        writeString("stale", *out);
+        out->finalize();
+    });
+
     String relative_part_dir = fs::path(relative_data_path) / part_dir_name;
     if (!disk->existsDirectory(relative_part_dir))
         return;
@@ -3851,22 +3865,7 @@ scope_guard MergeTreeData::claimTemporaryPartDirectory(const DiskPtr & disk, con
     scope_guard temporary_directory_lock = getTemporaryPartDirectoryHolder(part_dir_name);
 
     if (may_have_leftover)
-    {
-        /// For testing: simulate a stale leftover directory of a previously interrupted operation. The
-        /// dummy file makes the directory non-empty, so the reclaim below exercises removal of a
-        /// non-empty directory. Callers that declare the name collision-free are excluded: injecting a
-        /// leftover for them would simulate an impossible state and leave the directory unreclaimed.
-        fiu_do_on(FailPoints::claim_inject_stale_part_dir,
-        {
-            auto relative_part_dir = fs::path(relative_data_path) / part_dir_name;
-            disk->createDirectories(relative_part_dir);
-            auto out = disk->writeFile(relative_part_dir / "stale_dummy_file.txt");
-            writeString("stale", *out);
-            out->finalize();
-        });
-
         reclaimStaleTemporaryPartDirectory(disk, part_dir_name);
-    }
 
     return temporary_directory_lock;
 }
