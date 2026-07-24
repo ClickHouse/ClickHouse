@@ -3149,6 +3149,13 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
     if (is_parallel_reading_from_replicas || output_each_partition_through_separate_port)
         return 0;
 
+    /// The reader drops rows after the granule row counts are known - lightweight-delete masks, on-the-fly
+    /// DELETE mutations, and patch-part deletes - so those counts would overstate what the offset consumes.
+    if (mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()
+            || (reader_settings.apply_deleted_mask && mutations_snapshot->hasLightweightDeletedMask())))
+        return 0;
+
     /// Need a safe, ascending primary key to reason about granule ordering.
     const auto & metadata = storage_snapshot->metadata;
     if (!isSafePrimaryKey(metadata->getPrimaryKey()) || !metadata->getSortingKeyReverseFlags().empty())
@@ -3158,7 +3165,13 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
     if (!result.split_parts.layers.empty())
         return 0;
 
-    const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, /*in_reverse_order=*/false, log);
+    if (reader_settings.apply_deleted_mask)
+        for (const auto & part : result.parts_with_ranges)
+            if (part.data_part->hasLightweightDelete())
+                return 0;
+
+    const size_t prefix_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
+    const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, prefix_size, /*in_reverse_order=*/false, log);
     offset_granules_skipped = true;
     if (skipped_rows == 0)
         return 0;

@@ -234,6 +234,8 @@ public:
     {
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
+
+    size_t getLoadedColumnsCount() const { return loaded_columns; }
 private:
     const RangesInDataParts & parts;
     std::vector<IMergeTreeDataPart::IndexPtr> indices;
@@ -694,15 +696,29 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
 }
 
-size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, size_t offset, bool in_reverse_order, const LoggerPtr & logger)
+size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, size_t offset, size_t prefix_size, bool in_reverse_order, const LoggerPtr & logger)
 {
     /// Reverse order is not supported yet (boundary-value semantics differ).
-    if (in_reverse_order || offset == 0 || ranges_in_data_parts.empty())
+    if (in_reverse_order || offset == 0 || prefix_size == 0 || ranges_in_data_parts.empty())
         return 0;
 
     IndexAccess index_access(ranges_in_data_parts);
 
-    /// One cursor per non-empty part at its front (smallest) granule; `front` caches its primary key value.
+    /// The cut-point proof must compare only the `prefix_size` sorting-key columns that define the merge order
+    /// (e.g. ORDER BY a on a table sorted by (a, b)); the full primary key would treat merge-order ties as
+    /// strictly separated. Cap by the loaded index columns.
+    const size_t compare_columns = std::min(prefix_size, index_access.getLoadedColumnsCount());
+    if (compare_columns == 0)
+        return 0;
+
+    auto getPrefixValue = [&](size_t part_index, size_t mark)
+    {
+        Values values = index_access.getValue(part_index, mark);
+        values.resize(compare_columns);
+        return values;
+    };
+
+    /// One cursor per non-empty part at its front (smallest) granule; `front` caches its merge-key prefix value.
     struct PartCursor
     {
         size_t part_index;
@@ -723,7 +739,7 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
             continue;
 
         PartCursor cursor{part_index, &ranges, 0, ranges.front().begin, 0, true, {}};
-        cursor.front = index_access.getValue(part_index, cursor.mark);
+        cursor.front = getPrefixValue(part_index, cursor.mark);
         cursors.push_back(std::move(cursor));
     }
 
@@ -744,7 +760,7 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
             }
             cursor.mark = (*cursor.ranges)[cursor.range_index].begin;
         }
-        cursor.front = index_access.getValue(cursor.part_index, cursor.mark);
+        cursor.front = getPrefixValue(cursor.part_index, cursor.mark);
     };
 
     size_t remaining = offset;
@@ -770,7 +786,7 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         const bool end_value_defined = (cursor.mark + 1) < index_granularity.getMarksCount();
         Values end_value;
         if (end_value_defined)
-            end_value = index_access.getValue(cursor.part_index, cursor.mark + 1);
+            end_value = getPrefixValue(cursor.part_index, cursor.mark + 1);
 
         bool strictly_separated = true;
         for (size_t i = 0; i < cursors.size() && strictly_separated; ++i)
