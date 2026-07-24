@@ -71,9 +71,7 @@ O Bindplane resolve isso oferecendo:
 </div>
 
 <Steps>
-  <Step>
-    #### Configure o ClickStack como destino
-
+  <Step title="Configure o ClickStack como destino" id="configure-destination">
     1. Faça login na sua conta do Bindplane
     2. Acesse **Library**
     3. Clique em **Add Destination**
@@ -93,18 +91,16 @@ O Bindplane resolve isso oferecendo:
     </Tip>
   </Step>
 
-  <Step>
-    #### Crie uma configuração
-
+  <Step title="Crie uma configuração" id="create-configuration">
     Depois de configurar o destino ClickStack, crie uma configuração para processar e rotear a telemetria:
 
     1. Acesse **Configurations** → **Create Configuration**
     2. Dê um nome à configuração (por exemplo, &quot;Pipeline do ClickStack&quot;)
     3. Selecione o **Collector Type** e a **Platform** da sua implantação
-    4. Adicione origens:
-       * Clique em **Add Source** para selecionar entre mais de 80 origens disponíveis
-       * Para testes, você pode adicionar uma origem geradora de telemetria para simular tráfego
-       * Para produção, adicione origens para sua telemetria real (logs, métricas, traces)
+    4. Adicione fontes:
+       * Clique em **Add Source** para selecionar entre mais de 80 fontes disponíveis
+       * Para testes, você pode adicionar uma fonte geradora de telemetria para simular tráfego
+       * Para produção, adicione fontes para sua telemetria real (logs, métricas, traces)
     5. Adicione o destino ClickStack:
        * Clique em **Add Destination**
        * Selecione o destino ClickStack que você criou na etapa anterior
@@ -117,9 +113,7 @@ O Bindplane resolve isso oferecendo:
     </Tip>
   </Step>
 
-  <Step>
-    #### Adicione processadores (opcional)
-
+  <Step title="Adicione processadores (opcional)" id="add-processors">
     O Bindplane oferece pipeline intelligence e recomendações de processadores. Você pode adicionar processadores para:
 
     * **Filter**: Reduzir o volume de dados excluindo telemetria desnecessária
@@ -131,9 +125,7 @@ O Bindplane resolve isso oferecendo:
     Esses processadores são aplicados de forma consistente em toda a sua frota de coletores antes que os dados cheguem ao ClickStack.
   </Step>
 
-  <Step>
-    #### Implante coletores e inicie o rollout
-
+  <Step title="Implante coletores e inicie o rollout" id="deploy-collectors">
     1. Adicione um coletor (BDOT Collector) à sua configuração:
        * Acesse **Agents** no Bindplane
        * Instale o coletor do Bindplane nos sistemas de destino [seguindo as instruções de instalação do Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
@@ -151,15 +143,13 @@ O Bindplane resolve isso oferecendo:
     <Tip>
       **Principais pontos**
 
-      O Bindplane oferece rollouts seguros com um clique e validação. Você pode monitorar a integridade do coletor, a taxa de transferência e eventuais erros em tempo real pela interface do Bindplane.
+      O Bindplane oferece rollouts seguros com um clique e validação. Você pode monitorar a integridade do coletor, a vazão e eventuais erros em tempo real pela interface do Bindplane.
     </Tip>
 
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Sinais de telemetria no ClickStack via Bindplane" size="lg" />
   </Step>
 
-  <Step>
-    #### Verifique a telemetria no ClickStack
-
+  <Step title="Verifique a telemetria no ClickStack" id="verify-telemetry">
     Depois que a configuração for aplicada, a telemetria começará a fluir para o ClickStack a partir da sua frota gerenciada de coletores:
 
     1. Faça login na sua instância do ClickStack (UI do HyperDX)

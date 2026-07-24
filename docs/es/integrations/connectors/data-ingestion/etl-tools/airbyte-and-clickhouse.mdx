@@ -24,9 +24,7 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
 <a href="https://www.airbyte.com/" target="_blank">Airbyte</a> es una plataforma de integración de datos de código abierto. Permite crear canalizaciones de datos <a href="https://airbyte.com/blog/why-the-future-of-etl-is-not-elt-but-el" target="_blank">ELT</a> e incluye más de 140 conectores listos para usar. Este tutorial paso a paso muestra cómo conectar Airbyte a ClickHouse como destino y cargar un conjunto de datos de ejemplo.
 
 <Steps>
-  <Step>
-    ## Descarga y ejecuta Airbyte
-
+  <Step title="Descarga y ejecuta Airbyte" id="1-download-and-run-airbyte">
     1. Airbyte se ejecuta en Docker y utiliza `docker-compose`. Asegúrate de descargar e instalar las versiones más recientes de Docker.
 
     2. Despliega Airbyte clonando el repositorio oficial de GitHub y ejecutando `docker-compose up` en tu terminal preferido:
@@ -42,13 +40,11 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
        <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="Banner de Airbyte" />
 
     <Note>
-      También puedes registrarte y usar <a href="https://docs.airbyte.com/deploying-airbyte/on-cloud" target="_blank">Airbyte Cloud</a>
+      También puedes registrarte y usar <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
     </Note>
   </Step>
 
-  <Step>
-    ## Añadir ClickHouse como destino
-
+  <Step title="Añadir ClickHouse como destino" id="2-add-clickhouse-as-a-destination">
     En esta sección, mostraremos cómo añadir una instancia de ClickHouse como destino.
 
     1. Inicie su servidor ClickHouse (Airbyte es compatible con la versión `21.8.10.19` de ClickHouse o superior) o inicie sesión en su cuenta de ClickHouse Cloud:
@@ -78,9 +74,7 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
     </Note>
   </Step>
 
-  <Step>
-    ## Añadir un conjunto de datos como fuente
-
+  <Step title="Añadir un conjunto de datos como fuente" id="3-add-a-dataset-as-a-source">
     El conjunto de datos de ejemplo que usaremos es <a href="/es/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a> (en <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a>). Para este tutorial, usaremos un subconjunto de este conjunto de datos correspondiente al mes de enero de 2022.
 
     1. En Airbyte, selecciona la página &quot;Sources&quot; y añade una nueva fuente de tipo archivo.
@@ -98,9 +92,7 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
     3. ¡Enhorabuena! Ya has añadido un archivo fuente en Airbyte.
   </Step>
 
-  <Step>
-    ## Crear una conexión y cargar el conjunto de datos en ClickHouse
-
+  <Step title="Crear una conexión y cargar el conjunto de datos en ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. En Airbyte, selecciona la página &quot;Connections&quot; y añade una nueva conexión
 
     <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="Añadir una conexión en Airbyte" />
@@ -117,7 +109,7 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
 
     5. Tus datos empezarán a cargarse; puedes ampliar la vista para ver los logs y el progreso de Airbyte. Cuando finalice la operación, verás un mensaje `Completed successfully` en los logs:
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_09.webp" size="lg" border alt="Se completó correctamente" />
+    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_09.webp" size="lg" border alt="Completado correctamente" />
 
     6. Conéctese a su instancia de ClickHouse con el cliente SQL que prefiera y compruebe la tabla resultante:
 

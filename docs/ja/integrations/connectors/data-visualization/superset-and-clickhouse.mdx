@@ -34,115 +34,107 @@ import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupporte
 <Tip>
   **データを追加する**
 
-  使用するデータセットがない場合は、例のいずれかを追加できます。このガイドでは [UK Price Paid](/ja/get-started/sample-datasets/uk-price-paid) データセットを使用しているため、それを選ぶとよいでしょう。同じドキュメントカテゴリには、ほかにもいくつかあります。
+  使用するデータセットがない場合は、サンプルのいずれかを追加できます。このガイドでは [UK Price Paid](/ja/get-started/sample-datasets/uk-price-paid) データセットを使用しているため、それを選ぶとよいでしょう。同じドキュメントカテゴリには、ほかにもいくつかあります。
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続情報を準備する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ドライバーをインストールする" id="2-install-the-driver">
+    1. Superset は `clickhouse-connect` ドライバーを使用して ClickHouse に接続します。`clickhouse-connect` の詳細は <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a> にあり、次のコマンドでインストールできます。
 
-<div id="2-install-the-driver">
-  ## 2. ドライバーをインストールする
-</div>
+       ```console
+       pip install clickhouse-connect
+       ```
 
-1. Superset は ClickHouse に接続するために `clickhouse-connect` ドライバーを使用します。`clickhouse-connect` の詳細は <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a> を参照してください。インストールには次のコマンドを実行します。
+    <Info>
+      **Docker Compose Setup**
 
-   ```console
-   pip install clickhouse-connect
-   ```
+      Docker ベースのインストールについては、コンテナーに `clickhouse-connect` を追加する手順を [Superset のデータベース設定ガイド](https://superset.apache.org/user-docs/6.0.0/configuration/databases/) で確認してください。
+    </Info>
 
-<Info>
-  **Docker Compose のセットアップ**
+    2. Superset を起動します (または再起動します) 。
+  </Step>
 
-  Docker ベースのインストールの場合、コンテナーに `clickhouse-connect` を追加する手順については、[Superset database configuration guide](https://superset.apache.org/docs/configuration/databases/#clickhouse) を参照してください。
-</Info>
+  <Step title="Superset を ClickHouse に接続する" id="3-connect-superset-to-clickhouse">
+    1. Superset で、上部メニューから **Data** を選択し、続いてドロップダウンメニューから **Databases** を選択します。**+ Database** ボタンをクリックして、新しいデータベースを追加します。
 
-2. Superset を起動します (または再起動します) 。
+    <Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="Database メニューが表示され、+ Database ボタンが強調表示された Superset のインターフェイス" border />
 
-<div id="3-connect-superset-to-clickhouse">
-  ## 3. Superset を ClickHouse に接続する
-</div>
+    <br />
 
-1. Superset で、上部メニューから **Data** を選択し、次にドロップダウンメニューから **Databases** を選択します。**+ Database** ボタンをクリックして、新しいデータベースを追加します。
+    2. 最初のステップで、データベースの種類として **ClickHouse Connect** を選択します。
 
-<Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="Database メニューが表示され、+ Database ボタンが強調表示されている Superset のインターフェイス" border />
+    <Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="ClickHouse Connect オプションが選択された Superset のデータベース接続ウィザード" border />
 
-<br />
+    <br />
 
-2. 最初のステップで、データベースの種類として **ClickHouse Connect** を選択します。
+    3. 2 番目のステップでは、次の設定を行います。
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="ClickHouse Connect オプションが選択されている Superset のデータベース接続ウィザード" border />
+    * SSL をオンまたはオフに設定します。
+    * 先ほど収集した接続情報を入力します。
+    * **DISPLAY NAME** を指定します。名前は任意ですが、複数の ClickHouse データベースに接続する場合は、わかりやすい名前にしてください。
 
-<br />
+    <Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="ClickHouse 接続パラメーターが表示された Superset の接続設定フォーム" border />
 
-3. 2 番目のステップでは、以下を行います。
+    <br />
 
-* SSL をオンまたはオフに設定します。
-* 先ほど収集した接続情報を入力します。
-* **DISPLAY NAME** を指定します。これは任意の名前で構いません。複数の ClickHouse データベースに接続する場合は、よりわかりやすい名前にしてください。
+    4. **CONNECT** をクリックし、続いて **FINISH** ボタンをクリックしてセットアップウィザードを完了します。完了すると、データベースの一覧に追加したデータベースが表示されます。
+  </Step>
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="ClickHouse の接続パラメータが表示されている Superset の接続設定フォーム" border />
+  <Step title="データセットを追加" id="4-add-a-dataset">
+    1. Superset で ClickHouse のデータを扱うには、***データセット*** を定義する必要があります。Superset の上部メニューで **Data** を選択し、次にドロップダウンメニューから **Datasets** を選択します。
 
-<br />
+    2. データセットを追加するボタンをクリックします。新しいデータベースをデータソースとして選択すると、そのデータベースで定義されているテーブルが表示されます。
 
-4. **CONNECT** をクリックし、続けて **FINISH** ボタンをクリックしてセットアップウィザードを完了します。完了すると、データベースの一覧に追加したデータベースが表示されます。
+    <Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="ClickHouse データベースで利用可能なテーブルが表示された Superset のデータセット作成ダイアログ" border />
 
-<div id="4-add-a-dataset">
-  ## 4. データセットを追加する
-</div>
+    <br />
 
-1. Superset で ClickHouse のデータを操作するには、***データセット*** を定義する必要があります。Superset の上部メニューで **Data** を選択し、ドロップダウンメニューから **Datasets** を選択します。
+    3. ダイアログウィンドウの下部にある **ADD** ボタンをクリックすると、テーブルがデータセットの一覧に表示されます。これでダッシュボードを作成し、ClickHouse のデータを分析する準備は完了です！
+  </Step>
 
-2. データセットを追加するボタンをクリックします。新しく作成したデータベースをデータソースとして選択すると、そのデータベースで定義したテーブルが表示されます。
+  <Step title="Superset でチャートとダッシュボードを作成する" id="5--creating-charts-and-a-dashboard-in-superset">
+    Superset に慣れているなら、この次のセクションもすぐに理解できるはずです。Superset を初めて使う場合でも、まあ……世の中にある多くの優れた可視化ツールと同じです。使い始めるのは簡単ですが、細かな違いやコツは、実際に使いながら少しずつ身についていきます。
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="ClickHouse データベースで使用可能なテーブルが表示された Superset のデータセット作成ダイアログ" border />
+    1. まずはダッシュボードから始めます。Superset の上部メニューで **Dashboards** を選択します。右上のボタンをクリックして、新しいダッシュボードを追加します。以下のダッシュボード名は **UK property prices** です。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="チャートを追加できる状態の、UK property prices という名前の空の Superset ダッシュボード" border />
 
-3. ダイアログウィンドウの下部にある **ADD** ボタンをクリックすると、テーブルがデータセットの一覧に表示されます。これでダッシュボードを作成し、ClickHouse のデータを分析する準備は完了です。
+    <br />
 
-<div id="5--creating-charts-and-a-dashboard-in-superset">
-  ## 5.  Superset でチャートとダッシュボードを作成する
-</div>
+    2. 新しいチャートを作成するには、上部メニューから **Charts** を選択し、新しいチャートを追加するボタンをクリックします。多数のオプションが表示されます。次の例では、**CHOOSE A DATASET** ドロップダウンから **uk&#95;price&#95;paid** データセットを選び、**Pie Chart** チャートを使用しています。
 
-Superset に慣れているなら、この次のセクションもすぐに理解できるはずです。Superset を初めて使う場合でも、まあ……世の中にある多くの優れた可視化ツールと同じです。使い始めるのは簡単ですが、細かな違いやコツは、実際に使いながら少しずつ身についていきます。
+    <Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Pie Chart の可視化タイプが選択された Superset のチャート作成インターフェイス" border />
 
-1. まずはダッシュボードから始めます。Superset の上部メニューで **Dashboards** を選択します。右上のボタンをクリックして、新しいダッシュボードを追加します。以下のダッシュボード名は **UK property prices** です。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="チャートを追加できる状態の、UK property prices という名前の空の Superset ダッシュボード" border />
+    3. Superset の円グラフでは **Dimension** と **Metric** が必要で、それ以外の設定は任意です。Dimension と Metric には任意のフィールドを選べます。この例では、ClickHouse のフィールド `district` を Dimension、`AVG(price)` を Metric としています。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="円グラフ用に district フィールドが選択された Dimension 設定" border />
 
-2. 新しいチャートを作成するには、上部メニューから **Charts** を選択し、新しいチャートを追加するボタンをクリックします。多数のオプションが表示されます。次の例では、**CHOOSE A DATASET** ドロップダウンから **uk&#95;price&#95;paid** データセットを選び、**Pie Chart** チャートを使用しています。
+    <Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="円グラフ用の AVG(price) aggregate function が表示された Metric 設定" border />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Pie Chart の可視化タイプが選択された Superset のチャート作成インターフェイス" border />
+    <br />
 
-<br />
+    5. 円グラフではなくドーナツチャートにしたい場合は、**CUSTOMIZE** でそのほかのオプションとあわせて設定できます。
 
-3. Superset の円グラフでは **Dimension** と **Metric** が必要で、それ以外の設定は任意です。Dimension と Metric には任意のフィールドを選べます。この例では、ClickHouse のフィールド `district` を Dimension、`AVG(price)` を Metric としています。
+    <Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="ドーナツチャートのオプションとそのほかの円グラフ設定が表示された Customize パネル" border />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="円グラフ用に district フィールドが選択された Dimension 設定" border />
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="円グラフ用の AVG(price) aggregate function が表示された Metric 設定" border />
+    6. **SAVE** ボタンをクリックしてチャートを保存し、次に **ADD TO DASHBOARD** ドロップダウンで **UK property prices** を選択します。その後、**SAVE &amp; GO TO DASHBOARD** をクリックすると、チャートが保存され、ダッシュボードに追加されます。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="ダッシュボード選択用ドロップダウンと Save & Go to Dashboard ボタンが表示されたチャート保存ダイアログ" border />
 
-5. 円グラフではなくドーナツチャートにしたい場合は、**CUSTOMIZE** でそのほかのオプションとあわせて設定できます。
+    <br />
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="ドーナツチャートのオプションとそのほかの円グラフ設定が表示された Customize パネル" border />
+    7. 以上です。ClickHouse のデータを基に Superset でダッシュボードを構築すれば、超高速なデータ分析の世界が大きく広がります。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="ClickHouse の英国不動産価格データを複数の可視化で表示した完成済みの Superset ダッシュボード" border />
 
-6. **SAVE** ボタンをクリックしてチャートを保存し、次に **ADD TO DASHBOARD** ドロップダウンで **UK property prices** を選択します。その後、**SAVE &amp; GO TO DASHBOARD** をクリックすると、チャートが保存され、ダッシュボードに追加されます。
-
-<Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="ダッシュボード選択用ドロップダウンと Save & Go to Dashboard ボタンが表示されたチャート保存ダイアログ" border />
-
-<br />
-
-7. 以上です。ClickHouse のデータを基に Superset でダッシュボードを構築すれば、超高速なデータ分析の世界が大きく広がります。
-
-<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="ClickHouse の英国不動産価格データを複数の可視化で表示した完成済みの Superset ダッシュボード" border />
-
-<br />
+    <br />
+  </Step>
+</Steps>
