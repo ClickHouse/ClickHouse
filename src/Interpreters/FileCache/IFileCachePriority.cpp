@@ -91,9 +91,9 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
         if (!usage->valid.load(std::memory_order_acquire))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
 
+        const size_t entry_references = usage->entry_references.load(std::memory_order_acquire);
         const size_t size = usage->size.load(std::memory_order_relaxed);
         const size_t elements = usage->elements.load(std::memory_order_relaxed);
-        const size_t entry_references = usage->entry_references.load(std::memory_order_acquire);
         if (entry_references == 0)
         {
             if (size != 0 || elements != 0)

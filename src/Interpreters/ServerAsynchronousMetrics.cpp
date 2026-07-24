@@ -227,22 +227,24 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
             if (cache->exposesUsageMetricsPerUser() && cache->isInitialized())
             {
+                const auto & cache_name = cache->getName();
                 for (const auto & [user_id, usage] : cache->getUsageStatPerClient())
                 {
-                    current_usage_labels.emplace(cache->getName(), user_id);
-                    filesystem_cache_size_bytes.withLabels({cache->getName(), user_id}).set(usage.size);
-                    filesystem_cache_elements.withLabels({cache->getName(), user_id}).set(usage.elements);
+                    current_usage_labels.emplace(cache_name, user_id);
+                    filesystem_cache_size_bytes.withLabels({cache_name, user_id}).set(usage.size);
+                    filesystem_cache_elements.withLabels({cache_name, user_id}).set(usage.elements);
                 }
             }
         }
 
         for (const auto & labels : previous_filesystem_cache_usage_labels)
         {
-            if (!current_usage_labels.contains(labels))
-            {
-                filesystem_cache_size_bytes.removeLabels({labels.first, labels.second});
-                filesystem_cache_elements.removeLabels({labels.first, labels.second});
-            }
+            if (current_usage_labels.contains(labels))
+                continue;
+
+            const auto & [cache_name, user_id] = labels;
+            filesystem_cache_size_bytes.removeLabels({cache_name, user_id});
+            filesystem_cache_elements.removeLabels({cache_name, user_id});
         }
         previous_filesystem_cache_usage_labels = std::move(current_usage_labels);
 
