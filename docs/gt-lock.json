@@ -92,54 +92,6 @@
       "staged": false
     },
     {
-      "fileId": "f564898b52455af7e96d64d0bcb0f217f8c5ea2453c4ee34356e91fbaf030d8a",
-      "versionId": "efda287af9dcf707254ae21f7d7e2fcea8cb7e649ea78b940c16a1edfda9b9f8",
-      "translations": {
-        "es": {
-          "updatedAt": "2026-06-25T21:42:36.115Z",
-          "fileName": "es/_specs/hyperdx-openapi.json",
-          "postProcessHash": "2e682e964b90316de03269239194b52bbabdaf7e1579646c7698ed72b0a7d0ea"
-        },
-        "ja": {
-          "updatedAt": "2026-06-25T21:42:36.119Z",
-          "fileName": "ja/_specs/hyperdx-openapi.json",
-          "postProcessHash": "fc36642a6f9f3d433d902f00e656b91f9ede02ecbe4bbbf0e176bc8b241d8fad"
-        },
-        "ko": {
-          "updatedAt": "2026-06-25T21:42:36.125Z",
-          "fileName": "ko/_specs/hyperdx-openapi.json",
-          "postProcessHash": "64c274c74bb21eda34942c6aea6ab6a1bb6347a10214a02128c2b4ac5e5f5383"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-06-25T21:42:36.130Z",
-          "fileName": "pt-BR/_specs/hyperdx-openapi.json",
-          "postProcessHash": "f830e68061800abea0dfd8566c0de63bf9228781d295439ad921fd4519c8823f"
-        },
-        "ru": {
-          "updatedAt": "2026-06-25T21:42:36.135Z",
-          "fileName": "ru/_specs/hyperdx-openapi.json",
-          "postProcessHash": "823dcc4fa14a3afa08fa02b271f136c626bfee0b65d3c5be7cf62e367e6dbc0d"
-        },
-        "zh": {
-          "updatedAt": "2026-06-25T21:42:36.141Z",
-          "fileName": "zh/_specs/hyperdx-openapi.json",
-          "postProcessHash": "3fbde80c71cc4240c0e584e0b6dd970aa87750b71a0ed10206d5f07998334905"
-        },
-        "ar": {
-          "updatedAt": "2026-06-25T21:42:36.147Z",
-          "fileName": "ar/_specs/hyperdx-openapi.json",
-          "postProcessHash": "90a98b69166cf20176b23f56c293ddfe0237c73b870989dfa1c9fe513c788031"
-        },
-        "fr": {
-          "updatedAt": "2026-06-25T21:42:36.152Z",
-          "fileName": "fr/_specs/hyperdx-openapi.json",
-          "postProcessHash": "5be851bad90c302c9d08daa7d207d5b2d4756deed3d7a4552c3cdc16ece584bf"
-        }
-      },
-      "fileName": "_specs/hyperdx-openapi.json",
-      "staged": false
-    },
-    {
       "fileId": "1ffcd9aa7d0afa8b2b65d00841fd99b29eb814eeb52ba5fc759b3df6628b3ddc",
       "versionId": "54e5f2923ad6666c11c583ebeb6b7c25d8a969c047490c1f7a01ed27e96cce1c",
       "translations": {

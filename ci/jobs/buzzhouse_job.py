@@ -276,7 +276,7 @@ def main():
             "add_minmax_index_for_temporal_columns",
             "allow_coalescing_columns_in_partition_or_order_key",
             "allow_commit_order_projection",
-            "allow_experimental_text_index_positions",
+            "allow_experimental_text_index_phrase_search",
             "allow_nullable_key",
             "allow_part_offset_column_in_projections",
             "allow_suspicious_indices",
