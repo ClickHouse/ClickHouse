@@ -106,17 +106,7 @@ Hive Metastore أو AWS Glue.
     </dependency>
     ```
 
-    أضف المستودع التالي إذا كنت تريد استخدام إصدار SNAPSHOT.
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    لاستخدام إصدار SNAPSHOT، اتبع [تعليمات Sonatype لاستخدام إصدارات SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) مع Maven.
   </Tab>
 
   <Tab title="Gradle">
@@ -127,13 +117,7 @@ Hive Metastore أو AWS Glue.
     }
     ```
 
-    أضف المستودع التالي إذا كنت تريد استخدام إصدار SNAPSHOT:
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    لاستخدام إصدار SNAPSHOT، اتبع [تعليمات Sonatype لاستخدام إصدارات SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) مع Gradle.
   </Tab>
 
   <Tab title="SBT">
@@ -175,8 +159,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 يمكنك العثور على جميع ملفات JAR المتاحة للإصدارات المنشورة
-في [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-وجميع ملفات JAR اليومية من نوع SNAPSHOT في [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+في [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/).
+ملفات JAR اليومية من نوع SNAPSHOT متاحة عبر مستودع Sonatype للقطات snapshots المُعدّ أعلاه.
 
 <Warning>
   من الضروري تضمين [clickhouse-jdbc JAR](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)

@@ -1,0 +1,4 @@
+big-prealloc	650000
+small-prealloc	520000
+dist-big-prealloc	650000
+dist-small-prealloc	520000

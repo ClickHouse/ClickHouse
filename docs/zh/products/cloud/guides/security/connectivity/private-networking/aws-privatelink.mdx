@@ -13,6 +13,10 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 
 您可以使用 [AWS PrivateLink](https://aws.amazon.com/privatelink/) 在 VPC、AWS 服务、您的本地系统以及 ClickHouse Cloud 之间建立安全连接，而无需将流量暴露到公共互联网。本文档概述了通过 AWS PrivateLink 连接到 ClickHouse Cloud 的步骤。
 
+<Warning>
+  AWS PrivateLink 仅支持从您的 AWS VPC 发起、连接到 ClickHouse Cloud 的连接。它不能用于从 ClickHouse Cloud 发起、连接到您 VPC 中服务的连接，例如[私有数据库](#connecting-to-a-remote-database)。
+</Warning>
+
 若要将对您的 ClickHouse Cloud 服务的访问限制为仅可通过 AWS PrivateLink 地址进行，请按照 ClickHouse Cloud [IP Access Lists](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 中提供的说明操作。
 
 <Note>
@@ -54,8 +58,8 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 
 1. 获取端点 &quot;Service name&quot;。
 2. 创建 AWS 端点。
-3. 将 &quot;端点 ID&quot; 添加到 ClickHouse Cloud organization。
-4. 将 &quot;端点 ID&quot; 添加到 ClickHouse 服务允许列表。
+3. 将 &quot;Endpoint ID&quot; 添加到 ClickHouse Cloud organization。
+4. 将 &quot;Endpoint ID&quot; 添加到 ClickHouse 服务允许列表。
 
 可在[此处](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/)找到 Terraform 示例。
 
@@ -241,7 +245,7 @@ resource "aws_vpc_endpoint" "this" {
   ### 将“Endpoint ID”添加到 ClickHouse 服务的允许列表中
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-2">
   #### 选项 1：ClickHouse Cloud 控制台
 </div>
 
@@ -419,10 +423,8 @@ jq .result.privateEndpointIds
   ### 连接到远程数据库
 </div>
 
-假设你想在 ClickHouse Cloud 中使用 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数，并连接到托管在 Amazon Web Services (AWS) VPC 中的数据库。AWS PrivateLink 不能用于安全地建立此连接。PrivateLink 是一种单向连接。它允许你的内部网络或 Amazon VPC 安全地连接到 ClickHouse Cloud，但不允许 ClickHouse Cloud 连接到你的内部网络。
-
 根据 [AWS PrivateLink 文档](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html)：
 
-> 当你采用客户端/服务器架构，并希望允许一个或多个消费者 VPC 单向访问服务提供商 VPC 中的特定服务或一组实例时，请使用 AWS PrivateLink。只有消费者 VPC 中的客户端才能发起到服务提供商 VPC 中服务的连接。
+> 当你采用客户端/服务器架构，并希望允许一个或多个消费者 VPC 单向访问服务提供商 VPC 中的特定服务或一组实例时，请使用 AWS PrivateLink。只有消费者 VPC 中的客户端才能发起与服务提供商 VPC 中服务的连接。
 
-为此，请配置你的 AWS 安全组 (Security Group) ，允许来自 ClickHouse Cloud 的连接访问你的内部/私有数据库服务。请查看 [ClickHouse Cloud 各区域的默认 egress IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api) 以及 [可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。
+要将 ClickHouse Cloud 中的 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数连接到托管在你的 AWS VPC 中的数据库，请配置你的 AWS 安全组，允许来自 ClickHouse Cloud 的连接。请查看 [ClickHouse Cloud 各区域的默认出口 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)以及[可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。

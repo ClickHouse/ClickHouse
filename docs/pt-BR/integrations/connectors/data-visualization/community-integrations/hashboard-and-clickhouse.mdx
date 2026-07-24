@@ -23,7 +23,7 @@ import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMainta
 
 <br />
 
-Este guia orienta você pelas etapas para conectar o Hashboard à sua instância do ClickHouse. Essas informações também estão disponíveis na [documentação da integração com ClickHouse](https://docs.hashboard.com/docs/database-connections/clickhouse) do Hashboard.
+Este guia orienta você pelas etapas para conectar o Hashboard à sua instância do ClickHouse. Essas informações também estão disponíveis na [documentação da integração com ClickHouse](https://hashboard.com/docs/database-connections/clickhouse) do Hashboard.
 
 <div id="pre-requisites">
   ## Pré-requisitos
@@ -33,31 +33,29 @@ Este guia orienta você pelas etapas para conectar o Hashboard à sua instância
 * Uma [conta no Hashboard](https://hashboard.com/getAccess) e um projeto.
 
 <div id="steps-to-connect-hashboard-to-clickhouse">
-  ## Passos para conectar o Hashboard ao ClickHouse
+  ## Etapas para conectar o Hashboard ao ClickHouse
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. Reúna os detalhes da sua conexão
-</div>
+<Steps>
+  <Step title="Reúna os detalhes da conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Adicione uma nova conexão de banco de dados no Hashboard" id="2-add-a-new-database-connection-in-hashboard">
+    1. Acesse seu [projeto no Hashboard](https://hashboard.com/app).
+    2. Abra a página Settings clicando no ícone de engrenagem na barra lateral de navegação.
+    3. Clique em `+ New Database Connection`.
+    4. Na janela modal, selecione &quot;ClickHouse.&quot;
+    5. Preencha os campos **Connection Name**, **Host**, **Port**, **Username**, **Password** e **Database** com as informações coletadas anteriormente.
+    6. Clique em &quot;Test&quot; para verificar se a conexão foi configurada com sucesso.
+    7. Clique em &quot;Add&quot;
 
-<div id="2-add-a-new-database-connection-in-hashboard">
-  ### 2. Adicione uma nova conexão de banco de dados no Hashboard
-</div>
-
-1. Acesse seu [projeto no Hashboard](https://hashboard.com/app).
-2. Abra a página Settings clicando no ícone de engrenagem na barra lateral de navegação.
-3. Clique em `+ New Database Connection`.
-4. Na janela modal, selecione &quot;ClickHouse&quot;.
-5. Preencha os campos **Connection Name**, **Host**, **Port**, **Username**, **Password** e **Database** com as informações coletadas anteriormente.
-6. Clique em &quot;Test&quot; para verificar se a conexão foi configurada com sucesso.
-7. Clique em &quot;Add&quot;
-
-Seu banco de dados ClickHouse agora está conectado ao Hashboard, e você pode prosseguir criando [Modelos de Dados](https://docs.hashboard.com/docs/data-modeling/add-data-model), [Explorações](https://docs.hashboard.com/docs/visualizing-data/explorations), [Métricas](https://docs.hashboard.com/docs/metrics) e [Painéis](https://docs.hashboard.com/docs/dashboards). Consulte a documentação correspondente do Hashboard para obter mais detalhes sobre esses recursos.
+    Seu banco de dados ClickHouse agora está conectado ao Hashboard, e você pode prosseguir criando [Modelos de Dados](https://hashboard.com/docs/data-modeling/add-data-model), [Explorações](https://hashboard.com/docs/visualizing-data/explorations), [Métricas](https://hashboard.com/docs/metrics) e [Painéis](https://hashboard.com/docs/dashboards). Consulte a documentação correspondente do Hashboard para obter mais detalhes sobre esses recursos.
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Saiba mais
 </div>
 
-Para conhecer recursos mais avançados e obter ajuda para solucionar problemas, consulte a [documentação do Hashboard](https://docs.hashboard.com/).
+Para conhecer recursos mais avançados e obter ajuda para solucionar problemas, consulte a [documentação do Hashboard](https://hashboard.com/docs).

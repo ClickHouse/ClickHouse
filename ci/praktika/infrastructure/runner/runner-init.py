@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 73
+    version: int = 74
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)

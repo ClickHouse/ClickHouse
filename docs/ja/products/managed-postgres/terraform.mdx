@@ -14,8 +14,16 @@ import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 ClickHouse Managed Postgres サービスは、[ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service)の `clickhouse_postgres_service` リソースを使用して作成および管理できます。このページでは、このリソースと関連するデータソースについて、プロバイダーのセットアップと設定例を説明します。
 
 <Note>
-  このリソースはアルファ段階であり、今後のプロバイダー バージョンで動作が変更される可能性があります。通常のプロバイダー ビルドに含まれており、プロバイダー バージョン **v3.17.1** 以降で利用できます。詳細は [プロバイダーのリリース](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) を確認してください。
+  このリソースはアルファ段階であり、今後のプロバイダー バージョンで動作が変更される可能性があります。通常のプロバイダー ビルドに含まれています。このページでは、認証情報の管理方法が変更されたプロバイダー バージョン **v3.21.0** 以降を説明しています。以前のバージョンは動作が異なり、2026 年 7 月 31 日時点では正しく動作しなくなっています。詳細は [プロバイダーのリリース](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) を参照してください。
 </Note>
+
+<Warning>
+  **2026 年 7 月 31 日までにプロバイダー v3.21.0 にアップグレードしてください**
+
+  **2026 年 7 月 31 日** 時点で、Managed Postgres API はレスポンスで スーパーユーザー の password と接続文字列を返さなくなりました。認証情報が返されるのは、サービスの作成時または password のリセット時のみです。プロバイダー バージョン **v3.21.0 以降** は、この変更の前後で同様に動作します。古いプロバイダー バージョンは、API が認証情報をそのまま返すことに依存しています。2026 年 7 月 31 日時点で、それらは `connection_string` を設定しなくなっており、`password` を設定で宣言せずに作成されたサービスは成功する一方で、生成された password はどこにも記録されません。
+
+  2026 年 7 月 31 日までにアップグレードしてください。v3.21.0 で最初に `plan` または `apply` を実行した際に、Terraform state は自動的に移行されます。いずれかのサービスが server によって生成された password (設定に `password` がない) に依存している場合は、v3.21.0 では標準サービスに `password` または `password_wo` が必要になるため、先に `terraform state pull` でそれを復旧して宣言してください。
+</Warning>
 
 <div id="provider-setup">
   ## プロバイダーの設定
@@ -28,7 +36,7 @@ terraform {
   required_providers {
     clickhouse = {
       source  = "ClickHouse/clickhouse"
-      version = ">= 3.17.1"
+      version = ">= 3.21.0"
     }
   }
 }
@@ -48,25 +56,27 @@ provider "clickhouse" {
 
 `clickhouse_postgres_service` リソースでは、以下の引数を使用できます。
 
-| 引数                         | 必須     | 説明                                                                                                                       |
-| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `name`                     | はい     | サービスの人間が読める名前です。変更不可で、変更するとサービスは破棄されて再作成されます。                                                                            |
-| `cloud_provider`           | 通常の作成時 | インスタンスをホストするクラウドプロバイダーです。現在サポートされているのは `aws` のみです。読み取りレプリカまたはポイントインタイム復元の場合は省略してください (ソースから継承されます) 。                     |
-| `region`                   | 通常の作成時 | クラウドリージョンです (例: `us-east-1`) 。読み取りレプリカまたはポイントインタイム復元の場合は省略してください (ソースから継承されます) 。                                         |
-| `size`                     | 通常の作成時 | インスタンスサイズ (VM SKU) です (例: `m6gd.large`) 。その場でサイズ変更できます。ポイントインタイム復元の場合は省略してください (復元されたインスタンスはバックアップ時のサイズで起動します) 。         |
-| `postgres_version`         | いいえ    | Postgres のメジャーバージョンです (例: `18`) 。メジャーバージョンを変更すると、サービスは破棄されて再作成されます。                                                      |
-| `ha_type`                  | いいえ    | 高可用性モード: `none`、`async`、または `sync`。詳細は [高可用性](#high-availability) を参照してください。                                             |
-| `password`                 | いいえ    | スーパーユーザー のパスワードです。省略すると、server が生成します。(sensitive) な state に保存されます。                                                      |
-| `pg_config`                | いいえ    | キー・バリュー map として指定する Postgres server パラメーターです。                                                                            |
-| `pgbouncer_config`         | いいえ    | キー・バリュー map として指定する PgBouncer connection-pooler パラメーターです。                                                                |
-| `tags`                     | いいえ    | キー・バリュー map として指定するリソースタグです。                                                                                             |
-| `read_replica_of`          | いいえ    | レプリカ化するプライマリ service の ID です。詳細は [読み取りレプリカ](#read-replicas) を参照してください。`restore_to_point_in_time` とは同時に指定できません。           |
-| `restore_to_point_in_time` | いいえ    | 別の service を特定時点に復元して service を作成します。詳細は [ポイントインタイム復元](#point-in-time-restore) を参照してください。`read_replica_of` とは同時に指定できません。 |
+| 引数                         | 必須                                 | 説明                                                                                                                                                                  |
+| -------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                     | はい                                 | サービスの人間が読める名前です。変更不可で、変更するとサービスは破棄されて再作成されます。                                                                                                                       |
+| `cloud_provider`           | 通常の作成時                             | インスタンスをホストするクラウドプロバイダーです。現在サポートされているのは `aws` のみです。読み取りレプリカまたはポイントインタイム復元の場合は省略してください (ソースから継承されます) 。                                                                |
+| `region`                   | 通常の作成時                             | クラウドリージョンです (例: `us-east-1`) 。読み取りレプリカまたはポイントインタイム復元の場合は省略してください (ソースから継承されます) 。                                                                                    |
+| `size`                     | 通常の作成時                             | インスタンスサイズ (VM SKU) です (例: `m6gd.large`) 。その場でサイズ変更できます。ポイントインタイム復元の場合は省略してください (復元されたインスタンスはバックアップ時のサイズで起動します) 。                                                    |
+| `postgres_version`         | いいえ                                | Postgres のメジャーバージョンです (例: `18`) 。メジャーバージョンを変更すると、サービスは破棄されて再作成されます。                                                                                                 |
+| `ha_type`                  | いいえ                                | 高可用性モード: `none`、`async`、または `sync`。詳細は [高可用性](#high-availability) を参照してください。                                                                                        |
+| `password`                 | 通常の作成時 (`password_wo` が設定されていない場合) | 構成で管理するスーパーユーザーのパスワードです。Terraform が API からこれを読み戻すことはありません。(sensitive) な state に保存されます。読み取りレプリカの場合は省略してください (継承されます)。ポイントインタイム復元の場合も省略してください (ソースバックアップのものが保持されます) 。 |
+| `password_wo`              | 通常の作成時 (`password` が設定されていない場合)    | 書き込み専用のスーパーユーザーパスワードです。サービスには適用されますが、state には保存されません。`password_wo_version` が必要です。Terraform 1.11 以降が必要です。                                                            |
+| `password_wo_version`      | `password_wo` と併用                  | `password_wo` のバージョン番号です。これを変更すると、現在の `password_wo` 値にローテーションされます。                                                                                                  |
+| `pg_config`                | いいえ                                | キー・バリュー map として指定する Postgres server パラメーターです。                                                                                                                       |
+| `pgbouncer_config`         | いいえ                                | キー・バリュー map として指定する PgBouncer connection-pooler パラメーターです。                                                                                                           |
+| `tags`                     | いいえ                                | キー・バリュー map として指定するリソースタグです。                                                                                                                                        |
+| `read_replica_of`          | いいえ                                | レプリカ化するプライマリ service の ID です。詳細は [読み取りレプリカ](#read-replicas) を参照してください。`restore_to_point_in_time` とは同時に指定できません。                                                      |
+| `restore_to_point_in_time` | いいえ                                | 別の service を特定時点に復元して service を作成します。詳細は [ポイントインタイム復元](#point-in-time-restore) を参照してください。`read_replica_of` とは同時に指定できません。                                            |
 
-以下の属性は読み取り専用で、作成後に ClickHouse Cloud によって設定されます: `id`、`state`、`created_at`、`is_primary`、`hostname`、`port`、`username`、および `connection_string` (sensitive) 。
+以下の属性は読み取り専用で、作成後に ClickHouse Cloud によって設定されます: `id`、`state`、`created_at`、`is_primary`、`hostname`、`port`、および `username`。`connection_string` 属性はありません (v3.21.0 で削除されました)。接続 URI は、たとえば `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require` のように、`hostname`、`port`、`username`、および宣言したパスワードから構築してください。
 
 <Warning>
-  `password` は Terraform の state に平文で保存されます。そのため、state file は適切に保護してください。たとえば、保存時暗号化を備えたリモート backend を使用します。`password` を省略すると、server が生成し、provider は refresh のたびにそれを state に読み戻します。
+  `password` は Terraform の state に平文で保存されます。そのため、state file は適切に保護してください。たとえば、保存時暗号化を使用するリモート backend を利用する方法があります。あるいは、パスワードを完全に state から除外するために `password_wo` を使用してください。
 </Warning>
 
 <div id="create-a-service">
@@ -79,6 +89,7 @@ resource "clickhouse_postgres_service" "example" {
   cloud_provider = "aws"
   region         = "us-east-1"
   size           = "m6gd.large"
+  password       = var.postgres_password
 
   # High-availability mode — number of standby replicas:
   #   "none"  – primary only, no standby (default)
@@ -93,7 +104,7 @@ resource "clickhouse_postgres_service" "example" {
 }
 ```
 
-`password` を自分で管理するには、`password` を設定してください。12 文字以上で、少なくとも小文字 1 文字、大文字 1 文字、数字 1 文字を含める必要があります。省略すると、サーバーによって自動生成されます。
+標準のサービスでは、`password` または `password_wo` を宣言する必要があります。値は 12 文字以上で、少なくとも小文字 1 文字、大文字 1 文字、数字 1 文字を含める必要があります。`password_wo` (`password_wo_version` と併用) は同じパスワード規則を適用しますが、state には保存されません。ローテーションするには、`password_wo_version` を変更してください。API は認証情報を返さないため、Terraform がパスワードを書き込む唯一の手段であり続ける必要があります。Terraform の外部 (コンソールまたは API) でローテーションされたパスワードは検出されず、次回 Terraform によって実行されるローテーションで、宣言された値があらためて適用されます。
 
 <div id="high-availability">
   ## 高可用性
@@ -169,11 +180,13 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 既存のサービスのインポート
 </div>
 
-既存の Managed Postgres サービスは、service ID を使って Terraform state にインポートできます。インポート時にはパスワードも復元されます。これは、サーバーが `GET` に対してその値を返すためです。
+既存の Managed Postgres サービスは、service ID を使って Terraform state にインポートできます。
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+インポート時にはパスワードは復元されません。これは、API がその値を返さないためです。インポート後、最初の apply で、サービスのパスワードは設定で宣言した `password` または `password_wo` に切り替えられます。
 
 <div id="unsupported-operations">
   ## サポート対象外の操作
