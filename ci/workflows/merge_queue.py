@@ -1,6 +1,12 @@
 from praktika import Workflow
 
-from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames
+from ci.defs.defs import (
+    DOCKERS,
+    GH_AUTH_TRUSTED_LAMBDA_NAME,
+    SECRETS,
+    ArtifactConfigs,
+    ArtifactNames,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_merge_queue_job
 
@@ -40,6 +46,9 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_sync_commit_status.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_sync_pr_mergeable.py",
     ],
+    # check_sync_pr_mergeable.py needs a token with a broader permission scope -
+    # mint it from the dedicated lambda.
+    gh_auth_lambda_name=GH_AUTH_TRUSTED_LAMBDA_NAME,
 )
 
 WORKFLOWS = [

@@ -47,12 +47,12 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **Argumentos**
 
-* `expr` — Expresión sobre los valores de la columna cuyo resultado sea un tipo de dato numérico, Date o DateTime. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+* `expr` — Expresión sobre los valores de la columna cuyo resultado sea un tipo de dato numérico, `Date` o `DateTime`. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
 * `weight` — Columna con los pesos de los elementos de la secuencia. El peso es el número de ocurrencias del valor. [`UInt*`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
 
-Cuantil aproximado del nivel especificado. [`Float64`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+Cuantil aproximado del nivel especificado. Para entradas `Date` y `DateTime`, el formato de salida coincide con el formato de entrada. [`Float32`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
 
 **Ejemplos**
 
