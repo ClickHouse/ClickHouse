@@ -6,6 +6,10 @@
 # Quota types without an output denominator (e.g. `queries`) must reject invalid literals too:
 # a negative integer used to wrap around to 18446744073709551615 instead of throwing,
 # and a positive fractional literal used to be silently truncated (MAX queries = 1.5 became 1).
+# The fractional check is done on the literal text: the parsed Float64 has already been rounded
+# to the nearest double, so above 2^53 the fraction would vanish before any check on the value
+# (9007199254740992.5 rounds to 9007199254740992.0). An exponent moving all fractional digits
+# into the integer part (1.5e1 = 15) keeps the literal integral and accepted.
 # Quoted (string-literal) limits go through a size-suffix parse that used to skip overflow checking,
 # so an out-of-range quoted value silently wrapped around before the range checks; it must throw now.
 # Note: a `--` comment attached to a hinted query would shadow its test hint, so the queries below carry no leading SQL comments.
@@ -32,6 +36,9 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1; -- { clientError BAD_A
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1e-400; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1.5; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 9007199254740992.5; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5e-400; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 15e-1; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1e20; -- { clientError CANNOT_CONVERT_TYPE }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = inf; -- { clientError CANNOT_CONVERT_TYPE }
 
@@ -43,5 +50,10 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = '18446744073709551T'; -- {
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = 1.5, MAX queries = 100;
 SHOW CREATE QUOTA $QUOTA;
 
+-- A fractional literal whose exponent makes it integral is accepted.
+CREATE QUOTA ${QUOTA}_e FOR INTERVAL 1 hour MAX queries = 1.5e1;
+SHOW CREATE QUOTA ${QUOTA}_e;
+
 DROP QUOTA $QUOTA;
+DROP QUOTA ${QUOTA}_e;
 " | sed "s/$QUOTA/q_04617/g"

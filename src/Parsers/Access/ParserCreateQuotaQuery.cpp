@@ -17,7 +17,10 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/StringUtils.h>
+#include <base/hex.h>
 
+#include <bit>
 #include <cmath>
 
 
@@ -156,11 +159,111 @@ namespace
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
+    /// Whether a numeric literal denotes an integral value, determined from the literal text itself.
+    /// The Float64 field produced by ParserNumber has already been rounded to the nearest double,
+    /// so for a value above 2^53 a fractional part can vanish before any check on the value:
+    /// e.g. the literal 9007199254740992.5 is rounded to 9007199254740992.0. Handles a decimal
+    /// literal with an optional exponent (1.5, 1.5e1) and a hexadecimal float (0x1.8p1). Text that
+    /// does not match these forms (e.g. inf, nan) is reported as integral, leaving the rejection
+    /// to the range check inside FieldVisitorConvertToNumber.
+    bool isIntegralNumericLiteral(std::string_view text)
+    {
+        if (!text.empty() && (text.front() == '+' || text.front() == '-'))
+            text.remove_prefix(1);
+
+        bool is_hex = text.starts_with("0x") || text.starts_with("0X");
+        if (is_hex)
+            text.remove_prefix(2);
+
+        auto is_digit = [is_hex](char c) { return is_hex ? isHexDigit(c) : isNumericASCII(c); };
+
+        size_t i = 0;
+        while (i < text.size() && is_digit(text[i]))
+            ++i;
+        std::string_view integer_part = text.substr(0, i);
+
+        std::string_view fractional_part;
+        if (i < text.size() && text[i] == '.')
+        {
+            size_t fraction_begin = ++i;
+            while (i < text.size() && is_digit(text[i]))
+                ++i;
+            fractional_part = text.substr(fraction_begin, i - fraction_begin);
+        }
+
+        /// The exponent shifts the point by decimal digits for a decimal literal ('e')
+        /// and by bits for a hexadecimal one ('p'); its own digits are decimal in both cases.
+        Int64 exponent = 0;
+        char exponent_char = is_hex ? 'p' : 'e';
+        if (i < text.size() && (text[i] | 0x20) == exponent_char)
+        {
+            ++i;
+            bool exponent_negative = false;
+            if (i < text.size() && (text[i] == '+' || text[i] == '-'))
+            {
+                exponent_negative = (text[i] == '-');
+                ++i;
+            }
+            while (i < text.size() && isNumericASCII(text[i]))
+            {
+                /// Clamp: the point cannot usefully shift by more than the mantissa length anyway.
+                exponent = std::min<Int64>(exponent * 10 + (text[i] - '0'), 1000000000);
+                ++i;
+            }
+            if (exponent_negative)
+                exponent = -exponent;
+        }
+
+        if (i != text.size() || (integer_part.empty() && fractional_part.empty()))
+            return true; /// Not a numeric literal form we understand: leave it to the value checks.
+
+        /// Find the deepest nonzero digit relative to the point: fractional digits have depths
+        /// 1, 2, ..., integer digits have depths 0, -1, ... counting leftwards from the lowest one.
+        Int64 deepest_position = 0;
+        char deepest_digit = 0;
+        for (size_t k = 0; k < fractional_part.size(); ++k)
+        {
+            if (fractional_part[k] != '0')
+            {
+                deepest_position = static_cast<Int64>(k) + 1;
+                deepest_digit = fractional_part[k];
+            }
+        }
+        if (deepest_digit == 0)
+        {
+            for (size_t k = 0; k < integer_part.size(); ++k)
+            {
+                if (integer_part[k] != '0')
+                {
+                    deepest_position = static_cast<Int64>(k) + 1 - static_cast<Int64>(integer_part.size());
+                    deepest_digit = integer_part[k];
+                }
+            }
+        }
+        if (deepest_digit == 0)
+            return true; /// All digits are zero: the value is 0.
+
+        if (is_hex)
+        {
+            /// A hexadecimal digit at depth d occupies the bits at depths 4d-3 .. 4d after the
+            /// binary point; the deepest set bit of the digit decides integrality.
+            Int64 deepest_bit = 4 * deepest_position - std::countr_zero(static_cast<unsigned>(unhex(deepest_digit)));
+            return deepest_bit <= exponent;
+        }
+        return deepest_position <= exponent;
+    }
+
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
     {
+        IParserBase::Pos literal_pos = pos;
         ASTPtr ast;
         if (!ParserNumber{}.parse(pos, ast, expected) && !ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
+
+        /// ParserNumber consumes an optional sign token before the number token.
+        if (literal_pos->type == TokenType::Minus || literal_pos->type == TokenType::Plus)
+            ++literal_pos;
+        std::string_view literal_text(literal_pos->begin, literal_pos->size());
 
         const Field & max_field = ast->as<ASTLiteral &>().value;
         const auto & type_info = QuotaTypeInfo::get(quota_type);
@@ -178,14 +281,13 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
             /// Reject a fractional literal for an integer quota type: FieldVisitorConvertToNumber would
             /// silently truncate it (e.g. MAX queries = 1.5 would become 1 and round-trip differently),
-            /// while the users.xml path rejects the same input. A non-finite value passes through here
-            /// and is rejected by the range check inside FieldVisitorConvertToNumber.
-            if (max_field.getType() == Field::Types::Float64)
-            {
-                Float64 value = max_field.safeGet<Float64>();
-                if (std::isfinite(value) && std::floor(value) != value)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value must be an integer");
-            }
+            /// while the users.xml path rejects the same input. The check looks at the literal text
+            /// because the Float64 field has already been rounded to the nearest double, which loses
+            /// the fractional part of a value above 2^53 (e.g. 9007199254740992.5) before any check
+            /// on the value itself. A non-finite value is reported as integral and rejected by the
+            /// range check inside FieldVisitorConvertToNumber.
+            if (max_field.getType() == Field::Types::Float64 && !isIntegralNumericLiteral(literal_text))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value must be an integer");
             max_value = fieldToNumber<QuotaValue>(max_field);
         }
         else

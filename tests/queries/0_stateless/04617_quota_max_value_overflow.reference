@@ -1,1 +1,2 @@
 CREATE QUOTA q_04617 FOR INTERVAL 1 hour MAX queries = 100, execution_time = 1.5
+CREATE QUOTA q_04617_e FOR INTERVAL 1 hour MAX queries = 15
