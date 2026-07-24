@@ -308,6 +308,37 @@ TEST(BackupInfo, EquivalentLocatorsIgnoreKeyValueArgumentOrder)
 }
 
 
+TEST(BackupInfo, EquivalentLocatorsSupportNonStringValues)
+{
+    auto context = getContext().context;
+    const auto first = BackupInfo::fromString("S3(collection, use_environment_credentials = true, connect_timeout_ms = 1000)");
+    const auto second = BackupInfo::fromString("S3(collection, connect_timeout_ms = 1000, use_environment_credentials = true)");
+    const auto different = BackupInfo::fromString("S3(collection, connect_timeout_ms = 1001, use_environment_credentials = true)");
+
+    EXPECT_TRUE(first.isEquivalentTo(second, context));
+    EXPECT_FALSE(first.isEquivalentTo(different, context));
+}
+
+
+TEST(BackupInfo, EquivalentLocatorsHideInvalidValues)
+{
+    tryRegisterFunctions();
+    auto context = getContext().context;
+    const auto info = BackupInfo::fromString("S3(collection, access_key_id = throwIf(1, 'TOPSECRET'))");
+
+    try
+    {
+        (void)info.isEquivalentTo(info, context);
+        FAIL() << "Expected invalid backup locator override";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
+}
+
+
 TEST(BackupInfo, DestinationIdentityRequiresContextAndFrozenCollection)
 {
     auto context = getContext().context;

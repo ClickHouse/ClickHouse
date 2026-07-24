@@ -184,8 +184,18 @@ bool BackupInfo::isEquivalentTo(const BackupInfo & other, ContextPtr context) co
         std::map<String, String> key_values;
         for (const auto & arg : key_value_args)
         {
-            String key = evaluateKeyValueArgument(arg, 0, context);
-            String value = evaluateKeyValueArgument(arg, 1, context);
+            String key;
+            String value;
+            try
+            {
+                auto key_value = getKeyValueFromAST(arg, context);
+                key = std::move(key_value.first);
+                value = fieldToString(key_value.second);
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup locator key-value argument must be constant");
+            }
             if (!key_values.emplace(std::move(key), std::move(value)).second)
                 return std::optional<std::map<String, String>>{};
         }
