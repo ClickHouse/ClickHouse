@@ -99,6 +99,30 @@ SELECT count() FROM t_ttl_batch2;
 SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch2';
 DROP TABLE t_ttl_batch2;
 
+SELECT 'Batched ALTER adding the column the new TTL references falls back instead of throwing';
+DROP TABLE IF EXISTS t_ttl_batch3;
+-- The new TTL references a column introduced by a sibling `ADD COLUMN` of the same ALTER. The fast
+-- path proves its delta against the original metadata, where `d2` does not exist, so it must not be
+-- attempted at all (it used to throw UNKNOWN_IDENTIFIER instead of falling back).
+CREATE TABLE t_ttl_batch3 (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
+INSERT INTO t_ttl_batch3 SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
+ALTER TABLE t_ttl_batch3 ADD COLUMN d2 DateTime('UTC') DEFAULT d, MODIFY TTL d2 + INTERVAL 10 DAY;
+SELECT count() FROM t_ttl_batch3;
+SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch3';
+DROP TABLE t_ttl_batch3;
+
+SELECT 'Batched ALTER changing the default of the TTL column falls back to the regular rewrite';
+DROP TABLE IF EXISTS t_ttl_batch4;
+-- A sibling metadata-only `MODIFY COLUMN` changes the DEFAULT of the column the TTL reads. For parts
+-- where the column is derived rather than stored that changes the historical values the TTL sees, so
+-- the delta proven from the TTL ASTs alone would be unsound; any sibling command disables the fast path.
+CREATE TABLE t_ttl_batch4 (id UInt32, d DateTime('UTC'), d2 DateTime('UTC') DEFAULT d) ENGINE = MergeTree ORDER BY id TTL d2 + INTERVAL 300 DAY;
+INSERT INTO t_ttl_batch4 (id, d) SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
+ALTER TABLE t_ttl_batch4 MODIFY COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 1 DAY, MODIFY TTL d2 + INTERVAL 10 DAY;
+SELECT count() FROM t_ttl_batch4;
+SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch4';
+DROP TABLE t_ttl_batch4;
+
 SELECT 'Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows';
 DROP TABLE IF EXISTS t_ttl_stale;
 CREATE TABLE t_ttl_stale (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 1 DAY;

@@ -2171,29 +2171,21 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 if (result.empty() && settings[Setting::enable_fast_modify_ttl])
                 {
                     /// The fast command materializes only the rows-TTL shift of this `MODIFY TTL`
-                    /// command. In a batched ALTER, another command may change TTLs of the final
-                    /// metadata too (e.g. `MODIFY TTL ..., MODIFY COLUMN x String TTL ...`), and the
-                    /// fast path would never materialize that other TTL, so any other TTL-affecting
-                    /// command in the batch forces the regular rewrite.
-                    bool has_other_ttl_change = false;
-                    for (const auto & other_cmd : *this)
+                    /// command, and the shift is proven against `original_metadata`. Any sibling
+                    /// command in the batch can invalidate that proof: another TTL-affecting command
+                    /// would never be materialized by the fast path, and even a metadata-only column
+                    /// change can alter the meaning of the columns the TTL expression reads — e.g.
+                    /// `ADD COLUMN d2 DateTime DEFAULT d, MODIFY TTL d2 + INTERVAL 10 DAY` references
+                    /// a column that does not exist in the original metadata, and
+                    /// `MODIFY COLUMN d2 DateTime DEFAULT d + INTERVAL 1 DAY, MODIFY TTL d2 + ...`
+                    /// changes the historical value of `d2` for parts where it is not stored.
+                    /// So the fast path applies only when `MODIFY TTL` is the sole command.
+                    if (this->size() == 1)
                     {
-                        if (&other_cmd == &alter_cmd)
-                            continue;
-                        if (other_cmd.ttl || other_cmd.type == AlterCommand::MODIFY_TTL || other_cmd.type == AlterCommand::REMOVE_TTL
-                            || other_cmd.to_remove == AlterCommand::RemoveProperty::TTL)
-                        {
-                            has_other_ttl_change = true;
-                            break;
-                        }
-                    }
-
-                    /// Try optimizing TTL changes for the same column.
-                    /// Use `original_metadata`: `metadata` already has the new TTL applied above,
-                    /// so the old TTL needed to compute the delta is only available in the original copy.
-                    /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
-                    if (!has_other_ttl_change)
-                    {
+                        /// Try optimizing TTL changes for the same column.
+                        /// Use `original_metadata`: `metadata` already has the new TTL applied above,
+                        /// so the old TTL needed to compute the delta is only available in the original copy.
+                        /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
                         if (auto delta = tryOptimizeModifyTTL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
                         {
                             result.push_back(createFastMaterializeTTLCommand(*delta));
