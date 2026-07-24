@@ -2296,11 +2296,15 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     }
     else
     {
-        if (kind == TypeIndex::Array && nullable_array_null_map && !options.format.null_as_default)
+        if (kind == TypeIndex::Array && nullable_array_null_map)
         {
             const auto & null_map = assert_cast<const ColumnUInt8 &>(*nullable_array_null_map).getData();
-            if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
+            if (!options.format.null_as_default && memchr(null_map.data(), 1, null_map.size()) != nullptr)
                 throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", output_info.name);
+            if (options.format.null_as_default
+                && output_info.idx_in_output_block.has_value()
+                && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
+                row_subgroup.block_missing_values.setBitsFromNullMap(*output_info.idx_in_output_block, null_map);
         }
 
         if (output_info.needs_cast)

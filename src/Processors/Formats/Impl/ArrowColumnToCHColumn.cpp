@@ -2459,8 +2459,13 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
     bool type_hint_is_nullable = type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable());
+    bool type_hint_is_non_nullable_array = type_hint && !type_hint_is_nullable && typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
+    bool preserve_list_nulls_for_defaults = type_hint_is_non_nullable_array
+        && arrowTypeIsListLike(*arrow_column->type())
+        && settings.null_as_default;
     bool type_hint_not_nullable_capable = type_hint
         && !type_hint_is_nullable
+        && !preserve_list_nulls_for_defaults
         && !nestedTypeAllowsNullableWrapperForArrowRead(removeNullable(type_hint), settings.format_settings);
     bool arrow_type_not_nullable_capable = !type_hint
         && arrowTypeIsListLike(*arrow_column->type())

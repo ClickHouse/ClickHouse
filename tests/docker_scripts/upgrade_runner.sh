@@ -410,6 +410,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       RaftInstance errors are not masked.
+# `Failed to mark the rotated system log table as readonly` for `system.metric_log_0` with `QUERY_IS_TOO_LARGE`
+#       is a benign rotation-time warning in upgrade tests. The old wide `system.metric_log` metadata can
+#       exceed the default `max_query_size` after stress tests add many profile-event columns; the readonly
+#       marker update is skipped and rotation continues, so it does not indicate an upgrade incompatibility.
+#       The matcher below requires the `SystemLog` rotation wrapper, the rotated `system.metric_log_0` table,
+#       and `QUERY_IS_TOO_LARGE` together to avoid masking unrelated metadata errors.
 # `Failed to flush system log system.metric_log` + `DEADLOCK_AVOIDED` is a transient lock-timeout emitted by
 #       `SystemLog<MetricLogElement>::flushImpl` when the background `MetricLog` flush loop races with the
 #       ongoing upgrade-test shutdown sequence. Another worker (DROP/RENAME/DETACH on `system.metric_log`,
@@ -532,6 +538,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
+    | grep -av -e "SystemLog.*Failed to mark the rotated system log table as readonly.*system\.metric_log_0.*QUERY_IS_TOO_LARGE" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -av -e "Value passed to 'throwIf' function is non-zero" \
     | grep -av -e "PostgreSQLConnectionPool: Connection error.*192\.0\.2\.1., port 5432 failed" \

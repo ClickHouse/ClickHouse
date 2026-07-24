@@ -1825,7 +1825,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     bool skipped = false;
 
     const bool type_hint_is_nullable = type_hint && isNullableOrLowCardinalityNullable(type_hint);
-    const bool can_wrap_list_in_nullable = orc_type->getKind() != orc::LIST || allow_nullable_array_type || type_hint_is_nullable;
+    const bool type_hint_is_non_nullable_array = type_hint && !type_hint_is_nullable && isArray(removeNullable(type_hint));
+    const bool can_wrap_list_in_nullable = orc_type->getKind() != orc::LIST
+        || allow_nullable_array_type
+        || type_hint_is_nullable
+        || (type_hint_is_non_nullable_array && null_as_default);
     if (!inside_nullable && (orc_column->hasNulls || type_hint_is_nullable) && !orc_column->isEncoded
         && orc_type->getKind() != orc::MAP && can_wrap_list_in_nullable)
     {

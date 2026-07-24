@@ -1108,14 +1108,19 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// to the decoded column.
     const DataTypePtr effective_hint = resolveTargetHint(target_hint, path);
     const bool explicit_nullable_hint = effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable());
+    const bool explicit_non_nullable_array_hint = effective_hint
+        && !explicit_nullable_hint
+        && typeid_cast<const DataTypeArray *>(stripHint(effective_hint).get());
     if (field.nullable && node.null_count() != 0 && effective_hint && !explicit_nullable_hint
-        && typeid_cast<const DataTypeArray *>(stripHint(effective_hint).get()) && !settings.null_as_default)
+        && explicit_non_nullable_array_hint && !settings.null_as_default)
         throw Exception(
             ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
             "Cannot insert NULL value into a non-nullable Array column");
     const bool nullable_tuple_allowed = settings.schema_inference_allow_nullable_tuple_type || explicit_nullable_hint;
     const bool nullable_array_allowed = typeid_cast<const ColumnArray *>(inner.get())
-        && (settings.schema_inference_allow_nullable_array_type || explicit_nullable_hint);
+        && (settings.schema_inference_allow_nullable_array_type
+            || explicit_nullable_hint
+            || (explicit_non_nullable_array_hint && settings.null_as_default));
     const bool struct_not_allowed_nullable = field.type.kind == TypeKind::Struct && !nullable_tuple_allowed;
     if (field.nullable && (inner->canBeInsideNullable() || nullable_array_allowed) && !struct_not_allowed_nullable)
     {

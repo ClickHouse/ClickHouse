@@ -41,7 +41,6 @@ PART_PATH=$(run_query --query "
 ")
 
 echo "Before drop:"
-ls "${PART_PATH}" | grep -E '^arr\.' | sed -E 's/\.(bin|mrk2|cmrk2|mrk)$//' | sort -u
 
 run_query --query "
 ALTER TABLE nullable_array_drop_column
