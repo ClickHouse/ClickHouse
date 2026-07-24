@@ -1,6 +1,7 @@
 #include <Databases/DatabaseOverlay.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
@@ -573,8 +574,39 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     Tables tables;
     for (const auto & db : resolveDatabases())
     {
-        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
-            tables.insert({table_it->name(), table_it->table()});
+        auto collect = [&]
+        {
+            for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
+                tables.insert({table_it->name(), table_it->table()});
+        };
+
+        /// Fail-closed listing through the read-only facade: opening a source's iterator can reach
+        /// a remote catalog (`MySQL`, `PostgreSQL`, data-lake catalogs) and throw that source's own
+        /// error before any source-side grant is proven, which would let a caller granted only on
+        /// the facade use listings (`SHOW TABLES`, `system.tables`, `system.columns`, ...) as an
+        /// oracle for hidden broken sources — the same fencing as in `isSourceTableVisibleNoLoad`.
+        /// A caller granted `SHOW TABLES` on the whole source database is entitled to the error
+        /// (listing the source directly would surface the same), so it propagates as theirs to see;
+        /// for anyone else a failing source contributes nothing, indistinguishable from an empty or
+        /// denied one. Per-table visibility of the collected names is still enforced by the
+        /// metadata readers themselves against the owning source table.
+        if (readonly && context_ && !context_->getAccess()->isGranted(AccessType::SHOW_TABLES, db->getDatabaseName()))
+        {
+            try
+            {
+                collect();
+            }
+            catch (...)
+            {
+                /// Ok to swallow: the caller has not proven the source-side `SHOW TABLES` grant,
+                /// so the source's error must not surface through the facade (see above).
+                tryLogCurrentException(log, fmt::format("Hidden from the caller: failed to list tables of the source database {}", backQuote(db->getDatabaseName())));
+            }
+        }
+        else
+        {
+            collect();
+        }
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }

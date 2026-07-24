@@ -176,7 +176,12 @@ source-side visibility **before** the source table is resolved and loaded, so a 
 grant on the source receives the same access-denied error for a hidden broken source as for a
 hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used
 as an oracle for the state of sources the user is not allowed to see. Once the source-side
-grant is present, the source's own error propagates as usual.
+grant is present, the source's own error propagates as usual. The listing-style readers
+(`SHOW TABLES` / `system.tables`, `system.columns`, `system.data_skipping_indices`, and the
+other per-database enumerations) follow the same rule when they walk the facade: a source
+database that fails while being listed contributes no rows unless the caller is granted
+`SHOW TABLES` on that source database, in which case the source's own error propagates,
+the same as when listing the source directly.
 
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a
