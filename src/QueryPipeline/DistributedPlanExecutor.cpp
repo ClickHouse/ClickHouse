@@ -385,7 +385,7 @@ private:
                 return Chunk(getPort().getHeader().cloneEmptyColumns(), 0);
             if (chunk->empty())
                 return std::nullopt;   /// End-of-data marker.
-            return std::move(*chunk);
+            return chunk;
         }
 
         /// Wake the timed wait so the source finishes right away instead of on its next poll.
