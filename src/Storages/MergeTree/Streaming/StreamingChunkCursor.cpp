@@ -98,9 +98,9 @@ BuildStreamingChunkCursorStep::BuildStreamingChunkCursorStep(SharedHeader input_
 
 void BuildStreamingChunkCursorStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([unordered = unordered](const SharedHeader & header)
+    pipeline.addSimpleTransform([is_unordered = unordered](const SharedHeader & header)
     {
-        return std::make_shared<BuildStreamingChunkCursorTransform>(header, unordered);
+        return std::make_shared<BuildStreamingChunkCursorTransform>(header, is_unordered);
     });
 }
 
