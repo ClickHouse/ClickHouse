@@ -1239,7 +1239,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    if (cleanup_processing_files)
+    /// Check the TTL as well: it is changeable at runtime and zero disables
+    /// the cleanup (otherwise every node would be treated as stale).
+    if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
         cleanupPersistentProcessingNodes();
 
     if (table_metadata.hasTrackedFilesLimit())
