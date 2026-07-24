@@ -3796,40 +3796,51 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
     if (storage_id.database_name.empty())
         return;
 
-    PredicateStatisticsLogElement elem;
-    auto now = time(nullptr);
-    elem.event_date = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
-    elem.event_time = now;
-    elem.database = storage_id.database_name;
-    elem.table = storage_id.table_name;
-    elem.query_id = String(CurrentThread::getQueryId());
-
-    UInt64 prev_granules = 0;
+    bool has_index_stats = false;
     for (const auto & stat : result.index_stats)
     {
-        if (stat.type == IndexType::None)
+        if (stat.type != IndexType::None && stat.part_name.empty())
         {
-            prev_granules = stat.num_granules_after;
-            continue;
+            has_index_stats = true;
+            break;
         }
-
-        if (!stat.part_name.empty())
-            continue;
-
-        UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
-        UInt64 after = stat.num_granules_after;
-
-        elem.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
-        elem.index_types.push_back(indexTypeToString(stat.type));
-        elem.total_granules.push_back(total);
-        elem.granules_after.push_back(after);
-        elem.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
-
-        prev_granules = after;
     }
+    if (!has_index_stats)
+        return;
 
-    if (!elem.index_names.empty())
-        predicate_stats_log->add(std::move(elem));
+    auto now = time(nullptr);
+    predicate_stats_log->add([&](PredicateStatisticsLogElement & element)
+    {
+        element.event_date = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+        element.event_time = now;
+        element.database = storage_id.database_name;
+        element.table = storage_id.table_name;
+        element.query_id = String(CurrentThread::getQueryId());
+
+        UInt64 prev_granules = 0;
+        for (const auto & stat : result.index_stats)
+        {
+            if (stat.type == IndexType::None)
+            {
+                prev_granules = stat.num_granules_after;
+                continue;
+            }
+
+            if (!stat.part_name.empty())
+                continue;
+
+            UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
+            UInt64 after = stat.num_granules_after;
+
+            element.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
+            element.index_types.push_back(indexTypeToString(stat.type));
+            element.total_granules.push_back(total);
+            element.granules_after.push_back(after);
+            element.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
+
+            prev_granules = after;
+        }
+    });
 }
 
 /// Splits the analyzed marks across `bucket_count` distributed-read buckets as contiguous, mark-balanced
