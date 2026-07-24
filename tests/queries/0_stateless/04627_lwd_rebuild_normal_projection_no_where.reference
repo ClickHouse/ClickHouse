@@ -1,0 +1,14 @@
+compact storage	Compact	Full
+compact base rows	90
+compact projection rows	90
+compact deleted leaked via projection	0
+compact projection == no-projection	1
+wide storage	Wide	Full
+wide base rows	90
+wide projection rows	90
+wide deleted leaked via projection	0
+wide projection == no-projection	1
+offset base rows	90
+offset projection rows	90
+offset deleted in projection	0
+offset parent-offset matches	90	90
