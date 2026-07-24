@@ -191,6 +191,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ A continuación se muestra la jerarquía de privilegios en ClickHouse:
 Ejemplos de cómo se trata esta jerarquía:
 
 * El privilegio `ALTER` incluye todos los demás privilegios `ALTER*`.
-* `ALTER CONSTRAINT` incluye los privilegios `ALTER ADD CONSTRAINT` y `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` incluye los privilegios `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` y `ALTER MODIFY CONSTRAINT`.
 
 Los privilegios se aplican en distintos niveles. Conocer el nivel indica qué sintaxis está disponible para el privilegio.
 
@@ -452,6 +454,7 @@ Permite ejecutar consultas [ALTER](/es/reference/statements/alter/index) según 
   * `ALTER CONSTRAINT`. Nivel: `GROUP`. Alias: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. Nivel: `TABLE`. Alias: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. Nivel: `TABLE`. Alias: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. Nivel: `TABLE`. Alias: `MODIFY CONSTRAINT`
   * `ALTER TTL`. Nivel: `TABLE`. Alias: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. Nivel: `TABLE`. Alias: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. Nivel: `TABLE`. Alias: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ Permite ejecutar consultas [ALTER](/es/reference/statements/alter/index) según 
 Ejemplos de cómo se aplica esta jerarquía:
 
 * El privilegio `ALTER` incluye todos los demás privilegios `ALTER*`.
-* `ALTER CONSTRAINT` incluye los privilegios `ALTER ADD CONSTRAINT` y `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` incluye los privilegios `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` y `ALTER MODIFY CONSTRAINT`.
 
 **Notas**
 
@@ -629,7 +632,7 @@ Permite a un usuario ejecutar consultas [SYSTEM](/es/reference/statements/system
     * `SYSTEM DROP UNCOMPRESSED CACHE`. Nivel: `GLOBAL`. Alias: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. Nivel: `GROUP`
     * `SYSTEM RELOAD CONFIG`. Nivel: `GLOBAL`. Alias: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. Nivel: `GLOBAL`. Alias: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. Nivel: `GLOBAL`. Alias: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Nivel: `GLOBAL`. Alias: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. Nivel: `TABLE`. Alias: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. Nivel: `TABLE`. Alias: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -644,6 +647,8 @@ Permite a un usuario ejecutar consultas [SYSTEM](/es/reference/statements/system
   * `SYSTEM FLUSH`. Nivel: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. Nivel: `TABLE`. Alias: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. Nivel: `GLOBAL`. Alias: `FLUSH LOGS`
+
+Los comandos `SYSTEM UNLOAD DICTIONARY` y `SYSTEM UNLOAD DICTIONARIES` reutilizan el privilegio `SYSTEM RELOAD DICTIONARY`, por lo que un usuario con `SYSTEM RELOAD DICTIONARY` también puede descargar diccionarios.
 
 El privilegio `SYSTEM RELOAD EMBEDDED DICTIONARIES` se concede implícitamente con el privilegio `SYSTEM RELOAD DICTIONARY ON *.*`.
 
@@ -775,9 +780,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. Alias: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. Alias: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Permite que un usuario ejecute las funciones [dictGet](/es/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/es/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/es/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictIsIn](/es/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+Permite que un usuario ejecute las funciones [dictGet](/es/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/es/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/es/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictGetRoot](/es/reference/functions/regular-functions/ext-dict-functions#dictGetRoot), [dictGetChildren](/es/reference/functions/regular-functions/ext-dict-functions#dictGetChildren), [dictGetDescendants](/es/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants), [dictIsIn](/es/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
 
 Nivel de privilegio: `DICTIONARY`.
 
