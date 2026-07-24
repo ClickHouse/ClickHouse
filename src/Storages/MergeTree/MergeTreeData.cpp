@@ -795,6 +795,12 @@ MergeTreeData::MergeTreeData(
 
                 auto & changes = metadata_.settings_changes->as<ASTSetQuery &>().changes;
                 std::erase_if(changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
+
+                /// If the unsafe codec was the only stored setting, drop the AST entirely: a non-null
+                /// `ASTSetQuery` with an empty `changes` list would format as a bare `SETTINGS` clause,
+                /// making `SHOW CREATE` / backup metadata unparseable.
+                if (changes.empty())
+                    metadata_.settings_changes = nullptr;
             }
         }
     }
