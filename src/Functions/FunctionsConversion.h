@@ -2149,7 +2149,10 @@ struct ConvertImpl
             const auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_from->getScale());
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const Int64 whole = static_cast<Int64>(vec_from[i].value / scale_mult);
+                /// Round toward negative infinity, like TransformDateTime64 does for DateTime64.
+                Int64 whole = static_cast<Int64>(vec_from[i].value / scale_mult);
+                if (vec_from[i].value < 0 && vec_from[i].value % scale_mult != 0)
+                    --whole;
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                 {
                     if (whole < -MAX_TIME_TIMESTAMP || whole > MAX_TIME_TIMESTAMP) [[unlikely]]

@@ -457,28 +457,42 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// A constant Time64 converted to Time: drop the fractional part, matching the Time64 -> Time column
         /// conversion. Gated on the Time64 source hint because Decimal64 is also the Field storage for plain
         /// Decimal64 and DateTime64, which have different (or no) Time semantics.
-        if (which_type.isTime() && which_from_type.isTime64() && src.getType() == Field::Types::Decimal64)
+        if (which_type.isTime() && src.getType() == Field::Types::Decimal64)
         {
-            static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
-            const auto & from_field = src.safeGet<Decimal64>();
-            const Int64 scale_multiplier = from_field.getScaleMultiplier().value;
-            const Int64 raw = from_field.getValue().value;
-            const Int64 whole = raw / scale_multiplier;
-            const bool out_of_range = whole < -max_time_seconds || whole > max_time_seconds;
+            /// Look through LowCardinality/Nullable on the source hint: a non-NULL Nullable(Time64)
+            /// value arrives as a plain Decimal64 Field.
+            const IDataType * time64_hint = from_type_hint;
+            if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(time64_hint))
+                time64_hint = low_cardinality_hint->getDictionaryType().get();
+            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(time64_hint))
+                time64_hint = nullable_hint->getNestedType().get();
 
-            /// Strict callers (e.g. IN-set construction in Analyzer/SetUtils) must not silently normalize a
-            /// value that is not exactly representable as Time, otherwise a non-representable set element
-            /// would start matching. Reject fractional or out-of-range values instead of truncating/clamping.
-            if (strict && (raw % scale_multiplier != 0 || out_of_range))
-                return {};
+            if (time64_hint && WhichDataType(*time64_hint).isTime64())
+            {
+                static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
+                const auto & from_field = src.safeGet<Decimal64>();
+                const Int64 scale_multiplier = from_field.getScaleMultiplier().value;
+                const Int64 raw = from_field.getValue().value;
+                /// Round toward negative infinity, like TransformDateTime64 does for DateTime64.
+                Int64 whole = raw / scale_multiplier;
+                if (raw < 0 && raw % scale_multiplier != 0)
+                    --whole;
+                const bool out_of_range = whole < -max_time_seconds || whole > max_time_seconds;
 
-            /// Honor date_time_overflow_behavior like the column conversion (INSERT ... VALUES passes it in).
-            if (out_of_range && format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", whole);
+                /// Strict callers (e.g. IN-set construction in Analyzer/SetUtils) must not silently normalize a
+                /// value that is not exactly representable as Time, otherwise a non-representable set element
+                /// would start matching. Reject fractional or out-of-range values instead of truncating/clamping.
+                if (strict && (raw % scale_multiplier != 0 || out_of_range))
+                    return {};
 
-            const Int64 clamped = std::min<Int64>(std::max<Int64>(whole, -max_time_seconds), max_time_seconds);
-            /// Reuse the Int64 -> Time path so the produced Field matches the isTime() integer branch above.
-            return convertNumericType<Int32>(Field(clamped), type, strict, convert_inexact_floats);
+                /// Honor date_time_overflow_behavior like the column conversion (INSERT ... VALUES passes it in).
+                if (out_of_range && format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", whole);
+
+                const Int64 clamped = std::min<Int64>(std::max<Int64>(whole, -max_time_seconds), max_time_seconds);
+                /// Reuse the Int64 -> Time path so the produced Field matches the isTime() integer branch above.
+                return convertNumericType<Int32>(Field(clamped), type, strict, convert_inexact_floats);
+            }
         }
 
         /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;

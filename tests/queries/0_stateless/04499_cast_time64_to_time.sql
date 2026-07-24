@@ -40,3 +40,13 @@ CREATE TABLE t_04499_time3 (a Array(Time), t Tuple(Time, Int32), m Map(String, T
 INSERT INTO t_04499_time3 VALUES ([CAST('01:02:03.5' AS Time64(1))], (CAST('01:02:03.5' AS Time64(1)), 42), map('k', CAST('01:02:03.5' AS Time64(1))));
 SELECT a = [CAST('01:02:03' AS Time)], t.1 = CAST('01:02:03' AS Time), m['k'] = CAST('01:02:03' AS Time) FROM t_04499_time3;
 DROP TABLE t_04499_time3;
+
+-- Negative fractional values round toward negative infinity, like DateTime64 conversions.
+SELECT CAST(CAST(toDecimal64(-0.5, 1) AS Time64(1)) AS Time) = CAST(-1 AS Time);
+
+-- Same for constants, and Nullable(Time64) source hints are unwrapped, including nested ones.
+DROP TABLE IF EXISTS t_04499_time4;
+CREATE TABLE t_04499_time4 (c1 Time, a Array(Time)) ENGINE = Memory;
+INSERT INTO t_04499_time4 VALUES (CAST(toDecimal64(-0.5, 1) AS Time64(1)), [CAST('02:00:00.5' AS Nullable(Time64(1)))]) (CAST('01:02:03.5' AS Nullable(Time64(1))), []);
+SELECT c1 = CAST(-1 AS Time), c1 = CAST('01:02:03' AS Time), a = [CAST('02:00:00' AS Time)] FROM t_04499_time4 ORDER BY c1;
+DROP TABLE t_04499_time4;
