@@ -605,19 +605,24 @@ test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
   || { echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"; false; }
 ```
 
-`--binary` prints the binary and package URLs (one per line: the `clickhouse` executable,
-`.deb`, `.rpm`) for the exact build that produced the report — useful when you need to reproduce
-a failure locally against the same binary:
+`--binary` prints binary and package URLs (one per line: `clickhouse` executable, `.deb`, `.rpm`).
+**It only works with a concrete `Build (...)` report URL** (`name_1=Build%20(amd_binary)` etc.).
+Test-job report URLs (`name_1=Stateless tests (...)`, `name_1=Fast%20test`, etc.) carry no binary
+artifacts and will exit 1. PR URLs and top-level index URLs also fail fast. To get the binary,
+construct the Build report URL by replacing `name_1=<test-job>` with the build variant you need:
 
 ```bash
-node .claude/tools/fetch_ci_report.js "<report-url>" --binary 2>/dev/null
-# grab just the executable (no dots in name):
-node .claude/tools/fetch_ci_report.js "<report-url>" --binary 2>/dev/null | grep -v '\.'
+# From a test-job report URL, swap name_1 to the build you want:
+BUILD_URL="...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)"
+node .claude/tools/fetch_ci_report.js "$BUILD_URL" --binary 2>/dev/null
+# grab just the executable (basename has no dots):
+node .claude/tools/fetch_ci_report.js "$BUILD_URL" --binary 2>/dev/null | grep -E '/clickhouse(-stripped)?$'
 ```
 
 For other artifacts, list available URLs with `--links` and try to find the logs and artifacts
 helping to narrow the issue down. The files alongside this skill describe the layout and
 signal-bearing members for each job family:
+
 - `artifacts-integration.md` — integration tests (`logs.tar.gz` archive structure,
   `pytest_parallel.jsonl` schema, per-node server logs)
 - `artifacts-stateless.md` — stateless and fast tests (individual log files, `.zst` fetching)

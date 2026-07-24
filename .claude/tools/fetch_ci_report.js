@@ -230,7 +230,7 @@ function extractFailureReason(info, maxLines = 40) {
   const sepIdx = allLines.findIndex(
     l => /^\+\+? \[/.test(l) || /\.(?:debug)?log:$/.test(l.trim())
   );
-  const meaningful = (sepIdx > 0 ? allLines.slice(0, sepIdx) : allLines)
+  const meaningful = (sepIdx >= 0 ? allLines.slice(0, sepIdx) : allLines)
     .filter(l => l.trim());
   if (meaningful.length === 0) return [];
   // Short enough to show in full.
@@ -342,6 +342,23 @@ function parseTestResults(jsonData) {
   }
 
   extractTests(jsonData.results);
+
+  // The top-level node may itself be FAIL/ERROR even when all leaf results passed
+  // (Praktika sets result.set_status(ERROR) in the non-zero-exit path after the subtree
+  // is already populated). If no child captures the failure, synthesize one from the
+  // top-level node so --failed never prints "Total: 0" for a truly failed job.
+  if (isFailureStatus(jsonData.status) && !tests.some(t => isFailureStatus(t.status))) {
+    const test = {
+      name: jsonData.name || 'Job',
+      status: jsonData.status,
+      duration: jsonData.duration || 0,
+    };
+    if (jsonData.info) test.info = jsonData.info;
+    if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+    applyExtToTest(test, jsonData.ext);
+    tests.push(test);
+  }
+
   return tests;
 }
 
@@ -804,7 +821,12 @@ async function fetchReport(inputUrl, options = {}) {
       if (binaryLinks.length > 0) {
         for (const l of binaryLinks) process.stdout.write(l.href + '\n');
       } else {
-        process.stderr.write('No clickhouse binary or packages found in artifact links\n');
+        process.stderr.write(
+          'No binary artifacts found in this report.\n' +
+          '--binary only works with a concrete Build (...) report URL.\n' +
+          'If you have a test-job report, replace name_1=<test-job> with\n' +
+          'name_1=Build%20(amd_binary) (or the appropriate build variant).\n'
+        );
         process.exit(1);
       }
       return { testResults, artifactLinks, jsonData };
