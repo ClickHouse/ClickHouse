@@ -762,15 +762,57 @@ void Reader::preparePrewhere()
         if (!actions_settings.has_value())
             actions_settings.emplace();
 
-        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
-        prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
+        bool success = false;
 
-        bool success = tryBuildPrewhereSteps(
-            prewhere_info_patched,
-            *actions_settings,
-            prewhere_expr_info,
-            /*force_short_circuit_execution*/ false);
+        /// The per-condition split only registers kept prewhere outputs while filtering, so it is
+        /// used only when needs_filter is true; otherwise fall through to the single step below.
+        if (needs_filter)
+        {
+            auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+            prewhere_info_patched->need_filter = needs_filter;
+
+            success = tryBuildPrewhereSteps(
+                prewhere_info_patched,
+                *actions_settings,
+                prewhere_expr_info,
+                /*force_short_circuit_execution*/ false);
+
+            /// A cross-step column is addressable only if it is an original prewhere input or an
+            /// intermediate an earlier step wrote to a dedicated prewhere-output slot. Otherwise the
+            /// split step is unaddressable (or would resolve to a physical column that only shares the
+            /// generated name), so fall back to a single step.
+            NameSet addressable_columns;
+            for (const auto & col : dag.getRequiredColumns())
+                addressable_columns.insert(col.name);
+
+            for (const auto & step : prewhere_expr_info.steps)
+            {
+                if (!success)
+                    break;
+                for (const auto & col : step->actions->getActionsDAG().getRequiredColumns())
+                {
+                    if (!addressable_columns.contains(col.name))
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+                if (!success)
+                    break;
+
+                /// An intermediate this step computes can be read by a later step only through a
+                /// dedicated prewhere-output slot: one present in `extended_sample_block` whose slot is
+                /// not an original output column. This mirrors how `add_single_step` registers prewhere
+                /// outputs, and excludes generated names that only collide with physical columns.
+                for (const auto * node : step->actions->getActionsDAG().getOutputs())
+                {
+                    auto idx = extended_sample_block.findPositionByName(node->result_name);
+                    if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value())
+                        addressable_columns.insert(node->result_name);
+                }
+            }
+        }
 
         if (success)
         {
@@ -778,8 +820,7 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                if (needs_filter)
-                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else
