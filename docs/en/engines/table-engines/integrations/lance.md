@@ -79,9 +79,9 @@ Container-level `NULL` values in `Array` and `Map` are rejected because ClickHou
 
 ## Snapshot state {#snapshot-state}
 
-`LanceS3` captures the current Lance snapshot through `DataLakeTableStateSnapshot` during query analysis. Reads use the saved `Lance::TableStateSnapshot`, so query execution uses a consistent Lance snapshot even if the dataset is updated concurrently.
+`LanceS3` captures the current Lance dataset version through `DataLakeTableStateSnapshot` during query analysis. Reads use the saved `Lance::TableStateSnapshot`, so query execution uses a consistent dataset version even if the dataset is updated concurrently. If the pinned version is removed before the query finishes, the query returns an exception instead of reading the latest version.
 
-The virtual column `_data_lake_snapshot_version` exposes the Lance snapshot id used by the query.
+The virtual column `_data_lake_snapshot_version` exposes the Lance dataset version used by the query.
 
 ## Limitations {#limitations}
 

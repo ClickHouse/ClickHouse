@@ -13,6 +13,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int INCORRECT_DATA;
+extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 }
@@ -22,8 +24,10 @@ namespace DB::Lance
 
 void TableStateSnapshot::serialize(WriteBuffer & out) const
 {
-    writeVarInt(snapshot_id, out);
-    writeVarInt(schema_id, out);
+    if (version == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize `Lance::TableStateSnapshot` with zero dataset version");
+
+    writeVarUInt(version, out);
 }
 
 TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, int datalake_state_protocol_version)
@@ -36,12 +40,9 @@ TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, int datalake
             DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
 
     TableStateSnapshot state;
-    Int64 snapshot_id = 0;
-    Int64 schema_id = 0;
-    readVarInt(snapshot_id, in);
-    readVarInt(schema_id, in);
-    state.snapshot_id = snapshot_id;
-    state.schema_id = schema_id;
+    readVarUInt(state.version, in);
+    if (state.version == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize `Lance::TableStateSnapshot` with zero dataset version");
     return state;
 }
 

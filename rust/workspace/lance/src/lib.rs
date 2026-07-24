@@ -43,8 +43,7 @@ pub struct ch_lance_dataset_options {
 
 #[repr(C)]
 pub struct ch_lance_snapshot_info {
-    snapshot_id: u64,
-    schema_id: u64,
+    version: u64,
 }
 
 #[repr(C)]
@@ -55,7 +54,7 @@ pub struct ch_lance_string_list {
 
 #[repr(C)]
 pub struct ch_lance_scan_options {
-    snapshot_id: u64,
+    version: u64,
     projection: ch_lance_string_list,
     predicate: *const c_char,
     need_only_count: bool,
@@ -200,6 +199,23 @@ async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, Stri
             .await
             .map_err(|err| err.to_string())?;
         Ok(OpenedDataset { dataset })
+    }
+}
+
+async fn checkout_exact_version(dataset: &Dataset, version: u64) -> Result<Dataset, String> {
+    if version == 0 {
+        return Err("Lance dataset version must be non-zero".to_string());
+    }
+
+    if version == dataset.version().version {
+        Ok(dataset.clone())
+    } else {
+        dataset.checkout_version(version).await.map_err(|err| {
+            format!(
+                "Cannot check out Lance dataset version {}: {}",
+                version, err
+            )
+        })
     }
 }
 
@@ -472,15 +488,18 @@ pub unsafe extern "C" fn ch_lance_current_snapshot(
 
     let dataset = &*dataset;
     let version = dataset.dataset.version().version;
-    (*snapshot).snapshot_id = version;
-    (*snapshot).schema_id = 0;
+    if version == 0 {
+        set_error(error, "Lance returned zero as the current dataset version");
+        return false;
+    }
+    (*snapshot).version = version;
     true
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_export_schema(
     dataset: *mut ch_lance_dataset,
-    snapshot_id: u64,
+    version: u64,
     schema: *mut FFI_ArrowSchema,
     error: *mut ch_lance_error,
 ) -> bool {
@@ -491,18 +510,14 @@ pub unsafe extern "C" fn ch_lance_export_schema(
     }
 
     let dataset = &mut *dataset;
-    let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
-        dataset.dataset.clone()
-    } else {
-        match dataset
-            .runtime
-            .block_on(dataset.dataset.checkout_version(snapshot_id))
-        {
-            Ok(dataset) => dataset,
-            Err(err) => {
-                set_error(error, &err.to_string());
-                return false;
-            }
+    let dataset = match dataset
+        .runtime
+        .block_on(checkout_exact_version(&dataset.dataset, version))
+    {
+        Ok(dataset) => dataset,
+        Err(err) => {
+            set_error(error, &err);
+            return false;
         }
     };
     let arrow_schema = dataset.schema().into();
@@ -518,7 +533,7 @@ pub unsafe extern "C" fn ch_lance_export_schema(
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_total_rows(
     dataset: *mut ch_lance_dataset,
-    snapshot_id: u64,
+    version: u64,
     rows: *mut u64,
     has_value: *mut bool,
     error: *mut ch_lance_error,
@@ -531,12 +546,11 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 
     let dataset = &mut *dataset;
     let count_result = dataset.runtime.block_on(async {
-        let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
-            dataset.dataset.clone()
-        } else {
-            dataset.dataset.checkout_version(snapshot_id).await?
-        };
-        dataset.count_rows(None).await
+        let dataset = checkout_exact_version(&dataset.dataset, version).await?;
+        dataset
+            .count_rows(None)
+            .await
+            .map_err(|err| err.to_string())
     });
 
     match count_result {
@@ -555,7 +569,7 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_count_rows(
     dataset: *mut ch_lance_dataset,
-    snapshot_id: u64,
+    version: u64,
     predicate: *const c_char,
     rows: *mut u64,
     has_value: *mut bool,
@@ -577,15 +591,17 @@ pub unsafe extern "C" fn ch_lance_count_rows(
 
     let dataset = &mut *dataset;
     let count_result = dataset.runtime.block_on(async {
-        let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
-            dataset.dataset.clone()
-        } else {
-            dataset.dataset.checkout_version(snapshot_id).await?
-        };
+        let dataset = checkout_exact_version(&dataset.dataset, version).await?;
         if predicate.is_empty() {
-            dataset.count_rows(None).await
+            dataset
+                .count_rows(None)
+                .await
+                .map_err(|err| err.to_string())
         } else {
-            dataset.count_rows(Some(predicate)).await
+            dataset
+                .count_rows(Some(predicate))
+                .await
+                .map_err(|err| err.to_string())
         }
     });
 
@@ -645,7 +661,7 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
             return std::ptr::null_mut();
         }
     };
-    let snapshot_id = (*options).snapshot_id;
+    let version = (*options).version;
     let max_block_size = (*options).max_block_size as usize;
     let source_dataset = (*dataset).dataset.clone();
 
@@ -657,24 +673,25 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
         }
     };
 
-    let stream_result = runtime.block_on(async move {
-        let dataset = if snapshot_id == 0 || snapshot_id == source_dataset.version().version {
-            source_dataset
-        } else {
-            source_dataset.checkout_version(snapshot_id).await?
-        };
+    let stream_result: Result<_, String> = runtime.block_on(async move {
+        let dataset = checkout_exact_version(&source_dataset, version).await?;
 
         let mut scanner = dataset.scan();
         if !projection.is_empty() {
-            scanner.project(&projection)?;
+            scanner
+                .project(&projection)
+                .map_err(|err| err.to_string())?;
         }
         if !predicate.is_empty() {
-            scanner.filter(&predicate)?;
+            scanner.filter(&predicate).map_err(|err| err.to_string())?;
         }
         if max_block_size != 0 {
             scanner.batch_size(max_block_size);
         }
-        scanner.try_into_stream().await
+        scanner
+            .try_into_stream()
+            .await
+            .map_err(|err| err.to_string())
     });
 
     match stream_result {
@@ -852,7 +869,7 @@ mod tests {
 
     fn scan_row_count(
         dataset: *mut ch_lance_dataset,
-        snapshot_id: u64,
+        version: u64,
         projection: &[CString],
         predicate: &CString,
         error: *mut ch_lance_error,
@@ -862,7 +879,7 @@ mod tests {
             .map(|value| value.as_ptr())
             .collect::<Vec<_>>();
         let scan_options = ch_lance_scan_options {
-            snapshot_id,
+            version,
             projection: ch_lance_string_list {
                 values: projection_ptrs.as_ptr(),
                 size: projection_ptrs.len(),
@@ -912,20 +929,17 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
-        assert!(snapshot.snapshot_id > 0);
+        assert!(snapshot.version > 0);
 
         let mut schema = FFI_ArrowSchema::empty();
         assert!(unsafe {
             ch_lance_export_schema(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 addr_of_mut!(schema),
                 addr_of_mut!(error),
             )
@@ -935,7 +949,7 @@ mod tests {
         let projection_values = [column.as_ptr()];
         let predicate = CString::new("id = 2").unwrap();
         let scan_options = ch_lance_scan_options {
-            snapshot_id: snapshot.snapshot_id,
+            version: snapshot.version,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -983,10 +997,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -996,7 +1007,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 addr_of_mut!(error),
@@ -1018,7 +1029,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 addr_of_mut!(error),
@@ -1029,12 +1040,36 @@ mod tests {
 
         let latest_dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!latest_dataset.is_null());
+        let mut latest_snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(
+                latest_dataset,
+                addr_of_mut!(latest_snapshot),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(latest_snapshot.version > snapshot.version);
+
         rows = 0;
         has_value = false;
         assert!(unsafe {
             ch_lance_total_rows(
                 latest_dataset,
-                0,
+                snapshot.version,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 3);
+
+        rows = 0;
+        has_value = false;
+        assert!(unsafe {
+            ch_lance_total_rows(
+                latest_dataset,
+                latest_snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
                 addr_of_mut!(error),
@@ -1043,8 +1078,126 @@ mod tests {
         assert!(has_value);
         assert_eq!(rows, 4);
 
+        let projection = [CString::new("id").unwrap()];
+        let predicate = CString::new("").unwrap();
+        assert_eq!(
+            scan_row_count(
+                latest_dataset,
+                snapshot.version,
+                &projection,
+                &predicate,
+                addr_of_mut!(error),
+            ),
+            3
+        );
+
         unsafe {
             ch_lance_free_dataset(latest_dataset);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_rejects_zero_dataset_version() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(!unsafe {
+            ch_lance_total_rows(
+                dataset,
+                0,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("must be non-zero"));
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let mut schema = FFI_ArrowSchema::empty();
+        assert!(!unsafe {
+            ch_lance_export_schema(dataset, 0, addr_of_mut!(schema), addr_of_mut!(error))
+        });
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("must be non-zero"));
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let scan_options = ch_lance_scan_options {
+            version: 0,
+            projection: ch_lance_string_list {
+                values: ptr::null(),
+                size: 0,
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1024,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
+        assert!(scan.is_null());
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("must be non-zero"));
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_does_not_fall_back_when_dataset_version_is_missing() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(!unsafe {
+            ch_lance_total_rows(
+                dataset,
+                u64::MAX,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains(&u64::MAX.to_string()));
+        assert!(!has_value);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
             ch_lance_free_dataset(dataset);
         }
     }
@@ -1060,10 +1213,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -1080,7 +1230,7 @@ mod tests {
             assert_eq!(
                 scan_row_count(
                     dataset,
-                    snapshot.snapshot_id,
+                    snapshot.version,
                     &projection,
                     &predicate,
                     addr_of_mut!(error),
@@ -1105,10 +1255,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -1119,7 +1266,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_count_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 predicate.as_ptr(),
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
@@ -1165,7 +1312,7 @@ mod tests {
         assert!(unsafe {
             ch_lance_count_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 predicate.as_ptr(),
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
@@ -1398,10 +1545,7 @@ mod tests {
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -1415,7 +1559,7 @@ mod tests {
             .map(|value| value.as_ptr())
             .collect::<Vec<_>>();
         let scan_options = ch_lance_scan_options {
-            snapshot_id: snapshot.snapshot_id,
+            version: snapshot.version,
             projection: ch_lance_string_list {
                 values: projection_ptrs.as_ptr(),
                 size: projection_ptrs.len(),
