@@ -101,8 +101,7 @@ public:
         return qualified_identifier;
     }
 
-    /// Quote-structured qualified identifier as written in the query.
-    /// Empty when the matcher was synthesized internally; such matchers match exactly.
+    /// Quote-structured qualified identifier; empty for internally synthesized matchers.
     const IdentifierName & getQualifiedIdentifierName() const
     {
         return qualified_identifier_name;

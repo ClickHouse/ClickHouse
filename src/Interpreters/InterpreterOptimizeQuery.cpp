@@ -37,8 +37,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 {
     auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
-    /// Resolve the canonical names first and write them back, so the ON CLUSTER access check and
-    /// DDL entry, as well as the local access check, see the object the query acts on.
+    /// Canonicalize first and write back, so the ON CLUSTER access check, DDL entry and local access check see the same object.
     auto resolved_id = getContext()->tryResolveStorageID(ast);
     if (resolved_id && resolved_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {

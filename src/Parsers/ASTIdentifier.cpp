@@ -114,11 +114,7 @@ IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node)
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// Part boundaries are semantic and survive the format/reparse round-trip, so mix them in.
-    /// Quote styles do NOT survive formatting (presentation honors identifier_quoting_style) and
-    /// must stay out of the hash; resolution reads them from the AST parts, not from the hash.
-    /// This cannot poison hash-keyed caches: analysis (which applies quote semantics) runs before
-    /// any cache read, and under `standard` matching two same-text queries that differ only in
-    /// quoting can never both succeed against different objects.
+    /// Quote styles do not (formatting honors identifier_quoting_style), so they stay out of the hash.
     if (name_parts.size() > 1)
     {
         for (const auto & part : name_parts)
@@ -274,7 +270,6 @@ String ASTTableIdentifier::getDatabaseName() const
     return {};
 }
 
-/// A single-part identifier carrying over the part's quote style.
 static ASTPtr makeIdentifierFromPart(const IdentifierPart & part)
 {
     auto identifier = make_intrusive<ASTIdentifier>(part.spelling);

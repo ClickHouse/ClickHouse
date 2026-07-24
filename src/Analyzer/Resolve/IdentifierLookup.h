@@ -52,11 +52,8 @@ struct IdentifierLookup
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
 
-    /// Per-part quoting of the identifier as written in the query, mirroring `identifier`.
-    /// Empty when the lookup was synthesized from an internal (already resolved) name; such
-    /// lookups match exactly under any name matching mode. Intentionally not part of equality
-    /// and hashing: the identifier resolve cache is disabled under `standard` matching, and
-    /// the in-lookup-process map only breaks alias resolution cycles by spelling.
+    /// Per-part quoting mirroring `identifier`; empty for synthesized lookups, which match exactly.
+    /// Not part of equality/hash: the identifier resolve cache is disabled under `standard` matching.
     IdentifierName identifier_name;
 
     bool isExpressionLookup() const

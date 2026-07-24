@@ -355,9 +355,8 @@ BlockIO InterpreterSystemQuery::execute()
 
     using Type = ASTSystemQuery::Type;
 
-    /// Resolve the canonical names first and write them back, so the ON CLUSTER access check
-    /// and DDL entry, as well as the local access checks, see the object the query acts on.
-    /// Dictionary references (RELOAD DICTIONARY) are looked up by plain name and do not fold.
+    /// Canonicalize first and write back, so the ON CLUSTER access check, DDL entry and local access
+    /// checks see the same object. `RELOAD DICTIONARY` looks dictionaries up by plain name, which does not fold.
     if (query.type != Type::RELOAD_DICTIONARY)
     {
         if (query.table)
@@ -374,7 +373,6 @@ BlockIO InterpreterSystemQuery::execute()
         }
         else if (query.database)
         {
-            /// Database-only forms (SYNC/RESTORE DATABASE REPLICA, DROP REPLICA ... FROM DATABASE).
             query.setDatabase(
                 DatabaseCatalog::instance().resolveDatabaseNameSpelling(
                     query.getDatabase(), identifierPartQuoteFromAST(query.database), getContext()),
@@ -405,8 +403,7 @@ BlockIO InterpreterSystemQuery::execute()
     else if (query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
-        /// Carry the quote pins into resolution, so double-quoted parts stay exact and the
-        /// access checks below act on the canonical names.
+        /// Carry the quote pins into resolution, so double-quoted parts stay exact.
         id_in_query.database_name_quote = identifierPartQuoteFromAST(query.database);
         id_in_query.table_name_quote = identifierPartQuoteFromAST(query.table);
         /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress

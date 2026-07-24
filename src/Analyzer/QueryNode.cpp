@@ -71,8 +71,7 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
                 projection_columns_value.size(),
                 this->projection_aliases_to_override.size());
 
-        /// The override list renames every projection column, so pins derived from the inner
-        /// projection aliases no longer apply; the double-quoted override names pin instead.
+        /// The overrides replace the inner projection aliases, so their double-quoted names define the pins.
         Names pinned_names;
         for (size_t i = 0; i < projection_columns_value.size(); ++i)
         {
@@ -394,7 +393,8 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(is_cte);
         state.update(cte_name.size());
         state.update(cte_name);
-        /// Mix the quote only when semantic, so quote-free queries keep their previous hash.
+        /// Mix the quote only when non-default so quote-free queries keep byte-identical hashes:
+        /// hash-keyed container iteration order shows up in test references.
         if (cte_name_quote != IdentifierPartQuote::Unquoted)
             state.update(static_cast<UInt8>(cte_name_quote));
     }
@@ -542,8 +542,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
             if (ast_with_alias)
             {
-                /// Rebuilt aliases must keep the double-quote pin so a query tree built back
-                /// from this AST preserves `standard`-mode case-sensitivity of the column.
+                /// Keep the double-quote pin so a tree rebuilt from this AST preserves `standard`-mode case-sensitivity.
                 bool pinned = std::binary_search(
                     pinned_projection_column_names.begin(), pinned_projection_column_names.end(), projection_columns[i].name);
                 ast_with_alias->setAlias(

@@ -97,8 +97,7 @@ public:
         return expression_it->second.front();
     }
 
-    /// `standard` matching variant for an unquoted reference: an in-process expression matches
-    /// when its alias folds to `folded_alias`, unless its alias is double-quoted (pinned).
+    /// Match an in-process expression whose alias folds to `folded_alias`; double-quoted (pinned) aliases are skipped.
     QueryTreeNodePtr getExpressionWithAliasFolded(const std::string & folded_alias) const
     {
         for (const auto & [alias, alias_expressions] : alias_name_to_expressions)

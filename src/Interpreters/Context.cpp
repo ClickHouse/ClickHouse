@@ -7766,8 +7766,7 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
-    /// Canonicalize the spellings before the existence check and UUID stamping, so everything
-    /// downstream (access checks, caches, logs) sees the canonical object names.
+    /// Canonicalize before UUID stamping, so everything downstream (access checks, caches, logs) sees canonical names.
     resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);

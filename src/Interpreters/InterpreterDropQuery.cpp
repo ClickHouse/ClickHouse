@@ -99,8 +99,7 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
 
-    /// Resolve the canonical names first and write them back, so the ON CLUSTER access check and
-    /// DDL entry, as well as the local execution, all act on the same object.
+    /// Canonicalize first and write back, so the ON CLUSTER access check, DDL entry and local execution act on the same object.
     if (drop.table && drop.database && !drop.isTemporary())
     {
         auto table_id = DatabaseCatalog::instance().resolveStorageIDNames(StorageID(drop), getContext());
@@ -116,9 +115,8 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     }
     else if (drop.table && !drop.database && !drop.cluster.empty() && !drop.isTemporary())
     {
-        /// The cluster entry is serialized before local resolution and replayed with exact
-        /// matching, so an unqualified name must be qualified and canonicalized here.
-        /// A session temporary table shadows the current-database one and stays untouched.
+        /// The cluster entry replays with exact matching, so qualify and canonicalize an unqualified
+        /// name here. A session temporary table shadows the current-database one and stays as written.
         bool is_session_temporary = static_cast<bool>(getContext()->tryResolveStorageID(
             StorageID{"", drop.getTable()}, Context::ResolveExternal));
         if (!is_session_temporary && !getContext()->getCurrentDatabase().empty())
@@ -210,8 +208,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
-    /// Resolve the canonical names first, so the DDL guard, the access checks and the drop itself
-    /// all act on the same object.
+    /// Canonicalize first, so the DDL guard, access checks and the drop act on the same object.
     table_id = DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context_);
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);

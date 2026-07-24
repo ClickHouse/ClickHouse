@@ -755,8 +755,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    /// INFORMATION_SCHEMA is the uppercase alias of the same logical schema; pin it so folded
-    /// lookups deterministically resolve to `information_schema` instead of reporting ambiguity.
+    /// Pin `INFORMATION_SCHEMA` so folded lookups resolve to `information_schema` instead of reporting ambiguity.
     database_name_index.add(database_name, /*pinned=*/ database_name == "INFORMATION_SCHEMA");
     if (!database->isDatalakeCatalog())
         databases_without_datalake_catalogs.emplace(database_name, database);

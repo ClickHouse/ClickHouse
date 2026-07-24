@@ -161,8 +161,7 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     }
 }
 
-/// Compare quote structures the way IdentifierNode does: only double-quoted parts pin matching,
-/// so two names are equal unless their double-quoted-part patterns differ.
+/// Only double-quoted parts pin matching, so compare just the double-quoted pattern.
 static bool identifierNameQuotesEqual(const IdentifierName & lhs, const IdentifierName & rhs)
 {
     if (!lhs.anyPartDoubleQuoted() && !rhs.anyPartDoubleQuoted())
@@ -223,8 +222,7 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     hash_state.update(qualified_identifier_full_name.size());
     hash_state.update(qualified_identifier_full_name);
 
-    /// Mix quote flags only when a double-quoted part is present, to keep the hash
-    /// of all-unquoted matchers unchanged (mirrors IdentifierNode).
+    /// Mix quote flags only when a double-quoted part is present, so all-unquoted matchers hash as before.
     if (qualified_identifier_name.anyPartDoubleQuoted())
         for (const auto & part : qualified_identifier_name)
             hash_state.update(static_cast<UInt8>(part.quote == IdentifierPartQuote::DoubleQuoted));

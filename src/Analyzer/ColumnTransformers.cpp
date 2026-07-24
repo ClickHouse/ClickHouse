@@ -179,9 +179,8 @@ void ExceptColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState
     }
 }
 
-/// Compare per-name quote lists the way IdentifierNode does: only double-quoted names pin
-/// matching, so lists are equal unless their double-quoted patterns differ. A missing list
-/// (a synthesized transformer) compares as all-unquoted.
+/// Only double-quoted names pin matching, so compare just the double-quoted pattern;
+/// a missing list (synthesized transformer) counts as all-unquoted.
 static bool namesQuotesEqual(const std::vector<IdentifierPartQuote> & lhs, const std::vector<IdentifierPartQuote> & rhs)
 {
     auto quote_at = [](const std::vector<IdentifierPartQuote> & quotes, size_t i)
@@ -197,8 +196,7 @@ static bool namesQuotesEqual(const std::vector<IdentifierPartQuote> & lhs, const
     return true;
 }
 
-/// Mix quote flags only when a double-quoted name is present, to keep the hash
-/// of all-unquoted transformers unchanged (mirrors IdentifierNode).
+/// Mix quote flags only when a double-quoted name is present, so all-unquoted transformers hash as before.
 static void updateHashWithNamesQuotes(IQueryTreeNode::HashState & hash_state, const std::vector<IdentifierPartQuote> & quotes)
 {
     if (std::find(quotes.begin(), quotes.end(), IdentifierPartQuote::DoubleQuoted) == quotes.end())
@@ -275,8 +273,7 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
     ast_except_transformer->children.reserve(except_column_names.size());
     for (size_t i = 0; i < except_column_names.size(); ++i)
     {
-        /// Rebuild the identifier with its recorded quote so an in-memory round-trip
-        /// keeps the target exact under `standard` matching.
+        /// Keep the recorded quote so an AST round-trip preserves matching under `standard`.
         IdentifierName target_name;
         target_name.push_back(IdentifierPart{except_column_names[i],
             i < except_column_names_quotes.size() ? except_column_names_quotes[i] : IdentifierPartQuote::Unquoted});

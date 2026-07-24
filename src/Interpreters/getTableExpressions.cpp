@@ -153,9 +153,8 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
             DatabaseAndTableWithAlias(*table_expression, current_database), names_and_types);
 
         auto & table = tables_with_columns.back();
-        /// The expression names an existing table: store the canonical spellings, so qualified
-        /// column matching binds to the same object as the catalog lookup above. Unqualified
-        /// names may refer to temporary tables, which resolve by exact name and must not fold.
+        /// Store the canonical spellings, so qualified column matching binds to the same object as
+        /// the catalog lookup above. Unqualified names may be temporary tables, which must not fold.
         if (const auto * identifier = table_expression->database_and_table_name
                 ? table_expression->database_and_table_name->as<ASTTableIdentifier>()
                 : nullptr)

@@ -155,12 +155,10 @@ public:
     DatabasePtr getDatabase(std::string_view database_name) const;
     DatabasePtr tryGetDatabase(std::string_view database_name) const;
 
-    /// `standard` name matching: rewrite the database/table parts of `table_id` to the canonical
-    /// spellings of the objects they fold to. Throws on an ambiguous fold; leaves unknown names
-    /// untouched so the exact lookup downstream reports the usual error.
+    /// `standard` matching: rewrite database/table to the canonical spellings they fold to. Throws on an
+    /// ambiguous fold; leaves unknown names untouched. Skips internal queries, UUIDs and the temporary database.
     StorageID resolveStorageIDNames(StorageID table_id, ContextPtr context_) const;
-    /// `standard` matching for a bare database reference: returns the canonical spelling,
-    /// the input unchanged when absent or mode is sensitive, throws on an ambiguous fold.
+    /// Same for a bare database reference: returns the canonical spelling; throws on an ambiguous fold.
     String resolveDatabaseNameSpelling(const String & database_name, IdentifierPartQuote quote, ContextPtr context_) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;

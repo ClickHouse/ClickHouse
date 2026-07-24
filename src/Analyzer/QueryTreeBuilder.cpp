@@ -616,8 +616,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     for (auto & expression : expression_list_typed.children)
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
-        /// A double-quoted target is a single parsed part (its text may contain dots), so it must
-        /// not be re-split on dots; the quote also pins the target under `standard` matching.
+        /// A double-quoted target may contain dots, so it must not be re-split; the quote also pins it under `standard`.
         auto expression_to_interpolate = interpolate_element.column_quote == IdentifierPartQuote::DoubleQuoted
             ? std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{interpolate_element.column, IdentifierPartQuote::DoubleQuoted}}))
             : std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
@@ -746,8 +745,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
             auto lambda_node = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
 
-            /// LambdaNode rebuilds argument identifier nodes as unquoted; restore the quoting of
-            /// double-quoted arguments, which pins them to exact matching under `standard` mode.
+            /// `LambdaNode` rebuilds argument identifiers as unquoted; restore double-quoted ones so they stay pinned.
             auto & lambda_argument_identifier_nodes = lambda_node->getArguments().getNodes();
             for (size_t i = 0; i < lambda_argument_names.size(); ++i)
                 if (lambda_argument_names[i].anyPartDoubleQuoted())

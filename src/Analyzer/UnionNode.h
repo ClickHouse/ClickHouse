@@ -236,8 +236,7 @@ private:
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
-    /// Quoting of the CTE name as written in the query. Double quotes pin the name to
-    /// exact-case matching under `standard` name matching.
+    /// Double quotes pin the CTE name to exact-case matching under `standard` name matching.
     IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
     ContextMutablePtr context;
     SelectUnionMode union_mode;

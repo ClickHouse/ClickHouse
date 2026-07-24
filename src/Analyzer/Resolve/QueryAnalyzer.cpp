@@ -177,10 +177,7 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// The query node whose projection defines the column names of a query or union table
-/// expression. A union takes its projection names from its first select (see
-/// `UnionNode::computeProjectionColumns`), recursively for nested unions, so pinned
-/// projection names must be read from the same carrier.
+/// A union takes projection names from its first select (recursively), so pinned names must be read from that same node.
 const QueryNode * findProjectionNamesCarrier(const QueryNode * query_node, const UnionNode * union_node)
 {
     if (query_node || !union_node)
@@ -205,17 +202,15 @@ const QueryNode * findProjectionNamesCarrier(const QueryNode * query_node, const
     return nullptr;
 }
 
-/// Sorted projection column names of a resolved query or union node whose definitions are
-/// double-quoted and therefore pinned under `standard` matching.
+/// Sorted projection column names whose definitions are double-quoted, i.e. pinned under `standard` matching.
 Names collectPinnedProjectionNames(const QueryTreeNodePtr & node)
 {
     const auto * carrier = findProjectionNamesCarrier(node->as<QueryNode>(), node->as<UnionNode>());
     return carrier ? carrier->getPinnedProjectionColumnNames() : Names{};
 }
 
-/// The identifier resolve cache is keyed by identifier spelling only, but under `standard`
-/// matching differently quoted spellings of one name may resolve differently, so results
-/// must not be shared between them.
+/// The identifier resolve cache is keyed by spelling only, but under `standard` matching
+/// differently quoted spellings of one name may resolve differently.
 bool identifierResolveCacheIsSupported(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -223,9 +218,8 @@ bool identifierResolveCacheIsSupported(const ContextPtr & context)
         && settings[Setting::column_and_query_name_matching] == NameMatchMode::Sensitive;
 }
 
-/// Quoting of a CTE definition name in the scope CTE map. The map value is the registered
-/// QueryNode or UnionNode, or the TableNode that replaced a materialized CTE (its alias is
-/// set together with the definition quote in tryResolveIdentifierFromCTE).
+/// Quote of a CTE definition name. For a `TableNode` that replaced a materialized CTE the
+/// definition quote lives in its alias (set in `tryResolveIdentifierFromCTE`).
 IdentifierPartQuote cteDefinitionNameQuote(const QueryTreeNodePtr & node)
 {
     if (const auto * query_node = node->as<QueryNode>())
@@ -235,9 +229,8 @@ IdentifierPartQuote cteDefinitionNameQuote(const QueryTreeNodePtr & node)
     return node->getAliasQuote();
 }
 
-/// Find a window definition by name honoring the name matching mode. A window definition is
-/// registered under its alias; a double-quoted definition is pinned to exact-spelling lookups
-/// and a foldable reference resolves through the folded namespace.
+/// A double-quoted window definition is pinned to exact-spelling lookups; a foldable
+/// reference resolves through the folded namespace.
 std::unordered_map<std::string, QueryTreeNodePtr>::iterator findWindowNodeByName(
     std::unordered_map<std::string, QueryTreeNodePtr> & window_map,
     const String & name,
@@ -1826,9 +1819,8 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
     return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
-/// For a COLUMNS(name, ...) matcher under `standard` matching: the canonical names selected by
-/// each list entry from `available_names`, folding entries like column references with per-entry
-/// ambiguity rejection and quoted pins. Nullopt when exact matching must be used.
+/// For a COLUMNS(name, ...) matcher under `standard` matching: the canonical names selected from
+/// `available_names`, folding entries like column references with quoted pins; nullopt means match exactly.
 static std::optional<std::unordered_set<std::string>> buildStandardColumnsListMatchSet(
     const MatcherNode & matcher_node,
     const Names & available_names,
@@ -2036,9 +2028,8 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 bool matches_using_key = matched_column_name == join_using_column_name;
 
-                /// Standard matching: the USING key is named by its spelling as written, which can
-                /// differ from the canonical per-side column names. Match the canonical per-side
-                /// column with the same name and source instead.
+                /// The USING key keeps its spelling as written, which can differ from the canonical
+                /// per-side column names; match by per-side column name and source instead.
                 if (!matches_using_key && name_match_mode == NameMatchMode::Standard)
                 {
                     for (const auto & join_using_column_inner_node : join_using_column_nodes)
@@ -2689,10 +2680,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    /// Standard matching: resolve EXCEPT and REPLACE list targets against the matched column set
-    /// up front, folding each target like a column reference with per-target ambiguity rejection
-    /// and quoted pins. Maps canonical matched column name -> target name as written.
-    /// EXCEPT('regexp') stays untouched: a regexp is byte-exact by definition.
+    /// Under `standard` matching EXCEPT/REPLACE targets fold against the matched column set up front,
+    /// mapping canonical column name -> target name as written. `EXCEPT('regexp')` stays byte-exact.
     std::unordered_map<const IColumnTransformerNode *, std::unordered_map<std::string, std::string>> standard_transformer_target_names;
     if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
     {
@@ -2999,9 +2988,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         {
                             auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
 
-                            /// Standard matching: mapping keys are canonical column names; fold the
-                            /// reference against them with quoted pins. On several folded matches skip
-                            /// the rewrite and let normal resolution report the ambiguity.
+                            /// Mapping keys are canonical column names; fold the reference against them.
+                            /// On several folded matches let normal resolution report the ambiguity.
                             if (it == replace_transformer_mappings.end()
                                 && scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard
                                 && identifier->getIdentifierName().size() == identifier->getIdentifier().getPartsSize())
@@ -4434,10 +4422,8 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        /// Everything downstream matches the target by name against the output header:
-        /// `removeUnusedProjectionColumns` pruning and the planner's actions-DAG alias. A folded
-        /// `standard`-mode target (`INTERPOLATE (val ...)` over projection `Val`) must therefore
-        /// be rewritten to the canonical projection spelling here.
+        /// Everything downstream matches the target by name against the output header, so a
+        /// folded `standard`-mode target must be rewritten to the canonical projection spelling.
         String canonical_target_name = column_to_interpolate_name;
         if (name_match_mode == NameMatchMode::Standard && !target_pinned && !target_identifier_name.empty())
         {
@@ -4457,9 +4443,8 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
-        /// The fake column carries the canonical name (it becomes the DAG input that must exist in
-        /// the output block), while the registration key keeps the user's spelling so references
-        /// inside the interpolate expression bind to it; a double-quoted target stays pinned.
+        /// The fake column carries the canonical name (it becomes the DAG input), while the
+        /// registration key keeps the user's spelling so references inside the expression bind to it.
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(canonical_target_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
         interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
         if (target_pinned)
@@ -6981,9 +6966,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope, projection_columns);
     }
 
-    /// Capture double-quoted projection aliases before aliases are stripped below: outer
-    /// `standard`-mode references must not fold onto such columns. When a projection override
-    /// list is present, `resolveProjectionColumns` recomputes the pins from the override quotes.
+    /// Capture pins before aliases are stripped below: outer folded references must not match
+    /// double-quoted projection aliases. With an override list `resolveProjectionColumns` recomputes them.
     {
         Names pinned_projection_names;
         const auto & projection_nodes = query_node_typed.getProjection().getNodes();

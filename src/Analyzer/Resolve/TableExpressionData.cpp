@@ -47,8 +47,7 @@ void AnalysisTableExpressionData::ensureFoldedColumnIndexIsPopulated() const
     for (const auto & column_name_and_type : column_names_and_types)
     {
         folded_column_names[foldIdentifierCaseASCII(column_name_and_type.name)].push_back(column_name_and_type.name);
-        /// A pinned column is unreachable through folded binding; it stays in `folded_column_names`
-        /// for exact lookups of all-double-quoted prefixes of compound identifiers.
+        /// Pinned columns are excluded from folded binding but stay in `folded_column_names` for exact lookups.
         if (pinned_column_names.contains(column_name_and_type.name))
             continue;
         Identifier column_name_identifier(column_name_and_type.name);

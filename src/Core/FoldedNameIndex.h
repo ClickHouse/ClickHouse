@@ -29,9 +29,8 @@ public:
         std::vector<String> candidates;
     };
 
-    /// `pinned` objects are excluded from folded matching and can only be found by an
-    /// exact-spelling lookup. Used for predefined uppercase alias objects (`INFORMATION_SCHEMA`
-    /// and its views); quoting a name at creation time does not pin user objects.
+    /// Pinned objects match only by exact spelling, never through folding. Used for predefined
+    /// uppercase aliases (`INFORMATION_SCHEMA` and its views); quoting at creation does not pin user objects.
     void add(const String & canonical, bool pinned = false);
     void remove(const String & canonical);
     void rename(const String & old_canonical, const String & new_canonical, bool new_pinned = false);

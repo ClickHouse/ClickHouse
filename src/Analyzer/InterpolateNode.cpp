@@ -17,8 +17,7 @@ InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, Qu
     if (expression_)
     {
         expression_name = expression_->getIdentifier().getFullName();
-        /// Capture the quote structure now: after resolution the child is no longer
-        /// an IdentifierNode, so the original target spelling cannot be recovered.
+        /// Capture the quote structure now; after resolution the child is no longer an `IdentifierNode`.
         expression_identifier_name = expression_->getIdentifierName();
     }
 
@@ -39,9 +38,8 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
 
 bool InterpolateNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
-    /// The target name and its quote structure are semantic state: after analysis the
-    /// expression child no longer carries the original target spelling, and `"x"` vs `x`
-    /// differ under `standard` matching.
+    /// The resolved child loses the original target spelling, and `"x"` vs `x` differ
+    /// under `standard` matching, so the name and its quotes are state here.
     const auto & rhs_typed = assert_cast<const InterpolateNode &>(rhs);
     return expression_name == rhs_typed.expression_name
         && expression_identifier_name == rhs_typed.expression_identifier_name;
@@ -76,8 +74,7 @@ ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
     else
         result->column = expression_name;
 
-    /// Carry the original quote from the node itself: the resolved child is no longer
-    /// an IdentifierNode, so the quote cannot be read from there.
+    /// The resolved child is no longer an `IdentifierNode`, so take the quote from the node itself.
     if (expression_identifier_name.size() == 1)
         result->column_quote = expression_identifier_name.front().quote;
 

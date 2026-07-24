@@ -11,8 +11,7 @@ class ASTInterpolateElement : public IAST
 {
 public:
     String column;
-    /// Quoting of the target column as written in the query. A double-quoted target
-    /// stays case-sensitive under `standard` name matching.
+    /// Quoting of the target column as written in the query.
     IdentifierPartQuote column_quote = IdentifierPartQuote::Unquoted;
     ASTPtr expr;
 

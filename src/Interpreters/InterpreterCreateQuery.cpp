@@ -207,11 +207,8 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 namespace
 {
 
-/// `standard` matching: an unquoted new name must not be a case sibling of an existing object.
-/// Local creates re-check under a folded-name DDLGuard, making the policy race-free on one
-/// server. Dispatch-side checks (ON CLUSTER, Replicated databases) are snapshot-based: holding
-/// the folded guard across enqueue would deadlock against the local worker's own create, and
-/// concurrent creates from different initiators are best-effort for exact duplicates too.
+/// An unquoted new name must not be a case sibling of an existing object. Dispatch-side checks
+/// (ON CLUSTER, Replicated) are snapshot-based: holding the folded guard across enqueue would deadlock against the local worker.
 void throwIfCaseSiblingDatabase(const ASTCreateQuery & create, ContextPtr context)
 {
     if (create.attach || context->isInternalQuery()
@@ -264,9 +261,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
-    /// Serialize concurrent creates of case siblings on the folded spelling, then re-check.
-    /// Acquired after the exact-name guard: the exact spelling always sorts before its folded
-    /// (lowercased) form, and multi-guard holders like RENAME acquire in sorted order.
+    /// Serialize sibling creates on the folded spelling. Acquired after the exact-name guard: the
+    /// exact spelling sorts before its folded form, and multi-guard holders acquire in sorted order.
     std::unique_ptr<DDLGuard> folded_guard;
     if (String folded_name = foldIdentifierCaseASCII(database_name); folded_name != database_name)
         folded_guard = DatabaseCatalog::instance().getDDLGuard(folded_name, "", nullptr);
@@ -1299,13 +1295,12 @@ void InterpreterCreateQuery::validateViewSelectColumnSpellings(const ASTCreateQu
     }
     catch (const Exception & e)
     {
-        /// A body that does not analyze in the creating session's mode either is handled (or
-        /// deliberately tolerated) by the regular checks; reject only bodies that need folding.
+        /// Reject only bodies that need folding; one broken in the session's own mode is handled by the regular checks.
         try
         {
             analyze_select(/*sensitive=*/ false);
         }
-        catch (...) /// Ok: an already-broken body is tolerated here, matching allow_materialized_view_with_bad_select.
+        catch (...) /// An already-broken body is tolerated, matching `allow_materialized_view_with_bad_select`.
         {
             return;
         }
@@ -1840,8 +1835,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (!create.cluster.empty())
         {
-            /// Validate against the initiator's catalog before dispatch; workers replay with
-            /// exact matching and cannot re-run this policy themselves.
+            /// Workers replay with exact matching and cannot re-run this policy; validate on the initiator.
             if (create.database)
                 throwIfCaseSiblingTable(database, create, getContext());
             return executeQueryOnCluster(create);
@@ -1950,8 +1944,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
 
-        /// Store canonical table spellings, so the persisted body and the dependencies
-        /// registered from it keep working in sessions with any name matching mode.
+        /// Persist canonical table spellings, so the stored body and its registered dependencies work in any matching mode.
         if (!create.attach && getContext()->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard)
             CanonicalizeTableReferencesVisitor::visit(*create.select, getContext());
     }
@@ -2214,9 +2207,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!ddl_guard && likely(need_ddl_guard))
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
-    /// Guard on the folded spelling too, so concurrent sibling creates re-check serially.
-    /// Acquired after the exact-name guard: the exact spelling always sorts before its folded
-    /// (lowercased) form, and multi-guard holders like RENAME acquire in sorted order.
+    /// Guard the folded spelling too, so concurrent sibling creates re-check serially. Acquired after
+    /// the exact-name guard: the exact spelling sorts before its folded form, and multi-guard holders acquire in sorted order.
     std::unique_ptr<DDLGuard> folded_table_guard;
     if (String folded_table = foldIdentifierCaseASCII(create.getTable()); folded_table != create.getTable())
         folded_table_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), folded_table, nullptr);
@@ -2694,8 +2686,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         const String tmp_replace_table_name = TemporaryReplaceTableName{.name_hash = name_hash, .random_suffix = random_suffix}.toString();
         create.setTable(tmp_replace_table_name);
 
-        /// The temporary table name and the (already canonicalized) database are exact; pin them
-        /// so the drop does not re-fold them against case siblings.
+        /// The temporary name and the database are exact; pin them so the drop does not re-fold them.
         ast_drop->setTable(create.getTable(), IdentifierPartQuote::DoubleQuoted);
         ast_drop->is_dictionary = create.is_dictionary;
         ast_drop->setDatabase(create.getDatabase(), IdentifierPartQuote::DoubleQuoted);
@@ -2758,9 +2749,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
         executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
-        /// Replace target table with created one. The database and the temporary table name are
-        /// exact; the replace target keeps the user's quote pin so it resolves like an exchange
-        /// destination.
+        /// Replace target table with created one. The exact names are pinned; the replace target
+        /// keeps the user's quote pin so it resolves like an exchange destination.
         auto make_identifier = [](const String & name, IdentifierPartQuote quote)
         {
             IdentifierName parts(std::vector<String>{name});
@@ -3062,15 +3052,13 @@ BlockIO InterpreterCreateQuery::execute()
 
     bool is_create_database = create.database && !create.table;
 
-    /// The database component of CREATE TABLE/VIEW/... refers to an existing database: canonicalize
-    /// its spelling once, so DDL guards, access checks and replication all act on the same object.
-    /// CREATE DATABASE defines a new database and keeps the name as written.
+    /// Canonicalize the database once, so DDL guards, access checks and replication act on the
+    /// same object. `CREATE DATABASE` defines a new database and keeps the name as written.
     if (!is_create_database && create.database)
         create.setDatabase(DatabaseCatalog::instance().resolveDatabaseNameSpelling(
             create.getDatabase(), identifierPartQuoteFromAST(create.database), getContext()));
 
-    /// The AS [db.]table source refers to an existing table: canonicalize its spelling once,
-    /// before access checks and ON CLUSTER dispatch, and pin the result to exact matching.
+    /// Canonicalize the `AS [db.]table` source once, before access checks and ON CLUSTER dispatch, and pin it as exact.
     if (!create.as_table.empty())
     {
         String as_database_name = create.as_database.empty() ? getContext()->getCurrentDatabase() : create.as_database;
@@ -3124,9 +3112,8 @@ BlockIO InterpreterCreateQuery::execute()
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
-        /// Validate against the initiator's catalog before dispatch; workers replay the DDL log
-        /// with exact matching and cannot re-run the case-sibling policy themselves. Access is
-        /// checked first so the name policy cannot leak the existence of unrelated objects.
+        /// Workers replay the DDL log with exact matching, so validate on the initiator. Access is
+        /// checked first, so the name policy cannot leak the existence of unrelated objects.
         if (is_create_database)
         {
             getContext()->checkAccess(getRequiredAccess());
@@ -3139,7 +3126,6 @@ BlockIO InterpreterCreateQuery::execute()
             if (!is_create_database)
             {
                 getContext()->checkAccess(getRequiredAccess());
-                /// The database may be omitted in the query and empty at this point.
                 String create_database_name = create.getDatabase().empty() ? getContext()->getCurrentDatabase() : create.getDatabase();
                 if (!create_database_name.empty())
                     throwIfCaseSiblingTable(DatabaseCatalog::instance().tryGetDatabase(create_database_name), create, getContext());

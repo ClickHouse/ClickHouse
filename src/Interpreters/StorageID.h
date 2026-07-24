@@ -30,8 +30,7 @@ struct StorageID
     String table_name;
     UUID uuid = UUIDHelpers::Nil;
 
-    /// How the parts were written in the query. Consulted only when
-    /// database_and_table_name_matching = 'standard'; not part of the identity.
+    /// How the parts were written in the query; consulted only under `standard` matching, not part of the identity.
     IdentifierPartQuote database_name_quote = IdentifierPartQuote::Unquoted;
     IdentifierPartQuote table_name_quote = IdentifierPartQuote::Unquoted;
 

@@ -106,7 +106,7 @@ public:
         void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
         String name;
-        /// How the replacement name was written; pins exact matching under `standard` name matching.
+        /// Quoting of the replacement name as written in the query.
         IdentifierPartQuote name_quote = IdentifierPartQuote::Unquoted;
 
     protected:

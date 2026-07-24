@@ -688,9 +688,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     return {};
 }
 
-/// Whether lookup part `index` matches the canonical `name`: quote-aware folding under
-/// `standard` matching when the lookup carries quote structure, exact spelling otherwise.
-/// `pinned` marks a double-quoted definition, excluded from folded matching.
+/// Whether lookup part `index` matches the canonical `name`: quote-aware folding under `standard`
+/// when the lookup carries quote structure, exact spelling otherwise. `pinned` excludes folded matching.
 static bool lookupPartMatchesName(
     const IdentifierLookup & identifier_lookup,
     size_t index,
@@ -850,8 +849,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         */
 
     QueryTreeNodePtr result_expression;
-    /// Canonical full name of the matched column or subcolumn when `standard` matching
-    /// resolved the identifier; used for qualification and the projection name.
+    /// Canonical name of the column or subcolumn matched under `standard`; empty otherwise.
     String canonical_full_name;
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
@@ -875,9 +873,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             else
             {
                 canonical_full_name = match_result.column_name + "." + match_result.subcolumn_name;
-                /// Don't read subcolumn of aliases directly, only using getSubcolumn,
-                /// because aliases don't have real subcolumns, they should be extracted
-                /// after alias expression evaluation.
+                /// Aliases have no real subcolumns; extract them with `getSubcolumn` after alias evaluation.
                 if (table_expression_data.supports_subcolumns && !match_result.column_node->hasExpression())
                     result_expression = std::make_shared<ColumnNode>(NameAndTypePair{canonical_full_name, match_result.subcolumn_type}, match_result.column_node->getColumnSource());
                 else
@@ -956,8 +952,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     auto qualified_identifier = identifier;
 
-    /// Under standard matching the resolved canonical spelling, not the query spelling,
-    /// is used for qualification and the projection name.
+    /// Qualification and the projection name must use the canonical spelling, not the query spelling.
     if (!canonical_full_name.empty() && canonical_full_name != identifier_full_name)
     {
         std::vector<std::string> canonical_parts(identifier.getParts().begin(), identifier.getParts().begin() + identifier_column_qualifier_parts);
@@ -1070,8 +1065,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, name_match_mode);
     if (!foldable_name.empty())
     {
-        /// Standard matching: a single binding gate; the folded lookup inside
-        /// `tryResolveIdentifierFromStorage` decides between match, ambiguity and not found.
+        /// One binding gate; the folded lookup in `tryResolveIdentifierFromStorage` decides match, ambiguity or not found.
         if (table_expression_data.canBindIdentifierStandard(foldable_name))
         {
             auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
@@ -1524,9 +1518,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            /// Standard matching: the USING key is named by its spelling as written, which can
-            /// differ from the canonical per-side column names. Detect the key by membership
-            /// of the resolved column in a key's per-side column list instead.
+            /// Standard matching: the USING key is named as written and can differ from the canonical
+            /// per-side column names; detect the key by membership in its per-side column list instead.
             if (current_scope.context->getSettingsRef()[Setting::column_and_query_name_matching] != NameMatchMode::Standard)
                 return;
 
@@ -1591,9 +1584,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             if (left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
                 using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
 
-            /// Standard matching: the USING key is named by its spelling as written, which can
-            /// differ from the canonical per-side column names. Detect the key by membership of
-            /// both resolved columns in the same key's per-side column list instead.
+            /// Standard matching: the USING key is named as written and can differ from the canonical
+            /// per-side column names; detect the key by membership of both resolved columns instead.
             if (using_column_node_it == join_using_column_name_to_column_node.end()
                 && scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
             {

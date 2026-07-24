@@ -114,9 +114,8 @@ public:
         temporary_table_name_quote = temporary_table_name_quote_value;
     }
 
-    /// Sorted column names pinned to exact-spelling matching under `standard` name matching.
-    /// Used for synthetic tables built from a subquery projection (e.g. the temporary table of
-    /// a recursive CTE), whose double-quoted projection definitions must stay pinned.
+    /// Sorted column names pinned to exact-spelling matching under `standard` matching. Used for
+    /// synthetic tables built from a subquery projection (e.g. a recursive CTE's temporary table).
     const Names & getPinnedColumnNames() const
     {
         return pinned_column_names;

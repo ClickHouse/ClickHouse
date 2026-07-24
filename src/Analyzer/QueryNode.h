@@ -691,9 +691,8 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
-    /// Sorted projection column names whose definitions are double-quoted (`AS "Name"` aliases or
-    /// `AS t("Name")` override lists). Under `standard` matching such columns are pinned: outer
-    /// folded references must not match them, only double-quoted exact-spelling references do.
+    /// Sorted projection column names with double-quoted definitions (`AS "Name"` or `AS t("Name")`).
+    /// Under `standard` matching only double-quoted exact-spelling references match them.
     const Names & getPinnedProjectionColumnNames() const
     {
         return pinned_projection_column_names;
@@ -729,8 +728,7 @@ private:
     bool is_limit_by_all = false;
 
     std::string cte_name;
-    /// Quoting of the CTE name as written in the query. Double quotes pin the name to
-    /// exact-case matching under `standard` name matching.
+    /// Double quotes pin the CTE name to exact-case matching under `standard` name matching.
     IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
     NamesAndTypes projection_columns;
     std::vector<IdentifierPart> projection_aliases_to_override;

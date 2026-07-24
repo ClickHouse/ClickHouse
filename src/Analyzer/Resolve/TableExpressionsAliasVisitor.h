@@ -74,8 +74,7 @@ private:
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    /// `standard` matching: unquoted table expression aliases that differ only in character case
-    /// are rejected in one scope, mirroring the alias registration contract.
+    /// `standard` matching: reject unquoted table aliases that differ only in case within one scope.
     void throwIfCaseSiblingTableAlias(const QueryTreeNodePtr & node)
     {
         if (name_match_mode != NameMatchMode::Standard || node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)

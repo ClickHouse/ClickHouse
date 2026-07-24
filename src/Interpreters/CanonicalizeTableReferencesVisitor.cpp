@@ -12,8 +12,7 @@ namespace
 
 void canonicalizeTableIdentifier(ASTTableIdentifier & identifier, const ContextPtr & context)
 {
-    /// Only two-part identifiers are unambiguous catalog references; short ones may be
-    /// query-local (WITH RECURSIVE aliases, temporary tables) and must keep their spelling.
+    /// Only two-part names are catalog references; short ones may be query-local and must keep their spelling.
     if (identifier.isParam() || identifier.name_parts.size() != 2)
         return;
     if (identifier.name_parts[0].spelling.empty() || identifier.name_parts[1].spelling.empty())

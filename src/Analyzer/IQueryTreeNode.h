@@ -326,8 +326,7 @@ protected:
 
 private:
     String alias;
-    /// Quoting of the alias as written in the query. Double quotes pin the alias to
-    /// exact-case matching under `standard` name matching.
+    /// Double quotes pin the alias to exact-case matching under `standard` name matching.
     IdentifierPartQuote alias_quote = IdentifierPartQuote::Unquoted;
     /// An alias from query. Alias can be replaced by query passes,
     /// but we need to keep the original one to support additional_table_filters.

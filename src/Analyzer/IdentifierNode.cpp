@@ -59,8 +59,7 @@ bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) con
     if (identifier != rhs_typed.identifier || table_expression_modifiers != rhs_typed.table_expression_modifiers)
         return false;
 
-    /// Quote structure is compared only when a double-quoted part pins exact matching,
-    /// so all-unquoted identifiers compare exactly as before.
+    /// Compare quote structure only when some part is double-quoted; all-unquoted identifiers compare as before.
     if (!identifier_name.anyPartDoubleQuoted() && !rhs_typed.identifier_name.anyPartDoubleQuoted())
         return true;
 
@@ -84,8 +83,7 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(full_name.size());
     state.update(full_name);
 
-    /// Mix quote flags only when a double-quoted part is present, to keep the hash
-    /// of all-unquoted identifiers unchanged.
+    /// Mix quote flags only when a double-quoted part is present, so all-unquoted identifiers hash as before.
     if (identifier_name.anyPartDoubleQuoted())
     {
         for (const auto & part : identifier_name)

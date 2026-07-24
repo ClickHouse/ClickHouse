@@ -93,8 +93,7 @@ BlockIO InterpreterUpdateQuery::execute()
     if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
     {
         table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
-        /// Write the canonical names back, so the ON CLUSTER access check and DDL entry see the
-        /// object the query acts on.
+        /// Write the canonical names back, so the ON CLUSTER access check and DDL entry see the same object.
         if (update_query.database)
             update_query.setDatabase(table_id_for_access.database_name, IdentifierPartQuote::DoubleQuoted);
         update_query.setTable(table_id_for_access.table_name, IdentifierPartQuote::DoubleQuoted);

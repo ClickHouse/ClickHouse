@@ -40,8 +40,7 @@ struct AnalysisTableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
-    /// Whether `table_name` comes from a double-quoted definition (CTE name, recursive CTE
-    /// temporary table name): pinned to exact-spelling matching under `standard` matching.
+    /// `table_name` came from a double-quoted definition (e.g. a CTE name) and is pinned to exact-spelling matching.
     bool table_name_pinned = false;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
@@ -58,9 +57,8 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
-    /// Column names pinned to exact-spelling matching under `standard` matching (double-quoted
-    /// subquery projection definitions, pinned synthetic-table columns). Folded references must
-    /// not match them; double-quoted exact references still do.
+    /// Column names from double-quoted definitions, pinned to exact-spelling matching under
+    /// `standard` matching; folded references must not match them.
     std::unordered_set<String> pinned_column_names;
 
     void ensureColumnMembershipSetsArePopulated() const;
@@ -160,13 +158,11 @@ struct AnalysisTableExpressionData
         std::vector<String> candidates;
     };
 
-    /// Resolve `name` against table columns and type-level subcolumns with `standard` matching
-    /// semantics: unquoted and backticked parts match through ASCII case folding with no priority
-    /// for the exact spelling, double-quoted parts match exactly.
+    /// Resolve `name` against columns and type-level subcolumns with `standard` semantics: unquoted
+    /// and backticked parts fold with no exact-spelling priority, double-quoted parts match exactly.
     StandardMatchResult tryMatchColumnOrSubcolumnStandard(const IdentifierName & name) const;
 
-    /// Whether `name` could bind to this table's columns under `standard` matching,
-    /// by its first part. Never reports ambiguity, mirroring `canBindIdentifier`.
+    /// Whether `name` could bind to this table by its first part; never reports ambiguity (mirrors `canBindIdentifier`).
     bool canBindIdentifierStandard(const IdentifierName & name) const;
 
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name) const

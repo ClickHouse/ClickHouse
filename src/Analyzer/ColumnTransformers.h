@@ -206,8 +206,7 @@ public:
         return except_column_names;
     }
 
-    /// Per-name quotes as written in the query, mirroring `except_column_names`.
-    /// Empty when the transformer was synthesized; such names match exactly.
+    /// Per-name quotes mirroring `except_column_names`; empty for synthesized transformers.
     const std::vector<IdentifierPartQuote> & getExceptColumnNamesQuotes() const
     {
         return except_column_names_quotes;
@@ -289,8 +288,7 @@ public:
         return replacements_names;
     }
 
-    /// Per-name quotes as written in the query, mirroring `replacements_names`.
-    /// Empty when the transformer was synthesized; such names match exactly.
+    /// Per-name quotes mirroring `replacements_names`; empty for synthesized transformers.
     const std::vector<IdentifierPartQuote> & getReplacementsNamesQuotes() const
     {
         return replacements_names_quotes;

@@ -18,8 +18,7 @@ ASTPtr rewriteToAlterTable(const ASTDropIndexQuery & query, const ContextPtr & c
     auto alter = make_intrusive<ASTAlterQuery>();
     alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
 
-    /// Resolve the canonical target quote-aware first and pin it: copying plain names
-    /// would drop the quote pins and let a double-quoted wrong-case target fold.
+    /// Resolve quote-aware and pin: copying plain names would let a double-quoted wrong-case target fold.
     if (auto resolved = context->tryResolveStorageID(query))
     {
         if (query.database)

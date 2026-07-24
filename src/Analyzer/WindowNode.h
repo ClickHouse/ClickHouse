@@ -193,8 +193,7 @@ private:
 
     WindowFrame window_frame;
     String parent_window_name;
-    /// Quoting of the parent window name as written in the query. Double quotes pin the name
-    /// to exact-case matching under `standard` name matching.
+    /// Double quotes pin the parent window name to exact-case matching under `standard` name matching.
     IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
 };
 

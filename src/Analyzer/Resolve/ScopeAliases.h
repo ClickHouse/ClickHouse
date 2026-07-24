@@ -63,9 +63,8 @@ struct ScopeAliases
     {
         auto & alias_map = getAliasMap(lookup.lookup_context);
 
-        /// `standard` matching: an unquoted reference resolves through the folded alias namespace.
-        /// A double-quoted alias definition is pinned and can only be found by an exact-spelling
-        /// lookup; a double-quoted reference falls through to the exact path below.
+        /// `standard` matching: an unquoted reference resolves through the folded alias namespace;
+        /// double-quoted definitions and references go through the exact path below.
         auto foldable_name = getFoldableIdentifierSuffix(lookup, 0 /*qualifier_parts*/, name_match_mode);
         if (!foldable_name.empty())
         {

@@ -423,15 +423,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
-        /// Write both canonical names back so access checks and distributed DDL
-        /// operate on the object actually being altered.
+        /// Write the canonical names back, so access checks and distributed DDL act on the object being altered.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
         query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
-    /// MOVE PARTITION TO TABLE and REPLACE PARTITION FROM reference secondary tables: canonicalize
-    /// their spellings once, before access checks and ON CLUSTER dispatch, and pin them to exact matching.
+    /// `MOVE PARTITION TO TABLE` and `REPLACE PARTITION FROM` name secondary tables: canonicalize
+    /// them once, before access checks and ON CLUSTER dispatch, and pin them as exact.
     auto canonicalize_secondary_table
         = [&](String & database_name, IdentifierPartQuote & database_quote, String & table_name, IdentifierPartQuote & table_quote)
     {
@@ -535,8 +534,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
 
-    /// Resolve the canonical database spelling first and write it back, so the access check,
-    /// the ON CLUSTER dispatch and the DDL guard all act on the same object.
+    /// Canonicalize the database first, so the access check, ON CLUSTER dispatch and DDL guard act on the same object.
     if (alter.database)
         query_ptr->as<ASTAlterQuery &>().setDatabase(
             DatabaseCatalog::instance().resolveDatabaseNameSpelling(

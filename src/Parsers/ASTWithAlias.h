@@ -32,8 +32,7 @@ public:
     /// The alias, if any, or an empty string.
     String alias;
 
-    /// Quoting of the alias as written in the query. Double quotes pin the alias to
-    /// exact-case matching under `standard` name matching.
+    /// Quoting of the alias as written in the query.
     IdentifierPartQuote alias_quote = IdentifierPartQuote::Unquoted;
 
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.

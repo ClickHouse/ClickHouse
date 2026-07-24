@@ -82,10 +82,8 @@ private:
         aliases.nodes_with_duplicated_aliases.emplace_back(node);
     }
 
-    /// `standard` matching: reject at registration an unquoted alias whose name differs only in
-    /// character case from another unquoted alias in the same scope (fail-close, mirroring the
-    /// CREATE-side contract for databases and tables). Double-quoted aliases are pinned to exact
-    /// matching and never collide through folding.
+    /// `standard` matching: reject unquoted aliases that differ only in case within one scope
+    /// (fail-close, like the CREATE-side contract). Double-quoted aliases never collide via folding.
     void throwIfCaseSiblingAlias(const std::unordered_map<std::string, QueryTreeNodePtr> & alias_map, const QueryTreeNodePtr & node)
     {
         if (name_match_mode != NameMatchMode::Standard || node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)

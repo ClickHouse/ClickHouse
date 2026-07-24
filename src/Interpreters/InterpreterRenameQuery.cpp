@@ -36,7 +36,6 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 namespace
 {
 
-/// Write a resolved canonical spelling back into an identifier node and pin it as exact.
 void writeCanonicalNameBack(const ASTPtr & node, const String & canonical)
 {
     auto * identifier = node ? node->as<ASTIdentifier>() : nullptr;
@@ -77,9 +76,8 @@ BlockIO InterpreterRenameQuery::execute()
         descriptions.emplace_back(elem, current_database);
         auto & description = descriptions.back();
 
-        /// Resolve the canonical spellings of everything that refers to an existing object and write
-        /// them back into the AST, so access checks, ON CLUSTER dispatch, DDL guards and the rename
-        /// itself all act on the same object. A new name stays as written.
+        /// Canonicalize references to existing objects and write them back, so access checks,
+        /// ON CLUSTER dispatch, DDL guards and the rename agree. A new name stays as written.
         if (rename.database)
         {
             description.from_database_name = database_catalog.resolveDatabaseNameSpelling(
@@ -99,8 +97,7 @@ BlockIO InterpreterRenameQuery::execute()
 
             if (rename.exchange || rename.rename_if_cannot_exchange)
             {
-                /// The destination of an exchange refers to an existing object too. For a rename that
-                /// may fall back to exchange, a unique match selects the object to exchange with,
+                /// An exchange destination is an existing object too: a unique match selects it,
                 /// an ambiguous one throws, and an absent one keeps the new name as written.
                 StorageID to_id{description.to_database_name, description.to_table_name};
                 to_id.database_name_quote = quoteForDatabaseNode(elem.to.database);
