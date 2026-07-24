@@ -34,6 +34,9 @@ public:
     /// test assert the plan is REUSED across read-extent advances (count flat).
     UInt64 observationCount() const { return ex.stats.get(ReaderExecutor::Stats::Observations); }
 
+    /// Number of in-place plan extensions -- one per `extendPlan`.
+    UInt64 extensionCount() const { return ex.stats.get(ReaderExecutor::Stats::PlanExtensions); }
+
     size_t retrieveCount() const { return ex.read_plan.schedule.retrieves.size(); }
 
     /// The serve map (runs / per-job progress).

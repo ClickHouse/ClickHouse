@@ -328,7 +328,24 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
             || (at_plan_end && !planReachesEnd()));
     if (!machine && want_replan)
     {
-        observeAndSchedule(position_phys);
+        /// EXTEND vs RESTART: a contiguous-forward need - the cursor still inside
+        /// (or at the end of) the live span, only more look-ahead wanted - grows
+        /// the plan in place, keeping the held buffers, the bank and the fill-lane
+        /// epoch. Anything else (no plan, backward cursor) rebuilds from scratch.
+        /// The retention cap bounds the held buffers (readers pin segments,
+        /// writers hold cells) accumulated over the extended span until
+        /// release-behind trims them incrementally: past the cap, a rebuild
+        /// releases everything behind the cursor.
+        const auto & g = read_plan.geometry();
+        const bool live_plan = g && g->plan_end > g->plan_start;
+        const bool contiguous_forward = live_plan
+            && position_phys >= g->plan_start && position_phys <= g->plan_end;
+        const bool within_retention = live_plan
+            && position_phys - g->plan_start < 3 * effectivePlanCeiling();
+        if (contiguous_forward && within_retention)
+            extendPlan(position_phys);
+        else
+            observeAndSchedule(position_phys);
     }
 }
 
@@ -2410,6 +2427,88 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
 
 // ─── Plan build ────────────────────────────────────────────────────────────
 
+VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::observeSpan(
+    const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+    const OffsetMap & offset_map_,
+    ByteRange span)
+{
+    VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
+    for (const auto & cache : caches_)
+        traits.push_back(ResolutionFold::TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
+
+    VectorWithMemoryTracking<PieceObservation> pieces;
+    size_t piece_file_start = span.offset;
+    for (const auto & pr : offset_map_.map(span))
+    {
+        PieceObservation piece;
+        piece.object = pr.object;
+        piece.object_file_offset = piece_file_start - pr.object_offset;
+        const ByteRange piece_span{piece_file_start, pr.size};
+        ResidencyIterator iterator(caches_, piece.object, piece.object_file_offset, piece_span);
+
+        ResolutionFold fold(traits, piece_span);
+        size_t pos = piece_span.offset;
+        while (pos < piece_span.end())
+        {
+            const auto res = iterator.lookAt(pos);
+            fold.add(res);
+            pos = res.range.end();
+        }
+        piece.folded = fold.finish();
+        for (size_t ci = 0; ci < caches_.size(); ++ci)
+            piece.views.push_back(iterator.takeView(ci));
+
+        pieces.push_back(std::move(piece));
+        piece_file_start += pr.size;
+    }
+    return pieces;
+}
+
+void ReaderExecutor::emitObservation(
+    const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+    VectorWithMemoryTracking<PieceObservation> & pieces,
+    CoverageMap & geom,
+    VectorWithMemoryTracking<PlanTier> & tiers)
+{
+    for (size_t ci = 0; ci < caches_.size(); ++ci)
+    {
+        for (auto & piece : pieces)
+        {
+            GeometryEntry & folded = piece.folded[ci];
+            if (folded.resident.empty() && folded.aligned_miss.empty())
+                continue;
+
+            CacheViewPtr view = std::move(piece.views[ci]);
+            if (caches_[ci]->populatesOnMiss())
+            {
+                const auto & kept = folded.aligned_miss;
+                size_t k = 0;
+                for (size_t i = 0; i < view->misses().size();)
+                {
+                    const ByteRange cell = view->misses()[i].range;
+                    const bool keep = k < kept.size() && kept[k].offset == cell.offset && kept[k].size == cell.size;
+                    if (keep)
+                    {
+                        ++i;
+                        ++k;
+                    }
+                    else
+                        view->dropMiss(i);
+                }
+                chassert(k == kept.size());
+                if (!view->misses().empty())
+                    caches_[ci]->openWriteBuffers(piece.object, piece.object_file_offset, *view);
+            }
+
+            PlanTier plan_tier;
+            plan_tier.provider = caches_[ci].get();
+            plan_tier.view = std::move(view);
+            geom.entries.push_back(std::move(folded));
+            tiers.push_back(std::move(plan_tier));
+        }
+    }
+}
+
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
     stats.add(Stats::Observations);
@@ -2463,107 +2562,18 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan = std::move(empty);
         return;
     }
-    /// ONE observation over the bounded target span: per object-piece, the chain
-    /// iterator probes every tier (read-only, fastest first) and a forward
-    /// `lookAt` walk folds the per-position resolutions into the per-tier
-    /// geometry - resident runs plus the miss cells surviving the faster-tier
-    /// prune. A tier's miss CELLS may extend past the span in both directions
-    /// (the provider clamps them to the object end only): the overhang is
-    /// FILL-ONLY work carried by the schedule's cell closure (`fillRegion`) -
-    /// never served span - so the unprobed overhang needs no residency knowledge
-    /// and no second probe. Cell segmentation is probe-range-independent (virgin
+    /// A tier's miss CELLS may extend past the span in both directions (the
+    /// provider clamps them to the object end only): the overhang is FILL-ONLY
+    /// work carried by the schedule's cell closure (`fillRegion`) - never
+    /// served span - so the unprobed overhang needs no residency knowledge and
+    /// no second probe. Cell segmentation is probe-range-independent (virgin
     /// holes tile on the absolute grid; existing segments report their true
     /// extents), so one span-sized observation per piece is the whole story.
-    VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
-    for (const auto & cache : caches)
-        traits.push_back(ResolutionFold::TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
-
-    struct PieceWalk
-    {
-        StoredObject object;
-        size_t object_file_offset;
-        std::unique_ptr<ResidencyIterator> iterator;
-        /// Per-tier fold results, positional with `caches`.
-        VectorWithMemoryTracking<GeometryEntry> folded;
-    };
-    VectorWithMemoryTracking<PieceWalk> pieces;
-    {
-        size_t piece_file_start = plan_range.offset;
-        for (const auto & pr : offset_map.map(plan_range))
-        {
-            PieceWalk piece;
-            piece.object = pr.object;
-            piece.object_file_offset = piece_file_start - pr.object_offset;
-            const ByteRange piece_span{piece_file_start, pr.size};
-            piece.iterator = std::make_unique<ResidencyIterator>(
-                caches, piece.object, piece.object_file_offset, piece_span);
-
-            ResolutionFold fold(traits, piece_span);
-            size_t pos = piece_span.offset;
-            while (pos < piece_span.end())
-            {
-                const auto res = piece.iterator->lookAt(pos);
-                fold.add(res);
-                pos = res.range.end();
-            }
-            piece.folded = fold.finish();
-
-            pieces.push_back(std::move(piece));
-            piece_file_start += pr.size;
-        }
-    }
+    auto pieces = observeSpan(caches, offset_map, plan_range);
 
     geom->plan_end = plan_range.end();
     ReadPlan plan;
-
-    /// Each (tier x piece) observation becomes a 1:1 `GeometryEntry`/`PlanTier`
-    /// pair (pushed BOTH-or-NEITHER, so `geometry()->entries` and `tiers` stay
-    /// positionally aligned - `residentAt`'s entry index maps into `tiers`), in
-    /// cache-major fastest-first order. The fold's prune is applied to the held
-    /// view - the pruned cells lose their entries before `openWriteBuffers`
-    /// upgrades the survivors in place (`[CF-plan-rebuild]`) - while a bypass
-    /// tier keeps its probed miss entries untouched (never written, no fetch or
-    /// write target). Records that are neither resident nor a populatable gap
-    /// are dropped - nothing to read or write; a kept view's hit read buffers
-    /// pin the resident segments and its upgraded miss entries hold the write
-    /// buffers.
-    for (size_t ci = 0; ci < caches.size(); ++ci)
-    {
-        for (auto & piece : pieces)
-        {
-            GeometryEntry & folded = piece.folded[ci];
-            if (folded.resident.empty() && folded.aligned_miss.empty())
-                continue;
-
-            CacheViewPtr view = piece.iterator->takeView(ci);
-            if (caches[ci]->populatesOnMiss())
-            {
-                const auto & kept = folded.aligned_miss;
-                size_t k = 0;
-                for (size_t i = 0; i < view->misses().size();)
-                {
-                    const ByteRange cell = view->misses()[i].range;
-                    const bool keep = k < kept.size() && kept[k].offset == cell.offset && kept[k].size == cell.size;
-                    if (keep)
-                    {
-                        ++i;
-                        ++k;
-                    }
-                    else
-                        view->dropMiss(i);
-                }
-                chassert(k == kept.size());
-                if (!view->misses().empty())
-                    caches[ci]->openWriteBuffers(piece.object, piece.object_file_offset, *view);
-            }
-
-            PlanTier plan_tier;
-            plan_tier.provider = caches[ci].get();
-            plan_tier.view = std::move(view);
-            geom->entries.push_back(std::move(folded));
-            plan.tiers.push_back(std::move(plan_tier));
-        }
-    }
+    emitObservation(caches, pieces, *geom, plan.tiers);
 
     chassert(geom->entries.size() == plan.tiers.size());
 
@@ -2595,6 +2605,93 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
 
     LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves",
+        read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
+        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
+}
+
+void ReaderExecutor::extendPlan(size_t position_phys)
+{
+    chassert(!machine);
+    const auto old_geom = read_plan.geometry();
+    chassert(old_geom && old_geom->plan_end > old_geom->plan_start);
+
+    const size_t old_end = old_geom->plan_end;
+    const size_t target_end = boundedPlanSpan(position_phys).end();
+    if (target_end <= old_end)
+        return;
+
+    stats.add(Stats::PlanExtensions);
+
+    auto pieces = observeSpan(caches, offset_map, ByteRange{old_end, target_end - old_end});
+
+    /// A cell straddling the old `plan_end` is already owned by an old entry's
+    /// view (its writer was opened there); the extension derives the same
+    /// absolute-grid cell and must not own it twice - a second `openWriteBuffers`
+    /// would alias the segment in two buffers. Overlap implies identity: cells
+    /// tile on the absolute grid and an existing segment reports its true extent.
+    VectorWithMemoryTracking<std::pair<CacheTier, ByteRange>> straddlers;
+    for (const auto & e : old_geom->entries)
+        for (const auto & c : e.aligned_miss)
+            if (c.end() > old_end)
+                straddlers.push_back({e.tier, c});
+    if (!straddlers.empty())
+    {
+        for (auto & piece : pieces)
+        {
+            for (size_t ci = 0; ci < caches.size(); ++ci)
+            {
+                auto & cells = piece.folded[ci].aligned_miss;
+                for (size_t i = cells.size(); i > 0; --i)
+                {
+                    for (const auto & [tier, owned] : straddlers)
+                    {
+                        if (tier == caches[ci]->tier()
+                            && cells[i - 1].offset < owned.end() && owned.offset < cells[i - 1].end())
+                        {
+                            chassert(cells[i - 1].offset == owned.offset && cells[i - 1].size == owned.size);
+                            cells.erase(cells.begin() + (i - 1));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Copy-on-extend: the published snapshot is immutable (workers co-own it),
+    /// so the extension publishes a NEW geometry - the old entries copied, the
+    /// extension's appended - while `read_plan.tiers` grows in the same order,
+    /// keeping the 1:1 positional mapping. Pressure is resampled per extension.
+    auto geom = std::make_shared<CoverageMap>();
+    geom->plan_start = old_geom->plan_start;
+    geom->plan_end = target_end;
+    geom->pressure_level = memoryPressureMonitor().currentLevel();
+    geom->entries = old_geom->entries;
+    emitObservation(caches, pieces, *geom, read_plan.tiers);
+    chassert(geom->entries.size() == read_plan.tiers.size());
+    read_plan.geometry_snapshot = std::move(geom);
+
+    /// The schedule is a pure function of the geometry - rebuild it over the
+    /// full extended span rather than splice at the boundary. Jobs wholly
+    /// behind the cursor are skipped by the launch frontier: the geometry
+    /// behind the cursor is stale for cells fetched since their observation,
+    /// and the display, not the schedule, is the execution truth there.
+    read_plan.schedule = buildSchedule(
+        *read_plan.geometry(),
+        effectiveWindowSize(read_plan.geometry()->pressure_level),
+        effectiveBlockSize(read_plan.geometry()->pressure_level));
+    feedScheduleToFetchTracker(read_plan.schedule);
+    read_plan.has_remote_retrieves = std::any_of(
+        read_plan.schedule.retrieves.begin(), read_plan.schedule.retrieves.end(),
+        [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
+    size_t frontier = 0;
+    while (frontier < read_plan.schedule.retrieves.size()
+        && read_plan.schedule.retrieves[frontier].range.end() <= position_phys)
+        ++frontier;
+    read_plan.launch_frontier = frontier;
+
+    LOG_TRACE(log, "extendPlan: extended [{}, {}) -> [{}, {}), {} entries, {} retrieves",
+        read_plan.geometry()->plan_start, old_end,
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
         read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
 }

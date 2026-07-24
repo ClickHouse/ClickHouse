@@ -681,6 +681,47 @@ private:
     /// replanning.
     bool planReachesEnd() const;
 
+    /// EXTEND: grow the live plan forward to the span a fresh plan at
+    /// `position_phys` would target, keeping the held buffers, the bank and the
+    /// fill-lane epoch. Observes only `[plan_end, target)`; publishes a NEW
+    /// geometry snapshot (copy-on-extend - the published snapshot stays
+    /// immutable) and rebuilds the schedule - a pure function of the geometry -
+    /// over the full extended span, with the launch frontier skipping jobs
+    /// wholly behind the cursor. Requires a live plan and no machine in flight
+    /// (the same barrier as a rebuild).
+    void extendPlan(size_t position_phys);
+
+    /// One object-piece of a residency observation: the per-tier probed views
+    /// (hit readers + miss entries, positional with `caches`) and the fold's
+    /// per-tier geometry.
+    struct PieceObservation
+    {
+        StoredObject object;
+        size_t object_file_offset = 0;
+        VectorWithMemoryTracking<CacheViewPtr> views;
+        VectorWithMemoryTracking<GeometryEntry> folded;
+    };
+
+    /// ONE read-only residency observation of `span`: per object-piece, the
+    /// chain iterator probes every tier (fastest first) and a forward `lookAt`
+    /// walk folds the per-position resolutions into the per-tier geometry.
+    static VectorWithMemoryTracking<PieceObservation> observeSpan(
+        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+        const OffsetMap & offset_map_,
+        ByteRange span);
+
+    /// Translate an observation into 1:1 `GeometryEntry`/`PlanTier` pairs
+    /// (pushed BOTH-or-NEITHER, cache-major fastest-first): the fold's prune is
+    /// applied to the held view before `openWriteBuffers` upgrades the
+    /// survivors in place (`[CF-plan-rebuild]`); a bypass tier keeps its probed
+    /// miss entries untouched; records that are neither resident nor a
+    /// populatable gap are dropped.
+    static void emitObservation(
+        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+        VectorWithMemoryTracking<PieceObservation> & pieces,
+        CoverageMap & geom,
+        VectorWithMemoryTracking<PlanTier> & tiers);
+
     /// Pin the partial segment under `frontier` from the first held write
     /// buffer whose `range` contains it and whose `pin` is non-null. Empty
     /// when nothing partial is there.

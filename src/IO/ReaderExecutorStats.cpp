@@ -34,6 +34,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorLongConnectionBytes;
     extern const Event ReaderExecutorObservations;
+    extern const Event ReaderExecutorPlanExtensions;
 }
 
 namespace DB
@@ -94,6 +95,7 @@ void ReaderExecutorStats::add(Counter c, UInt64 value)
         case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionFallbacks, value); break;
         case LongConnectionBytes:       ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionBytes, value); break;
         case Observations:              ProfileEvents::increment(ProfileEvents::ReaderExecutorObservations, value); break;
+        case PlanExtensions:            ProfileEvents::increment(ProfileEvents::ReaderExecutorPlanExtensions, value); break;
         case NumCounters:               break;
     }
 }

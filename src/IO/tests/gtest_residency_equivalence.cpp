@@ -491,6 +491,48 @@ TEST_F(ResidencyEquivalence, TwoTierFoldMatchesExecutorGeometry)
     expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/SEGMENT / 2, "two-tier");
 }
 
+/// The EXTEND gate: a sequential stream crossing `plan_end` grows the plan in
+/// place instead of rebuilding it. The unaligned start makes the cold miss
+/// cells straddle the (unaligned) plan end, so every extension also exercises
+/// the straddle-cell dedup against the old entries' writers; the retention cap
+/// bounds the held span, so full rebuilds still happen - just 3x plan-window
+/// apart instead of every window.
+TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
+{
+    auto fc = makeFileCache("extend_gate");
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makeDiskProvider(fc));
+
+    const size_t start = ALIGNMENT / 2;
+    const size_t want = FILE_SIZE - start;
+
+    auto src = std::make_shared<MemBoundedSource>(data);
+    ReaderExecutor executor(src, objects, std::move(caches), makeOptions());
+    executor.seek(start);
+
+    String served;
+    while (served.size() < want)
+    {
+        executor.setReadExtent(std::min(start + want, executor.getPosition() + WINDOW));
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            served.append(node.data(), node.size);
+    }
+    ASSERT_EQ(served.size(), want);
+    EXPECT_EQ(served, content.substr(start, want)) << "extended plans must serve the same bytes";
+
+    /// One observation per retention epoch (3x plan ceiling) instead of one per
+    /// plan window; the crossings in between are extensions.
+    const size_t ceiling = std::max(WINDOW, PLAN_WINDOW);
+    const size_t epochs = (want + 3 * ceiling - 1) / (3 * ceiling);
+    const auto obs = inspect(executor).observationCount();
+    const auto ext = inspect(executor).extensionCount();
+    EXPECT_LE(obs, epochs + 1) << "plan_end crossings must extend, not rebuild";
+    EXPECT_GE(ext, 2 * epochs - 2) << "extensions must carry the crossings between rebuilds";
+}
+
 /// Randomized layout matrix: deterministic pseudo-randomness on purpose.
 TEST_F(ResidencyEquivalence, RandomizedTwoTierMatrix)
 {
