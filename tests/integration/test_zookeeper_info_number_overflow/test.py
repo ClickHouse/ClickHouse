@@ -54,7 +54,10 @@ def test_zookeeper_info_number_overflow(started_cluster):
     assert (
         keeper.query(
             "SELECT zxid, node_count, packets_received, open_file_descriptor_count,"
-            " max_file_descriptor_count FROM system.zookeeper_info WHERE port = 9998"
+            " max_file_descriptor_count, snapshot_dir_size, log_dir_size,"
+            " last_log_idx, last_committed_idx"
+            " FROM system.zookeeper_info WHERE port = 9998"
         )
-        == "2147483648\t5\t3000000000\t100\t\\N\n"
+        == "2147483648\t5\t3000000000\t100\t\\N\t3000000000\t4000000000"
+        "\t5000000000\t5000000000\n"
     )

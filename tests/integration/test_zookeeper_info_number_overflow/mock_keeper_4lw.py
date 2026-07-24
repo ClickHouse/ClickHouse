@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""A fake Keeper four letter command endpoint which responds to `srvr` with
-`Zxid` above 2^31 - 1, as on a Keeper which has committed more than 2^31 - 1
-transactions."""
+"""A fake Keeper four letter command endpoint which responds to `mntr`,
+`srvr`, `dirs` and `lgif` with values above 2^31 - 1, as on a Keeper which has
+committed more than 2^31 - 1 transactions."""
 
 import socket
 
@@ -26,6 +26,20 @@ RESPONSES = {
         "Zxid: 0x80000000\n"
         "Mode: leader\n"
         "Node count: 5\n"
+    ),
+    b"dirs": (
+        "snapshot_dir_size: 3000000000\n"
+        "log_dir_size: 4000000000\n"
+    ),
+    b"lgif": (
+        "first_log_idx\t1\n"
+        "first_log_term\t1\n"
+        "last_log_idx\t5000000000\n"
+        "last_log_term\t1\n"
+        "last_committed_log_idx\t5000000000\n"
+        "leader_committed_log_idx\t5000000000\n"
+        "target_committed_log_idx\t5000000000\n"
+        "last_snapshot_idx\t2500000000\n"
     ),
 }
 
