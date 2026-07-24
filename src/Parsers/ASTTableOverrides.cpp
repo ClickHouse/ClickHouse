@@ -5,10 +5,16 @@
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTTableOverride::clone() const
 {
@@ -152,6 +158,21 @@ void ASTTableOverrideList::readJSON(const Poco::JSON::Object & json)
     for (size_t i = 0; i < children.size(); ++i)
     {
         auto & override = children[i]->as<ASTTableOverride &>();
+        /// `ParserTableOverridesDeclarationList` fills this list only through `setTableOverride`
+        /// with standalone overrides (`TABLE OVERRIDE name (...)`), so every parser-produced child
+        /// is standalone, has a non-empty name, and names never repeat (`setTableOverride` replaces
+        /// an existing entry instead of appending). A non-standalone child would format as a bare
+        /// `PARTITION BY` / `COLUMNS` clause after `CREATE DATABASE ...`, and a duplicate name would
+        /// format both entries while `tryGetTableOverride` only sees the last one.
+        if (!override.is_standalone)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TableOverrideList children must be standalone table overrides during AST JSON deserialization");
+        if (override.table_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TableOverrideList children must have a non-empty 'table_name' during AST JSON deserialization");
+        if (positions.contains(override.table_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Duplicate table override for table '{}' during AST JSON deserialization", override.table_name);
         positions[override.table_name] = i;
     }
 }

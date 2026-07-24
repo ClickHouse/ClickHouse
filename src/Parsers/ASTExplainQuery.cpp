@@ -63,6 +63,17 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
             if (getExplainedQuery())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "EXPLAIN TABLE OVERRIDE cannot carry an explained 'query' during AST JSON deserialization");
+            /// `ParserExplainQuery` parses the override with `ParserTableOverrideDeclaration(false)`,
+            /// so it is always the embedded form: not standalone and without a table name. A standalone
+            /// override would format as `EXPLAIN TABLE OVERRIDE <function> TABLE OVERRIDE name ...`,
+            /// which the SQL parser can never produce back.
+            {
+                const auto & override_ast = getTableOverride()->as<const ASTTableOverride &>();
+                if (override_ast.is_standalone || !override_ast.table_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXPLAIN TABLE OVERRIDE requires an embedded table override (not standalone, without "
+                        "'table_name') during AST JSON deserialization");
+            }
             break;
         case ExplainKind::CurrentTransaction:
             if (getExplainedQuery() || getTableFunction() || getTableOverride())
