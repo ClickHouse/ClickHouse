@@ -1,0 +1,306 @@
+---
+title: 'DataStore 구성'
+sidebarTitle: '개요'
+slug: /chdb/configuration
+description: 'DataStore 실행 엔진, 로깅, 캐싱, 프로파일링 및 Dtype 보정을 구성합니다'
+keywords: ['chdb', 'datastore', 'configuration', 'config', 'settings']
+doc_type: '참고'
+---
+
+DataStore는 실행 엔진 선택, 호환성 모드, 로깅, 캐싱, 프로파일링, Dtype 보정을 위한 다양한 구성 옵션을 제공합니다.
+
+<div id="quick-reference">
+  ## 빠른 참고
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Quick setup presets
+config.enable_debug()           # Enable verbose logging
+config.use_chdb()               # Force ClickHouse engine
+config.use_pandas()             # Force pandas engine
+config.use_auto()               # Auto-select engine (default)
+config.use_performance_mode()   # SQL-first, max throughput
+config.use_pandas_compat()      # Full pandas compatibility (default)
+config.enable_profiling()       # Enable performance profiling
+```
+
+<div id="all-options">
+  ## 모든 구성 옵션
+</div>
+
+| 범주        | 옵션                       | 값                                                      | 기본값                | 설명                       |
+| --------- | ------------------------ | ------------------------------------------------------ | ------------------ | ------------------------ |
+| **로깅**    | `log_level`              | DEBUG/INFO/WARNING/ERROR                               | WARNING            | 로그 상세도                   |
+|           | `log_format`             | &quot;simple&quot;, &quot;verbose&quot;                | &quot;simple&quot; | 로그 메시지 포맷                |
+| **캐시**    | `cache_enabled`          | True/False                                             | True               | 결과 캐싱 활성화                |
+|           | `cache_ttl`              | float (seconds)                                        | 0.0                | 캐시 TTL                   |
+| **엔진**    | `execution_engine`       | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | 실행 엔진                    |
+|           | `cross_datastore_engine` | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | Cross-DataStore 작업       |
+| **호환성**   | `compat_mode`            | &quot;pandas&quot;, &quot;performance&quot;            | &quot;pandas&quot; | Pandas 호환성 또는 SQL 우선 처리량 |
+| **프로파일링** | `profiling_enabled`      | True/False                                             | False              | 프로파일링 활성화                |
+| **Dtype** | `correction_level`       | NONE/CRITICAL/HIGH/MEDIUM/ALL                          | HIGH               | Dtype 보정 수준              |
+
+***
+
+<div id="methods">
+  ## 구성 방법
+</div>
+
+<div id="logging">
+  ### 로깅 구성
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+# Set log level
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Default
+config.set_log_level(logging.ERROR)
+
+# Set log format
+config.set_log_format("simple")   # Default
+config.set_log_format("verbose")  # More details
+
+# Quick enable debug mode
+config.enable_debug()  # Sets DEBUG level + verbose format
+```
+
+자세한 내용은 [로깅](/ko/chdb/debugging/logging)을 참조하세요.
+
+<div id="cache">
+  ### 캐시 구성
+</div>
+
+```python
+# Enable/disable caching
+config.set_cache_enabled(True)   # Default
+config.set_cache_enabled(False)  # Disable caching
+
+# Set cache TTL (time-to-live)
+config.set_cache_ttl(60.0)  # Cache expires after 60 seconds
+config.set_cache_ttl(0.0)   # No expiration (default)
+
+# Check current settings
+print(config.cache_enabled)
+print(config.cache_ttl)
+```
+
+<div id="engine">
+  ### 엔진 구성
+</div>
+
+```python
+# Set execution engine
+config.set_execution_engine('auto')    # Auto-select (default)
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Quick presets
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+
+# Cross-DataStore engine (for operations between different DataStores)
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+
+# Check current engine
+print(config.execution_engine)
+```
+
+자세한 내용은 [실행 엔진](/ko/chdb/configuration/execution-engine)을 참고하십시오.
+
+<div id="compat-mode">
+  ### 호환 모드
+</div>
+
+```python
+# Performance mode: SQL-first, no pandas compatibility overhead
+config.use_performance_mode()
+# or: config.set_compat_mode('performance')
+
+# Pandas compatibility mode (default)
+config.use_pandas_compat()
+# or: config.set_compat_mode('pandas')
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+자세한 내용은 [성능 모드](/ko/chdb/configuration/performance-mode)를 참조하십시오.
+
+<div id="profiling">
+  ### 프로파일링 구성
+</div>
+
+```python
+# Enable profiling
+config.enable_profiling()
+config.set_profiling_enabled(True)
+
+# Disable profiling
+config.set_profiling_enabled(False)
+
+# Check if profiling is enabled
+print(config.profiling_enabled)
+```
+
+자세한 내용은 [프로파일링](/ko/chdb/debugging/profiling)을 참조하십시오.
+
+<div id="dtype">
+  ### Dtype 보정
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+
+# Set correction level
+config.set_correction_level(CorrectionLevel.NONE)      # No correction
+config.set_correction_level(CorrectionLevel.CRITICAL)  # Critical types only
+config.set_correction_level(CorrectionLevel.HIGH)      # Default
+config.set_correction_level(CorrectionLevel.MEDIUM)    # More corrections
+config.set_correction_level(CorrectionLevel.ALL)       # All corrections
+```
+
+***
+
+<div id="config-object">
+  ## `config` 객체 사용
+</div>
+
+`config` 객체는 모든 설정을 관리하는 싱글턴입니다:
+
+```python
+from chdb.datastore.config import config
+
+# Read settings
+print(config.log_level)
+print(config.execution_engine)
+print(config.cache_enabled)
+print(config.profiling_enabled)
+
+# Modify settings
+config.set_log_level(logging.DEBUG)
+config.set_execution_engine('chdb')
+config.set_cache_enabled(False)
+config.enable_profiling()
+```
+
+***
+
+<div id="in-code">
+  ## 코드 내 구성
+</div>
+
+<div id="per-script">
+  ### 스크립트별 구성
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Configure at script start
+config.enable_debug()
+config.use_chdb()
+config.enable_profiling()
+
+# Your DataStore code
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+```
+
+<div id="context-manager">
+  ### Context Manager (향후)
+</div>
+
+```python
+# Planned feature: temporary configuration
+with config.override(execution_engine='pandas'):
+    result = ds.process()
+# Original settings restored
+```
+
+***
+
+<div id="scenarios">
+  ## 일반적인 구성 시나리오
+</div>
+
+<div id="dev-config">
+  ### 개발/디버깅
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+config.set_cache_enabled(False)  # Disable caching for fresh results
+```
+
+<div id="prod-config">
+  ### 운영 환경
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+config.set_log_level(logging.WARNING)  # Minimal logging
+config.set_execution_engine('auto')    # Optimal engine selection
+config.set_cache_enabled(True)         # Enable caching
+config.set_profiling_enabled(False)    # Disable profiling overhead
+```
+
+<div id="max-throughput-config">
+  ### 최대 처리량
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()    # SQL-first, no pandas overhead
+config.set_cache_enabled(False)  # Disable cache for streaming
+```
+
+<div id="perf-config">
+  ### 성능 테스트
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_chdb()            # Force ClickHouse for benchmarks
+config.enable_profiling()    # Track performance
+config.set_cache_enabled(False)  # Disable cache for accurate timing
+```
+
+<div id="compat-config">
+  ### Pandas 호환성 테스트
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_pandas()          # Force pandas engine
+config.enable_debug()        # See what operations are used
+```
+
+***
+
+<div id="related">
+  ## 관련 문서
+</div>
+
+* [실행 엔진](/ko/chdb/configuration/execution-engine) - 엔진 선택에 대한 자세한 내용
+* [성능 모드](/ko/chdb/configuration/performance-mode) - 최대 처리량을 위한 SQL 우선 모드
+* [함수 구성](/ko/chdb/configuration/function-config) - 함수별 엔진 구성
+* [로깅](/ko/chdb/debugging/logging) - 로깅 구성
+* [프로파일링](/ko/chdb/debugging/profiling) - 성능 프로파일링

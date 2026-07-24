@@ -114,7 +114,7 @@ ui_default_catalog = $database$
 
 前往 DB Connect App Configuration -&gt; Databases -&gt; Identities：为 ClickHouse 创建一个 Identity。
 
-在 Configuration -&gt; Databases -&gt; Connections 中新建一个到 ClickHouse 的 connection，并选择“New Connection”。
+在 Configuration -&gt; Databases -&gt; Connections 中新建一个到 ClickHouse 的连接，并选择“New Connection”。
 
 <Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Splunk DB Connect 新建连接按钮" />
 
@@ -122,9 +122,9 @@ ui_default_catalog = $database$
 
 添加 ClickHouse 主机详细信息，并确保已勾选“Enable SSL”：
 
-<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="ClickHouse 的 Splunk connection 配置页面" />
+<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="ClickHouse 的 Splunk 连接配置页面" />
 
-保存该 connection 后，即表示已成功将 Splunk 连接到 ClickHouse！
+保存该连接后，即表示已成功将 Splunk 连接到 ClickHouse！
 
 <Note>
   如果收到错误，请确保已将 Splunk 实例的 IP 地址添加到 ClickHouse Cloud IP Access List。更多信息请参阅[文档](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
@@ -136,7 +136,7 @@ ui_default_catalog = $database$
 
 现在我们将运行一条 SQL 查询，测试一切是否正常。
 
-在 DB Connect App 的 DataLab 部分中，前往 SQL Explorer 并选择你的连接信息。这里我们使用 `trips` 表进行演示：
+在 DB Connect App 的 DataLab 部分中，在 SQL Explorer 里选择你的连接信息。这里我们使用 `trips` 表进行演示：
 
 <Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="在 Splunk SQL Explorer 中选择到 ClickHouse 的连接" />
 

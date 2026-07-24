@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Retool'
 slug: /integrations/retool
-keywords: ['clickhouse', 'retool', 'connect', 'integrate', 'ui', 'admin', 'panel', 'dashboard', 'nocode', 'no-code']
-description: '優れたユーザーインターフェイスを備えた Web アプリやモバイルアプリをすばやく構築し、複雑なタスクを自動化して、AI を統合できます。すべてはデータを基盤に動作します。'
+keywords: ['ClickHouse', 'Retool', '接続', '連携', 'UI', '管理者', 'パネル', 'ダッシュボード', 'ノーコード', 'no-code']
+description: '高度なユーザーインターフェイスを備えた Web アプリやモバイルアプリをすばやく構築し、複雑なタスクを自動化して、AI をインテグレーションできます。すべてをデータで支援します。'
 title: 'Retool を ClickHouse に接続する'
 doc_type: 'guide'
 integration:
@@ -17,45 +17,43 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続の詳細を収集する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ClickHouse リソースを作成する" id="2-create-a-clickhouse-resource">
+    Retool アカウントにログインし、*Resources* タブに移動します。次に、「Create New」-&gt;「Resource」を選択します。
 
-<div id="2-create-a-clickhouse-resource">
-  ## 2. ClickHouse リソースを作成する
-</div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="新しいリソースの作成" />
 
-Retool アカウントにログインし、*Resources* タブに移動します。次に、「Create New」-&gt;「Resource」を選択します。
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="新しいリソースの作成" />
+    使用可能なコネクタの一覧から「JDBC」を選択します。
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="JDBC コネクタの選択" />
 
-使用可能なコネクタの一覧から「JDBC」を選択します。
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="JDBC コネクタの選択" />
+    セットアップウィザードで、「Driver name」に `com.clickhouse.jdbc.ClickHouseDriver` が選択されていることを確認します。
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="適切なドライバーの選択" />
 
-セットアップウィザードで、「Driver name」に `com.clickhouse.jdbc.ClickHouseDriver` が選択されていることを確認します。
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="適切なドライバーの選択" />
+    次の形式で ClickHouse の認証情報を入力します。`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`
+    インスタンスで SSL が必要な場合、または ClickHouse Cloud を使用している場合は、接続文字列に `&ssl=true` を追加して、`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true` のようにします。
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="認証情報の指定" />
 
-次の形式で ClickHouse の認証情報を入力します。`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`
-インスタンスで SSL が必要な場合、または ClickHouse Cloud を使用している場合は、接続文字列に `&ssl=true` を追加して、`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true` のようにします。
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="認証情報の指定" />
+    その後、接続をテストします。
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="接続のテスト" />
 
-その後、接続をテストします。
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="接続のテスト" />
-
-<br />
-
-これで、ClickHouse リソースを使用してアプリの操作を進められるようになります。
+    これで、ClickHouse リソースを使用してアプリの操作を進められるようになります。
+  </Step>
+</Steps>

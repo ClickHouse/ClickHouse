@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
@@ -17,7 +17,7 @@ import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> est une plateforme d’intégration de données en temps réel spécialisée dans le Change Data Capture (CDC) en continu et le traitement de flux. Elle repose sur une stack évolutive à haut débit basée sur Apache Kafka, Apache Flink et Debezium, proposée sous forme de service entièrement géré dans des déploiements SaaS ou BYOC (Bring your own Cloud).
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> est une plateforme d’intégration de données en temps réel spécialisée dans la capture des changements de données (CDC) en continu et le traitement de flux. Elle repose sur une stack évolutive à haut débit basée sur Apache Kafka, Apache Flink et Debezium, proposée sous forme de service entièrement géré dans des déploiements SaaS ou BYOC (Bring your own Cloud).
 
 Streamkap vous permet de répliquer en continu chaque insert, mise à jour et suppression depuis des bases de données sources comme PostgreSQL, MySQL, SQL Server, MongoDB et <a href="https://streamkap.com/connectors" target="_blank">d’autres</a> directement vers ClickHouse avec une latence de l’ordre de la milliseconde.
 
@@ -49,52 +49,46 @@ Ce guide présente les grandes lignes de la configuration d’un pipeline Stream
 </div>
 
 * Un <a href="https://app.streamkap.com/account/sign-up" target="_blank">compte Streamkap</a>.
-* Les informations de connexion à votre cluster ClickHouse : nom d’hôte, port, nom d’utilisateur et mot de passe.
-* Une base de données source (par ex. PostgreSQL, SQL Server) configurée pour autoriser la CDC. Vous trouverez des guides de configuration détaillés dans la documentation de Streamkap.
+* Les informations de connexion de votre cluster ClickHouse : nom d’hôte, port, nom d’utilisateur et mot de passe.
+* Une base de données source (par exemple, PostgreSQL, SQL Server) configurée pour autoriser la CDC. Vous trouverez des guides de configuration détaillés dans la documentation Streamkap.
 
-<div id="configure-clickhouse-source">
-  ### Étape 1 : Configurer la source dans Streamkap
-</div>
+<Steps>
+  <Step title="Configurer la source dans Streamkap" id="configure-clickhouse-source">
+    1. Connectez-vous à votre compte Streamkap.
+    2. Dans la barre latérale, accédez à **Connectors** et sélectionnez l’onglet **Sources**.
+    3. Cliquez sur **+ Add** et sélectionnez le type de votre base de données source (par exemple, SQL Server RDS).
+    4. Renseignez les informations de connexion, notamment l’endpoint, le port, le nom de la base de données et les identifiants utilisateur.
+    5. Enregistrez le connecteur.
+  </Step>
 
-1. Connectez-vous à votre compte Streamkap.
-2. Dans la barre latérale, accédez à **Connectors** et sélectionnez l’onglet **Sources**.
-3. Cliquez sur **+ Add** et sélectionnez le type de votre base de données source (par exemple, SQL Server RDS).
-4. Renseignez les informations de connexion, notamment l’endpoint, le port, le nom de la base de données et les identifiants de l’utilisateur.
-5. Enregistrez le connecteur.
+  <Step title="Configurer la destination ClickHouse" id="configure-clickhouse-dest">
+    1. Dans la section **Connectors**, sélectionnez l’onglet **Destinations**.
+    2. Cliquez sur **+ Add**, puis choisissez **ClickHouse** dans la liste.
+    3. Saisissez les informations de connexion de votre service ClickHouse :
+       * **Nom d’hôte :** l’hôte de votre instance ClickHouse (par exemple, `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port :** le port HTTPS sécurisé, généralement `8443`
+       * **Nom d’utilisateur et mot de passe :** les identifiants de votre utilisateur ClickHouse
+       * **Base de données :** le nom de la base de données cible dans ClickHouse
+    4. Enregistrez la destination.
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### Étape 2 : Configurer la destination ClickHouse
-</div>
+  <Step title="Créer et exécuter le pipeline" id="run-pipeline">
+    1. Accédez à **Pipelines** dans la barre latérale et cliquez sur **+ Create**.
+    2. Sélectionnez la source et la destination que vous venez de configurer.
+    3. Choisissez les schémas et les tables que vous souhaitez diffuser en continu.
+    4. Donnez un nom à votre pipeline et cliquez sur **Save**.
 
-1. Dans la section **Connectors**, sélectionnez l’onglet **Destinations**.
-2. Cliquez sur **+ Add**, puis choisissez **ClickHouse** dans la liste.
-3. Saisissez les informations de connexion de votre service ClickHouse :
-   * **Nom d’hôte :** l’hôte de votre instance ClickHouse (par exemple, `abc123.us-west-2.aws.clickhouse.cloud`)
-   * **Port :** le port HTTPS sécurisé, généralement `8443`
-   * **Nom d’utilisateur et mot de passe :** les identifiants de votre utilisateur ClickHouse
-   * **Base de données :** le nom de la base de données cible dans ClickHouse
-4. Enregistrez la destination.
+    Une fois créé, le pipeline devient actif. Streamkap effectue d’abord un instantané des données existantes, puis commence à diffuser en continu toutes les nouvelles modifications au fur et à mesure qu’elles surviennent.
+  </Step>
 
-<div id="run-pipeline">
-  ### Étape 3 : Créer et démarrer le pipeline
-</div>
+  <Step title="Vérifier les données dans ClickHouse" id="verify-data-clickhoouse">
+    Connectez-vous à votre cluster ClickHouse et exécutez une requête pour voir les données arriver dans la table cible.
 
-1. Accédez à **Pipelines** dans la barre latérale, puis cliquez sur **+ Create**.
-2. Sélectionnez la source et la destination que vous venez de configurer.
-3. Choisissez les schémas et les tables que vous souhaitez répliquer en continu.
-4. Donnez un nom à votre pipeline, puis cliquez sur **Save**.
-
-Une fois créé, le pipeline sera actif. Streamkap commencera d’abord par prendre un instantané des données existantes, puis se mettra à répliquer en continu les nouvelles modifications au fur et à mesure qu’elles surviennent.
-
-<div id="verify-data-clickhoouse">
-  ### Étape 4 : Vérifier les données dans ClickHouse
-</div>
-
-Connectez-vous à votre cluster ClickHouse et exécutez une requête pour vérifier l’arrivée des données dans la table cible.
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## Fonctionnement avec ClickHouse

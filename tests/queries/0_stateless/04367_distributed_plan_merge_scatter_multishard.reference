@@ -1,0 +1,19 @@
+Expression ((Project names + Projection))
+  MergingAggregated
+    ReadFromMerge
+      GatherExchange
+        Expression
+          Aggregating
+            ShuffleExchange
+              Expression (Before GROUP BY)
+                Filter
+                  ReadFromMergeTree (default.base107946_1)
+      GatherExchange
+        Expression
+          Aggregating
+            ShuffleExchange
+              Expression (Before GROUP BY)
+                Filter
+                  ReadFromMergeTree (default.base107946_4)
+100000
+50000

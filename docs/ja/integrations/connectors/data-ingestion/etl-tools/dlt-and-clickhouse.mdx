@@ -30,9 +30,7 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step>
-    ### dlt プロジェクトを初期化する
-
+  <Step title="dlt プロジェクトを初期化する" id="1-initialize-the-dlt-project">
     まず、次のように新しい `dlt` プロジェクトを初期化します。
 
     ```bash
@@ -52,9 +50,7 @@ pip install "dlt[clickhouse]"
     または `pip install dlt[clickhouse]` を使用することもできます。これにより、`dlt` ライブラリと、ClickHouse を宛先として使用するために必要な依存関係がインストールされます。
   </Step>
 
-  <Step>
-    ### ClickHouse データベースをセットアップする
-
+  <Step title="ClickHouse データベースをセットアップする" id="2-setup-clickhouse-database">
     データを ClickHouse に読み込むには、ClickHouse データベースを作成する必要があります。大まかな手順は次のとおりです。
 
     1. 既存の ClickHouse データベースを使用するか、新しく作成します。
@@ -72,9 +68,7 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step>
-    ### 認証情報を追加する
-
+  <Step title="認証情報を追加する" id="3-add-credentials">
     次に、以下のように `.dlt/secrets.toml` ファイルで ClickHouse の認証情報を設定します。
 
     ```bash
@@ -88,7 +82,7 @@ pip install "dlt[clickhouse]"
     secure = 1                               # HTTPS を使用する場合は 1、それ以外は 0 に設定します。
 
     [destination.clickhouse]
-    dataset_table_separator = "___"          # dataset から生成される dataset テーブル名の区切り文字。
+    dataset_table_separator = "___"          # データセット から生成される データセット テーブル名の区切り文字。
     ```
 
     <Info>
@@ -96,9 +90,9 @@ pip install "dlt[clickhouse]"
 
       `http_port` パラメーターは、ClickHouse サーバーの HTTP インターフェイスに接続する際に使用するポート番号を指定します。これは、ネイティブ TCP プロトコルで使用されるデフォルトの 9000 番ポートとは異なります。
 
-      外部 staging を使用しない場合 (つまり、パイプラインで staging パラメーターを設定しない場合) は、`http_port` を設定する必要があります。これは、組み込みの ClickHouse ローカルストレージ staging で、HTTP 経由で ClickHouse と通信する <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse-connect</a> ライブラリが使用されるためです。
+      外部 ステージング を使用しない場合 (つまり、パイプラインで ステージング パラメーターを設定しない場合) は、`http_port` を設定する必要があります。これは、組み込みの ClickHouse ローカルストレージ ステージング で、HTTP 経由で ClickHouse と通信する <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse content</a> ライブラリが使用されるためです。
 
-      ClickHouse サーバーが、`http_port` で指定したポートで HTTP 接続を受け付けるよう設定されていることを確認してください。たとえば、`http_port = 8443` を設定した場合、ClickHouse は 8443 番ポートで HTTP リクエストを待ち受けている必要があります。外部 staging を使用している場合は、このケースでは clickhouse-connect は使用されないため、`http_port` パラメーターは省略できます。
+      ClickHouse サーバーが、`http_port` で指定したポートで HTTP 接続を受け付けるよう設定されていることを確認してください。たとえば、`http_port = 8443` を設定した場合、ClickHouse は 8443 番ポートで HTTP リクエストを待ち受けている必要があります。外部 ステージング を使用している場合は、このケースでは clickhouse-connect は使用されないため、`http_port` パラメーターは省略できます。
     </Info>
 
     `clickhouse-driver` ライブラリで使われるものと同様のデータベース接続文字列を渡すこともできます。上記の認証情報は次のようになります。

@@ -720,6 +720,18 @@ SELECT * FROM system.metrics LIMIT 10
 
 Количество запросов INSERT, ограничиваемых по скорости из-за большого числа активных частей данных в партиции таблицы MergeTree.
 
+<div id="deletebitmapcachebytes">
+  ### DeleteBitmapCacheBytes
+</div>
+
+Суммарный размер кэша delete-битмап для UNIQUE KEY в байтах
+
+<div id="deletebitmapcacheentries">
+  ### DeleteBitmapCacheEntries
+</div>
+
+Общее количество кэшированных битмапов удаления для UNIQUE KEY
+
 <div id="deltalakesnapshotcachesizeelements">
   ### DeltaLakeSnapshotCacheSizeElements
 </div>
@@ -1037,6 +1049,24 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 Элементы файлового кэша (сегменты файлов)
+
+<div id="filesystemcacheevictionthreads">
+  ### FilesystemCacheEvictionThreads
+</div>
+
+Количество потоков в фоновом пуле вытеснения (удаления) файлового кэша
+
+<div id="filesystemcacheevictionthreadsactive">
+  ### FilesystemCacheEvictionThreadsActive
+</div>
+
+Количество потоков в фоновом пуле вытеснения файлового кэша, которые выполняют задачу
+
+<div id="filesystemcacheevictionthreadsscheduled">
+  ### FilesystemCacheEvictionThreadsScheduled
+</div>
+
+Количество задач в очереди или выполняющихся задач в пуле фонового вытеснения файлового кэша
 
 <div id="filesystemcacheholdfilesegments">
   ### FilesystemCacheHoldFileSegments
@@ -1482,6 +1512,12 @@ SELECT * FROM system.metrics LIMIT 10
 
 Количество задач в очереди или выполняющихся задач в пуле потоков для чтения на сервере Keeper. Эта метрика не имеет смысла: фактические задачи чтения в этом пуле потоков планируются другим механизмом.
 
+<div id="keeperttlnodes">
+  ### KeeperTTLNodes
+</div>
+
+Количество узлов с заданным TTL, которые сейчас хранятся в Keeper.
+
 <div id="licenseremainingseconds">
   ### LicenseRemainingSeconds
 </div>
@@ -1571,6 +1607,18 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 Максимальная DDL-запись DDLWorker, отправленная в ZooKeeper.
+
+<div id="memoryreservationapproved">
+  ### MemoryReservationApproved
+</div>
+
+Общее количество байтов, в настоящее время выделенных (одобренных) для резервирования памяти
+
+<div id="memoryreservationdemand">
+  ### Потребность в резервировании памяти
+</div>
+
+Общее количество байтов в ещё не выполненных запросах на увеличение резервирования памяти
 
 <div id="memorytracking">
   ### MemoryTracking
@@ -2087,6 +2135,24 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 Количество асинхронных вставок, ожидающих сброса.
+
+<div id="pointinpolygoncachebytes">
+  ### PointInPolygonCacheBytes
+</div>
+
+Размер в байтах кэша предварительно обработанных константных полигонов для функции `pointInPolygon`
+
+<div id="pointinpolygoncachecells">
+  ### PointInPolygonCacheCells
+</div>
+
+Количество предварительно обработанных константных полигонов в кэше функции `pointInPolygon`
+
+<div id="pointinpolygoncachesizelimit">
+  ### PointInPolygonCacheSizeLimit
+</div>
+
+Максимальный размер в байтах для кэша предварительно обработанных константных полигонов функции `pointInPolygon` (используемое значение настройки сервера `point_in_polygon_cache_size`)
 
 <div id="polygondictionarythreads">
   ### PolygonDictionaryThreads
@@ -2927,6 +2993,24 @@ materialized view Number с периодическим обновлением (R
 </div>
 
 Число созданных временных файлов
+
+<div id="udfdriverinvokerthreads">
+  ### UDFDriverInvokerThreads
+</div>
+
+Количество потоков в пулах потоков, обслуживающих пайпы команд драйвера исполняемых UDF.
+
+<div id="udfdriverinvokerthreadsactive">
+  ### UDFDriverInvokerThreadsActive
+</div>
+
+Количество активных потоков в пулах потоков, обслуживающих пайпы команд драйвера исполняемых UDF.
+
+<div id="udfdriverinvokerthreadsscheduled">
+  ### UDFDriverInvokerThreadsScheduled
+</div>
+
+Количество задач в очереди или в работе в пулах потоков, обслуживающих пайпы команд драйвера исполняемых UDF.
 
 <div id="uncompressedcachebytes">
   ### UncompressedCacheBytes
