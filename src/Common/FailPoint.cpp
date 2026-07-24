@@ -133,6 +133,8 @@ static struct InitFiu
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
     ONCE(framing_throw_after_writing_packet) \
+    ONCE(framing_pump_logs_throw) \
+    ONCE(framing_throw_after_final_progress) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \

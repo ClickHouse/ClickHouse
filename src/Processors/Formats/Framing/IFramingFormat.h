@@ -156,6 +156,15 @@ private:
     /// nothing more. Returns false when it is safe to proceed.
     bool failClosedAfterPartialWrite();
 
+    /// Runs a step that emits bytes to `out`, with `writing` set for its duration (see `writing`).
+    template <typename Step>
+    void emitToOut(Step && step)
+    {
+        writing = true;
+        step();
+        writing = false;
+    }
+
     WriteBufferFromOwnString payload;
 
     std::shared_ptr<InternalTextLogsQueue> logs_queue;
@@ -173,14 +182,20 @@ private:
 
     bool finalized = false;
 
-    /// Set while a packet is being written to `out`, and cleared once the write completes. The public
-    /// methods (`onPayload`, `onProgress`, `finalize`) are serialized by `IOutputFormat` and never
-    /// nested (see the class comment), so entering one with this flag already set means a previous write
-    /// threw partway through - after some bytes may already have reached the socket. We then fail closed
-    /// (see `failClosedAfterPartialWrite`): a half-written packet is on the wire and the exception
-    /// recovery path retries `finalize`; re-emitting the buffered payload or the tail packets would
-    /// append a well-formed-looking duplicate after the truncated packet and corrupt the stream. Failing
-    /// closed lets the error terminate the already-broken stream instead.
+    /// Set only while bytes are being emitted to `out` (a packet write, `finalizeImpl`, or a flush),
+    /// and cleared once that emission completes. The public methods (`onPayload`, `onProgress`,
+    /// `finalize`) are serialized by `IOutputFormat` and never nested (see the class comment), so
+    /// entering one with this flag already set means a previous emission threw partway through - after
+    /// some bytes may already have reached the socket. We then fail closed (see
+    /// `failClosedAfterPartialWrite`): a half-written packet is on the wire and the exception recovery
+    /// path retries `finalize`; re-emitting the buffered payload or the tail packets would append a
+    /// well-formed-looking duplicate after the truncated packet and corrupt the stream. Failing closed
+    /// lets the error terminate the already-broken stream instead.
+    ///
+    /// Deliberately NOT set around the non-emitting work between packet writes (draining the log and
+    /// profile-events queues and building their blocks): a throw there leaves no partial packet on the
+    /// wire, so the recovery re-entry of `finalize` must still deliver the terminal framed `exception`
+    /// packet instead of failing closed.
     bool writing = false;
 };
 
