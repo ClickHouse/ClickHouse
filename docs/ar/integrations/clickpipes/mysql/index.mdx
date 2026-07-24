@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'استيراد البيانات من MySQL إلى ClickHouse'
-description: 'استورِد البيانات بسلاسة من قاعدة بيانات MySQL أو MariaDB إلى ClickHouse Cloud.'
+sidebarTitle: 'إدخال البيانات من MySQL إلى ClickHouse'
+description: 'أدخِل البيانات بسلاسة من قاعدة بيانات MySQL أو MariaDB إلى ClickHouse Cloud.'
 slug: /integrations/clickpipes/mysql
-title: 'استيراد البيانات من MySQL إلى ClickHouse (باستخدام CDC)'
+title: 'إدخال البيانات من MySQL إلى ClickHouse (باستخدام CDC)'
 doc_type: 'guide'
 keywords: ['MySQL', 'ClickPipes', 'CDC', 'التقاط تغييرات البيانات', 'النسخ المتماثل لقاعدة البيانات']
 integration:
@@ -13,14 +13,15 @@ integration:
 import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
 <Info>
-  استيراد البيانات من MySQL إلى ClickHouse Cloud عبر ClickPipes متاح حاليًا في الإصدار التجريبي العام.
+  إدخال البيانات من MySQL إلى ClickHouse Cloud عبر ClickPipes متاح حاليًا في الإصدار التجريبي العام.
 </Info>
 
-يوفّر MySQL ClickPipe طريقة مُدارة بالكامل وموثوقة لاستيراد البيانات من قواعد بيانات MySQL وMariaDB إلى ClickHouse Cloud. وهو يدعم كلاً من **التحميلات المجمّعة** للاستيراد لمرة واحدة و**التقاط تغيّر البيانات (CDC)** للاستيراد المستمر.
+يوفّر MySQL ClickPipe طريقة مُدارة بالكامل وموثوقة لإدخال البيانات من قواعد بيانات MySQL وMariaDB إلى ClickHouse Cloud. وهو يدعم كلاً من **عملية تحميل مجمّع** للإدخال لمرة واحدة و**التقاط تغيّر البيانات (CDC)** للإدخال المستمر.
 
 يمكن نشر MySQL ClickPipes وإدارتها يدويًا باستخدام واجهة ClickPipes، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
@@ -75,11 +76,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 4. املأ تفاصيل الاتصال لقاعدة بيانات MySQL المصدر التي أعددتها في خطوة المتطلبات الأساسية.
 
 <Info>
-  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح بقواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips).
+  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج ClickPipes IP addresses في قائمة السماح بقواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين ClickPipes IP addresses](/ar/integrations/clickpipes/home#list-of-static-ips).
   لمزيد من المعلومات، راجع أدلة إعداد MySQL المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (اختياري) تغيير إعدادات TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (اختياري) إعداد نفق SSH
@@ -114,6 +121,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **حجم دفعة السحب**: عدد الصفوف التي سيتم جلبها في دفعة واحدة. هذا إعداد يُطبَّق بأفضل جهد، وقد لا تتم مراعاته في جميع الحالات.
 * **عدد الصفوف لكل partition في اللقطة**: هذا هو عدد الصفوف التي سيتم جلبها في كل partition أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الصفوف في جداولك وتريد التحكم في عدد الصفوف التي يتم جلبها في كل partition.
 * **عدد الجداول في اللقطة بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
+* **معرّف الخادم**: مَعلمة اختيارية لتعيين معرّف الخادم لنسخ MySQL المتماثل عبر binlog. إذا لم يتم تعيينه، فسينشئ ClickPipes معرّف خادم عشوائيًا قد يتغير على مدار دورة حياة ClickPipe. استخدمه لتحديد ClickPipe الخاص بك بشكل حتمي على جانب خادم MySQL المصدر.
 
 <div id="configure-the-tables">
   ### إعداد الجداول
@@ -123,7 +131,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="اختيار قاعدة البيانات الوجهة" size="lg" border />
 
-6. يمكنك اختيار الجداول التي تريد نسخها من قاعدة بيانات MySQL المصدرية. وأثناء اختيار الجداول، يمكنك أيضًا إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، بالإضافة إلى استبعاد أعمدة محددة.
+6. يمكنك اختيار الجداول التي تريد نسخها من قاعدة بيانات MySQL المصدر. وأثناء اختيار الجداول، يمكنك أيضًا إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، بالإضافة إلى استبعاد أعمدة محددة.
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### راجع الأذونات وابدأ ClickPipe

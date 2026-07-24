@@ -21,9 +21,7 @@ Querio é um espaço de trabalho de análises e inteligência de negócios com I
 </div>
 
 <Steps>
-  <Step>
-    ### Crie um usuário dedicado
-
+  <Step title="Crie um usuário dedicado" id="create-dedicated-user">
     Como prática recomendada de segurança, crie uma conta de usuário dedicada exclusivamente ao Querio, com os privilégios mínimos necessários:
 
     ```sql
@@ -35,9 +33,7 @@ Querio é um espaço de trabalho de análises e inteligência de negócios com I
     </Tip>
   </Step>
 
-  <Step>
-    ### Conceda acesso somente leitura ao banco de dados
-
+  <Step title="Conceda acesso somente leitura ao banco de dados" id="grant-read-only-access">
     Limite as permissões do Querio apenas aos bancos de dados e tabelas que ele precisa consultar:
 
     ```sql
@@ -53,9 +49,7 @@ Querio é um espaço de trabalho de análises e inteligência de negócios com I
     Repita esse processo para cada banco de dados ao qual o Querio precisar de acesso.
   </Step>
 
-  <Step>
-    ### Reúna as informações de conexão
-
+  <Step title="Reúna as informações de conexão" id="gather-connection-details">
     Para conectar o Querio ao ClickHouse, você precisará das seguintes informações de conexão:
 
     | Parâmetro  | Descrição                                                                 |
@@ -98,5 +92,5 @@ Depois de conectar o Querio ao ClickHouse, você pode explorar e analisar seus d
   ## Recursos adicionais
 </div>
 
-* [Documentação do Querio](https://docs.querio.ai/integrations/clickhouse)
+* [Documentação do Querio](https://docs.querio.ai/)
 * [Guias introdutórios e tutoriais do Querio](https://www.querio.ai)

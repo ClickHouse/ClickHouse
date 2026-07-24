@@ -26,17 +26,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### شغّل ClickHouse Agents
-
+  <Step title="شغّل ClickHouse Agents" id="launch-agents">
     من خدمة Cloud الخاصة بك، انقر على **ClickHouse agents** في الشريط الجانبي الأيسر لفتح صفحة إطلاق الوكلاء. ثم انقر على **Launch ClickHouse agents** لفتح Agent Builder.
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="تنقّل خدمة Cloud مع تحديد ClickHouse agents (Beta)، مع ظهور صفحة الإطلاق التي تتضمن زر Launch ClickHouse agents" size="lg" />
   </Step>
 
-  <Step>
-    ### أنشئ الوكيل
-
+  <Step title="أنشئ الوكيل" id="create-the-agent">
     في Agent Builder، انقر على **Create New Agent** أعلى اللوحة اليسرى. ثم املأ الحقول الأساسية:
 
     * **Name** - معرّف قصير لوكيلك.
@@ -48,9 +44,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="لوحة Agent Builder تعرض القائمة المنسدلة Create New Agent، وحقول النموذج (Name وDescription وCategory وInstructions وModel)، وقسم Capabilities" size="lg" />
   </Step>
 
-  <Step>
-    ### أضف الإمكانات والأدوات
-
+  <Step title="أضف الإمكانات والأدوات" id="attach-tools">
     توجد إمكانات الوكيل وأدواته في موضعين.
 
     **Capabilities** في اللوحة الرئيسية — ميزات أصلية مثل [Run Code](/ar/products/cloud/features/ai-ml/agents/builder/code-interpreter)، و[Web Search](/ar/products/cloud/features/ai-ml/agents/builder/web-search)، وFile Context، وArtifacts، و[MCP Servers](/ar/products/cloud/features/ai-ml/agents/builder/mcp-servers)، و[Skills](/ar/products/cloud/features/ai-ml/agents/builder/skills). فعّل ما يحتاجه الوكيل منها.
@@ -70,9 +64,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يمكنك تغيير الإمكانات والأدوات المضافة في أي وقت.
   </Step>
 
-  <Step>
-    ### شغّل استعلام
-
+  <Step title="شغّل استعلامًا" id="run-a-query">
     احفظ الوكيل، وافتح conversation جديدة، ثم اختر وكيلك من أداة اختيار الوكيل. اكتب سؤالًا — على سبيل المثال، *&quot;ما أكثر 10 جداول لديّ من حيث عدد الصفوف هذا الأسبوع؟&quot;* — وسيضع الوكيل خطة، ويستدعي الأدوات عند الحاجة، ثم يعرض الإجابة.
 
     <Image img="/images/cloud/agent-builder/chat-query.webp" alt="محادثة تعرض السؤال 'What are my top 10 tables by row count this week?' وردّ الوكيل — جدول Markdown يرتّب أفضل 10 جداول عبر الخدمات حسب عدد الصفوف، مع Key Observations في الأسفل" size="lg" />
@@ -83,5 +75,5 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الخطوات التالية
 </div>
 
-* [شارك الوكيل](/ar/products/cloud/features/ai-ml/agents/sharing-and-access) مع زملائك.
+* [شارِك الوكيل](/ar/products/cloud/features/ai-ml/agents/sharing-and-access) مع زملائك في الفريق.
 * انشره في [السوق](/ar/products/cloud/features/ai-ml/agents/marketplace) بمجرد أن يصبح الوكيل مستقرًا.
