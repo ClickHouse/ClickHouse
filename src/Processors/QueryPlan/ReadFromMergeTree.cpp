@@ -4984,8 +4984,12 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 
     for (const auto & column_name : removed_columns)
     {
+        /// `removed_columns` are filter-DAG inputs no longer needed after the text-search predicate was
+        /// rewritten. They live in the filter expression namespace and may be derived nodes (e.g.
+        /// `mapValues(attributes)`) that are not physical read columns, so a name can be absent here.
         auto it = std::ranges::find(all_column_names, column_name);
-        all_column_names.erase(it);
+        if (it != all_column_names.end())
+            all_column_names.erase(it);
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
