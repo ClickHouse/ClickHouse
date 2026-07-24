@@ -16,10 +16,11 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
 
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/scope_guard_safe.h>
@@ -42,15 +43,14 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// `MergingSortedTransform` is supposed to consume virtual rows.
-/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual rows before output,
-/// otherwise they can reach downstream steps and cause issues, both because the attached conversions are valid only for the current step
-/// and because the virtual rows are empty chunks that some downstream transforms (e.g. `LimitTransform` with `WITH TIES`) do not expect.
+/// MergingSortedTransform supposed to consume virtual row
+/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual row before output,
+/// otherwise it can reach downstream steps and cause issues because of conversions are valid only for current step.
 class RemoveVirtualRowTransform : public ISimpleTransform
 {
 public:
     explicit RemoveVirtualRowTransform(SharedHeader header)
-        : ISimpleTransform(header, header, /*skip_empty_chunks=*/ true)
+        : ISimpleTransform(header, header, false)
     {
     }
 
@@ -58,13 +58,6 @@ public:
 
     void transform(Chunk & chunk) override
     {
-        if (isVirtualRow(chunk))
-        {
-            /// Drop the virtual row entirely: it was a marker for the merging algorithm,
-            /// and there is no merging in this branch (single stream), so it has no downstream purpose.
-            chunk.clear();
-            return;
-        }
         chunk.getChunkInfos().extract<MergeTreeReadInfo>();
     }
 
@@ -344,7 +337,36 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        scatterByPartition(pipeline, threads, key_columns);
+        pipeline.transform([&](const OutputPortRawPtrs & ports)
+        {
+            Processors processors;
+            for (auto * port : ports)
+            {
+                auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
+                connect(*port, scatter->getInputs().front());
+                processors.push_back(scatter);
+            }
+            return processors;
+        });
+
+        if (streams > 1)
+        {
+            pipeline.transform([&](const OutputPortRawPtrs & ports)
+            {
+                Processors processors;
+                for (size_t i = 0; i < threads; ++i)
+                {
+                    size_t output_it = i;
+                    auto resize = std::make_shared<ResizeProcessor>(stream_header, streams, 1);
+                    auto & inputs = resize->getInputs();
+
+                    for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
+                        connect(*ports[output_it], *input_it);
+                    processors.push_back(resize);
+                }
+                return processors;
+            });
+        }
     }
 }
 
@@ -673,15 +695,11 @@ void SortingStep::serialize(Serialization & ctx) const
 
     serializeSortDescription(result_description, ctx.out);
 
-    /// A non-empty partition_by_description means "sort within streams already partitioned by these
-    /// columns" (used for window functions). For an empty description this writes a single 0, which is
-    /// byte-compatible with the previous format that wrote `partition_by_description.size()`.
-    serializeSortDescription(partition_by_description, ctx.out);
-}
+    /// Later
+    if (!partition_by_description.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
 
-QueryPlanStepPtr SortingStep::clone() const
-{
-    return std::make_unique<SortingStep>(*this);
+    writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
@@ -694,12 +712,11 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    SortDescription partition_by_description;
-    deserializeSortDescription(partition_by_description, ctx.in);
+    UInt64 partition_desc_size = 0;
+    readVarUInt(partition_desc_size, ctx.in);
 
-    if (!partition_by_description.empty())
-        return std::make_unique<SortingStep>(
-            ctx.input_headers.front(), result_description, partition_by_description, 0, std::move(sort_settings));
+    if (partition_desc_size)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
 
     return std::make_unique<SortingStep>(
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));

@@ -1,8 +1,11 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- Window functions can be executed under make_distributed_plan=1: WindowStep is serialized for
--- remote execution and produces the same result as the non-distributed plan.
+-- Window functions can be executed under make_distributed_plan=1: WindowStep is serialized for remote
+-- execution and produces the same result as the non-distributed plan. Only windows whose feeding sort
+-- is serializable (no PARTITION BY) can be distributed for now; a PARTITION BY window is rejected (see
+-- the fail-close assertion at the end) because its partitioned sort cannot preserve per-partition order
+-- across the exchange yet.
 
 DROP TABLE IF EXISTS t_window_dist;
 
@@ -12,15 +15,17 @@ INSERT INTO t_window_dist SELECT number % 5, number FROM numbers(20);
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0;
 
-SELECT '-- sum OVER (PARTITION BY)';
-SELECT a, v, sum(v) OVER (PARTITION BY a) AS s FROM t_window_dist ORDER BY a, v;
+SELECT '-- sum OVER (ORDER BY)';
+SELECT v, sum(v) OVER (ORDER BY v) AS s FROM t_window_dist ORDER BY v;
 
-SELECT '-- row_number with ORDER BY';
-SELECT a, v, row_number() OVER (PARTITION BY a ORDER BY v) AS rn FROM t_window_dist ORDER BY a, v;
+SELECT '-- row_number OVER (ORDER BY)';
+SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v;
 
 SELECT '-- rolling frame (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)';
-SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll
-FROM t_window_dist ORDER BY a, v;
+SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v;
+
+SELECT '-- PARTITION BY window is not serializable for remote execution yet -> fail closed';
+SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_window_dist;
 

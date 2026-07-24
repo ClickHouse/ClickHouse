@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Core/SortDescription.h>
-
-#include <optional>
 
 
 namespace DB
@@ -13,12 +10,8 @@ namespace DB
 class GatherSendStep final : public IQueryPlanStep
 {
 public:
-    GatherSendStep(
-        SharedHeader input_header_,
-        const String & exchange_id_,
-        std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
+    GatherSendStep(SharedHeader input_header_, const String & exchange_id_)
         : exchange_id(exchange_id_)
-        , maintain_sort_description(std::move(maintain_sort_description_))
     {
         updateInputHeaders({std::move(input_header_)});
     }
@@ -38,10 +31,6 @@ private:
     void updateOutputHeader() override {}
 
     const String exchange_id;
-
-    /// When set, the incoming per-partition streams must be merged (not just collapsed) so the single
-    /// stream sent through the exchange stays globally sorted. Mirrors `GatherReceiveStep`.
-    const std::optional<SortDescription> maintain_sort_description;
 };
 
 }
