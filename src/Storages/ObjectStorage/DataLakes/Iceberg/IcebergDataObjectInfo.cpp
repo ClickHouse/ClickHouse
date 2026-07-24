@@ -139,6 +139,18 @@ ObjectInfoPtr IcebergDataObjectInfo::clone() const
     return result;
 }
 
+bool hasIcebergEqualityDeletes(const ObjectInfoPtr & object_info)
+{
+    const auto * iceberg = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+    return iceberg && !iceberg->info.equality_deletes_objects.empty();
+}
+
+bool hasIcebergPositionDeletes(const ObjectInfoPtr & object_info)
+{
+    const auto * iceberg = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+    return iceberg && !iceberg->info.position_deletes_objects.empty();
+}
+
 #endif
 
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const

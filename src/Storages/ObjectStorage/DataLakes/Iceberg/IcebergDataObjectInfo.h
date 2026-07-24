@@ -97,6 +97,11 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
+
+/// Equality deletes need real column values — disable need_only_count / count-from-files cache.
+bool hasIcebergEqualityDeletes(const ObjectInfoPtr & object_info);
+/// Position-delete attachment changes independently of data-file identity — skip count-from-files cache.
+bool hasIcebergPositionDeletes(const ObjectInfoPtr & object_info);
 }
 
 #endif

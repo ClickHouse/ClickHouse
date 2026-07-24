@@ -767,7 +767,12 @@ Chunk StorageObjectStorageSource::generate()
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo())
             && !hasNonEmptyExcludedRows(reader.getObjectInfo()->data_lake_metadata)
-            && !reader.getObjectInfo()->file_bucket_info)
+            && !reader.getObjectInfo()->file_bucket_info
+#if USE_AVRO
+            && !hasIcebergEqualityDeletes(reader.getObjectInfo())
+            && !hasIcebergPositionDeletes(reader.getObjectInfo())
+#endif
+            )
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -961,12 +966,27 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// Iceberg while DVs change independently).
     /// Also skip when file_bucket_info is set: the cache key is file identity only, while bucketed tasks
     /// only cover a subset of row groups.
+    /// Also skip when Iceberg equality/position deletes are attached: ConstChunkGenerator skips
+    /// `addDeleteTransformers`, and the cache key does not include delete-file identity.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
-    const bool can_use_count_cache = need_only_count && !headers_requested
+#if USE_AVRO
+    const bool has_iceberg_equality_deletes = hasIcebergEqualityDeletes(object_info);
+    const bool has_iceberg_position_deletes = hasIcebergPositionDeletes(object_info);
+#else
+    const bool has_iceberg_equality_deletes = false;
+    const bool has_iceberg_position_deletes = false;
+#endif
+
+    /// Equality deletes filter by column values; need_only_count emits default-filled chunks.
+    const bool effective_need_only_count = need_only_count && !has_iceberg_equality_deletes;
+
+    const bool can_use_count_cache = effective_need_only_count && !headers_requested
         && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         && !hasNonEmptyExcludedRows(object_info->data_lake_metadata)
-        && !object_info->file_bucket_info;
+        && !object_info->file_bucket_info
+        && !has_iceberg_equality_deletes
+        && !has_iceberg_position_deletes;
 
     std::optional<size_t> num_rows_from_cache = can_use_count_cache ? try_get_num_rows_from_cache() : std::nullopt;
 
@@ -1165,7 +1185,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info,
                 true /* is_remote_fs */,
                 compression_method,
-                need_only_count,
+                effective_need_only_count,
                 std::nullopt /*min_block_size_bytes*/,
                 std::nullopt /*min_block_size_rows*/,
                 std::nullopt /*max_block_size_bytes*/);
@@ -1183,13 +1203,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             filter_info,
             true /* is_remote_fs */,
             compression_method,
-            need_only_count);
+            effective_need_only_count);
         }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
-        if (need_only_count)
+        if (effective_need_only_count)
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));

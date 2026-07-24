@@ -407,6 +407,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<size_t> total_equality_deletes;
 
     if (snapshot_object->has(f_summary))
     {
@@ -421,6 +422,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_total_equality_deletes))
+            total_equality_deletes = summary_object->getValue<Int64>(f_total_equality_deletes);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -434,7 +438,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         schema_id,
         total_rows,
         total_bytes,
-        total_position_deletes);
+        total_position_deletes,
+        total_equality_deletes);
 }
 
 IcebergDataSnapshotPtr
@@ -1140,6 +1145,10 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return 0;
     }
 
+    /// Equality deletes remove data rows by value match; summary `total-equality-deletes` counts
+    /// rows in delete files, not deleted data rows. Fail closed — do not shortcut COUNT.
+    if (actual_data_snapshot->total_equality_delete_rows.value_or(0) > 0)
+        return {};
 
     /// Row counts stored in the metadata layers above the manifest files are not used as
     /// data sources, because writers derive them instead of measuring them against the data:

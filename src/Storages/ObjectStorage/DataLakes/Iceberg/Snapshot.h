@@ -23,6 +23,9 @@ struct IcebergDataSnapshot
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
+    /// Rows in equality-delete files (snapshot summary). Not a count of deleted data rows;
+    /// used only to fail closed trivial COUNT when equality deletes are present.
+    std::optional<size_t> total_equality_delete_rows;
 
     std::optional<size_t> getTotalRows() const
     {
