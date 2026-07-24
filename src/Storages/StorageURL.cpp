@@ -147,6 +147,7 @@ namespace
         }
         catch (...)
         {
+            /// Ok: Non-DB exceptions never affect system error counters.
         }
     }
 

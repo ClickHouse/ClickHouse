@@ -73,7 +73,7 @@ void recordUnexpectedMemoryMetricException(std::exception_ptr exception)
     }
     catch (...)
     {
-        /// Non-DB exceptions never affect system error counters.
+        /// Ok: Non-DB exceptions never affect system error counters.
     }
 }
 
