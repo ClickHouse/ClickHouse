@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
@@ -17,7 +17,7 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> 是一个实时数据集成平台，专注于流式 CDC (变更数据捕获) 和流处理。它基于 Apache Kafka、Apache Flink 和 Debezium 构建，具备高吞吐和可扩展性，并以 SaaS 或 BYOC (自备 Cloud) 部署模式提供全托管服务。
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> 是一个实时数据集成平台，专注于流式 CDC (变更数据捕获) 和流处理。它基于 Apache Kafka、Apache Flink 和 Debezium 构建，具备高吞吐和可扩展性，并以 SaaS 或 BYOC (自备 Cloud) 部署模式提供全托管服务。
 
 Streamkap 支持将 PostgreSQL、MySQL、SQL Server、MongoDB 等源数据库中的每一次插入、更新和删除直接实时流式传输到 ClickHouse，延迟可低至毫秒级。支持的数据源还有<a href="https://streamkap.com/connectors" target="_blank">更多</a>。
 
@@ -49,52 +49,46 @@ Streamkap 支持将 PostgreSQL、MySQL、SQL Server、MongoDB 等源数据库中
 </div>
 
 * 一个 <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap 账户</a>。
-* 你的 ClickHouse 集群连接信息：主机名、端口、用户名和密码。
+* 你的 ClickHouse cluster 连接信息：Hostname、Port、Username 和 Password。
 * 一个已配置为允许 CDC 的源数据库 (例如 PostgreSQL、SQL Server) 。你可以在 Streamkap 文档中找到详细的设置指南。
 
-<div id="configure-clickhouse-source">
-  ### 第 1 步：在 Streamkap 中配置源
-</div>
+<Steps>
+  <Step title="在 Streamkap 中配置源" id="configure-clickhouse-source">
+    1. 登录你的 Streamkap 账户。
+    2. 在侧边栏中，前往 **Connectors** 并选择 **Sources** 选项卡。
+    3. 点击 **+ Add**，然后选择你的源数据库类型 (例如 SQL Server RDS) 。
+    4. 填写连接信息，包括端点、端口、数据库名称和用户凭据。
+    5. 保存 connector。
+  </Step>
 
-1. 登录你的 Streamkap 账户。
-2. 在侧边栏中，前往 **Connectors**，然后选择 **Sources** 选项卡。
-3. 点击 **+ Add**，然后选择源 database 类型 (例如 SQL Server RDS) 。
-4. 填写连接信息，包括端点、端口、database 名称以及用户凭据。
-5. 保存该 connector。
+  <Step title="配置 ClickHouse 目标端" id="configure-clickhouse-dest">
+    1. 在 **Connectors** 部分，选择 **Destinations** 选项卡。
+    2. 点击 **+ Add**，然后从列表中选择 **ClickHouse**。
+    3. 输入你的 ClickHouse 服务连接信息：
+       * **Hostname：** 你的 ClickHouse 实例主机名 (例如 `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port：** 安全的 HTTPS 端口，通常为 `8443`
+       * **Username and Password：** 你的 ClickHouse 用户名和密码
+       * **Database：** ClickHouse 中目标数据库的名称
+    4. 保存目标端。
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### 第 2 步：配置 ClickHouse 目标端
-</div>
+  <Step title="创建并运行管道" id="run-pipeline">
+    1. 在侧边栏中前往 **Pipelines**，然后点击 **+ Create**。
+    2. 选择你刚刚配置的源和目标端。
+    3. 选择你希望进行流式传输的 schema 和表。
+    4. 为你的管道命名，然后点击 **Save**。
 
-1. 在 **Connectors** 部分，选择 **Destinations** 选项卡。
-2. 点击 **+ Add**，然后从列表中选择 **ClickHouse**。
-3. 输入你的 ClickHouse 服务连接信息：
-   * **Hostname：** 你的 ClickHouse 实例主机名 (例如 `abc123.us-west-2.aws.clickhouse.cloud`) 
-   * **Port：** 安全的 HTTPS 端口，通常为 `8443`
-   * **Username and Password：** 你的 ClickHouse 用户名和密码
-   * **Database：** ClickHouse 中目标数据库的名称
-4. 保存目标端。
+    创建后，管道将变为活动状态。Streamkap 会先对现有数据执行一次 snapshot，然后开始流式传输后续发生的所有新变更。
+  </Step>
 
-<div id="run-pipeline">
-  ### 第 3 步：创建并运行管道
-</div>
+  <Step title="在 ClickHouse 中验证数据" id="verify-data-clickhoouse">
+    连接到你的 ClickHouse cluster，并运行查询以查看写入目标表的数据。
 
-1. 在侧边栏中前往 **Pipelines**，然后点击 **+ 创建**。
-2. 选择您刚刚配置的 源 和目标端。
-3. 选择您要进行流式传输的 schema 和表。
-4. 为管道命名，然后点击 **保存**。
-
-创建后，管道将立即激活。Streamkap 会先对现有数据进行一次快照，然后开始流式传输后续产生的新变更。
-
-<div id="verify-data-clickhoouse">
-  ### 第 4 步：在 ClickHouse 中验证数据
-</div>
-
-连接到你的 ClickHouse 集群，并运行查询以查看写入目标表的数据。
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## 与 ClickHouse 的工作方式

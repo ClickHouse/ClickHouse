@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+導入バージョン: v26.7.0
+
+Naive Bayes Dictionary ([`NAIVE_BAYES`](/ja/reference/statements/create/dictionary/layouts/naive-bayes) レイアウト) と同じトークン化方式でテキストを N-gram に分割します。`byte`、`codepoint`、`token` モードに対応し、必要に応じて境界パディングも指定できます。これを使うと、その Dictionary が取り込む事前集計済みの `(ngram, class_id, count)` 学習データを作成できるため、学習用 N-gram を [`naiveBayesClassifier`](/ja/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) がクエリ時に生成するものと完全に一致させられます。
+
+**構文**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**引数**
+
+* `text` — N-gram に分割するテキスト。[`String`](/ja/reference/data-types/string)
+* `n` — N-gram のサイズ。1 ～ 1024。[`const UInt`](/ja/reference/data-types/int-uint)
+* `mode` — トークン化モード: &#39;byte&#39;、&#39;codepoint&#39;、または &#39;token&#39;。[`const String`](/ja/reference/data-types/string)
+* `start_token` — 任意。入力の先頭に境界トークンを (n-1) 回追加します。&#39;byte&#39;/&#39;codepoint&#39; では数値、&#39;token&#39; ではリテラルです。空文字列の場合、パディングは行われません。[`const String`](/ja/reference/data-types/string)
+* `end_token` — 任意。入力の末尾に境界トークンを (n-1) 回追加します。[`const String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+入力テキストの N-gram。[`Array(String)`](/ja/reference/data-types/array)
+
+**例**
+
+**トークンのバイグラム**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**境界パディング付きトークンバイグラム**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**境界パディング付きバイトバイグラム (結果は16進数で表示)&#x20;**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**境界パディング付きのコードポイントバイグラム (結果は16進数で表示)&#x20;**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>
@@ -302,7 +370,7 @@ splitByChar(separator, s[, max_substrings])
 
 **戻り値**
 
-選択された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
+抽出された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -364,7 +432,7 @@ SELECT splitByNonAlpha('user@domain.com');
 導入バージョン: v21.6.0
 
 指定された正規表現で区切られた文字列を、部分文字列の配列に分割します。
-指定された正規表現が空の場合、文字列は1文字ごとの配列に分割されます。
+指定された正規表現が空の場合、文字列は1文字ずつの配列に分割されます。
 正規表現に一致する箇所が見つからない場合、文字列は分割されません。
 
 次の場合、空の部分文字列が選択されることがあります。
@@ -374,7 +442,7 @@ SELECT splitByNonAlpha('user@domain.com');
 * 正規表現が空でなく、元の文字列 string が空の場合。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string)  (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -505,7 +573,7 @@ splitByWhitespace(s[, max_substrings])
 
 **戻り値**
 
-`s` から選択された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
+`s` から抽出された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
 
 **例**
 

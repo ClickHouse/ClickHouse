@@ -14,8 +14,16 @@ import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 Les services ClickHouse Managed Postgres peuvent être créés et gérés à l’aide de la ressource `clickhouse_postgres_service` du [fournisseur Terraform ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). Cette page présente la configuration du fournisseur ainsi que des exemples de configuration pour cette ressource et les sources de données associées.
 
 <Note>
-  Cette ressource est en alpha et son comportement peut évoluer dans les prochaines versions du fournisseur. Elle est incluse dans le build standard du fournisseur et disponible à partir de la version **v3.17.1** du fournisseur — consultez les [releases du fournisseur](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) pour plus de détails.
+  Cette ressource est en alpha et son comportement peut évoluer dans les prochaines versions du fournisseur. Elle est incluse dans le build standard du fournisseur. Cette page documente la version **v3.21.0** du fournisseur et les versions ultérieures, qui ont modifié la gestion des identifiants ; les versions antérieures se comportent différemment et, depuis le 31 juillet 2026, ne fonctionnent plus correctement. Consultez les [releases du fournisseur](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) pour plus de détails.
 </Note>
+
+<Warning>
+  **Mettez à niveau vers le fournisseur v3.21.0 avant le 31 juillet 2026**
+
+  Depuis le **31 juillet 2026**, l’API Managed Postgres ne renvoie plus le mot de passe du superutilisateur ni la chaîne de connexion dans ses réponses ; les identifiants ne sont renvoyés que lors de la création d’un service ou de la réinitialisation de son mot de passe. Les versions du fournisseur **v3.21.0 et ultérieures** fonctionnent de manière identique avant et après ce changement. Les anciennes versions du fournisseur dépendent du fait que l’API renvoie les identifiants : depuis le 31 juillet 2026, elles ne renseignent plus `connection_string`, et un service créé sans `password` déclaré aboutit alors que le mot de passe généré n’est jamais récupéré.
+
+  Mettez à niveau avant le 31 juillet 2026. Votre état migre automatiquement lors du premier plan ou apply avec v3.21.0. Si l’un de vos services s’appuie sur un mot de passe généré par le serveur (pas de `password` dans la configuration), récupérez-le d’abord avec `terraform state pull` et déclarez-le, car v3.21.0 exige `password` ou `password_wo` pour un service standard.
+</Warning>
 
 <div id="provider-setup">
   ## Configuration du fournisseur
@@ -28,7 +36,7 @@ terraform {
   required_providers {
     clickhouse = {
       source  = "ClickHouse/clickhouse"
-      version = ">= 3.17.1"
+      version = ">= 3.21.0"
     }
   }
 }
@@ -48,25 +56,27 @@ Consultez [Gérer les clés API](/fr/products/cloud/features/admin-features/api/
 
 La ressource `clickhouse_postgres_service` accepte les arguments suivants :
 
-| Argument                   | Requis                     | Description                                                                                                                                                                                                |
-| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                     | Oui                        | Nom du service lisible par un humain. Immuable — le modifier détruit et recrée le service.                                                                                                                 |
-| `cloud_provider`           | Pour une création standard | Fournisseur Cloud hébergeant l’instance. Actuellement, seul `aws` est pris en charge. À omettre pour une réplique de lecture ou une restauration à un instant donné (hérité de la source).                 |
-| `region`                   | Pour une création standard | Région Cloud (par exemple, `us-east-1`). À omettre pour une réplique de lecture ou une restauration à un instant donné (hérité de la source).                                                              |
-| `size`                     | Pour une création standard | Taille de l’instance (SKU de VM), par exemple `m6gd.large`. Redimensionnable sur place. À omettre pour une restauration à un instant donné (l’instance restaurée démarre avec la taille de la sauvegarde). |
-| `postgres_version`         | Non                        | Version majeure de Postgres (par exemple, `18`). Modifier la version majeure détruit et recrée le service.                                                                                                 |
-| `ha_type`                  | Non                        | Mode de haute disponibilité : `none`, `async` ou `sync`. Voir [Haute disponibilité](#high-availability).                                                                                                   |
-| `password`                 | Non                        | Mot de passe du superutilisateur. Omettez-le pour que le serveur en génère un. Stocké dans l’état (sensible).                                                                                              |
-| `pg_config`                | Non                        | Paramètres du serveur Postgres sous forme de mappage clé-valeur.                                                                                                                                           |
-| `pgbouncer_config`         | Non                        | Paramètres du pooler de connexions PgBouncer sous forme de mappage clé-valeur.                                                                                                                             |
-| `tags`                     | Non                        | Tags de la ressource sous forme de mappage clé-valeur.                                                                                                                                                     |
-| `read_replica_of`          | Non                        | ID d’un service principal à répliquer. Voir [Répliques de lecture](#read-replicas). Mutuellement exclusif avec `restore_to_point_in_time`.                                                                 |
-| `restore_to_point_in_time` | Non                        | Crée le service en restaurant un autre service à un instant donné. Voir [Restauration à un instant donné](#point-in-time-restore). Mutuellement exclusif avec `read_replica_of`.                           |
+| Argument                   | Requis                                                       | Description                                                                                                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                     | Oui                                                          | Nom du service lisible par un humain. Immuable — le modifier détruit et recrée le service.                                                                                                                                                                                       |
+| `cloud_provider`           | Pour une création standard                                   | Fournisseur Cloud hébergeant l’instance. Actuellement, seul `aws` est pris en charge. À omettre pour une réplique de lecture ou une restauration à un instant donné (hérité de la source).                                                                                       |
+| `region`                   | Pour une création standard                                   | Région Cloud (par exemple, `us-east-1`). À omettre pour une réplique de lecture ou une restauration à un instant donné (hérité de la source).                                                                                                                                    |
+| `size`                     | Pour une création standard                                   | Taille de l’instance (SKU de VM), par exemple `m6gd.large`. Redimensionnable sur place. À omettre pour une restauration à un instant donné (l’instance restaurée démarre avec la taille de la sauvegarde).                                                                       |
+| `postgres_version`         | Non                                                          | Version majeure de Postgres (par exemple, `18`). Modifier la version majeure détruit et recrée le service.                                                                                                                                                                       |
+| `ha_type`                  | Non                                                          | Mode de haute disponibilité : `none`, `async` ou `sync`. Voir [Haute disponibilité](#high-availability).                                                                                                                                                                         |
+| `password`                 | Pour une création standard, sauf si `password_wo` est défini | Mot de passe du superutilisateur, géré depuis votre configuration. Terraform ne le relit jamais depuis l’API. Stocké dans l’état (sensible). À omettre pour une réplique de lecture (hérité) ou une restauration à un instant donné (conservé à partir de la sauvegarde source). |
+| `password_wo`              | Pour une création standard, sauf si `password` est défini    | Mot de passe du superutilisateur en écriture seule : appliqué au service, mais jamais stocké dans l’état. Nécessite `password_wo_version` ; nécessite Terraform 1.11 ou une version ultérieure.                                                                                  |
+| `password_wo_version`      | Avec `password_wo`                                           | Numéro de version de `password_wo`. Modifiez-le pour faire pivoter la valeur actuelle de `password_wo`.                                                                                                                                                                          |
+| `pg_config`                | Non                                                          | Paramètres du serveur Postgres sous forme de mappage clé-valeur.                                                                                                                                                                                                                 |
+| `pgbouncer_config`         | Non                                                          | Paramètres du pooler de connexions PgBouncer sous forme de mappage clé-valeur.                                                                                                                                                                                                   |
+| `tags`                     | Non                                                          | Tags de la ressource sous forme de mappage clé-valeur.                                                                                                                                                                                                                           |
+| `read_replica_of`          | Non                                                          | ID d’un service principal à répliquer. Voir [Répliques de lecture](#read-replicas). Mutuellement exclusif avec `restore_to_point_in_time`.                                                                                                                                       |
+| `restore_to_point_in_time` | Non                                                          | Crée le service en restaurant un autre service à un instant donné. Voir [Restauration à un instant donné](#point-in-time-restore). Mutuellement exclusif avec `read_replica_of`.                                                                                                 |
 
-Les attributs suivants sont en lecture seule et sont renseignés par ClickHouse Cloud après la création : `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, `username` et `connection_string` (sensible).
+Les attributs suivants sont en lecture seule et sont renseignés par ClickHouse Cloud après la création : `id`, `state`, `created_at`, `is_primary`, `hostname`, `port` et `username`. Il n’existe pas d’attribut `connection_string` (supprimé dans la v3.21.0) : construisez les URI de connexion à partir de `hostname`, `port`, `username` et du mot de passe que vous déclarez, par exemple `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
 
 <Warning>
-  Le `password` est stocké en texte brut dans votre état Terraform. Protégez votre fichier d’état en conséquence — par exemple, utilisez un backend distant avec chiffrement au repos. Si vous omettez `password`, le serveur en génère un et le fournisseur le relit dans l’état à chaque actualisation.
+  Le `password` est stocké en texte brut dans votre état Terraform. Protégez votre fichier d’état en conséquence, par exemple avec un backend distant utilisant le chiffrement au repos, ou utilisez `password_wo` pour que le mot de passe ne figure plus du tout dans l’état.
 </Warning>
 
 <div id="create-a-service">
@@ -79,6 +89,7 @@ resource "clickhouse_postgres_service" "example" {
   cloud_provider = "aws"
   region         = "us-east-1"
   size           = "m6gd.large"
+  password       = var.postgres_password
 
   # High-availability mode — number of standby replicas:
   #   "none"  – primary only, no standby (default)
@@ -93,7 +104,7 @@ resource "clickhouse_postgres_service" "example" {
 }
 ```
 
-Pour gérer vous-même le mot de passe, définissez `password` — il doit contenir au moins 12 caractères, dont au moins une lettre minuscule, une lettre majuscule et un chiffre. Si vous l’omettez, le serveur en génère un.
+Un service standard doit déclarer `password` ou `password_wo`. La valeur doit contenir au moins 12 caractères, dont au moins une lettre minuscule, une lettre majuscule et un chiffre. `password_wo` (avec `password_wo_version`) applique les mêmes règles de mot de passe, mais n’est jamais stocké dans l’état ; modifiez `password_wo_version` pour effectuer la rotation. Comme l’API ne renvoie pas les identifiants, Terraform doit rester le seul à définir le mot de passe : un mot de passe dont la rotation est effectuée en dehors de Terraform (console ou API) n’est pas détecté, et la rotation suivante pilotée par Terraform réapplique la valeur déclarée.
 
 <div id="high-availability">
   ## Haute disponibilité
@@ -169,11 +180,13 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## Importation de services existants
 </div>
 
-Les services Managed Postgres existants peuvent être importés dans l’état Terraform à l’aide de l’ID du service. Le mot de passe est restauré lors de l’importation — le serveur le renvoie via `GET` :
+Les services Managed Postgres existants peuvent être importés dans l’état Terraform à l’aide de l’ID du service :
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+L’importation ne restaure pas le mot de passe (l’API ne le renvoie pas). Après l’importation, le premier apply fait passer le service au `password` ou `password_wo` déclaré dans votre configuration.
 
 <div id="unsupported-operations">
   ## Opérations non prises en charge
