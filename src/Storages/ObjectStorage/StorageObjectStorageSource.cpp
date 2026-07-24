@@ -765,7 +765,8 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo()))
+            && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo())
+            && !hasNonEmptyExcludedRows(reader.getObjectInfo()->data_lake_metadata))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -954,11 +955,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
     /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
+    /// Also skip when excluded_rows is present: ConstChunkGenerator bypasses DeletionVectorTransform, and the
+    /// schema row-count cache key does not include deletion-vector identity (data files are immutable under
+    /// Iceberg while DVs change independently).
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
-    std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
-        ? try_get_num_rows_from_cache() : std::nullopt;
+    const bool can_use_count_cache = need_only_count && !headers_requested
+        && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        && !hasNonEmptyExcludedRows(object_info->data_lake_metadata);
+
+    std::optional<size_t> num_rows_from_cache = can_use_count_cache ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
     {
@@ -1186,9 +1192,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
-        if (object_info->data_lake_metadata
-            && object_info->data_lake_metadata->excluded_rows
-            && object_info->data_lake_metadata->excluded_rows->size() > 0)
+        if (hasNonEmptyExcludedRows(object_info->data_lake_metadata))
         {
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
