@@ -48,7 +48,7 @@ String VersionInfo::readMetadataString(ReadBuffer & buf)
     /// "content is larger than the cap", regardless of what the on-disk file size claims.
     while (content.size() <= MAX_METADATA_SIZE && !buf.eof())
     {
-        char c;
+        char c = 0;
         readChar(c, buf);
         content.push_back(c);
     }
