@@ -238,12 +238,15 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
-    /// Effective max request size in bytes: the smaller of client config and server-advertised applies; 0 == unlimited.
+    /// Effective enforced max request size: min of client config and server limit, clamped to the int32 hard limit; never 0.
     UInt64 getMaxRequestSize() const
     {
-        if (args.max_request_size != 0 && keeper_max_request_size != 0)
-            return std::min(args.max_request_size, keeper_max_request_size);
-        return args.max_request_size != 0 ? args.max_request_size : keeper_max_request_size;
+        UInt64 limit = Coordination::MAX_REQUEST_SIZE_HARD_LIMIT;
+        if (args.max_request_size != 0)
+            limit = std::min(limit, args.max_request_size);
+        if (keeper_max_request_size != 0)
+            limit = std::min(limit, keeper_max_request_size);
+        return limit;
     }
 
     int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
@@ -389,6 +392,11 @@ private:
 
     void initFeatureFlags();
     void initMaxRequestSize();
+
+    /// Whether a serialized request of this size fits getMaxRequestSize.
+    bool checkRequestSize(size_t request_size) const { return request_size <= getMaxRequestSize(); }
+    /// Rejection details shared by the throw in `pushRequest` and the log in `sendThread`.
+    String formatRequestSizeExceeded(size_t request_size, const ZooKeeperRequest & request) const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;

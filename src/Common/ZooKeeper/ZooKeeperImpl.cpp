@@ -844,22 +844,12 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
                         static_cast<int32_t>(err), err);
 }
 
-namespace
+String ZooKeeper::formatRequestSizeExceeded(size_t request_size, const ZooKeeperRequest & request) const
 {
-
-/// Shared by the pre-check in `pushRequest` (lower-bound size) and the exact check in `sendThread` (wire size).
-void assertRequestSizeIsValid(size_t request_size, size_t max_request_size, const ZooKeeperRequest & request)
-{
-    const size_t limit = (max_request_size == 0 || max_request_size > MAX_REQUEST_SIZE_HARD_LIMIT)
-        ? MAX_REQUEST_SIZE_HARD_LIMIT : max_request_size;
-    if (request_size <= limit)
-        return;
-
-    throw Exception(Error::ZBADARGUMENTS,
-        "Request size {} exceeds limit {} (max_request_size = {}), request: {}",
-        request_size, limit, max_request_size, request.toString(/*short_format=*/true));
-}
-
+    return fmt::format(
+        "Request size {} exceeds limit {} (client max_request_size = {}, server max_request_size = {}), request: {}",
+        request_size, getMaxRequestSize(), args.max_request_size, keeper_max_request_size,
+        request.toString(/*short_format=*/true));
 }
 
 void ZooKeeper::sendThread()
@@ -947,25 +937,22 @@ void ZooKeeper::sendThread()
                     if (info.request->add_root_path)
                         info.request->addRootPath(args.chroot);
 
-                    /// Final size check: rejection fails only this request, session intact.
-                    try
+                    /// Final exact-size check: reject only this request, session intact (no alloc/IO here, so any exception would be a bug).
+                    size_t wire_size = sizeof(int32_t) + info.request->requestSize(use_xid_64);
+                    if (pass_opentelemetry_tracing_context)
                     {
-                        size_t wire_size = sizeof(int32_t) + info.request->requestSize(use_xid_64);
-                        if (pass_opentelemetry_tracing_context)
+                        ++wire_size;
+                        if (info.request->tracing_context)
                         {
-                            ++wire_size;
-                            if (info.request->tracing_context)
-                            {
-                                DB::NullWriteBuffer counter;
-                                info.request->tracing_context->serialize(counter);
-                                wire_size += counter.count();
-                            }
+                            DB::NullWriteBuffer counter;
+                            info.request->tracing_context->serialize(counter);
+                            wire_size += counter.count();
                         }
-                        assertRequestSizeIsValid(wire_size, getMaxRequestSize(), *info.request);
                     }
-                    catch (const Exception & e)
+                    if (!checkRequestSize(wire_size))
                     {
-                        reject_error = e.code;
+                        LOG_WARNING(log, "Rejecting request: {}", formatRequestSizeExceeded(wire_size, *info.request));
+                        reject_error = Error::ZBADARGUMENTS;
                         /// The SCOPE_EXIT guard above completes the callback with reject_error.
                         continue;
                     }
@@ -1634,8 +1621,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
-    /// Lower-bound pre-check (chroot/tracing bytes added later); exact check runs in `sendThread`.
-    assertRequestSizeIsValid(info.request->requestSize(use_xid_64), getMaxRequestSize(), *info.request);
+    /// Lower-bound pre-check (chroot/tracing added later, exact check in `sendThread`); outside the try below so an oversize fails alone, not the session.
+    if (const size_t request_size = info.request->requestSize(use_xid_64); !checkRequestSize(request_size))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, formatRequestSizeExceeded(request_size, *info.request));
 
     try
     {
@@ -1795,7 +1783,7 @@ void ZooKeeper::initMaxRequestSize()
         LOG_WARNING(log, "Cannot parse server-advertised max_request_size '{}', ignoring it", value->substr(0, 64));
         return;
     }
-    if (parsed != 0 && (parsed < 1024 || parsed > MAX_REQUEST_SIZE_HARD_LIMIT))
+    if (parsed != 0 && (parsed < MIN_SANE_ADVERTISED_REQUEST_SIZE_LIMIT || parsed > MAX_REQUEST_SIZE_HARD_LIMIT))
     {
         LOG_WARNING(log, "Server-advertised max_request_size {} is out of sane bounds, ignoring it", parsed);
         return;
