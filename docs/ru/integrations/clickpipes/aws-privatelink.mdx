@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Вы можете использовать [AWS PrivateLink](https://aws.amazon.com/privatelink/) для организации защищённого подключения между VPC,
 сервисами AWS, вашими системами в собственной инфраструктуре и ClickHouse Cloud без вывода трафика в публичный Интернет.
@@ -65,9 +66,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 3. Создайте общий доступ к ресурсу
 
 <Steps>
-  <Step>
-    #### Создайте шлюз ресурсов
-
+  <Step title="Создайте шлюз ресурсов" id="create-resource-gateway">
     Шлюз ресурсов — это точка, которая принимает трафик для указанных ресурсов в вашей VPC.
 
     <Note>
@@ -98,9 +97,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### Создайте конфигурацию ресурса VPC
-
+  <Step title="Создайте конфигурацию ресурса VPC" id="create-resource-configuration">
     Конфигурация ресурса связывается со шлюзом ресурса, чтобы предоставить доступ к вашему ресурсу.
 
     Вы можете создать конфигурацию ресурса в [консоли AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-configuration.html) или с помощью следующей команды:
@@ -136,9 +133,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     В выходных данных будут указаны ARN конфигурации ресурса и ID конфигурации ресурса. ARN понадобится на следующем шаге, а ID — для настройки подключения ClickPipe с ресурсом VPC.
   </Step>
 
-  <Step>
-    #### Создайте Resource-Share
-
+  <Step title="Создайте Resource-Share" id="create-resource-share">
     Чтобы открыть общий доступ к ресурсу, требуется Resource-Share. Это делается через Resource Access Manager (RAM).
 
     <Note>
@@ -196,15 +191,21 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Для этого нужно настроить NLB (Network Load Balancer) перед вашим источником данных
 и настроить VPC endpoint service на использование NLB.
 
-VPC endpoint service можно [настроить с приватным DNS](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html), который будет доступен в VPC ClickPipes.
+VPC endpoint service можно [настроить с private DNS](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html), который будет доступен в VPC ClickPipes.
+Управляемый private DNS AWS PrivateLink не всегда является подходящим вариантом:
+
+* вы не владеете доменным именем вашего источника данных, поэтому не можете подтвердить его в AWS
+* провайдер требует, чтобы consumers сами управляли DNS resolution, как в Confluent Cloud
+  В этих случаях см. раздел [пользовательский private DNS](#custom-private-dns).
 
 Это предпочтительный вариант для:
 
-* Любой конфигурации Kafka в собственной инфраструктуре, где требуется поддержка приватного DNS
+* Любой конфигурации Kafka в собственной инфраструктуре, где требуется поддержка private DNS
+* [Confluent Cloud private connectivity](/ru/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes)
 * [Межрегионального подключения для Postgres CDC](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-* Межрегионального подключения для кластера MSK. Для получения помощи обратитесь в службу поддержки ClickHouse.
+* [Межрегионального подключения для кластеров MSK](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 
-Дополнительные сведения см. в [руководстве по началу работы](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
+Дополнительные сведения см. в [руководстве по Началу работы](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
 <Info>
   Добавьте ID аккаунта ClickPipes `072088201116` в список разрешённых субъектов для вашего VPC endpoint service.
@@ -216,6 +217,63 @@ VPC endpoint service можно [настроить с приватным DNS](h
   Добавьте [регион вашего ClickPipe](#aws-privatelink-regions) в список разрешённых регионов в вашем VPC endpoint service.
 </Info>
 
+Для кластеров MSK см. [AWS PrivateLink VPC endpoint service for MSK cluster](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
+для конфигурации с отдельным broker для каждого endpoint service, использующей пользовательские private DNS-имена.
+
+<div id="custom-private-dns">
+  ## Пользовательский private DNS
+</div>
+
+<PrivatePreviewBadge />
+
+<Info>
+  Пользовательский private DNS находится в **закрытой предварительной версии**. Обратитесь в [службу поддержки ClickHouse](https://clickhouse.com/support/program), чтобы включить его для вашего сервиса.
+</Info>
+
+AWS PrivateLink предоставляет [управляемый private DNS](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
+для сервисов конечных точек VPC с подтвержденным доменом. Некоторые сервисы требуют, чтобы каждый потребитель самостоятельно управлял DNS-разрешением в своей VPC; например, Confluent Cloud требует, чтобы потребители разрешали DNS-имена брокеров в конечную точку PrivateLink.
+
+Для таких случаев ClickPipes поддерживает привязку пользовательских имен private DNS к обратной частной
+конечной точке. ClickPipes разрешает эти имена в частные адреса конечной точки, чтобы ваш источник данных
+был доступен по собственному hostname через частное подключение.
+
+Пользовательский private DNS дополняет управляемый private DNS — он его не заменяет. Если ваш
+сервис PrivateLink уже предоставляет имена private DNS, пользовательские
+имена вам не нужны.
+
+Пользовательские имена private DNS поддерживаются для типов конечных точек [VPC endpoint service](#vpc-endpoint-service)
+и [ресурс VPC](#vpc-resource). MSK multi-VPC предоставляет управляемый private DNS
+из коробки и не поддерживает пользовательские имена.
+
+<Note>
+  Консоль ClickHouse Cloud в настоящее время поддерживает одно пользовательское имя private DNS на одну обратную частную конечную точку.
+  Если вам нужно управлять несколькими пользовательскими именами private DNS для одной и той же конечной точки, используйте OpenAPI или Terraform.
+</Note>
+
+К пользовательским именам private DNS применяются следующие правила:
+
+* Поддерживаются точные имена (`kafka.internal.example.com`) и подстановочные имена (`*.example.com`).
+  Подстановочное имя соответствует одной DNS-метке — например,
+  `*.abcde12345.us-east-1.aws.confluent.cloud` соответствует
+  `b0-lkc123.abcde12345.us-east-1.aws.confluent.cloud`.
+* Имена должны быть уникальными среди всех обратных частных конечных точек сервиса ClickHouse,
+  включая пересечения между подстановочными и точными именами.
+* Имена с зарезервированными суффиксами (например, `local`, `localhost`, `internal`, `corp`,
+  `private`) отклоняются.
+
+Чтобы настроить пользовательские имена private DNS:
+
+* В консоли ClickHouse Cloud заполните поле `Custom private DNS name` при
+  [создании обратной частной конечной точки](#creating-clickpipe). Поле отображается только после того, как
+  эта возможность будет включена для вашего сервиса.
+* С помощью [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger) задайте
+  `customPrivateDnsMappings` при создании обратной частной конечной точки или обновите существующую
+  конечную точку запросом `PATCH`. При обновлении заменяется весь список сопоставлений; пустой список
+  удаляет все пользовательские имена.
+* С помощью Terraform используйте
+  ресурс [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
+  для управления сопоставлениями в существующей обратной частной конечной точке.
+
 <div id="creating-clickpipe">
   ## Создание ClickPipe с обратной частной конечной точкой
 </div>
@@ -226,47 +284,49 @@ VPC endpoint service можно [настроить с приватным DNS](h
 
 2. Выберите кнопку `Data Sources` в меню слева и нажмите «Set up a ClickPipe»
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортов" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выберите импорты" size="lg" border />
 
 3. Выберите Kafka или Postgres в качестве источника данных.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="Выбор источника данных" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="Выберите источник данных" size="lg" border />
 
 4. Выберите опцию `Reverse private endpoint`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="Выберите обратную частную конечную точку" size="lg" border />
 
-5. Выберите одну из существующих обратных частных конечных точек или создайте новую.
+5. Выберите любую из существующих обратных частных конечных точек или создайте новую.
 
 <Info>
   Если для RDS требуется межрегиональный доступ, необходимо создать VPC endpoint service, и
-  [это руководство](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) станет хорошей отправной точкой для его настройки.
+  [это руководство](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) может служить хорошей отправной точкой для настройки.
 
-  Для доступа в пределах одного региона рекомендуется использовать ресурс VPC.
+  Для доступа в пределах одного региона рекомендуется создавать ресурс VPC.
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Выберите обратную частную конечную точку" size="lg" border />
 
 6. Укажите обязательные параметры для выбранного типа конечной точки.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Выберите обратную частную конечную точку" size="lg" border />
 
-* Для ресурса VPC укажите ARN общего доступа к configuration и идентификатор configuration.
+* Для ресурса VPC укажите ARN общего доступа к конфигурации и ID конфигурации.
   * Для MSK multi-VPC укажите ARN кластера и метод аутентификации, используемый с созданной конечной точкой.
   * Для VPC endpoint service укажите Service name.
+  * При необходимости укажите [пользовательское частное DNS-имя](#custom-private-dns).
 
-7. Нажмите `Create` и дождитесь, пока обратная частная конечная точка будет готова.
+7. Нажмите `Create` и дождитесь, пока обратная частная конечная точка перейдёт в состояние готовности.
 
-   Если вы создаете новую конечную точку, её подготовка займет некоторое время.
-   Страница обновится автоматически, как только конечная точка будет готова.
+   Если вы создаёте новую конечную точку, её настройка займёт некоторое время.
+   Страница автоматически обновится, как только конечная точка будет готова.
    Для VPC endpoint service может потребоваться принять запрос на подключение в консоли AWS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Выберите обратную частную конечную точку" size="lg" border />
 
 8. Когда конечная точка будет готова, вы сможете использовать DNS-имя для подключения к источнику данных.
 
-   В списке конечных точек отображается DNS-имя доступной конечной точки.
-   Это может быть как внутреннее DNS-имя, подготовленное ClickPipes, так и частное DNS-имя, предоставленное сервисом PrivateLink.
+   В списке конечных точек вы увидите DNS-имя доступной конечной точки.
+   Это может быть внутреннее DNS-имя, созданное ClickPipes, частное DNS-имя, предоставленное сервисом PrivateLink,
+   или [пользовательское частное DNS-имя](#custom-private-dns).
    DNS-имя не является полным сетевым адресом.
    Добавьте порт в соответствии с источником данных.
 

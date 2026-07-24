@@ -822,6 +822,11 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
+void LocalConnection::sendScalarsData(Scalars &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
 void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");

@@ -662,9 +662,7 @@ server 会自动回退到原始的 Map 下标形式。
 下面的示例展示了一种简单方法：基于现有 schema 创建一张新的日志表，但将主键调整为让列 `SeverityText` 排在 `ServiceName` 之前。
 
 <Steps>
-  <Step>
-    #### 创建新表
-
+  <Step title="创建新表" id="create-new-table-with-key">
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -681,9 +679,7 @@ server 会自动回退到原始的 Map 下标形式。
     </Info>
   </Step>
 
-  <Step>
-    #### 交换并删除表
-
+  <Step title="交换并删除表" id="exhange-and-drop-table">
     `EXCHANGE` 语句用于[以原子方式](/zh/concepts/core-concepts/glossary#atomicity)交换表名。临时表 (现在即原先的默认表) 随后可以删除。
 
     ```sql
@@ -704,9 +700,7 @@ server 会自动回退到原始的 Map 下标形式。
 下面继续使用将 `SeverityText` 作为主键第一列的同一个示例。在这种情况下，会为新数据创建一张表，同时保留旧表用于历史分析。
 
 <Steps>
-  <Step>
-    #### 创建新表
-
+  <Step title="创建新表" id="create-new-table-with-key-2">
     使用所需的主键创建新表。注意 `_23_01_2025` 后缀——请将其调整为当前日期。例如：
 
     ```sql
@@ -716,9 +710,7 @@ server 会自动回退到原始的 Map 下标形式。
     ```
   </Step>
 
-  <Step>
-    #### 创建 Merge 表
-
+  <Step title="创建 Merge 表" id="create-merge-table">
     [Merge 引擎](/zh/reference/engines/table-engines/special/merge) (不要与 MergeTree 混淆) 本身不存储数据，但允许同时从任意数量的其他表读取数据。
 
     ```sql
@@ -734,9 +726,7 @@ server 会自动回退到原始的 Map 下标形式。
     现在可以查询这个表，以确认它会返回来自 `otel_logs` 的数据。
   </Step>
 
-  <Step>
-    #### 更新 ClickStack UI 以从 merge 表读取数据
-
+  <Step title="更新 ClickStack UI 以从 merge 表读取数据" id="update-clickstack-ui-to-read-from-merge-tree">
     将 ClickStack UI 配置为使用 `otel_logs_merge` 作为日志数据源对应的表。
 
     <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="选择 Merge 表" />
@@ -744,9 +734,7 @@ server 会自动回退到原始的 Map 下标形式。
     此时，写入仍会继续进入使用原始主键的 `otel_logs`，而读取则通过 merge 表进行。对用户没有可见变化，也不会影响摄取。
   </Step>
 
-  <Step>
-    #### 交换表
-
+  <Step title="交换表" id="exchange-the-tables">
     现在使用 `EXCHANGE` 语句以原子方式交换 `otel_logs` 和 `otel_logs_23_01_2025` 两个表的名称。
 
     ```sql
@@ -762,9 +750,7 @@ server 会自动回退到原始的 Map 下标形式。
 如果之后还需要进一步调整主键，可以按此流程进行变更。例如，如果你在一周后决定应将 `SeverityNumber` 而不是 `SeverityText` 纳入主键，仍可采用同样的方法。只要还需要修改主键，下面的流程就可以重复使用。
 
 <Steps>
-  <Step>
-    #### 创建新表
-
+  <Step title="创建新表" id="create-new-table-with-key-3">
     使用所需的主键创建新表。
     在下面的示例中，使用 `30_01_2025` 作为后缀来表示表的日期。例如：
 
@@ -775,9 +761,7 @@ server 会自动回退到原始的 Map 下标形式。
     ```
   </Step>
 
-  <Step>
-    #### 交换表
-
+  <Step title="交换表" id="exchange-the-tables-v2">
     现在使用 `EXCHANGE` 语句以原子方式交换 `otel_logs` 和 `otel_logs_30_01_2025` 两个表的名称。
 
     ```sql
@@ -971,7 +955,7 @@ ORDER BY t;
   ### 替代方案
 </div>
 
-如果你需要多个排序键，PROJECTION 并非唯一选择。可根据运维约束以及你希望 ClickStack 如何路由查询，考虑以下方案：
+如果你需要多个排序键，projection 并不是唯一的选择。请根据运维限制以及你希望 ClickStack 如何路由查询，考虑以下方案：
 
 * 将 OpenTelemetry collector 配置为写入两个具有不同 `ORDER BY` 键的表，并为每个表分别创建 ClickStack 数据源。
-* 创建一个作为复制管道的 materialized view，即将 materialized view 挂接到主表上，把原始行写入一个具有不同排序键的辅助表中 (这是一种反规范化或路由模式) 。然后为该目标表创建数据源。示例见[此处](/zh/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)。
+* 将 materialized view 用作复制管道，即把一个 materialized view 附加到主表上，将原始行写入一个具有不同排序键的辅助表中 (这是一种反规范化或路由模式) 。然后为这个目标表创建一个数据源。示例可参见[这里](/zh/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)。
