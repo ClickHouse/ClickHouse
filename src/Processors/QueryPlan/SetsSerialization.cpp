@@ -251,6 +251,13 @@ QueryPlanAndSets deserializeEnvelopeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
 
+        /// Check against the remaining buffer before allocating: a hostile size must not cause a
+        /// huge allocation only for readStrict to throw afterwards.
+        if (entry.payload_size > in.available())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized set {}_{} declares {} payload bytes but only {} remain",
+                entry.hash.low64, entry.hash.high64, entry.payload_size, in.available());
+
         String payload;
         payload.resize(entry.payload_size);
         in.readStrict(payload.data(), payload.size());

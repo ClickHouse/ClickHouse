@@ -33,6 +33,7 @@ constexpr UInt64 MAX_SKELETON_BYTES = 64ULL << 20;
 constexpr UInt64 MAX_SKELETON_NODES = 1ULL << 20;
 constexpr UInt64 MAX_SKELETON_FIELD_BYTES = 16ULL << 20;
 constexpr UInt64 MAX_SKELETON_SETTINGS_PER_NODE = 64 * 1024;
+constexpr UInt64 MAX_SKELETON_DECLARED_PAYLOAD_BYTES = 2ULL << 30;
 
 void writeSkeletonBody(const PlanSkeleton & skeleton, WriteBuffer & out)
 {
@@ -129,7 +130,7 @@ PlanSkeleton readSkeletonBody(ReadBuffer & in, size_t max_type_complexity)
             node.settings.push_back(std::move(entry));
         }
 
-        readVarUInt(node.payload_size, in);
+        node.payload_size = readCappedVarUInt(in, MAX_SKELETON_DECLARED_PAYLOAD_BYTES, "step payload bytes");
 
         /// Future skeleton layouts append data here; a v4 reader skips it, which is what keeps
         /// shape rendering working for plans of newer versions.
@@ -145,7 +146,7 @@ PlanSkeleton readSkeletonBody(ReadBuffer & in, size_t max_type_complexity)
         PlanSkeleton::SetEntry entry;
         readBinary(entry.hash, in);
         readIntBinary(entry.kind, in);
-        readVarUInt(entry.payload_size, in);
+        entry.payload_size = readCappedVarUInt(in, MAX_SKELETON_DECLARED_PAYLOAD_BYTES, "set payload bytes");
         skeleton.sets.push_back(entry);
     }
 

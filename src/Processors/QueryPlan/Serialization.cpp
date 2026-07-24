@@ -42,10 +42,17 @@ void serializeQueryPlanHeader(const Block & header, WriteBuffer & out)
     }
 }
 
+/// Sanity cap for a hostile header; far above any real plan. Checked before allocation.
+static constexpr UInt64 MAX_QUERY_PLAN_HEADER_COLUMNS = 1'000'000;
+
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 {
     UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
+    if (num_columns > MAX_QUERY_PLAN_HEADER_COLUMNS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized query plan header declares {} columns which exceeds the limit of {}",
+            num_columns, MAX_QUERY_PLAN_HEADER_COLUMNS);
 
     ColumnsWithTypeAndName columns(num_columns);
 
@@ -244,7 +251,8 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
             const auto & skeleton_node = skeleton.nodes[i];
 
             payload_offsets[i] = offset;
-            if (offset + skeleton_node.payload_size > envelope.size())
+            /// Subtraction, not addition: `offset + payload_size` could wrap around on a hostile size.
+            if (skeleton_node.payload_size > envelope.size() - offset)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Query plan payload of step '{}' extends past the envelope", skeleton_node.step_name);
             offset += skeleton_node.payload_size;
