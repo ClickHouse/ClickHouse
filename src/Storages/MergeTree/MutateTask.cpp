@@ -319,9 +319,44 @@ static void splitAndModifyMutationCommands(
     /// rewrite, which re-serializes every column with the *current* effective codec
     /// (`getCompressionCodecForPart`) and rewrites `default_compression_codec.txt`.
     bool recompress_needs_full_rewrite = false;
+
+    /// Names (both old and new) of the columns that reach this part through a rename: a pending
+    /// metadata-only RENAME COLUMN that this part has not materialized yet (it still stores the
+    /// streams under the old name), or a RENAME COLUMN in this very mutation. The in-place fast
+    /// path cannot recompress such a column -- it resolves the streams against the source part,
+    /// where they exist only under the old name, so it would either fail or silently skip the
+    /// column -- so those columns are routed to the whole-part rewrite below, which re-serializes
+    /// every column with its current codec and materializes the rename through the interpreter.
+    NameSet renamed_column_names;
     for (const auto & command : commands)
     {
-        if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN && part_columns.has(command.column_name))
+        if (command.type == MutationCommand::Type::RENAME_COLUMN && part_columns.has(command.column_name))
+        {
+            renamed_column_names.insert(command.column_name);
+            renamed_column_names.insert(command.rename_to);
+        }
+    }
+    for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+    {
+        if (part_columns.has(rename_from))
+        {
+            renamed_column_names.insert(rename_from);
+            renamed_column_names.insert(rename_to);
+        }
+    }
+
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::Type::RECOMPRESS_COLUMN)
+            continue;
+
+        if (renamed_column_names.contains(command.column_name))
+        {
+            recompress_needs_full_rewrite = true;
+            break;
+        }
+
+        if (part_columns.has(command.column_name))
         {
             const auto * column_desc = table_columns.tryGet(command.column_name);
             if (!column_desc || !column_desc->codec || codecDependsOnDefault(column_desc->codec))
