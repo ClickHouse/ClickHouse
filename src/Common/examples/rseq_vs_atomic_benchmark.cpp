@@ -34,7 +34,6 @@
 #include <vector>
 
 #include <sched.h>
-#include <unistd.h>
 
 #include <Common/CacheLine.h>
 #include <Common/Stopwatch.h>
@@ -107,8 +106,7 @@ bool parseOptions(int argc, char ** argv, Options & opts)
 ALWAYS_INLINE void atomicBump(Slot * slots, int slot_count)
 {
     int cpu = ::sched_getcpu();
-    /// `_SC_NPROCESSORS_CONF` is a count, not an upper bound for logical CPU ids, so on
-    /// sparse numbering (or a `sched_getcpu` error) the id may fall outside the slot array.
+    /// The array covers every possible CPU id, so this only guards a `sched_getcpu` error (-1).
     /// Fall back to slot 0 — one increment per iteration, like `ProfileEvents::Counters::fetchAdd`.
     if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
         cpu = 0;
@@ -128,6 +126,7 @@ ALWAYS_INLINE void rseqBump(Slot * slots, int slot_count)
 
     while (true)
     {
+        /// The array covers every possible CPU id, so this only guards a negative sentinel.
         /// The rseq critical section only commits while running on `cpu`, so an out-of-range id
         /// cannot be redirected to another slot within it. Fall back to an atomic increment on
         /// slot 0 instead — one increment per iteration, like `ProfileEvents::Counters::fetchAdd`.
@@ -225,12 +224,16 @@ int mainEntryExampleRSeqVsAtomicBenchmark(int argc, char ** argv)
 
     int slot_count = 0;
 #if USE_LIBRSEQ
-    Int64 n = ::sysconf(_SC_NPROCESSORS_CONF);
-    slot_count = n > 0 ? static_cast<int>(n) : 0;
+    /// Size the array by the number of *possible* CPU ids (librseq parses
+    /// "/sys/devices/system/cpu/possible", falling back to sysconf), not by the CPU count:
+    /// with sparse CPU numbering the largest id exceeds the count, and every
+    /// `sched_getcpu` / `rseq_cpu_start` value must map to its own slot for the
+    /// "cache lines never bounce" contract to hold.
+    slot_count = rseq_get_max_nr_cpus();
 #endif
-    if (slot_count == 0)
+    if (slot_count <= 0)
     {
-        std::cerr << "Could not determine CPU count\n";
+        std::cerr << "Could not determine the number of possible CPUs\n";
         return 1;
     }
 
