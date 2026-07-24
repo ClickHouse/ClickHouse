@@ -11,11 +11,27 @@
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
+
+#include <ch_lance.h>
 
 #include <limits>
 #include <tuple>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int ACCESS_DENIED;
+extern const int AUTHENTICATION_FAILED;
+extern const int BAD_ARGUMENTS;
+extern const int CANNOT_OPEN_FILE;
+extern const int FILE_DOESNT_EXIST;
+extern const int INCORRECT_DATA;
+extern const int LOGICAL_ERROR;
+extern const int S3_ERROR;
+extern const int UNKNOWN_EXCEPTION;
+}
 
 TEST(LanceTableStateSnapshot, RoundTrip)
 {
@@ -78,8 +94,29 @@ TEST(LanceWrapper, OpenMissingDatasetThrowsClickHouseException)
     }
     catch (const Exception & e)
     {
+        EXPECT_EQ(e.code(), ErrorCodes::FILE_DOESNT_EXIST);
         EXPECT_NE(String(e.message()).find("path/to/missing/lance/dataset"), String::npos);
     }
+}
+
+TEST(LanceWrapper, MapsFfiErrorKinds)
+{
+    using Lance::ErrorMapping::toClickHouseErrorCode;
+
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_NONE, CH_LANCE_ERROR_ORIGIN_UNKNOWN), ErrorCodes::LOGICAL_ERROR);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_INVALID_ARGUMENT, CH_LANCE_ERROR_ORIGIN_UNKNOWN), ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_NOT_FOUND, CH_LANCE_ERROR_ORIGIN_LOCAL), ErrorCodes::FILE_DOESNT_EXIST);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_PERMISSION_DENIED, CH_LANCE_ERROR_ORIGIN_S3), ErrorCodes::ACCESS_DENIED);
+    EXPECT_EQ(
+        toClickHouseErrorCode(CH_LANCE_ERROR_UNAUTHENTICATED, CH_LANCE_ERROR_ORIGIN_S3), ErrorCodes::AUTHENTICATION_FAILED);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_CORRUPT_DATA, CH_LANCE_ERROR_ORIGIN_LOCAL), ErrorCodes::INCORRECT_DATA);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_UNSUPPORTED, CH_LANCE_ERROR_ORIGIN_LOCAL), ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_VERSION_NOT_FOUND, CH_LANCE_ERROR_ORIGIN_LOCAL), ErrorCodes::FILE_DOESNT_EXIST);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_STORAGE, CH_LANCE_ERROR_ORIGIN_S3), ErrorCodes::S3_ERROR);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_STORAGE, CH_LANCE_ERROR_ORIGIN_LOCAL), ErrorCodes::CANNOT_OPEN_FILE);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_STORAGE, CH_LANCE_ERROR_ORIGIN_UNKNOWN), ErrorCodes::UNKNOWN_EXCEPTION);
+    EXPECT_EQ(toClickHouseErrorCode(CH_LANCE_ERROR_INTERNAL, CH_LANCE_ERROR_ORIGIN_UNKNOWN), ErrorCodes::UNKNOWN_EXCEPTION);
+    EXPECT_EQ(toClickHouseErrorCode(1000, CH_LANCE_ERROR_ORIGIN_UNKNOWN), ErrorCodes::UNKNOWN_EXCEPTION);
 }
 
 #endif

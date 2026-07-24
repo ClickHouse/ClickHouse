@@ -12,6 +12,7 @@ dependencies = [
  "futures",
  "lance",
  "object_store",
+ "prost",
  "tempfile",
  "tokio",
  "url",

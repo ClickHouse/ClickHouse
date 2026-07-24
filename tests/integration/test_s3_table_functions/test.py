@@ -664,6 +664,24 @@ def test_lance_s3_error_paths(started_cluster):
         unsupported_prefix,
         dataset_name="extension_unsupported.lance",
     )
+    corrupt_prefix = "data/lance/corrupt.lance"
+    upload_lance_dataset_to_minio(started_cluster, corrupt_prefix)
+    corrupt_manifest = next(
+        item.object_name
+        for item in started_cluster.minio_client.list_objects(
+            bucket_name=started_cluster.minio_bucket,
+            prefix=f"{corrupt_prefix}/_versions/",
+            recursive=True,
+        )
+        if item.object_name.endswith(".manifest")
+    )
+    corrupt_payload = b"not a Lance manifest"
+    started_cluster.minio_client.put_object(
+        bucket_name=started_cluster.minio_bucket,
+        object_name=corrupt_manifest,
+        data=io.BytesIO(corrupt_payload),
+        length=len(corrupt_payload),
+    )
 
     missing_error = node.query_and_get_error(
         """
@@ -671,7 +689,16 @@ def test_lance_s3_error_paths(started_cluster):
         FROM lanceS3(nc_s3, filename = 'lance/missing.lance')
         """
     )
+    assert "FILE_DOESNT_EXIST" in missing_error
     assert "missing.lance" in missing_error or "not found" in missing_error.lower()
+
+    invalid_uri_error = node.query_and_get_error(
+        """
+        SELECT *
+        FROM lanceS3('http://[invalid', 'minio', 'secret')
+        """
+    )
+    assert "BAD_ARGUMENTS" in invalid_uri_error
 
     credentials_error = node.query_and_get_error(
         """
@@ -682,11 +709,7 @@ def test_lance_s3_error_paths(started_cluster):
             'wrong-secret')
         """
     )
-    assert (
-        "AccessDenied" in credentials_error
-        or "forbidden" in credentials_error.lower()
-        or "signature" in credentials_error.lower()
-    )
+    assert "ACCESS_DENIED" in credentials_error
 
     session_token_error = node.query_and_get_error(
         """
@@ -698,7 +721,15 @@ def test_lance_s3_error_paths(started_cluster):
             session_token = 'session-token-that-minio-rejects')
         """
     )
-    assert "S3_ERROR" in session_token_error or "Failed to get object info" in session_token_error
+    assert "ACCESS_DENIED" in session_token_error
+
+    corrupt_error = node.query_and_get_error(
+        """
+        SELECT *
+        FROM lanceS3(nc_s3, filename = 'lance/corrupt.lance')
+        """
+    )
+    assert "INCORRECT_DATA" in corrupt_error
 
     disk_error = node.query_and_get_error(
         """
