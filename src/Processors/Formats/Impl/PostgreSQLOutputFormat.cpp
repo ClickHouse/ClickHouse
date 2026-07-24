@@ -122,7 +122,7 @@ or storing query results as a standalone file.
 After enabling the PostgreSQL interface, use a compatible client to execute a query:
 
 ```shell
-psql -p 9005 -h 127.0.0.1 -U alice -d default \
+psql -p 9005 -h 127.0.0.1 -U default -d default \
     -c "SELECT number, number % 2 = 0 AS even FROM numbers(3)"
 ```
 
