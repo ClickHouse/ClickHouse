@@ -3,11 +3,15 @@
 #
 # Stateless replacement for 02995_new_settings_history:
 #   * No per-release regeneration and no hard-coded version threshold.
-#   * The only committed data is a FROZEN, name-only snapshot of the settings
-#     that existed when this test was introduced (03999_settings_history_baseline_names.tsv).
-#     It is never regenerated: any setting NOT present in it was added afterwards
-#     and therefore must be recorded in `SettingsChangesHistory.cpp` (surfaced via
-#     `system.settings_changes`) so that the `compatibility` setting keeps working.
+#   * The only committed data is a FROZEN snapshot of the settings (name, kind and
+#     default value) that existed when this test was introduced
+#     (03999_settings_history_baseline.tsv). It is never regenerated:
+#       - any setting NOT present in it was added afterwards and must be recorded in
+#         `SettingsChangesHistory.cpp` (surfaced via `system.settings_changes`);
+#       - any setting present in it whose default differs from the snapshot must be
+#         recorded there too (otherwise a default change to a long-lived setting that
+#         has no history row would go unnoticed).
+#     so that the `compatibility` setting keeps working.
 #   * Aliases and obsolete settings are ignored.
 #
 # The snapshot only ever needs editing to REMOVE a name (when an old setting is
@@ -17,7 +21,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-BASELINE="${CUR_DIR}/03999_settings_history_baseline_names.tsv"
+BASELINE="${CUR_DIR}/03999_settings_history_baseline.tsv"
 # Settings whose current default already disagrees with the newest new_value recorded in
 # SettingsChangesHistory.cpp (i.e. a default change that predates this test and was never
 # recorded). This list may only SHRINK: each name should be fixed in the history and removed.
@@ -27,7 +31,7 @@ $CLICKHOUSE_LOCAL --query "
     WITH
         baseline AS
         (
-            SELECT name, kind FROM file('${BASELINE}', 'TSV', 'name String, kind String')
+            SELECT name, kind, default FROM file('${BASELINE}', 'TSV', 'name String, kind String, default String')
         ),
         value_drift_ignore AS
         (
@@ -146,6 +150,36 @@ $CLICKHOUSE_LOCAL --query "
               if(s.type = 'Float',
                  toFloat32OrNull(e.expected) != toFloat32OrNull(s.default),
                  e.expected != s.default))
+
+        UNION ALL
+
+        -- A long-lived Session setting present in the frozen baseline whose default no longer
+        -- matches the baseline but that has NO history row at all: the value-drift arm above
+        -- joins on the history and so cannot see it. Compare against the frozen baseline default
+        -- (both come from system.settings, so the representation matches - no normalization). Such
+        -- a change must be recorded in SettingsChangesHistory.cpp so the compatibility setting restores it.
+        SELECT 'PLEASE RECORD THE DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+            || ' default changed from ' || b.default || ' to ' || s.default || ' since the baseline but has no history entry'
+        FROM system.settings s
+        JOIN baseline b ON b.name = s.name AND b.kind = 'Session'
+        WHERE s.is_obsolete = 0 AND s.alias_for = ''
+          AND s.default NOT LIKE 'auto(%'   -- runtime-derived value, machine-specific
+          AND s.default != b.default
+          AND s.name NOT IN (SELECT name FROM session_documented)
+          AND s.name NOT IN (SELECT name FROM value_drift_ignore)
+
+        UNION ALL
+
+        -- Same guard for MergeTree settings without a history row.
+        SELECT 'PLEASE RECORD THE MERGE_TREE_SETTING DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+            || ' default changed from ' || b.default || ' to ' || s.default || ' since the baseline but has no history entry'
+        FROM system.merge_tree_settings s
+        JOIN baseline b ON b.name = s.name AND b.kind = 'MergeTree'
+        WHERE s.is_obsolete = 0
+          AND s.default NOT LIKE 'auto(%'
+          AND s.default != b.default
+          AND s.name NOT IN (SELECT name FROM mergetree_documented)
+          AND s.name NOT IN (SELECT name FROM value_drift_ignore)
     )
     ORDER BY message
 "

@@ -125,11 +125,11 @@ def test_literal_filename_match_beats_cross_extension_stem():
 
 def test_orphan_data_file_maps_to_owning_test_by_prefix():
     # PR #104097 reproducer: `_derive_test_name` returns None for a `.tsv`, so it
-    # used to be skipped. The frozen name snapshot consumed by the settings
-    # history test carries that test's `03999` prefix and is referenced by its
-    # literal filename, so the flaky check reruns exactly that test.
+    # used to be skipped. The frozen baseline consumed by the settings history test
+    # carries that test's `03999` prefix and is referenced by its literal filename,
+    # so the flaky check reruns exactly that test.
     owning = Targeting._tests_owning_data_file(
-        "tests/queries/0_stateless/03999_settings_history_baseline_names.tsv"
+        "tests/queries/0_stateless/03999_settings_history_baseline.tsv"
     )
     assert owning == ["03999_stateless_settings_history"]
 
