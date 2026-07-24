@@ -7,6 +7,8 @@ title: 'SET Statement'
 doc_type: 'reference'
 ---
 
+# SET Statement
+
 ```sql
 SET param = value
 ```

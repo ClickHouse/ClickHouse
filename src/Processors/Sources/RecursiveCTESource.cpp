@@ -208,10 +208,9 @@ private:
 
         /// TODO: Support squashing transform
 
-        const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
-            metadata_snapshot,
+            intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
             recursive_query_context,
             false /*async_insert*/);
 
@@ -228,9 +227,8 @@ private:
     {
         /// TODO: Support proper locking
         TableExclusiveLockHolder table_exclusive_lock;
-        const auto metadata_snapshot = temporary_table->getInMemoryMetadataPtr(recursive_query_context, false);
         temporary_table->truncate({},
-            metadata_snapshot,
+            temporary_table->getInMemoryMetadataPtr(recursive_query_context, false),
             recursive_query_context,
             table_exclusive_lock);
     }

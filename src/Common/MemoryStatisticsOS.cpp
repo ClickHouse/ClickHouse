@@ -8,6 +8,7 @@
 #endif
 #include <fcntl.h>
 #include <unistd.h>
+#include <cassert>
 
 #include <Common/MemoryStatisticsOS.h>
 
@@ -61,7 +62,7 @@ MemoryStatisticsOS::~MemoryStatisticsOS()
 
 MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 {
-    Data data{};
+    Data data;
 
     constexpr size_t buf_size = 1024;
     char buf[buf_size];
@@ -80,13 +81,13 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
         }
 
-        chassert(res >= 0);
+        assert(res >= 0);
         break;
     } while (true);
 
     ReadBufferFromMemory in(buf, res);
 
-    uint64_t unused = 0;
+    uint64_t unused;
     readIntText(data.virt, in);
     skipWhitespaceIfAny(in);
     readIntText(data.resident, in);

@@ -51,8 +51,21 @@ namespace DB
     CLIENT_SETTINGS(M, ALIAS) \
     AUTH_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)
+DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST)
+IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST)
+
+struct S3AuthSettingsImpl : public BaseSettings<S3AuthSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) S3AuthSettings##TYPE NAME = &S3AuthSettingsImpl ::NAME;
+
+namespace S3AuthSetting
+{
+CLIENT_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 namespace S3
 {
@@ -102,7 +115,14 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
 {
 }
 
-S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept = default;
+S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept
+    : headers(std::move(settings.headers))
+    , access_headers(std::move(settings.access_headers))
+    , users(std::move(settings.users))
+    , server_side_encryption_kms_config(std::move(settings.server_side_encryption_kms_config))
+    , impl(std::make_unique<S3AuthSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 S3AuthSettings::S3AuthSettings(const DB::Settings & settings) : impl(std::make_unique<S3AuthSettingsImpl>())
 {
@@ -113,7 +133,16 @@ S3AuthSettings::~S3AuthSettings() = default;
 
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept = default;
+S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept
+{
+    headers = std::move(settings.headers);
+    access_headers = std::move(settings.access_headers);
+    users = std::move(settings.users);
+    server_side_encryption_kms_config = std::move(settings.server_side_encryption_kms_config);
+    *impl = std::move(*settings.impl);
+
+    return *this;
+}
 
 bool S3AuthSettings::operator==(const S3AuthSettings & right)
 {
@@ -174,32 +203,6 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
         server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
 }
 
-void S3AuthSettings::clearServerManagedRequestAuth()
-{
-    headers.clear();
-    access_headers.clear();
-    impl->set("server_side_encryption_customer_key_base64", "");
-    server_side_encryption_kms_config = {};
-}
-
-void S3AuthSettings::clearRoleArn()
-{
-    impl->set("role_arn", "");
-    impl->set("role_session_name", "");
-    impl->set("external_id", "");
-}
-
-void S3AuthSettings::clearServerManagedGcpOAuth()
-{
-    impl->set("http_client", "");
-    impl->set("service_account", "");
-    impl->set("metadata_service", "");
-    impl->set("request_token_path", "");
-    impl->set("google_adc_client_id", "");
-    impl->set("google_adc_client_secret", "");
-    impl->set("google_adc_refresh_token", "");
-}
-
 HTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
     bool auth_settings_is_default = !impl->isChanged("access_key_id");
@@ -246,7 +249,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
     result.impl = std::make_unique<S3AuthSettingsImpl>();
     result.impl->readBinary(in);
 
-    size_t headers_size = 0;
+    size_t headers_size;
     readVarUInt(headers_size, in);
     for (size_t i = 0; i < headers_size; ++i)
     {
@@ -257,7 +260,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         result.headers.emplace_back(name, value);
     }
 
-    size_t access_headers_size = 0;
+    size_t access_headers_size;
     readVarUInt(access_headers_size, in);
     for (size_t i = 0; i < access_headers_size; ++i)
     {
@@ -267,7 +270,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         readStringBinary(value, in);
         result.access_headers.emplace_back(name, value);
     }
-    size_t users_size = 0;
+    size_t users_size;
     readVarUInt(users_size, in);
     for (size_t i = 0; i < users_size; ++i)
     {
