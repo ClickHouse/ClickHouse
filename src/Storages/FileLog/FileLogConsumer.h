@@ -60,7 +60,7 @@ private:
         StringWithMemoryTracking data;
         std::string file_name;
         /// Offset is the start of a row, which is needed for virtual columns.
-        UInt64 offset{};
+        UInt64 offset;
     };
     using Records = std::vector<Record, AllocatorWithMemoryTracking<Record>>;
 

@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <base/types.h>
@@ -47,7 +46,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
-extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 
@@ -292,8 +290,8 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     DB::ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-    size_t precision = 0;
-    size_t scale = 0;
+    size_t precision;
+    size_t scale;
     readIntText(precision, buf);
     skipWhitespaceIfAny(buf);
     assertChar(',', buf);
@@ -334,12 +332,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             type_mapping[f_geography] = f_binary;
             type_mapping[f_geometry] = f_binary;
         }
-        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
-        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
-                schema_id);
+        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping));
     }
     else
     {
@@ -453,7 +446,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     if (type_name.starts_with("fixed[") && type_name.ends_with(']'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 6, type_name.end() - 1));
-        size_t n = 0;
+        size_t n;
         readIntText(n, buf);
         /// Reject trailing garbage such as embedded whitespace ("fixed[1 6]"): the canonicalized
         /// form of a valid spelling has no characters left after the size.
@@ -606,7 +599,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
                 outputs.push_back(old_node);
@@ -656,11 +649,9 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            auto default_type_column = type->createColumnConstWithDefaultValue(0);
-            const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
-            /// Materialize so the column leaves the transform as a full column, not a ColumnConst,
-            /// like every other missing-column path (inplaceBlockConversions, IMergeTreeReader, ...).
-            outputs.push_back(&dag->materializeNode(constant));
+            ColumnPtr default_type_column = type->createColumnConstWithDefaultValue(0);
+            const auto & constant = dag->addColumn({default_type_column, type, name});
+            outputs.push_back(&constant);
         }
     }
     return dag;

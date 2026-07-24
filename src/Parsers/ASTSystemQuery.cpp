@@ -89,20 +89,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         return ostr;
     };
 
-    auto print_database_table = [&](bool force_quote = false) -> WriteBuffer &
+    auto print_database_table = [&]() -> WriteBuffer &
     {
-        FormatSettings quoted_settings = settings;
-        quoted_settings.identifier_quoting_rule = IdentifierQuotingRule::Always;
-        const FormatSettings & id_settings = force_quote ? quoted_settings : settings;
-
         if (database)
         {
-            database->format(ostr, id_settings, state, frame);
+            database->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, id_settings, state, frame);
+        table->format(ostr, settings, state, frame);
 
         if (if_exists)
             print_keyword(" IF EXISTS");
@@ -154,7 +150,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     std::unordered_set<Type> queries_with_on_cluster_at_end = {
         Type::CLEAR_FILESYSTEM_CACHE,
-        Type::CLEAR_DISTRIBUTED_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
         Type::CLEAR_QUERY_CACHE,
     };
@@ -222,7 +217,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
-        case Type::WAIT_QUERY_RUNNER:
         case Type::FLUSH_DISTRIBUTED:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
@@ -265,7 +259,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
         case Type::RELOAD_DICTIONARY:
-        case Type::UNLOAD_DICTIONARY:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
@@ -368,7 +361,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
-                ostr << " " << quoteString(distributed_cache_server_id);
+                ostr << " " << distributed_cache_server_id;
             break;
         }
         case Type::CLEAR_QUERY_CACHE:
@@ -485,16 +478,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_database_table();
             break;
         }
-        case Type::STOP:
-        case Type::START:
-        case Type::PAUSE:
-        case Type::CANCEL:
-        case Type::REFRESH:
-        {
-            ostr << ' ';
-            print_database_table(/*force_quote=*/true);
-            break;
-        }
         case Type::TEST_VIEW:
         {
             ostr << ' ';
@@ -566,8 +549,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     break;
             }
 
-            for (const auto & arg : instrumentation_arguments)
+            bool whitespace = false;
+            for (const auto & param : instrumentation_parameters)
             {
+                if (!whitespace)
+                    ostr << ' ';
+                else
+                    whitespace = true;
                 std::visit([&](const auto & value)
                 {
                     using T = std::decay_t<decltype(value)>;
@@ -575,7 +563,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                         ostr << ' ' << quoteString(value);
                     else
                         ostr << ' ' << value;
-                }, arg);
+                }, param);
             }
             break;
         }
@@ -605,7 +593,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
-        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_INDEX_MARK_CACHE:
@@ -619,9 +606,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-        case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
-        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
@@ -634,7 +619,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::REPLICA_READY:   /// Obsolete
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
-        case Type::UNLOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         case Type::RELOAD_MODELS:
         case Type::RELOAD_FUNCTIONS:
@@ -646,11 +630,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
         case Type::PAUSE_VIEWS:
-        case Type::STOP_ALL_BACKGROUND:
-        case Type::START_ALL_BACKGROUND:
-        case Type::PAUSE_ALL_BACKGROUND:
-        case Type::CANCEL_ALL_BACKGROUND:
-        case Type::REFRESH_ALL_BACKGROUND:
         case Type::CLEAR_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:

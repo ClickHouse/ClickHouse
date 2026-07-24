@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -38,7 +37,7 @@ FunctionBasePtr buildFunction(const String & name, const DataTypes & argument_ty
     return resolver->build(arguments);
 }
 
-Field evaluateFunction(const String & name, const VectorWithMemoryTracking<TypedArgument> & arguments)
+Field evaluateFunction(const String & name, const std::vector<TypedArgument> & arguments)
 {
     DataTypes argument_types;
     for (const auto & arg : arguments)
@@ -71,9 +70,9 @@ Field evaluateFunction(const String & name, const VectorWithMemoryTracking<Typed
 }
 
 /// Overload for backward compatibility with single-argument string tests
-Field evaluateFunction(const String & name, const VectorWithMemoryTracking<String> & arguments_str)
+Field evaluateFunction(const String & name, const std::vector<String> & arguments_str)
 {
-    VectorWithMemoryTracking<TypedArgument> arguments;
+    std::vector<TypedArgument> arguments;
     for (const auto & str : arguments_str)
         arguments.push_back({std::make_shared<DataTypeString>(), str});
     return evaluateFunction(name, arguments);

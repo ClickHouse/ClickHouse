@@ -100,7 +100,7 @@ bool isAuthenticationError(Aws::S3::S3Errors error)
         || error == Aws::S3::S3Errors::INVALID_SIGNATURE;
 }
 
-static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
+String getAuthenticationErrorHint(Aws::S3::S3Errors error)
 {
     if (isAuthenticationError(error))
         return " Please check your AWS credentials and permissions.";
