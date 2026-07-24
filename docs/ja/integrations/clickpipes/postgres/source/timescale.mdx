@@ -104,7 +104,7 @@ chunk テーブルの変更を検出することになります。Postgres Click
    CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
 ```
 
-`clickpipes` publication には、指定したテーブルで発生した変更イベントの集合が含まれ、後でレプリケーションストリームを取り込むために使用されます。
+`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象のテーブル集合を定義します。すべてのテーブルをレプリケーションする意図がない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
 <Info>
   一部のマネージドサービスでは、管理者ユーザーにスキーマ全体の publication を作成するために必要な権限が付与されていません。その場合は、利用中のプロバイダーにサポートチケットを起票してください。あるいは、この手順 (および以降の手順) をスキップし、代わりにデータを一度だけロードすることもできます。

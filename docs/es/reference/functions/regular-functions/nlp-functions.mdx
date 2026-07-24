@@ -10,10 +10,6 @@ keywords: ['NLP', 'procesamiento del lenguaje natural']
 import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="natural-language-processing-nlp-functions">
-  # Funciones de procesamiento del lenguaje natural (NLP)
-</div>
-
 <ExperimentalBadge />
 
 <CloudNotSupportedBadge />
@@ -51,7 +47,7 @@ detectCharset(s)
 
 **Valor devuelto**
 
-Devuelve una cadena que contiene el código del conjunto de caracteres detectado [`String`](/es/reference/data-types/string)
+Devuelve una cadena que contiene el código del juego de caracteres detectado [`String`](/es/reference/data-types/string)
 
 **Ejemplos**
 
@@ -71,7 +67,7 @@ WINDOWS-1252
 
 Introducido en: v22.2.0
 
-Detecta el idioma de la cadena de entrada codificada en UTF8.
+Detecta el idioma de la cadena de entrada codificada en UTF-8.
 La función utiliza la [biblioteca CLD2](https://github.com/CLD2Owners/cld2) para la detección y devuelve el código de idioma ISO de dos letras.
 
 Cuanto más larga sea la entrada, más precisa será la detección del idioma.
@@ -287,6 +283,7 @@ Cada cadena de entrada debe ser una única palabra en minúsculas; las cadenas q
 Si se pasan caracteres en mayúsculas, los resultados no están definidos.
 Devuelve String para entradas escalares (incluido FixedString) y Array(String) para entradas de Array.
 Se admiten variantes Nullable y LowCardinality de String y FixedString.
+La lista de identificadores de idioma admitidos está disponible en [system.stemmers](/es/reference/system-tables/stemmers).
 
 **Sintaxis**
 
@@ -297,7 +294,7 @@ stem(word, language)
 **Argumentos**
 
 * `word` — Una única palabra en minúsculas (o un array de palabras) a la que aplicar stemming. Debe estar en minúsculas; los caracteres en mayúsculas producen resultados indefinidos. Acepta String, FixedString, Array(String), Array(FixedString), Array(Nullable(String)) o Array(Nullable(FixedString)). [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Array(String)`](/es/reference/data-types/array) o [`Array(FixedString)`](/es/reference/data-types/array)
-* `language` — Idioma cuyas reglas de stemming se aplicarán. Use el código ISO 639-1 de dos letras (p. ej., &#39;en&#39;, &#39;de&#39;, &#39;fr&#39;); consulte https://en.wikipedia.org/wiki/List&#95;of&#95;ISO&#95;639&#95;language&#95;codes. [`String`](/es/reference/data-types/string)
+* `language` — Idioma cuyas reglas de stemming se aplicarán. Los identificadores canónicos se enumeran en [system.stemmers](/es/reference/system-tables/stemmers) (p. ej., &#39;english&#39;, &#39;german&#39;, &#39;porter&#39;). Snowball también acepta códigos ISO 639 de 2 o 3 letras (p. ej., &#39;en&#39;, &#39;eng&#39;) como alias cuando están definidos, pero la cobertura varía según el idioma; para una mayor portabilidad, prefiera los nombres de `system.stemmers`. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 

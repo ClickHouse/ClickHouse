@@ -46,6 +46,33 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 SELECT name, status FROM system.dictionaries;
 ```
 
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
+
+Выгружает словарь `dictionary_name`, чтобы освободить занимаемую им память, если статус словаря — `LOADED`.
+При следующем обращении словарь при необходимости снова загружается отложенно.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+Статус словаря можно проверить, выполнив запрос к таблице `system.dictionaries`.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+Запрос `SYSTEM UNLOAD DICTIONARIES` выгружает из памяти все словари со статусом `LOADED` (см. столбец `status` в [`system.dictionaries`](/ru/reference/system-tables/dictionaries)), то есть словари, которые ранее были успешно загружены.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 <div id="reload-models">
   ## SYSTEM RELOAD MODELS
 </div>
@@ -112,6 +139,13 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 Очищает кэш меток.
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+Очищает кэш первичного индекса, в котором в памяти хранятся первичные ключи таблиц [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+Его размер задаётся параметром уровня сервера [`primary_index_cache_size`](/ru/reference/settings/server-settings/settings#primary_index_cache_size).
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 Очищает кэш метаданных Parquet.
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+Очищает хранящийся в памяти кэш разобранных файлов метаданных Paimon (manifest lists и manifests).
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+Очищает кэш предварительно обработанных константных полигонов, используемых функцией [`pointInPolygon`](/ru/reference/functions/regular-functions/geo/coordinates#pointinpolygon). Настроенное ограничение размера (настройка сервера `point_in_polygon_cache_size`) остаётся без изменений, поэтому после этого кэш продолжает принимать новые записи. Чтобы отключить кэш, установите `point_in_polygon_cache_size` в `0`.
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-Очищает кэши заголовка, словаря и списков вхождений текстового индекса.
+Очищает кэши токенов, заголовка и списков вхождений текстового индекса.
 
 Если вы хотите очистить один из этих кэшей отдельно, можно выполнить
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE` или
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE` или
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+Очищает кэш меток вторичных индексов пропуска данных.
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+Очищает кэш несжатых блоков для вторичных индексов пропуска данных.
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+Очищает кэш файлов, отображаемых в память.
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+Очищает кэш страниц в пространстве пользователя — собственный кэш данных ClickHouse в памяти, где хранятся данные, считанные из нижележащего хранилища.
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+Очищает кэш индекса векторного сходства.
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+Очищает кэш пулов HTTP-соединений для исходящих подключений.
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+Очищает кэш S3-клиентов.
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+Загружает метки таблицы в [кэш меток](#drop-mark-cache). Метки вторичного индекса также загружаются в [кэш меток вторичного индекса пропуска данных](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+Загружает первичные индексы таблицы `MergeTree` в [кэш первичного индекса](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+Очищает кэш метаданных указанного диска.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+Синхронизирует хранящееся в памяти состояние файлового кэша ClickHouse с файлами кэша, фактически находящимися на диске, и возвращает `cache_name`, `path` и загруженный `size` каждого кэшированного сегмента файла. Необязательное имя кэша ограничивает операцию одним кэшем.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` доступна только в ClickHouse Cloud.
+</Note>
+
+Удаляет распределённый кэш. Используйте `CONNECTIONS`, чтобы удалить только кэшированные соединения с серверами распределённого кэша, либо передайте идентификатор сервера, чтобы выбрать только один сервер.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -196,6 +338,12 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 Очищает кэш условий запроса.
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+Очищает кэш заголовков шифрования. В этом кэше хранятся заголовки шифрования, считываемые из начала зашифрованных файлов. Он используется экспериментальным путём чтения `use_reader_executor`, чтобы избежать их повторного чтения; его размер задаётся настройкой сервера `encryption_header_cache_size`.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP КЭШ ЗАПРОСОВ

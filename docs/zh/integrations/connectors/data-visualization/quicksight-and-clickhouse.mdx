@@ -122,44 +122,44 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 
 <br />
 
-搜索 QuickSight 附带的官方 MySQL 连接器 (名称就是 **MySQL**) ：
+搜索 QuickSight 内置的官方 MySQL 连接器 (名称就是 **MySQL**) ：
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="QuickSight 数据源选择界面，搜索结果中高亮显示了 MySQL" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="QuickSight 数据源选择界面，搜索结果中高亮显示 MySQL" border />
 
 <br />
 
 填写连接信息。请注意，MySQL 接口的默认端口是 9004，
-具体端口可能会因服务器配置而有所不同。
+具体端口也可能因服务器配置而异。
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="QuickSight MySQL 连接配置表单，包含 hostname、端口、database 和凭证字段" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="QuickSight MySQL 连接配置表单，包含 hostname、端口、database 和凭据字段" border />
 
 <br />
 
-现在，您有两种方式可以从 ClickHouse 获取数据。首先，您可以从列表中选择一张表：
+现在，你有两种从 ClickHouse 拉取数据的方式。首先，你可以从列表中选择一张表：
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="QuickSight 表选择界面，显示来自 ClickHouse 的可用数据库表" border />
 
 <br />
 
-或者，您也可以指定自定义 SQL 来获取数据：
+或者，你也可以指定自定义 SQL 来拉取数据：
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="用于从 ClickHouse 获取数据的 QuickSight 自定义 SQL 查询编辑器" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="QuickSight 自定义 SQL 查询编辑器，用于从 ClickHouse 拉取数据" border />
 
 <br />
 
-点击“Edit/Preview data”后，您应该能够看到识别出的表结构；如果您选择的是自定义 SQL 方式，也可以在这里进行调整：
+点击“Edit/Preview data”后，你应该可以查看自动识别出的表结构；如果你选择的是这种方式，也可以调整自定义 SQL：
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="QuickSight 数据预览，显示包含列和样本数据的表结构" border />
 
 <br />
 
-请确保在 UI 左下角选择了“Direct Query”模式：
+请确保在 UI 左下角选中了“Direct Query 模式”：
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="QuickSight 界面，底角高亮显示了 Direct Query 模式选项" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="QuickSight 界面，左下角高亮显示 Direct Query 模式选项" border />
 
 <br />
 
-现在，您可以继续发布数据集并创建新的可视化！
+现在，你可以继续发布数据集并创建新的可视化了！
 
 <div id="known-limitations">
   ## 已知限制
