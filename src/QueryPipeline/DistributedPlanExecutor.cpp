@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -351,6 +352,10 @@ private:
 
         void consume(Chunk chunk) override
         {
+            /// Zero-row chunks are scheduling ticks from an upstream `SourceFromInMemoryExchange`;
+            /// forwarding them would only grow the queue and wake the consumer for nothing.
+            if (!chunk.hasRows() && chunk.getChunkInfos().empty())
+                return;
             exchange->appendChunk(std::move(chunk));
         }
 
@@ -400,6 +405,32 @@ private:
 
     const String query_id;
 };
+
+
+/// Drops zero-row chunks emitted as scheduling ticks by `SourceFromInMemoryExchange`; without
+/// this filter they would escape the exchange path, e.g. to the client as empty `Data` packets.
+class SkipZeroRowChunksTransform final : public ISimpleTransform
+{
+public:
+    explicit SkipZeroRowChunksTransform(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ true)
+    {
+    }
+
+    String getName() const override { return "SkipZeroRowChunksTransform"; }
+
+    void transform(Chunk & chunk) override
+    {
+        /// Keep zero-row chunks that carry chunk infos: they are not ticks.
+        if (!chunk.hasRows() && chunk.getChunkInfos().empty())
+            chunk = Chunk();
+    }
+};
+
+std::shared_ptr<IProcessor> makeSkipZeroRowChunksTransform(SharedHeader header)
+{
+    return std::make_shared<SkipZeroRowChunksTransform>(std::move(header));
+}
 
 
 /// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Persistent or Streaming
