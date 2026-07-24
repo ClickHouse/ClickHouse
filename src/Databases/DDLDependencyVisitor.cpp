@@ -392,8 +392,16 @@ namespace
                 /// these inspect a concrete local MergeTree table named by the first two arguments and read it
                 /// via `DatabaseCatalog::getTable` at read time, so a DROP / RENAME of that table must be tracked
                 /// as a referential dependency. The UUID-resolved form (`mergeTreeAnalyzeIndexesUUID`) references
-                /// its source by UUID rather than by name and so needs no name-based dependency here.
-                addDatabaseAndTableNameFromArguments(function, 0, 1);
+                /// its source by UUID rather than by name and so needs no name-based dependency here. Only a
+                /// spelling with an explicit non-empty database yields a dependency: an empty database argument
+                /// resolves against the current database of the *querying* session at read time
+                /// (`evaluateConstantExpressionForDatabaseName`), not necessarily that of this CREATE, so it
+                /// does not name a stable object (the same rule `addDependencyFromLeadingTableNameArguments`
+                /// applies; a persisted `Distributed(..., mergeTree*(...))` target has the create-time database
+                /// baked into an empty argument by `bindTableFunctionTargetToCurrentDatabase`).
+                auto qualified_name = tryGetDatabaseAndTableNameFromArguments(function, 0, 1, /* apply_current_database= */ false);
+                if (qualified_name && !qualified_name->database.empty())
+                    dependencies.emplace(std::move(qualified_name).value());
             }
             /// The `merge` table function is deliberately absent here: its argument is a regular expression,
             /// not a table name, and the set of matching tables is resolved anew on every read. Dropping or

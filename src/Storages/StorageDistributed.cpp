@@ -2335,6 +2335,50 @@ void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t
     args.insert(args.begin(), make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
 }
 
+/// Rewrites the leading explicit `database` argument of a table function's long form so it no longer
+/// depends on the querying session. The functions resolve this argument through
+/// `evaluateConstantExpressionForDatabaseName` or `Context::resolveStorageID`, both of which fall back
+/// to the current database at query time when the argument evaluates to an empty string, so a persisted
+/// target has to fold the argument to a literal (freezing an expression like `currentDatabase()` too)
+/// and bake the current database of the CREATE into an empty result - the same CREATE-time freezing
+/// rule the short forms take. `table_name_may_reference_temporary_table` mirrors whether the function
+/// resolves the pair through `Context::resolveStorageID`, which looks up session-local temporary /
+/// external tables only when the database is empty: an empty database paired with a table name that
+/// matches a temporary/external table is left as is, the same exemption `bindLeadingTableNameArgument`
+/// takes for the short form. A malformed argument is left as is: the table function is instantiated
+/// right after this rewrite (for `canBeUsedToCreateTable`) and rejects it.
+void bindLeadingDatabaseNameArgument(const ASTFunction & table_function_ast, bool table_name_may_reference_temporary_table, const ContextPtr & local_context)
+{
+    ASTs & args = table_function_ast.arguments->children;
+
+    ASTPtr & database_arg = args.at(0);
+    ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(database_arg, local_context);
+    const auto * literal = evaluated->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return;
+
+    if (!literal->value.safeGet<String>().empty())
+    {
+        database_arg = evaluated;
+        return;
+    }
+
+    if (table_name_may_reference_temporary_table && !local_context->isGlobalContext())
+    {
+        ASTPtr table_name_evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(args.at(1), local_context);
+        if (const auto * table_name_literal = table_name_evaluated->as<ASTLiteral>();
+            table_name_literal && table_name_literal->value.getType() == Field::Types::String)
+        {
+            const String & table_name = table_name_literal->value.safeGet<String>();
+            for (const auto & [external_table_name, _ /* storage */] : local_context->getExternalTables())
+                if (external_table_name == table_name)
+                    return;
+        }
+    }
+
+    database_arg = make_intrusive<ASTLiteral>(local_context->getCurrentDatabase());
+}
+
 /// Binds a table function used as a persisted `Distributed` target to the current database.
 /// `AddDefaultDatabaseVisitor` qualifies table identifiers in nested SELECTs and the table name argument
 /// of `dictGet` / `joinGet`, but it does not rewrite the arguments of a table function itself: in general
@@ -2346,6 +2390,9 @@ void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t
 /// `dictGet` does), the `timeSeries*` / `prometheusQuery*` family and `loop` (their short forms resolve
 /// the table through `Context::resolveStorageID` / `Context::getCurrentDatabase`), and the
 /// single-argument `merge` (its table name regexp matches tables of the current database).
+/// The long forms are not exempt either: an explicit database argument that evaluates to an empty
+/// string (`loop('', 'table')`, `timeSeriesMetrics('', 'table')`, the `mergeTree*` family) also falls
+/// back to the current database at query time, so it is folded and frozen the same way.
 void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function_ast, const ContextPtr & local_context)
 {
     if (!table_function_ast.arguments)
@@ -2368,44 +2415,81 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
              || function_name == "timeSeriesTags" || function_name == "timeSeriesMetrics")
     {
         /// timeSeriesMetrics([db.]table) / timeSeriesMetrics('db', 'table')
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        if (args.size() == 1)
+            bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        else if (args.size() == 2)
+            bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "timeSeriesSelector")
     {
         /// timeSeriesSelector([db.]table, selector, min_time, max_time)
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 4, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        if (args.size() == 4)
+            bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 4, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        else if (args.size() == 5)
+            bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "prometheusQuery")
     {
         /// prometheusQuery([db.]table, promql_query, evaluation_time)
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 3, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        if (args.size() == 3)
+            bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 3, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        else if (args.size() == 4)
+            bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "prometheusQueryRange")
     {
         /// prometheusQueryRange([db.]table, promql_query, start_time, end_time, step)
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 5, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        if (args.size() == 5)
+            bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 5, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
+        else if (args.size() == 6)
+            bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "merge")
     {
-        /// merge('table_name_regexp'): the regexp matches tables of the current database
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ false, /* table_name_may_reference_temporary_table= */ false, local_context);
+        /// merge(['db_name', ] 'table_name_regexp'): with the database omitted the regexp matches tables of
+        /// the current database, and in the two-argument form an empty database argument resolves to the
+        /// current database as well (`evaluateConstantExpressionForDatabaseName`). The `REGEXP(...)` database
+        /// form matches databases by name at read time and does not depend on the current database, so it is
+        /// left as is.
+        if (args.size() == 1)
+            bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ false, /* table_name_may_reference_temporary_table= */ false, local_context);
+        else if (args.size() == 2)
+        {
+            const auto * database_function = args.at(0)->as<ASTFunction>();
+            if (!database_function || database_function->name != "REGEXP")
+                bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ false, local_context);
+        }
     }
     else if (function_name == "loop")
     {
-        /// loop([db.]table). The string form loop('table') is rejected by the function itself, so an
-        /// unqualified name can only be an identifier here. The `loop(inner_table_function(...))` form needs
-        /// no special handling: the inner table function is reached by the recursive walk in
-        /// `bindTableFunctionTargetsToCurrentDatabase` and bound like any other nested target.
-        if (args.size() != 1)
-            return;
-        if (const auto * identifier = args.at(0)->as<ASTIdentifier>())
+        /// loop([db.]table) / loop('db', 'table'). The string form loop('table') is rejected by the function
+        /// itself, so an unqualified name can only be an identifier in the one-argument form. The
+        /// `loop(inner_table_function(...))` form needs no special handling: the inner table function is
+        /// reached by the recursive walk in `bindTableFunctionTargetsToCurrentDatabase` and bound like any
+        /// other nested target.
+        if (args.size() == 1)
         {
-            auto table_identifier = identifier->createTable();
-            if (!table_identifier || !table_identifier->getDatabaseName().empty())
-                return;
-            args.at(0) = make_intrusive<ASTLiteral>(table_identifier->shortName());
-            args.insert(args.begin(), make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
+            if (const auto * identifier = args.at(0)->as<ASTIdentifier>())
+            {
+                auto table_identifier = identifier->createTable();
+                if (!table_identifier || !table_identifier->getDatabaseName().empty())
+                    return;
+                args.at(0) = make_intrusive<ASTLiteral>(table_identifier->shortName());
+                args.insert(args.begin(), make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
+            }
         }
+        else if (args.size() == 2)
+            bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ false, local_context);
+    }
+    else if (function_name == "mergeTreeIndex" || function_name == "mergeTreeProjection"
+             || function_name == "mergeTreeTextIndex" || function_name == "mergeTreeAnalyzeIndexes")
+    {
+        /// mergeTreeIndex(database, table, ...) / mergeTreeProjection(database, table, projection) /
+        /// mergeTreeTextIndex(database, table, index_name) / mergeTreeAnalyzeIndexes(database, table, ...):
+        /// the database argument is always explicit here, but an empty string still resolves to the current
+        /// database at read time (`evaluateConstantExpressionForDatabaseName`), so it is frozen the same way.
+        if (args.size() >= 2)
+            bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ false, local_context);
     }
 }
 
