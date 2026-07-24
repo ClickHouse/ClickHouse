@@ -142,8 +142,9 @@ public:
 
     bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
+        const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         /// A non-string haystack (an Enum) is converted to strings during execution, which can throw.
-        if (!isStringOrFixedString(arguments[0].type))
+        if (!isStringOrFixedString(haystack_type.type))
             return true;
         /// The OrNull variants return NULL instead of throwing on execution errors.
         if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
