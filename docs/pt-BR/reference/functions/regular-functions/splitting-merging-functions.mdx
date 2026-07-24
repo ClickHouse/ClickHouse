@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+Introduzido em: v26.7.0
+
+Divide o texto em n-gramas usando a mesma tokenização de um dicionário Naive Bayes (o layout [`NAIVE_BAYES`](/pt-BR/reference/statements/create/dictionary/layouts/naive-bayes)): modo `byte`, `codepoint` ou `token`, com padding de borda opcional. Use-o para gerar os dados de treinamento pré-agregados `(ngram, class_id, count)` consumidos por esse dicionário, para que os n-gramas de treinamento correspondam exatamente ao que [`naiveBayesClassifier`](/pt-BR/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produz durante a consulta.
+
+**Sintaxe**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**Argumentos**
+
+* `text` — Texto a ser dividido em n-gramas. [`String`](/pt-BR/reference/data-types/string)
+* `n` — Tamanho do n-grama, de 1 a 1024. [`const UInt`](/pt-BR/reference/data-types/int-uint)
+* `mode` — Modo de tokenização: &#39;byte&#39;, &#39;codepoint&#39; ou &#39;token&#39;. [`const String`](/pt-BR/reference/data-types/string)
+* `start_token` — Opcional. Token de borda adicionado ao início da entrada (n-1) vezes; um número para &#39;byte&#39;/&#39;codepoint&#39;, um literal para &#39;token&#39;. Vazio significa sem padding. [`const String`](/pt-BR/reference/data-types/string)
+* `end_token` — Opcional. Token de borda adicionado ao final da entrada (n-1) vezes. [`const String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Os n-gramas do texto de entrada. [`Array(String)`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Bigramas de token**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**Bigramas de token com padding nas bordas**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**Bigramas de bytes com preenchimento nas bordas (resultado mostrado em hexadecimal)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**Bigramas de pontos de código com preenchimento nas bordas (resultado mostrado em hexadecimal)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>

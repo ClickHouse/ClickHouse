@@ -113,13 +113,9 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 [기본 Map 기반 스키마](/ko/clickstack/ingesting-data/schemas)에서 마이그레이션하려면 다음 단계를 따르십시오.
 
 <Steps>
-  <Step>
-    ### OTel collector 중지하기
-  </Step>
+  <Step title="OTel collector 중지하기" id="stop-the-collector" />
 
-  <Step>
-    ### 기존 테이블 이름 변경 및 데이터 소스 업데이트
-
+  <Step title="기존 테이블 이름 변경 및 데이터 소스 업데이트" id="rename-existing-tables-sources">
     기존 테이블의 이름을 변경하고 HyperDX에서 데이터 소스를 업데이트합니다.
 
     예시:
@@ -130,23 +126,17 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     ```
   </Step>
 
-  <Step>
-    ### collector 배포하기
-
+  <Step title="collector 배포하기" id="deploy-the-collector">
     `OTEL_AGENT_FEATURE_GATE_ARG`를 설정한 상태로 collector를 배포합니다.
   </Step>
 
-  <Step>
-    ### JSON 스키마 지원으로 HyperDX 컨테이너 재시작하기
-
+  <Step title="JSON 스키마 지원으로 HyperDX 컨테이너 재시작하기" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step>
-    ### 새 데이터 소스 생성하기
-
+  <Step title="새 데이터 소스 생성하기" id="create-new-data-sources">
     HyperDX에서 JSON 테이블을 가리키는 새 데이터 소스를 생성합니다.
   </Step>
 </Steps>

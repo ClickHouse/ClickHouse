@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
@@ -17,7 +17,7 @@ import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.j
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> é uma plataforma de integração de dados em tempo real especializada em CDC (captura de alterações de dados) em streaming e processamento de fluxos. Ela é baseada em uma stack escalável e de alta taxa de transferência com Apache Kafka, Apache Flink e Debezium, oferecida como um serviço totalmente gerenciado em implantações SaaS ou BYOC (Bring Your Own Cloud).
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> é uma plataforma de integração de dados em tempo real especializada em CDC (captura de alterações de dados) em streaming e processamento de streams. Ela é baseada em uma stack escalável e de alto throughput com Apache Kafka, Apache Flink e Debezium, oferecida como um serviço totalmente gerenciado em implantações SaaS ou BYOC (Bring Your Own Cloud).
 
 O Streamkap permite transmitir cada inserção, atualização e exclusão de bancos de dados de origem, como PostgreSQL, MySQL, SQL Server, MongoDB e <a href="https://streamkap.com/connectors" target="_blank">outros</a>, diretamente para o ClickHouse com latência de milissegundos.
 
@@ -48,53 +48,47 @@ Este guia oferece uma visão geral de como configurar um pipeline do Streamkap p
   ### Pré-requisitos
 </div>
 
-* Uma <a href="https://app.streamkap.com/account/sign-up" target="_blank">conta no Streamkap</a>.
-* Os detalhes de conexão do seu cluster do ClickHouse: Hostname, Porta, Nome de usuário e Senha.
-* Um banco de dados de origem (por exemplo, PostgreSQL, SQL Server) configurado para permitir CDC. Você pode encontrar guias detalhados de configuração na documentação do Streamkap.
+* Uma <a href="https://app.streamkap.com/account/sign-up" target="_blank">conta do Streamkap</a>.
+* Os detalhes de conexão do seu cluster ClickHouse: Hostname, Port, Username e Password.
+* Um banco de dados de origem (por exemplo, PostgreSQL, SQL Server) configurado para permitir CDC. Você pode encontrar guias de configuração detalhados na documentação do Streamkap.
 
-<div id="configure-clickhouse-source">
-  ### Etapa 1: Configure a origem no Streamkap
-</div>
+<Steps>
+  <Step title="Configure a origem no Streamkap" id="configure-clickhouse-source">
+    1. Faça login na sua conta do Streamkap.
+    2. Na barra lateral, navegue até **Connectors** e selecione a guia **Sources**.
+    3. Clique em **+ Add** e selecione o tipo do seu banco de dados de origem (por exemplo, SQL Server RDS).
+    4. Preencha os detalhes da conexão, incluindo o endpoint, a porta, o nome do banco de dados e as credenciais do usuário.
+    5. Salve o connector.
+  </Step>
 
-1. Faça login na sua conta do Streamkap.
-2. Na barra lateral, acesse **Connectors** e selecione a aba **Sources**.
-3. Clique em **+ Add** e selecione o tipo do seu banco de dados de origem (por exemplo, SQL Server RDS).
-4. Preencha os detalhes da conexão, incluindo o endpoint, a porta, o nome do banco de dados e as credenciais do usuário.
-5. Salve o conector.
+  <Step title="Configure o destino do ClickHouse" id="configure-clickhouse-dest">
+    1. Na seção **Connectors**, selecione a guia **Destinations**.
+    2. Clique em **+ Add** e escolha **ClickHouse** na lista.
+    3. Insira os detalhes da conexão do seu serviço ClickHouse:
+       * **Hostname:** O host da sua instância do ClickHouse (por exemplo, `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port:** A porta HTTPS segura, normalmente `8443`
+       * **Username and Password:** As credenciais do seu usuário do ClickHouse
+       * **Database:** O nome do banco de dados de destino no ClickHouse
+    4. Salve o destino.
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### Etapa 2: Configure o destino do ClickHouse
-</div>
+  <Step title="Crie e execute o pipeline" id="run-pipeline">
+    1. Navegue até **Pipelines** na barra lateral e clique em **+ Create**.
+    2. Selecione a origem e o destino que você acabou de configurar.
+    3. Escolha os schemas e as tables que deseja transmitir via streaming.
+    4. Dê um nome ao seu pipeline e clique em **Save**.
 
-1. Na seção **Connectors**, selecione a guia **Destinations**.
-2. Clique em **+ Add** e escolha **ClickHouse** na lista.
-3. Insira os detalhes da conexão do seu serviço ClickHouse:
-   * **Hostname:** O host da sua instância do ClickHouse (por exemplo, `abc123.us-west-2.aws.clickhouse.cloud`)
-   * **Port:** A porta HTTPS segura, normalmente `8443`
-   * **Username and Password:** As credenciais do seu usuário do ClickHouse
-   * **Database:** O nome do banco de dados de destino no ClickHouse
-4. Salve o destino.
+    Depois de criado, o pipeline ficará ativo. O Streamkap primeiro fará um snapshot dos dados existentes e depois começará a transmitir, via streaming, todas as novas alterações à medida que ocorrerem.
+  </Step>
 
-<div id="run-pipeline">
-  ### Etapa 3: Criar e executar o pipeline
-</div>
+  <Step title="Verifique os dados no ClickHouse" id="verify-data-clickhoouse">
+    Conecte-se ao seu cluster ClickHouse e execute uma consulta para ver os dados chegando à tabela de destino.
 
-1. Vá até **Pipelines** na barra lateral e clique em **+ Create**.
-2. Selecione a origem e o destino que você acabou de configurar.
-3. Escolha os schemas e as tabelas que deseja transmitir.
-4. Dê um nome ao seu pipeline e clique em **Save**.
-
-Depois de criado, o pipeline ficará ativo. O Streamkap primeiro fará um snapshot dos dados existentes e, em seguida, começará a transmitir novas alterações conforme elas ocorrerem.
-
-<div id="verify-data-clickhoouse">
-  ### Passo 4: Verifique os dados no ClickHouse
-</div>
-
-Conecte-se ao seu cluster do ClickHouse e execute uma consulta para ver os dados sendo gravados na tabela de destino.
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## Como funciona com o ClickHouse

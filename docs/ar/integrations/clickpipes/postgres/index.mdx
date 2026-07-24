@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 
 يمكنك استخدام ClickPipes لاستيراد البيانات من قاعدة بيانات Postgres المصدر لديك إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات Postgres المصدر ضمن بنيتك التحتية المحلية أو في السحابة، بما في ذلك Amazon RDS وGoogle Cloud SQL وAzure Database for Postgres وSupabase وغيرها.
 
@@ -89,6 +90,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ترغب في الحفاظ على خصوصية نقل البيانات.
 يمكنك اتباع [دليل الإعداد لإعداد الاتصال](/ar/integrations/clickpipes/aws-privatelink).
 
+<div id="optional-changing-tls-settings">
+  #### (اختياري) تعديل إعدادات TLS
+</div>
+
+<ChangingTLSSettings />
+
 <div id="optional-setting-up-ssh-tunneling">
   #### (اختياري) إعداد نفق SSH
 </div>
@@ -144,6 +151,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Warning>
   إذا كنت تحدد مفتاح الترتيب في ClickHouse بشكل مختلف عن المفتاح الأساسي في Postgres، فلا تنسَ قراءة جميع [الاعتبارات](/ar/integrations/clickpipes/postgres/ordering-keys) المتعلقة بذلك
 </Warning>
+
+8. بالإضافة إلى ذلك، يمكنك توفير تعبير `PARTITION BY <expr>` مخصص للتحكم في [تقسيم جداول ClickHouse](/partitions).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="التقسيم حسب" size="lg" border />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### راجع الأذونات وابدأ ClickPipe

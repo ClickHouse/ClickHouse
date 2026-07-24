@@ -3,425 +3,420 @@ slug: /cloud/managed-postgres/quickstart
 sidebarTitle: 'クイックスタート'
 title: 'Managed Postgres のクイックスタート'
 description: 'NVMe による Postgres のパフォーマンスを体験し、ネイティブな ClickHouse 連携でリアルタイム分析を実現'
-keywords: ['managed postgres', 'クイックスタート', '使い始める', 'データベースを作成', 'nvme', 'パフォーマンス']
+keywords: ['managed postgres', 'クイックスタート', '使い始める', 'データベースを作成', 'nvme', 'パフォーマンス', 'clickhousectl', 'CLI', '自動化', 'AI エージェント']
 doc_type: 'guide'
 ---
 
 import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
+import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
+<Visibility for="agents">
+  <QuickstartCLI />
+</Visibility>
 
-ClickHouse Managed Postgres は、NVMe ストレージを採用したエンタープライズ向けの Postgres で、EBS のようなネットワーク接続型ストレージと比べて、ディスク I/O がボトルネックになるワークロードで最大 10 倍高速なパフォーマンスを発揮します。このクイックスタートは次の 2 部構成です。
+<Visibility for="humans">
+  <View title="CLI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
 
-* **第1部:** NVMe Postgres を使い始め、そのパフォーマンスを体験する
-* **第2部:** ClickHouse と統合してリアルタイム分析を実現する
+    この方法は、自分で進めても、スクリプト化しても、AI Agent に任せてもかまいません。コンソール版を使う場合は、**Cloud UI** 表示に切り替えてください。
 
-Managed Postgres は現在 AWS の複数のリージョンで利用でき、プライベートプレビュー期間中は無料です。
+    <QuickstartCLI />
+  </View>
 
-**このクイックスタートで行うこと:**
+  <View title="Cloud UI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
-* NVMe による高性能を備えた Managed Postgres インスタンスを作成する
-* 100 万件のサンプルイベントをロードし、NVMe の速度を実際に確認する
-* クエリを実行し、低レイテンシのパフォーマンスを体感する
-* リアルタイム分析のためにデータを ClickHouse にレプリケートする
-* `pg_clickhouse` を使用して Postgres から ClickHouse に直接クエリを実行する
+    ClickHouse Managed Postgres は、NVMe ストレージを基盤とするエンタープライズグレードの Postgres サービスです。EBS のようなネットワーク接続型ストレージと比較して、ディスクバウンドなワークロードに対して最大 10 倍高速なパフォーマンスを実現します。このクイックスタートは 2 つのパートに分かれています：
 
-<div id="part-1">
-  ## 第1部: NVMe Postgres を始める
-</div>
+    * **第1部:** NVMe Postgres を使い始め、そのパフォーマンスを体感する
+    * **第2部:** ClickHouse と統合してリアルタイム分析を実現する
 
-<div id="create-postgres-database">
-  ### データベースを作成する
-</div>
-
-新しいManaged Postgres サービスを作成するには、Cloud Console のサービス一覧で **New service** ボタンをクリックします。続いて、データベースの種類として Postgres を選択します。
-
-<Image img="/images/managed-postgres/create-service.webp" alt="Managed Postgres サービスの作成" size="md" border />
-
-データベースインスタンスの名前を入力し、**Create service** をクリックします。すると、概要ページが表示されます。
-
-<Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres の概要" size="md" border />
-
-Managed Postgres インスタンスのプロビジョニングが行われ、3〜5 分で使用可能になります。
-
-<div id="connect">
-  ### データベースに接続する
-</div>
-
-左側のサイドバーに [**Connect** ボタン](/ja/products/managed-postgres/connection) があります。これをクリックすると、接続情報と複数のフォーマットの接続文字列を確認できます。
-
-<Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres の接続モーダル" size="md" border />
-
-`psql` の接続文字列をコピーして、データベースに接続します。DBeaver などの Postgres 互換クライアントや、各種アプリケーションライブラリも使用できます。
-
-<div id="nvme-performance">
-  ### NVMe のパフォーマンスを体感する
-</div>
-
-NVMe によるパフォーマンスを実際に確認してみましょう。まず、クエリの実行時間を測定できるよう、psql でタイミング計測を有効にします。
-
-```sql
-\timing
-```
-
-イベント用とユーザー用のサンプルテーブルを2つ作成します。
-
-```sql
-CREATE TABLE events (
-   event_id SERIAL PRIMARY KEY,
-   event_name VARCHAR(255) NOT NULL,
-   event_type VARCHAR(100),
-   event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   event_data JSONB,
-   user_id INT,
-   user_ip INET,
-   is_active BOOLEAN DEFAULT TRUE,
-   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE users (
-   user_id SERIAL PRIMARY KEY,
-   name VARCHAR(100),
-   country VARCHAR(50),
-   platform VARCHAR(50)
-);
-```
-
-それでは、100万件のイベントを挿入して、NVMeの速度を見てみましょう：
-
-```sql
-INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
-SELECT
-   'Event ' || gs::text AS event_name,
-   CASE
-       WHEN random() < 0.5 THEN 'click'
-       WHEN random() < 0.75 THEN 'view'
-       WHEN random() < 0.9 THEN 'purchase'
-       WHEN random() < 0.98 THEN 'signup'
-       ELSE 'logout'
-   END AS event_type,
-   NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
-   jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
-   GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
-   ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
-FROM
-   generate_series(1, 1000000) gs;
-```
-
-```text
-INSERT 0 1000000
-Time: 3596.542 ms (00:03.597)
-```
-
-<Tip>
-  **NVMe パフォーマンス**
-
-  JSONB データを含む 100 万行を 4 秒未満で挿入。EBS のようなネットワーク接続型ストレージを使用する従来のクラウドデータベースでは、ネットワーク往復遅延と IOPS のスロットリングにより、同じ操作に通常 2〜3 倍の時間がかかります。NVMeストレージは、ストレージをコンピュートに物理的に直結することで、こうしたボトルネックを解消します。
-
-  パフォーマンスは、インスタンスサイズ、現在の負荷、データ特性によって異なります。
-</Tip>
-
-1,000 人のユーザーを挿入します:
-
-```sql
-INSERT INTO users (name, country, platform)
-SELECT
-    first_names[first_idx] || ' ' || last_names[last_idx] AS name,
-    CASE
-        WHEN random() < 0.25 THEN 'India'
-        WHEN random() < 0.5 THEN 'USA'
-        WHEN random() < 0.7 THEN 'Germany'
-        WHEN random() < 0.85 THEN 'China'
-        ELSE 'Other'
-    END AS country,
-    CASE
-        WHEN random() < 0.2 THEN 'iOS'
-        WHEN random() < 0.4 THEN 'Android'
-        WHEN random() < 0.6 THEN 'Web'
-        WHEN random() < 0.75 THEN 'Windows'
-        WHEN random() < 0.9 THEN 'MacOS'
-        ELSE 'Linux'
-    END AS platform
-FROM
-    generate_series(1, 1000) AS seq
-    CROSS JOIN LATERAL (
-        SELECT
-            array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
-            array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
-            1 + (seq % 32) AS first_idx,
-            1 + ((seq / 32)::int % 32) AS last_idx
-    ) AS names;
-```
-
-<div id="run-queries">
-  ### データに対してクエリを実行する
-</div>
-
-それでは、NVMeストレージで Postgres がどれほど高速に応答するかを確認するために、いくつかのクエリを実行してみましょう。
-
-**100 万件のイベントを種類別に集計:**
-
-```sql
-SELECT event_type, COUNT(*) as count 
-FROM events 
-GROUP BY event_type 
-ORDER BY count DESC;
-```
-
-```text
- event_type | count  
-------------+--------
- click      | 499523
- view       | 375644
- purchase   | 112473
- signup     |  12117
- logout     |    243
-(5 rows)
-
-Time: 114.883 ms
-```
-
-**JSONB フィルタリングと日付範囲を使ったクエリ:**
-
-```sql
-SELECT COUNT(*) 
-FROM events 
-WHERE event_timestamp > NOW() - INTERVAL '30 days'
-  AND event_data->>'additional_info' LIKE 'info_5%';
-```
-
-```text
- count 
--------
-  9042
-(1 row)
+    Managed Postgres は現在、AWS の複数のリージョンで利用可能であり、パブリックベータ版として提供されています。
 
-Time: 109.294 ms
-```
+    **このクイックスタートでは、以下を行います：**
 
-**イベントをユーザー情報と結合する:**
+    * NVMe による高性能を備えた Managed Postgres インスタンスを作成
+    * 100万件のサンプルイベントを読み込み、NVMe の速度を実際に確認
+    * クエリを実行し、低レイテンシのパフォーマンスを体感
+    * リアルタイム分析のためにデータを ClickHouse にレプリケート
+    * `pg_clickhouse` を使用して、Postgres から ClickHouse に直接クエリ
 
-```sql
-SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
-FROM events e
-JOIN users u ON e.user_id = u.user_id
-GROUP BY u.country
-ORDER BY events DESC;
-```
+    ## 第1部: NVMe Postgres を使い始める
 
-```text
- country | events | avg_json_size 
----------+--------+---------------
- USA     | 383748 |            52
- India   | 255990 |            52
- Germany | 223781 |            52
- China   | 127754 |            52
- Other   |   8727 |            52
-(5 rows)
+    ### データベースを作成する
 
-Time: 224.670 ms
-```
+    新しい Managed Postgres サービスを作成するには、Cloud Console のサービス一覧にある **New service** ボタンをクリックします。その後、データベースタイプとして Postgres を選択できます。
 
-<Info>
-  **Postgres の準備ができました**
+    <Image img="/images/managed-postgres/create-service.webp" alt="Managed Postgres サービスを作成する" size="md" border />
 
-  これで、トランザクション処理のワークロードに対応できる、完全に機能する高性能な Postgres データベースを利用できます。
+    データベースインスタンスの名前を入力し、**Create service** をクリックします。概要ページに移動します。
+
+    <Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres の概要" size="md" border />
+
+    Managed Postgres インスタンスは 3～5 分で準備が完了し、使用できるようになります。
+
+    ### データベースに接続する
+
+    左側のサイドバーに [**Connect** ボタン](/ja/products/managed-postgres/connection) が表示されます。クリックすると、接続の詳細と複数のフォーマットの接続文字列を確認できます。
+
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres の「Connect」モーダル" size="md" border />
+
+    `psql` の接続文字列をコピーして、データベースに接続します。DBeaver などの Postgres 互換クライアントや、任意のアプリケーションライブラリを使用することもできます。
+
+    ### NVMe のパフォーマンスを体感する
+
+    NVMe によるパフォーマンスを実際に確認してみましょう。まず、クエリの実行時間を測定できるよう、psql でタイミング計測を有効にします。
+
+    ```sql
+    \timing
+    ```
+
+    イベント用とユーザー用のサンプルテーブルを2つ作成します。
+
+    ```sql
+    CREATE TABLE events (
+       event_id SERIAL PRIMARY KEY,
+       event_name VARCHAR(255) NOT NULL,
+       event_type VARCHAR(100),
+       event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       event_data JSONB,
+       user_id INT,
+       user_ip INET,
+       is_active BOOLEAN DEFAULT TRUE,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE users (
+       user_id SERIAL PRIMARY KEY,
+       name VARCHAR(100),
+       country VARCHAR(50),
+       platform VARCHAR(50)
+    );
+    ```
+
+    それでは、100万件のイベントを挿入して、NVMeの速度を見てみましょう：
+
+    ```sql
+    INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
+    SELECT
+       'Event ' || gs::text AS event_name,
+       CASE
+           WHEN random() < 0.5 THEN 'click'
+           WHEN random() < 0.75 THEN 'view'
+           WHEN random() < 0.9 THEN 'purchase'
+           WHEN random() < 0.98 THEN 'signup'
+           ELSE 'logout'
+       END AS event_type,
+       NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
+       jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
+       GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
+       ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
+    FROM
+       generate_series(1, 1000000) gs;
+    ```
+
+    ```text
+    INSERT 0 1000000
+    Time: 3596.542 ms (00:03.597)
+    ```
+
+    <Tip>
+      **NVMe パフォーマンス**
+
+      JSONB データを含む 100 万行を 4 秒未満で挿入。EBS のようなネットワーク接続型ストレージを使用する従来のクラウドデータベースでは、ネットワーク往復遅延と IOPS のスロットリングにより、同じ操作に通常 2〜3 倍の時間がかかります。NVMeストレージは、ストレージをコンピュートに物理的に直結することで、こうしたボトルネックを解消します。
+
+      パフォーマンスは、インスタンスサイズ、現在の負荷、データ特性によって異なります。
+    </Tip>
+
+    1,000 人のユーザーを挿入します:
+
+    ```sql
+    INSERT INTO users (name, country, platform)
+    SELECT
+        first_names[first_idx] || ' ' || last_names[last_idx] AS name,
+        CASE
+            WHEN random() < 0.25 THEN 'India'
+            WHEN random() < 0.5 THEN 'USA'
+            WHEN random() < 0.7 THEN 'Germany'
+            WHEN random() < 0.85 THEN 'China'
+            ELSE 'Other'
+        END AS country,
+        CASE
+            WHEN random() < 0.2 THEN 'iOS'
+            WHEN random() < 0.4 THEN 'Android'
+            WHEN random() < 0.6 THEN 'Web'
+            WHEN random() < 0.75 THEN 'Windows'
+            WHEN random() < 0.9 THEN 'MacOS'
+            ELSE 'Linux'
+        END AS platform
+    FROM
+        generate_series(1, 1000) AS seq
+        CROSS JOIN LATERAL (
+            SELECT
+                array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
+                array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
+                1 + (seq % 32) AS first_idx,
+                1 + ((seq / 32)::int % 32) AS last_idx
+        ) AS names;
+    ```
+
+    ### データに対してクエリを実行する
+
+    それでは、NVMe ストレージを使用した場合に Postgres がどれほど高速に応答するか、いくつかのクエリを実行して確認してみましょう。
+
+    **100万件のイベントをタイプ別に集計する：**
+
+    ```sql
+    SELECT event_type, COUNT(*) as count 
+    FROM events 
+    GROUP BY event_type 
+    ORDER BY count DESC;
+    ```
+
+    ```text
+     event_type | count  
+    ------------+--------
+     click      | 499523
+     view       | 375644
+     purchase   | 112473
+     signup     |  12117
+     logout     |    243
+    (5 rows)
 
-  第2部 に進み、ClickHouse のネイティブ連携によって分析機能をどのように大幅に強化できるかをご確認ください。
-</Info>
+    Time: 114.883 ms
+    ```
 
-***
+    **JSONB フィルタリングと日付範囲を使用したクエリ：**
 
-<div id="part-2">
-  ## 第2部: ClickHouse でリアルタイム分析を追加する
-</div>
+    ```sql
+    SELECT COUNT(*) 
+    FROM events 
+    WHERE event_timestamp > NOW() - INTERVAL '30 days'
+      AND event_data->>'additional_info' LIKE 'info_5%';
+    ```
 
-Postgres はトランザクションワークロード (OLTP) に優れる一方、ClickHouse は大規模なデータセットに対する分析クエリ (OLAP) 向けに特化して設計されています。この 2 つを組み合わせることで、両方の長所を活かせます。
+    ```text
+     count 
+    -------
+      9042
+    (1 row)
 
-* アプリケーションのトランザクションデータ (挿入、更新、ポイントルックアップ) には **Postgres**
-* 数十億行規模のデータに対するサブ秒レベルの分析には **ClickHouse**
+    Time: 109.294 ms
+    ```
 
-このセクションでは、Postgres のデータを ClickHouse にレプリケートし、それをシームレスにクエリする方法を紹介します。
+    **イベントとユーザーを結合する:**
 
-<div id="setup-integrate-clickhouse">
-  ### ClickHouse 連携の設定
-</div>
+    ```sql
+    SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
+    FROM events e
+    JOIN users u ON e.user_id = u.user_id
+    GROUP BY u.country
+    ORDER BY events DESC;
+    ```
 
-Postgres にテーブルとデータが入ったので、次は分析のためにそれらのテーブルを ClickHouse にレプリケートします。まず、サイドバーで **ClickHouse 連携** をクリックします。次に **Replicate data in ClickHouse** をクリックします。
+    ```text
+     country | events | avg_json_size 
+    ---------+--------+---------------
+     USA     | 383748 |            52
+     India   | 255990 |            52
+     Germany | 223781 |            52
+     China   | 127754 |            52
+     Other   |   8727 |            52
+    (5 rows)
 
-<Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres インテグレーション（空の状態）" size="md" border />
+    Time: 224.670 ms
+    ```
 
-続いて表示されるフォームで、インテグレーション名を入力し、レプリケート先の既存の ClickHouse インスタンスを選択できます。まだ ClickHouse インスタンスがない場合は、このフォームから直接作成できます。
+    <Info>
+      **Postgres の準備が整いました**
 
-<Info>
-  **重要**
+      この時点で、トランザクションワークロードに対応できる、高性能で完全に機能する Postgres データベースが利用可能になっています。
 
-  先に進む前に、選択した ClickHouse サービスが Running になっていることを確認してください。
-</Info>
+      第2部に進み、ネイティブな ClickHouse 連携が分析性能をどのように大幅に高めるかをご覧ください。
+    </Info>
 
-<Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres インテグレーションフォーム" size="md" border />
+    ***
 
-**Next** をクリックすると、テーブルピッカーに移動します。ここで行うことは次のとおりです。
+    ## 第2部: ClickHouse でリアルタイム分析を追加する
 
-* レプリケート先の ClickHouse データベースを選択します。
-* **public** スキーマを展開し、先ほど作成した users テーブルと events テーブルを選択します。
-* **Replicate data to ClickHouse** をクリックします。
+    Postgres はトランザクション系ワークロード (OLTP) に優れている一方、ClickHouse は大規模データセットに対する分析クエリ (OLAP) に特化して設計されています。両者を統合することで、それぞれの長所を最大限に活かすことができます：
 
-<Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres テーブルピッカー" size="md" border />
+    * アプリケーションのトランザクションデータ (挿入、更新、ポイントルックアップ) には **Postgres**
+    * 数十億行規模のデータに対するサブ秒の分析には **ClickHouse**
 
-レプリケーションが開始され、インテグレーションの概要ページに移動します。初めてのインテグレーションであるため、初期インフラストラクチャのセットアップには 2〜3 分かかることがあります。その間に、新しい **pg&#95;clickhouse** 拡張機能を見てみましょう。
+    このセクションでは、Postgres のデータを ClickHouse にレプリケートし、シームレスにクエリを実行する方法を説明します。
 
-<div id="pg-clickhouse-extension">
-  ### Postgres から ClickHouse をクエリする
-</div>
+    ### ClickHouse 連携のセットアップ
 
-`pg_clickhouse` 拡張機能を使うと、標準 SQL で Postgres から ClickHouse のデータを直接クエリできます。つまり、アプリケーションは Postgres を、トランザクションデータと分析データの両方に対応する統一的なクエリレイヤーとして利用できます。詳細は、[完全なドキュメント](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction)を参照してください。
+    Postgres にテーブルとデータが揃ったので、分析のためにテーブルを ClickHouse にレプリケートしましょう。まず、サイドバーの **ClickHouse 連携** をクリックします。次に、**Replicate data in ClickHouse** をクリックします。
 
-拡張機能を有効にします:
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres インテグレーションが空です" size="md" border />
 
-```sql
-CREATE EXTENSION pg_clickhouse;
-```
+    次のフォームでは、インテグレーションの名前を入力し、レプリケート先となる既存の ClickHouse インスタンスを選択できます。ClickHouse インスタンスをまだお持ちでない場合は、このフォームから直接作成することもできます。
 
-次に、ClickHouse への foreign server 接続を作成します。セキュアな接続には、ポート `8443` の `http` ドライバーを使用します。
-
-```sql
-CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
-       OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
-```
-
-`<clickhouse_cloud_host>` は ClickHouse のホスト名に、`<database_name>` はレプリケーションの設定時に選択したデータベース名に置き換えてください。ホスト名は、サイドバーの **Connect** をクリックすると ClickHouse サービス で確認できます。
-
-<Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="ClickHouse ホストを取得" size="md" border />
-
-次に、Postgres ユーザーを ClickHouse サービス の認証情報に対応付けます。
-
-```sql
-CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
-OPTIONS (user 'default', password '<clickhouse_password>');
-```
-
-次に、ClickHouseのテーブルをPostgresのスキーマにインポートします。
-
-```sql
-CREATE SCHEMA organization;
-IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
-```
-
-`<database_name>` は、サーバーの作成時に指定したものと同じデータベース名に置き換えてください。
-
-これで、Postgres クライアントですべての ClickHouse テーブルを参照できます。
-
-```sql
-\det+ organization.*
-```
+    <Info>
+      **重要**
 
-<div id="analytics-after-integration">
-  ### 分析データが反映されていることを確認する
-</div>
+      次に進む前に、選択した ClickHouse service が Running 状態であることを確認してください。
+    </Info>
 
-インテグレーションのページに戻って確認しましょう。初回のレプリケーションが完了しているはずです。詳細を表示するには、インテグレーション名をクリックします。
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres インテグレーション フォーム" size="md" border />
 
-<Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres の分析一覧" size="md" border />
+    **次へ**をクリックすると、テーブルピッカーに移動します。ここで必要な操作は以下のとおりです：
 
-サービス名をクリックして ClickHouse Console を開き、レプリケートテーブルを確認します。
+    * レプリケート先の ClickHouse データベースを選択します。
+    * **public** スキーマを展開し、先ほど作成した users テーブルと events テーブルを選択します。
+    * **Replicate data to ClickHouse** をクリックします。
 
-<Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 内の Managed Postgres のレプリケートテーブル" size="md" border />
+    <Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres テーブル選択" size="md" border />
 
-<div id="performance-comparison">
-  ### Postgres と ClickHouse のパフォーマンスを比較する
-</div>
+    レプリケーションプロセスが開始され、インテグレーションの概要ページに移動します。初回のインテグレーションでは、初期インフラストラクチャのセットアップに 2〜3 分かかる場合があります。その間に、新しい **pg&#95;clickhouse** 拡張機能を確認してみましょう。
 
-それでは、いくつかの分析クエリを実行して、Postgres と ClickHouse のパフォーマンスを比較してみましょう。レプリケートテーブルでは、`public_<table_name>` という命名規則が使われる点に注意してください。
+    ### Postgres から ClickHouse をクエリする
 
-**クエリ 1: アクティビティ別の上位ユーザー**
+    `pg_clickhouse` 拡張機能を使用すると、Standard SQL を使って Postgres から直接 ClickHouse のデータをクエリできます。これにより、アプリケーションはトランザクションデータと分析データの両方に対して、Postgres を統合クエリレイヤーとして利用できます。詳細については、[完全なドキュメント](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction)を参照してください。
 
-このクエリは、複数の集計を使って最もアクティブなユーザーを抽出します。
+    拡張機能を有効にします:
 
-```sql
--- ClickHouse経由
-SELECT 
-    user_id,
-    COUNT(*) as total_events,
-    COUNT(DISTINCT event_type) as unique_event_types,
-    SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
-    MIN(event_timestamp) as first_event,
-    MAX(event_timestamp) as last_event
-FROM organization.public_events
-GROUP BY user_id
-ORDER BY total_events DESC
-LIMIT 10;
-```
+    ```sql
+    CREATE EXTENSION pg_clickhouse;
+    ```
 
-```text
- user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
----------+--------------+--------------------+-----------+----------------------------+----------------------------
-       1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
-       2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
-...
-(10 rows)
+    次に、ClickHouse への foreign server 接続を作成します。セキュアな接続には、ポート `8443` を使用する `http` ドライバーを指定します：
 
-Time: 163.898 ms   -- ClickHouse
-Time: 554.621 ms   -- Postgresで同じクエリを実行した場合
-```
+    ```sql
+    CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
+           OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
+    ```
+
+    `<clickhouse_cloud_host>` をご使用の ClickHouse のホスト名に、`<database_name>` をレプリケーション設定時に選択したデータベース名に置き換えてください。ホスト名は、サイドバーの **Connect** をクリックすることで ClickHouse サービス上で確認できます。
+
+    <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="ClickHouse のホストを取得する" size="md" border />
+
+    次に、Postgres ユーザーを ClickHouse サービスの認証情報にマップします：
+
+    ```sql
+    CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
+    OPTIONS (user 'default', password '<clickhouse_password>');
+    ```
 
-**クエリ 2: 国別およびプラットフォーム別のユーザーエンゲージメント**
+    次に、ClickHouse のテーブルを Postgres のスキーマにインポートします。
+
+    ```sql
+    CREATE SCHEMA organization;
+    IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
+    ```
 
-このクエリでは、events と users を結合し、エンゲージメントのメトリクスを算出します:
+    `<database_name>` には、サーバーの作成時に使用したデータベース名と同じ名前を指定してください。
 
-```sql
--- ClickHouse経由
-SELECT 
-    u.country,
-    u.platform,
-    COUNT(DISTINCT e.user_id) as users,
-    COUNT(*) as total_events,
-    ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
-    SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
-FROM organization.public_events e
-JOIN organization.public_users u ON e.user_id = u.user_id
-GROUP BY u.country, u.platform
-ORDER BY total_events DESC
-LIMIT 10;
-```
+    これで、Postgres クライアントですべての ClickHouse テーブルを確認できます：
 
-```text
- country | platform | users | total_events | events_per_user | purchases 
----------+----------+-------+--------------+-----------------+-----------
- USA     | Android  |   115 |       109977 |             956 |     12388
- USA     | Web      |   108 |       105057 |             972 |     11847
- USA     | iOS      |    83 |        84594 |            1019 |      9565
- Germany | Android  |    85 |        77966 |             917 |      8852
- India   | Android  |    80 |        68095 |             851 |      7724
-...
-(10 rows)
+    ```sql
+    \det+ organization.*
+    ```
 
-Time: 170.353 ms   -- ClickHouse
-Time: 1245.560 ms  -- Postgresで同じクエリを実行した場合
-```
+    ### 分析機能を実際に確認する
 
-**パフォーマンス比較:**
+    インテグレーションページに戻って確認してみましょう。初期レプリケーションが完了していることが確認できるはずです。詳細を表示するには、インテグレーション名をクリックしてください。
 
-| Query                     | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | Speedup |
-| ------------------------- | --------------- | ---------------------------------- | ------- |
-| 上位ユーザー (5つの集計)            | 555 ms          | 164 ms                             | 3.4x    |
-| ユーザーエンゲージメント (JOIN + 集計)  | 1,246 ms        | 170 ms                             | 7.3x    |
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres 分析一覧" size="md" border />
 
-<Tip>
-  **ClickHouseを使うべきケース**
+    サービス名をクリックして ClickHouse コンソールを開き、レプリケートテーブルを確認します。
 
-  この100万行のデータセットでも、ClickHouseはJOINや複数の集計を含む複雑な分析クエリで3〜7倍高速です。規模がさらに大きくなると (1億行以上) 、その差はより顕著になり、ClickHouseの列指向ストレージとベクトル化実行によって10〜100倍の高速化が期待できます。
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse の Managed Postgres レプリケートテーブル" size="md" border />
 
-  クエリ時間は、インスタンスのサイズ、サービス間のネットワークレイテンシ、データの特性、現在の負荷によって変動します。
-</Tip>
+    ### Postgres と ClickHouse のパフォーマンスを比較する
 
-<div id="cleanup">
-  ## クリーンアップ
-</div>
+    次に、いくつかの分析クエリを実行して、Postgres と ClickHouse のパフォーマンスを比較してみましょう。なお、レプリケートテーブルは `public_<table_name>` という命名規則を使用します。
 
-このクイックスタートで作成したリソースを削除するには、次の手順を実行します。
+    **クエリ 1: アクティビティ別上位ユーザー**
 
-1. まず、ClickHouseサービスから ClickPipe インテグレーションを削除します
-2. 次に、Cloud Console から Managed Postgres インスタンスを削除します
+    このクエリは、複数の集計を用いて最もアクティブなユーザーを見つけます。
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        user_id,
+        COUNT(*) as total_events,
+        COUNT(DISTINCT event_type) as unique_event_types,
+        SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
+        MIN(event_timestamp) as first_event,
+        MAX(event_timestamp) as last_event
+    FROM organization.public_events
+    GROUP BY user_id
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
+    ---------+--------------+--------------------+-----------+----------------------------+----------------------------
+           1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+           2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+    ...
+    (10 rows)
+
+    Time: 163.898 ms   -- ClickHouse
+    Time: 554.621 ms   -- Same query on Postgres
+    ```
+
+    **クエリ 2: 国別・プラットフォーム別のユーザーエンゲージメント**
+
+    このクエリはイベントとユーザーを結合し、エンゲージメントメトリクスを計算します：
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        u.country,
+        u.platform,
+        COUNT(DISTINCT e.user_id) as users,
+        COUNT(*) as total_events,
+        ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
+        SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
+    FROM organization.public_events e
+    JOIN organization.public_users u ON e.user_id = u.user_id
+    GROUP BY u.country, u.platform
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     country | platform | users | total_events | events_per_user | purchases 
+    ---------+----------+-------+--------------+-----------------+-----------
+     USA     | Android  |   115 |       109977 |             956 |     12388
+     USA     | Web      |   108 |       105057 |             972 |     11847
+     USA     | iOS      |    83 |        84594 |            1019 |      9565
+     Germany | Android  |    85 |        77966 |             917 |      8852
+     India   | Android  |    80 |        68095 |             851 |      7724
+    ...
+    (10 rows)
+
+    Time: 170.353 ms   -- ClickHouse
+    Time: 1245.560 ms  -- Same query on Postgres
+    ```
+
+    **パフォーマンス比較：**
+
+    | クエリ                      | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | 高速化倍率 |
+    | ------------------------ | --------------- | ---------------------------------- | ----- |
+    | 上位ユーザー (5つの集計)           | 555 ms          | 164 ms                             | 3.4x  |
+    | ユーザーエンゲージメント (JOIN + 集計) | 1,246 ms        | 170 ms                             | 7.3x  |
+
+    <Tip>
+      **ClickHouse を使うべきケース**
+
+      この 100 万行のデータセットでも、ClickHouse は JOIN を含む複雑な分析クエリや複数の集計で 3〜7 倍高速なパフォーマンスを発揮します。さらに大規模 (1 億行以上) になるとその差はいっそう顕著になり、ClickHouse の列指向ストレージとベクトル化実行によって 10〜100 倍の高速化が得られることがあります。
+
+      クエリ時間は、インスタンスサイズ、サービス間のネットワーク遅延、データ特性、現在の負荷によって異なります。
+    </Tip>
+
+    ## クリーンアップ
+
+    このクイックスタートで作成したリソースを削除するには：
+
+    1. まず、ClickHouse サービスから ClickPipe インテグレーションを削除します
+    2. 次に、Cloud Console から Managed Postgres インスタンスを削除します
+  </View>
+</Visibility>

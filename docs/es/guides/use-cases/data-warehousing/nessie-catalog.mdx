@@ -50,7 +50,7 @@ Para el desarrollo y las pruebas en local, puedes usar una implementación de Ne
   ### Configuración de un catálogo de Nessie local
 </div>
 
-Puedes usar la [configuración oficial de Docker Compose de Nessie](https://projectnessie.org/guides/setting-up/), que proporciona un entorno completo con Nessie, un almacén de versiones en memoria y MinIO para el almacenamiento de objetos.
+Puedes usar la [configuración oficial de Docker Compose de Nessie](https://projectnessie.org/guides/), que proporciona un entorno completo con Nessie, un almacén de versiones en memoria y MinIO para el almacenamiento de objetos.
 
 **Paso 1:** Crea una carpeta nueva para ejecutar el ejemplo y, a continuación, crea un archivo `docker-compose.yml` con la siguiente configuración:
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # Garantiza permisos de root
+    user: '0:0'  # Ensures root permissions
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Montar carpeta del conjunto de datos
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
     networks:
       - iceberg_net
     environment:

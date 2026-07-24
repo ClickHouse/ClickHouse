@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
@@ -17,11 +17,11 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> es una plataforma de integración de datos en tiempo real especializada en CDC (captura de cambios de datos) en streaming y procesamiento de flujo. Está construida sobre una pila escalable y de alto rendimiento que utiliza Apache Kafka, Apache Flink y Debezium, y se ofrece como un servicio totalmente gestionado en despliegues SaaS o BYOC (Bring your own Cloud).
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> es una plataforma de integración de datos en tiempo real especializada en CDC (captura de cambios de datos) en streaming y procesamiento de flujo. Está construida sobre una pila escalable y de alto rendimiento que utiliza Apache Kafka, Apache Flink y Debezium, y se ofrece como un servicio totalmente gestionado en despliegues SaaS o BYOC (Bring your own Cloud).
 
 Streamkap le permite transmitir en streaming cada insert, actualización y eliminación desde bases de datos de origen como PostgreSQL, MySQL, SQL Server, MongoDB y <a href="https://streamkap.com/connectors" target="_blank">otras</a> directamente a ClickHouse con latencia de milisegundos.
 
-Esto la hace ideal para impulsar paneles analíticos en tiempo real, análisis operativos y alimentar modelos de aprendizaje automático con datos en vivo.
+Esto la hace ideal para impulsar paneles analíticos en tiempo real, analítica operativa y alimentar modelos de aprendizaje automático con datos en vivo.
 
 <div id="key-features">
   ## Características clave
@@ -49,52 +49,46 @@ Esta guía ofrece una visión general de cómo configurar una canalización de S
 </div>
 
 * Una <a href="https://app.streamkap.com/account/sign-up" target="_blank">cuenta de Streamkap</a>.
-* Los datos de conexión de tu clúster de ClickHouse: nombre de host, puerto, nombre de usuario y contraseña.
+* Los detalles de conexión de tu clúster de ClickHouse: Hostname, Port, Username y Password.
 * Una base de datos de origen (p. ej., PostgreSQL, SQL Server) configurada para permitir CDC. Puedes encontrar guías de configuración detalladas en la documentación de Streamkap.
 
-<div id="configure-clickhouse-source">
-  ### Paso 1: Configura el origen en Streamkap
-</div>
+<Steps>
+  <Step title="Configurar la fuente en Streamkap" id="configure-clickhouse-source">
+    1. Inicia sesión en tu cuenta de Streamkap.
+    2. En la barra lateral, ve a **Connectors** y selecciona la pestaña **fuentes**.
+    3. Haz clic en **+ Add** y selecciona el tipo de base de datos de origen (p. ej., SQL Server RDS).
+    4. Completa los detalles de conexión, incluidos el endpoint, el puerto, el nombre de la base de datos y las credenciales del usuario.
+    5. Guarda el connector.
+  </Step>
 
-1. Inicia sesión en tu cuenta de Streamkap.
-2. En la barra lateral, ve a **Connectors** y selecciona la pestaña **Sources**.
-3. Haz clic en **+ Add** y selecciona el tipo de base de datos de origen (por ejemplo, SQL Server RDS).
-4. Completa los datos de conexión, incluidos el endpoint, el puerto, el nombre de la base de datos y las credenciales del usuario.
-5. Guarda el conector.
+  <Step title="Configura el destino de ClickHouse" id="configure-clickhouse-dest">
+    1. En la sección **Connectors**, selecciona la pestaña **destinos**.
+    2. Haz clic en **+ Add** y elige **ClickHouse** de la lista.
+    3. Introduce los detalles de conexión de tu servicio ClickHouse:
+       * **Hostname:** El nombre de host de tu instancia de ClickHouse (p. ej., `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port:** El puerto HTTPS seguro, normalmente `8443`
+       * **Username and Password:** Las credenciales de tu usuario de ClickHouse
+       * **Database:** El nombre de la base de datos de destino en ClickHouse
+    4. Guarda el destino.
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### Paso 2: Configura el destino de ClickHouse
-</div>
+  <Step title="Crear y ejecutar la canalización" id="run-pipeline">
+    1. Ve a **Pipelines** en la barra lateral y haz clic en **+ Create**.
+    2. Selecciona la fuente y el destino que acabas de configurar.
+    3. Elige los schemas y las tablas que quieres transmitir.
+    4. Asigna un nombre a tu canalización y haz clic en **Save**.
 
-1. En la sección **Connectors**, selecciona la pestaña **Destinations**.
-2. Haz clic en **+ Add** y elige **ClickHouse** de la lista.
-3. Introduce los detalles de conexión de tu servicio ClickHouse:
-   * **Hostname:** El nombre de host de tu instancia de ClickHouse (p. ej., `abc123.us-west-2.aws.clickhouse.cloud`)
-   * **Port:** El puerto HTTPS seguro, normalmente `8443`
-   * **Username and Password:** Las credenciales de tu usuario de ClickHouse
-   * **Database:** El nombre de la base de datos de destino en ClickHouse
-4. Guarda el destino.
+    Una vez creada, la canalización se activará. Streamkap primero tomará una snapshot de los datos existentes y luego comenzará a transmitir cualquier cambio nuevo a medida que se produzca.
+  </Step>
 
-<div id="run-pipeline">
-  ### Paso 3: Crear y ejecutar la canalización
-</div>
+  <Step title="Verificar los datos en ClickHouse" id="verify-data-clickhoouse">
+    Conéctate a tu clúster de ClickHouse y ejecuta una consulta para ver los datos que van llegando a la tabla de destino.
 
-1. Ve a **Pipelines** en la barra lateral y haz clic en **+ Create**.
-2. Selecciona el origen y el destino que acabas de configurar.
-3. Elige los esquemas y las tablas que deseas transmitir en streaming.
-4. Asigna un nombre a la canalización y haz clic en **Save**.
-
-Una vez creada, la canalización se activará. Streamkap primero tomará una instantánea de los datos existentes y luego comenzará a transmitir en streaming cualquier cambio nuevo a medida que se produzca.
-
-<div id="verify-data-clickhoouse">
-  ### Paso 4: Verifica los datos en ClickHouse
-</div>
-
-Conéctate a tu clúster de ClickHouse y ejecuta una consulta para comprobar que los datos estén llegando a la tabla de destino.
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## Cómo funciona con ClickHouse
