@@ -30,11 +30,19 @@ FROM values(
     (36028797018963969, '36028797018963969.1'))
 WHERE i < d AND d <= toFloat64(36028797018963968);
 
--- A constant `String` is converted independently to the type of the other operand. `256` fits
--- into `UInt16` but not into `UInt8`, so the implied endpoint comparison is false.
+-- A `String` constant converts once to its direct counterpart's type (`256` fits `UInt16`,
+-- not `UInt8`); the derived endpoint must use that typed value and stay numerically true.
 SELECT 'constant string conversion', count()
 FROM values('a UInt16, b UInt8', (200, 100))
 WHERE '256' > a AND a > b;
+
+-- The literal converts using its direct counterpart's timezone; a derived endpoint
+-- must reuse that instant, not re-parse the literal in the other column's timezone.
+SELECT 'string literal timezone', count()
+FROM values(
+    'ts1 DateTime(\'Pacific/Kiritimati\'), ts2 DateTime(\'UTC\')',
+    ('2020-01-01 09:00:00', '2019-12-31 22:00:00'))
+WHERE ts1 < ts2 AND ts2 < '2020-01-01 00:00:00';
 
 -- Both original comparisons have a common type, but the inferred `Time` to `Date` endpoint does
 -- not. The optimization used to turn this valid query into an exception during analysis.
@@ -312,6 +320,49 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a LowCardinality(String), b LowCardinality(String)', ('a', 'b'))
            WHERE a < b AND b < 'z'
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- A const string operand converts once to the other side's type; such edges keep chaining.
+SELECT
+    'string literal edges remain optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('u1 UUID, u2 UUID', ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'))
+           WHERE u1 < u2 AND u2 < '33333333-3333-3333-3333-333333333333'
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('u1 UUID, u2 UUID', ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'))
+           WHERE u1 < u2 AND u2 < '33333333-3333-3333-3333-333333333333'
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('ts1 DateTime(\'UTC\'), ts2 DateTime(\'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
+           WHERE ts1 < ts2 AND ts2 < '2020-01-02 00:00:00'
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('ts1 DateTime(\'UTC\'), ts2 DateTime(\'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
+           WHERE ts1 < ts2 AND ts2 < '2020-01-02 00:00:00'
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('x UInt32, y UInt32', (1, 2))
+           WHERE x < y AND y < '10'
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('x UInt32, y UInt32', (1, 2))
+           WHERE x < y AND y < '10'
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
 

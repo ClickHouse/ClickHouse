@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
@@ -2107,6 +2108,40 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
+    /// If one side is a constant `String`/`FixedString` compared with a non-string type, convert
+    /// the literal to that type as `executeWithConstString` does and return the edge's domain.
+    ComparisonOrderDomain tryNormalizeConstStringEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
+    {
+        const auto * lhs_constant = lhs->as<ConstantNode>();
+        const auto * rhs_constant = rhs->as<ConstantNode>();
+        if (static_cast<bool>(lhs_constant) == static_cast<bool>(rhs_constant))
+            return {};
+
+        auto & constant_side = lhs_constant ? lhs : rhs;
+        const auto & other_side = lhs_constant ? rhs : lhs;
+        const auto constant_type = removeLowCardinality(constant_side->getResultType());
+        const auto other_type = removeLowCardinality(other_side->getResultType());
+        if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+            return {};
+
+        const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
+        auto converted = tryConvertFieldToType(
+            constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        if (converted.isNull())
+            return {};
+
+        auto typed_constant = std::make_shared<ConstantNode>(std::move(converted), other_type);
+        const auto typed_comparison = std::make_shared<FunctionNode>(function_name);
+        typed_comparison->markAsOperator();
+        typed_comparison->getArguments().getNodes().push_back(other_side);
+        typed_comparison->getArguments().getNodes().push_back(typed_constant);
+        typed_comparison->resolveAsFunction(FunctionFactory::instance().get(function_name, getContext()));
+        const auto domain = typed_comparison->getFunctionOrThrow()->getComparisonOrderDomain();
+        if (domain.isValid())
+            constant_side = std::move(typed_constant);
+        return domain;
+    }
+
     void tryOptimizeAndCompareChain(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
@@ -2185,8 +2220,8 @@ private:
 
             const auto function_name = argument_function->getFunctionName();
             const auto & function_arguments = argument_function->getArguments().getNodes();
-            const auto & lhs = function_arguments[0];
-            const auto & rhs = function_arguments[1];
+            auto lhs = function_arguments[0];
+            auto rhs = function_arguments[1];
 
             /// Conservatively skip comparisons whose operands contain a non-deterministic function.
             /// Common subexpression elimination makes structurally identical occurrences (e.g. two
@@ -2210,10 +2245,13 @@ private:
                 addComparisonFilter(derived_conjunct_filters, expression_node, std::move(seed_filter), true, getContext());
             }
 
-            /// Only comparisons within a single order domain participate in transitive chains;
-            /// the filter seeding above stays domain-agnostic because it converts constants
-            /// to the expression's own type.
-            const auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
+            /// Only comparisons within one order domain join transitive chains; the seeding above
+            /// is domain-agnostic (it converts constants to the expression's own type).
+            auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
+            /// A const string compares after a one-time conversion to the other side's type (see
+            /// `executeWithConstString`); mirror it so the edge carries a typed constant instead.
+            if (!comparison_domain.isValid())
+                comparison_domain = tryNormalizeConstStringEdge(function_name, lhs, rhs);
             if (!comparison_domain.isValid())
                 continue;
 
