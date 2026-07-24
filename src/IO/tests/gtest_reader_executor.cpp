@@ -42,6 +42,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
+    extern const Event ReaderExecutorSiblingDeferredBytes;
+    extern const Event ReaderExecutorSiblingWaits;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorLongConnectionOpened;
     extern const Event ReaderExecutorLongConnectionHits;
@@ -84,12 +86,26 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
+/// `sibling_led` simulates a concurrent reader holding the downloader role over those ranges
+/// (`sibling_ranges` mirrors it for enumeration): `claim` reports them as sibling-led and `write`
+/// refuses to land bytes there. With `sibling_completes_on_wait`, a `waitAndReadSiblingLed` call
+/// "finishes" the sibling's download: its pattern bytes land in the cache and the roles are freed.
 struct MockCacheState
 {
     std::vector<char> store;
     IntervalSet resident;
+    IntervalSet sibling_led;
+    VectorWithMemoryTracking<ByteRange> sibling_ranges;
+    bool sibling_completes_on_wait = false;
+    VectorWithMemoryTracking<ByteRange> waits;
     VectorWithMemoryTracking<ByteRange> writes;
     explicit MockCacheState(size_t file_size) : store(file_size, 0) {}
+
+    void addSibling(ByteRange r)
+    {
+        sibling_led.add(r);
+        sibling_ranges.push_back(r);
+    }
 };
 
 /// A minimal in-memory FILE-LEVEL cache (like the page cache): block-aligned, whole-block writes,
@@ -162,8 +178,46 @@ private:
             return c;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
+        FillClaim claim(ByteRange w) override
+        {
+            FillClaim c;
+            const size_t lo = std::max(w.offset, r.offset);
+            const size_t hi = std::min(w.end(), r.end());
+            if (lo >= hi)
+                return c;
+            const ByteRange overlap{lo, hi - lo};
+            c.to_fetch = state->sibling_led.subtract(overlap);
+            IntervalSet ours;
+            for (const auto & t : c.to_fetch)
+                ours.add(t);
+            c.sibling_led = ours.subtract(overlap);
+            return c;
+        }
+        ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override
+        {
+            state->waits.push_back(sub);
+            if (state->sibling_completes_on_wait)
+            {
+                /// The sibling finishes during the wait: its bytes land in the cache, roles freed.
+                for (const auto & sr : state->sibling_ranges)
+                {
+                    for (size_t i = sr.offset; i < sr.end(); ++i)
+                        state->store[i] = static_cast<char>(patternByte(i));
+                    state->resident.add(sr);
+                }
+                state->sibling_led = IntervalSet{};
+                state->sibling_ranges.clear();
+            }
+            return read(sub);
+        }
         size_t write(ChainedBuffers data) override
         {
+            /// A sibling-led block is not ours to fill (no downloader role).
+            size_t free_bytes = 0;
+            for (const auto & fr : state->sibling_led.subtract(r))
+                free_bytes += fr.size;
+            if (free_bytes != r.size)
+                return 0;
             /// Whole-cell: a straddling block is covered only by a cross-object fetch.
             if (!data.covers(r))
                 return 0;
@@ -513,6 +567,126 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
     ASSERT_EQ(warm_data, data);
     EXPECT_EQ(warm_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u)
         << "warm read fetched from source -> a boundary block missed the cache";
+}
+
+TEST_F(ReaderExecutorTest, SiblingLedRangeDefersFetchUntilCached)
+{
+    /// A sibling downloads [512, 768) while we read. The first window is served only up to the
+    /// sibling range (the fetch is trimmed - those bytes are not fetched twice); once the
+    /// sibling's bytes land in the cache, the next window reads them from cache.
+    StoredObjects objects{makeFile("a.bin", 2048)};
+    const size_t block = 256;
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/2048);
+    state->addSibling(ByteRange{512, 256});
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
+
+    std::vector<char> out;
+    auto append = [&](ChainedBuffers && w)
+    {
+        while (!w.atEnd())
+        {
+            auto span = w.peek();
+            out.insert(out.end(), span.data, span.data + span.size);
+            w.advance(span.size);
+        }
+    };
+
+    /// Window 1: [0, 1024) wanted, trimmed at the sibling range -> [0, 512) served.
+    append(ex.readNextWindow());
+    EXPECT_EQ(out.size(), 512u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingDeferredBytes), 512u);
+    for (const auto & wr : state->writes)
+        EXPECT_TRUE(wr.end() <= 512 || wr.offset >= 768)
+            << "a write touched the sibling-led range: [" << wr.offset << ", " << wr.end() << ")";
+
+    /// The sibling finishes: its bytes appear in the cache.
+    for (size_t i = 512; i < 768; ++i)
+        state->store[i] = static_cast<char>(patternByte(i));
+    state->resident.add(ByteRange{512, 256});
+
+    /// Window 2: the sibling's range is a hit at the window start - served from cache, no fetch.
+    append(ex.readNextWindow());
+    EXPECT_EQ(out.size(), 768u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u);
+
+    /// The tail is fetched normally and the whole stream is byte-correct.
+    const auto rest = drain(ex);
+    out.insert(out.end(), rest.begin(), rest.end());
+    ASSERT_EQ(out.size(), 2048u);
+    for (size_t i = 0; i < out.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(out[i]), patternByte(i)) << "at " << i;
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u + 1280u);
+    /// A mid-window sibling never triggers a wait.
+    EXPECT_TRUE(state->waits.empty());
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 0u);
+}
+
+TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsServedAfterWait)
+{
+    /// The sibling leads the very range the window starts in and finishes during the wait: the
+    /// re-probe serves its bytes from cache - the range is never fetched twice.
+    StoredObjects objects{makeFile("a.bin", 1024)};
+    const size_t block = 256;
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
+    state->addSibling(ByteRange{0, 256});
+    state->sibling_completes_on_wait = true;
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 1024u);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// One wait, and only the tail came from source.
+    ASSERT_EQ(state->waits.size(), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 768u);
+}
+
+TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsFetchedThrough)
+{
+    /// The sibling leads the very range the window starts in and does NOT finish during the
+    /// single wait attempt: the executor fetches through it rather than waiting again. Our write
+    /// there lands 0 (no downloader role); the data still serves correctly.
+    StoredObjects objects{makeFile("a.bin", 1024)};
+    const size_t block = 256;
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
+    state->addSibling(ByteRange{0, 256});
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 1024u);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// One wait attempt, then one full fetch (no trim: the sibling range contains the start).
+    ASSERT_EQ(state->waits.size(), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingDeferredBytes), 0u);
+    /// The sibling's block stayed theirs: not written, not resident.
+    for (const auto & wr : state->writes)
+        EXPECT_GE(wr.offset, 256u) << "wrote into the sibling-led block";
+    EXPECT_FALSE(state->resident.subtract(ByteRange{0, block}).empty());
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)

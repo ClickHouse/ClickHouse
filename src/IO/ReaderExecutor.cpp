@@ -16,6 +16,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
+    extern const Event ReaderExecutorSiblingDeferredBytes;
+    extern const Event ReaderExecutorSiblingWaits;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorDecryptMicroseconds;
@@ -93,6 +95,12 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case CachePopulateRequests:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 100 * value);
+            break;
+        case SiblingDeferredBytes:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorSiblingDeferredBytes, value);
+            break;
+        case SiblingWaits:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorSiblingWaits, value);
             break;
         case WorkMicroseconds:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value);
@@ -374,7 +382,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t want)
+ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t want, bool allow_sibling_wait)
 {
     chassert(!cache_chain.empty());
     const ByteRange window{window_offset, want};
@@ -415,9 +423,12 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
     if (!offset_map.hasUnknownSize())
         fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
 
-    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
-    const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
-
+    /// Claim the miss cells BEFORE the fetch and serve only up to the first range a sibling
+    /// already downloads: a later window reads it from cache instead of fetching it twice.
+    /// Greedy - never wait: a sibling range AT the window start is fetched through (its write
+    /// lands 0). Roles won past a trim are released unfilled when `claimed` goes out of scope.
+    struct ClaimedCell { CacheWriter * writer; ByteRange range; CacheWriter::FillClaim claim; };
+    VectorWithMemoryTracking<ClaimedCell> claimed;
     for (auto & p : planned)
     {
         p.cache->openWriteBuffers(p.object, p.object_file_offset, *p.view);
@@ -426,17 +437,58 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
             if (!m.writer)
                 continue;
             const size_t lo = std::max(m.range.offset, fetch_lo);
-            const size_t hi = std::min(m.range.end(), fetched_end);
+            const size_t hi = std::min(m.range.end(), fetch_hi);
             if (lo >= hi)
                 continue;
-            /// From the whole file-level fetch, so a block straddling objects is covered.
-            const ByteRange write_range{lo, hi - lo};
-            if (!fetched.covers(write_range))
-                continue;
-            auto claim = m.writer->claim(write_range);
-            stats.add(Stats::CachePopulateRequests);
-            m.writer->write(fetched.slice(write_range));
+            const ByteRange cell{lo, hi - lo};
+            claimed.push_back(ClaimedCell{m.writer.get(), cell, m.writer->claim(cell)});
         }
+    }
+    /// A sibling already downloads the very range the window starts in: wait for its first byte at
+    /// our position - holding NO claims, a bare waiter cannot be part of a hold-and-wait cycle -
+    /// then re-probe: the committed prefix is a hit, or the freed role becomes ours. One attempt;
+    /// if the sibling still leads the start afterwards, fetch through it (its write lands 0).
+    if (allow_sibling_wait)
+    {
+        for (const auto & c : claimed)
+        {
+            for (const auto & s : c.claim.sibling_led)
+            {
+                if (s.offset <= window.offset && window.offset < s.end())
+                {
+                    CacheWriter * lead_writer = c.writer;
+                    claimed.clear();
+                    stats.add(Stats::SiblingWaits);
+                    lead_writer->waitAndReadSiblingLed(ByteRange{window.offset, 1});
+                    return serveThroughCaches(window_offset, want, /*allow_sibling_wait=*/false);
+                }
+            }
+        }
+    }
+
+    const size_t untrimmed_hi = fetch_hi;
+    for (const auto & c : claimed)
+        for (const auto & s : c.claim.sibling_led)
+            if (s.offset > window.offset && s.offset < fetch_hi)
+                fetch_hi = s.offset;
+    if (fetch_hi < untrimmed_hi)
+        stats.add(Stats::SiblingDeferredBytes, untrimmed_hi - fetch_hi);
+
+    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
+    const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
+
+    for (const auto & c : claimed)
+    {
+        const size_t lo = std::max(c.range.offset, fetch_lo);
+        const size_t hi = std::min(c.range.end(), fetched_end);
+        if (lo >= hi)
+            continue;
+        /// From the whole file-level fetch, so a block straddling objects is covered.
+        const ByteRange write_range{lo, hi - lo};
+        if (!fetched.covers(write_range))
+            continue;
+        stats.add(Stats::CachePopulateRequests);
+        c.writer->write(fetched.slice(write_range));
     }
 
     return fetched.slice(window);

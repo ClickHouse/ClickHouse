@@ -119,6 +119,8 @@ private:
             IncompleteConnections,
             CacheGetRequests,
             CachePopulateRequests,
+            SiblingDeferredBytes,   /// fetch bytes skipped: a sibling is downloading them
+            SiblingWaits,           /// waits for a sibling downloading the window start
             WorkMicroseconds,
             DecryptMicroseconds,        /// time spent decrypting served payload
             LongConnectionOpened,       /// held connections opened for reuse
@@ -219,9 +221,12 @@ private:
     /// Read `[file_offset, file_offset + want)`, spanning object boundaries via `OffsetMap::map`. The
     /// single source-read entry point; a known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want);
-    /// Serve the file-level window through the cache chain: the cached prefix, else fetch the miss
-    /// across objects and populate. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers serveThroughCaches(size_t window_offset, size_t want);
+    /// Serve the file-level window through the cache chain: the cached prefix, else claim the miss
+    /// cells, fetch up to the first range a sibling already downloads (a later window reads it from
+    /// cache), and populate. A sibling downloading the window start itself is waited for ONCE -
+    /// holding no claims - then the window is re-probed; if it still leads the start, it is fetched
+    /// through. Precondition: `!cache_chain.empty()`.
+    ChainedBuffers serveThroughCaches(size_t window_offset, size_t want, bool allow_sibling_wait = true);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
