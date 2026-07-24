@@ -1,0 +1,122 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-10
+title: 'أيام العروض التوضيحية - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: 'أيام العروض التوضيحية لـ ClickStack بتاريخ 2026-07-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'أيام العروض التوضيحية']
+---
+
+<div id="text-index-fix-for-map-column-disjunction-filters">
+  ## إصلاح الفهرس النصي لعوامل التصفية بالفصل المنطقي على عمود Map
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+اكتشف Aaron هذه المشكلة أثناء المساعدة في تصحيح تقرير كانت فيه الاستعلامات على سمة ضمن عمود Map أبطأ من المتوقع. وكان الشخص قد تحايل بالفعل على المشكلة بنفسه بإضافة عمود materialized ومرشح bloom filter، مع أن ذلك لم يكن ينبغي أن يكون ضروريًا في ظل التحسينات الموجودة أصلًا لسمات map.
+
+واتضح أن التصفية على عدة قيم محتملة لسمة map كانت تستخدم الدالة `hasAny`، أي عمليًا فحص فصل منطقي على مصفوفة. على سبيل المثال، عند مطابقة سمات السجل مثل معرّف المستخدم مع قائمة من القيم. ولم يكن هذا يفعّل الفهرس النصي في إصدارات ClickHouse الأقدم من 26.5. ويعيد هذا الإصلاح كتابة هذا الفصل المنطقي على هيئة مجموعة من اختبارات مساواة مربوطة بـ OR ومغلّفة بأقواس، مما يفعّل الفهرس بشكل صحيح. وأكّد Aaron عبر `EXPLAIN` أن الاستعلام المعاد كتابته أصبح الآن يستخدم skip index كما هو متوقع.
+
+معظم المستخدمين يستخدمون بالفعل الإصدار 26.5 أو أحدث، لكن بالنسبة لمن لم ينتقلوا إليه بعد، فهذا يحافظ على سرعة هذه الاستعلامات في الوقت الحالي.
+
+**طلبات السحب ذات الصلة:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) ميزة: إعادة صياغة getAllKeyValues وإضافة عوامل تصفية مُعبّأة من الفهارس النصية
+
+<div id="profiling-data-in-clickcannon">
+  ## بيانات التنميط في ClickCannon
+</div>
+
+*عرض توضيحي من [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+لقد [نشرنا مؤخرًا تدوينة عن ClickCannon](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse)، وهي أداة لتوليد بيانات اصطناعية وإجراء اختبارات أداء على ClickHouse. وقد أضاف Spencer الآن إشارة تنميط إلى جانب الدعم الحالي للسجلات والمقاييس وآثار التتبع. يمكنك توليد بيانات التنميط بعمق مكدس قابل للتهيئة، إما بمحاكاتها أثناء التشغيل أو بقراءتها من القرص، ثم استيعابها بالطريقة نفسها المتبعة مع الإشارات الأخرى: وجّه ClickCannon إلى جدول profiles وسيبدأ في توليد الصفوف.
+
+واتضح أن حمولات بيانات profiles أكبر بكثير من الإشارات الأخرى، لذا لا يزال العمل جاريًا على ضبط عدد المفاتيح التي تُضاف لكل عينة، والتحقق من معدل النقل مقارنةً بحجم المثيل. وإمكانية توليد هذه البيانات بأحجام كبيرة تعني أن الفريق يستطيع البدء في تحسين المخطط والحصول على نقطة مرجعية له، وهو ما يرتبط بالجهد الأوسع لدعم بيانات التنميط وتصورها عبر ClickStack. كما ألقى Spencer أيضًا نظرة أولى على عرض إطارات profiles في عارض السجلات ضمن ClickStack.
+
+<div id="bar-charts">
+  ## المخططات الشريطية
+</div>
+
+*عرض توضيحي بواسطة [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أصبحت المخططات الشريطية متاحة الآن، وقد استُلهمت من طلب سحب طُرح قبل أشهر ثم تعثّر أثناء إعادة التأسيس (`rebase`). وهي الآن مدعومة في كل مكان تظهر فيه المخططات في ClickStack: لوحات المعلومات، ومنشئ لوحات معلومات MCP، وغير ذلك. وبما أن المخططات الشريطية أصبحت تغطي نفس الاستخدامات التي كانت المخططات الخطية تُستخدم لها سابقًا في المقارنات عند نقاط زمنية محددة، فقد أُعيدت تسمية المخططات الخطية إلى السلاسل الزمنية لتوضيح الفرق بشكل أكبر.
+
+تدعم المخططات الشريطية حدًا لعدد السلاسل، بحيث يمكنك التحكم في عدد الأشرطة التي تظهر عند استخدام Group By عالي الكاردينالية، كما تدعم ORDER BY مخصصًا، بحيث يمكنك الفرز حسب أي مقياس يهمك أكثر بدلًا من الترتيب الافتراضي.
+
+**طلبات السحب ذات الصلة:** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: إضافة نوع عرض مخطط شريطي categorical، [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: السماح باستخدام ORDER BY مخصص في المخططات categorical ‏(الدائرية/الشريطية)
+
+<div id="community-contributions">
+  ## مساهمات المجتمع
+</div>
+
+*عرض توضيحي من [@vinzee](https://github.com/vinzee) و[@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+شهد هذا الأسبوع مساهمتين رائعتين من المجتمع عبر مراجعات طلبات السحب. من [@vinzee](https://github.com/vinzee): زر مرجعي لبناء جملة الاستعلام بجوار مبدّل Lucene/SQL في شريط البحث، يوفّر للمستخدمين أمثلة سريعة داخل التطبيق على بناء جملة الاستعلام والخيارات المتاحة لهم، من دون الحاجة إلى مغادرة الصفحة.
+
+ومن [@zoov-xavier](https://github.com/zoov-xavier): أصبح بإمكان شرائح التصفية الآن قبول القيم المُدخلة يدويًا. في السابق، كان بإمكانك الاختيار فقط من قائمة منسدلة للقيم المأخوذة من عيّنة، ما يعني أنه لم يكن بإمكانك التصفية حسب قيمة لم تُحمَّل بعد ضمن تلك العيّنة. الآن يمكنك ببساطة كتابة القيمة التي تريدها والضغط على Enter.
+
+**طلبات السحب ذات الصلة:** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) إضافة مرجع بناء جملة الاستعلام إلى حقل البحث، [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): السماح بقيم نصية حرة عند تحرير شريحة التصفية
+
+<div id="alert-annotations-on-charts">
+  ## التعليقات التوضيحية للتنبيهات على المخططات
+</div>
+
+*عرض توضيحي من [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+جاء هذا استجابةً لطلب أحد العملاء إظهار التعليقات التوضيحية على مخططاتهم عند تفعيل التنبيهات. يتوفر الآن مفتاح تبديل جديد لعرض التعليقات التوضيحية للتنبيهات، وهو معطّل افتراضيًا، ويُظهر مباشرةً على المخطط التوقيت الدقيق لتفعيل التنبيه وتوقيت عودته إلى الحالة الطبيعية. وإذا كان التنبيه في حالة تفعيل خارج النطاق الزمني المعروض حاليًا، يظهر وسم عند الحافة اليسرى للمخطط للإشارة إلى أنه كان نشطًا بالفعل قبل بداية الفترة المعروضة، كما تُحدَّث التعليقات التوضيحية لحظيًا مع تفعيل التنبيهات وانتهائها.
+
+أنشأ Tom هذه الميزة باستخدام نمط قابل لإعادة الاستخدام للتعليقات التوضيحية، لذا ينبغي أن تكون إضافة أنواع جديدة منها لاحقًا، مثل الإصدارات أو أحداث Kubernetes، سهلة فوق النهج نفسه.
+
+**طلبات السحب ذات الصلة:** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): تعليقات توضيحية لتفعيل التنبيه والتعافي على مخططات بلاطة، [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): تحسين وضوح التعليقات التوضيحية للتنبيهات على مخططات بلاطة
+
+<div id="event-patterns-tile-polish-and-line-series-actions">
+  ## Event patterns، وتحسينات البلاطات، وإجراءات السلاسل الخطية
+</div>
+
+*عرض توضيحي من [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أصبحت Event patterns الآن نوعًا رسميًا وأساسيًا من بلاطات لوحة المعلومات. ويمكنك إنشاء بلاطة pattern وتمرير عبارة `WHERE` أو تعبير نمط، مثل التصفية حسب اسم الخدمة أو نص مستوى الخطورة، لإبراز الأنماط المتكررة بسرعة.
+
+كما أضاف Brandon تحسينًا لالتفاف النص في التصورات داخل البلاطات الصغيرة، بحيث تلتف العناوين الطويلة الآن على عدة أسطر مع علامة حذف بدلًا من أن تُقتطع بشكل غير ملائم، إلى جانب عرضٍ أنظف لأزرار إجراءات البلاطة: ففي البلاطات الصغيرة تُطوى هذه الأزرار داخل قائمة سياق باستخدام استعلام حاوية في CSS، ثم تظهر مجددًا مباشرةً على البلاطة عند تكبير حجمها. وهناك أيضًا إصلاح لحالة كان فيها إغلاق إعدادات العرض الخاصة بالبلاطة دون حفظ قد يؤدي إلى تجاهل تغييراتك بصمت؛ أما الآن فسيظهر تحذير مناسب قبل فقدان التعديلات.
+
+وأخيرًا، استجابةً لملاحظات المستخدمين، يمكنك الآن النقر على سلسلة خطية لنسخ قيمتها أو التركيز على هذا الخط فقط، بالإضافة إلى إجراء Search الحالي. كما أن Brandon قطع شوطًا في الترقية إلى Recharts v3، بهدف إصلاح اقتطاع تلميحات الأدوات داخل الجداول التي تحتوي على عدد كبير من المجموعات.
+
+**طلبات السحب ذات الصلة:** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) ميزة: إضافة Event patterns كنوع أساسي من بلاطات لوحة المعلومات، [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) إصلاح(charts): استخدام علامة حذف متعددة الأسطر لعناوين بلاطات لوحة المعلومات، [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) إصلاح: تتبّع إعدادات العرض/heatmap باعتبارها معدّلة لنافذة التغييرات غير المحفوظة، [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) ميزة(charts): إجراءات drill-down لكل سلسلة، وdrill-in في علامة تبويب جديدة، وتركيز متزامن مع Search
+
+<div id="dashboard-and-service-map-styling">
+  ## تنسيق لوحات المعلومات وخريطة الخدمات
+</div>
+
+*عرض توضيحي من [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+دفعة من تحسينات التنسيق التي تركز على سهولة الاستخدام؛ قد يبدو كل تحسين صغيرًا بمفرده، لكنها مجتمعة تمنح تجربة أنظف وأكثر اتساقًا بوضوح. في لوحات المعلومات، كانت البلاطات القابلة للتحرير تعرض ألوانًا غير متسقة للترويسة في الوضع الفاتح؛ فبعضها كان رماديًا وبعضها أبيض. أما الآن فقد أصبح ذلك موحدًا، مع خط فاصل واضح أسفل الترويسة. كذلك أُعيد تموضع إجراءات البلاطات التي لا تظهر إلا عند التمرير فوقها لتجنب تداخلها مع العناوين على البطاقات الصغيرة المتجاوبة، كما أصبحت المخططات تدعم الآن إعادة ضبط التكبير.
+
+كما نالت خريطة الخدمات تحسينات مماثلة: إذ أصبحت عناصر التحكم تراعي وضع الألوان، فتبقى فاتحة في الوضع الفاتح وداكنة في الوضع الداكن بدلًا من أن تكون سوداء دائمًا افتراضيًا. كذلك أصبحت وسائل الإيضاح توضّح بشكل أفضل زمن الاستجابة ومعدل الأخطاء ومعدل النقل، ويمكنك النقر على خدمة للتركيز عليها، ثم النقر مرة أخرى لإلغاء التركيز والعودة إلى العرض الكامل.
+
+**طلبات السحب ذات الصلة:** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) صقل تنسيق بلاطة لوحة المعلومات وتخطيط الترويسة، [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): مفتاح تبديل لون المقياس وتحسين النافذة المنبثقة

@@ -35,9 +35,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 سيجري دعم المزيد من المصادر لاحقًا.
 
 <Steps>
-  <Step>
-    ## تنزيل وتشغيل BladePipe
-
+  <Step title="تنزيل وتشغيل BladePipe" id="1-run-bladepipe">
     1. سجّل الدخول إلى <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
 
     2. اتبع التعليمات الواردة في <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">تثبيت Worker (Docker)</a> أو <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">تثبيت Worker (الملف التنفيذي)</a> لتنزيل Worker من BladePipe وتثبيته.
@@ -47,9 +45,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     </Note>
   </Step>
 
-  <Step>
-    ## أضِف ClickHouse كوجهة
-
+  <Step title="أضِف ClickHouse كوجهة" id="2-add-clickhouse-as-a-target">
     <Note>
       1. يدعم BladePipe إصدار ClickHouse `20.12.3.3` أو الإصدارات الأحدث.
       2. لاستخدام ClickHouse كوجهة، تأكَّد من أن لدى المستخدم أذونات SELECT وINSERT وأذونات DDL الشائعة.
@@ -64,9 +60,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     3. انقر على &quot;Add DataSource&quot; في الأسفل، وستتم إضافة مثيل ClickHouse.
   </Step>
 
-  <Step>
-    ## إضافة MySQL كمصدر
-
+  <Step title="إضافة MySQL كمصدر" id="3-add-mysql-as-a-source">
     في هذا الدليل العملي، نستخدم مثيل MySQL كمصدر، ونشرح عملية تحميل بيانات MySQL إلى ClickHouse.
 
     <Note>
@@ -82,9 +76,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     3. انقر على &quot;Add DataSource&quot; في الأسفل، وستتم إضافة مثيل MySQL.
   </Step>
 
-  <Step>
-    ## إنشاء مسار معالجة
-
+  <Step title="إنشاء مسار معالجة" id="4-create-a-pipeline">
     1. في BladePipe، انقر على &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
 
     2. حدِّد مثيلَي MySQL وClickHouse اللذين تمت إضافتهما، ثم انقر على &quot;Test Connection&quot; للتأكد من اتصال BladePipe بهما. بعد ذلك، حدِّد قواعد البيانات المطلوب نقلها.
@@ -103,9 +95,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob قيد التشغيل" />
   </Step>
 
-  <Step>
-    ## تحقّق من البيانات
-
+  <Step title="تحقّق من البيانات" id="5-verify-the-data">
     1. أوقف كتابة البيانات في مثيل MySQL وانتظر حتى يُكمل ClickHouse دمج البيانات.
 
     <Note>

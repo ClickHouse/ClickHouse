@@ -8,10 +8,6 @@ doc_type: 'reference'
 
 import DeprecatedBadge from "/snippets/ja/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
-<div id="functions-for-working-with-uuids">
-  # UUIDsを扱う関数
-</div>
-
 <div id="uuidv7-generation">
   ## UUIDv7 の生成
 </div>
@@ -267,53 +263,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<div id="dateTime64ToSnowflake">
-  ## dateTime64ToSnowflake
-</div>
-
-導入バージョン: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  この関数は非推奨であり、設定 [`allow_deprecated_snowflake_conversion_functions`](/ja/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) が有効な場合にのみ使用できます。
-  この関数は将来のいずれかの時点で削除される予定です。
-
-  代わりに関数 [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID) を使用してください。
-</Warning>
-
-[DateTime64](/ja/reference/data-types/datetime64) を、指定した時刻に対応する最初の [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) に変換します。
-
-**構文**
-
-```sql
-dateTime64ToSnowflake(value)
-```
-
-**引数**
-
-* `value` — 日時。[`DateTime64`](/ja/reference/data-types/datetime64)
-
-**戻り値**
-
-指定した時点における最初の Snowflake ID に変換された入力値を返します。[`Int64`](/ja/reference/data-types/int-uint)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-```response title=Response
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dateTime64ToSnowflakeID">
@@ -349,51 +300,6 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 
 ```response title=Response
 6832626394434895872
-```
-
-<div id="dateTimeToSnowflake">
-  ## dateTimeToSnowflake
-</div>
-
-導入バージョン: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  この関数は非推奨であり、設定 [`allow_deprecated_snowflake_conversion_functions`](/ja/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) が有効な場合にのみ使用できます。
-  この関数は今後削除される予定です。
-
-  代わりに関数 [dateTimeToSnowflakeID](#dateTimeToSnowflakeID) を使用してください。
-</Warning>
-
-[DateTime](/ja/reference/data-types/datetime) の値を、指定した時刻における最初の [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) に変換します。
-
-**構文**
-
-```sql
-dateTimeToSnowflake(value)
-```
-
-**引数**
-
-* `value` — 日時。[`DateTime`](/ja/reference/data-types/datetime)
-
-**戻り値**
-
-入力された日時における最初の Snowflake ID を返します。[`Int64`](/ja/reference/data-types/int-uint)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-```response title=Response
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -445,6 +351,10 @@ UUID の構造、カウンターの管理方法、および同時実行時の保
   2025年9月時点では、バージョン 7 UUID はドラフト段階にあり、今後レイアウトが変更される可能性があります。
 </Note>
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -469,8 +379,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **同じタイムスタンプに対して複数のUUID**
@@ -499,7 +409,11 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 
 関数 `generateSnowflakeID` は、同時実行中のスレッドおよびクエリ全体にわたるすべての関数呼び出しにおいて、タイムスタンプ内のカウンター フィールドが単調増加することを保証します。
 
-実装の詳細については、[&quot;Snowflake ID generation&quot;](#snowflake-id-generation) セクションを参照してください。
+実装の詳細については、[&quot;Snowflake ID の生成&quot;](#snowflake-id-generation) セクションを参照してください。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -567,6 +481,10 @@ SELECT generateSnowflakeID('expr', 1);
 
 [バージョン 4](https://tools.ietf.org/html/rfc4122#section-4.4) の [UUID](/ja/reference/data-types/uuid) を生成します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -621,6 +539,10 @@ UUID の構造、カウンター管理、および同時実行性の保証の詳
 
 <Note>
   2025 年 9 月時点では、バージョン 7 UUID はドラフト段階にあり、今後レイアウトが変更される可能性があります。
+</Note>
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
 </Note>
 
 **構文**
@@ -741,98 +663,6 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 └─────────────────────┘
 ```
 
-<div id="snowflakeToDateTime">
-  ## snowflakeToDateTime
-</div>
-
-導入バージョン: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  この関数は非推奨であり、設定 [`allow_deprecated_snowflake_conversion_functions`](/ja/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) が有効な場合にのみ使用できます。
-  この関数は今後削除される予定です。
-
-  代わりに [`snowflakeIDToDateTime`](#snowflakeIDToDateTime) 関数を使用してください。
-</Warning>
-
-[Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) のタイムスタンプ部分を [DateTime](/ja/reference/data-types/datetime) フォーマットで抽出します。
-
-**構文**
-
-```sql
-snowflakeToDateTime(value[, time_zone])
-```
-
-**引数**
-
-* `value` — Snowflake ID。[`Int64`](/ja/reference/data-types/int-uint)
-* `time_zone` — 任意。[タイムゾーン](/ja/reference/settings/server-settings/settings#timezone)。この関数は、`time_string` をタイムゾーンに従って解析します。[`String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-`value` のタイムスタンプ部分を返します。[`DateTime`](/ja/reference/data-types/datetime)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-<div id="snowflakeToDateTime64">
-  ## snowflakeToDateTime64
-</div>
-
-導入バージョン: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  この関数は非推奨であり、設定 [`allow_deprecated_snowflake_conversion_functions`](/ja/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) が有効になっている場合にのみ使用できます。
-  この関数は将来的に削除される予定です。
-
-  代わりに [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64) 関数を使用してください。
-</Warning>
-
-[Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) の タイムスタンプ部分 を [DateTime64](/ja/reference/data-types/datetime64) 形式で抽出します。
-
-**構文**
-
-```sql
-snowflakeToDateTime64(value[, time_zone])
-```
-
-**引数**
-
-* `value` — Snowflake ID。[`Int64`](/ja/reference/data-types/int-uint)
-* `time_zone` — 任意。[タイムゾーン](/ja/reference/settings/server-settings/settings#timezone)。この関数は、タイムゾーンに従って `time_string` を解析します。[`String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-`value` のタイムスタンプ部分を返します。[`DateTime64(3)`](/ja/reference/data-types/datetime64)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
 <div id="toUUIDOrDefault">
   ## toUUIDOrDefault
 </div>
@@ -868,8 +698,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **変換に失敗した場合、デフォルトのUUIDを返します**
@@ -880,8 +710,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrNull">

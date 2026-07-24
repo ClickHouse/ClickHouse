@@ -12,9 +12,13 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
-本指南介绍如何使用 Azure Private Link，通过虚拟网络在 Azure (包括客户自有服务和 Microsoft Partner 服务) 与 ClickHouse Cloud 之间建立私有连接。Azure Private Link 通过避免数据暴露在公共互联网上，简化网络架构，并提升 Azure 中各端点之间连接的安全性。
+本指南介绍如何使用 Azure Private Link，通过虚拟网络在 Azure (包括客户自有服务和 Microsoft Partner 服务) 与 ClickHouse Cloud 之间建立私有连接。Azure Private Link 通过避免数据暴露在公网，简化网络架构，并提升 Azure 中各端点之间连接的安全性。
 
 <Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="PrivateLink 概览" background="white" />
+
+<Warning>
+  Azure Private Link 仅支持从您的 Azure VNet 发起到 ClickHouse Cloud 的连接。它不能用于从 ClickHouse Cloud 发起到您 VNet 中服务的连接，例如私有数据库。
+</Warning>
 
 Azure 支持通过 Private Link 进行跨区域连接。这使您能够在部署了 ClickHouse 服务的不同区域中的 VNet 之间建立连接。
 
@@ -26,8 +30,8 @@ Azure 支持通过 Private Link 进行跨区域连接。这使您能够在部署
 
 1. 获取 Private Link 的 Azure 连接别名
 2. 在 Azure 中创建专用终结点
-3. 将专用终结点 Resource ID 添加到您的 ClickHouse Cloud 组织
-4. 将专用终结点 Resource ID 添加到您的服务允许列表
+3. 将专用终结点资源 ID 添加到您的 ClickHouse Cloud 组织
+4. 将专用终结点资源 ID 添加到您的服务允许列表
 5. 通过 Private Link 访问您的 ClickHouse Cloud 服务
 
 <Note>
@@ -122,11 +126,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 ***
 
-在接下来的页面中，设置以下选项：
+在接下来的页面中，指定以下选项：
 
-* **Subscription** / **Resource Group**：请选择专用终结点所属的 Azure 订阅和资源组。
+* **Subscription** / **Resource Group**：请选择用于该专用终结点的 Azure 订阅和资源组。
 * **Name**：为 **Private Endpoint** 设置名称。
-* **Region**：选择已部署 VNet 所在的区域，该 VNet 将通过 Private Link 连接到 ClickHouse Cloud。
+* **Region**：选择一个区域，即要通过 Private Link 连接到 ClickHouse Cloud 的已部署 VNet 所在的区域。
 
 完成上述步骤后，点击 **Next: Resource** 按钮。
 
@@ -136,7 +140,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 选择 **Connect to an Azure resource by resource ID or alias** 选项。
 
-在 **Resource ID or alias** 中，使用你在 [获取用于 Private Link 的 Azure 连接别名](#obtain-azure-connection-alias-for-private-link) 步骤中获取的 `endpointServiceId`。
+对于 **Resource ID or alias**，请使用你在 [获取用于 Private Link 的 Azure 连接别名](#obtain-azure-connection-alias-for-private-link) 步骤中获得的 `endpointServiceId`。
 
 点击 **Next: Virtual Network** 按钮。
 
@@ -149,7 +153,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 可选：
 
-* **Application security group**：可以将 ASG 附加到专用终结点，并在 Network Security Groups 中使用它来过滤进出专用终结点的网络流量。
+* **Application security group**：你可以将 ASG 附加到专用终结点，并在 Network Security Groups 中使用它来过滤进出专用终结点的网络流量。
 
 点击 **Next: DNS** 按钮。
 
@@ -161,7 +165,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="专用终结点 DNS 配置" border />
 
-你也可以为专用终结点添加标签。
+你也可以选择为专用终结点添加标签。
 
 点击 **Next: Review + create** 按钮。
 
@@ -171,11 +175,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 最后，点击 **Create** 按钮。
 
-<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="专用终结点审核" border />
+<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="专用终结点评审" border />
 
-已创建专用终结点的 **Connection status** 将处于 **Pending** 状态。将此专用终结点添加到服务 允许列表 后，其状态将变为 **Approved**。
+已创建专用终结点的 **Connection status** 将处于 **Pending** 状态。将该专用终结点添加到服务允许列表后，其状态会变为 **Approved**。
 
-打开与专用终结点关联的网络接口，并复制 **Private IPv4 address** (本例中为 10.0.0.4) ；后续步骤中将会用到此信息。
+打开与该专用终结点关联的网络接口，并复制 **Private IPv4 address** (本示例中为 10.0.0.4) ；后续步骤会用到此信息。
 
 <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="专用终结点 IP 地址" border />
 
@@ -467,9 +471,9 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
   #### 选项 1：ClickHouse Cloud 控制台
 </div>
 
-在 ClickHouse Cloud 控制台中，前往 **设置**。点击 **设置专用终结点** 按钮。在打开的弹出面板中，复制 **DNS 名称**。
+在 ClickHouse Cloud 控制台中，前往 **设置**。点击 **设置专用终结点** 按钮。在打开的弹出面板中，复制 **DNS name**。
 
-<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="专用终结点 DNS 名称" border />
+<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="专用终结点 DNS name" border />
 
 <div id="option-2-api-3">
   #### 选项 2：API

@@ -21,60 +21,54 @@ QStudio est une interface graphique SQL gratuite qui permet d’exécuter des sc
 
 QStudio se connecte à ClickHouse via JDBC.
 
-<div id="1-gather-your-clickhouse-details">
-  ## 1. Récupérez vos informations ClickHouse
-</div>
+<Steps>
+  <Step title="Rassemblez vos informations ClickHouse" id="1-gather-your-clickhouse-details">
+    QStudio utilise JDBC sur HTTP(S) pour se connecter à ClickHouse ; vous avez besoin de :
 
-QStudio utilise JDBC sur HTTP(S) pour se connecter à ClickHouse ; vous avez besoin des éléments suivants :
+    * endpoint
+    * numéro de port
+    * nom d’utilisateur
+    * mot de passe
 
-* endpoint
-* numéro de port
-* nom d’utilisateur
-* mot de passe
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Téléchargez QStudio" id="2-download-qstudio">
+    QStudio est disponible à l’adresse https://www.timestored.com/qstudio/download/
+  </Step>
 
-<div id="2-download-qstudio">
-  ## 2. Télécharger QStudio
-</div>
+  <Step title="Ajouter une base de données" id="3-add-a-database">
+    * Lorsque vous ouvrez QStudio pour la première fois, cliquez sur les options du menu **Server-&gt;Add Server** ou sur le bouton d’ajout de serveur dans la barre d’outils.
+    * Ensuite, renseignez les informations :
 
-QStudio est disponible à l’adresse suivante : https://www.timestored.com/qstudio/download/
+    <Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="Écran de configuration de connexion à la base de données QStudio affichant les paramètres de connexion à ClickHouse" />
 
-<div id="3-add-a-database">
-  ## 3. Ajouter une base de données
-</div>
+    1. Server Type: Clickhouse.com
+    2. Remarque : pour Host, vous DEVEZ inclure https://
+       Host: https://abc.def.clickhouse.cloud
+       Port: 8443
+    3. Username: default
+       Password: `XXXXXXXXXXX`
+    4. Cliquez sur Add
 
-* Lorsque vous ouvrez QStudio pour la première fois, cliquez sur les options du menu **Server-&gt;Add Server** ou sur le bouton d’ajout de serveur dans la barre d’outils.
-* Renseignez ensuite les informations suivantes :
+    Si QStudio détecte que vous n’avez pas installé le ClickHouse JDBC driver, il vous proposera de le télécharger pour vous :
+  </Step>
 
-<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="Écran de configuration de connexion à la base de données dans QStudio affichant les paramètres de connexion ClickHouse" />
+  <Step title="Interroger ClickHouse" id="4-query-clickhouse">
+    * Ouvrez un éditeur de requêtes et exécutez une requête. Vous pouvez exécuter des requêtes avec :
 
-1. Type de serveur : Clickhouse.com
-2. Notez que, pour l’hôte, vous DEVEZ inclure https://
-   Hôte : https://abc.def.clickhouse.cloud
-   Port : 8443
-3. Nom d’utilisateur : default
-   Mot de passe : `XXXXXXXXXXX`
-4. Cliquez sur Add
+    * Ctrl + e - Exécute le texte surligné
 
-Si QStudio détecte que le ClickHouse JDBC driver n’est pas installé, il vous proposera de le télécharger :
+    * Ctrl + Enter - Exécute la ligne en cours
 
-<div id="4-query-clickhouse">
-  ## 4. Interroger ClickHouse
-</div>
+    * Exemple de requête :
 
-* Ouvrez un éditeur de requêtes et exécutez une requête. Vous pouvez exécuter des requêtes comme suit :
-
-* Ctrl + e - Exécute le texte sélectionné
-
-* Ctrl + Enter - Exécute la ligne en cours
-
-* Exemple de requête :
-
-<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="Interface de QStudio affichant l’exécution d’une requête SQL d’exemple sur la base de données ClickHouse" />
+    <Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="Interface QStudio montrant l’exécution d’une requête SQL d’exemple sur une base de données ClickHouse" />
+  </Step>
+</Steps>
 
 <div id="next-steps">
   ## Étapes suivantes
 </div>
 
-Consultez [QStudio](https://www.timestored.com/qstudio) pour découvrir les fonctionnalités de QStudio, et la [documentation ClickHouse](/fr/) pour en savoir plus sur les fonctionnalités de ClickHouse.
+Consultez [QStudio](https://www.timestored.com/qstudio) pour découvrir les fonctionnalités de QStudio, ainsi que la [documentation ClickHouse](/fr/) pour découvrir les fonctionnalités de ClickHouse.

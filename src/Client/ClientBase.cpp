@@ -564,17 +564,23 @@ void ClientBase::adjustQueryEnd(
 void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
-    if (!select && !external_tables.empty())
+    bool has_external_data = !external_tables.empty() || !external_scalars.empty();
+    if (!select && has_external_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
 
-    if (isEmbeeddedClient() && !external_tables.empty())
+    if (isEmbeeddedClient() && has_external_data)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
 
-    std::vector<ExternalTableDataPtr> data;
+    Scalars scalars;
+    std::vector<ExternalTableDataPtr> tables;
     for (auto & table : external_tables)
-        data.emplace_back(table.getData(client_context));
+        tables.emplace_back(table.getData(client_context));
+    for (auto & table : external_scalars)
+        scalars[table.name] = table.getScalar(client_context);
 
-    connection->sendExternalTablesData(data);
+    if (!scalars.empty())
+        connection->sendScalarsData(scalars);
+    connection->sendExternalTablesData(tables);
 }
 
 
@@ -1282,6 +1288,16 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
+std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
+{
+    const Settings & settings = client_context->getSettingsRef();
+    if (!settings.hasSettingsChangedByCompatibility())
+        return {};
+    Settings result = settings;
+    result.resetSettingsChangedByCompatibility();
+    return result;
+}
+
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.
@@ -1420,6 +1436,9 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
 
+    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
+
     int retries_left = 10;
     while (retries_left)
     {
@@ -1441,7 +1460,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     query_parameters,
                     client_context->getCurrentQueryId(),
                     query_processing_stage,
-                    &client_context->getSettingsRef(),
+                    settings_to_send,
                     &client_context->getClientInfo(),
                     true,
                     {},
@@ -2005,13 +2024,17 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const Settings * settings_to_send
+        = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
+
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
         query_parameters,
         client_context->getCurrentQueryId(),
         query_processing_stage,
-        &client_context->getSettingsRef(),
+        settings_to_send,
         &client_context->getClientInfo(),
         true,
         {},

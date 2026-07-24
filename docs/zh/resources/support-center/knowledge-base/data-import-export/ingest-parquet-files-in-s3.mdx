@@ -24,13 +24,13 @@ keywords: ['Parquet', 'S3 存储桶']
 下面是一个非常简单的示例，你可以先用它测试是否能够成功访问你的 Parquet 文件，然后再应用到实际数据。
 
 如果你需要有关创建用户和存储桶的示例，可以参考前两个部分 (创建用户和创建存储桶) ：
-https://clickhouse.com/docs/guides/sre/configuring-s3-for-clickhouse-use/
+[将 S3 与 ClickHouse 集成](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
 
 我使用了这个示例文件：https://github.com/Teradata/kylo/tree/master/samples/sample-data/parquet
 并将其上传到了我的测试存储桶
 
 你可以像下面这样为存储桶设置策略：
- (根据需要调整，此策略授予的权限比较宽松，但有助于测试。你可以根据需要进一步收紧权限。) 
+(根据需要调整，此策略授予的权限比较宽松，但有助于测试。你可以根据需要进一步收紧权限。)
 
 ```
 {
