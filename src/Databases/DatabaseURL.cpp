@@ -9,7 +9,9 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -56,6 +58,66 @@ bool hasURLScheme(const String & url)
 
     return true;
 }
+
+/// The table function creates the delegate storage in read mode: at resolution time the database
+/// cannot know whether the table is the source or the target of the query, so only the READ
+/// source-access check has run. The delegate storage itself may be writable (`INSERT INTO
+/// web.`s3://...``), and the interpreter checks only the INSERT privilege on the logical table
+/// name, so without an extra check an INSERT would write to the external source without the
+/// corresponding WRITE source grant. This proxy intercepts every write entry point (INSERT,
+/// async insert, a materialized view target) and repeats the source-access check in write mode.
+class StorageURLDatabaseTable final : public StorageProxy
+{
+public:
+    StorageURLDatabaseTable(StoragePtr nested_, TableFunctionPtr table_function_)
+        : StorageProxy(nested_->getStorageID())
+        , nested(std::move(nested_))
+        , table_function(std::move(table_function_))
+    {
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
+        setInMemoryMetadata(*nested_metadata);
+    }
+
+    StoragePtr getNested() const override { return nested; }
+    String getName() const override { return nested->getName(); }
+
+    /// Read through a snapshot of the nested storage (like `StorageTableFunctionProxy` does):
+    /// the storage may downcast `storage_snapshot->storage` to its own type.
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr &,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override
+    {
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
+        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
+        nested->read(query_plan, column_names, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    }
+
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
+    {
+        table_function->checkSourceAccess(context, /* is_insert_query */ true);
+        return nested->write(query, metadata_snapshot, context, async_insert);
+    }
+
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        TableExclusiveLockHolder & lock) override
+    {
+        table_function->checkSourceAccess(context, /* is_insert_query */ true);
+        nested->truncate(query, metadata_snapshot, context, lock);
+    }
+
+private:
+    StoragePtr nested;
+    TableFunctionPtr table_function;
+};
 
 }
 
@@ -152,7 +214,11 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
     /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from
     /// `tryGetTable`, because they are more informative. The tables are intentionally not cached:
     /// the remote data (and the inferred schema) can change between queries.
-    return table_function->execute(ast_function_ptr, context_copy, name);
+    auto storage = table_function->execute(ast_function_ptr, context_copy, name);
+    if (!storage)
+        return nullptr;
+
+    return std::make_shared<StorageURLDatabaseTable>(std::move(storage), std::move(table_function));
 }
 
 bool DatabaseURL::isTableExist(const String & name, ContextPtr context_) const
@@ -200,7 +266,7 @@ ASTPtr DatabaseURL::getCreateDatabaseQueryImpl() const
 }
 
 /**
- * Returns an empty vector because the database is read-only and no tables can be backed up
+ * Returns an empty vector because the database stores no tables of its own, so there is nothing to back up
  */
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseURL::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
@@ -243,11 +309,14 @@ void registerDatabaseURL(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::URL,
     }, Documentation{
-        .description = "A read-only database that treats table names as URLs and exposes the data they point to as tables. "
+        .description = "A database that treats table names as URLs and exposes the data they point to as tables. "
                        "Relative names are resolved against the optional base URL. The URL scheme selects the backend: "
                        "`file://` reads local files, `s3://` (and `gs://`, `gcs://`, `oss://`) reads object storage, "
                        "`az://`/`azure://`/`abfss://` reads Azure Blob Storage, `hdfs://` reads HDFS, and `http://`/`https://` "
                        "and other schemes are read by the URL engine, so files, web and object storage URLs are handled uniformly. "
+                       "The database stores no tables of its own; reading a table requires read access to the corresponding "
+                       "source (e.g. `GRANT READ ON URL`), and `INSERT` writes to the underlying source and requires the "
+                       "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
                        "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
                        "database, so a plain table name resolves to a file in the current directory, while queries like "
                        "`SELECT * FROM 'https://example.com/data.csv'` read from the URL.",
