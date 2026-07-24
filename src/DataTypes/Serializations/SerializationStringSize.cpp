@@ -260,9 +260,8 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
     else
     {
-        /// A null stream is an absent/defaulted substream, not a truncated one: return the column
-        /// unchanged, matching SerializationString::deserializeBinaryBulkWithSizeStream. The short-stream
-        /// check below only applies once a stream was actually read.
+        /// Null stream = absent substream: return unchanged, like the String sibling. The short-stream
+        /// check below applies only once a stream was actually read.
         settings.path.pop_back();
         return;
     }
