@@ -45,29 +45,22 @@ TEST(IcebergCountShortcuts, HasEqualityAndPositionDeleteHelpers)
     EXPECT_TRUE(hasIcebergPositionDeletes(iceberg));
 }
 
-TEST(IcebergCountShortcuts, SnapshotGetTotalRowsIgnoresEqualityHint)
+TEST(IcebergCountShortcuts, SnapshotShortcutRequiresExplicitZeroEqualityDeletes)
 {
     Iceberg::IcebergDataSnapshot snapshot;
     snapshot.total_rows = 100;
     snapshot.total_position_delete_rows = 10;
+
+    /// Field absent: getTotalRows() would succeed, but shortcut must not be used.
+    ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+
     snapshot.total_equality_delete_rows = 5;
+    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
 
-    /// getTotalRows still only subtracts position deletes; callers must fail closed on equality.
-    ASSERT_TRUE(snapshot.getTotalRows().has_value());
-    EXPECT_EQ(*snapshot.getTotalRows(), 90u);
-    EXPECT_GT(snapshot.total_equality_delete_rows.value_or(0), 0u);
-}
-
-TEST(IcebergCountShortcuts, SnapshotWithoutEqualityAllowsShortcut)
-{
-    Iceberg::IcebergDataSnapshot snapshot;
-    snapshot.total_rows = 100;
-    snapshot.total_position_delete_rows = 10;
     snapshot.total_equality_delete_rows = 0;
-
-    ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
     EXPECT_EQ(*snapshot.getTotalRows(), 90u);
-    EXPECT_EQ(snapshot.total_equality_delete_rows.value_or(0), 0u);
 }
 
 #endif

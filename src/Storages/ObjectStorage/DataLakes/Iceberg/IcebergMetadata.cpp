@@ -1146,9 +1146,22 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
     /// Equality deletes remove data rows by value match; summary `total-equality-deletes` counts
-    /// rows in delete files, not deleted data rows. Fail closed — do not shortcut COUNT.
-    if (actual_data_snapshot->total_equality_delete_rows.value_or(0) > 0)
+    /// rows in delete files, not deleted data rows. Fail closed when the field is present and > 0.
+    /// If the field is absent, skip the summary shortcut and scan manifests for EQUALITY_DELETE files.
+    if (actual_data_snapshot->total_equality_delete_rows.has_value()
+        && *actual_data_snapshot->total_equality_delete_rows > 0)
         return {};
+
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (actual_data_snapshot->allowsSnapshotTotalRowsShortcut())
+    {
+        if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+            return total_rows;
+        }
+    }
 
     /// Row counts stored in the metadata layers above the manifest files are not used as
     /// data sources, because writers derive them instead of measuring them against the data:

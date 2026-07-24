@@ -33,6 +33,13 @@ struct IcebergDataSnapshot
             return *total_rows - *total_position_delete_rows;
         return std::nullopt;
     }
+
+    /// Summary `total-equality-deletes` is optional. Only trust the cheap getTotalRows() shortcut
+    /// when the field is present and explicitly zero; absent or >0 must fall through / fail closed.
+    bool allowsSnapshotTotalRowsShortcut() const
+    {
+        return total_equality_delete_rows.has_value() && *total_equality_delete_rows == 0;
+    }
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
