@@ -883,7 +883,8 @@ static bool getColumnsFromTableExpression(
     const QueryTreeNodePtr & root_table_expression,
     NameSet & existing_columns,
     JoinVirtualColumnsPolicy virtuals_policy = JoinVirtualColumnsPolicy::Exclude,
-    GetColumnsOptions::Kind table_function_columns_kind = GetColumnsOptions::AllPhysical);
+    GetColumnsOptions::Kind table_function_columns_kind = GetColumnsOptions::AllPhysical,
+    bool collect_array_join_columns = false);
 
 void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
@@ -942,6 +943,13 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * enclosing `ARRAY JOIN` exposes names that cannot be determined before resolution (e.g. a
       * `COLUMNS(...)` matcher), the strict behavior is kept, as for unknown table expression columns.
       *
+      * A sibling table expression can itself be wrapped in an `ARRAY JOIN` (e.g. `(...) AS lhs ARRAY JOIN
+      * [1] AS elem JOIN (SELECT 1 AS x) ON 1`). Such a sibling exposes the columns of its inner table
+      * expression plus the `ARRAY JOIN` output columns; both sets are already resolved by the time this
+      * validation runs, so they participate in the collision check like any other sibling columns instead
+      * of forcing the conservative fallback (`collect_array_join_columns` in
+      * `getColumnsFromTableExpression`).
+      *
       * Table functions contribute their full column set (`GetColumnsOptions::All`, i.e. also `ALIAS` /
       * `EPHEMERAL` columns, matching `initializeTableExpressionData`), not just physical ones, so the
       * collision check sees every name a bare identifier can bind to. Table functions such as `merge`
@@ -971,7 +979,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     {
         if (sibling.get() == table_expression_node.get())
             continue;
-        columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns, JoinVirtualColumnsPolicy::Include, GetColumnsOptions::All);
+        columns_are_known &= getColumnsFromTableExpression(
+            sibling, sibling_columns, JoinVirtualColumnsPolicy::Include, GetColumnsOptions::All, true /*collect_array_join_columns*/);
     }
 
     for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
@@ -5257,7 +5266,8 @@ static bool getColumnsFromTableExpression(
     const QueryTreeNodePtr & root_table_expression,
     NameSet & existing_columns,
     JoinVirtualColumnsPolicy virtuals_policy,
-    GetColumnsOptions::Kind table_function_columns_kind)
+    GetColumnsOptions::Kind table_function_columns_kind,
+    bool collect_array_join_columns)
 {
     /// Insert the storage's real columns (per `base_options`) and, unless virtuals are excluded, its virtual
     /// columns on top. Real columns are collected first so a real column that happens to be named like a
@@ -5348,6 +5358,33 @@ static bool getColumnsFromTableExpression(
                 chassert(cross_join_node);
                 for (const auto & table_expr : cross_join_node->getTableExpressions())
                     nodes_to_process.push(table_expr.get());
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                /// Treating an `ARRAY JOIN` as an unknown column set (`return false`) is the historical
+                /// behavior of every caller except the join-alias validation, which opts in via
+                /// `collect_array_join_columns` so that a sibling wrapped in `ARRAY JOIN` does not force
+                /// its conservative fallback.
+                if (!collect_array_join_columns)
+                    return false;
+
+                const auto * array_join_node = table_expression->as<ArrayJoinNode>();
+                chassert(array_join_node);
+
+                /// A resolved `ARRAY JOIN` exposes the columns of its inner table expression plus its own
+                /// output columns, which `resolveArrayJoin` has rewritten into `ColumnNode`s carrying the
+                /// output names (the explicit alias or the source column name). A join expression that is
+                /// not a `ColumnNode` means the node is not resolved yet and its exposed names are unknown.
+                for (const auto & array_join_column : array_join_node->getJoinExpressions().getNodes())
+                {
+                    const auto * column_node = array_join_column->as<ColumnNode>();
+                    if (!column_node)
+                        return false;
+                    existing_columns.insert(column_node->getColumnName());
+                }
+
+                nodes_to_process.push(array_join_node->getTableExpression().get());
                 break;
             }
             default:

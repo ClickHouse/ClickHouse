@@ -134,6 +134,28 @@ SELECT arr1 FROM arr_t, (SELECT 1 AS not_colliding) ARRAY JOIN COLUMNS('^arr'); 
 SELECT arr1 FROM arr_t, (SELECT 1 AS other) AS rhs ARRAY JOIN COLUMNS('^arr');
 SELECT arr1 FROM arr_t, (SELECT 1 AS other) ARRAY JOIN COLUMNS('^arr') SETTINGS joined_subquery_requires_alias = 0;
 
+-- A sibling table expression can itself be wrapped in an `ARRAY JOIN`. Such a sibling exposes the columns
+-- of its inner table expression plus the `ARRAY JOIN` output columns, and both sets are already resolved
+-- when the join is validated, so it does not force the conservative fallback. No name collides here
+-- (`id` / `elem` vs `x`), so the unaliased subquery is allowed.
+SELECT id, elem, x FROM (SELECT [0] AS id) AS lhs ARRAY JOIN [1] AS elem INNER JOIN (SELECT 1 AS x) ON true;
+
+-- A collision with the sibling's `ARRAY JOIN` output column still requires the alias ...
+SELECT id FROM (SELECT [0] AS id) AS lhs ARRAY JOIN [1] AS elem INNER JOIN (SELECT 1 AS elem) ON true; -- { serverError ALIAS_REQUIRED }
+
+-- ... as does a collision with a column of the table expression inside the sibling's `ARRAY JOIN`.
+SELECT elem FROM (SELECT [0] AS id) AS lhs ARRAY JOIN [1] AS elem INNER JOIN (SELECT 1 AS id) ON true; -- { serverError ALIAS_REQUIRED }
+
+-- An `ARRAY JOIN` of a bare column keeps the source column name as the output name; it coincides with
+-- the inner column of the same name, so it is not a collision by itself.
+SELECT arr1, x FROM arr_t ARRAY JOIN arr1 INNER JOIN (SELECT 1 AS x) ON true;
+
+-- Unlike an *enclosing* `ARRAY JOIN` with a `COLUMNS(...)` matcher (see above), a *sibling* `ARRAY JOIN`
+-- is fully resolved by the time the join is validated, so its output names are known even for a matcher
+-- and only a real collision requires the alias.
+SELECT arr1, arr2, x FROM arr_t ARRAY JOIN COLUMNS('^arr') INNER JOIN (SELECT 1 AS x) ON true;
+SELECT arr1 FROM arr_t ARRAY JOIN COLUMNS('^arr') INNER JOIN (SELECT 1 AS arr2) ON true; -- { serverError ALIAS_REQUIRED }
+
 -- The widened (`ALIAS`-including) table function column set is local to the join-alias validation: the
 -- `NATURAL JOIN` synthesis keeps matching physical columns only, symmetrically for both operand orders.
 -- `z` is a forwarded ALIAS column of `merge`, so neither order synthesizes `USING (z)` and both degrade
