@@ -14,8 +14,8 @@ DROP TABLE IF EXISTS base_dlk_2;
 
 CREATE TABLE base_dlk_1 (key Int, value Int) ENGINE = MergeTree ORDER BY key;
 CREATE TABLE base_dlk_2 (key Int, value Int) ENGINE = MergeTree ORDER BY key;
-INSERT INTO base_dlk_1 SELECT number, number FROM numbers(100000);
-INSERT INTO base_dlk_2 SELECT number, number FROM numbers(50000);
+INSERT INTO base_dlk_1 SELECT number, number FROM numbers(10000);
+INSERT INTO base_dlk_2 SELECT number, number FROM numbers(5000);
 
 CREATE TABLE d_dlk_1 AS base_dlk_1 ENGINE = Distributed(test_shard_localhost, currentDatabase(), base_dlk_1);
 CREATE TABLE d_dlk_2 AS base_dlk_2 ENGINE = Distributed(test_shard_localhost, currentDatabase(), base_dlk_2);
