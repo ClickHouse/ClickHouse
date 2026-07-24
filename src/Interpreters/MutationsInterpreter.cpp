@@ -261,46 +261,49 @@ bool canExcludePartByIndexAnalysis(
     const StorageMetadataPtr & metadata_snapshot,
     ASTs predicates,
     ContextPtr context)
-try
 {
-    if (part->isEmpty())
-        return true;
+    /// Only the predicate rewrite/analysis below is allowed to fall back silently: a genuine
+    /// error there will surface again when the fallback path executes the check query. The
+    /// index analysis call further down reads primary key / minmax metadata and must not have
+    /// resource, I/O or cancellation errors swallowed here.
+    std::shared_ptr<ActionsDAGWithInversionPushDown> inverted_dag;
+    try
+    {
+        ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
 
-    ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
+        /// SQL UDF bodies are allowed to contain subqueries and table reads; TreeRewriter expands
+        /// them below, so the guard must run after the same substitution, not on the raw predicate.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(condition, context);
 
-    /// SQL UDF bodies are allowed to contain subqueries and table reads; TreeRewriter expands
-    /// them below, so the guard must run after the same substitution, not on the raw predicate.
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(condition, context);
+        /// Sets for subqueries and table references would be built again by the fallback path.
+        if (containsSubqueryOrTableReference(*condition))
+            return false;
 
-    /// Sets for subqueries and table references would be built again by the fallback path.
-    if (containsSubqueryOrTableReference(*condition))
+        auto syntax_result = TreeRewriter(context).analyze(
+            condition,
+            metadata_snapshot->getColumns().getAllPhysical(),
+            storage_from_part,
+            storage_from_part->getStorageSnapshot(metadata_snapshot, context));
+
+        auto actions = ExpressionAnalyzer(condition, syntax_result, context).getActionsDAG(false);
+        const auto * predicate_node = actions.tryFindInOutputs(condition->getColumnName());
+        if (!predicate_node)
+            return false;
+
+        inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate_node, context, /*boolean_context=*/true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("MutationsInterpreter"),
+            "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
+            LogsLevel::debug);
         return false;
-
-    auto syntax_result = TreeRewriter(context).analyze(
-        condition,
-        metadata_snapshot->getColumns().getAllPhysical(),
-        storage_from_part,
-        storage_from_part->getStorageSnapshot(metadata_snapshot, context));
-
-    auto actions = ExpressionAnalyzer(condition, syntax_result, context).getActionsDAG(false);
-    const auto * predicate_node = actions.tryFindInOutputs(condition->getColumnName());
-    if (!predicate_node)
-        return false;
-
-    auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate_node, context, /*boolean_context=*/true);
+    }
 
     static const LoggerPtr log = getLogger("MutationsInterpreter");
     return MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(part, inverted_dag, metadata_snapshot, context, log);
-}
-catch (...)
-{
-    /// A genuine error will surface when the fallback path executes the check query.
-    tryLogCurrentException(
-        getLogger("MutationsInterpreter"),
-        "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
-        LogsLevel::debug);
-    return false;
 }
 
 }
@@ -364,6 +367,11 @@ IsStorageTouched isStorageTouchedByMutations(
 
     if (all_commands_can_be_skipped)
         return no_rows;
+
+    /// An empty part trivially has no rows to touch; this is not an index-analysis exclusion,
+    /// so it must not count towards MutationUntouchedPartsByIndexAnalysis.
+    if (source_part->isEmpty())
+        return {.any_rows_affected = false, .all_rows_affected = true};
 
     if (canExcludePartByIndexAnalysis(source_part, storage_from_part, metadata_snapshot, std::move(predicates_for_part), context))
     {
