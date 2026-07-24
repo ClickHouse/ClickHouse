@@ -82,9 +82,7 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### Helm으로 Odigos 배포
-
+  <Step title="Helm으로 Odigos 배포" id="deploy-odigos">
     Odigos Enterprise를 사용하려면 온프레미스 라이선스 토큰이 필요합니다. 셸에서 다음과 같이 export하세요:
 
     ```bash
@@ -114,9 +112,7 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
     ```
   </Step>
 
-  <Step>
-    #### Odigos UI에서 소스 추가
-
+  <Step title="Odigos UI에서 소스 추가" id="add-sources">
     1. Odigos UI 서비스로 포트 포워딩합니다:
 
     ```bash
@@ -129,9 +125,7 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
     5. **SOURCES** 컬럼에서 워크로드가 성공적으로 계측되었는지 확인하세요.
   </Step>
 
-  <Step>
-    #### Odigos UI에서 ClickStack을 대상으로 추가하기
-
+  <Step title="Odigos UI에서 ClickStack을 대상으로 추가하기" id="add-destination-ui">
     텔레메트리를 ClickStack으로 보내려면 Odigos에서 **OTLP HTTP** 대상을 추가합니다. 정확한 구성은 ClickStack의 배포 방식에 따라 달라집니다. 오픈 소스 ClickStack에서는 OpenTelemetry collector가 함께 제공되며 수집 key는 HyperDX UI에서 자동으로 생성됩니다. Managed ClickStack에서는 독립 실행형 ClickStack collector를 직접 실행하고, 컨테이너 시작 시 인증 토큰을 직접 지정합니다.
 
     <Tip>
@@ -193,9 +187,7 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
     </Tabs>
   </Step>
 
-  <Step>
-    #### ClickStack에서 텔레메트리 확인
-
+  <Step title="ClickStack에서 텔레메트리 확인" id="verify-telemetry">
     1. ClickStack UI(HyperDX)를 여십시오:
        * **Open source ClickStack**: 예를 들어 all-in-one 이미지에서는 `http://<host>:8080`입니다.
        * **Managed ClickStack**: [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 연 후 **Launch ClickStack**을 클릭하십시오. 자세한 내용은 [ClickStack UI로 이동](/ko/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud)을 참조하십시오.
