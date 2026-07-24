@@ -74,7 +74,7 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
 
 <Note>
   [`FixedString`](/ja/reference/data-types/fixedstring) データ型を使用する場合、値が行を完全に埋めないと、null 文字で埋められます。
-  `bech32Encode` 関数は hrp 引数についてはこれを自動的に処理しますが、data 引数については値が埋められていてはなりません。
+  `bech32Encode` 関数は hrp 引数についてはこれを自動的に処理しますが、data 引数については値を埋めてはいけません。
   このため、すべての値の長さが同じであり、かつ `FixedString` カラムもその長さに設定されていることを確実に保証できる場合を除き、
   データ値に [`FixedString`](/ja/reference/data-types/fixedstring) データ型を使用することは推奨されません。
 </Note>
@@ -100,7 +100,7 @@ human-readable part、常に &#39;1&#39; である区切り文字、および da
 **デフォルトの Bech32m**
 
 ```sql title=Query
--- witness versionが指定されない場合、デフォルトは1（更新されたBech32mアルゴリズム）が使用されます。
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -111,7 +111,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Bech32アルゴリズム**
 
 ```sql title=Query
--- witness versionが0の場合、異なるアドレス文字列が生成されます。
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -122,8 +122,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **カスタムHRP**
 
 ```sql title=Query
--- 'bc'（メインネット）と 'tb'（テストネット）は SegWit アドレス形式で許可される唯一の hrp 値だが、
--- Bech32 は上記の要件を満たす任意の hrp を使用できる。
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -134,8 +134,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Cosmos SDK アドレス (BIP173、witness versionなし)&#x20;**
 
 ```sql title=Query
--- 'bech32' バリアントを使用すると、witness version バイトなしで生データをエンコードします。
--- Cosmos SDK、Injective、Osmosis、その他の非SegWit チェーンと互換性があります。
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 
@@ -1029,7 +1029,7 @@ SELECT sqidEncode(1, 2, 3, 4, 5);
 </Note>
 
 `0` と `1` の 2 進数のみをサポートします。2 進数の桁数は 8 の倍数である必要はありません。引数文字列に 2 進数以外の文字が含まれている場合、
-結果は未定義です (例外はスローされません) 。
+結果は未定義です (例外はスローされません)。
 
 **構文**
 
@@ -1090,7 +1090,7 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 大文字と小文字の `A-F` の両方をサポートしています。
 16 進数の桁数は偶数である必要はありません。
 奇数の場合、最後の 1 桁は `00-0F` バイトの下位 4 ビットとして解釈されます。
-引数の文字列に 16 進数以外の文字が含まれている場合、実装依存の結果が返されます (例外はスローされません) 。
+引数の文字列に 16 進数以外の文字が含まれている場合、実装依存の結果が返されます (例外はスローされません)。
 数値引数に対しては、hex(N) の逆変換は unhex() では行われません。
 
 **構文**

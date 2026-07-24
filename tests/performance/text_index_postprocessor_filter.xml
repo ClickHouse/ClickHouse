@@ -1,0 +1,33 @@
+<test>
+  <!-- Build a text index whose postprocessor is a filter-only stop-word filter
+       (if(token IN (...), '', token)). This exercises the filter-only fast path:
+       the fast path drops matching tokens during the build instead of running the
+       postprocessor expression per token occurrence. The source is stop-word-heavy
+       (~1/3 of tokens are dropped) so the filtering cost is significant. -->
+
+  <create_query>
+    CREATE TABLE tab_filter (
+      id UInt64,
+      text String,
+      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text IN ('a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into', 'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then', 'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with'), '', text))
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+  </create_query>
+  <create_query>
+    CREATE TABLE tab_src (id UInt64, text String) ENGINE = Memory;
+  </create_query>
+
+  <fill_query>
+    INSERT INTO tab_src
+    SELECT 
+      number,
+      arrayStringConcat(arrayMap(x -> if(x % 3 = 0, ['the', 'a', 'of', 'to', 'in', 'and', 'is', 'it'][(x % 8) + 1], toString(cityHash64(number, x) % 100000)), range(30)), ' ')
+    FROM numbers(1000000);
+  </fill_query>
+
+  <query>INSERT INTO tab_filter SELECT * FROM tab_src</query>
+
+  <drop_query>DROP TABLE IF EXISTS tab_filter</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_src</drop_query>
+</test>

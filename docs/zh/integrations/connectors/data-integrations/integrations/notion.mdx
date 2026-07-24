@@ -30,16 +30,16 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
   ## 将 ClickHouse 连接到 Notion 自定义智能体
 </div>
 
-ClickHouse 在 Notion 中已作为预配置连接提供 (当前为 Beta) 。无需设置自定义 MCP 服务器，也无需粘贴 URL。
+ClickHouse 在 Notion 中作为预配置连接提供 (当前为 Beta) 。无需设置自定义 MCP 服务器，也无需粘贴 URL。
 
-1. 在 Notion 中，从侧边栏的 **智能体** 部分新建一个 **自定义智能体**。
-2. 在智能体的 **设置** 中，找到 **工具和访问权限**，选择 **添加连接**，然后从可用连接列表中添加 **ClickHouse**。
+1. 在 Notion 中，从侧边栏的 **Agents** 部分新建一个 **自定义智能体**。
+2. 在智能体的 **Settings** 中，找到 **Tools and Access**，选择 **Add connection**，然后从可用连接列表中添加 **ClickHouse**。
 
 <Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="在 Notion 的“添加连接”选择器中选择 ClickHouse" />
 
-3. 点击 **连接**，然后使用你的 ClickHouse Cloud 凭据完成 OAuth 流程。访问范围仅限于你的账户当前已可访问的组织和服务。
+3. 点击 **Connect**，然后使用你的 ClickHouse Cloud 凭据完成 OAuth flow。访问范围仅限于你的账户当前已可访问的组织和服务。
 
-4. 在智能体设置中展开新添加的 ClickHouse 连接，并开启你希望该智能体使用的工具。对于每个工具，你还可以选择让智能体自动运行，或始终请求批准。ClickHouse 远程 MCP 服务器公开的所有工具均为只读。有关完整的最新列表，请参阅[可用工具](/zh/products/cloud/features/ai-ml/remote-mcp#available-tools)参考文档。
+4. 在智能体设置中展开新添加的 ClickHouse 连接，并打开你希望该智能体使用的工具。对于每个工具，你还可以选择让智能体自动运行，或始终请求批准。ClickHouse 远程 MCP 服务器公开的所有工具均为只读。有关完整的最新列表，请参阅[可用工具](/zh/products/cloud/features/ai-ml/remote-mcp#available-tools)参考文档。
 
 <Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="Notion 中展开的 ClickHouse 连接，显示各个工具的开关" />
 
