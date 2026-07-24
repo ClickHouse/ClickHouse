@@ -71,8 +71,12 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!close_bracket.ignore(pos, expected))
                 return false;
 
+            /// Store each column already rendered as valid SQL, like `table_name` below. `full_name` alone
+            /// would drop the original quoting, and the handler splices these strings verbatim into
+            /// `INSERT INTO ... (...)` / `SELECT ... FROM ...`, so a quoted column such as `"a.b"` or
+            /// `"select"` (pqxx's `stream_to` always quotes the column list) must stay a single identifier.
             for (const auto & column_ast : columns->children)
-                copy_element->column_names.push_back(column_ast->as<ASTIdentifier>()->full_name);
+                copy_element->column_names.push_back(backQuoteIfNeed(column_ast->as<ASTIdentifier>()->full_name));
         }
         saved_pos = pos;
         /// Store the table name already rendered as valid SQL: a compound `database.table` must keep its
