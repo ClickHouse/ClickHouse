@@ -176,10 +176,11 @@ def main():
             ok = False
 
     # --- TEMPORARY DIAGNOSTIC (do not merge) ---
-    # Does the write-scoped release PAT (ROBOT_CLICKHOUSE_COMMIT_TOKEN) bypass the
-    # "Merge only for releases" ruleset on release-pattern branches
-    # (refs/heads/[0-9][0-9].[0-9]*)? The push only needs HEAD, not any history,
-    # so run it here — before the slow `--unshallow` fetch — and stop.
+    # Does either robot token (GH_TOKEN = /github-tokens/robot-1, or the
+    # write-scoped ROBOT_CLICKHOUSE_COMMIT_TOKEN) bypass the "Merge only for
+    # releases" ruleset on release-pattern branches (refs/heads/[0-9][0-9].[0-9]*)?
+    # The push only needs HEAD, not any history, so run it here — before the slow
+    # `--unshallow` fetch — and stop.
     # We only need 30.12's tip, not the whole history, so fetch just that one ref
     # shallowly (not the slow `--unshallow`). Then build a *fast-forward* update:
     # an empty commit on top of 30.12's tip. A plain (non-force) fast-forward push
@@ -201,15 +202,6 @@ def main():
         strict=True,
         verbose=True,
     )
-    # Authenticate with the PAT via the x-access-token URL syntax. The token is a
-    # literal ${ROBOT_CLICKHOUSE_COMMIT_TOKEN} that the shell expands at run time,
-    # so praktika's verbose command logging never prints its value. Clear
-    # actions/checkout's origin extraheader for this one command so the URL
-    # credentials (our PAT), not the checkout GITHUB_TOKEN, authenticate the push.
-    print(
-        "=== ROBOT-TOKEN PUSH TEST (ROBOT_CLICKHOUSE_COMMIT_TOKEN via "
-        "x-access-token): fast-forward push -> refs/heads/30.12 ==="
-    )
     # Which GitHub identity does each token authenticate as? Ask the API before
     # the push, so a GH013 cannot be misread as an empty/wrong token. Each token
     # is a shell-expanded ${...} literal, so its value is not printed by verbose
@@ -230,25 +222,38 @@ def main():
         verbose=True,
         strict=False,
     )
-    push_ok = Shell.check(
-        "git -c http.https://github.com/.extraheader= push"
-        " https://x-access-token:${ROBOT_CLICKHOUSE_COMMIT_TOKEN}@github.com/"
-        "ClickHouse/ClickHouse.git HEAD:refs/heads/30.12",
-        verbose=True,
-        strict=False,
-    )
-    if push_ok:
+
+    # Try the same fast-forward push with each token in turn; both are expected to
+    # be blocked by the ruleset (GH013). Authenticate via the x-access-token URL
+    # syntax, with the token as a shell-expanded ${<var>} literal — the variable
+    # *name* is safe to log, the value is not. Clear actions/checkout's origin
+    # extraheader for the command so the URL credentials (our token), not the
+    # checkout GITHUB_TOKEN, authenticate the push.
+    def try_push(token_var):
         print(
-            "ROBOT-PUSH RESULT: SUCCEEDED — the ruleset does NOT block "
-            "ROBOT_CLICKHOUSE_COMMIT_TOKEN; the push to 30.12 went through."
+            f"=== PUSH TEST [{token_var}] (x-access-token, fast-forward)"
+            " -> refs/heads/30.12 ==="
         )
-    else:
+        pushed = Shell.check(
+            "git -c http.https://github.com/.extraheader= push"
+            f" https://x-access-token:${{{token_var}}}@github.com/"
+            "ClickHouse/ClickHouse.git HEAD:refs/heads/30.12",
+            verbose=True,
+            strict=False,
+        )
         print(
-            "ROBOT-PUSH RESULT: REJECTED — the ruleset blocks "
-            "ROBOT_CLICKHOUSE_COMMIT_TOKEN too "
-            "(expected GH013: changes must be made through a pull request)."
+            f"PUSH RESULT [{token_var}]: "
+            + (
+                "SUCCEEDED — the ruleset does NOT block this token; 30.12 updated."
+                if pushed
+                else "REJECTED — the ruleset blocks this token "
+                "(expected GH013: changes must be made through a pull request)."
+            )
         )
-    print("=== stopping after robot-token push test (diagnostic run) ===")
+
+    try_push("GH_TOKEN")
+    try_push("ROBOT_CLICKHOUSE_COMMIT_TOKEN")
+    print("=== stopping after robot-token push tests (diagnostic run) ===")
     return
     # --- END TEMPORARY DIAGNOSTIC ---
 
