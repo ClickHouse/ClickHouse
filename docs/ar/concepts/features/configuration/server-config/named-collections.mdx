@@ -375,6 +375,8 @@ SELECT dictGet('dict', 'B', 2);
 * `username` بدلًا من `user`
 * `db` بدلًا من `database`.
 
+يمكن أيضًا تخزين إعدادات تجمّع الاتصالات الخاصة بـ [PostgreSQL table engine](/ar/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` وإعدادات `postgresql_*` الأخرى) في المجموعة أو تمريرها كتجاوزات بصيغة `key = value`. وهي تنطبق على محرك الجدول `PostgreSQL`، والدالة الجدولية `postgresql`، ومحرك قاعدة البيانات `PostgreSQL`؛ وتكون لعبارة `SETTINGS` الصريحة على الجدول أولوية على القيم الواردة من المجموعة.
+
 تُستخدم المعلمة `addresses_expr` في المجموعة بدلًا من `host:port`. وهذه المعلمة اختيارية، لأن هناك معلمات اختيارية أخرى، وهي: `host` و`hostname` و`port`. توضّح الشيفرة الزائفة التالية ترتيب الأولوية:
 
 ```sql

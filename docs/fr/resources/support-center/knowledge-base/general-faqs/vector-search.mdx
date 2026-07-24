@@ -25,51 +25,47 @@ Les principaux avantages de l’utilisation de ClickHouse pour la recherche vect
 
 Voici un bref tutoriel sur l’utilisation de ClickHouse pour la recherche vectorielle.
 
-<div id="1-create-embeddings">
-  ## 1. Créer des embeddings
-</div>
+<Steps>
+  <Step title="Créer des embeddings">
+    Vos données (documents, images ou données structurées) doivent être converties en *embeddings*. Nous vous recommandons de créer des embeddings à l’aide de l’[API OpenAI Embeddings](https://platform.openai.com/docs/api-reference/embeddings) ou de la bibliothèque Python open-source [SentenceTransformers](https://www.sbert.net/).
 
-Vos données (documents, images ou données structurées) doivent être converties en *embeddings*. Nous vous recommandons de créer ces embeddings à l’aide de l’[API OpenAI Embeddings](https://platform.openai.com/docs/api-reference/embeddings) ou de la bibliothèque Python open source [SentenceTransformers](https://www.sbert.net/).
+    Vous pouvez considérer un embedding comme un grand tableau de nombres à virgule flottante qui représente vos données. [Consultez ce guide d’OpenAI pour en savoir plus sur les embeddings](https://developers.openai.com/api/docs/guides/embeddings).
+  </Step>
 
-Vous pouvez considérer un embedding comme un grand tableau de nombres à virgule flottante représentant vos données. [Consultez ce guide d’OpenAI pour en savoir plus sur les embeddings](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings).
+  <Step title="Stocker les embeddings">
+    Une fois que vous avez généré des embeddings, vous devez les stocker dans ClickHouse. Chaque embedding doit être stocké dans une ligne distincte et peut inclure des métadonnées pour le filtrage, les agrégations ou l’analyse. Voici un exemple de table pouvant stocker des images avec des légendes :
 
-<div id="2-store-the-embeddings">
-  ## 2. Stocker les embeddings
-</div>
+    ```sql
+    CREATE TABLE images
+    (
+    	`_file` LowCardinality(String),
+    	`caption` String,
+    	`image_embedding` Array(Float32)
+    )
+    ENGINE = MergeTree;
+    ```
+  </Step>
 
-Une fois que vous avez généré des embeddings, vous devez les stocker dans ClickHouse. Chaque embedding doit être stocké dans une ligne distincte et peut inclure des métadonnées pour le filtrage, les agrégations ou l’analyse. Voici un exemple de table permettant de stocker des images avec des légendes :
+  <Step title="Rechercher des embeddings associés">
+    Supposons que vous souhaitiez rechercher des images de chiens dans votre jeu de données. Vous pouvez utiliser une fonction de distance comme `cosineDistance` pour utiliser l’embedding d’une image de chien et rechercher des images similaires :
 
-```sql
-CREATE TABLE images
-(
-	`_file` LowCardinality(String),
-	`caption` String,
-	`image_embedding` Array(Float32)
-)
-ENGINE = MergeTree;
-```
+    ```sql
+    SELECT
+        _file,
+    	caption,
+    	cosineDistance(
+            -- Un embedding de votre image de chien en entrée
+            [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+            image_embedding
+        ) AS score
+    FROM images
+    ORDER BY score ASC
+    LIMIT 10
+    ```
 
-<div id="3-search-for-related-embeddings">
-  ## 3. Rechercher des embeddings similaires
-</div>
-
-Supposons que vous souhaitiez rechercher des images de chiens dans votre jeu de données. Vous pouvez utiliser une fonction de distance comme `cosineDistance` pour partir de l&#39;embedding d&#39;une image de chien et rechercher des images similaires :
-
-```sql
-SELECT
-    _file,
-	caption,
-	cosineDistance(
-        -- An embedding of your "input" dog picture
-        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
-        image_embedding
-    ) AS score
-FROM images
-ORDER BY score ASC
-LIMIT 10
-```
-
-Cette requête renvoie les noms `_file` et la légende des 10 images les plus susceptibles d’être liées à l’image de chien que vous avez fournie.
+    Cette requête renvoie les valeurs de `_file` et `caption` des 10 images les plus susceptibles d’être liées à l’image de chien que vous avez fournie.
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## Pour en savoir plus

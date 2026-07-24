@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Looker'
 slug: /integrations/looker
-keywords: ['ClickHouse', 'looker', 'подключение', 'интеграция', 'интерфейс']
-description: 'Looker — это корпоративная платформа для BI, приложений для работы с данными и встроенной аналитики, которая помогает анализировать данные и делиться выводами в реальном времени.'
+keywords: ['clickhouse', 'looker', 'connect', 'integrate', 'ui']
+description: 'Looker — это платформа корпоративного уровня для BI, приложений для работы с данными и встроенной аналитики, которая помогает анализировать данные и делиться выводами в реальном времени.'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -17,46 +17,44 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-Looker может подключаться к ClickHouse Cloud или к развертыванию в собственной инфраструктуре через официальный источник данных ClickHouse.
+Looker может подключаться к ClickHouse Cloud или развертыванию в собственной инфраструктуре через официальный источник данных ClickHouse.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Подготовьте сведения о подключении
-</div>
+<Steps>
+  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Создайте источник данных ClickHouse" id="2-create-a-clickhouse-data-source">
+    Перейдите в Admin -&gt; Database -&gt; Connections и нажмите кнопку &quot;Add Connection&quot; в правом верхнем углу.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. Создайте источник данных ClickHouse
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Добавление нового соединения в интерфейсе управления базой данных Looker" border />
 
-Перейдите в Admin -&gt; Database -&gt; Connections и нажмите кнопку &quot;Add Connection&quot; в правом верхнем углу.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Добавление нового соединения в интерфейсе управления базой данных Looker" border />
+    Укажите имя источника данных, выберите `ClickHouse` в раскрывающемся списке dialect и введите свои учетные данные в соответствующие поля формы.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Указание учетных данных ClickHouse в форме подключения Looker" border />
 
-Укажите имя источника данных, выберите `ClickHouse` в раскрывающемся списке dialect и введите свои учетные данные в соответствующие поля формы.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Указание учетных данных ClickHouse в форме подключения Looker" border />
+    Если вы используете ClickHouse Cloud или для вашего развертывания требуется SSL, убедитесь, что SSL включен в дополнительных настройках.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Включение SSL для подключения ClickHouse в настройках Looker" border />
 
-Если вы используете ClickHouse Cloud или для вашего развертывания требуется SSL, убедитесь, что SSL включен в дополнительных настройках.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Включение SSL для подключения ClickHouse в настройках Looker" border />
+    Сначала проверьте подключение, а затем, когда проверка завершится, подключитесь к новому источнику данных ClickHouse.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Проверка подключения и подключение к источнику данных ClickHouse" border />
 
-Сначала проверьте подключение, а затем, когда проверка завершится, подключитесь к новому источнику данных ClickHouse.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Проверка подключения и подключение к источнику данных ClickHouse" border />
-
-<br />
-
-Теперь вы сможете подключить источник данных ClickHouse к своему проекту Looker.
+    Теперь вы сможете подключить источник данных ClickHouse к своему проекту Looker.
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. Известные ограничения
+  ## Известные ограничения
 </div>
 
 1. Следующие типы данных по умолчанию обрабатываются как строки:
