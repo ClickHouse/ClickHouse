@@ -19,9 +19,11 @@ part=comment-0/<uuid>.parquet
 -- null: NULL partition value must be accepted and read back as NULL (was NOT_IMPLEMENTED)
 1	\N
 committed path: part=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+committed partitionValues: "partitionValues":{"part":null}
 -- empty string is null-equivalent per the Delta protocol (reads back as NULL)
 1	\N
 committed path: part=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+committed partitionValues: "partitionValues":{"part":null}
 -- NULL and the literal string '__HIVE_DEFAULT_PARTITION__' stay distinct
 1	\N
 2	__HIVE_DEFAULT_PARTITION__
@@ -39,3 +41,16 @@ CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
 2	p	q
 committed paths: a=a%252Fb/b=c%2525d/<uuid>.parquet
 a=p/b=q/<uuid>.parquet
+-- Unicode (UTF-8) partition values round-trip; non-ASCII bytes stay literal in the
+-- directory and are URI-encoded in the committed add.path
+1	café
+2	日本語
+3	a/münchen
+committed paths: part=%E6%97%A5%E6%9C%AC%E8%AA%9E/<uuid>.parquet
+part=a%252Fm%C3%BCnchen/<uuid>.parquet
+part=caf%C3%A9/<uuid>.parquet
+-- the legacy (non-kernel) reader must also read a null partition value back as NULL
+-- (the committed JSON null previously threw in the String-only parsing path)
+1	\N
+2	x
+3	\N

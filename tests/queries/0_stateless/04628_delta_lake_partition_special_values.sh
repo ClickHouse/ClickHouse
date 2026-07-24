@@ -48,6 +48,16 @@ committed_paths() {
         | sort
 }
 
+# List the committed `partitionValues` object of every add action, sorted. This shows the exact
+# JSON committed for a null partition (`{"part":null}`), so a writer that omitted the key (which
+# the reader would still materialize as NULL) would be caught here.
+committed_partition_values() {
+    local path="$1"
+    grep -h '"add"' "${path}"/_delta_log/*.json \
+        | sed -E 's/.*("partitionValues":\{[^}]*\}).*/\1/' \
+        | sort
+}
+
 # schema for (number Int32 NOT NULL, part Nullable(String)) partitioned by part
 SCHEMA_PART='{\"type\":\"struct\",\"fields\":[{\"name\":\"number\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"part\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}'
 
@@ -90,6 +100,7 @@ ${CLICKHOUSE_LOCAL} --allow_experimental_delta_lake_writes=1 --query "
     SELECT number, part FROM deltaLakeLocal('${ROOT}/null') ORDER BY number;
 "
 echo "committed path: $(committed_paths "${ROOT}/null")"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/null")"
 
 echo "-- empty string is null-equivalent per the Delta protocol (reads back as NULL)"
 bootstrap "${ROOT}/empty" "${SCHEMA_PART}" '["part"]'
@@ -98,6 +109,7 @@ ${CLICKHOUSE_LOCAL} --allow_experimental_delta_lake_writes=1 --query "
     SELECT number, part FROM deltaLakeLocal('${ROOT}/empty') ORDER BY number;
 "
 echo "committed path: $(committed_paths "${ROOT}/empty")"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/empty")"
 
 echo "-- NULL and the literal string '__HIVE_DEFAULT_PARTITION__' stay distinct"
 bootstrap "${ROOT}/collide" "${SCHEMA_PART}" '["part"]'
@@ -142,3 +154,22 @@ ${CLICKHOUSE_LOCAL} --allow_experimental_delta_lake_writes=1 --query "
     SELECT number, a, b FROM deltaLakeLocal('${ROOT}/two') ORDER BY number;
 "
 echo "committed paths: $(committed_paths "${ROOT}/two")"
+
+echo "-- Unicode (UTF-8) partition values round-trip; non-ASCII bytes stay literal in the"
+echo "-- directory and are URI-encoded in the committed add.path"
+bootstrap "${ROOT}/unicode" "${SCHEMA_PART}" '["part"]'
+${CLICKHOUSE_LOCAL} --allow_experimental_delta_lake_writes=1 --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/unicode') VALUES (1, 'café'), (2, '日本語'), (3, 'a/münchen');
+    SELECT number, part FROM deltaLakeLocal('${ROOT}/unicode') ORDER BY number;
+"
+echo "committed paths: $(committed_paths "${ROOT}/unicode")"
+
+echo "-- the legacy (non-kernel) reader must also read a null partition value back as NULL"
+echo "-- (the committed JSON null previously threw in the String-only parsing path)"
+bootstrap "${ROOT}/legacy_null" "${SCHEMA_PART}" '["part"]'
+${CLICKHOUSE_LOCAL} --allow_experimental_delta_lake_writes=1 --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/legacy_null') VALUES (1, NULL), (2, 'x'), (3, '');
+"
+${CLICKHOUSE_LOCAL} --allow_experimental_delta_lake_writes=1 --allow_experimental_delta_kernel_rs=0 --query "
+    SELECT number, part FROM deltaLakeLocal('${ROOT}/legacy_null') ORDER BY number;
+"
