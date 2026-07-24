@@ -71,9 +71,7 @@ Bindplane 通过以下能力解决这一问题：
 </div>
 
 <Steps>
-  <Step>
-    #### 将 ClickStack 配置为目标端
-
+  <Step title="将 ClickStack 配置为目标端" id="configure-destination">
     1. 登录你的 Bindplane 账户
     2. 进入 **Library**
     3. 点击 **Add Destination**
@@ -82,7 +80,7 @@ Bindplane 通过以下能力解决这一问题：
        * **Protocol**：选择 HTTP 或 gRPC (默认使用 HTTP，端口为 `4318`)
        * **Hostname**：输入你的 ClickStack OTLP 端点主机名或 IP 地址
        * **Port**：输入端口 (HTTP 为 `4318`，gRPC 为 `4317`)
-       * **API Ingestion Key**：输入你的 ClickStack API Ingestion Key
+       * **API 摄取密钥**：输入你的 ClickStack API 摄取密钥
     6. 为目标端命名 (例如“ClickStack Production”)
     7. 点击 **Save** 创建目标端
 
@@ -93,9 +91,7 @@ Bindplane 通过以下能力解决这一问题：
     </Tip>
   </Step>
 
-  <Step>
-    #### 创建配置
-
+  <Step title="创建配置" id="create-configuration">
     配置好 ClickStack 目标端后，创建一个配置来处理并路由遥测数据：
 
     1. 进入 **Configurations** → **Create Configuration**
@@ -117,10 +113,8 @@ Bindplane 通过以下能力解决这一问题：
     </Tip>
   </Step>
 
-  <Step>
-    #### 添加处理器 (可选)
-
-    Bindplane 提供管道智能和处理器推荐。你可以添加处理器来执行以下操作：
+  <Step title="添加处理器 (可选)" id="add-processors">
+    Bindplane 提供管道智能分析和处理器推荐。你可以添加处理器来执行以下操作：
 
     * **Filter**：排除不必要的遥测数据，以减少数据量
     * **Sample**：对高数据量的链路追踪应用采样策略
@@ -131,9 +125,7 @@ Bindplane 通过以下能力解决这一问题：
     这些处理器会在数据到达 ClickStack 之前，在你的 collector 集群中统一应用。
   </Step>
 
-  <Step>
-    #### 部署 collectors 并开始滚动发布
-
+  <Step title="部署 collectors 并开始滚动发布" id="deploy-collectors">
     1. 将一个 collector (BDOT Collector) 添加到你的配置中：
        * 在 Bindplane 中进入 **Agents**
        * 按照 [Bindplane 的安装说明](https://docs.bindplane.com/readme/install-your-first-collector) 在目标系统上安装 Bindplane collector
@@ -157,9 +149,7 @@ Bindplane 通过以下能力解决这一问题：
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="通过 Bindplane 在 ClickStack 中查看遥测信号" size="lg" />
   </Step>
 
-  <Step>
-    #### 在 ClickStack 中验证遥测数据
-
+  <Step title="在 ClickStack 中验证遥测数据" id="verify-telemetry">
     配置完成滚动发布后，遥测数据会从你管理的 collector 集群流入 ClickStack：
 
     1. 登录你的 ClickStack 实例 (HyperDX UI)

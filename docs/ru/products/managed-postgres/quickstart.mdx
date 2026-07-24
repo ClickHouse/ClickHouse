@@ -3,425 +3,420 @@ slug: /cloud/managed-postgres/quickstart
 sidebarTitle: 'Быстрый старт'
 title: 'Быстрый старт для Managed Postgres'
 description: 'Оцените производительность Postgres на базе NVMe и добавьте Real-time аналитику с помощью нативной интеграции ClickHouse'
-keywords: ['managed postgres', 'быстрый старт', 'начало работы', 'создать базу данных', 'nvme', 'производительность']
+keywords: ['managed postgres', 'быстрый старт', 'начало работы', 'создать базу данных', 'nvme', 'производительность', 'clickhousectl', 'CLI', 'автоматизация', 'ИИ-агенты']
 doc_type: 'guide'
 ---
 
 import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
+import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
+<Visibility for="agents">
+  <QuickstartCLI />
+</Visibility>
 
-ClickHouse Managed Postgres — это Postgres корпоративного уровня на базе NVMe-хранилища, который обеспечивает до 10 раз более высокую производительность для рабочих нагрузок, упирающихся в скорость дисковой подсистемы, по сравнению с сетевыми хранилищами вроде EBS. Этот быстрый старт состоит из двух частей:
+<Visibility for="humans">
+  <View title="CLI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
 
-* **Часть 1:** Начните работу с NVMe Postgres и оцените его производительность
-* **Часть 2:** Откройте возможности Real-time аналитики, интегрировав ее с ClickHouse
+    Вы можете пройти этот путь самостоятельно, автоматизировать его с помощью скрипта или передать ИИ-агенту. Для версии в консоли переключитесь в режим **интерфейса Cloud**.
 
-Сейчас Managed Postgres доступен в AWS в нескольких регионах и предоставляется бесплатно в рамках закрытой предварительной версии.
+    <QuickstartCLI />
+  </View>
 
-**В этом быстром старте вы:**
+  <View title="Интерфейс Cloud">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
-* Создадите экземпляр Managed Postgres с производительностью NVMe
-* Загрузите 1 миллион тестовых событий и увидите скорость NVMe в действии
-* Выполните запросы и оцените низкую задержку
-* Реплицируете данные в ClickHouse для Real-time аналитики
-* Будете выполнять запросы к ClickHouse напрямую из Postgres с помощью `pg_clickhouse`
+    ClickHouse Managed Postgres — это Postgres корпоративного уровня на базе NVMe-хранилища, обеспечивающий производительность до 10 раз выше для дисковых рабочих нагрузок по сравнению с сетевыми хранилищами, такими как EBS. Это руководство по быстрому старту состоит из двух частей:
 
-<div id="part-1">
-  ## Часть 1: Начало работы с NVMe Postgres
-</div>
+    * **Часть 1:** Начало работы с NVMe Postgres и оценка его производительности
+    * **Часть 2:** Откройте для себя Real-time аналитику благодаря интеграции с ClickHouse
 
-<div id="create-postgres-database">
-  ### Создание базы данных
-</div>
-
-Чтобы создать новый сервис Managed Postgres, нажмите кнопку **New service** в списке сервисов в Cloud Console. Затем вы сможете выбрать Postgres в качестве типа базы данных.
-
-<Image img="/images/managed-postgres/create-service.webp" alt="Создание сервиса Managed Postgres" size="md" border />
-
-Введите имя для экземпляра базы данных и нажмите **Create service**. После этого вы перейдёте на страницу обзора.
-
-<Image img="/images/managed-postgres/overview.webp" alt="Обзор Managed Postgres" size="md" border />
-
-Экземпляр Managed Postgres будет подготовлен и готов к использованию через 3–5 минут.
-
-<div id="connect">
-  ### Подключитесь к своей базе данных
-</div>
-
-На боковой панели слева вы увидите [**кнопку Connect**](/ru/products/managed-postgres/connection). Нажмите на нее, чтобы просмотреть сведения о подключении и строки подключения в разных форматах.
-
-<Image img="/images/managed-postgres/connect-modal.webp" alt="Модальное окно подключения Managed Postgres" size="md" border />
-
-Скопируйте строку подключения `psql` и подключитесь к своей базе данных. Вы также можете использовать любой клиент, совместимый с Postgres, например DBeaver, или любую библиотеку для приложений.
-
-<div id="nvme-performance">
-  ### Оцените производительность NVMe
-</div>
-
-Давайте посмотрим, как проявляется производительность NVMe на практике. Сначала включите замер времени в psql, чтобы оценить время выполнения запроса:
-
-```sql
-\timing
-```
-
-Создайте две тестовые таблицы для событий и пользователей:
-
-```sql
-CREATE TABLE events (
-   event_id SERIAL PRIMARY KEY,
-   event_name VARCHAR(255) NOT NULL,
-   event_type VARCHAR(100),
-   event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   event_data JSONB,
-   user_id INT,
-   user_ip INET,
-   is_active BOOLEAN DEFAULT TRUE,
-   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE users (
-   user_id SERIAL PRIMARY KEY,
-   name VARCHAR(100),
-   country VARCHAR(50),
-   platform VARCHAR(50)
-);
-```
-
-Теперь вставьте 1 миллион событий и посмотрите на скорость NVMe:
-
-```sql
-INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
-SELECT
-   'Event ' || gs::text AS event_name,
-   CASE
-       WHEN random() < 0.5 THEN 'click'
-       WHEN random() < 0.75 THEN 'view'
-       WHEN random() < 0.9 THEN 'purchase'
-       WHEN random() < 0.98 THEN 'signup'
-       ELSE 'logout'
-   END AS event_type,
-   NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
-   jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
-   GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
-   ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
-FROM
-   generate_series(1, 1000000) gs;
-```
-
-```text
-INSERT 0 1000000
-Time: 3596.542 ms (00:03.597)
-```
-
-<Tip>
-  **Производительность NVMe**
-
-  1 миллион строк с данными JSONB вставляется менее чем за 4 секунды. В традиционных облачных базах данных, использующих сетевые хранилища вроде EBS, та же операция обычно занимает в 2–3 раза больше времени из-за задержек при сетевом обмене и ограничений по IOPS. NVMe-хранилище устраняет эти узкие места, поскольку хранилище физически подключено к вычислительным ресурсам.
-
-  Производительность зависит от размера инстанса, текущей нагрузки и характеристик данных.
-</Tip>
-
-Вставьте 1 000 пользователей:
-
-```sql
-INSERT INTO users (name, country, platform)
-SELECT
-    first_names[first_idx] || ' ' || last_names[last_idx] AS name,
-    CASE
-        WHEN random() < 0.25 THEN 'India'
-        WHEN random() < 0.5 THEN 'USA'
-        WHEN random() < 0.7 THEN 'Germany'
-        WHEN random() < 0.85 THEN 'China'
-        ELSE 'Other'
-    END AS country,
-    CASE
-        WHEN random() < 0.2 THEN 'iOS'
-        WHEN random() < 0.4 THEN 'Android'
-        WHEN random() < 0.6 THEN 'Web'
-        WHEN random() < 0.75 THEN 'Windows'
-        WHEN random() < 0.9 THEN 'MacOS'
-        ELSE 'Linux'
-    END AS platform
-FROM
-    generate_series(1, 1000) AS seq
-    CROSS JOIN LATERAL (
-        SELECT
-            array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
-            array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
-            1 + (seq % 32) AS first_idx,
-            1 + ((seq / 32)::int % 32) AS last_idx
-    ) AS names;
-```
-
-<div id="run-queries">
-  ### Выполните запросы к своим данным
-</div>
-
-Теперь давайте выполним несколько запросов, чтобы увидеть, насколько быстро Postgres отвечает при использовании NVMe-хранилища.
-
-**Агрегируйте 1 миллион событий по типу:**
-
-```sql
-SELECT event_type, COUNT(*) as count 
-FROM events 
-GROUP BY event_type 
-ORDER BY count DESC;
-```
-
-```text
- event_type | count  
-------------+--------
- click      | 499523
- view       | 375644
- purchase   | 112473
- signup     |  12117
- logout     |    243
-(5 строк)
-
-Время: 114.883 ms
-```
-
-**Запрос с фильтрацией по JSONB и диапазоном дат:**
-
-```sql
-SELECT COUNT(*) 
-FROM events 
-WHERE event_timestamp > NOW() - INTERVAL '30 days'
-  AND event_data->>'additional_info' LIKE 'info_5%';
-```
-
-```text
- count 
--------
-  9042
-(1 row)
+    Managed Postgres в настоящее время доступен в AWS в нескольких регионах и находится в стадии публичной бета-версии.
 
-Time: 109.294 ms
-```
+    **В этом руководстве по быстрому старту вы:**
 
-**Объедините события с пользователями:**
+    * Создайте инстанс Managed Postgres с NVMe-производительностью
+    * Загрузите 1 миллион событий и посмотрите на скорость NVMe в деле
+    * Выполняйте запросы и оцените производительность с низкими задержками
+    * Реплицируйте данные в ClickHouse для Real-time аналитики
+    * Выполняйте запросы к ClickHouse напрямую из Postgres с помощью `pg_clickhouse`
 
-```sql
-SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
-FROM events e
-JOIN users u ON e.user_id = u.user_id
-GROUP BY u.country
-ORDER BY events DESC;
-```
+    ## Часть 1: Начало работы с NVMe Postgres
 
-```text
- country | events | avg_json_size 
----------+--------+---------------
- USA     | 383748 |            52
- India   | 255990 |            52
- Germany | 223781 |            52
- China   | 127754 |            52
- Other   |   8727 |            52
-(5 rows)
+    ### Создание базы данных
 
-Time: 224.670 ms
-```
+    Чтобы создать новый сервис Managed Postgres, нажмите кнопку **New service** в списке сервисов Cloud Console. После этого вы сможете выбрать Postgres в качестве типа базы данных.
 
-<Info>
-  **Ваш Postgres готов**
+    <Image img="/images/managed-postgres/create-service.webp" alt="Создайте сервис Managed Postgres" size="md" border />
 
-  На этом этапе у вас есть полностью работоспособная высокопроизводительная база данных Postgres, готовая к транзакционным нагрузкам.
+    Введите имя для вашего инстанса базы данных и нажмите **Create service**. Вы будете перенаправлены на страницу обзора.
+
+    <Image img="/images/managed-postgres/overview.webp" alt="Обзор Managed Postgres" size="md" border />
+
+    Ваш инстанс Managed Postgres будет подготовлен и готов к использованию в течение 3–5 минут.
+
+    ### Подключитесь к базе данных
+
+    На боковой панели слева вы увидите [кнопку **Connect**](/ru/products/managed-postgres/connection). Нажмите на неё, чтобы просмотреть сведения о подключении и строки подключения в различных форматах.
+
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="Модальное окно Connect для Managed Postgres" size="md" border />
+
+    Скопируйте строку подключения `psql` и подключитесь к своей базе данных. Также можно использовать любой совместимый с Postgres клиент, например DBeaver, или любую библиотеку приложения.
+
+    ### Оцените производительность NVMe
+
+    Давайте посмотрим, как проявляется производительность NVMe на практике. Сначала включите замер времени в psql, чтобы оценить время выполнения запроса:
+
+    ```sql
+    \timing
+    ```
+
+    Создайте две тестовые таблицы для событий и пользователей:
+
+    ```sql
+    CREATE TABLE events (
+       event_id SERIAL PRIMARY KEY,
+       event_name VARCHAR(255) NOT NULL,
+       event_type VARCHAR(100),
+       event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       event_data JSONB,
+       user_id INT,
+       user_ip INET,
+       is_active BOOLEAN DEFAULT TRUE,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE users (
+       user_id SERIAL PRIMARY KEY,
+       name VARCHAR(100),
+       country VARCHAR(50),
+       platform VARCHAR(50)
+    );
+    ```
+
+    Теперь вставьте 1 миллион событий и посмотрите на скорость NVMe:
+
+    ```sql
+    INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
+    SELECT
+       'Event ' || gs::text AS event_name,
+       CASE
+           WHEN random() < 0.5 THEN 'click'
+           WHEN random() < 0.75 THEN 'view'
+           WHEN random() < 0.9 THEN 'purchase'
+           WHEN random() < 0.98 THEN 'signup'
+           ELSE 'logout'
+       END AS event_type,
+       NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
+       jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
+       GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
+       ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
+    FROM
+       generate_series(1, 1000000) gs;
+    ```
+
+    ```text
+    INSERT 0 1000000
+    Time: 3596.542 ms (00:03.597)
+    ```
+
+    <Tip>
+      **Производительность NVMe**
+
+      1 миллион строк с данными JSONB вставляется менее чем за 4 секунды. В традиционных облачных базах данных, использующих сетевые хранилища вроде EBS, та же операция обычно занимает в 2–3 раза больше времени из-за задержек при сетевом обмене и ограничений по IOPS. NVMe-хранилище устраняет эти узкие места, поскольку хранилище физически подключено к вычислительным ресурсам.
+
+      Производительность зависит от размера инстанса, текущей нагрузки и характеристик данных.
+    </Tip>
+
+    Вставьте 1 000 пользователей:
+
+    ```sql
+    INSERT INTO users (name, country, platform)
+    SELECT
+        first_names[first_idx] || ' ' || last_names[last_idx] AS name,
+        CASE
+            WHEN random() < 0.25 THEN 'India'
+            WHEN random() < 0.5 THEN 'USA'
+            WHEN random() < 0.7 THEN 'Germany'
+            WHEN random() < 0.85 THEN 'China'
+            ELSE 'Other'
+        END AS country,
+        CASE
+            WHEN random() < 0.2 THEN 'iOS'
+            WHEN random() < 0.4 THEN 'Android'
+            WHEN random() < 0.6 THEN 'Web'
+            WHEN random() < 0.75 THEN 'Windows'
+            WHEN random() < 0.9 THEN 'MacOS'
+            ELSE 'Linux'
+        END AS platform
+    FROM
+        generate_series(1, 1000) AS seq
+        CROSS JOIN LATERAL (
+            SELECT
+                array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
+                array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
+                1 + (seq % 32) AS first_idx,
+                1 + ((seq / 32)::int % 32) AS last_idx
+        ) AS names;
+    ```
+
+    ### Выполнение запросов к данным
+
+    Теперь выполним несколько запросов, чтобы оценить скорость отклика Postgres с NVMe-хранилищем.
+
+    **Агрегируйте 1 миллион событий по типу:**
+
+    ```sql
+    SELECT event_type, COUNT(*) as count 
+    FROM events 
+    GROUP BY event_type 
+    ORDER BY count DESC;
+    ```
+
+    ```text
+     event_type | count  
+    ------------+--------
+     click      | 499523
+     view       | 375644
+     purchase   | 112473
+     signup     |  12117
+     logout     |    243
+    (5 rows)
 
-  Перейдите к части 2, чтобы узнать, как нативная интеграция ClickHouse может вывести вашу аналитику на новый уровень.
-</Info>
+    Time: 114.883 ms
+    ```
 
-***
+    **Запрос с фильтрацией JSONB и диапазоном дат:**
 
-<div id="part-2">
-  ## Часть 2: Добавьте Real-time аналитику с ClickHouse
-</div>
+    ```sql
+    SELECT COUNT(*) 
+    FROM events 
+    WHERE event_timestamp > NOW() - INTERVAL '30 days'
+      AND event_data->>'additional_info' LIKE 'info_5%';
+    ```
 
-Хотя Postgres отлично подходит для транзакционных рабочих нагрузок (OLTP), ClickHouse специально создан для аналитических запросов (OLAP) по большим наборам данных. Объединив их, вы получите лучшее из двух миров:
+    ```text
+     count 
+    -------
+      9042
+    (1 row)
 
-* **Postgres** для транзакционных данных вашего приложения (вставки, обновления, точечные выборки)
-* **ClickHouse** для аналитики с задержкой менее секунды на миллиардах строк
+    Time: 109.294 ms
+    ```
 
-В этом разделе показано, как настроить репликацию данных из Postgres в ClickHouse и выполнять запросы к ним без лишних сложностей.
+    **JOIN событий с пользователями:**
 
-<div id="setup-integrate-clickhouse">
-  ### Настройка интеграции ClickHouse
-</div>
+    ```sql
+    SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
+    FROM events e
+    JOIN users u ON e.user_id = u.user_id
+    GROUP BY u.country
+    ORDER BY events DESC;
+    ```
 
-Теперь, когда в Postgres есть таблицы и данные, давайте настроим репликацию таблиц в ClickHouse для аналитики. Сначала нажмите **ClickHouse integration** на боковой панели. Затем нажмите **Replicate data in ClickHouse**.
+    ```text
+     country | events | avg_json_size 
+    ---------+--------+---------------
+     USA     | 383748 |            52
+     India   | 255990 |            52
+     Germany | 223781 |            52
+     China   | 127754 |            52
+     Other   |   8727 |            52
+    (5 rows)
 
-<Image img="/images/managed-postgres/integration-landing.webp" alt="Пустая интеграция Managed Postgres" size="md" border />
+    Time: 224.670 ms
+    ```
 
-В открывшейся форме можно указать имя интеграции и выбрать существующий экземпляр ClickHouse, в который будут реплицироваться данные. Если у вас еще нет экземпляра ClickHouse, его можно создать прямо из этой формы.
+    <Info>
+      **Ваш Postgres готов**
 
-<Info>
-  **Важно**
+      На этом этапе у вас есть полностью функциональная высокопроизводительная база данных Postgres, готовая для транзакционных нагрузок.
 
-  Перед продолжением убедитесь, что выбранный сервис ClickHouse находится в состоянии Running.
-</Info>
+      Перейдите к части 2, чтобы узнать, как нативная интеграция ClickHouse может значительно ускорить вашу аналитику.
+    </Info>
 
-<Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Форма интеграции Managed Postgres" size="md" border />
+    ***
 
-Нажмите **Next**, чтобы перейти к выбору таблиц. Здесь нужно сделать следующее:
+    ## Часть 2: Добавление аналитики в реальном времени с помощью ClickHouse
 
-* Выберите базу данных ClickHouse, в которую будут реплицироваться данные.
-* Разверните схему **public** и выберите таблицы users и events, которые мы создали ранее.
-* Нажмите **Replicate data to ClickHouse**.
+    Postgres отлично справляется с транзакционными рабочими нагрузками (OLTP), тогда как ClickHouse создан специально для аналитических запросов (OLAP) над большими датасетами. Интегрируя оба решения, вы получаете лучшее от каждого из них:
 
-<Image img="/images/managed-postgres/table-picker.webp" alt="Выбор таблиц Managed Postgres" size="md" border />
+    * **Postgres** для транзакционных данных вашего приложения (вставки, обновления, точечные запросы по ключу)
+    * **ClickHouse** для аналитики по миллиардам строк за доли секунды
 
-Запустится процесс репликации, и вы перейдете на страницу обзора интеграции. Поскольку это первая интеграция, развертывание базовой инфраструктуры может занять 2–3 минуты. А пока давайте рассмотрим новое расширение **pg&#95;clickhouse**.
+    В этом разделе описано, как реплицировать данные из Postgres в ClickHouse и выполнять к ним запросы.
 
-<div id="pg-clickhouse-extension">
-  ### Выполнение запросов к ClickHouse из Postgres
-</div>
+    ### Настройка интеграции с ClickHouse
 
-Расширение `pg_clickhouse` позволяет напрямую выполнять запросы к данным ClickHouse из Postgres с помощью стандартного SQL. Это означает, что ваше приложение может использовать Postgres как единый слой запросов как для транзакционных, так и для аналитических данных. Подробности см. в [полной документации](/ru/products/managed-postgres/extensions/pg_clickhouse/introduction).
+    Теперь, когда в Postgres есть таблицы и данные, выполним репликацию таблиц в ClickHouse для аналитики. Начнём с нажатия на **ClickHouse integration** на боковой панели. Затем нажмите **Replicate data in ClickHouse**.
 
-Включите расширение:
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="Интеграция Managed Postgres пуста" size="md" border />
 
-```sql
-CREATE EXTENSION pg_clickhouse;
-```
+    В следующей форме вы можете ввести имя интеграции и выбрать существующий экземпляр ClickHouse для репликации. Если у вас ещё нет экземпляра ClickHouse, его можно создать непосредственно из этой формы.
 
-Затем создайте foreign server для подключения к ClickHouse. Используйте драйвер `http` и порт `8443` для защищённых соединений:
-
-```sql
-CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
-       OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
-```
-
-Замените `<clickhouse_cloud_host>` на имя хоста ClickHouse, а `<database_name>` — на базу данных, выбранную при настройке репликации. Имя хоста можно найти в сервисе ClickHouse, нажав **Connect** на боковой панели.
-
-<Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Получение имени хоста ClickHouse" size="md" border />
-
-Теперь сопоставим пользователя Postgres с учетными данными сервиса ClickHouse:
-
-```sql
-CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
-OPTIONS (user 'default', password '<clickhouse_password>');
-```
-
-Теперь импортируйте таблицы ClickHouse в схему Postgres:
-
-```sql
-CREATE SCHEMA organization;
-IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
-```
-
-Замените `<database_name>` на то же имя базы данных, которое вы использовали при создании сервера.
-
-Теперь в клиенте Postgres вы можете увидеть все таблицы ClickHouse:
-
-```sql
-\det+ organization.*
-```
+    <Info>
+      **Важно**
 
-<div id="analytics-after-integration">
-  ### Посмотрите аналитику в работе
-</div>
+      Прежде чем продолжить, убедитесь, что выбранный вами сервис ClickHouse имеет статус Running.
+    </Info>
 
-Снова перейдите на страницу интеграции. Вы увидите, что начальная репликация завершена. Нажмите на название интеграции, чтобы посмотреть подробности.
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Форма интеграции с Managed Postgres" size="md" border />
 
-<Image img="/images/managed-postgres/analytics-list.webp" alt="Список аналитики Managed Postgres" size="md" border />
+    Нажмите **Далее**, чтобы перейти к выбору таблицы. Здесь вам нужно:
 
-Нажмите на название сервиса, чтобы открыть консоль ClickHouse и увидеть реплицированные таблицы.
+    * Выберите базу данных ClickHouse, в которую нужно реплицировать данные.
+    * Разверните схему **public** и выберите таблицы users и events, которые мы создали ранее.
+    * Нажмите **Replicate data to ClickHouse**.
 
-<Image img="/images/managed-postgres/replicated-tables.webp" alt="Реплицированные таблицы Managed Postgres в ClickHouse" size="md" border />
+    <Image img="/images/managed-postgres/table-picker.webp" alt="Выбор таблиц Managed Postgres" size="md" border />
 
-<div id="performance-comparison">
-  ### Сравнение производительности Postgres и ClickHouse
-</div>
+    Начнётся процесс репликации, и вы будете перенаправлены на страницу обзора интеграции. Поскольку это первая интеграция, первоначальная настройка инфраструктуры может занять 2–3 минуты. Пока давайте рассмотрим новое расширение **pg&#95;clickhouse**.
 
-Теперь выполним несколько аналитических запросов и сравним производительность Postgres и ClickHouse. Обратите внимание: для реплицированных таблиц используется соглашение об именовании `public_<table_name>`.
+    ### Запросы к ClickHouse из Postgres
 
-**Запрос 1: Самые активные пользователи**
+    Расширение `pg_clickhouse` позволяет выполнять запросы к данным ClickHouse напрямую из Postgres с использованием стандартного SQL. Это означает, что ваше приложение может использовать Postgres как единый уровень запросов как для транзакционных, так и для аналитических данных. Подробнее см. в [полной документации](/ru/products/managed-postgres/extensions/pg_clickhouse/introduction).
 
-Этот запрос определяет самых активных пользователей с помощью нескольких агрегаций:
+    Включите расширение:
 
-```sql
--- Через ClickHouse
-SELECT 
-    user_id,
-    COUNT(*) as total_events,
-    COUNT(DISTINCT event_type) as unique_event_types,
-    SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
-    MIN(event_timestamp) as first_event,
-    MAX(event_timestamp) as last_event
-FROM organization.public_events
-GROUP BY user_id
-ORDER BY total_events DESC
-LIMIT 10;
-```
+    ```sql
+    CREATE EXTENSION pg_clickhouse;
+    ```
 
-```text
- user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
----------+--------------+--------------------+-----------+----------------------------+----------------------------
-       1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
-       2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
-...
-(10 rows)
+    Затем создайте подключение к внешнему серверу ClickHouse. Используйте драйвер `http` с портом `8443` для защищённых соединений:
 
-Time: 163.898 ms   -- ClickHouse
-Time: 554.621 ms   -- Тот же запрос в Postgres
-```
+    ```sql
+    CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
+           OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
+    ```
+
+    Замените `<clickhouse_cloud_host>` на имя хоста вашего ClickHouse, а `<database_name>` — на базу данных, выбранную при настройке репликации. Имя хоста можно найти в вашем сервисе ClickHouse, нажав **Connect** на боковой панели.
+
+    <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Получение хоста ClickHouse" size="md" border />
+
+    Теперь сопоставим пользователя Postgres с учётными данными сервиса ClickHouse:
+
+    ```sql
+    CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
+    OPTIONS (user 'default', password '<clickhouse_password>');
+    ```
 
-**Запрос 2: Вовлечённость пользователей по странам и платформам**
+    Теперь импортируйте таблицы ClickHouse в схему Postgres:
+
+    ```sql
+    CREATE SCHEMA organization;
+    IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
+    ```
 
-Этот запрос связывает события с пользователями и вычисляет метрики вовлечённости:
+    Замените `<database_name>` на то же имя базы данных, которое вы использовали при создании сервера.
 
-```sql
--- Через ClickHouse
-SELECT 
-    u.country,
-    u.platform,
-    COUNT(DISTINCT e.user_id) as users,
-    COUNT(*) as total_events,
-    ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
-    SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
-FROM organization.public_events e
-JOIN organization.public_users u ON e.user_id = u.user_id
-GROUP BY u.country, u.platform
-ORDER BY total_events DESC
-LIMIT 10;
-```
+    Теперь вы можете видеть все таблицы ClickHouse в своём клиенте Postgres:
 
-```text
- country | platform | users | total_events | events_per_user | purchases 
----------+----------+-------+--------------+-----------------+-----------
- USA     | Android  |   115 |       109977 |             956 |     12388
- USA     | Web      |   108 |       105057 |             972 |     11847
- USA     | iOS      |    83 |        84594 |            1019 |      9565
- Germany | Android  |    85 |        77966 |             917 |      8852
- India   | Android  |    80 |        68095 |             851 |      7724
-...
-(10 rows)
+    ```sql
+    \det+ organization.*
+    ```
 
-Time: 170.353 ms   -- ClickHouse
-Time: 1245.560 ms  -- Тот же запрос в Postgres
-```
+    ### Аналитика в действии
 
-**Сравнение производительности:**
+    Вернитесь на страницу интеграции. Вы должны увидеть, что начальная репликация завершена. Нажмите на название интеграции, чтобы просмотреть подробности.
 
-| Query                                          | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | Speedup |
-| ---------------------------------------------- | --------------- | ---------------------------------- | ------- |
-| Топ пользователей (5 агрегаций)                | 555 ms          | 164 ms                             | 3.4x    |
-| Вовлечённость пользователей (JOIN + агрегации) | 1,246 ms        | 170 ms                             | 7.3x    |
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="Список аналитики для Managed Postgres" size="md" border />
 
-<Tip>
-  **Когда использовать ClickHouse**
+    Нажмите на имя сервиса, чтобы открыть консоль ClickHouse и просмотреть реплицированные таблицы.
 
-  Даже на этом наборе данных из 1 млн строк ClickHouse обеспечивает в 3–7 раз более высокую производительность для сложных аналитических запросов с JOIN и несколькими агрегациями. На больших масштабах (100 млн+ строк) разница становится ещё заметнее: благодаря столбцовому хранению и векторизованному выполнению ClickHouse может давать ускорение в 10–100 раз.
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="Репликация таблиц Managed Postgres в ClickHouse" size="md" border />
 
-  Время выполнения запросов зависит от размера инстанса, сетевой задержки между сервисами, характеристик данных и текущей нагрузки.
-</Tip>
+    ### Сравнение производительности Postgres и ClickHouse
 
-<div id="cleanup">
-  ## Очистка
-</div>
+    Теперь выполним несколько аналитических запросов и сравним производительность Postgres и ClickHouse. Обратите внимание, что реплицированные таблицы используют соглашение об именовании `public_<table_name>`.
 
-Чтобы удалить ресурсы, созданные в этом быстром старте:
+    **Запрос 1: Самые активные пользователи**
 
-1. Сначала удалите интеграцию ClickPipe в сервисе ClickHouse
-2. Затем удалите экземпляр Managed Postgres в Cloud Console
+    Этот запрос находит наиболее активных пользователей с использованием нескольких агрегаций:
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        user_id,
+        COUNT(*) as total_events,
+        COUNT(DISTINCT event_type) as unique_event_types,
+        SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
+        MIN(event_timestamp) as first_event,
+        MAX(event_timestamp) as last_event
+    FROM organization.public_events
+    GROUP BY user_id
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
+    ---------+--------------+--------------------+-----------+----------------------------+----------------------------
+           1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+           2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+    ...
+    (10 rows)
+
+    Time: 163.898 ms   -- ClickHouse
+    Time: 554.621 ms   -- Same query on Postgres
+    ```
+
+    **Запрос 2: Вовлечённость пользователей по стране и платформе**
+
+    Этот запрос объединяет события с пользователями и вычисляет метрики вовлечённости:
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        u.country,
+        u.platform,
+        COUNT(DISTINCT e.user_id) as users,
+        COUNT(*) as total_events,
+        ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
+        SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
+    FROM organization.public_events e
+    JOIN organization.public_users u ON e.user_id = u.user_id
+    GROUP BY u.country, u.platform
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     country | platform | users | total_events | events_per_user | purchases 
+    ---------+----------+-------+--------------+-----------------+-----------
+     USA     | Android  |   115 |       109977 |             956 |     12388
+     USA     | Web      |   108 |       105057 |             972 |     11847
+     USA     | iOS      |    83 |        84594 |            1019 |      9565
+     Germany | Android  |    85 |        77966 |             917 |      8852
+     India   | Android  |    80 |        68095 |             851 |      7724
+    ...
+    (10 rows)
+
+    Time: 170.353 ms   -- ClickHouse
+    Time: 1245.560 ms  -- Same query on Postgres
+    ```
+
+    **Сравнение производительности:**
+
+    | Запрос                                         | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | Ускорение |
+    | ---------------------------------------------- | --------------- | ---------------------------------- | --------- |
+    | Топ пользователей (5 агрегаций)                | 555 ms          | 164 ms                             | 3.4x      |
+    | Вовлечённость пользователей (JOIN + агрегации) | 1,246 ms        | 170 ms                             | 7.3x      |
+
+    <Tip>
+      **Когда использовать ClickHouse**
+
+      Даже на этом наборе данных из 1 млн строк ClickHouse выполняет сложные аналитические запросы с JOIN и несколькими агрегациями в 3–7 раз быстрее. На больших объемах (100M+ строк) разница становится еще заметнее: благодаря столбцовому хранению и векторизованному выполнению ClickHouse может ускорять такие запросы в 10–100 раз.
+
+      Время выполнения запросов зависит от размера инстанса, сетевой задержки между сервисами, характеристик данных и текущей нагрузки.
+    </Tip>
+
+    ## Очистка
+
+    Чтобы удалить ресурсы, созданные в рамках этого краткого руководства:
+
+    1. Сначала удалите интеграцию ClickPipe из сервиса ClickHouse
+    2. Затем удалите инстанс Managed Postgres из Cloud Console
+  </View>
+</Visibility>
