@@ -6,6 +6,8 @@
 # no-flaky-check: the FileSync-count measurement is not reproducible under the flaky check's thread
 #   fuzzer and is not suitable for rerun-based flakiness detection (see below).
 
+set -euo pipefail
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
