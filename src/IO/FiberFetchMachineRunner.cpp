@@ -4,9 +4,15 @@
 
 #include <IO/SilkFiberJob.h>
 
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+
 #include <base/defines.h>
 
 #include <silk/fibers/fiber.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -18,6 +24,7 @@ struct FiberStepParams
 {
     SilkFiberJobHeader header;
     std::shared_ptr<MachineBase> machine;
+    ThreadGroupPtr thread_group;
 };
 
 /// The global fiber-switch hooks read `getFiberParameters` as a `SilkFiberJobHeader *`
@@ -33,30 +40,64 @@ struct FiberStepParams
 int stepFiberMain(FiberStepParams * params) noexcept
 {
     MachineBase & m = *params->machine;
-    m.state.store(MachineState::Running);
     try
     {
-        switch (m.run_step())
+        /// The fiber owns this ThreadStatus for the whole step: created here and destroyed
+        /// before this function returns, one per step, rather than a carrier-OS-thread-wide
+        /// ThreadStatus shared and lazily created across every fiber that thread ever borrows.
+        /// `NoOSThreadTag` marks it as not owning a dedicated OS thread: `ThreadStatusExt.cpp`
+        /// gates OS-thread-only bookkeeping (query profiler, perf counters, nice value, the
+        /// group's OS-thread linked list) off `thread_id == NO_OS_THREAD`. The fiber-switch
+        /// hooks (`SilkScheduler.cpp`) only ever swap `DB::current_thread` as this fiber
+        /// migrates across carrier OS threads; they never construct or attach anything.
+        ThreadStatus thread_status(ThreadStatus::NoOSThreadTag{});
+
+        /// Attach to the submitter's group for the step's duration, so memory accounting and
+        /// per-user throttling follow the fiber. A null group (e.g. a machine scheduled off
+        /// any query) leaves the switcher a no-op, which is still correct: `thread_status`
+        /// above keeps `current_thread` non-null for the whole step regardless. No thread
+        /// name to set - fibers migrate across carrier OS threads too fast for a `setThreadName`
+        /// syscall on each switch to mean anything.
+        ThreadGroupSwitcher switcher(params->thread_group, std::nullopt);
+
+        m.state.store(MachineState::Running);
+        try
         {
-            case StepResult::AwaitCollect:
-                m.state.store(MachineState::AwaitCollect);
-                break;
-            case StepResult::Interrupted:
-                m.state.store(MachineState::Interrupted);
-                break;
-            case StepResult::Done:
-                m.state.store(MachineState::Done);
-                break;
+            switch (m.run_step())
+            {
+                case StepResult::AwaitCollect:
+                    m.state.store(MachineState::AwaitCollect);
+                    break;
+                case StepResult::Interrupted:
+                    m.state.store(MachineState::Interrupted);
+                    break;
+                case StepResult::Done:
+                    m.state.store(MachineState::Done);
+                    break;
+            }
+        }
+        catch (...)
+        {
+            m.failure = std::current_exception();
+            m.state.store(MachineState::Failed);
         }
     }
     catch (...)
     {
+        /// ThreadStatus construction itself can throw (e.g. an ErrnoException from the
+        /// alt-stack setup) - and its constructor publishes `current_thread = this` BEFORE
+        /// that throwing tail, so restore the invariant first: everything below (the machine
+        /// teardown included) allocates through `current_thread`. At fiber-body entry the
+        /// value is always null (the first-resume swap installs the header's zero slot), so
+        /// null is the correct restore. This is also a fiber entry point: letting a C++
+        /// exception escape it would call std::terminate, so fail the step instead.
+        current_thread = nullptr;
         m.failure = std::current_exception();
         m.state.store(MachineState::Failed);
     }
 
-    /// Drop our co-ownership INSIDE the fiber: if this copy is the last
-    /// reference (the collector can finish the instant the future resolves,
+    /// Drop our co-ownership INSIDE the fiber, after the ThreadStatus above is gone: if this
+    /// copy is the last reference (the collector can finish the instant the future resolves,
     /// before the scheduler frees the parameter block), the machine's
     /// destructor - which may tear down an HTTPS connection and do socket
     /// I/O - runs in a suspendable fiber context, never on the bare carrier
@@ -72,14 +113,14 @@ bool FiberFetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
     chassert(machine && machine->run_step);
     chassert(!inflight);
 
-    /// Scheduled is stored BEFORE the fiber is spawned: it may start the
-    /// instant `run` returns, and its first action is the Running store.
+    /// Scheduled is stored BEFORE the fiber is spawned: the fiber may start the
+    /// instant `run` returns (it sets up its ThreadStatus, then stores Running).
     machine->state.store(MachineState::Scheduled);
     inflight = machine.get();
 
     const int rc = runSilkFiber(
         stepFiberMain,
-        FiberStepParams{{getCurrentThreadGroup()}, machine},
+        FiberStepParams{{}, machine, getCurrentThreadGroup()},
         SilkFiberCategory::FETCH,
         &step_released);
 

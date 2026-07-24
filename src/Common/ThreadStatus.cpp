@@ -115,7 +115,17 @@ static thread_local bool has_alt_stack = false;
 
 
 ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+    : ThreadStatus(getThreadId())
+{
+}
+
+ThreadStatus::ThreadStatus(NoOSThreadTag)
+    : ThreadStatus(NO_OS_THREAD)
+{
+}
+
+ThreadStatus::ThreadStatus(UInt64 thread_id_)
+    : thread_id(thread_id_)
 {
     chassert(!current_thread);
 
