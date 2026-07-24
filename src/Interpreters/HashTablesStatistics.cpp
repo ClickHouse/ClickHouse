@@ -90,11 +90,12 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
     {
         if (auto hint = DB::getHashTablesStatistics<AggregationEntry>().getSizeHint(stats_collecting_params))
         {
-            /// `sum_of_sizes` scales with the table count of the run that recorded it, so normalize by that
-            /// count rather than the current one.
+            /// `sum_of_sizes` and `median_size` scale with the table count of the run that recorded them, so normalize by
+            /// that count rather than the current one.
             const auto lower_limit = hint->sum_of_sizes / std::max<size_t>(hint->tables_cnt, 1);
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate / tables_cnt;
-            if (hint->median_size > upper_limit)
+            const auto median_size = std::max(lower_limit, hint->median_size);
+            if (median_size > upper_limit)
             {
                 /// Since we cannot afford to preallocate as much as needed, we would likely have to do at least one resize anyway.
                 /// Though it still sounds better than N resizes, but in actuality we saw that one big resize (remember, HT-s grow exponentially)
@@ -105,15 +106,15 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
                     "No space were preallocated in hash tables because 'max_size_to_preallocate' has too small value: {}, "
                     "should be at least {}",
                     stats_collecting_params.max_size_to_preallocate,
-                    hint->median_size * tables_cnt);
+                    median_size * tables_cnt);
             }
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
-            else if ((tables_cnt > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
+            else if (const auto sum_of_sizes = lower_limit * tables_cnt; (tables_cnt > 1 && sum_of_sizes > 100'000) || sum_of_sizes > 500'000)
             {
                 return AggregationEntry{
-                    .sum_of_sizes = hint->sum_of_sizes,
-                    .median_size = std::max(lower_limit, hint->median_size),
-                    .tables_cnt = hint->tables_cnt};
+                    .sum_of_sizes = sum_of_sizes,
+                    .median_size = median_size,
+                    .tables_cnt = tables_cnt};
             }
         }
     }
