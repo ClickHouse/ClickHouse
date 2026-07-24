@@ -1,5 +1,5 @@
 --- row count ---
 110
---- string column annotations ---
-a	None
-b	String
+--- string column annotations and compression ---
+a	None	GZIP
+b	String	GZIP
