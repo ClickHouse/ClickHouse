@@ -83,8 +83,8 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
+        uint16_t port = 0;
+        Poco::Net::StreamSocketImpl * impl = nullptr;
     };
 
     silk::FiberFuture client_future;
@@ -150,9 +150,9 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
-        std::latch * negative_poll_done;
+        uint16_t port = 0;
+        Poco::Net::StreamSocketImpl * impl = nullptr;
+        std::latch * negative_poll_done = nullptr;
     };
 
     silk::FiberFuture client_future;
@@ -221,8 +221,8 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
+        uint16_t port = 0;
+        Poco::Net::StreamSocketImpl * impl = nullptr;
     };
 
     silk::FiberFuture client_future;
@@ -252,8 +252,8 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
+        uint16_t port = 0;
+        Poco::Net::StreamSocketImpl * impl = nullptr;
     };
 
     silk::FiberFuture client_future;
