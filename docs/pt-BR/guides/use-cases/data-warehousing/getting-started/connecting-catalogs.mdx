@@ -32,11 +32,10 @@ Para fins de exemplo, usaremos o Unity Catalog.
 
 O [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) oferece governança centralizada para os dados de lakehouse no Databricks.
 
-O Databricks oferece suporte a vários formatos de dados para seu lakehouse. Com o ClickHouse, você pode consultar tabelas do Unity Catalog tanto em Delta quanto em Iceberg.
+O Databricks oferece suporte a vários formatos de dados para seu lakehouse. Com o ClickHouse, você pode consultar tabelas Delta e Iceberg do Unity Catalog que usam locais de armazenamento externo.
 
 <Note>
-  A integração com o Unity Catalog funciona com tabelas gerenciadas e tabelas externas.
-  No momento, essa integração é compatível apenas com a AWS.
+  No momento, essa integração é compatível apenas com a AWS. Tabelas no armazenamento gerenciado do Databricks não são compatíveis porque o Unity Catalog não fornece credenciais para esses locais. Consulte a [referência do Unity Catalog](/pt-BR/guides/use-cases/data-warehousing/unity-catalog) para obter detalhes.
 </Note>
 
 <div id="configuring-unity-in-databricks">

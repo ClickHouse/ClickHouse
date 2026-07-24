@@ -35,17 +35,13 @@ Azure용 BYOC를 사용하면 자체 Azure 구독에서 ClickHouse를 실행할 
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Terraform 모듈 적용
-
+  <Step title="1. Terraform 모듈 적용" id="apply-terraform-module">
     BYOC Azure 온보딩을 시작하려면 ClickHouse에서 제공하는 [Azure용 Terraform 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)을 **대상 테넌트와 구독**에 적용하세요.
 
     필수 변수와 적용 단계는 모듈 문서를 참조하세요. 적용이 완료되면 모듈이 Azure 환경에 필요한 아이덴티티와 권한을 설정합니다.
   </Step>
 
-  <Step>
-    ### 2. ClickHouse에 ID 제공
-
+  <Step title="2. ClickHouse에 ID 제공" id="provide-ids">
     다음을 ClickHouse 팀에 공유하십시오:
 
     * **대상 구독 ID** — BYOC 리소스가 생성될 Azure 구독

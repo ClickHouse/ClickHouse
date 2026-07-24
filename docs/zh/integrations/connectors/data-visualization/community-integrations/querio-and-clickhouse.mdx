@@ -21,9 +21,7 @@ Querio 是一个由 AI 驱动的分析与商业智能工作区，团队可借助
 </div>
 
 <Steps>
-  <Step>
-    ### 创建专用用户
-
+  <Step title="创建专用用户" id="create-dedicated-user">
     遵循安全最佳实践，请为 Querio 创建一个专用用户账户，并仅授予其最低必要权限：
 
     ```sql
@@ -35,9 +33,7 @@ Querio 是一个由 AI 驱动的分析与商业智能工作区，团队可借助
     </Tip>
   </Step>
 
-  <Step>
-    ### 授予只读数据库访问权限
-
+  <Step title="授予只读数据库访问权限" id="grant-read-only-access">
     将 Querio 的权限限制为仅能访问其执行查询所需的数据库和表：
 
     ```sql
@@ -53,9 +49,7 @@ Querio 是一个由 AI 驱动的分析与商业智能工作区，团队可借助
     对 Querio 需要访问的每个数据库重复此过程。
   </Step>
 
-  <Step>
-    ### 收集连接详细信息
-
+  <Step title="收集连接详细信息" id="gather-connection-details">
     要将 Querio 连接到 ClickHouse，您需要以下连接信息：
 
     | Parameter  | Description                   |
@@ -98,5 +92,5 @@ Querio 是一个由 AI 驱动的分析与商业智能工作区，团队可借助
   ## 其他资源
 </div>
 
-* [Querio 文档](https://docs.querio.ai/integrations/clickhouse)
+* [Querio 文档](https://docs.querio.ai/)
 * [Querio 入门指南和教程](https://www.querio.ai)
