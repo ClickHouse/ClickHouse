@@ -1949,14 +1949,16 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
-    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
 archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
 file. Substreams larger than this stay in the legacy per-file layout. The decision is
 made independently per substream at write time, so a single part can have small indices
 (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
-to disable packing entirely (default).
+to disable packing entirely. Defaults to 1 MiB, which bundles the typically small skip
+indices into one archive per part and cuts the object count (and read requests) on object
+storage, while leaving genuinely large substreams in the per-file layout.
 
 Each skip-index substream actually consists of a data file and a marks file; both buffer
 in memory up to the threshold before the spill decision is made. So peak memory while
@@ -1971,7 +1973,7 @@ with `add_minmax_index_for_numeric_columns`).
 The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.
