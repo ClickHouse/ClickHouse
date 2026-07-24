@@ -30,6 +30,10 @@ Introduzido em: v20.1.0
 
 Retorna o nome de domínio totalmente qualificado do servidor ClickHouse.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -55,9 +59,9 @@ SELECT fqdn()
 ```
 
 ```response title=Response
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
 ```
 
 <div id="MACNumToString">
@@ -174,6 +178,10 @@ Introduzido em: v25.11.0
 Se o usuário da sessão tiver sido alterado com o comando EXECUTE AS, esta função retorna o nome do usuário original usado para autenticação e criação da sessão.
 Alias: authUser()
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -284,6 +292,10 @@ Introduzido em: v1.1.0
 Retorna um número de sequência monotonicamente crescente do [bloco](/pt-BR/resources/develop-contribute/introduction/architecture#block) que contém a linha.
 O número do bloco retornado é atualizado na medida do possível, ou seja, pode não ser totalmente preciso.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -343,6 +355,10 @@ Introduzido em: v20.3.0
 
 Retorna o tamanho não comprimido, em bytes, de um bloco de valores em disco.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -379,6 +395,10 @@ Introduzido em: v1.1.0
 
 No ClickHouse, as consultas são processadas em [blocos](/pt-BR/resources/develop-contribute/introduction/architecture#block) (fragmentos).
 Esta função retorna o tamanho (número de linhas) do bloco em que a função é chamada.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -423,6 +443,10 @@ Retorna o ID de compilação gerado por um compilador para o binário do servido
 Se for executada no contexto de uma tabela distribuída, essa função gera uma coluna comum com valores correspondentes a cada shard.
 Caso contrário, produz um valor constante.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -435,7 +459,7 @@ buildId()
 
 **Valor retornado**
 
-Retorna o ID da compilação. [`String`](/pt-BR/reference/data-types/string)
+Retorna o ID de compilação. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
@@ -541,6 +565,12 @@ se comunicam por meio de uma interface HTTP. Por padrão, a porta `9012` é usad
 
 Consulte [Training and applying models](https://catboost.ai/docs/features/training.html#training) para saber como treinar modelos catboost com base em um conjunto de dados de treinamento.
 
+O arquivo do modelo deve estar localizado dentro do diretório [`user_files`](/pt-BR/reference/settings/server-settings/settings#user_files_path), como na função [`file`](/pt-BR/reference/functions/regular-functions/files#file).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -549,7 +579,7 @@ catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
 
 **Argumentos**
 
-* `path_to_model` — Caminho para o modelo CatBoost. [`const String`](/pt-BR/reference/data-types/string)
+* `path_to_model` — Caminho para o modelo CatBoost, localizado dentro do diretório `user_files`. [`const String`](/pt-BR/reference/data-types/string)
 * `feature` — Um ou mais atributos/argumentos do modelo. [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
@@ -561,7 +591,7 @@ Retorna o resultado da avaliação do modelo. [`Float64`](/pt-BR/reference/data-
 **catboostEvaluate**
 
 ```sql title=Query
-SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
 ```
 
 ```response title=Response
@@ -582,8 +612,8 @@ das faixas típicas do OKLab, o resultado dependerá da implementação.
 O OKLab usa três componentes:
 
 * L: luminosidade perceptual (normalmente no intervalo [0..1])
-  * a: eixo oponente verde-vermelho
-  * b: eixo oponente azul-amarelo
+* a: eixo oponente verde-vermelho
+* b: eixo oponente azul-amarelo
 
 Os componentes a e b são teoricamente ilimitados, mas, na prática, ficam entre -0.4 e 0.4.
 O OKLab foi projetado para ser perceptualmente uniforme
@@ -593,7 +623,7 @@ A conversão foi concebida para ser o inverso de colorSRGBToOKLAB e consiste em
 os seguintes estágios:
 
 1. Conversão de OKLab para Linear sRGB.
-   2) Conversão de Linear sRGB para sRGB com codificação gama.
+2. Conversão de Linear sRGB para sRGB com codificação gama.
 
 O argumento opcional gamma especifica o expoente usado ao converter de Linear sRGB
 para valores RGB com codificação gama. Se não for especificado, será usado um valor gamma padrão
@@ -663,8 +693,8 @@ Se `L` estiver fora do intervalo `[0...1]`, `C` for negativo ou `H` estiver fora
 A conversão é a inversa de [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 
 1. OKLCH para OKLab.
-   2) OKLab para Linear sRGB
-   3) Linear sRGB para sRGB
+2. OKLab para Linear sRGB
+3. Linear sRGB para sRGB
 
 O segundo argumento, gamma, é usado na última etapa.
 
@@ -720,7 +750,7 @@ Introduzido em: v26.2.0
 
 Converte uma cor codificada no espaço de cores **sRGB** para o espaço de cores **OKLAB**, perceptualmente uniforme.
 
-Se algum canal de entrada estiver fora de `[0...255]` ou se o valor de gamma não for positivo, o comportamento depende da implementação.
+Se algum canal de entrada estiver fora de `[0...255]` ou se o valor de gamma não for positivo, o comportamento é definido pela implementação.
 
 <Note>
   **OKLAB** é um espaço de cores perceptualmente uniforme.
@@ -731,7 +761,7 @@ Se algum canal de entrada estiver fora de `[0...255]` ou se o valor de gamma nã
 A conversão consiste em duas etapas:
 
 1. sRGB para Linear sRGB
-   2) Linear sRGB para OKLab
+2. Linear sRGB para OKLab
 
 **Sintaxe**
 
@@ -781,8 +811,8 @@ Se algum canal de entrada estiver fora de `[0...255]` ou se o valor de gamma nã
 A conversão consiste em três etapas:
 
 1. sRGB para Linear sRGB
-   2) Linear sRGB para OKLab
-   3) OKLab para OKLCH.
+2. Linear sRGB para OKLab
+3. OKLab para OKLCH.
 
 Para ver referências de cores no espaço OKLCH e como elas correspondem às cores sRGB, consulte [https://OKLCH.com/](https://OKLCH.com/).
 
@@ -825,6 +855,10 @@ Retorna o ID da conexão do cliente que enviou a consulta atual.
 Esta função é mais útil em cenários de depuração.
 Ela foi criada para manter a compatibilidade com a função `CONNECTION_ID` do MySQL.
 Ela normalmente não é usada em consultas em produção.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -918,13 +952,17 @@ Retorna o nome do banco de dados atual.
 
 Veja também a [instrução `SET`](/pt-BR/reference/statements/use).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
 currentDatabase()
 ```
 
-**Aliases**: `current_database`, `SCHEMA`, `DATABASE`
+**Aliases**: `current_database`, `DATABASE`, `SCHEMA`
 
 **Argumentos**
 
@@ -968,6 +1006,10 @@ Introduzido em: v21.9.0
 
 Retorna um array com os perfis de configuração do usuário atual.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1004,6 +1046,10 @@ Introduzido em: v25.2.0
 
 Retorna o ID da consulta atual.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1039,6 +1085,10 @@ SELECT currentQueryID();
 Introduzido em: v21.9.0
 
 Retorna um array com as funções atribuídas ao usuário atual.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1084,6 +1134,10 @@ Use `currentDatabase`.
 
 Veja também a [instrução `SET`](/pt-BR/reference/statements/use).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1123,13 +1177,17 @@ Introduzido em: v20.1.0
 Retorna o nome do usuário atual.
 Em uma consulta distribuída, retorna o nome do usuário que iniciou a consulta.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
 currentUser()
 ```
 
-**Aliases**: `session_user`, `user`, `current_user`
+**Aliases**: `session_user`, `current_user`, `user`
 
 **Argumentos**
 
@@ -1173,6 +1231,10 @@ Introduzido em: v21.9.0
 
 Retorna um array com os nomes dos perfis de configuração padrão do usuário atual.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1208,6 +1270,10 @@ SELECT defaultProfiles();
 Introduzido em: v21.9.0
 
 Retorna um array com as funções padrão do usuário atual.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1334,6 +1400,94 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
 └──────────────────────────────────────────┘
 ```
 
+<div id="digits">
+  ## digits
+</div>
+
+Introduzido em: v26.7.0
+
+Retorna os dígitos de um número `n`, começando no índice `offset` especificado.
+A contagem começa em 1, seguindo a lógica abaixo:
+
+* Se `offset` for `0`, uma exceção é lançada, pois `offset` é indexado a partir de 1.
+* Se `offset` for negativo, a contagem começa `offset` dígitos a partir do fim do número, em vez do início.
+* Se `offset` for maior que o número de dígitos em `n`, `0` é retornado.
+
+Um argumento opcional `length` segue a lógica abaixo:
+
+* Se `length` for positivo, significa o número de dígitos a considerar a partir de `offset`
+* Se `length` for negativo, significa o número de dígitos à direita do número a serem excluídos
+
+Veja também a função [`substring`](/pt-BR/reference/functions/regular-functions/string-functions#substring), que realiza a operação análoga em strings.
+
+**Sintaxe**
+
+```sql
+digits(n, offset[, length])
+```
+
+**Argumentos**
+
+* `n` — O número cujos dígitos serão calculados. [`(U)Int8`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int16`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int32`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int64`](/pt-BR/reference/data-types/int-uint)
+* `offset` — A posição inicial do dígito em `n`. [`(U)Int8`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int16`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int32`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int64`](/pt-BR/reference/data-types/int-uint)
+* `length` — Opcional. O comprimento máximo dos dígitos. [`(U)Int8`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int16`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int32`](/pt-BR/reference/data-types/int-uint) ou [`(U)Int64`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+Os dígitos selecionados de `n`, interpretados como `UInt64`. Retorna `0` se o intervalo selecionado estiver vazio. Zeros à esquerda não são preservados. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Offset positivo**
+
+```sql title=Query
+SELECT digits(1234567890, 7)
+```
+
+```response title=Response
+7890
+```
+
+**Deslocamento e comprimento positivos**
+
+```sql title=Query
+SELECT digits(1234567890, 7, 2)
+```
+
+```response title=Response
+78
+```
+
+**Offset negativo conta a partir da direita**
+
+```sql title=Query
+SELECT digits(1234567890, -3)
+```
+
+```response title=Response
+890
+```
+
+**Comprimento negativo exclui dígitos à direita**
+
+```sql title=Query
+SELECT digits(1234567890, 3, -2)
+```
+
+```response title=Response
+345678
+```
+
+**Offset após o fim retorna 0**
+
+```sql title=Query
+SELECT digits(1234567890, 11)
+```
+
+```response title=Response
+0
+```
+
 <div id="displayName">
   ## displayName
 </div>
@@ -1341,6 +1495,10 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
 Introduzido em: v22.11.0
 
 Retorna o valor de `display_name` de [config](/pt-BR/concepts/features/configuration/server-config/configuration-files) ou o Fully Qualified Domain Name (FQDN) do servidor, caso não esteja definido.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1378,6 +1536,10 @@ Introduzido em: v1.1.0
 
 Exibe uma descrição detalhada da estrutura interna de uma coluna e do seu tipo de dado.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1414,6 +1576,10 @@ Introduzido em: v21.9.0
 
 Retorna um array com os nomes dos perfis de configuração habilitados para o usuário atual.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1449,6 +1615,10 @@ SELECT enabledProfiles();
 Introduzido em: v21.9.0
 
 Retorna um array das funções habilitadas para o usuário atual.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1526,6 +1696,10 @@ O conteúdo do arquivo não é interpretado.
 
 Veja também a função de tabela [`file`](/pt-BR/reference/functions/table-functions/file).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1549,17 +1723,18 @@ Retorna o conteúdo do arquivo como string. [`String`](/pt-BR/reference/data-typ
 INSERT INTO table SELECT file('a.txt'), file('b.txt');
 ```
 
-```response title=Response
-```
-
 <div id="filesystemAvailable">
   ## filesystemAvailable
 </div>
 
 Introduzido na versão: v20.1.0
 
-Retorna a quantidade de espaço livre no sistema de arquivos que hospeda a persistência da database.
+Retorna a quantidade de espaço livre no sistema de arquivos que hospeda a persistência do banco de dados.
 O valor retornado é sempre menor que o espaço livre total ([`filesystemUnreserved`](/pt-BR/reference/functions/regular-functions/other-functions#filesystemUnreserved)), porque parte do espaço é reservada para o sistema operacional.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1598,6 +1773,10 @@ Introduzido em: v20.1.0
 Retorna a capacidade do sistema de arquivos em bytes.
 É necessário que o [caminho](/pt-BR/reference/settings/server-settings/settings#path) para o diretório de dados esteja configurado.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -1634,6 +1813,10 @@ Introduzido na versão: v22.12.0
 
 Retorna a quantidade total de espaço livre no sistema de arquivos que hospeda a persistência do banco de dados (anteriormente `filesystemFree`).
 Veja também [`filesystemAvailable`](#filesystemAvailable).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -1702,6 +1885,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
 **Em combinação com initializeAggregation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -2179,11 +2363,11 @@ SELECT
 ```
 
 ```response title=Response
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta─────────────────────┐
+│       100 │ 1 minute and 40 seconds        │
+│     12345 │ 205 minutes and 45 seconds     │
+│ 432546534 │ 7209108 minutes and 54 seconds │
+└───────────┴────────────────────────────────┘
 ```
 
 **Com uma expressão INTERVAL**
@@ -2228,9 +2412,6 @@ A string da consulta após o fuzzing [`String`](/pt-BR/reference/data-types/stri
 SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 ```
 
-```response title=Response
-```
-
 <div id="generateRandomStructure">
   ## generateRandomStructure
 </div>
@@ -2238,6 +2419,10 @@ SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 Introduzido em: v23.5.0
 
 Gera uma estrutura aleatória de tabela no formato `column1_name column1_type, column2_name column2_type, ...`.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2296,6 +2481,10 @@ Gera e retorna números sequenciais a partir do valor anterior do contador.
 Esta função recebe um argumento string — um identificador de série — e um valor inicial opcional.
 O servidor deve ser configurado com Keeper.
 As séries são armazenadas em nós do Keeper no caminho, que pode ser configurado em [`series_keeper_path`](/pt-BR/reference/settings/server-settings/settings#series_keeper_path) na configuração do servidor.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2385,18 +2574,28 @@ SELECT generateSerialID('id2', 100)
 Introduzido em: v24.5.0
 
 Obtém o valor de um cabeçalho HTTP.
-Se esse cabeçalho não existir ou se a solicitação atual não for feita pela interface HTTP, a função retornará uma string vazia.
-Alguns cabeçalhos HTTP (por exemplo, `Authentication` e `X-ClickHouse-*`) são restritos.
+Se esse cabeçalho não existir ou se a requisição atual não for feita pela interface HTTP, a função retorna uma string vazia.
+Determinados cabeçalhos HTTP (por exemplo, `Authorization`, `Authentication` e `X-ClickHouse-*`) são restritos.
 
 <Info>
   **A configuração `allow_get_client_http_header` é obrigatória**
 
   A função exige que a configuração `allow_get_client_http_header` esteja habilitada.
-  Por motivos de segurança, essa configuração não vem habilitada por padrão, pois alguns cabeçalhos, como `Cookie`, podem conter informações sensíveis.
+  Essa configuração não vem habilitada por padrão por motivos de segurança, porque alguns cabeçalhos, como `Cookie`, podem conter informações sensíveis.
 </Info>
 
-Os cabeçalhos HTTP diferenciam maiúsculas de minúsculas nesta função.
-Se a função for usada no contexto de uma consulta distribuída, ela retornará um resultado não vazio apenas no nó iniciador.
+Os cabeçalhos HTTP não diferenciam maiúsculas de minúsculas de acordo com a RFC 9110.
+Se a função for usada no contexto de uma consulta distribuída, ela retorna um resultado não vazio somente no nó iniciador.
+
+`getClientHTTPHeader` lê os cabeçalhos da requisição atual, portanto retorna um valor não vazio somente quando a consulta é enviada pela interface HTTP.
+Por exemplo, envie o cabeçalho na requisição e leia-o de volta via HTTP:
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+O comando acima retorna `application/x-www-form-urlencoded`.
 
 **Sintaxe**
 
@@ -2417,13 +2616,10 @@ Retorna o valor do cabeçalho. [`String`](/pt-BR/reference/data-types/string)
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT getClientHTTPHeader('Content-Type');
-```
-
-```response title=Response
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
 ```
 
 <div id="getMacro">
@@ -2435,6 +2631,10 @@ Introduzido em: v20.1.0
 Retorna o valor de uma macro do arquivo de configuração do servidor.
 As macros são definidas na seção [`<macros>`](/pt-BR/reference/settings/server-settings/settings#macros) do arquivo de configuração e podem ser usadas para diferenciar servidores por nomes convenientes, mesmo que tenham hostname complexos.
 Se a função for executada no contexto de uma tabela distribuída, ela gerará uma coluna normal com valores correspondentes a cada shard.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2508,6 +2708,10 @@ Introduzido em: v25.6.0
 
 Retorna o valor atual de uma configuração do MergeTree.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2543,6 +2747,10 @@ SELECT getMergeTreeSetting('index_granularity');
 Introduzido em: v21.11.0
 
 Retorna uma string com a versão do kernel do sistema operacional.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2580,6 +2788,10 @@ Introduzido em: v21.10.0
 
 Retorna o número da porta do servidor para um determinado protocolo.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2616,6 +2828,10 @@ Introduzido em: v25.6.0
 
 Retorna o valor definido no momento para a configuração do servidor informada.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -2651,6 +2867,10 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
 Introduzido em: v20.7.0
 
 Retorna o valor atual de uma configuração.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2692,6 +2912,10 @@ SELECT getSetting('enable_analyzer');
 Introduzido em: v24.10.0
 
 Retorna o valor atual de uma configuração ou, caso ela não esteja definida no perfil atual, o valor padrão especificado no segundo argumento.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -2790,9 +3014,6 @@ getSubcolumn(nested_value, subcolumn_name)
 SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
 ```
 
-```response title=Response
-```
-
 <div id="getTypeSerializationStreams">
   ## getTypeSerializationStreams
 </div>
@@ -2882,10 +3103,21 @@ Verifica se uma coluna específica existe em uma tabela de um banco de dados.
 Para elementos em uma estrutura de dados aninhada, a função verifica a existência de uma coluna.
 Para a própria estrutura de dados aninhada, a função retorna `0`.
 
+<Info>
+  **O privilégio `SHOW COLUMNS` é necessário**
+
+  A função exige o privilégio `SHOW COLUMNS` na tabela de destino (o mesmo privilégio necessário para `DESCRIBE` e `SHOW CREATE TABLE`).
+  Sem ele, a chamada falha com `ACCESS_DENIED` em vez de retornar `1` ou `0`, portanto não é possível verificar nomes de colunas sem acesso.
+</Info>
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
-hasColumnInTable([hostname[, username[, password]],]database, table, column)
+hasColumnInTable(database, table, column)
 ```
 
 **Argumentos**
@@ -2893,9 +3125,6 @@ hasColumnInTable([hostname[, username[, password]],]database, table, column)
 * `database` — Nome do banco de dados. [`const String`](/pt-BR/reference/data-types/string)
 * `table` — Nome da tabela. [`const String`](/pt-BR/reference/data-types/string)
 * `column` — Nome da coluna. [`const String`](/pt-BR/reference/data-types/string)
-* `hostname` — Opcional. Nome do servidor remoto em que a verificação será realizada. [`const String`](/pt-BR/reference/data-types/string)
-* `username` — Opcional. Nome de usuário do servidor remoto. [`const String`](/pt-BR/reference/data-types/string)
-* `password` — Opcional. Senha do servidor remoto. [`const String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -3008,6 +3237,10 @@ Retorna o nome do host em que esta função foi executada.
 Se a função for executada em um servidor remoto (processamento distribuído), o nome desse servidor remoto será retornado.
 Se a função for executada no contexto de uma tabela distribuída, ela gera uma coluna normal com valores correspondentes a cada shard.
 Caso contrário, produz um valor constante.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -3268,6 +3501,10 @@ Outros parâmetros de uma consulta podem ser extraídos do campo `initial_query_
 
 Ao contrário da função [`queryID`](/pt-BR/reference/functions/regular-functions/other-functions#queryID), `initialQueryID` retorna os mesmos resultados em diferentes shards.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -3308,6 +3545,10 @@ Introduzido em: v25.4.0
 
 Retorna o horário de início da consulta inicial atual.
 `initialQueryStartTime` retorna os mesmos resultados em diferentes shards.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -3406,6 +3647,10 @@ Retorna se o argumento é uma expressão constante.
 Uma expressão constante é uma expressão cujo resultado é conhecido durante a análise da consulta, isto é, antes da execução.
 Por exemplo, expressões com [literais](/pt-BR/reference/syntax#literals) são expressões constantes.
 Esta função se destina principalmente a desenvolvimento, depuração e demonstração.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -3527,6 +3772,10 @@ Obtém dados de tabelas Join usando a chave de junção especificada.
   Compatível apenas com tabelas criadas com a instrução `ENGINE = Join(ANY, LEFT, <join_keys>)` [instrução](/pt-BR/reference/engines/table-engines/special/join).
 </Note>
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -3602,6 +3851,10 @@ Ao contrário de [`joinGet`](#joinGet), retorna `NULL` quando a chave não exist
   Suporta apenas tabelas criadas com a [instrução](/pt-BR/reference/engines/table-engines/special/join) `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 </Note>
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -3643,6 +3896,10 @@ Introduzido em: v18.12.0
 
 Retorna a posição de um valor no dicionário de uma coluna [LowCardinality](/pt-BR/reference/data-types/lowcardinality). As posições começam em 1. Como LowCardinality tem dicionários por parte, esta função pode retornar posições diferentes para o mesmo valor em partes diferentes.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -3665,7 +3922,7 @@ A posição do valor no dicionário da parte atual. [`UInt64`](/pt-BR/reference/
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- criar duas partes:
+-- create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -3700,6 +3957,10 @@ Retorna os valores do dicionário de uma coluna [LowCardinality](/pt-BR/referenc
 Se o bloco for menor ou maior que o tamanho do dicionário, o resultado será truncado ou preenchido com valores padrão.
 Como o LowCardinality tem dicionários por parte, esta função pode retornar valores de dicionário diferentes em partes diferentes.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -3722,7 +3983,7 @@ Retorna as chaves do dicionário. [`UInt64`](/pt-BR/reference/data-types/int-uin
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- criar duas partes:
+-- create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -3907,6 +4168,7 @@ Retorna um valor no deslocamento especificado ou o valor padrão, se estiver for
 **Exemplo de uso**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
@@ -3928,6 +4190,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 **Com valor padrão**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
@@ -4118,6 +4381,10 @@ Recursos:
 * Substitui literais numéricos e de string por valores aleatórios
 * Preserva a estrutura geral da consulta e a sintaxe SQL
 * Produz resultados diferentes para linhas diferentes
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -4502,6 +4769,10 @@ Outros parâmetros da consulta podem ser extraídos do campo `query_id` na tabel
 
 Em contraste com a função [`initialQueryID`](#initialQueryID), `queryID` pode retornar resultados diferentes em shards distintos.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -4542,6 +4813,10 @@ Introduzido em: v22.7.0
 
 Retorna a revisão atual do servidor ClickHouse.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -4577,6 +4852,10 @@ SELECT revision()
 Introduzido em: v1.1.0
 
 Retorna um número de linha único para cada linha processada.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -4636,9 +4915,13 @@ SETTINGS max_block_size = 2
 
 Introduzido em: v1.1.0
 
-Para cada [block](/pt-BR/resources/develop-contribute/introduction/architecture#block) processado por `rowNumberInBlock`, retorna o número da linha atual.
+Para cada [bloco](/pt-BR/resources/develop-contribute/introduction/architecture#block) processado por `rowNumberInBlock`, retorna o número da linha atual.
 
-O número retornado começa em 0 para cada [block](/pt-BR/resources/develop-contribute/introduction/architecture#block).
+O número retornado começa em 0 para cada [bloco](/pt-BR/resources/develop-contribute/introduction/architecture#block).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -4727,6 +5010,7 @@ Retorna o resultado acumulado para cada linha. [`Any`](/pt-BR/reference/data-typ
 **Exemplo de uso com initializeAggregation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -4848,6 +5132,23 @@ Retorna a diferença entre valores consecutivos, com 0 para a primeira linha.
 **Exemplo de uso**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
+
+CREATE TABLE events
+(
+    EventID UInt32,
+    EventDate Date,
+    EventTime DateTime
+)
+ENGINE = Memory;
+
+INSERT INTO events VALUES
+    (1106, '2025-11-24', '2025-11-24 00:00:04'),
+    (1107, '2025-11-24', '2025-11-24 00:00:05'),
+    (1108, '2025-11-24', '2025-11-24 00:00:05'),
+    (1109, '2025-11-24', '2025-11-24 00:00:09'),
+    (1110, '2025-11-24', '2025-11-24 00:00:10');
+
 SELECT
     EventID,
     EventTime,
@@ -4859,7 +5160,7 @@ FROM
         EventTime
     FROM events
     WHERE EventDate = '2025-11-24'
-    ORDER BY EventTime ASC
+    ORDER BY EventTime ASC, EventID ASC
     LIMIT 5
 );
 ```
@@ -4877,6 +5178,7 @@ FROM
 **Exemplo do impacto do tamanho do bloco**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifference(number + 1) AS diff
@@ -4930,6 +5232,7 @@ Retorna a diferença entre valores consecutivos, sendo que, para a primeira linh
 **Exemplo de uso**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifferenceStartingWithFirstValue(number) AS diff
@@ -4954,6 +5257,10 @@ Introduzido em: v20.1.0
 
 Retorna o UUID (v4) aleatório e exclusivo gerado quando o servidor é iniciado pela primeira vez.
 O UUID é persistido, ou seja, a segunda, a terceira etc. inicialização do servidor retorna o mesmo UUID.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -4992,6 +5299,10 @@ Introduzido em: v21.9.0
 Retorna o número total de shards de uma consulta distribuída.
 Se uma consulta não for distribuída, retorna o valor constante `0`.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -5011,7 +5322,7 @@ Retorna o número total de shards ou `0`. [`UInt32`](/pt-BR/reference/data-types
 **Exemplo de uso**
 
 ```sql title=Query
--- Veja o exemplo de shardNum() acima, que também ilustra shardCount()
+-- See shardNum() example above which also demonstrates shardCount()
 CREATE TABLE shard_count_example (dummy UInt8)
 ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT shardCount() FROM shard_count_example;
@@ -5033,6 +5344,10 @@ Introduzido em: v21.9.0
 Retorna o índice do shard que processa parte dos dados em uma consulta distribuída.
 Os índices começam em `1`.
 Se uma consulta não for distribuída, será retornado o valor constante `0`.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -5141,8 +5456,8 @@ Retorna `0`. [`UInt8`](/pt-BR/reference/data-types/int-uint)
 **Exemplo de uso**
 
 ```sql title=Query
--- Esta consulta fará uma pausa de 2 segundos antes de ser concluída.
--- Durante esse tempo, nenhum resultado será retornado, e a consulta parecerá travada ou sem resposta.
+-- This query will pause for 2 seconds before completing.
+-- During this time, no results will be returned, and the query will appear to be hanging or unresponsive.
 SELECT sleep(2);
 ```
 
@@ -5166,7 +5481,7 @@ Ela permite simular atrasos ou inserir pausas no processamento de cada linha, o 
 
 1. **Testes**: Ao testar ou fazer benchmarking do desempenho do ClickHouse em condições específicas, você pode usar `sleepEachRow()` para simular atrasos ou inserir pausas em cada linha processada.
 2. **Depuração**: Se você precisar examinar o estado do sistema ou a execução de uma consulta para cada linha processada, poderá usar `sleepEachRow()` para inserir pausas, permitindo inspecionar ou coletar informações relevantes.
-3. **Simulação**: Em alguns casos, você pode querer simular cenários reais em que ocorram atrasos ou pausas para cada linha processada, como ao lidar com sistemas externos ou latência de rede.
+3. **Simulação**: Em alguns casos, você pode querer simular cenários reais em que ocorram atrasos ou pausas para cada linha processada, como ao lidar com sistemas externos ou latências de rede.
 
 <Warning>
   Assim como a função `sleep()`, é importante usar `sleepEachRow()` com critério e somente quando necessário, pois ela pode afetar significativamente o desempenho geral e a capacidade de resposta do seu sistema ClickHouse, especialmente ao lidar com grandes conjuntos de resultados.
@@ -5191,7 +5506,7 @@ Retorna `0` para cada linha. [`UInt8`](/pt-BR/reference/data-types/int-uint)
 **Exemplo de uso**
 
 ```sql title=Query
--- A saída terá um atraso, com uma pausa de 0,5 segundo entre cada linha.
+-- The output will be delayed, with a 0.5-second pause between each row.
 SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
 ```
 
@@ -5296,6 +5611,10 @@ Retorna o número da porta TCP da [interface nativa](/pt-BR/concepts/features/in
 Se executada no contexto de uma tabela distribuída, esta função gera uma coluna comum com valores relevantes para cada shard.
 Caso contrário, gera um valor constante.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -5370,6 +5689,10 @@ Introduzido em: v1.1.0
 
 Retorna o nome interno do tipo de dados do valor fornecido.
 Diferentemente da função [`toTypeName`](#toTypeName), o tipo de dados retornado pode incluir colunas internas de encapsulamento, como `Const` e `LowCardinality`.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -5484,8 +5807,8 @@ Introduzido em: v22.6.0
 Retorna o ID de uma transação.
 
 <Note>
-  Esta função faz parte de um conjunto de funcionalidades experimentais.
-  Ative o suporte experimental a transações adicionando esta configuração aos seus [arquivos de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files):
+  Esta função faz parte de um recurso experimental.
+  Ative o suporte experimental a transações adicionando esta configuração à sua [configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files):
 
   ```xml
   <clickhouse>
@@ -5494,6 +5817,10 @@ Retorna o ID de uma transação.
   ```
 
   Para mais informações, consulte a página [Suporte transacional (ACID)](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
 </Note>
 
 **Sintaxe**
@@ -5511,7 +5838,7 @@ transactionID()
 Retorna uma tupla composta por `start_csn`, `local_tid` e `host_id`.
 
 * `start_csn`: Número sequencial global; o timestamp de commit mais recente observado quando esta transação foi iniciada.
-* `local_tid`: Número sequencial local, exclusivo para cada transação iniciada por este host dentro de um `start_csn` específico.
+* `local_tid`: Número sequencial local, exclusivo para cada transação iniciada por este host dentro de um `start&#95;csn` específico.
 * `host_id`: UUID do host que iniciou esta transação.
   [`Tuple(UInt64, UInt64, UUID)`](/pt-BR/reference/data-types/tuple)
 
@@ -5544,7 +5871,7 @@ Introduzido em: v22.6.0
 Retorna o snapshot mais recente (Commit Sequence Number) de uma [transação](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) disponível para leitura.
 
 <Note>
-  Esta função faz parte de um conjunto de recursos experimentais. Ative o suporte experimental a transações adicionando esta configuração às suas configurações:
+  Esta função faz parte de um recurso experimental. Ative o suporte experimental a transações adicionando esta configuração às suas configurações:
 
   ```xml
   <clickhouse>
@@ -5598,7 +5925,7 @@ Introduzido em: v22.6.0
 Retorna o snapshot mais antigo (Commit Sequence Number) visível para alguma [transação](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) em execução.
 
 <Note>
-  Esta função faz parte de um conjunto de recursos experimentais. Ative o suporte experimental a transações adicionando esta opção à sua configuração:
+  Esta função faz parte de um recurso experimental. Ative o suporte experimental a transações adicionando esta opção à sua configuração:
 
   ```xml
   <clickhouse>
@@ -5850,6 +6177,10 @@ Retorna o uptime do servidor em segundos.
 Se for executada no contexto de uma tabela distribuída, essa função gera uma coluna comum com valores correspondentes a cada shard.
 Caso contrário, produz um valor constante.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -5972,6 +6303,10 @@ Retorna a versão atual do ClickHouse como uma string no formato: `major_version
 Se for executada no contexto de uma tabela distribuída, esta função gera uma coluna comum com valores específicos de cada shard.
 Caso contrário, produz um valor constante.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -6045,6 +6380,10 @@ SELECT visibleWidth(NULL)
 Introduzido em: v21.11.0
 
 Retorna o uptime da sessão atual do ZooKeeper, em segundos.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 

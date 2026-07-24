@@ -2,7 +2,7 @@
 sidebarTitle: 'Looker'
 slug: /integrations/looker
 keywords: ['clickhouse', 'looker', 'conectar', 'integrar', 'UI']
-description: 'Looker es una plataforma empresarial de BI, aplicaciones de datos y analítica embebida que ayuda a explorar y compartir información en tiempo real.'
+description: 'Looker es una plataforma empresarial de BI, aplicaciones de datos y analítica embebida que te ayuda a explorar y compartir información en tiempo real.'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -17,46 +17,44 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-Looker puede conectarse a ClickHouse Cloud o a un despliegue on-premise mediante el origen de datos oficial de ClickHouse.
+Looker puede conectarse a ClickHouse Cloud o a una implementación on-premise mediante el origen de datos oficial de ClickHouse.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúne los datos de conexión
-</div>
+<Steps>
+  <Step title="Reúne los detalles de tu conexión" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Crear un origen de datos de ClickHouse" id="2-create-a-clickhouse-data-source">
+    Ve a Admin -&gt; Database -&gt; Connections y haz clic en el botón &quot;Add Connection&quot;, en la esquina superior derecha.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. Crear un origen de datos de ClickHouse
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Añadir una nueva conexión en la interfaz de administración de bases de datos de Looker" border />
 
-Ve a Admin -&gt; Database -&gt; Connections y haz clic en el botón &quot;Add Connection&quot;, en la esquina superior derecha.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Añadir una nueva conexión en la interfaz de administración de bases de datos de Looker" border />
+    Elige un nombre para tu origen de datos y selecciona `ClickHouse` en el menú desplegable de dialecto. Introduce tus credenciales en el formulario.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Especificar tus credenciales de ClickHouse en el formulario de conexión de Looker" border />
 
-Elige un nombre para tu origen de datos y selecciona `ClickHouse` en el menú desplegable de dialecto. Introduce tus credenciales en el formulario.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Especificar tus credenciales de ClickHouse en el formulario de conexión de Looker" border />
+    Si utilizas ClickHouse Cloud o tu entorno requiere SSL, asegúrate de tener SSL activado en la configuración adicional.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Activar SSL para la conexión de ClickHouse en la configuración de Looker" border />
 
-Si utilizas ClickHouse Cloud o tu entorno requiere SSL, asegúrate de tener SSL activado en la configuración adicional.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Activar SSL para la conexión de ClickHouse en la configuración de Looker" border />
+    Primero prueba la conexión y, una vez completado este paso, conéctate a tu nuevo origen de datos de ClickHouse.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Probar y conectarse al origen de datos de ClickHouse" border />
 
-Primero prueba la conexión y, una vez completado este paso, conéctate a tu nuevo origen de datos de ClickHouse.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Probar y conectarse al origen de datos de ClickHouse" border />
-
-<br />
-
-Ahora ya deberías poder asociar el origen de datos de ClickHouse a tu proyecto de Looker.
+    Ahora ya deberías poder asociar el origen de datos de ClickHouse a tu proyecto de Looker.
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. Limitaciones conocidas
+  ## Limitaciones conocidas
 </div>
 
 1. Los siguientes tipos de datos se tratan como cadenas de forma predeterminada:
