@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/pt-BR/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -75,11 +76,17 @@ Certifique-se de estar conectado à sua conta do ClickHouse Cloud. Se você aind
 4. Preencha os detalhes da conexão com o banco de dados MySQL de origem que você configurou na etapa de pré-requisitos.
 
 <Info>
-  Antes de começar a adicionar os detalhes da conexão, certifique-se de ter incluído os endereços IP do ClickPipes na lista de permissões das regras do seu firewall. Na página a seguir, você pode encontrar uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips).
+  Antes de começar a adicionar os detalhes da conexão, certifique-se de ter adicionado os endereços IP do ClickPipes à lista de permissões das regras do seu firewall. Na página a seguir, você pode encontrar uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips).
   Para mais informações, consulte os guias de configuração do MySQL de origem com link [no topo desta página](#prerequisites).
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Preencha os detalhes da conexão" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Alterar as configurações de TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (Opcional) Configure o túnel SSH
@@ -114,6 +121,7 @@ Você pode configurar as opções avançadas, se necessário. Uma breve descriç
 * **Tamanho do lote de extração**: O número de linhas a serem buscadas em um único lote. Esta é uma configuração de melhor esforço e pode não ser seguida em todos os casos.
 * **Número de linhas por partição no snapshot**: Este é o número de linhas que serão buscadas em cada partição durante o snapshot inicial. Isso é útil quando você tem um grande número de linhas em suas tabelas e quer controlar o número de linhas buscadas em cada partição.
 * **Número de tabelas em paralelo no snapshot**: Este é o número de tabelas que serão buscadas em paralelo durante o snapshot inicial. Isso é útil quando você tem um grande número de tabelas e quer controlar o número de tabelas buscadas em paralelo.
+* **ID do servidor**: Parâmetro opcional para definir o ID do servidor para a replicação do binlog do MySQL. Se não for definido, o ClickPipes gerará um ID de servidor aleatório que pode mudar ao longo do ciclo de vida do ClickPipe. Use-o para identificar seu ClickPipe de forma determinística no lado do servidor MySQL de origem.
 
 <div id="configure-the-tables">
   ### Configurar as tabelas

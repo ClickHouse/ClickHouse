@@ -22,7 +22,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 ويتميّز ClickHouse في تخزين بيانات السجلات وتحليلها بفضل إمكانات الضغط الممتازة لديه (حتى [170x](https://clickhouse.com/blog/log-compression-170x) للسجلات)
 وقدرتِه على تجميع كميات كبيرة من البيانات بسرعة.
 
-يوضح لك هذا الدليل كيفية استخدام خط أنابيب البيانات الشائع [Vector](https://vector.dev/docs/about/what-is-vector/) لمراقبة ملف سجل Nginx وإرساله إلى ClickHouse.
+يوضح لك هذا الدليل كيفية استخدام خط أنابيب البيانات الشائع [Vector](https://vector.dev/docs/introduction/) لمراقبة ملف سجل Nginx وإرساله إلى ClickHouse.
 والخطوات أدناه متشابهة عند مراقبة أي نوع من ملفات السجل.
 
 **المتطلبات الأساسية:**
@@ -31,9 +31,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 * لديك Vector مثبت
 
 <Steps>
-  <Step>
-    ## أنشئ قاعدة بيانات وجدولًا
-
+  <Step title="أنشئ قاعدة بيانات وجدولًا" id="1-create-a-database-and-table">
     عرّف جدولًا لتخزين أحداث السجل:
 
     1. ابدأ بإنشاء قاعدة بيانات جديدة باسم `nginxdb`:
@@ -57,9 +55,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     </Note>
   </Step>
 
-  <Step>
-    ## تهيئة Nginx
-
+  <Step title="تهيئة Nginx" id="2--configure-nginx">
     في هذه الخطوة، ستتعرّف على كيفية تهيئة logging في Nginx.
 
     1. تُرسل الخاصية `access_log` التالية السجلات إلى `/var/log/nginx/my_access.log` بتنسيق **combined**.
@@ -88,9 +84,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     ```
   </Step>
 
-  <Step>
-    ## تكوين Vector
-
+  <Step title="تكوين Vector" id="3-configure-vector">
     يجمع Vector السجلات والمقاييس والتتبعات، ويحوّلها ويوجّهها (ويُشار إليها باسم **المصادر**) إلى العديد من المزوّدين المختلفين (ويُشار إليهم باسم **الوجهات**)؛ بما في ذلك التوافق الجاهز مع ClickHouse.
     تُعرَّف المصادر والوجهات في ملف تكوين باسم **vector.toml**.
 
@@ -122,9 +116,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="عرض سجلات ClickHouse بتنسيق جدولي" />
   </Step>
 
-  <Step>
-    ## تحليل السجلات
-
+  <Step title="تحليل السجلات" id="4-parse-the-logs">
     يُعدّ تخزين السجلات في ClickHouse أمرًا رائعًا، غير أن تخزين كل حدث كسلسلة نصية واحدة لا يتيح إجراء تحليل يُذكر للبيانات.
     سنتناول بعد ذلك كيفية تحليل أحداث السجلات باستخدام [طريقة العرض المُجسَّدة](/ar/concepts/features/materialized-views/incremental-materialized-view).
 
