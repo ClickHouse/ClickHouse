@@ -63,15 +63,23 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
+static MergeTreeIndexFormat defaultIndexFormatDetector(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
+    const IDataPartStorage * storage)
 {
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    return defaultIndexFormatDetector(checksums, relative_path_prefix, storage);
 }
 
 void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
@@ -98,6 +106,51 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
 {
     if (!validators.emplace(index_type, std::move(validator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
+}
+
+void MergeTreeIndexFactory::registerFormatDetector(const std::string & index_type, FormatDetector detector)
+{
+    if (!format_detectors.emplace(index_type, std::move(detector)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index format detector name '{}' is not unique", index_type);
+}
+
+Names MergeTreeIndexFactory::getStreamNames(
+    const IndexDescription & index,
+    const MergeTreeDataPartChecksums & checksums,
+    const IDataPartStorage * storage) const
+{
+    auto index_name = getIndexFileName(index.name, index.escape_filenames);
+
+    auto it = format_detectors.find(index.type);
+    auto format = it != format_detectors.end()
+        ? it->second(checksums, index_name, storage)
+        : defaultIndexFormatDetector(checksums, index_name, storage);
+
+    Names stream_names;
+    stream_names.reserve(format.substreams.size());
+
+    for (const auto & substream : format.substreams)
+    {
+        auto full_stream_name = index_name + substream.suffix;
+        if (checksums.files.contains(full_stream_name + substream.extension))
+        {
+            stream_names.push_back(std::move(full_stream_name));
+            continue;
+        }
+
+        auto hash = sipHash128String(full_stream_name);
+        if (checksums.files.contains(hash + substream.extension))
+        {
+            stream_names.push_back(std::move(hash));
+            continue;
+        }
+
+        /// A packed substream has no per-virtual-file checksums entry: keep the
+        /// non-hashed name and rely on the storage overlay to resolve it.
+        stream_names.push_back(std::move(full_stream_name));
+    }
+
+    return stream_names;
 }
 
 std::vector<String> MergeTreeIndexFactory::getAllRegisteredNames() const
@@ -196,6 +249,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .syntax = "INDEX name expr TYPE minmax GRANULARITY n",
         .related = {"set"}});
     registerValidator("minmax", minmaxIndexValidator);
+    registerFormatDetector("minmax", minmaxIndexFormatDetector);
 
     registerCreator("set", setIndexCreator, Documentation{
         .description = "Stores up to `max_rows` distinct values of the index expression per granule (0 means unlimited), allowing granules to be skipped for equality and IN conditions.",
@@ -240,6 +294,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .syntax = "INDEX name expr TYPE text(tokenizer = splitByNonAlpha) GRANULARITY g",
         .related = {"tokenbf_v1"}});
     registerValidator("text", textIndexValidator);
+    registerFormatDetector("text", textIndexFormatDetector);
 
     /// Index type 'hypothesis' is no longer supported.
     /// To allow loading tables with old indexes, register a dummy index which allows attach but
