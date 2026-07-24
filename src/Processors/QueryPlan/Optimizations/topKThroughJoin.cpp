@@ -107,8 +107,10 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// `FullSortingMergeJoin` explicitly (it preserves order but adds the pre-JOIN sort). For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
-/// `FULL_SORTING_MERGE`. `GRACE_HASH` / `AUTO` are already covered by
-/// `joinMayHaveDelayedBlocks`. See issues #110662 and #109216.
+/// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant
+/// physicalizes to the same `FullSortingMergeJoin` with the same pre-JOIN sort).
+/// `GRACE_HASH` / `AUTO` are already covered by `joinMayHaveDelayedBlocks`.
+/// See issues #110662 and #109216.
 bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -124,7 +126,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
                 || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
-                || a == JoinAlgorithm::FULL_SORTING_MERGE;
+                || a == JoinAlgorithm::FULL_SORTING_MERGE
+                || a == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE;
         });
     }
     /// Unknown step kind - be conservative.
