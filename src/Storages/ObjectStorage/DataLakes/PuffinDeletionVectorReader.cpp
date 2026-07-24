@@ -236,6 +236,14 @@ std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset
             length,
             PUFFIN_DV_MAX_BLOB_SIZE);
 
+    /// Reject before envelope peek / full allocate: cardinality alone is enough to fail closed.
+    if (expected_cardinality.has_value() && *expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {}",
+            *expected_cardinality,
+            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
+
     if (auto file_size = tryGetFileSizeFromReadBuffer(file))
         validatePuffinBlobBounds(offset, length, *file_size);
     else if (offset < 0)

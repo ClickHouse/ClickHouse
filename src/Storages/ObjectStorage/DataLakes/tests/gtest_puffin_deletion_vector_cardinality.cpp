@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 
 #include <string_view>
@@ -26,6 +27,7 @@ constexpr UInt8 two_position_dv_blob[] = {
 };
 
 constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
+constexpr Int64 large_declared_length = 64 * 1024 * 1024;
 
 }
 
@@ -35,6 +37,27 @@ TEST(PuffinDeletionVectorCardinality, RejectsCardinalityAboveMaterializationLimi
     try
     {
         deserializeDeletionVectorV1Blob(std::string_view{}, PUFFIN_DV_MAX_MATERIALIZED_POSITIONS + 1);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_NE(e.message().find("exceeds materialization limit"), std::string::npos);
+    }
+}
+
+TEST(PuffinDeletionVectorCardinality, RejectsCardinalityAboveLimitBeforeFullAllocate)
+{
+    /// Huge declared length with only a tiny buffer: without an early ceiling check this would
+    /// allocate `large_declared_length` (or fail mid-read after that allocate). ReadBufferFromMemory
+    /// does not expose file size, so bounds checks alone do not stop this.
+    const char header[8] = {};
+    ReadBufferFromMemory file(header, sizeof(header));
+
+    try
+    {
+        readDeletionVectorFromPuffin(
+            file, 0, large_declared_length, PUFFIN_DV_MAX_MATERIALIZED_POSITIONS + 1);
         FAIL() << "Expected exception";
     }
     catch (const Exception & e)
