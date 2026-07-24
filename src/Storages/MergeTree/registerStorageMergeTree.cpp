@@ -723,7 +723,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, metadata.virtuals, context);
+            metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+                args.storage_def->primary_key->ptr(), metadata.sorting_key, metadata.columns, metadata.virtuals, context);
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by.
         {
