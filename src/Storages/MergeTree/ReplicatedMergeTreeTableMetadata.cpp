@@ -564,26 +564,23 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!empty())
     {
-        auto parse_key_expr = [] (const String & key_expr)
+        /// Symmetric with `sameSerializedKey` above and with `KeyDescription::parse`: the sorting
+        /// key stored in ZooKeeper may contain an explicit direction (`a DESC`) that a plain
+        /// expression parser would reject.
+        auto parse_key_expr = [] (const String & key_expr, bool allow_order)
         {
-            ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-            ASTPtr order_by_ast;
-            if (new_sorting_key_expr_list->children.size() == 1)
-                order_by_ast = new_sorting_key_expr_list->children[0];
-            else
-            {
-                auto tuple = makeASTOperator("tuple");
-                tuple->arguments->children = new_sorting_key_expr_list->children;
-                order_by_ast = tuple;
-            }
-            return order_by_ast;
+            ParserStorageOrderByClause parser(allow_order);
+            ASTPtr ast = parseQuery(parser, "(" + key_expr + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// The artificial "(" + str + ")" wrapping marks a single-element expression as
+            /// parenthesized; strip the flag so the key does not round-trip as `(x)`.
+            if (ast)
+                ast->setParenthesized(false);
+            return ast;
         };
 
         if (sorting_key_changed)
         {
-            auto order_by_ast = parse_key_expr(new_sorting_key);
+            auto order_by_ast = parse_key_expr(new_sorting_key, /*allow_order=*/ true);
 
             new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, virtuals, context);
 
@@ -599,7 +596,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         {
             if (!new_sampling_expression.empty())
             {
-                auto sample_by_ast = parse_key_expr(new_sampling_expression);
+                auto sample_by_ast = parse_key_expr(new_sampling_expression, /*allow_order=*/ false);
                 new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, virtuals, context);
             }
             else /// SAMPLE BY was removed

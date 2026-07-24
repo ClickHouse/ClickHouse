@@ -3,8 +3,11 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 using namespace DB;
@@ -204,6 +207,40 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, TTLSemanticsOutsideExpressionAreSi
     recompress_lz4.ttl = "d + toIntervalYear(10) RECOMPRESS CODEC(LZ4)";
     EXPECT_TRUE(diffOf(recompress_zstd, recompress_lz4).ttl_table_changed);
     EXPECT_FALSE(diffOf(recompress_zstd, recompress_zstd).ttl_table_changed);
+}
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, ReverseSortingKeyDiffIsApplicable)
+{
+    /// The apply path must be symmetric with the comparison path: a sorting key stored with an
+    /// explicit direction (`b DESC`) must be reparsed by `Diff::getNewMetadata` instead of being
+    /// rejected by a plain expression parser (which would leave the `ALTER_METADATA` log entry
+    /// retrying forever on the replica).
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto context = getContext().context;
+    VirtualColumnsDescription virtuals;
+
+    ColumnsDescription columns;
+    columns.add(ColumnDescription("b", std::make_shared<DataTypeUInt64>()));
+    columns.add(ColumnDescription("c", std::make_shared<DataTypeUInt64>()));
+
+    StorageInMemoryMetadata old_metadata;
+    old_metadata.columns = columns;
+    old_metadata.sorting_key = KeyDescription::parse("b, c", columns, virtuals, context, /*allow_order=*/ true);
+    old_metadata.primary_key = KeyDescription::parse("b", columns, virtuals, context, /*allow_order=*/ true);
+
+    ReplicatedMergeTreeTableMetadata::Diff diff;
+    diff.sorting_key_changed = true;
+    diff.new_sorting_key = "b DESC, c";
+
+    auto new_metadata = diff.getNewMetadata(columns, virtuals, context, old_metadata);
+    ASSERT_EQ(new_metadata.sorting_key.column_names.size(), 2);
+    EXPECT_EQ(new_metadata.sorting_key.column_names[0], "b");
+    EXPECT_EQ(new_metadata.sorting_key.column_names[1], "c");
+    ASSERT_EQ(new_metadata.sorting_key.reverse_flags.size(), 2);
+    EXPECT_TRUE(new_metadata.sorting_key.reverse_flags[0]);
+    EXPECT_FALSE(new_metadata.sorting_key.reverse_flags[1]);
 }
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, DeclarationIdentityIsSignificant)
