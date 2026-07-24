@@ -69,12 +69,16 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_bounded{Keyword::BOUNDED};
+    ParserKeyword s_unordered{Keyword::UNORDERED};
     ParserKeyword s_cursor{Keyword::CURSOR};
 
     ASTStreamSettings::StreamSettings settings;
 
     if (s_bounded.ignore(pos, expected))
         settings.bounded = true;
+
+    if (s_unordered.ignore(pos, expected))
+        settings.unordered = true;
 
     if (s_cursor.ignore(pos, expected))
     {

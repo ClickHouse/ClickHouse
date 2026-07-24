@@ -29,6 +29,8 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
         buffer << ", stream";
         if (stream_settings->bounded)
             buffer << " bounded";
+        if (stream_settings->unordered)
+            buffer << " unordered";
         if (stream_settings->cursor_tree)
             buffer << " cursor";
     }
@@ -56,6 +58,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     if (stream_settings.has_value())
     {
         hash_state.update(stream_settings->bounded);
+        hash_state.update(stream_settings->unordered);
 
         if (stream_settings->cursor_tree)
         {
@@ -110,6 +113,8 @@ String TableExpressionModifiers::formatForErrorMessage() const
         buffer << "STREAM";
         if (stream_settings->bounded)
             buffer << " BOUNDED";
+        if (stream_settings->unordered)
+            buffer << " UNORDERED";
         if (stream_settings->cursor_tree)
             buffer << " CURSOR";
     }

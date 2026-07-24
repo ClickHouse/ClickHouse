@@ -20,7 +20,7 @@ struct StreamingChunkCursorInfo : public ChunkInfoCloneable<StreamingChunkCursor
 class BuildStreamingChunkCursorStep : public ITransformingStep
 {
 public:
-    explicit BuildStreamingChunkCursorStep(SharedHeader input_header_);
+    BuildStreamingChunkCursorStep(SharedHeader input_header_, bool unordered_);
 
     String getName() const override { return "BuildStreamingChunkCursor"; }
 
@@ -30,6 +30,8 @@ public:
 
 private:
     void updateOutputHeader() override;
+
+    const bool unordered;
 };
 
 }

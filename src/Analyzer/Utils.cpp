@@ -489,6 +489,7 @@ static ASTPtr convertIntoTableExpressionAST(
         {
             ASTStreamSettings::StreamSettings ast_stream_settings;
             ast_stream_settings.bounded = stream_settings->bounded;
+            ast_stream_settings.unordered = stream_settings->unordered;
             if (stream_settings->cursor_tree)
                 ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
 

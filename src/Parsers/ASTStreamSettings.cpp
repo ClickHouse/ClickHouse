@@ -54,6 +54,14 @@ void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings &, F
         need_space = true;
     }
 
+    if (settings.unordered)
+    {
+        if (need_space)
+            ostr << ' ';
+        ostr << "UNORDERED";
+        need_space = true;
+    }
+
     if (settings.cursor_tree.has_value())
     {
         if (need_space)

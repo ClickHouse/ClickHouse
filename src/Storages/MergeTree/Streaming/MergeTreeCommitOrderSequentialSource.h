@@ -32,7 +32,8 @@ public:
         size_t requested_num_streams_,
         UInt64 max_block_size_,
         MergeTreeBoundsSubscriptionPtr subscription_,
-        MergeTreeCursor starting_positions_);
+        MergeTreeCursor starting_positions_,
+        bool unordered_);
 
     String getName() const override { return "MergeTreeCommitOrderSequentialSource"; }
 
@@ -53,6 +54,7 @@ private:
     const Names user_requested_columns;
     const size_t requested_num_streams;
     const UInt64 max_block_size;
+    const bool unordered;
     const MergeTreeBoundsSubscriptionPtr subscription;
     const LoggerPtr log;
 

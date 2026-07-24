@@ -265,3 +265,58 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesBoundedCursor)
     ASSERT_TRUE(stream_ast->settings.cursor_tree.has_value());
     ASSERT_EQ(stream_ast->settings.cursor_tree->size(), 2u);
 }
+
+TEST(ParserStreamSettings, StreamUnorderedParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM UNORDERED");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_TRUE(stream_ast->settings.unordered);
+    ASSERT_FALSE(stream_ast->settings.bounded);
+}
+
+TEST(ParserStreamSettings, StreamBoundedUnorderedCursorParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED UNORDERED CURSOR {'all': {'block_number': 10, 'block_offset': 5}}");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_TRUE(stream_ast->settings.bounded);
+    ASSERT_TRUE(stream_ast->settings.unordered);
+    ASSERT_TRUE(stream_ast->settings.cursor_tree.has_value());
+    ASSERT_EQ(stream_ast->settings.cursor_tree->size(), 2u);
+}
+
+TEST(ParserStreamSettings, PlainStreamIsNotUnordered)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->settings.unordered);
+}
+
+TEST(ParserStreamSettings, FormatRoundTripPreservesBoundedUnorderedCursor)
+{
+    auto ast = parse("SELECT * FROM t STREAM BOUNDED UNORDERED CURSOR {'all': {'block_number': 10, 'block_offset': 5}}");
+    auto formatted = format(ast);
+
+    auto ast2 = parse(formatted);
+    const auto * table_expr = extractTableExpression(ast2);
+    ASSERT_NE(table_expr, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_TRUE(stream_ast->settings.bounded);
+    ASSERT_TRUE(stream_ast->settings.unordered);
+    ASSERT_TRUE(stream_ast->settings.cursor_tree.has_value());
+}

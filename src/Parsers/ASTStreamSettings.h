@@ -19,6 +19,8 @@ public:
     {
         /// If true, read only the first snapshot and then finish (do not subscribe for updates).
         bool bounded = false;
+        /// If true, do not sort each snapshot by cursor; ordering holds only between snapshots.
+        bool unordered = false;
         std::optional<Map> cursor_tree;
     };
 

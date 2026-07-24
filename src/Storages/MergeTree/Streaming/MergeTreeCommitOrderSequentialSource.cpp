@@ -95,6 +95,7 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     size_t requested_num_streams,
     UInt64 max_block_size,
     const SharedHeader & output_header,
+    bool unordered,
     const LoggerPtr & log)
 {
     auto sub = MergeTreeDataSelectExecutor(storage).read(
@@ -130,20 +131,23 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
             initial_prewhere_info->remove_prewhere_column));
     }
 
-    /// Add commit-order sorting (_block_number, _block_offset)
-    SortDescription sort_desc;
-    sort_desc.emplace_back(BlockNumberColumn::name, 1);
-    sort_desc.emplace_back(BlockOffsetColumn::name, 1);
-    SortingStep::Settings sort_settings(context->getSettingsRef());
-    plan.addStep(std::make_unique<SortingStep>(
-        plan.getCurrentHeader(),
-        std::move(sort_desc),
-        /*limit=*/ 0,
-        sort_settings,
-        /*is_sorting_for_merge_join=*/false));
+    /// Commit-order sort (_block_number, _block_offset); skipped for unordered streams (ordering holds only between snapshots).
+    if (!unordered)
+    {
+        SortDescription sort_desc;
+        sort_desc.emplace_back(BlockNumberColumn::name, 1);
+        sort_desc.emplace_back(BlockOffsetColumn::name, 1);
+        SortingStep::Settings sort_settings(context->getSettingsRef());
+        plan.addStep(std::make_unique<SortingStep>(
+            plan.getCurrentHeader(),
+            std::move(sort_desc),
+            /*limit=*/ 0,
+            sort_settings,
+            /*is_sorting_for_merge_join=*/false));
+    }
 
     /// Add cursor calculation step.
-    plan.addStep(std::make_unique<BuildStreamingChunkCursorStep>(plan.getCurrentHeader()));
+    plan.addStep(std::make_unique<BuildStreamingChunkCursorStep>(plan.getCurrentHeader(), unordered));
 
     /// Add projection to required header.
     auto convert = ActionsDAG::makeConvertingActions(
@@ -178,6 +182,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     size_t requested_num_streams,
     UInt64 max_block_size,
     const SharedHeader & output_header,
+    bool unordered,
     const LoggerPtr & log)
 {
     const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
@@ -213,6 +218,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
             requested_num_streams,
             max_block_size,
             output_header,
+            unordered,
             log);
 
         if (result)
@@ -290,7 +296,8 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     size_t requested_num_streams_,
     UInt64 max_block_size_,
     MergeTreeBoundsSubscriptionPtr subscription_,
-    MergeTreeCursor starting_positions_)
+    MergeTreeCursor starting_positions_,
+    bool unordered_)
     : IProcessor({}, {Block(*header_)})
     , header(std::move(header_))
     , storage(storage_)
@@ -300,6 +307,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , user_requested_columns(std::move(user_requested_columns_))
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)
+    , unordered(unordered_)
     , subscription(std::move(subscription_))
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
     , last_emitted_positions(std::move(starting_positions_))
@@ -466,6 +474,7 @@ void MergeTreeCommitOrderSequentialSource::work()
         requested_num_streams,
         max_block_size,
         header,
+        unordered,
         log);
 
     if (result)

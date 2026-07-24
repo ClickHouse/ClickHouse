@@ -3472,6 +3472,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
     MergeTreeCursor starting_positions = buildMergeTreeCursor(stream_settings.cursor_tree);
     const bool bounded = stream_settings.bounded;
+    const bool unordered = stream_settings.unordered;
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -3489,7 +3490,8 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
             num_streams,
             block_size.max_block_size_rows,
             std::move(subscription),
-            starting_positions));
+            starting_positions,
+            unordered));
     }
 
     data.triggerStreamingSubscriptionEnrichment();
