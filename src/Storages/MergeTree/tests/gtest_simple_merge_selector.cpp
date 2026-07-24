@@ -1,17 +1,16 @@
-#include <gtest/gtest.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <ranges>
 
 using namespace DB;
 
 TEST(SimpleMergeSelector, TestRowsConstraint)
 {
-    SimpleMergeSelector::Settings settings;
-    settings.base = 2.0;
-    SimpleMergeSelector selector(settings);
-    std::vector<std::string> part_names = {"all_0_0_0", "all_1_1_0", "all_2_2_0"};
     PartsRange parts_range;
-
-    for (const auto & part_name : part_names)
+    for (const auto & part_name : {"all_0_0_0", "all_1_1_0", "all_2_2_0"})
     {
         parts_range.push_back(PartProperties
         {
@@ -23,6 +22,18 @@ TEST(SimpleMergeSelector, TestRowsConstraint)
         });
     }
 
+    PartitionsStatistics statistics;
+    statistics["all"] = PartitionStatistics{
+        .min_age = std::ranges::min(parts_range | std::views::transform(&PartProperties::age)),
+        .part_count = parts_range.size(),
+        .total_size = 10 * 1024 * 3,
+    };
+
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2.0;
+    settings.partitions_stats = &statistics;
+
+    SimpleMergeSelector selector(settings);
     size_t max_bytes = 100 * 1024 * 1024;
 
     {
