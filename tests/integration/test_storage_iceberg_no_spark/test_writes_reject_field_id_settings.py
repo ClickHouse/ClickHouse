@@ -119,3 +119,37 @@ def test_writes_reject_field_id_settings(
     assert "BAD_ARGUMENTS" in error
     assert "column-id mapping" in error
     assert instance.query(f"EXISTS TABLE {explicit_table}") == "0\n"
+
+    # A legacy table created before the definition-time guard existed can still
+    # carry these settings in its stored definition. Replaying such a stored
+    # definition (short ATTACH, server startup, replica recovery, RESTORE) must
+    # keep working — reads included — while the write-time guard in
+    # `ParquetBlockOutputFormat` rejects every INSERT into it.
+    legacy_table = make_table_name("legacy")
+    create_iceberg_table(
+        storage_type,
+        instance,
+        legacy_table,
+        started_cluster_iceberg_no_spark,
+        "(x Int32)",
+        format_version,
+    )
+    instance.query(f"INSERT INTO {legacy_table} VALUES (1);")
+    instance.query(f"DETACH TABLE {legacy_table}")
+    # Simulate the pre-guard table by injecting the setting into the stored
+    # metadata, then replay it with a short ATTACH.
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"sed -i 's/^SETTINGS /SETTINGS output_format_parquet_auto_assign_field_ids = 1, /' "
+            f"/var/lib/clickhouse/metadata/default/{legacy_table}.sql",
+        ]
+    )
+    instance.query(f"ATTACH TABLE {legacy_table}")
+    assert instance.query(f"SELECT * FROM {legacy_table} ORDER BY ALL") == "1\n"
+    error = instance.query_and_get_error(f"INSERT INTO {legacy_table} VALUES (2);")
+    assert "BAD_ARGUMENTS" in error
+    assert "column-id mapping" in error
+    # The table stays readable after the rejected write.
+    assert instance.query(f"SELECT * FROM {legacy_table} ORDER BY ALL") == "1\n"
