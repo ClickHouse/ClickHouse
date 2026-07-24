@@ -5,6 +5,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -24,12 +25,15 @@ namespace
     {
         const auto & function_name = function_node->function_name;
 
-        if (arguments.size() != 1)
+        if (arguments.size() > 1)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects {} arguments, but was called with {} arguments",
-                            function_name, 1, arguments.size());
+                            "Function '{}' expects 0 or 1 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
         }
+
+        if (arguments.empty())
+            return;
 
         const auto & argument = arguments[0];
 
@@ -124,6 +128,14 @@ SQLQueryPiece applyDateTimeFunction(
     chassert(impl_info);
 
     checkArgumentTypes(function_node, arguments, context);
+
+    if (arguments.empty())
+    {
+        /// A date/time function called without arguments acts as if it was called with `vector(time())`.
+        auto time_argument = makeTimeQueryPiece(function_node, context);
+        time_argument.type = ResultType::INSTANT_VECTOR;
+        arguments.push_back(std::move(time_argument));
+    }
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {

@@ -1059,6 +1059,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "day_of_week()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "0"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 0]],
+    )
+
+    do_query_test(
         "day_of_week(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "0"], [120, "6"]]}]}',
@@ -1072,6 +1079,13 @@ def test_date_time_functions():
 
     do_query_test(
         "day_of_month(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "8"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 8]],
+    )
+
+    do_query_test(
+        "day_of_month()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "8"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 8]],
@@ -1097,6 +1111,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "days_in_month()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "28"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 28]],
+    )
+
+    do_query_test(
         "days_in_month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "31"]]}]}',
@@ -1110,6 +1131,13 @@ def test_date_time_functions():
 
     do_query_test(
         "day_of_year(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "39"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 39]],
+    )
+
+    do_query_test(
+        "day_of_year()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "39"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 39]],
@@ -1135,6 +1163,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "minute()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "30"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 30]],
+    )
+
+    do_query_test(
         "minute(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "30"]]}]}',
@@ -1148,6 +1183,13 @@ def test_date_time_functions():
 
     do_query_test(
         "hour(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "20"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 20]],
+    )
+
+    do_query_test(
+        "hour()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "20"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 20]],
@@ -1173,6 +1215,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "month()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "2"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 2]],
+    )
+
+    do_query_test(
         "month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "11"], [120, "12"]]}]}',
@@ -1192,6 +1241,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "year()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "2026"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 2026]],
+    )
+
+    do_query_test(
         "year(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "2025"], [120, "2025"]]}]}',
@@ -1199,6 +1255,21 @@ def test_date_time_functions():
             [
                 "[('job','test')]",
                 "[('1970-01-01 00:01:50.000',2025),('1970-01-01 00:02:00.000',2025)]",
+            ]
+        ],
+    )
+
+    # A date/time function called without arguments is evaluated at each step of a range query.
+    do_range_query_test(
+        "minute()",
+        1770582580,
+        1770582700,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1770582580, "29"], [1770582640, "30"], [1770582700, "31"]]}]}',
+        [
+            [
+                "[]",
+                "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
             ]
         ],
     )

@@ -17,26 +17,16 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece fromFunctionTime(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece makeTimeQueryPiece(const PQT::Node * node, ConverterContext & context)
 {
-    const auto & function_name = function_node->function_name;
-    chassert(isFunctionTime(function_name));
-
-    if (!arguments.empty())
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function '{}' expects no arguments, but was called with {} arguments",
-                        function_name, arguments.size());
-    }
-
-    auto node_range = context.node_range_getter.get(function_node);
+    auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
-        return SQLQueryPiece{function_node, ResultType::SCALAR, StoreMethod::EMPTY};
+        return SQLQueryPiece{node, ResultType::SCALAR, StoreMethod::EMPTY};
 
     if (node_range.start_time == node_range.end_time)
     {
         /// Single evaluation time, so we use StoreMethod::CONST_SCALAR.
-        SQLQueryPiece res{function_node, ResultType::SCALAR, StoreMethod::CONST_SCALAR};
+        SQLQueryPiece res{node, ResultType::SCALAR, StoreMethod::CONST_SCALAR};
         res.start_time = node_range.start_time;
         res.end_time = node_range.end_time;
         res.step = node_range.step;
@@ -46,7 +36,7 @@ SQLQueryPiece fromFunctionTime(const PQT::Function * function_node, std::vector<
     else
     {
         /// Range of evaluation times (e.g. "time()[10m:1m]"), so we use StoreMethod::SCALAR_GRID.
-        SQLQueryPiece res{function_node, ResultType::SCALAR, StoreMethod::SCALAR_GRID};
+        SQLQueryPiece res{node, ResultType::SCALAR, StoreMethod::SCALAR_GRID};
         res.start_time = node_range.start_time;
         res.end_time = node_range.end_time;
         res.step = node_range.step;
@@ -67,6 +57,22 @@ SQLQueryPiece fromFunctionTime(const PQT::Function * function_node, std::vector<
 
         return res;
     }
+}
+
+
+SQLQueryPiece fromFunctionTime(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+{
+    const auto & function_name = function_node->function_name;
+    chassert(isFunctionTime(function_name));
+
+    if (!arguments.empty())
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Function '{}' expects no arguments, but was called with {} arguments",
+                        function_name, arguments.size());
+    }
+
+    return makeTimeQueryPiece(function_node, context);
 }
 
 }
