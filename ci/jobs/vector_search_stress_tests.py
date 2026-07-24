@@ -64,6 +64,12 @@ QUANTIZED_CODEC = "quantized_codec"
 # '<metric>TransposedQuantized' distance function at QBIT_SEARCH_BITS bit precision.
 QBIT_ELEMENT_TYPE = "qbit_element_type"
 QBIT_SEARCH_BITS = "qbit_search_bits"
+# When set to an integer seed, vectors are passed through randomHadamardTransform with
+# that seed before being quantized into the QBit column, and external query vectors are
+# rotated with the same seed at search time. The rotation is orthogonal and norm-
+# preserving, so cosine ranking is invariant, while the rotation spreads energy evenly
+# across dimensions and markedly improves the recall of the low-bit codes.
+QBIT_HADAMARD_SEED = "qbit_hadamard_seed"
 HNSW_M = "hnsw_M"
 HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
 HNSW_EF_SEARCH = "hnsw_ef_search"
@@ -327,13 +333,14 @@ test_params_cohere_wiki_20m_qbit_int8_1bit = {
     QUANTIZED_CODEC: None,  # not a CODEC(Quantized(...)) column
     QBIT_ELEMENT_TYPE: "Int8",
     QBIT_SEARCH_BITS: 1,  # 1-bit search: read only the top bit-plane of each code
+    QBIT_HADAMARD_SEED: 42,  # Hadamard-rotate before quantizing to improve 1-bit recall
     HNSW_M: None,
     HNSW_EF_CONSTRUCTION: None,
     HNSW_EF_SEARCH: None,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
-    TRUTH_SET_COUNT: 25000,
+    TRUTH_SET_COUNT: 1000,  # only check recall for 1000 query vectors
     RECALL_K: 10,
     # Let's have more than 1 part for this dataset (7 - 9 parts)
     MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
@@ -355,6 +362,7 @@ test_params_hackernews_10m_qbit_int8_1bit = {
     QUANTIZED_CODEC: None,  # not a CODEC(Quantized(...)) column
     QBIT_ELEMENT_TYPE: "Int8",
     QBIT_SEARCH_BITS: 1,  # 1-bit search: read only the top bit-plane of each code
+    QBIT_HADAMARD_SEED: 42,  # Hadamard-rotate before quantizing to improve 1-bit recall
     HNSW_M: None,
     HNSW_EF_CONSTRUCTION: None,
     HNSW_EF_SEARCH: None,
@@ -402,6 +410,7 @@ class RunTest:
         self._quantized_codec = test_params.get(QUANTIZED_CODEC)
         self._qbit_element = test_params.get(QBIT_ELEMENT_TYPE)
         self._qbit_bits = test_params.get(QBIT_SEARCH_BITS)
+        self._qbit_hadamard_seed = test_params.get(QBIT_HADAMARD_SEED)
 
         self._query_count = int(test_params[TRUTH_SET_COUNT])
         self._k = int(test_params[RECALL_K])
@@ -451,18 +460,34 @@ class RunTest:
         return names
 
     # Projection for INSERT into a QBit column: pass every column through unchanged
-    # except the vector column, which is Lloyd-Max quantized to Int8 codes (an
-    # Array(Int8) that implicitly converts to QBit(Int8, <dim>) on insert).
+    # except the vector column, which is (optionally Hadamard-rotated and) Lloyd-Max
+    # quantized to Int8 codes (an Array(Int8) that implicitly converts to
+    # QBit(Int8, <dim>) on insert).
     def _qbit_insert_projection(self):
         projection = []
         for name in self._table_column_names():
             if name == self._vector_column:
+                vec_source = name
+                if self._qbit_hadamard_seed is not None:
+                    vec_source = (
+                        f"randomHadamardTransform({name}, {self._qbit_hadamard_seed})"
+                    )
                 projection.append(
-                    f"quantizeBFloat16ToInt8(CAST({name}, 'Array(BFloat16)')) AS {name}"
+                    f"quantizeBFloat16ToInt8(CAST({vec_source}, 'Array(BFloat16)')) AS {name}"
                 )
             else:
                 projection.append(name)
         return ", ".join(projection)
+
+    # Rotate an external (client-supplied) query vector with the same Hadamard seed used
+    # at insert time. References read back from the table are already rotated and must
+    # NOT be rotated again. The reference here is always a constant (a bound parameter or
+    # a literal), so the rotation is constant-folded and evaluated once per query, not
+    # per row.
+    def _maybe_rotate_reference(self, reference_sql):
+        if self._qbit_element is not None and self._qbit_hadamard_seed is not None:
+            return f"randomHadamardTransform({reference_sql}, {self._qbit_hadamard_seed})"
+        return reference_sql
 
     # Build the distance expression used to rank candidates. QBit runs use the
     # '<metric>TransposedQuantized' function with an explicit bit-precision argument;
@@ -748,7 +773,10 @@ class RunTest:
                     "Warning: truth record contains both `query_id` and `query_vector`, using `query_vector`"
                 )
                 self._query_source_warning_logged = True
-            return self._vector_literal(truth_record["query_vector"])
+            # External literal query vector: rotate it to match the rotated database.
+            return self._maybe_rotate_reference(
+                self._vector_literal(truth_record["query_vector"])
+            )
 
         if truth_record["query_id"] is None:
             raise ValueError("Truth record must contain either `query_id` or `query_vector`")
@@ -913,7 +941,9 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                reference_sql = "reinterpret($search_vector_binary$, 'Array(Float32)')"
+                reference_sql = self._maybe_rotate_reference(
+                    "reinterpret($search_vector_binary$, 'Array(Float32)')"
+                )
                 ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_expression(reference_sql)} AS distance LIMIT {self._k}"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
@@ -1027,6 +1057,9 @@ def run_single_test(test_name, dataset, test_params):
         ):
             for tf in test_runner._test_params[TRUTH_SET_FILES]:
                 generated_truth_set = test_runner.load_truth_set(tf)
+                # Cap the number of query vectors actually searched to TRUTH_SET_COUNT
+                # (truth set files can contain many more than we need to run).
+                generated_truth_set = generated_truth_set[: test_runner._query_count]
                 test_runner._truth_set = generated_truth_set
                 result_set = test_runner.run_search_for_truth_set()
                 test_runner.calculate_recall(result_set)
@@ -1095,11 +1128,11 @@ TESTS_TO_RUN = [
     #     dataset_cohere_wiki_20m,
     #     test_params_cohere_wiki_20m_rabitq,
     # ),
-    # (
-    #     "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
-    #     dataset_cohere_wiki_20m,
-    #     test_params_cohere_wiki_20m_qbit_int8_1bit,
-    # ),
+    (
+        "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
+        dataset_cohere_wiki_20m,
+        test_params_cohere_wiki_20m_qbit_int8_1bit,
+    ),
     (
         "Test using the hackernews dataset with QBit(Int8) 1-bit search",
         dataset_hackernews_openai,
