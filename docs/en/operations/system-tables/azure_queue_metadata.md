@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Contains the current number of `processed`, `processing` and `failed` nodes in keeper for each `AzureQueue` metadata object, and, on demand, their contents. Unlike `system.azure_queue_metadata_cache`, which shows the in-memory cache, this table reads the state directly from keeper.
 
-The `processed`, `processing`, `failed` and `processed_path` map columns issue keeper requests to list the corresponding folders and are fetched only when the respective column is selected, so selecting only the `*_nodes` counters avoids the extra keeper traffic.
+The `processed_nodes`, `processing_nodes`, `failed_nodes` and `processed_path` map columns issue keeper requests to list the corresponding folders and are fetched only when the respective column is selected, so selecting only the `*_nodes_count` counters avoids the extra keeper traffic.
 
 ## Columns {#columns}
 

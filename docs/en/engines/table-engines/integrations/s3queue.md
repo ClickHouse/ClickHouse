@@ -498,7 +498,7 @@ exception:
 
 2. `system.s3_queue_metadata`. This table is not persistent and reads the state directly from keeper: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents.
 
-The `processed`, `processing`, `failed` and `processed_path` columns issue keeper requests and are fetched only when the corresponding column is selected, so selecting just the `*_nodes` counters avoids the extra keeper traffic.
+The `processed_nodes`, `processing_nodes`, `failed_nodes` and `processed_path` columns issue keeper requests and are fetched only when the corresponding column is selected, so selecting just the `*_nodes_count` counters avoids the extra keeper traffic.
 
 ```sql
 SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
