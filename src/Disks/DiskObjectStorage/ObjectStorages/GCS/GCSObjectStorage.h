@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/logger_useful.h>
 
@@ -34,7 +35,7 @@ public:
         , description(std::move(description_))
         , disk_name(std::move(disk_name_))
         , client(std::move(client_))
-        , settings(std::move(settings_))
+        , settings(std::make_unique<const GCSObjectStorageSettings>(std::move(settings_)))
         , key_generator(std::move(key_generator_))
         , log(getLogger("GCSObjectStorage"))
     {
@@ -104,7 +105,7 @@ public:
 
     bool isRemote() const override { return true; }
     bool supportParallelWrite() const override { return true; }
-    bool isReadOnly() const override { return settings.read_only; }
+    bool isReadOnly() const override { return settings.get()->read_only; }
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
@@ -129,7 +130,10 @@ private:
     mutable std::mutex client_mutex;
     std::shared_ptr<google::cloud::storage::Client> client; /// guarded by client_mutex
 
-    GCSObjectStorageSettings settings;
+    /// A disk config reload (`applyNewSettings`) can replace the settings while other threads are
+    /// reading them (`isReadOnly`, `copyObjectToAnotherObjectStorage`), so they get the same
+    /// atomic-snapshot treatment as `client` (mirrors the S3 backend's `MultiVersion<S3Settings>`).
+    MultiVersion<GCSObjectStorageSettings> settings;
     const ObjectStorageKeyGeneratorPtr key_generator;
     LoggerPtr log;
 };

@@ -278,8 +278,8 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
     /// ever writing the real destination; on the same endpoint with different credentials the copy
     /// would be authenticated as the source instead of the destination. In those cases fall back to a
     /// buffer copy, which reads through this client and writes through the destination's own client.
-    if (auto * dest_gcs = dynamic_cast<GCSObjectStorage *>(&object_storage_to);
-        dest_gcs != nullptr && settings.describesSameClientAs(dest_gcs->settings))
+    auto * dest_gcs = dynamic_cast<GCSObjectStorage *>(&object_storage_to);
+    if (dest_gcs != nullptr && settings.get()->describesSameClientAs(*dest_gcs->settings.get()))
     {
         auto client_ptr = getClient();
         auto result = client_ptr->RewriteObjectBlocking(
@@ -321,7 +321,7 @@ void GCSObjectStorage::applyNewSettings(
         client = std::move(new_client);
     }
 
-    settings = std::move(new_settings);
+    settings.set(std::make_unique<const GCSObjectStorageSettings>(std::move(new_settings)));
 }
 
 ObjectStorageKeyGeneratorPtr GCSObjectStorage::createKeyGenerator() const
