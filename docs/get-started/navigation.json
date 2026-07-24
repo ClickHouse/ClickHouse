@@ -159,7 +159,6 @@
         {
           "group": "BigQuery",
           "pages": [
-            "get-started/migrate/bigquery/index",
             "get-started/migrate/bigquery/overview",
             "get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "get-started/migrate/bigquery/loading-data"
