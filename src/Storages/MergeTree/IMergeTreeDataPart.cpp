@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
@@ -1674,7 +1675,26 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
         result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
 
+    /// UNIQUE KEY per-part SST. Enumerated based on the part's own on-disk
+    /// presence (a part property), not table metadata, so `MergeTreeData::backupParts`
+    /// and `DataPartsExchange::sendPart` transfer it — both build the transferred
+    /// file set from `checksums ∪ getFileNamesWithoutChecksums()`, not by globbing
+    /// the part directory.
+    if (getDataPartStorage().existsFile(SSTIndexWriter::FILE_NAME))
+        result.emplace(SSTIndexWriter::FILE_NAME);
+
     return result;
+}
+
+std::optional<String> IMergeTreeDataPart::getDenseIndexBackingPath() const
+{
+    /// Neutral name for the on-disk dense-index file. The concrete on-disk
+    /// format is owned by the dense-index backend (currently SST);
+    /// cross-module callers treat this as "is there an on-disk dense index
+    /// for this part?" and let backend code open + verify the file.
+    if (!getDataPartStorage().existsFile(SSTIndexWriter::FILE_NAME))
+        return std::nullopt;
+    return getDataPartStorage().getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
 }
 
 std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
