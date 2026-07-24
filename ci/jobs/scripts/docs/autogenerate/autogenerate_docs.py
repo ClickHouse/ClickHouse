@@ -1016,6 +1016,18 @@ def _settings_explorer(family):
     )
 
 
+def _settings_legacy_routes_script(anchor_routes, family):
+    """Expose moved settings anchors to the global Mintlify redirect script."""
+    base_route = json.dumps(family["base_route"])
+    routes = json.dumps(
+        anchor_routes, separators=(",", ":")).replace("<", "\\u003c")
+    return (
+        "window.clickhouseSettingsLegacyRoutes = "
+        "window.clickhouseSettingsLegacyRoutes || {};\n"
+        f"window.clickhouseSettingsLegacyRoutes[{base_route}] = {routes};\n"
+    )
+
+
 def _replace_redundant_h1_with_anchor(preamble):
     """Keep a historical H1 fragment without rendering a duplicate page title."""
     match = re.match(r"^# [^\n]+\n+", preamble)
@@ -1030,9 +1042,8 @@ def _replace_redundant_h1_with_anchor(preamble):
     return f'<a id="{anchor}"></a>\n\n{remainder}'
 
 
-def _settings_explorer_component(pages, anchor_routes=None, family=None):
+def _settings_explorer_component(pages, family=None):
     family = family or SETTINGS_SPLIT_FAMILIES["session-settings"]
-    anchor_routes = anchor_routes or _settings_anchor_routes(pages)
     def subtree_count(page):
         return len(page.sections) + sum(subtree_count(child) for child in page.children)
 
@@ -1050,60 +1061,14 @@ def _settings_explorer_component(pages, anchor_routes=None, family=None):
 
     entries_json = json.dumps(
         [explorer_entry(page) for page in pages], separators=(",", ":"))
-    anchor_routes_json = json.dumps(anchor_routes, separators=(",", ":"))
     template = '''const __COMPONENT_NAME__ = () => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => (__SESSION_SETTINGS_ENTRIES__));
-  const [anchorRoutes] = useState(() => (__ANCHOR_ROUTES__));
-
-  useEffect(() => {
-    const rawHash = window.location.hash.slice(1);
-    if (!rawHash) return;
-
-    let decodedHash;
-    try {
-      decodedHash = decodeURIComponent(rawHash);
-    } catch {
-      return;
-    }
-
-    const canonicalAnchor = (value) => {
-      const candidates = [
-        value,
-        value.replace(/[?,;:!'"()[\\]{}]/g, ""),
-      ];
-      for (const candidate of candidates) {
-        if (anchorRoutes[candidate]) return candidate;
-        const lowerValue = candidate.toLowerCase();
-        if (anchorRoutes[lowerValue]) return lowerValue;
-      }
-      return null;
-    };
-
-    const directAnchor = canonicalAnchor(decodedHash);
-    const baseAnchor = directAnchor || canonicalAnchor(decodedHash.split("-", 1)[0]);
-    if (!baseAnchor) return;
-    const target = anchorRoutes[baseAnchor];
-    const targetHash = directAnchor || rawHash;
-
-    const marker = "__BASE_ROUTE__";
-    const markerIndex = window.location.pathname.indexOf(marker);
-    let basePath = "";
-    if (markerIndex >= 0) {
-      basePath = window.location.pathname.slice(0, markerIndex);
-    } else if (window.location.pathname.startsWith("/docs/")) {
-      basePath = "/docs";
-    }
-
-    window.location.replace(
-      `${basePath}${target}${window.location.search}#${targetHash}`,
-    );
-  }, []);
-
   const [expandedGroups, setExpandedGroups] = useState(() => new Set());
   const [searchTerm, setSearchTerm] = useState("");
+
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const toPlainSearchTerms = (value) => value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -1288,9 +1253,7 @@ export default __COMPONENT_NAME__;
     return (
         template
         .replace("__SESSION_SETTINGS_ENTRIES__", entries_json)
-        .replace("__ANCHOR_ROUTES__", anchor_routes_json)
         .replace("__COMPONENT_NAME__", family["component_name"])
-        .replace("__BASE_ROUTE__", family["base_route"])
         .replace("__EXPLORER_ROOT__", family["explorer_root"])
     )
 
@@ -1329,7 +1292,12 @@ def split_settings_page(dest, content, docs_dir, family_name):
     artifacts = [GeneratedArtifact(Path(dest), root_content)]
     artifacts.append(GeneratedArtifact(
         Path(docs_dir) / family["component_path"],
-        _settings_explorer_component(pages, anchor_routes, family),
+        _settings_explorer_component(pages, family),
+    ))
+    artifacts.append(GeneratedArtifact(
+        Path(docs_dir) / "_site/customizations/settings-legacy-routes"
+        / f"{family_name}.js",
+        _settings_legacy_routes_script(anchor_routes, family),
     ))
 
     page_manifest = []

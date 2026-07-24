@@ -1,0 +1,356 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse Cloud",
+      "pages": [
+        {
+          "group": "البدء",
+          "pages": [
+            "ar/products/cloud/getting-started/intro",
+            "ar/products/cloud/getting-started/resource-tour"
+          ],
+          "root": "ar/products/cloud/getting-started/cloud-get-started"
+        },
+        {
+          "group": "المزايا",
+          "pages": [
+            "ar/products/cloud/features/cloud-tiers",
+            "ar/products/cloud/features/cli",
+            "ar/products/cloud/features/integrations",
+            "ar/products/cloud/features/data-catalogs",
+            "ar/products/cloud/reference/architecture",
+            "ar/products/cloud/reference/supported-regions",
+            {
+              "expanded": false,
+              "group": "وحدة تحكم SQL",
+              "pages": [
+                "ar/products/cloud/features/sql-console-features/sql-console",
+                "ar/products/cloud/features/sql-console-features/query-insights",
+                "ar/products/cloud/features/sql-console-features/query-endpoints",
+                "ar/products/cloud/features/sql-console-features/dashboards",
+                "ar/products/cloud/features/sql-console-features/clickstack",
+                "ar/products/cloud/features/sql-console-features/user-defined-functions"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "البنية التحتية",
+              "pages": [
+                {
+                  "group": "التوسع التلقائي",
+                  "pages": [
+                    "ar/products/cloud/features/autoscaling/vertical",
+                    "ar/products/cloud/features/autoscaling/horizontal",
+                    "ar/products/cloud/features/autoscaling/make-before-break",
+                    "ar/products/cloud/features/autoscaling/idling",
+                    "ar/products/cloud/features/autoscaling/scaling-recommendations",
+                    "ar/products/cloud/features/autoscaling/scheduled-scaling"
+                  ],
+                  "root": "ar/products/cloud/features/autoscaling/overview"
+                },
+                "ar/products/cloud/features/infrastructure/parallel-replicas",
+                "ar/products/cloud/features/infrastructure/deployment-options",
+                "ar/products/cloud/features/infrastructure/shared-catalog",
+                "ar/products/cloud/features/infrastructure/shared-merge-tree",
+                "ar/products/cloud/features/infrastructure/warehouses"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "المسؤول",
+              "pages": [
+                {
+                  "group": "واجهة برمجة تطبيقات Cloud",
+                  "pages": [
+                    "ar/products/cloud/features/admin-features/api/api-overview",
+                    "ar/products/cloud/features/admin-features/api/openapi",
+                    "ar/products/cloud/features/admin-features/api/postman"
+                  ],
+                  "root": "ar/products/cloud/features/admin-features/api/index"
+                },
+                "ar/products/cloud/features/admin-features/upgrades"
+              ]
+            },
+            "ar/products/cloud/features/security",
+            {
+              "expanded": false,
+              "group": "المراقبة",
+              "pages": [
+                "ar/products/cloud/features/monitoring/overview",
+                "ar/products/cloud/features/monitoring/cloud-console",
+                "ar/products/cloud/features/monitoring/advanced-dashboard",
+                "ar/products/cloud/features/monitoring/notifications",
+                "ar/products/cloud/features/monitoring/prometheus",
+                "ar/products/cloud/features/monitoring/system-tables",
+                "ar/products/cloud/features/monitoring/integrations"
+              ]
+            },
+            {
+              "group": "النسخ الاحتياطية",
+              "pages": [
+                "ar/products/cloud/features/backups/faq"
+              ],
+              "root": "ar/products/cloud/features/backups/overview"
+            },
+            "ar/products/cloud/features/support",
+            {
+              "expanded": false,
+              "group": "AI/ML",
+              "pages": [
+                "ar/products/cloud/features/ai-ml/ask-ai",
+                "ar/products/cloud/features/ai-ml/aichat/using-ai-chat",
+                "ar/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+                "ar/products/cloud/features/ai-ml/langfuse",
+                "ar/products/cloud/features/ai-ml/remote-mcp",
+                "ar/products/cloud/features/ai-ml/mcp/remote-mcp",
+                {
+                  "group": "ClickHouse Agents",
+                  "pages": [
+                    "ar/products/cloud/features/ai-ml/agents/quickstart",
+                    "ar/products/cloud/features/ai-ml/agents/chat",
+                    {
+                      "group": "منشئ الوكلاء",
+                      "pages": [
+                        "ar/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                        "ar/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                        "ar/products/cloud/features/ai-ml/agents/builder/web-search",
+                        "ar/products/cloud/features/ai-ml/agents/builder/image-generation",
+                        "ar/products/cloud/features/ai-ml/agents/builder/vision",
+                        "ar/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                        "ar/products/cloud/features/ai-ml/agents/builder/skills",
+                        "ar/products/cloud/features/ai-ml/agents/builder/subagents"
+                      ],
+                      "root": "ar/products/cloud/features/ai-ml/agents/builder/index"
+                    },
+                    "ar/products/cloud/features/ai-ml/agents/prompts",
+                    "ar/products/cloud/features/ai-ml/agents/memory",
+                    "ar/products/cloud/features/ai-ml/agents/marketplace",
+                    "ar/products/cloud/features/ai-ml/agents/sharing-and-access"
+                  ],
+                  "root": "ar/products/cloud/features/ai-ml/agents/index"
+                },
+                "ar/products/cloud/features/ai-ml/model-developer-terms"
+              ],
+              "root": "ar/products/cloud/features/ai-ml/index"
+            }
+          ]
+        },
+        {
+          "group": "مرجع Cloud",
+          "pages": [
+            "ar/products/cloud/reference/service-uptime",
+            "ar/products/cloud/reference/account-close",
+            "ar/products/cloud/reference/data-resiliency",
+            "ar/products/cloud/reference/settings",
+            "ar/products/cloud/reference/security/console-roles",
+            "ar/products/cloud/reference/security/audit-logging",
+            "ar/products/cloud/reference/security/compliance-overview",
+            "ar/products/cloud/reference/security/ai-compliance",
+            "ar/products/cloud/reference/personal-data-access"
+          ],
+          "root": "ar/products/cloud/reference/index"
+        },
+        {
+          "group": "الفوترة",
+          "pages": [
+            "ar/products/cloud/reference/billing/billing-overview",
+            {
+              "expanded": false,
+              "group": "السوق",
+              "pages": [
+                "ar/products/cloud/reference/billing/marketplace/overview",
+                "ar/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
+                "ar/products/cloud/reference/billing/marketplace/aws-marketplace-payg",
+                "ar/products/cloud/reference/billing/marketplace/azure-marketplace-committed",
+                "ar/products/cloud/reference/billing/marketplace/azure-marketplace-payg",
+                "ar/products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
+                "ar/products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
+                "ar/products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
+              ],
+              "root": "ar/products/cloud/reference/billing/marketplace/index"
+            },
+            {
+              "expanded": false,
+              "group": "ClickPipes",
+              "pages": [
+                "ar/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+                "ar/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
+              ],
+              "root": "ar/products/cloud/reference/billing/clickpipes/index"
+            },
+            "ar/products/cloud/reference/billing/network-data-transfer",
+            "ar/products/cloud/reference/billing/payment-thresholds",
+            "ar/products/cloud/reference/billing/spend-alerts",
+            "ar/products/cloud/reference/billing/managing-payment-methods",
+            "ar/products/cloud/reference/billing/billing-compliance"
+          ],
+          "root": "ar/products/cloud/reference/billing/index"
+        },
+        {
+          "group": "الأدلة",
+          "pages": [
+            {
+              "group": "أفضل الممارسات",
+              "pages": [
+                "ar/products/cloud/guides/best-practices/multitenancy",
+                "ar/products/cloud/guides/best-practices/usagelimits"
+              ],
+              "root": "ar/products/cloud/guides/best-practices/index"
+            },
+            {
+              "expanded": false,
+              "group": "عام",
+              "pages": [
+                "ar/products/cloud/guides/cloud-compatibility",
+                "ar/products/cloud/guides/production-readiness"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "الترحيل",
+              "pages": [
+                "ar/products/cloud/guides/migration/upload-a-csv-file",
+                "ar/products/cloud/guides/migration/oss-to-cloud-backup-restore"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "وحدة تحكم SQL",
+              "pages": [
+                "ar/products/cloud/guides/sql-console/connection-details",
+                "ar/products/cloud/guides/sql-console/query-endpoints"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "النسخ الاحتياطية",
+              "pages": [
+                "ar/products/cloud/guides/backups/review-and-restore-backups",
+                "ar/products/cloud/guides/backups/configurable-backups",
+                {
+                  "expanded": false,
+                  "group": "استخدم نسختك الاحتياطية الخاصة",
+                  "pages": [
+                    "ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
+                    "ar/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
+                    "ar/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
+                  ]
+                }
+              ],
+              "root": "ar/products/cloud/guides/backups/index"
+            },
+            {
+              "expanded": false,
+              "group": "مصادر البيانات",
+              "pages": [
+                "ar/products/cloud/guides/data-sources/cloud-endpoints-api",
+                "ar/products/cloud/guides/data-sources/accessing-s3-data-securely",
+                "ar/products/cloud/guides/data-sources/secure-azure",
+                "ar/products/cloud/guides/data-sources/secure-gcs",
+                "ar/products/cloud/guides/data-sources/accessing-iceberg-data-securely"
+              ],
+              "root": "ar/products/cloud/guides/data-sources/index"
+            },
+            {
+              "expanded": false,
+              "group": "البنية التحتية",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "أوضاع النشر",
+                  "pages": [
+                    "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+                    "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
+                    "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                  ]
+                }
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "الأمان",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "إدارة الوصول إلى Cloud",
+                  "pages": [
+                    "ar/products/cloud/guides/security/cloud-access-management/manage-my-account",
+                    "ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                    "ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+                    "ar/products/cloud/guides/security/cloud-access-management/manage-database-users",
+                    "ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
+                    "ar/products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "ar/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
+                    "ar/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
+                    "ar/products/cloud/guides/security/saml-sso-removal"
+                  ],
+                  "root": "ar/products/cloud/guides/security/cloud-access-management/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "الاتصال",
+                  "pages": [
+                    "ar/products/cloud/guides/security/connectivity/setting-ip-filters",
+                    {
+                      "expanded": false,
+                      "group": "الشبكات الخاصة",
+                      "pages": [
+                        "ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
+                        "ar/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
+                        "ar/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+                      ],
+                      "root": "ar/products/cloud/guides/security/connectivity/private-networking/index"
+                    }
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "تسجيل عمليات التدقيق",
+                  "pages": [
+                    "ar/products/cloud/guides/security/audit-logging/console-audit-log",
+                    "ar/products/cloud/guides/security/audit-logging/database-audit-log",
+                    "ar/products/cloud/guides/security/audit-logging/byoc-security-playbook"
+                  ],
+                  "root": "ar/products/cloud/guides/security/audit-logging/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "أمن البيانات",
+                  "pages": [
+                    "ar/products/cloud/guides/security/data-masking",
+                    "ar/products/cloud/guides/security/cmek"
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "الامتثال",
+                  "pages": [
+                    "ar/products/cloud/guides/security/compliance/hipaa-onboarding",
+                    "ar/products/cloud/guides/security/compliance/pci-onboarding"
+                  ]
+                }
+              ]
+            }
+          ],
+          "root": "ar/products/cloud/guides/index"
+        },
+        {
+          "group": "مرجع واجهة برمجة التطبيقات",
+          "openapi": {
+            "directory": "ar/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
+          },
+          "pages": {
+            "$ref": "./api-reference/navigation.json"
+          }
+        }
+      ]
+    },
+    {
+      "$ref": "../bring-your-own-cloud/navigation.json"
+    }
+  ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
+  "item": "ClickHouse Cloud"
+}
