@@ -22,6 +22,9 @@ id2	unknown
 10.10.2025	buy
 10.10.2025	sell
 2024-06-01	sell
+>> non_empty_unmaterialized_branch_falls_back_to_omitted
+10.10.2025	buy
+10.10.2025	omitted
 >> non_empty_branch_with_nested_payload_uses_normal_path
 10.10.2025		sell
 10.10.2025	dell	buy

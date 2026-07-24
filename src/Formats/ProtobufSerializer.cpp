@@ -1970,7 +1970,10 @@ namespace
     };
 
 
-    /// Wraps a structure (field, Message, etc) which is a member of OneOf (protobuf union)
+    /// Wraps a protobuf `oneof` member and updates its presence column.
+    /// The nested serializer can be null for a known message branch whose payload
+    /// has no matching target columns. In that case the wrapper records presence,
+    /// and `ProtobufReader` skips the unread field payload before reading the next field.
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
@@ -2031,6 +2034,8 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
+            /// Sibling `oneof` wrappers share this column; another branch may have
+            /// already inserted the value for the current row.
             if (row_num >= presence_column->size())
                 presence_column->insert(0);
 
@@ -3513,13 +3518,11 @@ namespace
                     oneof_name);
             };
 
-            /// The presence Enum must be able to represent the oneof cases that actually have a
-            /// backing column: it must contain the 'omitted' marker 0 and the tag of this oneof
-            /// case. Extra (dead) Enum values are harmless and allowed; oneof cases without a
-            /// column impose no requirement (they are skipped and read as omitted). This keeps the
-            /// Enum decoupled from the full set of `.proto` tags, restoring protobuf forward/backward
-            /// schema evolution, while still rejecting an Enum that cannot hold a tag it will be asked
-            /// to store (which would otherwise write an out-of-range value into the Enum column).
+            /// A materialized branch must have both its tag and the omitted marker 0 in
+            /// the presence Enum. An unmaterialized message branch may omit its tag: it
+            /// preserves the tag when available and otherwise records 0. Extra Enum
+            /// values are allowed to keep the table schema independent of the full
+            /// protobuf `oneof` definition.
             auto check_enum
                 = [&throw_incompatible_oneof](const auto * data_type_enum, int field_tag, std::string_view oneof_name, bool strict_oneof_presence_check) -> int
             {

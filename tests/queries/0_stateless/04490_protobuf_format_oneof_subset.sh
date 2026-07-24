@@ -25,7 +25,7 @@ SELECT '>> additive_forward_compat';
 CREATE TABLE oneof_subset_additive_04490 ( string1 String, string_oneof Enum('no'=0, 'string1'=1) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_subset_additive_04490 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 INSERT INTO oneof_subset_additive_04490 from INFILE '$CURDIR/data_protobuf/String2' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
-SELECT string1, string_oneof FROM oneof_subset_additive_04490 ORDER BY string_oneof FORMAT TSV;
+SELECT string1, string_oneof FROM oneof_subset_additive_04490 ORDER BY toString(string_oneof) FORMAT TSV;
 EOF
 
 # (b) Dead values: the Enum may list values that no oneof case (and no column) produces.
@@ -119,9 +119,8 @@ INSERT INTO oneof_empty_only_zero_04490 from INFILE '$CURDIR/data_protobuf/Recor
 SELECT type FROM oneof_empty_only_zero_04490 FORMAT TSV;
 EOF
 
-# (j) The `Enum8('unknown'=0)` limitation is specific to the presence-only shape above. If the
-#     message also has some other mapped field, serializer construction succeeds and an unmatched
-#     empty-message branch is read as omitted.
+# (j) The same `Enum8('unknown'=0)` shape also works when another mapped field keeps the enclosing
+#     message serializer active. The unmatched empty-message branch is still read as omitted.
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_empty_only_zero_with_id_04490;
@@ -143,10 +142,22 @@ CREATE TABLE oneof_transaction_presence_only_04490 ( date String, payment_detail
 INSERT INTO oneof_transaction_presence_only_04490 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
 INSERT INTO oneof_transaction_presence_only_04490 from INFILE '$CURDIR/data_protobuf/tsell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
 INSERT INTO oneof_transaction_presence_only_04490 from INFILE '$CURDIR/data_protobuf/temptysell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
-SELECT date, payment_details FROM oneof_transaction_presence_only_04490 ORDER BY date, payment_details FORMAT TSV;
+SELECT date, payment_details FROM oneof_transaction_presence_only_04490 ORDER BY date, toString(payment_details) FORMAT TSV;
 EOF
 
-# (l) If a branch has a materializable nested payload column, the synthetic oneof-only fallback
+# (l) Generalized non-empty fallback: if an unmaterialized message branch is absent from the
+#     presence Enum but 0 is available, ClickHouse records it as `omitted`.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_transaction_presence_partial_enum_04490;
+SELECT '>> non_empty_unmaterialized_branch_falls_back_to_omitted';
+CREATE TABLE oneof_transaction_presence_partial_enum_04490 ( date String, payment_details Enum8('omitted'=0, 'buy'=2) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_transaction_presence_partial_enum_04490 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+INSERT INTO oneof_transaction_presence_partial_enum_04490 from INFILE '$CURDIR/data_protobuf/tsell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+SELECT date, payment_details FROM oneof_transaction_presence_partial_enum_04490 ORDER BY date, toString(payment_details) FORMAT TSV;
+EOF
+
+# (m) If a branch has a materializable nested payload column, the synthetic oneof-only fallback
 #     must not steal it. Here `buy.vendor_name` is present, so `tbuy` must fill both
 #     `payment_details='buy'` and `buy_vendor_name`, while `tsell` still has no payload columns
 #     but its known branch tag must still be preserved as `sell`.
@@ -157,5 +168,5 @@ SELECT '>> non_empty_branch_with_nested_payload_uses_normal_path';
 CREATE TABLE oneof_transaction_partial_materialization_04490 ( date String, buy_vendor_name String, payment_details Enum8('omitted'=0, 'buy'=2, 'sell'=3) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_transaction_partial_materialization_04490 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
 INSERT INTO oneof_transaction_partial_materialization_04490 from INFILE '$CURDIR/data_protobuf/tsell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
-SELECT date, buy_vendor_name, payment_details FROM oneof_transaction_partial_materialization_04490 ORDER BY date, buy_vendor_name, payment_details FORMAT TSV;
+SELECT date, buy_vendor_name, payment_details FROM oneof_transaction_partial_materialization_04490 ORDER BY date, buy_vendor_name, toString(payment_details) FORMAT TSV;
 EOF
