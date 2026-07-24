@@ -674,6 +674,7 @@ class GH:
 
         MAX_RACE_RETRIES = 5
         res = None
+        race_detected = False
 
         for attempt in range(MAX_RACE_RETRIES):
             output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
@@ -791,14 +792,19 @@ class GH:
             if not race_detected:
                 break
 
+            delay = random.uniform(0.5, 2.0) * (2**attempt)
             if attempt < MAX_RACE_RETRIES - 1:
-                delay = random.uniform(0.5, 2.0) * (2**attempt)
                 print(
                     f"WARNING: Race condition on comment update "
                     f"(attempt {attempt + 1}/{MAX_RACE_RETRIES}), "
                     f"retrying in {delay:.1f}s"
                 )
                 time.sleep(delay)
+            else:
+                print(
+                    f"WARNING: Race condition on comment update was not resolved "
+                    f"after {MAX_RACE_RETRIES} attempts; giving up"
+                )
 
         return res
 
