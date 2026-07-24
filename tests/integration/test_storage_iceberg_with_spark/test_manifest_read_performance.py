@@ -7,7 +7,7 @@ from helpers.iceberg_utils import (
 )
 
 NUMBER_OF_MANIFESTS = 5
-MAX_SELECT_SECONDS = 60.0
+MAX_SELECT_SECONDS = 0.60
 ROWS_PER_MANIFEST = 100
 
 def elapsed(node, query, **kwargs):
