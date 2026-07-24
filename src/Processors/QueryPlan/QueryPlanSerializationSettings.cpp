@@ -130,7 +130,9 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::mak
 {
 }
 
-QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings) : impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
+QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings)
+    : max_memory_usage_is_step_local(settings.max_memory_usage_is_step_local)
+    , impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
 {
 }
 
@@ -212,10 +214,13 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// trigger): a receiver that does not get it from the stream restores it from its query context
     /// settings (see JoinStepLogical::deserialize), and a pre-version-4 receiver behaves exactly
     /// like a pre-version-4 server - a graceful degradation.
-    /// Even with compression enabled, the setting can only matter when the step's `join_algorithm`
-    /// may pick a hash-family implementation: a step restricted to e.g. `full_sorting_merge` or
-    /// `partial_merge` never consumes it, so its fragment stays readable by older receivers.
-    if ((*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
+    /// The exception is a step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged
+    /// by JoinSettings::updatePlanSettings): the receiver's query context carries only the outer
+    /// query's value, so an omitted step-local value cannot be restored and the stream must carry it.
+    /// Both cases can only matter when the step's `join_algorithm` may pick a hash-family
+    /// implementation: a step restricted to e.g. `full_sorting_merge` or `partial_merge` never
+    /// consumes either setting, so its fragment stays readable by older receivers.
+    if (((*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression] || max_memory_usage_is_step_local)
         && canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]))
         return 4;
     return 1;

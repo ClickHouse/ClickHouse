@@ -1757,6 +1757,14 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     if (!ctx.settings.isChanged("max_memory_usage"))
         join_settings.max_memory_usage = ctx.context->getSettingsRef()[Setting::max_memory_usage];
 
+    /// A step-local value (a subquery-local SETTINGS override, carried only by version-4 streams -
+    /// see QueryPlanSerializationSettings::getMinRequiredVersion) cannot be restored from the query
+    /// context. Recompute the flag against this receiver's query context, so re-serializing the step
+    /// for a further hop keeps carrying the value. An omitted value was just restored from that very
+    /// context above, so the flag correctly stays false for it.
+    join_settings.max_memory_usage_is_step_local
+        = join_settings.max_memory_usage != ctx.context->getSettingsRef()[Setting::max_memory_usage];
+
     return std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),

@@ -72,6 +72,12 @@ struct QueryPlanSerializationSettings
     /// raise the version, because steps mark every serialized setting changed even at its default.
     UInt64 getMinRequiredVersion() const;
 
+    /// Whether the `max_memory_usage` value assigned by a join step differs from the query-wide
+    /// setting (a subquery-local SETTINGS override). Not a serialized setting - the receiver
+    /// recomputes it against its query context - it only feeds getMinRequiredVersion: an omitted
+    /// step-local value cannot be restored on the receiver, so the stream must carry it.
+    bool max_memory_usage_is_step_local = false;
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

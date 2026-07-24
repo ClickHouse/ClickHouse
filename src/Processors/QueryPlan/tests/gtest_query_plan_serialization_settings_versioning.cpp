@@ -69,8 +69,9 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
 /// setting it serializes (marking it changed even at the default value), so a flag-based check would
 /// raise every join fragment - including a `full_sorting_merge` join, or a hash join with compression
 /// off but a non-default `max_memory_usage` - to version 4 and get it rejected by a version-3 worker
-/// during a rolling upgrade. Only an actually enabled `enable_join_in_memory_compression` requires
-/// version 4; omitting the other version-4 setting reproduces pre-version-4 behavior.
+/// during a rolling upgrade. Only an actually enabled `enable_join_in_memory_compression` or a
+/// step-local `max_memory_usage` override requires version 4; omitting a query-wide
+/// `max_memory_usage` reproduces pre-version-4 behavior.
 TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 {
     /// Nothing set, or only pre-version-4 settings set: the baseline version is enough.
@@ -131,6 +132,22 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, algorithm};
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
+
+    /// A step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged by
+    /// JoinSettings::updatePlanSettings) is the other case that requires version 4 even with
+    /// compression off: the receiver's query context carries only the outer query's value, so an
+    /// omitted step-local value could not be restored (see JoinStepLogical::deserialize). The same
+    /// hash-family gate applies: only hash-family joins consume the setting.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
+        settings.max_memory_usage_is_step_local = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::DIRECT};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
 }
 

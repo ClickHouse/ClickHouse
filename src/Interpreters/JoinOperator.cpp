@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -194,6 +195,19 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
 }
 
+JoinSettings JoinSettings::fromContext(const ContextPtr & context)
+{
+    JoinSettings result(context->getSettingsRef());
+    if (context->hasQueryContext())
+    {
+        const auto query_context = context->getQueryContext();
+        if (query_context.get() != context.get())
+            result.max_memory_usage_is_step_local
+                = result.max_memory_usage != query_context->getSettingsRef()[Setting::max_memory_usage];
+    }
+    return result;
+}
+
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
@@ -202,6 +216,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
     max_bytes_in_join = settings[QueryPlanSerializationSetting::max_bytes_in_join];
     max_memory_usage = settings[QueryPlanSerializationSetting::max_memory_usage];
+    /// Not on the wire; JoinStepLogical::deserialize recomputes it against the receiver's query
+    /// context so that re-serializing the step for a further hop keeps carrying a step-local value.
+    max_memory_usage_is_step_local = settings.max_memory_usage_is_step_local;
 
     join_overflow_mode = settings[QueryPlanSerializationSetting::join_overflow_mode];
     join_any_take_last_row = settings[QueryPlanSerializationSetting::join_any_take_last_row];
@@ -259,6 +276,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;
     settings[QueryPlanSerializationSetting::max_bytes_in_join] = max_bytes_in_join;
     settings[QueryPlanSerializationSetting::max_memory_usage] = max_memory_usage;
+    settings.max_memory_usage_is_step_local = max_memory_usage_is_step_local;
 
     settings[QueryPlanSerializationSetting::join_overflow_mode] = join_overflow_mode;
     settings[QueryPlanSerializationSetting::join_any_take_last_row] = join_any_take_last_row;
