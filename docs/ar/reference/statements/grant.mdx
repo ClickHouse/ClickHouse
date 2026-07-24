@@ -191,6 +191,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
 أمثلة على كيفية التعامل مع هذا التسلسل الهرمي:
 
 * يشمل الامتياز `ALTER` جميع امتيازات `ALTER*` الأخرى.
-* يشمل `ALTER CONSTRAINT` امتيازي `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT`.
+* يشمل `ALTER CONSTRAINT` امتيازات `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT` و`ALTER MODIFY CONSTRAINT`.
 
 تُطبَّق الامتيازات على مستويات مختلفة. وتساعد معرفة المستوى على تحديد الصيغة المتاحة للامتياز.
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`. المستوى: `GROUP`. الأسماء البديلة: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `MODIFY CONSTRAINT`
   * `ALTER TTL`. المستوى: `TABLE`. الأسماء البديلة: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. المستوى: `TABLE`. الأسماء البديلة: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. المستوى: `TABLE`. الأسماء البديلة: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 أمثلة على كيفية تطبيق هذا التسلسل الهرمي:
 
 * يشمل امتياز `ALTER` جميع امتيازات `ALTER*` الأخرى.
-* يشمل `ALTER CONSTRAINT` امتيازي `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT`.
+* يشمل `ALTER CONSTRAINT` امتيازات `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT` و`ALTER MODIFY CONSTRAINT`.
 
 **ملاحظات**
 
@@ -619,7 +622,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   ### SYSTEM
 </div>
 
-يسمح للمستخدم بتنفيذ استعلامات [SYSTEM](/ar/reference/statements/system) وفقًا للتدرج الهرمي التالي للامتيازات.
+يسمح للمستخدم بتنفيذ استعلامات [SYSTEM](/ar/reference/statements/system) وفقًا لتسلسل هرمي التالي للامتيازات.
 
 * `SYSTEM`. المستوى: `GROUP`
   * `SYSTEM SHUTDOWN`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM KILL`, `SHUTDOWN`
@@ -629,7 +632,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
     * `SYSTEM DROP UNCOMPRESSED CACHE`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. المستوى: `GROUP`
     * `SYSTEM RELOAD CONFIG`. المستوى: `GLOBAL`. الأسماء البديلة: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. المستوى: `GLOBAL`. الأسماء البديلة: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -644,6 +647,8 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `SYSTEM FLUSH`. المستوى: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. المستوى: `TABLE`. الأسماء البديلة: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. المستوى: `GLOBAL`. الأسماء البديلة: `FLUSH LOGS`
+
+يعيد الأمران `SYSTEM UNLOAD DICTIONARY` و`SYSTEM UNLOAD DICTIONARIES` استخدام امتياز `SYSTEM RELOAD DICTIONARY`، لذلك يمكن للمستخدم الذي لديه `SYSTEM RELOAD DICTIONARY` أيضًا إلغاء تحميل القواميس.
 
 يُمنَح الامتياز `SYSTEM RELOAD EMBEDDED DICTIONARIES` ضمنيًا من خلال الامتياز `SYSTEM RELOAD DICTIONARY ON *.*`.
 
@@ -775,9 +780,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. الأسماء البديلة: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. الأسماء البديلة: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-يسمح للمستخدم بتنفيذ الدوال [dictGet](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet)، و[dictHas](/ar/reference/functions/regular-functions/ext-dict-functions#dictHas)، و[dictGetHierarchy](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)، و[dictIsIn](/ar/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+يسمح للمستخدم بتنفيذ الدوال [dictGet](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet)، و[dictHas](/ar/reference/functions/regular-functions/ext-dict-functions#dictHas)، و[dictGetHierarchy](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)، و[dictGetRoot](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetRoot)، و[dictGetChildren](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetChildren)، و[dictGetDescendants](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants)، و[dictIsIn](/ar/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
 
 مستوى الامتياز: `DICTIONARY`.
 
