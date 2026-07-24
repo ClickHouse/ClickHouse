@@ -33,3 +33,10 @@ DROP TABLE IF EXISTS t_04499_time2;
 CREATE TABLE t_04499_time2 (c1 Time) ENGINE = Memory;
 INSERT INTO t_04499_time2 SETTINGS date_time_overflow_behavior = 'throw' VALUES (CAST(toDecimal64(3600001, 0) AS Time64(0))); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 DROP TABLE t_04499_time2;
+
+-- Nested Time64 values must convert too: the source type hint is propagated into Array/Tuple/Map.
+DROP TABLE IF EXISTS t_04499_time3;
+CREATE TABLE t_04499_time3 (a Array(Time), t Tuple(Time, Int32), m Map(String, Time)) ENGINE = Memory;
+INSERT INTO t_04499_time3 VALUES ([CAST('01:02:03.5' AS Time64(1))], (CAST('01:02:03.5' AS Time64(1)), 42), map('k', CAST('01:02:03.5' AS Time64(1))));
+SELECT a = [CAST('01:02:03' AS Time)], t.1 = CAST('01:02:03' AS Time), m['k'] = CAST('01:02:03' AS Time) FROM t_04499_time3;
+DROP TABLE t_04499_time3;

@@ -572,11 +572,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t src_arr_size = src_arr.size();
 
             const auto & element_type = *(type_array->getNestedType());
+            /// Propagate the element source type so hint-dependent conversions (e.g. Time64 -> Time) work for nested values.
+            const auto * from_array_hint = typeid_cast<const DataTypeArray *>(from_type_hint);
+            const IDataType * element_from_hint = from_array_hint ? from_array_hint->getNestedType().get() : nullptr;
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, element_from_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -603,12 +606,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
+            /// Propagate per-element source types for hint-dependent conversions (e.g. Time64 -> Time).
+            const auto * from_tuple_hint = typeid_cast<const DataTypeTuple *>(from_type_hint);
+            if (from_tuple_hint && from_tuple_hint->getElements().size() != dst_tuple_size)
+                from_tuple_hint = nullptr;
+
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const IDataType * element_from_hint = from_tuple_hint ? from_tuple_hint->getElements()[i].get() : nullptr;
+                res[i] = convertFieldToType(src_tuple[i], element_type, element_from_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -784,6 +793,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            /// Propagate key/value source types for hint-dependent conversions (e.g. Time64 -> Time).
+            const auto * from_map_hint = typeid_cast<const DataTypeMap *>(from_type_hint);
+            const IDataType * key_from_hint = from_map_hint ? from_map_hint->getKeyType().get() : nullptr;
+            const IDataType * value_from_hint = from_map_hint ? from_map_hint->getValueType().get() : nullptr;
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -800,12 +814,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_from_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_from_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
