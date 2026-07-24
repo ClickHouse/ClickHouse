@@ -60,6 +60,7 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_backup_keeper_session_expired_always) \
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
@@ -181,6 +182,7 @@ static struct InitFiu
     ONCE(iceberg_writes_cleanup) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_fail_before_writing_metadata) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
@@ -250,7 +252,13 @@ static struct InitFiu
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
-    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
 
 namespace FailPoints
 {
