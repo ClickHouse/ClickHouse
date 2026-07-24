@@ -233,7 +233,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
 
     LOG_TEST(log, "Unified snapshot plan:\n{}", explainPlan(unified));
 
-    auto builder = unified.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
+    auto builder = unified.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
 
     PipeWithResources result;
     result.pipe = QueryPipelineBuilder::getPipe(std::move(*builder), result.resources);
