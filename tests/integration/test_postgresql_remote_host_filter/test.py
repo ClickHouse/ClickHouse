@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
-from helpers.database_disk import replace_text_in_metadata
+from helpers.database_disk import read_metadata, replace_text_in_metadata
 from helpers.postgres_utility import get_postgres_conn
 from helpers.test_tools import assert_eq_with_retry
 
@@ -28,7 +28,15 @@ def _rewrite_database_metadata(old_value, new_value, database_name):
     # lives at `metadata/<name>.sql` on the database disk, which is a remote object storage in
     # the "db disk" CI configuration, so it must be edited through the `clickhouse disks` CLI
     # (`replace_text_in_metadata`) rather than by touching `/var/lib/clickhouse` directly.
-    replace_text_in_metadata(node, f"metadata/{database_name}.sql", old_value, new_value)
+    # Fail closed on both sides of the rewrite: the replay tests only prove anything if the
+    # stored definition actually changed, and `str.replace` is a silent no-op when the metadata
+    # serialization drifts and `old_value` no longer appears in it.
+    metadata_path = f"metadata/{database_name}.sql"
+    assert old_value in read_metadata(node, metadata_path), (
+        f"persisted metadata of `{database_name}` does not contain '{old_value}'; the replay test would silently stop exercising the startup exemption"
+    )
+    replace_text_in_metadata(node, metadata_path, old_value, new_value)
+    assert new_value in read_metadata(node, metadata_path)
 
 
 @pytest.fixture(scope="module")
@@ -279,6 +287,37 @@ def test_startup_metadata_replay_skips_remote_host_filter(started_cluster):
 
     assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
     node.query("DROP DATABASE pg_db_persisted")
+
+
+def test_startup_metadata_replay_skips_remote_host_filter_materialized(started_cluster):
+    # The same startup-replay contract as above, but for the `MaterializedPostgreSQL` database
+    # engine and the host filter itself: an existing database pointing outside the whitelist
+    # must keep loading after an upgrade. This is the case the multi-address replay test below
+    # cannot cover (its collection only holds whitelisted addresses), so rewrite the persisted
+    # definition from the allowed collection to the blocked-host one and verify the server
+    # comes back up with the database in place, replication failing and retrying in the
+    # background against the unreachable host.
+    node.query("DROP DATABASE IF EXISTS mpg_db_host_persisted SYNC")
+    node.query(
+        """
+        CREATE DATABASE mpg_db_host_persisted
+        ENGINE = MaterializedPostgreSQL(mpg_nc_allowed)
+        SETTINGS materialized_postgresql_tables_list = 'test_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert_eq_with_retry(node, "SELECT count() FROM mpg_db_host_persisted.test_table", "10", retry_count=120)
+
+    node.stop_clickhouse()
+    try:
+        _rewrite_database_metadata("mpg_nc_allowed", "mpg_nc_blocked", "mpg_db_host_persisted")
+    finally:
+        # Bring the server back even if the rewrite failed, so a failure here does not
+        # cascade into every later test in the module.
+        node.start_clickhouse()
+
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'mpg_db_host_persisted'").strip() == "1"
+    node.query("DROP DATABASE mpg_db_host_persisted SYNC")
 
 
 def test_startup_metadata_replay_skips_multi_address_validation(started_cluster):
