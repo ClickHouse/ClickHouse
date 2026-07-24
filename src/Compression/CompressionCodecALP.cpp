@@ -266,12 +266,12 @@ struct ALPFloatUtils
         = {1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15, 1e-16, 1e-17, 1e-18};
     static_assert(EXPONENTS[EXPONENT_COUNT - 1] == 1e18 && FRACTIONS[EXPONENT_COUNT - 1] == 1e-18);
 
-    /// Scaled values are clamped to ±(2^63 − 2048): the largest magnitude whose rounding (num + magic - magic) cannot overflow the cast to Int64.
+    /// The largest magnitude whose rounding (num + magic - magic) cannot overflow the cast to Int64.
     /// The reference implementation uses 2^63 − 1024, which does overflow.
-    static constexpr Float64 UPPER = 9223372036854773760.0;
-    static constexpr Float64 LOWER = -9223372036854773760.0;
+    static constexpr Float64 UPPER = (1ull << 63) - 2048;
+    static constexpr Float64 LOWER = -UPPER;
 
-    static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
+    static constexpr Float64 ROUND_MAGIC = (1ull << 51) + (1ull << 52);
 
     /// d = round(v * 10^e * 10^-f)
     static ALWAYS_INLINE Int64 encodeValue(Float32 value, UInt8 exponent, UInt8 fraction)
