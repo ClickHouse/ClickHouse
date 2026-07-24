@@ -94,6 +94,44 @@ def _has_build_digest_changes(changed_files):
     return False
 
 
+# Files whose content directly drives the LLVM coverage pipeline's own
+# behaviour (test-shard execution, profdata merging, report/diff generation,
+# and this job-filtering logic itself) - as opposed to files that merely add
+# or edit a test case. `_has_build_digest_changes` only tracks whether the
+# *compiled binary* can change, so a PR that only touches one of these would
+# otherwise be auto-skipped as "tests-only" and could never exercise the
+# coverage-specific code it just modified.
+_COVERAGE_PIPELINE_PATHS = (
+    "ci/jobs/llvm_coverage_job.py",
+    "ci/jobs/functional_tests.py",
+    "ci/jobs/integration_test_job.py",
+    "ci/jobs/unit_tests_job.py",
+    "ci/jobs/scripts/merge_llvm_coverage.sh",
+    "ci/jobs/scripts/generate_diff_coverage_report.sh",
+    "ci/jobs/scripts/print_newly_covered_code.py",
+    "ci/jobs/scripts/print_uncovered_code.py",
+    "ci/jobs/scripts/dedup_lcov_instantiations.py",
+    "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+    "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    "ci/defs/job_configs.py",
+    "ci/defs/defs.py",
+    "tests/clickhouse-test",
+    "tests/config/",
+)
+
+
+def _has_coverage_pipeline_changes(changed_files):
+    """True if any changed file could alter how the coverage pipeline itself
+    behaves, independent of whether the compiled binary changed. See
+    `_COVERAGE_PIPELINE_PATHS`.
+    """
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if any(p.startswith(path) for path in _COVERAGE_PIPELINE_PATHS):
+            return True
+    return False
+
+
 _info_cache = None
 _pipeline_note_labels = set()
 
@@ -263,11 +301,14 @@ def should_skip_job(job_name):
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
     #
     # This also fires automatically, without the label, whenever a PR has no build-digest-affecting
-    # changes (i.e. it only touches tests/docs/CI scripts). Coverage numbers only move when the
-    # compiled binary changes, so a tests-only PR would produce coverage identical to master - running
-    # any part of the family just burns CI time on profdata that the (also-skipped) merge job would
-    # never consume. Master itself is unaffected (pr_number gate): its coverage runs must always
-    # publish a complete llvm_coverage.info for later PRs to compare against.
+    # changes (i.e. it only touches tests/docs/CI scripts) AND does not touch the coverage pipeline's
+    # own code (`_has_coverage_pipeline_changes`) - a PR fixing a bug in llvm_coverage_job.py, this
+    # hook, or the coverage-relevant parts of functional_tests.py/integration_test_job.py must still
+    # be able to run the jobs it changed, even though it changes no compiled-binary path. Coverage
+    # numbers only move when the compiled binary changes, so an ordinary tests-only PR would produce
+    # coverage identical to master - running any part of the family just burns CI time on profdata that
+    # the (also-skipped) merge job would never consume. Master itself is unaffected (pr_number gate):
+    # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
     if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
@@ -277,6 +318,7 @@ def should_skip_job(job_name):
         or (
             _info_cache.pr_number > 0
             and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
         )
     ):
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
