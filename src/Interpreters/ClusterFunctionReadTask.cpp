@@ -84,6 +84,19 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 {
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+
+    /// Fail closed: downgrading would omit deletion / selection vectors and return deleted rows.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS
+        && hasNonEmptyExcludedRows(data_lake_metadata))
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `excluded_rows`, which is required for distributed "
+            "reads with deletion vectors / selection vectors (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS);
+    }
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 

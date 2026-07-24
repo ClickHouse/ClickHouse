@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
+#include <Common/Exception.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -7,6 +9,14 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 using namespace DB;
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int UNKNOWN_PROTOCOL;
+}
+}
 
 namespace
 {
@@ -315,4 +325,61 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
     auto object_info = deserialized.getObjectInfo();
     ASSERT_TRUE(object_info->relative_path_with_metadata.read_source_index.has_value());
     ASSERT_EQ(*object_info->relative_path_with_metadata.read_source_index, 42);
+}
+
+TEST(ClusterFunctionReadTaskResponse, RejectsNonEmptyExcludedRowsOnOldProtocol)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.data_lake_metadata.excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+    response.data_lake_metadata.excluded_rows->add(7);
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    try
+    {
+        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PROTOCOL);
+        EXPECT_NE(e.message().find("excluded_rows"), std::string::npos);
+    }
+}
+
+TEST(ClusterFunctionReadTaskResponse, AllowsEmptyExcludedRowsOnOldProtocol)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.data_lake_metadata.excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+    out.finalize();
+    EXPECT_FALSE(serialized.empty());
+}
+
+TEST(ClusterFunctionReadTaskResponse, RoundTripsExcludedRowsOnSupportedProtocol)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.data_lake_metadata.excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+    response.data_lake_metadata.excluded_rows->add(3);
+    response.data_lake_metadata.excluded_rows->add(9);
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS);
+    out.finalize();
+
+    ReadBufferFromString in(serialized);
+    ClusterFunctionReadTaskResponse deserialized;
+    deserialized.deserialize(in);
+
+    ASSERT_TRUE(deserialized.data_lake_metadata.excluded_rows);
+    EXPECT_EQ(deserialized.data_lake_metadata.excluded_rows->size(), 2u);
+    EXPECT_TRUE(deserialized.data_lake_metadata.excluded_rows->rb_contains(3));
+    EXPECT_TRUE(deserialized.data_lake_metadata.excluded_rows->rb_contains(9));
 }
