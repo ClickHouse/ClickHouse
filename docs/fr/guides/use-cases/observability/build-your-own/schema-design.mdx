@@ -643,12 +643,12 @@ En outre, les timestamps, bien qu’ils bénéficient de l’encodage delta en t
   ## Utilisation des dictionnaires
 </div>
 
-Les [dictionnaires](/fr/reference/statements/create/dictionary) sont une [fonctionnalité clé](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) de ClickHouse : ils fournissent une représentation [clé-valeur](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) en mémoire de données provenant de diverses [sources](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimisée pour des requêtes de lookup à très faible latence.
+Les [dictionnaires](/fr/reference/statements/create/dictionary) sont une [fonctionnalité clé](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) de ClickHouse : ils fournissent une représentation [clé-valeur](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) en mémoire de données provenant de diverses [sources](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimisée pour des requêtes de recherche à très faible latence.
 
 <Image img="/images/use-cases/observability/observability-12.webp" alt="Observabilité et dictionnaires" size="md" />
 
-Cela s’avère utile dans divers scénarios, qu’il s’agisse d’enrichir à la volée les données ingérées sans ralentir le processus d’ingestion, ou d’améliorer les performances des requêtes de manière générale, en particulier pour les JOINs.
-Même si les jointures sont rarement nécessaires dans les cas d’usage d’observabilité, les dictionnaires restent utiles pour l’enrichissement, aussi bien à l’insertion qu’au moment de l’exécution des requêtes. Nous donnons ci-dessous des exemples des deux approches.
+Cela s’avère utile dans divers scénarios, qu’il s’agisse d’enrichir à la volée les données ingérées sans ralentir le processus d’ingestion, ou d’améliorer les performances des requêtes de manière générale, en particulier pour les jointures.
+Même si les jointures sont rarement nécessaires dans les cas d’usage d’observabilité, les dictionnaires restent utiles pour l’enrichissement, aussi bien à l’insertion qu’au moment de la requête. Nous donnons ci-dessous des exemples des deux approches.
 
 <Info>
   **Accélérer les jointures**
@@ -1994,6 +1994,6 @@ Si vous interrogez fréquemment une clé spécifique, envisagez de la déplacer 
 
 L’une des principales raisons pour lesquelles ClickHouse est utilisé pour l’Observability est la compression.
 
-Outre la réduction considérable des coûts de stockage, moins de données sur le disque signifie moins d’entrées/sorties et des requêtes et insertions plus rapides. La réduction des E/S compense largement la surcharge de n’importe quel algorithme de compression du point de vue du CPU. Améliorer la compression des données doit donc être la priorité absolue si vous voulez garantir la rapidité des requêtes ClickHouse.
+En plus de réduire considérablement les coûts de stockage, moins de données sur disque signifie moins d’I/O, ainsi que des requêtes et des insertions plus rapides. La réduction des I/O compense largement la charge supplémentaire liée à tout algorithme de compression du point de vue du CPU. Améliorer la compression des données doit donc être la première priorité pour garantir la rapidité des requêtes ClickHouse.
 
-Vous trouverez plus de détails sur la mesure de la compression [ici](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+Vous trouverez [ici](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) plus de détails sur la mesure de la compression.
