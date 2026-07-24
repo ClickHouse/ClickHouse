@@ -5,17 +5,25 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+_main_configs = [
+    "configs/remote_servers.xml",
+    # display_secrets_in_show_and_select must be enabled server-side so that
+    # privileged users (with the displaySecretsInShowAndSelect access right and the
+    # format_display_secrets_in_show_and_select query setting) can see secrets.
+    "configs/display_secrets.xml",
+]
+
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node1", main_configs=_main_configs, with_zookeeper=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node2", main_configs=_main_configs, with_zookeeper=True
 )
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node3", main_configs=_main_configs, with_zookeeper=True
 )
 node4 = cluster.add_instance(
-    "node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node4", main_configs=_main_configs, with_zookeeper=True
 )
 
 nodes = [node1, node2, node3, node4]
@@ -150,7 +158,34 @@ def test_distributed_ddl_rubbish(started_cluster):
         == 4
     )
 
+    # Regression for issue #111383: a malformed (unparseable) DDL entry that embeds
+    # credentials must not expose them to users without displaySecretsInShowAndSelect.
+    node1.query("CREATE USER IF NOT EXISTS ddl_viewer IDENTIFIED WITH no_password")
+    node1.query("GRANT SELECT ON system.distributed_ddl_queue TO ddl_viewer")
+    try:
+        # A user without displaySecretsInShowAndSelect sees the placeholder, not raw text.
+        unprivileged = node1.query(
+            f"SELECT query FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND cluster='' LIMIT 1",
+            user="ddl_viewer",
+        )
+        assert unprivileged.strip() == "<DDL entry could not be parsed>", (
+            f"Unprivileged user should see placeholder for malformed DDL, got: {unprivileged!r}"
+        )
+
+        # An admin with format_display_secrets_in_show_and_select=1 sees the raw text.
+        privileged = node1.query(
+            f"SELECT query FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND cluster='' LIMIT 1",
+            settings={"format_display_secrets_in_show_and_select": "1"},
+        )
+        assert "TUBLE" in privileged, (
+            f"Privileged user should see raw query for malformed DDL, got: {privileged!r}"
+        )
+    finally:
+        node1.query("DROP USER IF EXISTS ddl_viewer")
+
     node1.query(
         f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster DROP COLUMN somenewcolumn",
         settings={"replication_alter_partitions_sync": "2"},
     )
+
+
