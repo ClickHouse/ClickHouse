@@ -23,7 +23,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 
 <br />
 
-يرشدك هذا الدليل خلال خطوات ربط Hashboard بمثيل ClickHouse لديك. تتوفر هذه المعلومات أيضًا في [وثائق تكامل ClickHouse](https://docs.hashboard.com/docs/database-connections/clickhouse) الخاصة بـ Hashboard.
+يرشدك هذا الدليل خلال خطوات ربط Hashboard بمثيل ClickHouse لديك. تتوفر هذه المعلومات أيضًا في [وثائق تكامل ClickHouse](https://hashboard.com/docs/database-connections/clickhouse) الخاصة بـ Hashboard.
 
 <div id="pre-requisites">
   ## المتطلبات الأساسية
@@ -36,28 +36,26 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
   ## خطوات ربط Hashboard بـ ClickHouse
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. جهّز بيانات الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="أضف اتصالًا جديدًا بقاعدة بيانات في Hashboard" id="2-add-a-new-database-connection-in-hashboard">
+    1. انتقل إلى [مشروع Hashboard](https://hashboard.com/app) الخاص بك.
+    2. افتح صفحة الإعدادات بالنقر على أيقونة الترس في شريط التنقل الجانبي.
+    3. انقر على `+ New Database Connection`.
+    4. في النافذة المنبثقة، اختر &quot;ClickHouse.&quot;
+    5. املأ حقول **Connection Name** و**Host** و**Port** و**Username** و**Password** و**Database** بالمعلومات التي جمعتها سابقًا.
+    6. انقر على &quot;Test&quot; للتحقق من إعداد الاتصال بنجاح.
+    7. انقر على &quot;Add&quot;
 
-<div id="2-add-a-new-database-connection-in-hashboard">
-  ### 2. أضف اتصالًا جديدًا بقاعدة بيانات في Hashboard
-</div>
-
-1. انتقل إلى [مشروع Hashboard](https://hashboard.com/app) الخاص بك.
-2. افتح صفحة الإعدادات بالنقر على أيقونة الترس في شريط التنقل الجانبي.
-3. انقر على `+ New Database Connection`.
-4. في النافذة المنبثقة، اختر &quot;ClickHouse&quot;.
-5. املأ حقول **Connection Name** و**Host** و**Port** و**Username** و**Password** و**Database** بالمعلومات التي جمعتها سابقًا.
-6. انقر على &quot;Test&quot; للتحقق من إعداد الاتصال بنجاح.
-7. انقر على &quot;Add&quot;
-
-أصبحت قاعدة بيانات ClickHouse الخاصة بك الآن متصلة بـ Hashboard، ويمكنك المتابعة بإنشاء [نماذج البيانات](https://docs.hashboard.com/docs/data-modeling/add-data-model) و[الاستكشافات](https://docs.hashboard.com/docs/visualizing-data/explorations) و[المقاييس](https://docs.hashboard.com/docs/metrics) و[لوحات المعلومات](https://docs.hashboard.com/docs/dashboards). راجع وثائق Hashboard ذات الصلة لمزيد من التفاصيل حول هذه الميزات.
+    أصبحت قاعدة بيانات ClickHouse الخاصة بك الآن متصلة بـ Hashboard، ويمكنك المتابعة بإنشاء [نماذج البيانات](https://hashboard.com/docs/data-modeling/add-data-model) و[الاستكشافات](https://hashboard.com/docs/visualizing-data/explorations) و[المقاييس](https://hashboard.com/docs/metrics) و[لوحات المعلومات](https://hashboard.com/docs/dashboards). راجع وثائق Hashboard ذات الصلة لمزيد من التفاصيل حول هذه الميزات.
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## مزيد من المعلومات
 </div>
 
-لمزيد من الميزات المتقدمة ومعلومات استكشاف الأخطاء وإصلاحها، يُرجى زيارة [وثائق Hashboard](https://docs.hashboard.com/).
+لمزيد من الميزات المتقدمة ومعلومات استكشاف الأخطاء وإصلاحها، يُرجى زيارة [وثائق Hashboard](https://hashboard.com/docs).

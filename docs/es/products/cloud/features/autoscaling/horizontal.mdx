@@ -17,7 +17,7 @@ import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge
 
 <ScalePlanFeatureBadge feature="Escalado horizontal manual" />
 
-Puede usar las [API públicas](/api-reference/organization/get-list-of-available-organizations#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch) de ClickHouse Cloud para escalar su servicio actualizando la configuración de escalado del servicio o ajustando el número de réplicas desde la consola de ClickHouse Cloud.
+Puede usar las [API públicas](/es/products/cloud/api-reference/service/instance-scaling-update) de ClickHouse Cloud para escalar su servicio actualizando la configuración de escalado del servicio o ajustando el número de réplicas desde la consola de ClickHouse Cloud.
 
 Los niveles **Scale** y **Enterprise** también admiten servicios con una sola réplica. Una vez ampliados horizontalmente, los servicios pueden volver a reducirse hasta un mínimo de una sola réplica. Tenga en cuenta que los servicios con una sola réplica tienen una disponibilidad reducida y no se recomiendan para uso en producción.
 
@@ -51,6 +51,6 @@ Para escalar un servicio horizontalmente desde la UI, puedes ajustar el número 
 
 *Configuración de escalado del servicio desde la consola de ClickHouse Cloud*
 
-Una vez que el servicio se haya escalado, el dashboard de métricas en la consola de ClickHouse Cloud debería mostrar la asignación correcta del servicio. La captura de pantalla siguiente muestra el cluster escalado hasta una memoria total de `96 GiB`, es decir, `6` réplicas, cada una con una asignación de memoria de `16 GiB`.
+Una vez que el servicio se haya escalado, el dashboard de métricas en la consola de ClickHouse Cloud debería mostrar la asignación correcta del servicio. La captura de pantalla siguiente muestra el clúster escalado hasta una memoria total de `96 GiB`, es decir, `6` réplicas, cada una con una asignación de memoria de `16 GiB`.
 
 <Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="Asignación de memoria del escalado" border />

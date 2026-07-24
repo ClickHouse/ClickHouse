@@ -2454,7 +2454,7 @@ Calculates the approximate distance between two points (the values of the vector
     )";
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read.", {"UInt"}}};
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read.", {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
@@ -2497,7 +2497,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
-            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only "
             "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
@@ -2543,7 +2543,7 @@ Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_produ
             {"UInt"}},
            {"used_dims",
             "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
-            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only "
             "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_dot_product_transposed
@@ -2598,8 +2598,8 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
     const auto quantized_used_dims_argument = FunctionDocumentation::Argument{
         "used_dims",
         "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
-        "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
-        "the stride groups covering these dimensions are read.",
+        "multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any "
+        "extra trailing elements are ignored). Only the stride groups covering these dimensions are read.",
         {"UInt"}};
     const FunctionDocumentation::IntroducedIn introduced_in_transposed_quantized = {26, 7};
 
