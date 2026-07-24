@@ -762,8 +762,12 @@ private:
         const auto nested_type = removeLowCardinality(type);
         if (nested_type->isNullable())
             return {};
-        if (isNativeNumber(nested_type))
-            return {.kind = Kind::NativeNumber};
+        /// Integers of all widths (including Int128/256), floats of all widths (BFloat16
+        /// included) and Enum values share one accurate numeric order: cross-type comparisons
+        /// never round the integer side through a float, and Enum compares numerically by its
+        /// underlying 8/16-bit value against any numeric counterpart.
+        if (isInteger(nested_type) || isFloat(nested_type) || isEnum(nested_type))
+            return {.kind = Kind::Number};
         if (isString(nested_type))
             return {.kind = Kind::String};
         if (isDateOrDate32(nested_type))
@@ -782,13 +786,18 @@ private:
         /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
         if (isDecimal(nested_type))
             return {.kind = Kind::Decimal, .scale = getDecimalScale(*nested_type)};
+        /// Cross-width `FixedString` comparisons zero-pad the shorter side, embedding all widths
+        /// into one shared byte order. `String` stays a separate domain: `String` comparisons
+        /// distinguish values that differ only in trailing zero bytes, the padded order does not.
+        if (isFixedString(nested_type))
+            return {.kind = Kind::FixedString};
         /// Every remaining comparable type gets a domain keyed by the type itself. The domain
         /// matches only between equal types, so all nodes of a chain share one type and its
-        /// single canonical order (UUID, a concrete Enum, a concrete FixedString width, ...),
-        /// while order-mixing edges (Enum vs String, FixedString of different widths) never
-        /// join a chain. Types whose comparison is three-valued (e.g. a Tuple with Nullable
-        /// elements) cannot reach the chain optimization at all: their Nullable result makes
-        /// the whole `and` node Nullable, and the pass skips Nullable chains.
+        /// single canonical order (UUID, IPv4, a concrete named Tuple, ...), while order-mixing
+        /// edges (Enum vs String, IPv4 vs IPv6) never join a chain. Types whose comparison is
+        /// three-valued (e.g. a Tuple with Nullable elements) cannot reach the chain
+        /// optimization at all: their Nullable result makes the whole `and` node Nullable, and
+        /// the pass skips Nullable chains.
         return {.kind = Kind::ExactType, .exact_type = nested_type};
     }
 

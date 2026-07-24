@@ -8,21 +8,28 @@ namespace DB
 
 /** Identifies a shared ordering used by comparison functions
   * Equal valid domains guarantee that comparisons between any member types use the same
-  * counterpart-independent ordering and do not require a partial or throwing conversion
+  * counterpart-independent ordering and do not require a partial or throwing conversion.
+  * The model is deliberately one domain per type: types that participate in several
+  * orderings (e.g. IPv4, which compares both numerically and against IPv6) would need
+  * domains-as-sets with intersection semantics and are conservatively left unchained.
   */
 struct ComparisonOrderDomain
 {
     enum class Kind : UInt8
     {
         None,
-        NativeNumber,
+        Number,
         String,
         Date,
         TimePoint,
         TimeOfDay,
         Decimal,
-        /// The type accepts only its own exact type as a comparison counterpart, so its
-        /// single per-type order is trivially counterpart-independent
+        FixedString,
+        /// Keyed by the type itself: the domain matches only between types that are equal
+        /// after normalization (`IDataType::equals`), so every node of a chain shares one
+        /// type and its single canonical order. The type's comparisons may accept broader
+        /// counterparts (e.g. a `Tuple` with different element names); those edges
+        /// conservatively never join a chain.
         ExactType,
     };
 

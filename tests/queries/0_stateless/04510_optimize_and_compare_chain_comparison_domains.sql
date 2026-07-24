@@ -14,6 +14,14 @@ FROM values(
     ('36028797018963966.9', 36028797018963967))
 WHERE a < b AND b < toFloat64(36028797018963968);
 
+-- Equality edges bridge chains the same way inequalities do. The bridge `a = b` holds exactly,
+-- but the derived `Decimal` vs `Float64` endpoint would round `a` up and reject the row.
+SELECT 'equality bridge', count()
+FROM values(
+    'a Decimal64(1), b Int64',
+    ('36028797018963967.0', 36028797018963967))
+WHERE a = b AND b < toFloat64(36028797018963968);
+
 -- Checking only the generated endpoint types is insufficient. The endpoints here are native
 -- numbers, but the unsafe `Decimal` intermediate still makes the inferred comparison false.
 SELECT 'unsafe intermediate', count()
@@ -100,6 +108,50 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a String, b String', ('a', 'b'))
            WHERE a < b AND b < 'z'
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- Integers of all widths, floats (BFloat16 included) and Enum values share one accurate
+-- numeric order. Keep deriving conditions across the whole numeric domain.
+SELECT
+    'wide numeric domains remain optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Int128, b Int64', (1, 2))
+           WHERE a < b AND b < toFloat64(3)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Int128, b Int64', (1, 2))
+           WHERE a < b AND b < toFloat64(3)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a BFloat16, b Float64', (1, 2))
+           WHERE a < b AND b < toFloat64(3)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a BFloat16, b Float64', (1, 2))
+           WHERE a < b AND b < toFloat64(3)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Enum8(\'x\' = 1, \'y\' = 2), b Int32', ('x', 2))
+           WHERE a < b AND b < 3
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Enum8(\'x\' = 1, \'y\' = 2), b Int32', ('x', 2))
+           WHERE a < b AND b < 3
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
 
@@ -227,9 +279,45 @@ SELECT
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
 
--- Types that accept only their own exact type as a comparison counterpart keep a single
--- order per type. Keep deriving conditions for chains over one such type: UUID, one
--- concrete Enum, one FixedString width.
+-- Cross-width `FixedString` comparisons zero-pad the shorter side into one shared byte order.
+-- Keep deriving conditions across `FixedString` widths.
+SELECT
+    'fixed string widths remain optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('f2 FixedString(2), f4 FixedString(4)', ('aa', 'bbbb'))
+           WHERE f2 < f4 AND f4 < toFixedString('zzzz', 4)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('f2 FixedString(2), f4 FixedString(4)', ('aa', 'bbbb'))
+           WHERE f2 < f4 AND f4 < toFixedString('zzzz', 4)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- `LowCardinality` is normalized away before the domain is determined; chains over
+-- `LowCardinality` columns keep deriving conditions.
+SELECT
+    'low cardinality remains optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a LowCardinality(String), b LowCardinality(String)', ('a', 'b'))
+           WHERE a < b AND b < 'z'
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a LowCardinality(String), b LowCardinality(String)', ('a', 'b'))
+           WHERE a < b AND b < 'z'
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- Chains over one concrete type keep a single order and keep deriving conditions:
+-- UUID via the exact-type domain, one concrete Enum and one FixedString width via
+-- their shared numeric and byte-order domains.
 SELECT
     'exact type domains remain optimized',
     (SELECT count()
@@ -272,22 +360,22 @@ SELECT
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
 
--- The exact-type domain must not connect different types: FixedString of different widths
--- trims padding when converting while equal widths compare the padded bytes, and Enum
--- converts against a String column by name. No conditions may be derived across those.
+-- Cross-domain edges must not connect a chain: Enum compares to a String column by name,
+-- and named Tuple types that differ only in element names conservatively stay unchained
+-- (their comparisons work, but the exact-type domain matches only equal types).
 SELECT
     'exact type requires equal types',
     (SELECT count()
      FROM (EXPLAIN QUERY TREE
-           SELECT * FROM values('f3 FixedString(3), f5 FixedString(5)', ('aaa', 'bbbbb'))
-           WHERE f3 < f5 AND f5 < toFixedString('zzzzz', 5)
+           SELECT * FROM values('a Tuple(x Int32, y Int32), b Tuple(u Int32, v Int32)', ((1, 1), (2, 2)))
+           WHERE a < b AND b < CAST((3, 3), 'Tuple(Int32, Int32)')
            SETTINGS optimize_and_compare_chain = 1)
      WHERE explain LIKE '%function_name: less,%')
         =
     (SELECT count()
      FROM (EXPLAIN QUERY TREE
-           SELECT * FROM values('f3 FixedString(3), f5 FixedString(5)', ('aaa', 'bbbbb'))
-           WHERE f3 < f5 AND f5 < toFixedString('zzzzz', 5)
+           SELECT * FROM values('a Tuple(x Int32, y Int32), b Tuple(u Int32, v Int32)', ((1, 1), (2, 2)))
+           WHERE a < b AND b < CAST((3, 3), 'Tuple(Int32, Int32)')
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%'),
     (SELECT count()
