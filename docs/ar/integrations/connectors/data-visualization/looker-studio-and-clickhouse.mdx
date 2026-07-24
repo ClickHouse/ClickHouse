@@ -36,22 +36,22 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
   ## ربط Looker Studio بـ ClickHouse
 </div>
 
-أولاً، سجّل الدخول إلى https://lookerstudio.google.com باستخدام حساب Google، ثم أنشئ مصدر بيانات جديدًا:
+أولاً، سجّل الدخول إلى https://lookerstudio.google.com باستخدام حساب Google الخاص بك، ثم أنشئ مصدر بيانات جديدًا:
 
 <Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="إنشاء مصدر بيانات جديد في واجهة Looker Studio" border />
 
 <br />
 
-ابحث عن موصل MySQL الرسمي الذي توفّره Google (ويحمل ببساطة اسم **MySQL**):
+ابحث عن موصل MySQL الرسمي الذي توفّره Google (ويظهر باسم **MySQL** فقط):
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="البحث عن موصل MySQL في قائمة موصلات Looker Studio" border />
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="البحث عن موصل MySQL في قائمة الموصلات في Looker Studio" border />
 
 <br />
 
 حدّد تفاصيل الاتصال الخاصة بك. يُرجى ملاحظة أن منفذ واجهة MySQL هو 9004 افتراضيًا،
-وقد يختلف ذلك بحسب إعدادات الخادم لديك.
+وقد يختلف ذلك حسب إعدادات الخادم لديك.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="تحديد تفاصيل اتصال ClickHouse عبر MySQL في Looker Studio" border />
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="تحديد تفاصيل اتصال MySQL الخاصة بـ ClickHouse في Looker Studio" border />
 
 <br />
 
@@ -61,19 +61,19 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 <br />
 
-وبدلاً من ذلك، يمكنك تحديد استعلام مخصّص لجلب بياناتك:
+أو يمكنك تحديد استعلام SQL مخصص لجلب بياناتك:
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="استخدام استعلام SQL مخصّص لجلب البيانات من ClickHouse في Looker Studio" border />
-
-<br />
-
-أخيرًا، ينبغي أن تتمكن من رؤية بنية الجدول المكتشفة تلقائيًا وضبط أنواع البيانات إذا لزم الأمر.
-
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="عرض بنية جدول ClickHouse المكتشفة تلقائيًا في Looker Studio" border />
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="استخدام استعلام SQL مخصص لجلب البيانات من ClickHouse في Looker Studio" border />
 
 <br />
 
-يمكنك الآن المتابعة إلى استكشاف بياناتك أو إنشاء تقرير جديد!
+أخيرًا، ينبغي أن تتمكن من رؤية بنية الجدول التي جرى استكشافها وضبط أنواع البيانات إذا لزم الأمر.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="عرض بنية جدول ClickHouse التي جرى استكشافها في Looker Studio" border />
+
+<br />
+
+يمكنك الآن المتابعة لاستكشاف بياناتك أو إنشاء تقرير جديد!
 
 <div id="using-looker-studio-with-clickhouse-cloud">
   ## استخدام Looker Studio مع ClickHouse Cloud

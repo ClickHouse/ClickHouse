@@ -4,6 +4,8 @@
 #include <Backups/BackupSettings.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/HashingWriteBuffer.h>
@@ -549,6 +551,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the
+    /// builder-owned storage path.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
@@ -612,6 +618,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
@@ -652,6 +661,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
         throw;
     }
 
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// cloned part for its whole lifetime; route them into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
     return create(single_disk_volume, to, dir_path, /*initialize=*/ true);
 }
@@ -1006,7 +1018,13 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
     if (dst_size > 0 && to_root.back() == '/')
         --dst_size;
 
-    root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
+    /// `root_path` is part-lifetime metadata of this (arena-owned) storage, so build its new value in
+    /// the dedicated arena instead of the caller's default arena. Parent-part commit calls this for
+    /// every projection storage, so otherwise the projection path escapes back to the default arena.
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
+    }
 
     /// See rename: keep a successfully-loaded (path-independent) reader, but clear a stale cached
     /// miss so the next access re-probes the new path.

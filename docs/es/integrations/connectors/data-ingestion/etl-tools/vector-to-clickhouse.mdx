@@ -22,7 +22,7 @@ Poder analizar los logs en tiempo real es fundamental para las aplicaciones en p
 ClickHouse destaca en el almacenamiento y análisis de logs gracias a su excelente compresión (hasta [170x](https://clickhouse.com/blog/log-compression-170x) para logs)
 y a su capacidad para agregar rápidamente grandes volúmenes de datos.
 
-Esta guía te muestra cómo usar el popular pipeline de datos [Vector](https://vector.dev/docs/about/what-is-vector/) para seguir un archivo de logs de Nginx y enviarlo a ClickHouse.
+Esta guía te muestra cómo usar el popular pipeline de datos [Vector](https://vector.dev/docs/introduction/) para seguir un archivo de logs de Nginx y enviarlo a ClickHouse.
 Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs.
 
 **Requisitos previos:**
@@ -31,9 +31,7 @@ Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs
 * Tienes Vector instalado
 
 <Steps>
-  <Step>
-    ## Crear una base de datos y una tabla
-
+  <Step title="Crear una base de datos y una tabla" id="1-create-a-database-and-table">
     Defina una tabla para almacenar los eventos de log:
 
     1. Comience con una nueva base de datos llamada `nginxdb`:
@@ -57,9 +55,7 @@ Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs
     </Note>
   </Step>
 
-  <Step>
-    ## Configurar Nginx
-
+  <Step title="Configurar Nginx" id="2--configure-nginx">
     En este paso, se muestra cómo configurar el registro de Nginx.
 
     1. La siguiente propiedad `access_log` envía los logs a `/var/log/nginx/my_access.log` en formato **combined**.
@@ -88,9 +84,7 @@ Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs
     ```
   </Step>
 
-  <Step>
-    ## Configurar Vector
-
+  <Step title="Configurar Vector" id="3-configure-vector">
     Vector recopila, transforma y enruta logs, métricas y trazas (denominados **fuentes**) a muchos proveedores distintos (denominados **destinos**), incluida la compatibilidad nativa con ClickHouse.
     Las fuentes y los destinos se definen en un archivo de configuración llamado **vector.toml**.
 
@@ -122,9 +116,7 @@ Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Ver los logs de ClickHouse en formato tabular" />
   </Step>
 
-  <Step>
-    ## Procesar los logs
-
+  <Step title="Procesar los logs" id="4-parse-the-logs">
     Tener los logs en ClickHouse es muy útil, pero almacenar cada evento como una cadena de texto única no permite realizar un análisis de datos exhaustivo.
     A continuación, veremos cómo parsear los eventos de log mediante una [vista materializada](/es/concepts/features/materialized-views/incremental-materialized-view).
 
