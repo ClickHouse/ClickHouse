@@ -405,28 +405,14 @@ bool isVanishedEntryError(const std::error_code & error)
 {
     return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
 }
-}
 
-ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
+/// Best-effort metadata stat for a path that has ALREADY been validated against
+/// the key prefix. Uses the non-throwing `error_code` overloads and tolerates the
+/// concurrent-disappearance class (see `isVanishedEntryError`), returning an empty
+/// optional for a vanished entry. Every other error is propagated.
+std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
 {
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     ObjectMetadata object_metadata;
-    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
-
-    auto time = fs::last_write_time(resolved_path);
-
-    object_metadata.size_bytes = fs::file_size(resolved_path);
-    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
-    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
-        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
-    return object_metadata;
-}
-
-std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
-{
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
-    ObjectMetadata object_metadata;
-    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
     std::error_code error;
     auto time = fs::last_write_time(resolved_path, error);
@@ -451,6 +437,29 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
         std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
     return object_metadata;
+}
+}
+
+ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
+{
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    ObjectMetadata object_metadata;
+    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
+
+    auto time = fs::last_write_time(resolved_path);
+
+    object_metadata.size_bytes = fs::file_size(resolved_path);
+    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
+        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
+    return object_metadata;
+}
+
+std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+{
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
+    return tryStatResolvedPath(resolved_path);
 }
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
@@ -539,7 +548,14 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             }
             else
             {
-                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
+                /// `entry_path` is produced by descending the already-validated
+                /// `resolved_path` and the walk never follows symlinks, so it is
+                /// guaranteed to be under the key prefix. Stat it directly instead
+                /// of routing through `tryGetObjectMetadata`, whose per-entry
+                /// re-resolution (`fs::relative` / `fs::weakly_canonical`) uses
+                /// throwing filesystem primitives that abort the whole listing
+                /// when a churned entry vanishes mid-resolution.
+                if (auto metadata = tryStatResolvedPath(entry_path))
                     children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
             }
 
