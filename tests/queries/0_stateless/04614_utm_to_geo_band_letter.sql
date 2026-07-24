@@ -63,3 +63,11 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, NULL);
 
 SELECT '-- non-NULL rows of a Nullable band column are still validated';
 SELECT UTMToGeo(500000., 0., 31, band) FROM values('band Nullable(String)', ('N'), ('?')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Variant and Dynamic band arguments still dispatch through the default adaptors';
+SELECT UTMToGeo(448251.6, 5411935.13, 31, CAST('U', 'Variant(UInt8, String)')) = UTMToGeo(448251.6, 5411935.13, 31, 1);
+SELECT UTMToGeo(334368.634, 6250948.345, 56, CAST(0, 'Variant(UInt8, String)')) = UTMToGeo(334368.634, 6250948.345, 56, 'H');
+SELECT UTMToGeo(448251.6, 5411935.13, 31, CAST('U', 'Dynamic')) = UTMToGeo(448251.6, 5411935.13, 31, 1);
+SELECT UTMToGeo(448251.6, 5411935.13, 31, CAST(1, 'Dynamic')) = UTMToGeo(448251.6, 5411935.13, 31, 'U');
+SELECT isNull(g), g = UTMToGeo(448251.6, 5411935.13, 31, 1)
+FROM (SELECT UTMToGeo(448251.6, 5411935.13, 31, band) AS g FROM values('band Dynamic', (NULL), ('U')));

@@ -70,6 +70,13 @@ public:
     /// null map is re-applied. Handle Nullable arguments explicitly instead: NULL rows are skipped, not validated.
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// The Dynamic and Variant adaptors default to useDefaultImplementationForNulls, but disabling them here is
+    /// unnecessary: the adaptors dispatch on the concrete types held inside the column and handle NULL rows
+    /// themselves, and this function accepts Nullable arguments anyway. Keep them enabled so that Dynamic and
+    /// Variant arguments still dispatch to the matching alternative.
+    bool useDefaultImplementationForDynamic() const override { return true; }
+    bool useDefaultImplementationForVariant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

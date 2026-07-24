@@ -35,3 +35,10 @@ Nullable(Tuple(longitude Float64, latitude Float64))
 0
 \N
 -- non-NULL rows of a Nullable band column are still validated
+-- Variant and Dynamic band arguments still dispatch through the default adaptors
+1
+1
+1
+1
+1	\N
+0	1
