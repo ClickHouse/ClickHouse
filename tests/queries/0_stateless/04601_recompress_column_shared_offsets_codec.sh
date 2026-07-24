@@ -4,7 +4,8 @@
 # object storage (where the data lives remotely) are excluded. On a case-insensitive filesystem
 # (macOS) `replaceFileNameToHashIfNeeded` hashes every stream file name regardless of
 # `replace_long_file_name_to_hash`, so the `n.size0.bin` file cannot be located by name -- excluded
-# via no-darwin.
+# via no-darwin. Full (non-packed) part storage is pinned in the table settings for the same reason:
+# a packed part has no per-stream `.bin` files to inspect.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -40,7 +41,9 @@ do
         )
         ENGINE = MergeTree ORDER BY id
         SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-                 replace_long_file_name_to_hash = 0"
+                 replace_long_file_name_to_hash = 0,
+                 min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+                 min_level_for_full_part_storage = 0"
 
     ${CLICKHOUSE_CLIENT} --query "
         INSERT INTO t_recompress_shared_codec
