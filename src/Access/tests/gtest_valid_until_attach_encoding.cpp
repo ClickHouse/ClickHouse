@@ -280,3 +280,47 @@ TEST(ValidForInterval, PreEpochClockResolvesFailClosed)
     /// Sanity check for the ordinary post-epoch clock.
     EXPECT_EQ(getValidUntilFromAST(one_day, context, /* is_interval= */ true, /* now= */ 1), 86401);
 }
+
+TEST(ValidForInterval, SubSecondIntervalsAreRejected)
+{
+    /// The deadline is sampled, stored and enforced with second precision, so an accepted sub-second
+    /// interval could not take effect as requested: `VALID FOR INTERVAL 1 MILLISECOND` would keep the
+    /// credential usable until the next whole second. Sub-second interval kinds must be rejected
+    /// instead of silently truncated.
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+
+    for (const char * to_interval : {"toIntervalNanosecond", "toIntervalMicrosecond", "toIntervalMillisecond"})
+    {
+        const auto interval = makeASTFunction(to_interval, make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
+        try
+        {
+            getValidUntilFromAST(interval, context, /* is_interval= */ true, /* now= */ 1);
+            FAIL() << "expected the sub-second interval to be rejected: " << to_interval;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("does not support sub-second intervals")) << e.message();
+        }
+    }
+
+    /// A sub-second term inside a sum of intervals (which folds to a tuple of interval types) is
+    /// rejected too, even when the sum also has whole-second terms.
+    const auto mixed = makeASTFunction(
+        "plus",
+        makeASTFunction("toIntervalDay", make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1)))),
+        makeASTFunction("toIntervalMillisecond", make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1)))));
+    try
+    {
+        getValidUntilFromAST(mixed, context, /* is_interval= */ true, /* now= */ 1);
+        FAIL() << "expected the mixed sub-second interval sum to be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_TRUE(e.message().contains("does not support sub-second intervals")) << e.message();
+    }
+
+    /// One second is the smallest accepted interval.
+    const auto one_second = makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
+    EXPECT_EQ(getValidUntilFromAST(one_second, context, /* is_interval= */ true, /* now= */ 1), 2);
+}

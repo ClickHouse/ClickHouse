@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
@@ -70,19 +71,41 @@ namespace DB
             /// folds e.g. `INTERVAL 1 DAY + INTERVAL 2 HOUR` into `Tuple(IntervalDay, IntervalHour)`
             /// (a sum of intervals of the same kind stays a plain `Interval`).
             const auto interval_type = evaluateConstantExpression(ast, context).second;
-            bool is_interval_type = WhichDataType(*interval_type).isInterval();
-            if (!is_interval_type && WhichDataType(*interval_type).isTuple())
+            DataTypes interval_types;
+            if (WhichDataType(*interval_type).isInterval())
+            {
+                interval_types.push_back(interval_type);
+            }
+            else if (WhichDataType(*interval_type).isTuple())
             {
                 const auto & elements = assert_cast<const DataTypeTuple &>(*interval_type).getElements();
-                is_interval_type = !elements.empty()
-                    && std::all_of(elements.begin(), elements.end(), [](const auto & element) { return WhichDataType(*element).isInterval(); });
+                if (!elements.empty()
+                    && std::all_of(elements.begin(), elements.end(), [](const auto & element) { return WhichDataType(*element).isInterval(); }))
+                    interval_types = elements;
             }
-            if (!is_interval_type)
+            if (interval_types.empty())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "VALID FOR expects an interval expression (for example, INTERVAL 1 DAY), but got an expression of type {}. "
                     "Use VALID UNTIL to specify an absolute point in time",
                     interval_type->getName());
+
+            /// The deadline is sampled (`getCurrentTime` returns whole seconds), stored (`time_t` in
+            /// `AuthenticationData`) and enforced (the authentication check compares whole seconds)
+            /// with second precision, so a sub-second interval cannot take effect as requested:
+            /// `VALID FOR INTERVAL 1 MILLISECOND` would keep the credential usable until the next
+            /// whole second. Reject sub-second interval kinds instead of silently truncating them.
+            for (const auto & element : interval_types)
+            {
+                const auto kind = assert_cast<const DataTypeInterval &>(*element).getKind().kind;
+                if (kind == IntervalKind::Kind::Nanosecond || kind == IntervalKind::Kind::Microsecond
+                    || kind == IntervalKind::Kind::Millisecond)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "VALID FOR does not support sub-second intervals (got {}): the deadline is stored and enforced "
+                        "with second precision. Use an interval of at least one second",
+                        element->getName());
+            }
 
             /// Use the reference time supplied by the caller when available, so that all `VALID FOR`
             /// clauses of one statement resolve against a single `now`; otherwise sample it here.

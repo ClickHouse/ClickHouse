@@ -121,7 +121,7 @@ Examples:
 
 ## VALID FOR Clause {#valid-for-clause}
 
-The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It follows the same placement rules as `VALID UNTIL`: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only.
+The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It follows the same placement rules as `VALID UNTIL`: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only. The deadline is stored and enforced with second precision, so sub-second intervals (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) are rejected; the smallest accepted unit is `SECOND`.
 
 Examples:
 
