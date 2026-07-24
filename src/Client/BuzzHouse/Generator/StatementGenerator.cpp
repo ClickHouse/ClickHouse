@@ -3491,7 +3491,8 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_column_structure, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_empirical, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_processors, trueOrFalseInt)};
 
 void StatementGenerator::generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi)
 {
@@ -3535,6 +3536,9 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
                     this->ids.insert(this->ids.end(), {0, 8, 15, 16, 24});
                     break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ANALYZE:
+                    this->ids.insert(this->ids.end(), {9, 11, 12, 14, 15, 16, 19, 20, 21, 22, 25});
+                    break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF:
                     /// `empirical` is the only supported setting for EXPLAIN WHATIF
                     this->ids.insert(this->ids.end(), {23});
@@ -3563,9 +3567,11 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             this->ids.clear();
         }
     }
-    if (val.has_value() && val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF)
+    if (val.has_value()
+        && (val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF
+            || val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ANALYZE))
     {
-        /// Only SELECT is supported for EXPLAIN WHATIF
+        /// Only SELECT is supported for EXPLAIN WHATIF. EXPLAIN ANALYZE executes the query do the same
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select());
     }
     else

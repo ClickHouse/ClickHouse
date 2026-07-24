@@ -2720,6 +2720,7 @@ message ExplainOption {
         pretty = 23;
         empirical = 24;
         compact_repeated_processor_chains = 25;
+        processors = 26;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
@@ -2736,6 +2737,7 @@ message ExplainQuery {
         TABLE_OVERRIDE = 7;
         CURRENT_TRANSACTION = 8;
         WHATIF = 9;
+        ANALYZE = 10;
     }
     optional string execute_as = 1;
     optional bool is_explain = 2;

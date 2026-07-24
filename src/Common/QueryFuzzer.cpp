@@ -3800,11 +3800,19 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
         changes.erase(changes.begin() + fuzz_rand() % changes.size());
     }
 
+    /// `passes` (QUERY TREE) and `query_tree_passes` (SYNTAX) are the only Int64-valued EXPLAIN
+    /// settings; the rest are booleans. Exercise the 0 case for booleans and boundary values for
+    /// the integers, instead of always forcing 1.
+    static const std::unordered_set<String> integer_settings = {"passes", "query_tree_passes"};
+    static const std::array<Int64, 7> integer_values = {-10, -1, 0, 1, 2, 10, 1000000};
     for (const auto & setting : settings)
     {
         if (fuzz_rand() % 5 == 0)
         {
-            changes.emplace_back(setting, static_cast<UInt64>(1));
+            changes.emplace_back(
+                setting,
+                integer_settings.contains(setting) ? Field(integer_values[fuzz_rand() % integer_values.size()])
+                                                   : Field(static_cast<UInt64>(fuzz_rand() % 2)));
         }
     }
 }
@@ -6688,6 +6696,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// INSERT INTO FUNCTION: swap the table function within its group
         fuzzTableFunctionName(insert_query->table_function);
         fuzz(insert_query->children);
+
+        /// Wrap an `INSERT ... SELECT` into a plain table in `EXPLAIN PLAN` / `EXPLAIN PIPELINE`
+        /// (the non-executing kinds) to exercise the insert-select pipeline planner.
+        if (insert_query->select && !insert_query->hasInlinedData() && !insert_query->infile && !insert_query->table_function
+            && current_ast_depth <= 1 && fuzz_rand() % 40 == 0)
+        {
+            const auto kind = fuzz_rand() % 2 == 0 ? ASTExplainQuery::ExplainKind::QueryPlan : ASTExplainQuery::ExplainKind::QueryPipeline;
+            auto explain = make_intrusive<ASTExplainQuery>(kind);
+
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            fuzzExplainSettings(*settings_ast, kind);
+            explain->setSettings(settings_ast);
+
+            explain->setExplainedQuery(ast);
+            debug_visited_nodes.erase(ast.get());
+            ast = explain;
+        }
     }
     else if (auto * delete_query = typeid_cast<ASTDeleteQuery *>(ast.get()))
     {
