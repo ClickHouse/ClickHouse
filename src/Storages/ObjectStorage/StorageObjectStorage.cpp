@@ -698,7 +698,10 @@ SinkToStoragePtr StorageObjectStorage::write(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+    {
+        std::optional<FormatSettings> write_format_settings = getFormatSettings(local_context);
+        return configuration->write(sample_block, storage_id, object_storage, write_format_settings, local_context, catalog);
+    }
 
     /// Not a data lake, just raw object storage
 
