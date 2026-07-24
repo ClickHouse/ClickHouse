@@ -245,9 +245,13 @@ static void serializeWindowFunctions(const std::vector<WindowFunctionDescription
 
         writeStringBinary(func.aggregate_function->getName(), out);
 
-        const auto & parameters = func.aggregate_function->getParameters();
-        writeVarUInt(parameters.size(), out);
-        for (const auto & param : parameters)
+        /// Serialize the parameters the planner preserved, not `aggregate_function->getParameters()`:
+        /// some parametric aggregates (e.g. `groupArrayMovingSum`, `groupArrayMovingAvg`,
+        /// `mannWhitneyUTest`, `kolmogorovSmirnovTest`) do not round-trip their parameters through
+        /// `getParameters`, which would silently rebuild a different function on the worker. This mirrors
+        /// `serializeAggregateDescriptions`.
+        writeVarUInt(func.function_parameters.size(), out);
+        for (const auto & param : func.function_parameters)
             writeFieldBinary(param, out);
     }
 }
