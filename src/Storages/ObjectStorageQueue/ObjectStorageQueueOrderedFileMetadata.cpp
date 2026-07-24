@@ -212,7 +212,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,
     const std::string & processor_info_,
-    size_t persistent_processing_node_ttl_seconds_,
+    const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
     LoggerPtr log_,
     const std::string & zookeeper_name_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
@@ -338,8 +338,9 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
         /// A lock not refreshed for longer than the TTL could have been removed by the
         /// cleanup and re-created by another server colliding on the version (e.g. both
         /// at the creation version 0), so the version check alone cannot prove ownership.
-        if (persistent_processing_node_ttl_seconds
-            && age_watch.elapsedSeconds() >= static_cast<double>(persistent_processing_node_ttl_seconds)
+        const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
+        if (ttl_seconds
+            && age_watch.elapsedSeconds() >= static_cast<double>(ttl_seconds)
             && !checkBucketOwnership(zk_client))
         {
             ownership_lost = true;
@@ -662,7 +663,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
     bool /*use_persistent_processing_nodes_*/,
-    size_t persistent_processing_node_ttl_seconds_,
+    const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
 {
