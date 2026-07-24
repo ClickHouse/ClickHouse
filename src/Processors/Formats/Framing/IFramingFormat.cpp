@@ -26,6 +26,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char framing_throw_after_writing_packet[];
+    extern const char framing_pump_logs_throw[];
 }
 
 IFramingFormat::IFramingFormat(WriteBuffer & out_, const FormatSettings & format_settings_)
@@ -76,12 +77,10 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     if (finalized || failClosedAfterPartialWrite())
         return;
 
-    writing = true;
     extractAndWritePayload(kind);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
     flushOut();
-    writing = false;
 }
 
 void IFramingFormat::onProgress(const Progress & progress)
@@ -89,12 +88,10 @@ void IFramingFormat::onProgress(const Progress & progress)
     if (finalized || failClosedAfterPartialWrite())
         return;
 
-    writing = true;
-    writeProgressPacket(progress);
+    emitToOut([&] { writeProgressPacket(progress); });
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
     flushOut();
-    writing = false;
 }
 
 void IFramingFormat::setFinalProgress(const Progress & progress)
@@ -111,7 +108,6 @@ void IFramingFormat::finalize()
     if (finalized || failClosedAfterPartialWrite())
         return;
 
-    writing = true;
     extractAndWritePayload(FramedPacketKind::Data);
     pumpLogs();
     pumpProfileEvents(/*force=*/ true);
@@ -120,17 +116,16 @@ void IFramingFormat::finalize()
     /// stream ends with it (see `setFinalProgress`). On a failure the `exception` packet below
     /// stays terminal.
     if (has_final_progress)
-        writeProgressPacket(final_progress);
+        emitToOut([&] { writeProgressPacket(final_progress); });
 
     if (!exception_message.empty())
-        writeExceptionPacket(exception_message);
+        emitToOut([&] { writeExceptionPacket(exception_message); });
 
-    finalizeImpl();
+    emitToOut([&] { finalizeImpl(); });
     flushOut();
 
     payload.finalize();
     finalized = true;
-    writing = false;
 }
 
 namespace
@@ -153,7 +148,7 @@ void flushBufferChain(WriteBuffer & buf)
 
 void IFramingFormat::flushOut()
 {
-    flushBufferChain(out);
+    emitToOut([&] { flushBufferChain(out); });
 }
 
 void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
@@ -161,6 +156,7 @@ void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
     std::string & data = payload.str();
     if (!data.empty())
     {
+        writing = true;
         writePayloadPacket(kind, data);
 
         /// Test-only: emulate a packet write throwing after some bytes have reached `out` but before the
@@ -171,12 +167,22 @@ void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after writing a framing packet");
         });
+
+        writing = false;
     }
     payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
 }
 
 void IFramingFormat::pumpLogs()
 {
+    /// Test-only: emulate a failure in the non-emitting drain work between packet writes (no bytes of
+    /// the next packet have been written to `out` yet), to check that the exception recovery still
+    /// delivers the terminal framed `exception` packet instead of failing closed (see `writing`).
+    fiu_do_on(FailPoints::framing_pump_logs_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while pumping logs into the framing format");
+    });
+
     if (!logs_queue)
         return;
 
@@ -203,7 +209,7 @@ void IFramingFormat::pumpLogs()
 
     Block block = InternalTextLogsQueue::getSampleBlock();
     block.setColumns(std::move(logs_columns));
-    writeLogsPacket(block);
+    emitToOut([&] { writeLogsPacket(block); });
 }
 
 void IFramingFormat::pumpProfileEvents(bool force)
@@ -220,7 +226,7 @@ void IFramingFormat::pumpProfileEvents(bool force)
 
     Block block = ProfileEvents::getProfileEvents(host_name, profile_events_queue, profile_events_snapshots);
     if (block.rows() != 0)
-        writeProfileEventsPacket(block);
+        emitToOut([&] { writeProfileEventsPacket(block); });
 
     profile_events_watch.restart();
 }
