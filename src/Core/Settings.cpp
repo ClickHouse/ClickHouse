@@ -4170,7 +4170,7 @@ When enabled and aggregation in order is active, pushes LIMIT into the aggregati
     DECLARE(Bool, aggregation_in_order_shuffle, false, R"(
 When enabled together with [optimize_aggregation_in_order](#optimize_aggregation_in_order), repartitions the sorted input by the hash of the `GROUP BY` keys into independent shards so that aggregation-in-order runs in parallel across threads, instead of funneling all partially-aggregated streams through the single-threaded `FinishAggregatingInOrderTransform`. Each shard aggregates a disjoint set of keys, so no cross-shard merge is needed, while keeping the bounded memory of aggregation-in-order.
 
-The order of `GROUP BY` keys in the output is not preserved, so this optimization is only applied when the result order is not relied upon downstream (i.e. when memory-bound merging is not used).
+The order of `GROUP BY` keys in the output is not preserved, so this optimization is only applied when the result order is not relied upon downstream (i.e. when memory-bound merging is not used). It is also not applied when [max_rows_to_group_by](#max_rows_to_group_by) is set to a non-zero value, because the shuffled path does not enforce that limit.
 
 Possible values:
 
