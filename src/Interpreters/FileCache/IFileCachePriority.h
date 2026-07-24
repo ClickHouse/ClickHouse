@@ -41,6 +41,7 @@ struct FileCacheUsageCounters
     std::atomic<size_t> size = 0;
     std::atomic<size_t> elements = 0;
     std::atomic<bool> valid = true;
+    bool error_reported = false;
 
     void add(size_t size_delta, size_t elements_delta) noexcept;
     void sub(size_t size_delta, size_t elements_delta) noexcept;

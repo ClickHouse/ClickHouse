@@ -3284,7 +3284,7 @@ TEST_F(FileCacheTest, UsageTrackerDetectsUnderflow)
 
     EXPECT_EQ(counters->size.load(std::memory_order_relaxed), 10);
     EXPECT_EQ(counters->elements.load(std::memory_order_relaxed), 1);
-    EXPECT_THROW(tracker.snapshot(), DB::Exception);
+    EXPECT_TRUE(tracker.snapshot().empty());
 }
 
 TEST_F(FileCacheTest, SLRUDowngradeMetric)

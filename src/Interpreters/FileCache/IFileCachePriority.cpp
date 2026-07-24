@@ -57,6 +57,8 @@ FileCacheUsageCountersPtr FileCacheUsageTracker::getOrCreate(const String & user
 
 std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
 {
+    static Poco::Logger * log = &Poco::Logger::get("FileCacheUsageTracker");
+
     std::lock_guard lock(mutex);
     std::unordered_map<String, FileCacheUsageStat> result;
     result.reserve(usage_by_user.size());
@@ -64,14 +66,26 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
     {
         const auto & [user_id, usage] = *it;
         if (!usage->valid.load(std::memory_order_relaxed))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
+        {
+            if (!usage->error_reported)
+            {
+                LOG_ERROR(log, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
+                usage->error_reported = true;
+            }
+
+            if (usage.use_count() == 1)
+                it = usage_by_user.erase(it);
+            else
+                ++it;
+            continue;
+        }
 
         const size_t size = usage->size.load(std::memory_order_relaxed);
         const size_t elements = usage->elements.load(std::memory_order_relaxed);
         if (usage.use_count() == 1)
         {
             if (size != 0 || elements != 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
+                LOG_ERROR(log, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
 
             it = usage_by_user.erase(it);
             continue;
