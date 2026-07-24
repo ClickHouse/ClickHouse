@@ -158,6 +158,12 @@ Contagem total de endereços marcados como inválidos devido a erros de conexão
 
 Tempo total gasto na agregação de colunas ordenadas
 
+<div id="aggregationconvertedtotwolevel">
+  ### AggregationConvertedToTwoLevel
+</div>
+
+Quantas vezes uma tabela hash de agregação de um nível foi convertida em dois níveis durante a execução.
+
 <div id="aggregationhashtablesinitializedastwolevel">
   ### AggregationHashTablesInitializedAsTwoLevel
 </div>
@@ -900,7 +906,7 @@ Número total de preempções da CPU
   ### ConcurrencyControlQueriesDelayed
 </div>
 
-Número total de alocações de slots de CPU (consultas) que precisaram aguardar slots para aumentar a escala
+Número de consultas atrasadas pela pressão de capacidade dos slots de CPU. Indicador de contenção — exclui esperas por aumento de escala preguiçoso em um servidor sem contenção.
 
 <div id="concurrencycontrolslotsacquired">
   ### ConcurrencyControlSlotsAcquired
@@ -918,7 +924,7 @@ Número total de slots de CPU não concorrentes adquiridos
   ### ConcurrencyControlSlotsDelayed
 </div>
 
-Número de slots de CPU que não foram concedidos inicialmente e tiveram de aguardar um slot de CPU livre
+Número de slots de CPU não concedidos no momento da alocação devido à pressão de capacidade. Exclui slots retidos pela alocação preguiçosa.
 
 <div id="concurrencycontrolslotsgranted">
   ### ConcurrencyControlSlotsGranted
@@ -2287,6 +2293,24 @@ Número de vezes em que a análise distribuída de índice falhou em uma das ré
 
 Número de réplicas (a réplica local é contabilizada uma vez) para as quais a análise distribuída de índice foi agendada
 
+<div id="distributedplanhostsused">
+  ### DistributedPlanHostsUsed
+</div>
+
+Número de hosts distintos aos quais foi atribuída pelo menos uma tarefa durante a execução de uma consulta com `make_distributed_plan`.
+
+<div id="distributedplanlocalexecution">
+  ### DistributedPlanLocalExecution
+</div>
+
+Definido como 1 quando uma consulta `make_distributed_plan` foi executada no processo local por meio do executor local (`distributed_plan_execute_locally`), em vez de ser encaminhada para workers remotos.
+
+<div id="distributedplanremotetasks">
+  ### DistributedPlanRemoteTasks
+</div>
+
+Número de tarefas enviadas para workers remotos ao executar uma consulta com `make_distributed_plan`. Um valor diferente de zero significa que a consulta foi realmente executada de forma distribuída.
+
 <div id="distributedrejectedinserts">
   ### DistributedRejectedInserts
 </div>
@@ -2743,6 +2767,12 @@ Número de segmentos de arquivo que falharam inesperadamente ao serem removidos 
 
 Número de tentativas malsucedidas de reserva de espaço no cache de arquivos.
 
+<div id="filesystemcachefreespacekeepingthreaderrors">
+  ### Erros da Thread de Manutenção do Espaço Livre do Cache do Sistema de Arquivos
+</div>
+
+Número de exceções capturadas pela tarefa em segundo plano de manutenção do espaço livre (coleta, remoção ou finalização)
+
 <div id="filesystemcachefreespacekeepingthreadrun">
   ### FilesystemCacheFreeSpaceKeepingThreadRun
 </div>
@@ -3119,7 +3149,7 @@ Número total de informações de objetos retornadas pelo iterador do Iceberg.
   ### IcebergMetadataUpdateMicroseconds
 </div>
 
-Tempo total gasto na inicialização síncrona dos iteradores de dados do Iceberg.
+Tempo total gasto na atualização dos metadados de armazenamento do Iceberg a partir do estado (buildStorageMetadataFromState).
 
 <div id="icebergminmaxindexprunedfiles">
   ### IcebergMinMaxIndexPrunedFiles
@@ -3865,6 +3895,18 @@ Tempo gasto aguardando a obtenção do bloqueio de armazenamento do Keeper
 
 Tempo gasto aguardando a obtenção do bloqueio compartilhado do armazenamento do Keeper
 
+<div id="keeperttlremoverequestsdropped">
+  ### KeeperTTLRemoveRequestsDropped
+</div>
+
+Número de solicitações de remoção de TTL descartadas porque a fila estava cheia
+
+<div id="keeperttlremoverequestsenqueued">
+  ### KeeperTTLRemoveRequestsEnqueued
+</div>
+
+Número de solicitações de remoção de TTL colocadas na fila com sucesso
+
 <div id="keepertotalelapsedmicroseconds">
   ### KeeperTotalElapsedMicroseconds
 </div>
@@ -4170,6 +4212,42 @@ Tempo total gasto na purga do alocador de memória
 </div>
 
 Tempo total gasto aguardando a liberação de memória no OvercommitTracker.
+
+<div id="memoryreservationadmitmicroseconds">
+  ### MemoryReservationAdmitMicroseconds
+</div>
+
+Tempo total que uma consulta ficou aguardando a reserva inicial de memória ser aprovada
+
+<div id="memoryreservationdecreases">
+  ### MemoryReservationDecreases
+</div>
+
+Número total de solicitações aprovadas para redução de reserva de memória
+
+<div id="memoryreservationfailed">
+  ### MemoryReservationFailed
+</div>
+
+Número total de reservas de memória que falharam
+
+<div id="memoryreservationincreasemicroseconds">
+  ### MemoryReservationIncreaseMicroseconds
+</div>
+
+Tempo total que uma consulta passou aguardando a aprovação do aumento da reserva de memória
+
+<div id="memoryreservationincreases">
+  ### MemoryReservationIncreases
+</div>
+
+Número total de solicitações aprovadas para aumento da reserva de memória
+
+<div id="memoryreservationkilled">
+  ### MemoryReservationKilled
+</div>
+
+Número total de sinais de interrupção da reserva de memória
 
 <div id="memoryworkerrun">
   ### MemoryWorkerRun
@@ -5491,18 +5569,6 @@ Ciclos estagnados durante a emissão.
 
 Uma contagem de ciclos de clock específica da tarefa em execução
 
-<div id="polygonsaddedtopool">
-  ### PolygonsAddedToPool
-</div>
-
-Um polígono foi incluído no cache (pool) da função &#39;pointInPolygon&#39;.
-
-<div id="polygonsinpoolallocatedbytes">
-  ### PolygonsInPoolAllocatedBytes
-</div>
-
-O número de bytes dos polígonos adicionados ao cache (pool) para a função &#39;pointInPolygon&#39;.
-
 <div id="preferredwarmedunmergedparts">
   ### PreferredWarmedUnmergedParts
 </div>
@@ -5532,6 +5598,12 @@ Número de consultas com todas as subconsultas
 </div>
 
 Número de consultas a serem interpretadas e potencialmente executadas. Não inclui consultas que não puderam ser analisadas ou que foram rejeitadas devido a limites de tamanho da AST, limites de quota ou limites no número de consultas executadas simultaneamente. Pode incluir consultas internas iniciadas pelo próprio ClickHouse. Não contabiliza subconsultas.
+
+<div id="queryanalysismicroseconds">
+  ### QueryAnalysisMicroseconds
+</div>
+
+Tempo total gasto para construir a árvore de consulta e executar as etapas do analyzer (resolução de identificadores, tipos e expressões).
 
 <div id="querybackupthrottlerbytes">
   ### QueryBackupThrottlerBytes
@@ -5634,6 +5706,24 @@ Número de vezes em que as regras de mascaramento de consultas foram correspondi
 </div>
 
 Número de vezes em que a consulta excedeu o limite de memória.
+
+<div id="queryparsemicroseconds">
+  ### QueryParseMicroseconds
+</div>
+
+Tempo total gasto na análise sintática do texto da consulta para convertê-lo em uma AST.
+
+<div id="querypipelinebuildmicroseconds">
+  ### QueryPipelineBuildMicroseconds
+</div>
+
+Tempo total gasto na construção do QueryPipeline a partir do QueryPlan otimizado.
+
+<div id="queryplanbuildmicroseconds">
+  ### QueryPlanBuildMicroseconds
+</div>
+
+Tempo total gasto na criação do QueryPlan a partir da árvore de consulta analisada.
 
 <div id="queryplanoptimizemicroseconds">
   ### QueryPlanOptimizeMicroseconds
@@ -6883,6 +6973,12 @@ Quantas solicitações HTTP foram enviadas para confirmar as partes desatualizad
 
 Quantas respostas HTTP foram enviadas para confirmar partes desatualizadas
 
+<div id="sharedmergetreepartitionoperationretries">
+  ### SharedMergeTreePartitionOperationRetries
+</div>
+
+Quantas vezes uma operação em nível de partição (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) precisou repetir a gravação múltipla no Keeper devido a uma alteração concorrente
+
 <div id="sharedmergetreepartskillermicroseconds">
   ### SharedMergeTreePartsKillerMicroseconds
 </div>
@@ -7369,6 +7465,18 @@ Número de segmentos totalmente densos preenchidos de uma só vez (`memset` para
 
 Número de segmentos ignorados porque a região de saída já havia sido determinada (todos 1s para OR, todos 0s para AND) no modo preguiçoso de lista de postings.
 
+<div id="textindexphrasematchmicroseconds">
+  ### TextIndexPhraseMatchMicroseconds
+</div>
+
+Tempo total gasto na interseção de correspondência de frases do roaringish.
+
+<div id="textindexpositionsdecodemicroseconds">
+  ### TextIndexPositionsDecodeMicroseconds
+</div>
+
+Tempo total gasto para decodificar listas de posições (.pos) do índice de texto em buscas por frase.
+
 <div id="textindexpostingscachehits">
   ### TextIndexPostingsCacheHits
 </div>
@@ -7584,6 +7692,18 @@ Número de vezes em que um bloco de dados não foi encontrado no cache não comp
 </div>
 
 Número de bytes removidos do cache não compactado.
+
+<div id="uniquekeybitmaploadmicroseconds">
+  ### UniqueKeyBitmapLoadMicroseconds
+</div>
+
+Tempo gasto na leitura e desserialização de arquivos sidecar do bitmap de exclusão de UNIQUE KEY quando ocorre um miss no DeleteBitmapCache.
+
+<div id="uniquekeybitmapupdates">
+  ### Atualizações do bitmap de UNIQUE KEY
+</div>
+
+Número de arquivos sidecar do bitmap de exclusão de UNIQUE KEY gravados (um por substituição / commit de DELETE).
 
 <div id="uniquekeyindexcachehits">
   ### UniqueKeyIndexCacheHits
