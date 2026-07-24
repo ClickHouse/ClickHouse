@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+도입 버전: v26.7.0
+
+Naive Bayes 딕셔너리([`NAIVE_BAYES`](/ko/reference/statements/create/dictionary/layouts/naive-bayes) 레이아웃)와 동일한 토큰화 방식을 사용해 텍스트를 n-그램으로 분할합니다. 모드는 `byte`, `codepoint`, `token`이며, 필요하면 경계 패딩을 적용할 수 있습니다. 이 함수는 해당 딕셔너리가 사용하는 미리 집계된 `(ngram, class_id, count)` 학습 데이터를 생성할 때 사용하십시오. 이렇게 하면 학습 n-그램이 쿼리 시점에 [`naiveBayesClassifier`](/ko/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier)가 생성하는 결과와 정확히 일치합니다.
+
+**구문**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**인수**
+
+* `text` — n-그램으로 분할할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `n` — n-그램의 크기이며, 1부터 1024까지입니다. [`const UInt`](/ko/reference/data-types/int-uint)
+* `mode` — 토큰화 모드입니다: &#39;byte&#39;, &#39;codepoint&#39;, 또는 &#39;token&#39;. [`const String`](/ko/reference/data-types/string)
+* `start_token` — 선택 사항입니다. 경계 토큰을 입력 앞에 (n-1)번 붙입니다. &#39;byte&#39;/&#39;codepoint&#39;에서는 숫자이고, &#39;token&#39;에서는 리터럴입니다. 비어 있으면 패딩이 없습니다. [`const String`](/ko/reference/data-types/string)
+* `end_token` — 선택 사항입니다. 경계 토큰을 입력 뒤에 (n-1)번 붙입니다. [`const String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+입력 텍스트의 n-그램입니다. [`Array(String)`](/ko/reference/data-types/array)
+
+**예시**
+
+**토큰 바이그램**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**경계 패딩이 적용된 토큰 바이그램**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**경계 패딩을 적용한 바이트 바이그램(결과는 16진수로 표시됨)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**경계 패딩을 적용한 코드 포인트 바이그램(결과는 16진수로 표시됨)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>

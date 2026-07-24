@@ -21,47 +21,43 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
   ## Запустите или скачайте DbVisualizer
 </div>
 
-DbVisualizer доступен для скачивания по адресу https://www.dbvis.com/download/
+DbVisualizer доступен по адресу https://www.dbvis.com/download/
 
-<div id="1-gather-your-connection-details">
-  ## 1. Подготовьте сведения о подключении
-</div>
+<Steps>
+  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Встроенное управление JDBC-драйверами" id="2-built-in-jdbc-driver-management">
+    DbVisualizer включает самые актуальные JDBC-драйверы для ClickHouse. В него встроено полноценное управление JDBC-драйверами, которое обеспечивает доступ как к последним выпускам, так и к предыдущим версиям драйверов.
 
-<div id="2-built-in-jdbc-driver-management">
-  ## 2. Встроенное управление JDBC-драйверами
-</div>
+    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Интерфейс менеджера драйверов DbVisualizer, показывающий настройку драйвера ClickHouse JDBC" />
+  </Step>
 
-DbVisualizer включает самые актуальные JDBC-драйверы для ClickHouse. В нем есть полноценное встроенное управление JDBC-драйверами с доступом как к последним релизам, так и к более ранним версиям драйверов.
+  <Step title="Подключение к ClickHouse" id="3-connect-to-clickhouse">
+    Чтобы подключить базу данных в DbVisualizer, сначала нужно создать и настроить подключение к базе данных.
 
-<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Интерфейс Driver Manager в DbVisualizer с конфигурацией JDBC-драйвера ClickHouse" />
+    1. Создайте новое подключение через **Database-&gt;Create Database Connection** и выберите драйвер для вашей базы данных во всплывающем меню.
 
-<div id="3-connect-to-clickhouse">
-  ## 3. Подключение к ClickHouse
-</div>
+    2. Откроется вкладка **Object View** для нового подключения.
 
-Чтобы подключить базу данных в DbVisualizer, сначала нужно создать и настроить подключение к базе данных.
+    3. Введите имя подключения в поле **Name** и, при необходимости, описание подключения в поле **Notes**.
 
-1. Создайте новое подключение через **Database-&gt;Create Database Connection** и выберите драйвер для вашей базы данных во всплывающем меню.
+    4. Оставьте значение **Database Type** как **Auto Detect**.
 
-2. Откроется вкладка **Object View** для нового подключения.
+    5. Если выбранный драйвер в **Driver Type** отмечен зелёной галочкой, он готов к использованию. Если зелёной галочки нет, возможно, вам потребуется настроить драйвер в **Driver Manager**.
 
-3. Введите имя подключения в поле **Name** и, при необходимости, описание подключения в поле **Notes**.
+    6. В оставшихся полях укажите сведения о сервере базы данных.
 
-4. Оставьте значение **Database Type** как **Auto Detect**.
+    7. Нажмите кнопку **Ping Server**, чтобы проверить, можно ли установить сетевое connection с указанным адресом и портом.
 
-5. Если выбранный драйвер в **Driver Type** отмечен зелёной галочкой, он готов к использованию. Если зелёной галочки нет, возможно, вам потребуется настроить драйвер в **Driver Manager**.
+    8. Если результат Ping Server показывает, что server доступен, нажмите **Connect**, чтобы подключиться к серверу базы данных.
 
-6. В оставшихся полях укажите сведения о сервере базы данных.
-
-7. Нажмите кнопку **Ping Server**, чтобы проверить, можно ли установить сетевое connection с указанным адресом и портом.
-
-8. Если результат Ping Server показывает, что server доступен, нажмите **Connect**, чтобы подключиться к серверу базы данных.
-
-<Tip>
-Если у вас возникают проблемы с подключением к базе данных, ознакомьтесь с [Fixing Connection Issues](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) — там приведены полезные советы.
-</Tip>
+    <Tip>
+      Если у вас возникают проблемы с подключением к базе данных, ознакомьтесь с [Fixing Connection Issues](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) — там приведены полезные советы.
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Подробнее

@@ -23,7 +23,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 
 <br />
 
-이 가이드에서는 Hashboard를 ClickHouse 인스턴스에 연결하는 단계를 안내합니다. 이 정보는 Hashboard의 [ClickHouse 통합 문서](https://docs.hashboard.com/docs/database-connections/clickhouse)에서도 확인할 수 있습니다.
+이 가이드에서는 Hashboard를 ClickHouse 인스턴스에 연결하는 단계를 안내합니다. 이 정보는 Hashboard의 [ClickHouse 통합 문서](https://hashboard.com/docs/database-connections/clickhouse)에서도 확인할 수 있습니다.
 
 <div id="pre-requisites">
   ## 사전 요구 사항
@@ -33,31 +33,29 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 * [Hashboard](https://hashboard.com/getAccess) 계정 및 프로젝트
 
 <div id="steps-to-connect-hashboard-to-clickhouse">
-  ## Hashboard와 ClickHouse 연결 단계
+  ## Hashboard를 ClickHouse에 연결하는 단계
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. 연결 정보를 준비합니다
-</div>
+<Steps>
+  <Step title="연결 세부 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Hashboard에서 새 데이터베이스 연결 추가" id="2-add-a-new-database-connection-in-hashboard">
+    1. [Hashboard 프로젝트](https://hashboard.com/app)로 이동합니다.
+    2. 측면 탐색 메뉴에서 톱니바퀴 아이콘을 클릭해 설정 페이지를 엽니다.
+    3. `+ New Database Connection`을 클릭합니다.
+    4. 모달에서 &quot;ClickHouse&quot;를 선택합니다.
+    5. 앞서 확인한 정보를 바탕으로 **Connection Name**, **Host**, **Port**, **Username**, **Password**, **Database** 필드를 입력합니다.
+    6. 연결이 올바르게 구성되었는지 확인하려면 &quot;Test&quot;를 클릭합니다.
+    7. &quot;Add&quot;를 클릭합니다.
 
-<div id="2-add-a-new-database-connection-in-hashboard">
-  ### 2. Hashboard에서 새 데이터베이스 연결 추가
-</div>
-
-1. [Hashboard 프로젝트](https://hashboard.com/app)로 이동합니다.
-2. 측면 탐색 메뉴에서 톱니바퀴 아이콘을 클릭해 설정 페이지를 엽니다.
-3. `+ New Database Connection`을 클릭합니다.
-4. 모달에서 &quot;ClickHouse&quot;를 선택합니다.
-5. 앞서 확인한 정보를 바탕으로 **Connection Name**, **Host**, **Port**, **Username**, **Password**, **Database** 필드를 입력합니다.
-6. 연결이 올바르게 구성되었는지 확인하려면 &quot;Test&quot;를 클릭합니다.
-7. &quot;Add&quot;를 클릭합니다.
-
-이제 ClickHouse 데이터베이스가 Hashboard에 연결되었으며, [Data Models](https://docs.hashboard.com/docs/data-modeling/add-data-model), [Explorations](https://docs.hashboard.com/docs/visualizing-data/explorations), [메트릭](https://docs.hashboard.com/docs/metrics), [Dashboards](https://docs.hashboard.com/docs/dashboards)를 만들어 작업을 이어갈 수 있습니다. 이러한 기능에 대한 자세한 내용은 해당 Hashboard 문서를 참조하십시오.
+    이제 ClickHouse 데이터베이스가 Hashboard에 연결되었으며, [Data Models](https://hashboard.com/docs/data-modeling/add-data-model), [Explorations](https://hashboard.com/docs/visualizing-data/explorations), [메트릭](https://hashboard.com/docs/metrics), [Dashboards](https://hashboard.com/docs/dashboards)를 만들어 작업을 이어갈 수 있습니다. 이러한 기능에 대한 자세한 내용은 해당 Hashboard 문서를 참조하십시오.
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 자세히 알아보기
 </div>
 
-고급 기능과 문제 해결에 대한 자세한 내용은 [Hashboard 문서](https://docs.hashboard.com/)를 참조하십시오.
+고급 기능과 문제 해결에 대한 자세한 내용은 [Hashboard 문서](https://hashboard.com/docs)를 참조하십시오.

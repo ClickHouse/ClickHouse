@@ -37,6 +37,7 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -1005,6 +1006,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+
+    /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
+    checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
