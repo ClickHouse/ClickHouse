@@ -26,7 +26,7 @@ A read-only first pass over a CI failure: turn a single URL into a per-test verd
   comment on the PR. This skill diagnoses; the human decides what to do. Surface findings, do not
   act on them. To read source at the report's commit, use `git show <sha>:<path>` rather than
   checking it out; only fetch/switch after asking the user (see step 4).
-- Use `tmp/investigate/` for all working files, never `/tmp` (per CLAUDE.md).
+- Use `tmp/investigate/<sha>/` for all working files, never `/tmp` (per CLAUDE.md). The `<sha>` is the first 7 characters of the report commit SHA — one subdirectory per investigation so artifacts from different PRs or branches never collide and you can return to an earlier investigation without re-downloading.
 - **Run every `gh` read through `.claude/tools/gh-ro.sh` (same args as `gh`).** It drops a poisoned
   `GH_CONFIG_DIR` — some agent/CI runners set it to a config dir with no working auth, which makes
   raw `gh` fail — and refuses any non-read-only subcommand, so it can never create/close/edit/merge/
@@ -47,10 +47,10 @@ issue links. If `$0` is `.../issues/NNNNN`, read the issue body and extract the 
 ```
 
 Read the issue from the command output — do **not** redirect to a file. A
-`.claude/tools/gh-ro.sh issue view … > tmp/investigate/issue.json` redirect is a file write that
+`.claude/tools/gh-ro.sh issue view … > tmp/investigate/$SHA/issue.json` redirect is a file write that
 rides the wildcard `Bash(.claude/tools/gh-ro.sh:*)` allow (not the hook), so a symlinked
 `tmp`/`tmp/investigate` could land it outside the scratch dir without a prompt. (Step 1 creates
-`tmp/investigate`.)
+`tmp/investigate/$SHA`.)
 
 Bot-generated `flaky test` issues use this body format:
 
@@ -79,7 +79,7 @@ expired, so do not block on them.
 `fetch_ci_report.js` needs `node` on `PATH`. Run these as **separate** commands (not one compound
 block) so each matches an allowed shape under the investigate profile — a combined
 `mkdir … ; if … node …` string matches neither the exact `mkdir` allow nor the node-fetch hook and
-would prompt. Primary inputs (PR/S3) skip step 0, so create the working dir here first:
+would prompt. Primary inputs (PR/S3) skip step 0, so create the parent working dir first:
 
 ```bash
 mkdir -p tmp/investigate
@@ -98,9 +98,21 @@ If `node` is present, fetch the failed tests and their output:
 node .claude/tools/fetch_ci_report.js "$0" --failed --cidb 2>&1
 ```
 
+For a **single HTML report URL** (including `sha=latest`, which resolves to the actual build
+commit) the tool prints a `SHA: <40-hex-sha>` line — read it and set `$SHA` to the first 7
+characters. For a **PR URL** the tool prints a multi-report summary without a `SHA:` line;
+extract `$SHA` from the `?sha=<hex>` query-string parameter in any `🔗 Report:` URL printed in
+the summary, or re-run with `--report N` on the relevant job to get single-report output that
+does print `SHA:`. Either way, `$SHA` is always a concrete commit hash, never a PR-number fallback. Then create the
+working directory:
+
+```bash
+mkdir -p tmp/investigate/$SHA
+```
+
 This prints the failed tests **and their output** straight from the praktika `result_*.json` (no
 copy-paste), with a CIDB link per failed test. Read it from the command output — do **not** add a
-`> tmp/investigate/…` redirect (a redirect is a file write the hook won't auto-approve, since it
+`> tmp/investigate/$SHA/…` redirect (a redirect is a file write the hook won't auto-approve, since it
 can't be made symlink-safe, so it would prompt); the harness persists large output to a file you
 can re-read or `grep`. **If `node` is absent, the fallback depends on the input type:**
 
@@ -590,7 +602,7 @@ first (list reports by running the tool with no `--failed`). This writes a file,
 expected write, and it's the rare artifact-needed path):
 
 ```bash
-node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs tmp/investigate/ci_logs.tar.gz
+node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs "tmp/investigate/$SHA/logs.tar.gz"
 ```
 
 The tool prints the saved path and lists the archive's pytest logs. The compression may be zstd
@@ -600,8 +612,8 @@ absent) is itself a finding; surface it instead of letting the later `grep | jq`
 nothing and look "inconclusive":
 
 ```bash
-tar -xf tmp/investigate/ci_logs.tar.gz -C tmp/investigate/ ci/tmp/pytest_parallel.jsonl
-test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
+tar -xf "tmp/investigate/$SHA/logs.tar.gz" -C "tmp/investigate/$SHA/" ci/tmp/pytest_parallel.jsonl
+test -f "tmp/investigate/$SHA/ci/tmp/pytest_parallel.jsonl" \
   || { echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"; false; }
 ```
 
@@ -633,7 +645,7 @@ signal-bearing members for each job family:
 For an integration-test failure, pull the relevant longrepr:
 
 ```bash
-grep -F -- "<test_name>" tmp/investigate/ci/tmp/pytest_parallel.jsonl \
+grep -F -- "<test_name>" "tmp/investigate/$SHA/ci/tmp/pytest_parallel.jsonl" \
   | jq -r 'select((.longrepr // "") != "") | .longrepr'
 ```
 

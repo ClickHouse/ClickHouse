@@ -10,7 +10,7 @@ All artifacts are individual files. List their URLs with `--links`, then fetch w
 ## File catalog
 
 | File | Contains |
-|---|---|
+| --- | --- |
 | `clickhouse-server.initial.log[.zst]` | Server log at first startup (key for "Cannot start") |
 | `clickhouse-server.log[.zst]` | Full server log during the entire run |
 | `clickhouse-server.err.log[.zst]` | Server stderr |
@@ -34,6 +34,7 @@ to start (metadata load errors, table load failures, config issues).
 
 The full exception and stack trace are already in `result.info`. Cross-check the server
 log around the time of the abort:
+
 ```bash
 curl -sL '<clickhouse-server.stress.log.zst url>' | zstd -dcq \
   | grep -i 'logical error\|assertion\|fatal\|STID' | head -30
@@ -61,7 +62,7 @@ curl -sL '<url>' | tail -200
 curl -sL '<url>' | zstd -dcq | grep -i 'error' | tail -50
 
 # Unknown — download first, then check
-curl -sL '<url>' -o tmp/artifact
-file tmp/artifact   # shows "Zstandard compressed data" or "ASCII text", etc.
-# then: zstd -dcq tmp/artifact | ...   or   cat tmp/artifact | ...
+curl -sL '<url>' -o "tmp/investigate/$SHA/artifact"
+file "tmp/investigate/$SHA/artifact"   # shows "Zstandard compressed data" or "ASCII text", etc.
+# then: zstd -dcq "tmp/investigate/$SHA/artifact" | ...   or   cat "tmp/investigate/$SHA/artifact" | ...
 ```

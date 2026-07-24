@@ -45,6 +45,7 @@
     ],
     "allow": [
       "Bash(mkdir -p tmp/investigate)",
+      "Bash(mkdir -p tmp/investigate/:*)",
       "Bash(command -v:*)",
       "Bash(grep:*)",
       "Bash(jq:*)",

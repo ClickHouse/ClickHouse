@@ -33,7 +33,6 @@
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
-const fs = require('fs');
 const { execSync, execFileSync } = require('child_process');
 const zlib = require('zlib');
 
@@ -68,7 +67,13 @@ function maybeDecompress(buf) {
 
 function fetchUrl(urlString, credentials = null) {
   return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(urlString);
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(urlString);
+    } catch (e) {
+      reject(e);
+      return;
+    }
     const protocol = parsedUrl.protocol === 'https:' ? https : http;
 
     const options = {
@@ -140,7 +145,12 @@ function fetchUrl(urlString, credentials = null) {
  * Parse the HTML URL to extract parameters and construct JSON URLs
  */
 async function parseReportUrl(htmlUrl, credentials = null) {
-  const url = new URL(htmlUrl);
+  let url;
+  try {
+    url = new URL(htmlUrl);
+  } catch (e) {
+    throw new Error(`Invalid report URL: ${e.message}`);
+  }
   const params = url.searchParams;
 
   const PR = params.get('PR');
@@ -187,7 +197,12 @@ async function parseReportUrl(htmlUrl, credentials = null) {
   if (sha === 'latest') {
     const commitsUrl = `${baseUrl}/${suffix}/commits.json`;
     const commitsText = await fetchUrl(commitsUrl, credentials);
-    const commits = JSON.parse(commitsText);
+    let commits;
+    try {
+      commits = JSON.parse(commitsText);
+    } catch (e) {
+      throw new Error(`Invalid JSON in commits.json: ${e.message}`);
+    }
     if (!commits || commits.length === 0) {
       throw new Error('No commits found in commits.json');
     }
@@ -347,16 +362,33 @@ function parseTestResults(jsonData) {
   // (Praktika sets result.set_status(ERROR) in the non-zero-exit path after the subtree
   // is already populated). If no child captures the failure, synthesize one from the
   // top-level node so --failed never prints "Total: 0" for a truly failed job.
-  if (isFailureStatus(jsonData.status) && !tests.some(t => isFailureStatus(t.status))) {
-    const test = {
-      name: jsonData.name || 'Job',
-      status: jsonData.status,
-      duration: jsonData.duration || 0,
-    };
-    if (jsonData.info) test.info = jsonData.info;
-    if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
-    applyExtToTest(test, jsonData.ext);
-    tests.push(test);
+  if (isFailureStatus(jsonData.status)) {
+    const hasFailing = tests.some(t => isFailureStatus(t.status));
+    if (!hasFailing) {
+      // No failing leaves — synthesize from root.
+      const test = {
+        name: jsonData.name || 'Job',
+        status: jsonData.status,
+        duration: jsonData.duration || 0,
+      };
+      if (jsonData.info) test.info = jsonData.info;
+      if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+      applyExtToTest(test, jsonData.ext);
+      tests.push(test);
+    } else if (jsonData.info && jsonData.info.trim() && !tests.some(t => t.info === jsonData.info) && !/^Failures:\s/.test(jsonData.info)) {
+      // Root has additional error context (e.g. "Test execution was interrupted") not captured
+      // by any failing leaf. Synthesize an aggregate entry so the interrupt context is visible
+      // alongside the normal test failures.
+      const test = {
+        name: '[job error]',
+        status: jsonData.status,
+        duration: jsonData.duration || 0,
+        info: jsonData.info,
+      };
+      if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+      applyExtToTest(test, jsonData.ext);
+      tests.push(test);
+    }
   }
 
   return tests;
@@ -665,6 +697,17 @@ async function fetchReport(inputUrl, options = {}) {
           console.log(`Note: could not expand the top-level PR report into job reports (${e.message}); showing job-level failures only.`);
         }
       }
+
+      // Remove workflow-index entries (name_0=PR|MasterCI|REF|master with no name_1) so that
+      // --report N and the displayed numbering only count concrete job reports, not the
+      // top-level aggregation URL that would be mishandled as a concrete job when selected.
+      const concreteUrls = ciUrls.filter(u => {
+        const m = u.match(/[?&]name_0=([^&]+)/);
+        if (!m) return true;
+        const name0 = decodeURIComponent(m[1]);
+        return !/^(PR|MasterCI|REF|master)$/i.test(name0) || /[?&]name_1=/.test(u);
+      });
+      if (concreteUrls.length > 0) ciUrls.splice(0, ciUrls.length, ...concreteUrls);
 
       console.log(`Found ${ciUrls.length} CI report(s)\n`);
 

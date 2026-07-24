@@ -37,8 +37,9 @@ tests/integration/<test_module>/
 **Assertion / wrong result** (`AssertionError`, wrong row count, etc.)
 
 `pytest_parallel.jsonl` — query by `nodeid`:
+
 ```bash
-grep -F '<test_name>' ci/tmp/pytest_parallel.jsonl \
+grep -F '<test_name>' "tmp/investigate/$SHA/ci/tmp/pytest_parallel.jsonl" \
   | jq 'select(.outcome == "failed") | {
       crash:    .longrepr.reprcrash.message,
       lines:    [.longrepr.reprtraceback.reprentries[].data.lines[]?],
@@ -56,11 +57,12 @@ Spark protocol) lives in `.sections[]` entries with headers `"Captured stderr ca
 
 `tests/integration/<test_module>/_instances-conftest.py-gw<N>/node<M>/logs/clickhouse-server.log`
 (plain text, inside the archive). Extract and grep:
+
 ```bash
-tar -xf logs.tar.gz -C tmp/ \
+tar -xf "tmp/investigate/$SHA/logs.tar.gz" -C "tmp/investigate/$SHA/" \
   'tests/integration/<test_module>/_instances-conftest.py-gw1/node1/logs/clickhouse-server.log'
 grep -i 'error\|exception\|fatal' \
-  tmp/tests/integration/<test_module>/_instances-conftest.py-gw1/node1/logs/clickhouse-server.log \
+  "tmp/investigate/$SHA/tests/integration/<test_module>/_instances-conftest.py-gw1/node1/logs/clickhouse-server.log" \
   | tail -50
 ```
 
@@ -70,13 +72,13 @@ grep -i 'error\|exception\|fatal' \
 
 **Verbose test trace** (which queries ran, in what order)
 
-`ci/tmp/pytest_parallel-gw<N>.log` for the worker that ran the test (find with `grep -l '<test_name>' pytest_parallel-gw*.log`).
+`ci/tmp/pytest_parallel-gw<N>.log` for the worker that ran the test (find with `grep -l '<test_name>' tmp/investigate/$SHA/ci/tmp/pytest_parallel-gw*.log`).
 
 ## Fetching individual members without extracting everything
 
 ```bash
 # Extract only the JSONL and one node's server log
-tar -xf logs.tar.gz -C tmp/ \
+tar -xf "tmp/investigate/$SHA/logs.tar.gz" -C "tmp/investigate/$SHA/" \
   ci/tmp/pytest_parallel.jsonl \
   'tests/integration/<test_module>/_instances-conftest.py-gw1/node1/logs/clickhouse-server.log'
 ```

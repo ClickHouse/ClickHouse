@@ -10,7 +10,7 @@ All artifacts are individual files. List their URLs with `--links`, then fetch w
 ## File catalog
 
 | File | Contains |
-|---|---|
+| --- | --- |
 | `clickhouse-server.log[.zst]` | Main ClickHouse server log |
 | `clickhouse-server.err.log[.zst]` | Server stderr (startup errors, fatal signals) |
 | `clickhouse-local.log[.zst]` | clickhouse-local output (Fast test only) |
@@ -31,9 +31,9 @@ curl -sL '<url>' | tail -200
 curl -sL '<url>' | zstd -dcq | grep -i 'error\|exception\|fatal' | tail -50
 
 # Unknown — download first, then check
-curl -sL '<url>' -o tmp/artifact
-file tmp/artifact   # shows "Zstandard compressed data" or "ASCII text", etc.
-# then: zstd -dcq tmp/artifact | ...   or   cat tmp/artifact | ...
+curl -sL '<url>' -o "tmp/investigate/$SHA/artifact"
+file "tmp/investigate/$SHA/artifact"   # shows "Zstandard compressed data" or "ASCII text", etc.
+# then: zstd -dcq "tmp/investigate/$SHA/artifact" | ...   or   cat "tmp/investigate/$SHA/artifact" | ...
 ```
 
 ## Key files by failure type
