@@ -35,8 +35,6 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
-    options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
-
     return options;
 }
 
@@ -407,53 +405,81 @@ void registerInputFormatParquet(FormatFactory & factory)
 
 ## Data types matching {#data-types-matching-parquet}
 
-The table below shows how Parquet data types match ClickHouse [data types](/sql-reference/data-types/index.md).
+The table below shows how Parquet data types match ClickHouse [data types](/reference/data-types/index).
 
 | Parquet type (logical, converted, or physical) | ClickHouse data type |
 |------------------------------------------------|----------------------|
-| `BOOLEAN` | [Bool](/sql-reference/data-types/boolean.md) |
-| `UINT_8` | [UInt8](/sql-reference/data-types/int-uint.md) |
-| `INT_8` | [Int8](/sql-reference/data-types/int-uint.md) |
-| `UINT_16` | [UInt16](/sql-reference/data-types/int-uint.md) |
-| `INT_16` | [Int16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) |
-| `UINT_32` | [UInt32](/sql-reference/data-types/int-uint.md) |
-| `INT_32` | [Int32](/sql-reference/data-types/int-uint.md) |
-| `UINT_64` | [UInt64](/sql-reference/data-types/int-uint.md) |
-| `INT_64` | [Int64](/sql-reference/data-types/int-uint.md) |
-| `DATE` | [Date32](/sql-reference/data-types/date.md) |
-| `TIMESTAMP`, `TIME` | [DateTime64](/sql-reference/data-types/datetime64.md) |
-| `FLOAT` | [Float32](/sql-reference/data-types/float.md) |
-| `DOUBLE` | [Float64](/sql-reference/data-types/float.md) |
-| `INT96` | [DateTime64(9, 'UTC')](/sql-reference/data-types/datetime64.md) |
-| `BYTE_ARRAY`, `UTF8`, `ENUM`, `BSON` | [String](/sql-reference/data-types/string.md) |
-| `JSON` | [JSON](/sql-reference/data-types/newjson.md) |
-| `FIXED_LEN_BYTE_ARRAY` | [FixedString](/sql-reference/data-types/fixedstring.md) |
-| `DECIMAL` | [Decimal](/sql-reference/data-types/decimal.md) |
-| `LIST` | [Array](/sql-reference/data-types/array.md) |
-| `MAP` | [Map](/sql-reference/data-types/map.md) |
-| struct | [Tuple](/sql-reference/data-types/tuple.md) |
-| `FLOAT16` | [Float32](/sql-reference/data-types/float.md) |
-| `UUID` | [FixedString(16)](/sql-reference/data-types/fixedstring.md) |
-| `INTERVAL` | [FixedString(12)](/sql-reference/data-types/fixedstring.md) |
+| `BOOLEAN` | [Bool](/reference/data-types/boolean) |
+| `UINT_8` | [UInt8](/reference/data-types/int-uint) |
+| `INT_8` | [Int8](/reference/data-types/int-uint) |
+| `UINT_16` | [UInt16](/reference/data-types/int-uint) |
+| `INT_16` | [Int16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum) |
+| `UINT_32` | [UInt32](/reference/data-types/int-uint) |
+| `INT_32` | [Int32](/reference/data-types/int-uint) |
+| `UINT_64` | [UInt64](/reference/data-types/int-uint) |
+| `INT_64` | [Int64](/reference/data-types/int-uint) |
+| `DATE` | [Date32](/reference/data-types/date) |
+| `TIMESTAMP`, `TIME` | [DateTime64](/reference/data-types/datetime64) |
+| `FLOAT` | [Float32](/reference/data-types/float) |
+| `DOUBLE` | [Float64](/reference/data-types/float) |
+| `INT96` | [DateTime64(9, 'UTC')](/reference/data-types/datetime64) |
+| `BYTE_ARRAY`, `UTF8`, `ENUM`, `BSON` | [String](/reference/data-types/string) |
+| `JSON` | [JSON](/reference/data-types/newjson) |
+| `FIXED_LEN_BYTE_ARRAY` | [FixedString](/reference/data-types/fixedstring) |
+| `DECIMAL` | [Decimal](/reference/data-types/decimal) |
+| `LIST` | [Array](/reference/data-types/array) |
+| `MAP` | [Map](/reference/data-types/map) |
+| struct | [Tuple](/reference/data-types/tuple) |
+| `FLOAT16` | [Float32](/reference/data-types/float) |
+| `UUID` | [FixedString(16)](/reference/data-types/fixedstring) |
+| `INTERVAL` | [FixedString(12)](/reference/data-types/fixedstring) |
+| `Point` (GeoParquet) | [Point](/reference/data-types/geo#point) |
+| `LineString` (GeoParquet) | [LineString](/reference/data-types/geo#linestring) |
+| `Polygon` (GeoParquet) | [Polygon](/reference/data-types/geo#polygon) |
+| `MultiLineString` (GeoParquet) | [MultiLineString](/reference/data-types/geo#multilinestring) |
+| `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
+| mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 
 | ClickHouse data type | Parquet type |
 |----------------------|--------------|
-| [IPv4](/sql-reference/data-types/ipv4.md) | `UINT_32` |
-| [IPv6](/sql-reference/data-types/ipv6.md) | `FIXED_LEN_BYTE_ARRAY` (16 bytes) |
-| [Date](/sql-reference/data-types/date.md) (16 bits) | `DATE` (32 bits) |
-| [DateTime](/sql-reference/data-types/datetime.md) (32 bits, seconds) | `TIMESTAMP` (64 bits, milliseconds) |
-| [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md) | `FIXED_LEN_BYTE_ARRAY` (16/32 bytes, little-endian) |
+| [IPv4](/reference/data-types/ipv4) | `UINT_32` |
+| [IPv6](/reference/data-types/ipv6) | `FIXED_LEN_BYTE_ARRAY` (16 bytes) |
+| [Date](/reference/data-types/date) (16 bits) | `DATE` (32 bits) |
+| [DateTime](/reference/data-types/datetime) (32 bits, seconds) | `TIMESTAMP` (64 bits, milliseconds) |
+| [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint) | `FIXED_LEN_BYTE_ARRAY` (16/32 bytes, little-endian) |
+| [Point](/reference/data-types/geo#point) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
+| [LineString](/reference/data-types/geo#linestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
+| [Polygon](/reference/data-types/geo#polygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
+| [MultiLineString](/reference/data-types/geo#multilinestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
+| [MultiPolygon](/reference/data-types/geo#multipolygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/sql-reference/data-types/ipv4.md) ClickHouse column.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/reference/data-types/ipv4) ClickHouse column.
 
 For some Parquet types there's no closely matching ClickHouse type. We read them as follows:
 * `TIME` (time of day) is read as a timestamp. E.g. `10:23:13.000` becomes `1970-01-01 10:23:13.000`.
 * `TIMESTAMP`/`TIME` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
 * `INTERVAL` is currently read as `FixedString(12)` with raw binary representation of the time interval, as encoded in Parquet file.
+
+## Geo types (GeoParquet) {#geo-types}
+
+ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification. Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read), with a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS.
+
+### Read behavior {#read}
+
+On read, geometry columns are mapped to the corresponding ClickHouse [geo data types](/reference/data-types/geo):
+* A column declared as `Point`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` is read into the matching ClickHouse geo type.
+* A column with multiple or unknown geometry types is read into the [`Geometry`](/reference/data-types/geo#geometry) type, which is a `Variant` over all supported geo types.
+* If the requested column type is `String`, the GeoParquet metadata is ignored and the raw encoded geometry payload is returned as-is — WKB or WKT bytes, matching whichever encoding the GeoParquet column declares. This is also true if the setting [`input_format_parquet_allow_geoparquet_parser`](/reference/settings/formats#input_format_parquet_allow_geoparquet_parser) is set to `0`.
+
+### Write behavior {#write}
+
+On write, top-level columns of type `Point`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` are encoded as `BYTE_ARRAY` (WKB) and the appropriate `geo` JSON metadata is appended to the Parquet file footer. A top-level [`Geometry`](/reference/data-types/geo#geometry) `Variant` is also encoded as a WKB `BYTE_ARRAY` payload (its sub-values are converted to WKB and stored as a `Nullable(String)` column), but no `geo` metadata is emitted for it, so the result is not recognized as a GeoParquet geometry column on read. Other geo-related types, such as [`Ring`](/reference/data-types/geo#ring), are written using their native underlying representation with no GeoParquet metadata. This behavior can be disabled entirely by setting [`output_format_parquet_geometadata`](/reference/settings/formats#output_format_parquet_geometadata) to `0`, in which case even the supported geo types are written using their native underlying representation (`Point` as `Tuple(Float64, Float64)`, `LineString` as `Array(Point)`, `Polygon` as `Array(Array(Point))`, etc.) and no GeoParquet metadata is emitted.
+
+Geometry columns must appear at the root of the schema or nested inside `Tuple` (`struct`); nesting them inside `Array` or `Map` is not supported. `Nullable` is not supported for geo columns either.
 
 ## Example usage {#example-usage}
 
@@ -500,11 +526,11 @@ INTO OUTFILE 'football.parquet'
 FORMAT Parquet
 ```
 
-:::tip
+<Tip>
 Parquet is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output Parquet files.
-:::
+</Tip>
 
-To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/table-engines/integrations/hdfs.md).
+To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/engines/table-engines/integrations/hdfs).
 
 ## Format settings {#format-settings}
 
@@ -514,7 +540,6 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 | `input_format_parquet_preserve_order`                                          | Avoid reordering rows when reading from Parquet files. Usually makes it much slower.                                                                                                                                              | `0`         |
 | `input_format_parquet_filter_push_down`                                        | When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.                                                                                          | `1`         |
 | `input_format_parquet_bloom_filter_push_down`                                  | When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.                                                                                                          | `0`         |
-| `input_format_parquet_dictionary_filter_push_down`                             | When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, for equality and `IN` conditions, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to `0` to disable. Takes precedence over the bloom filter when both are available. | `1048576`   |
 | `input_format_parquet_allow_missing_columns`                                   | Allow missing columns while reading Parquet input formats                                                                                                                                                                          | `1`         |
 | `input_format_parquet_local_file_min_bytes_for_seek`                           | Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format                                                                                                                          | `8192`      |
 | `input_format_parquet_enable_row_group_prefetch`                               | Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.                                                                                                                          | `1`         |
@@ -522,6 +547,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 | `input_format_parquet_max_block_size`                                          | Max block size for parquet reader.                                                                                                                                                                                                | `65409`     |
 | `input_format_parquet_prefer_block_bytes`                                      | Average block bytes output by parquet reader                                                                                                                                                                                      | `16744704`  |
 | `input_format_parquet_enable_json_parsing`                                      | When reading Parquet files, parse JSON columns as ClickHouse JSON Column.                                                                                                                                                                                      | `1`  |
+| `input_format_parquet_allow_geoparquet_parser`                                  | When reading Parquet files, recognize the GeoParquet `geo` metadata and decode geometry columns (WKB or WKT, per the column's declared encoding) as ClickHouse geo data types. If `0`, geometry columns are exposed as their raw physical (`String`) representation.                                                                                                                                              | `1`         |
 | `output_format_parquet_row_group_size`                                         | Target row group size in rows.                                                                                                                                                                                                      | `1000000`   |
 | `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.                                                                                                                                                                                  | `536870912` |
 | `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.                                                                                                                                                                      | `1`         |
@@ -531,6 +557,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
+| `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |
 | `input_format_parquet_import_nested`                                           | Obsolete setting, does nothing.                                                                                                                                                                                                   | `0`         |
 | `input_format_parquet_local_time_as_utc` | true | Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time. |
 )DOCS_MD"});

@@ -134,9 +134,12 @@ function fuzz
               --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
       exit "${PIPESTATUS[0]}" ) &
     server_bg_pid=$!
-    for _ in {1..30}
+    # A debug or sanitizer server can take over a minute from fork to listening;
+    # give it the same 120s budget as `wait_ready` in `clickhouse_proc.py`.
+    # A dead server is detected early, so the deadline only affects hung servers.
+    for _ in {1..120}
     do
-        if clickhouse-client --receive_timeout=5 --query "select 1"
+        if clickhouse-client --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi
