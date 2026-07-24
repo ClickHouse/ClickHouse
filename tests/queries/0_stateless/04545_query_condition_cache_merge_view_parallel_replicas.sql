@@ -72,3 +72,38 @@ SELECT count() FROM m_base WHERE v IN (1, 2, 3) SETTINGS use_query_condition_cac
 
 DROP VIEW m_view_in;
 DROP TABLE m_base;
+
+-- Qualifier-collision edge case: a table with BOTH a column `k` and a real column literally named
+-- `__table1.k` (which the storage domain renders as the bare identifier `__table1.k`). The comparator
+-- strips a leading `__tableN.` qualifier, so the outer filter on `k` and the view read condition on
+-- `__table1.k` both reduce to `k`. This confirms the outer predicate is still not attributed to the
+-- view predicate's hash across that name collision, so a later plain query on `__table1.k` is not
+-- poisoned. (The read predicate and the outer predicate stay structurally distinct, so the atoms do
+-- not match even though their stripped leaf names coincide.)
+DROP TABLE IF EXISTS c_base;
+DROP VIEW IF EXISTS c_view;
+CREATE TABLE c_base (k Int64, `__table1.k` Int64, s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO c_base SELECT number, number + 1000, toString(number % 7) FROM numbers(100);
+CREATE VIEW c_view AS SELECT * FROM c_base WHERE `__table1.k` = 1042;
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- Poison attempt: outer filter on `k` = 1042 matches no rows (k in [0, 99]); its stripped leaf name
+-- collides with the view predicate's stripped leaf name.
+SELECT count() FROM merge('^c_view$') WHERE k = 1042
+SETTINGS use_query_condition_cache = 1,
+         allow_experimental_parallel_reading_from_replicas = 1,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1,
+         max_parallel_replicas = 3,
+         parallel_replicas_local_plan = 1,
+         automatic_parallel_replicas_mode = 0,
+         optimize_move_to_prewhere = 1,
+         query_plan_optimize_prewhere = 1;
+
+-- Later plain query on the real `__table1.k` column must return its 1 matching row, not 0.
+SELECT count() FROM c_base WHERE `__table1.k` = 1042 SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM c_base WHERE `__table1.k` = 1042 SETTINGS use_query_condition_cache = 0;
+
+DROP VIEW c_view;
+DROP TABLE c_base;
