@@ -72,11 +72,11 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 
 /// The version a plan is written with for a peer that supports up to `max_supported_version`.
 /// v4+ peers accept streams by the content's needed-to-read version, so they all get the writer's
-/// own version (one byte string serves a whole mixed v4+ fleet); only pre-skeleton peers need the
+/// own version (one byte string serves a whole mixed v4+ fleet); only pre-outline peers need the
 /// stream clamped down to what they can parse.
 static UInt64 effectiveSerializationVersion(size_t max_supported_version)
 {
-    if (max_supported_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+    if (max_supported_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
         return DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
     return std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 }
@@ -89,7 +89,7 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     SerializationFlags flags;
     flags.version = version;
 
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
         serializeEnvelope(out, flags);
     else
         serialize(out, flags);
@@ -166,9 +166,9 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
     SerializedSetsRegistry registry;
     const auto & step_registry = QueryPlanStepRegistry::instance();
 
-    PlanSkeleton skeleton;
+    PlanOutline outline;
     std::vector<String> payloads;
-    UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
+    UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 
     /// Pre-order walk (children pushed in reverse); Delayed* steps are elided as in the legacy walk.
     std::stack<Node *> stack;
@@ -182,19 +182,19 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
             || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
             node = node->children.front();
 
-        PlanSkeleton::Node skeleton_node;
-        skeleton_node.child_count = node->children.size();
-        skeleton_node.step_name = node->step->getSerializationName();
-        skeleton_node.step_description = node->step->getStepDescription();
+        PlanOutline::Node outline_node;
+        outline_node.child_count = node->children.size();
+        outline_node.step_name = node->step->getSerializationName();
+        outline_node.step_description = node->step->getStepDescription();
 
-        const auto * info = step_registry.getStepSerializationInfo(skeleton_node.step_name);
-        skeleton_node.has_output_header = node->step->hasOutputHeader();
-        if (skeleton_node.has_output_header)
-            skeleton_node.header = node->step->getOutputHeader();
+        const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
+        outline_node.has_output_header = node->step->hasOutputHeader();
+        if (outline_node.has_output_header)
+            outline_node.header = node->step->getOutputHeader();
 
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings);
-        skeleton_node.settings = settings.getChangedEntries();
+        outline_node.settings = settings.getChangedEntries();
 
         WriteBufferFromOwnString payload;
         IQueryPlanStep::Serialization ctx{payload, registry};
@@ -204,13 +204,13 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
         payload.finalize();
 
         /// The step may have emitted an older payload form and lowered the context value; the
-        /// skeleton must advertise the format of the bytes actually written.
-        skeleton_node.step_format_version = ctx.step_format_version;
-        skeleton_node.payload_size = payload.str().size();
+        /// outline must advertise the format of the bytes actually written.
+        outline_node.step_format_version = ctx.step_format_version;
+        outline_node.payload_size = payload.str().size();
 
         /// "Needed to read" for this node: the step's registry requirements for the format
         /// actually written, its value-dependent requirements, and the header's type encodings.
-        UInt64 node_min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
+        UInt64 node_min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
         if (info)
         {
             node_min_reader = std::max(node_min_reader, info->introduced_in_plan_version);
@@ -219,16 +219,16 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
                     node_min_reader = std::max(node_min_reader, min_plan_version);
         }
         node_min_reader = std::max(node_min_reader, ctx.min_reader_version);
-        if (skeleton_node.header)
-            for (const auto & column : *skeleton_node.header)
+        if (outline_node.header)
+            for (const auto & column : *outline_node.header)
                 node_min_reader = std::max(node_min_reader, minReaderVersionForType(*column.type));
-        for (const auto & entry : skeleton_node.settings)
+        for (const auto & entry : outline_node.settings)
             node_min_reader = std::max(node_min_reader, QueryPlanSerializationSettings::minReaderVersionForEntry(entry));
 
-        skeleton_node.min_reader_plan_version = node_min_reader;
+        outline_node.min_reader_plan_version = node_min_reader;
         min_reader_plan_version = std::max(min_reader_plan_version, node_min_reader);
 
-        skeleton.nodes.push_back(std::move(skeleton_node));
+        outline.nodes.push_back(std::move(outline_node));
         payloads.push_back(payload.str());
 
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
@@ -236,14 +236,14 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
     }
 
     std::vector<String> set_payloads;
-    serializeEnvelopeSets(registry, flags, skeleton, set_payloads, min_reader_plan_version);
+    serializeEnvelopeSets(registry, flags, outline, set_payloads, min_reader_plan_version);
 
     /// An honest writer never requires a reader newer than the version it writes: features are
     /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate.
     chassert(min_reader_plan_version <= flags.version);
 
     WriteBufferFromOwnString envelope;
-    writeQueryPlanSkeleton(skeleton, envelope);
+    writeQueryPlanOutline(outline, envelope);
     for (const auto & payload : payloads)
         envelope.write(payload.data(), payload.size());
     for (const auto & payload : set_payloads)
@@ -279,18 +279,18 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
     }
 
     ReadBufferFromMemory envelope_buffer(envelope.data(), envelope.size());
-    auto skeleton = readQueryPlanSkeleton(envelope_buffer, max_type_complexity);
+    auto outline = readQueryPlanOutline(envelope_buffer, max_type_complexity);
 
-    /// One pass over the skeleton reports every problem at once (unknown steps, unsupported step
+    /// One pass over the outline reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
-    auto validation = validateQueryPlanSkeleton(skeleton, flags.version, min_reader_plan_version);
+    auto validation = validateQueryPlanOutline(outline, flags.version, min_reader_plan_version);
     if (!validation.ok())
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan cannot be deserialized: {}", validation.describe());
 
-    size_t node_count = skeleton.nodes.size();
+    size_t node_count = outline.nodes.size();
 
-    /// Payload offsets in the envelope (Section B starts where the skeleton ended) and the
+    /// Payload offsets in the envelope (Section B starts where the outline ended) and the
     /// children lists reconstructed from the pre-order child counts.
     std::vector<size_t> payload_offsets(node_count);
     std::vector<std::vector<size_t>> children_indices(node_count);
@@ -299,14 +299,14 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
         std::vector<std::pair<size_t, UInt64>> parents; /// (node index, remaining child slots)
         for (size_t i = 0; i < node_count; ++i)
         {
-            const auto & skeleton_node = skeleton.nodes[i];
+            const auto & outline_node = outline.nodes[i];
 
             payload_offsets[i] = offset;
             /// Subtraction, not addition: `offset + payload_size` could wrap around on a hostile size.
-            if (skeleton_node.payload_size > envelope.size() - offset)
+            if (outline_node.payload_size > envelope.size() - offset)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                    "Query plan payload of step '{}' extends past the envelope", skeleton_node.step_name);
-            offset += skeleton_node.payload_size;
+                    "Query plan payload of step '{}' extends past the envelope", outline_node.step_name);
+            offset += outline_node.payload_size;
 
             if (i > 0)
             {
@@ -314,8 +314,8 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
                 if (--parents.back().second == 0)
                     parents.pop_back();
             }
-            if (skeleton_node.child_count > 0)
-                parents.emplace_back(i, skeleton_node.child_count);
+            if (outline_node.child_count > 0)
+                parents.emplace_back(i, outline_node.child_count);
         }
     }
 
@@ -331,7 +331,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
     /// refill them, and e.g. `UnionStep` depends on child header constness).
     for (size_t idx = node_count; idx-- > 0;)
     {
-        const auto & skeleton_node = skeleton.nodes[idx];
+        const auto & outline_node = outline.nodes[idx];
 
         std::vector<Node *> children;
         SharedHeaders input_headers;
@@ -343,29 +343,29 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
             input_headers.push_back(nodes_by_index[child_index]->step->getOutputHeader());
         }
 
-        SharedHeader output_header = skeleton_node.has_output_header
-            ? skeleton_node.header
+        SharedHeader output_header = outline_node.has_output_header
+            ? outline_node.header
             : std::make_shared<const Block>();
 
         QueryPlanSerializationSettings settings;
-        settings.applyEntries(skeleton_node.settings);
+        settings.applyEntries(outline_node.settings);
 
-        ReadBufferFromMemory payload(envelope.data() + payload_offsets[idx], skeleton_node.payload_size);
+        ReadBufferFromMemory payload(envelope.data() + payload_offsets[idx], outline_node.payload_size);
         IQueryPlanStep::Deserialization ctx{
             payload, sets_registry, {}, context, input_headers, output_header, settings,
-            max_type_complexity, flags.version, flags.skip_data, skeleton_node.step_format_version};
-        auto step = step_registry.createStep(skeleton_node.step_name, ctx);
+            max_type_complexity, flags.version, flags.skip_data, outline_node.step_format_version};
+        auto step = step_registry.createStep(outline_node.step_name, ctx);
 
         if (step->hasOutputHeader())
         {
             assertCompatibleHeader(
                 *step->getOutputHeader(), *output_header,
-                fmt::format("deserialization of query plan {} step", skeleton_node.step_name));
+                fmt::format("deserialization of query plan {} step", outline_node.step_name));
         }
         else if (output_header->columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
-                skeleton_node.step_name, output_header->dumpStructure());
+                outline_node.step_name, output_header->dumpStructure());
 
         /// A payload tail the step did not consume is a newer, ignorable extension of its format;
         /// the frame makes it skippable by construction.
@@ -381,7 +381,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
 
     ReadBufferFromMemory sets_buffer(envelope.data() + offset, envelope.size() - offset);
     auto res = deserializeEnvelopeSets(
-        std::move(plan), sets_registry, skeleton, sets_buffer, flags, context, max_type_complexity);
+        std::move(plan), sets_registry, outline, sets_buffer, flags, context, max_type_complexity);
 
     if (!sets_buffer.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
@@ -426,7 +426,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
     SerializationFlags flags{.version = version, .skip_data = skip_data};
 
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
     {
         /// Acceptance is decided by the content's "needed to read" version, not by the writer's
         /// version: a newer writer's plan is readable as long as everything above this reader's

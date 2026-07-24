@@ -157,10 +157,10 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
 
 UInt64 QueryPlanSerializationSettings::minReaderVersionForEntry(const SerializedEntry &)
 {
-    /// All current settings and value encodings predate the skeleton format. A non-ignorable
+    /// All current settings and value encodings predate the outline format. A non-ignorable
     /// setting introduced later must return its introduced-at version here (an ignorable one
     /// never raises the floor: readers skip it by the wire flag).
-    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
+    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 }
 
 bool QueryPlanSerializationSettings::hasSetting(std::string_view name)

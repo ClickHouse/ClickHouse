@@ -101,7 +101,7 @@ QueryPlan deserializePlan(const std::string & bytes)
 
 /// For the legacy v3 stream and the current stream: serialize -> deserialize -> serialize must reproduce identical
 /// bytes, and the reconstructed plans must explain identically across versions. This pins both
-/// the legacy and the v4 skeleton formats and per-step determinism.
+/// the legacy and the v4 outline formats and per-step determinism.
 void checkRoundTrip(QueryPlan plan)
 {
     registerStepsOnce();
@@ -221,21 +221,21 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
 namespace
 {
 
-/// A two-node skeleton: root "Expression" with one "TestSource" child.
-PlanSkeleton makeTestSkeleton()
+/// A two-node outline: root "Expression" with one "TestSource" child.
+PlanOutline makeTestOutline()
 {
-    PlanSkeleton skeleton;
+    PlanOutline outline;
 
-    PlanSkeleton::Node root;
+    PlanOutline::Node root;
     root.child_count = 1;
     root.step_name = "Expression";
     root.step_format_version = 1;
     root.min_reader_plan_version = 4;
     root.has_output_header = true;
     root.header = makeTestHeader();
-    skeleton.nodes.push_back(std::move(root));
+    outline.nodes.push_back(std::move(root));
 
-    PlanSkeleton::Node leaf;
+    PlanOutline::Node leaf;
     leaf.child_count = 0;
     leaf.step_name = "TestSource";
     leaf.step_format_version = 1;
@@ -243,33 +243,33 @@ PlanSkeleton makeTestSkeleton()
     leaf.has_output_header = true;
     leaf.header = makeTestHeader();
     leaf.payload_size = 0;
-    skeleton.nodes.push_back(std::move(leaf));
+    outline.nodes.push_back(std::move(leaf));
 
-    return skeleton;
+    return outline;
 }
 
-std::string writeSkeletonToString(const PlanSkeleton & skeleton)
+std::string writeOutlineToString(const PlanOutline & outline)
 {
     WriteBufferFromOwnString out;
-    writeQueryPlanSkeleton(skeleton, out);
+    writeQueryPlanOutline(outline, out);
     out.finalize();
     return out.str();
 }
 
 }
 
-TEST(QueryPlanSkeleton, WriteReadRoundTrip)
+TEST(QueryPlanOutline, WriteReadRoundTrip)
 {
     registerStepsOnce();
-    auto skeleton = makeTestSkeleton();
-    skeleton.nodes[0].step_description = "test description";
-    skeleton.nodes[1].settings.push_back({.name = "max_block_size", .flags = 0, .value = "\x01"});
-    skeleton.nodes[1].payload_size = 42;
+    auto outline = makeTestOutline();
+    outline.nodes[0].step_description = "test description";
+    outline.nodes[1].settings.push_back({.name = "max_block_size", .flags = 0, .value = "\x01"});
+    outline.nodes[1].payload_size = 42;
 
-    auto bytes = writeSkeletonToString(skeleton);
+    auto bytes = writeOutlineToString(outline);
 
     ReadBufferFromString in(bytes);
-    auto restored = readQueryPlanSkeleton(in, /*max_type_complexity=*/0);
+    auto restored = readQueryPlanOutline(in, /*max_type_complexity=*/0);
     EXPECT_TRUE(in.eof());
 
     ASSERT_EQ(restored.nodes.size(), 2u);
@@ -283,20 +283,20 @@ TEST(QueryPlanSkeleton, WriteReadRoundTrip)
     EXPECT_EQ(restored.nodes[1].settings[0].name, "max_block_size");
 
     /// Re-write must reproduce identical bytes.
-    EXPECT_EQ(writeSkeletonToString(restored), bytes);
+    EXPECT_EQ(writeOutlineToString(restored), bytes);
 }
 
-TEST(QueryPlanSkeleton, ValidationCollectsAllIssues)
+TEST(QueryPlanOutline, ValidationCollectsAllIssues)
 {
     registerStepsOnce();
-    auto skeleton = makeTestSkeleton();
+    auto outline = makeTestOutline();
 
-    skeleton.nodes[1].step_name = "NoSuchStep";
-    skeleton.nodes[1].has_output_header = false;
-    skeleton.nodes[1].header = nullptr;
-    skeleton.nodes[0].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
+    outline.nodes[1].step_name = "NoSuchStep";
+    outline.nodes[1].has_output_header = false;
+    outline.nodes[1].header = nullptr;
+    outline.nodes[0].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
 
-    auto result = validateQueryPlanSkeleton(skeleton, /*plan_version=*/4, /*head_min_reader_plan_version=*/4);
+    auto result = validateQueryPlanOutline(outline, /*plan_version=*/4, /*head_min_reader_plan_version=*/4);
     ASSERT_FALSE(result.ok());
     /// All three problems reported at once, not just the first.
     EXPECT_EQ(result.issues.size(), 3u) << result.describe();
@@ -305,51 +305,51 @@ TEST(QueryPlanSkeleton, ValidationCollectsAllIssues)
     EXPECT_NE(result.describe().find("no_such_setting"), std::string::npos);
 }
 
-TEST(QueryPlanSkeleton, ValidationAcceptsIgnorableUnknownSetting)
+TEST(QueryPlanOutline, ValidationAcceptsIgnorableUnknownSetting)
 {
     registerStepsOnce();
-    auto skeleton = makeTestSkeleton();
-    skeleton.nodes[0].settings.push_back(
-        {.name = "future_setting", .flags = PlanSkeleton::SettingEntry::FLAG_IGNORABLE, .value = ""});
+    auto outline = makeTestOutline();
+    outline.nodes[0].settings.push_back(
+        {.name = "future_setting", .flags = PlanOutline::SettingEntry::FLAG_IGNORABLE, .value = ""});
 
-    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 4, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline, 4, 4).ok());
 }
 
-TEST(QueryPlanSkeleton, ValidationChecksStepVersionAgainstRegistryInfo)
+TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
 {
     registerStepsOnce();
 
-    auto skeleton = makeTestSkeleton();
-    skeleton.nodes[1].step_name = "TestGatedStep";
-    skeleton.nodes[1].step_format_version = 2;
-    skeleton.nodes[1].min_reader_plan_version = 5;
+    auto outline = makeTestOutline();
+    outline.nodes[1].step_name = "TestGatedStep";
+    outline.nodes[1].step_format_version = 2;
+    outline.nodes[1].min_reader_plan_version = 5;
 
     /// Format version 2 of this step requires plan version 5.
-    EXPECT_FALSE(validateQueryPlanSkeleton(skeleton, 4, 5).ok());
-    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 5, 5).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(outline, 4, 5).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline, 5, 5).ok());
 
     /// A version above the known maximum is an ignorable extension when no mapping forbids it.
-    skeleton.nodes[1].step_format_version = 3;
-    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 5, 5).ok());
+    outline.nodes[1].step_format_version = 3;
+    EXPECT_TRUE(validateQueryPlanOutline(outline, 5, 5).ok());
 }
 
-TEST(QueryPlanSkeleton, ValidationCrossChecksDeclaredReaderVersions)
+TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
 {
     registerStepsOnce();
 
     /// A writer that undercounted the "needed to read" version is reported: the gated step's
     /// registry info requires 5 while the node declares only the base version.
-    auto skeleton = makeTestSkeleton();
-    skeleton.nodes[1].step_name = "TestGatedStep";
-    skeleton.nodes[1].step_format_version = 2;
-    auto result = validateQueryPlanSkeleton(skeleton, 5, 5);
+    auto outline = makeTestOutline();
+    outline.nodes[1].step_name = "TestGatedStep";
+    outline.nodes[1].step_format_version = 2;
+    auto result = validateQueryPlanOutline(outline, 5, 5);
     ASSERT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("registry info requires 5"), std::string::npos);
 
     /// A node requiring more than the plan's declared head value is reported too.
-    skeleton = makeTestSkeleton();
-    skeleton.nodes[1].min_reader_plan_version = 5;
-    result = validateQueryPlanSkeleton(skeleton, 5, 4);
+    outline = makeTestOutline();
+    outline.nodes[1].min_reader_plan_version = 5;
+    result = validateQueryPlanOutline(outline, 5, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("above the plan's declared"), std::string::npos);
 }
@@ -365,7 +365,7 @@ TEST(QueryPlanSerialization, NewerCompatibleStreamIsAccepted)
     /// single-byte varints here.
     ASSERT_GE(bytes.size(), 2u);
     ASSERT_EQ(static_cast<UInt8>(bytes[0]), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    ASSERT_EQ(static_cast<UInt8>(bytes[1]), DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON);
+    ASSERT_EQ(static_cast<UInt8>(bytes[1]), DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE);
 
     /// A stream from a "newer" writer whose content requires nothing new must be accepted.
     std::string from_the_future = bytes;
@@ -381,90 +381,90 @@ TEST(QueryPlanSerialization, NewerCompatibleStreamIsAccepted)
     EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, 0), Exception);
 }
 
-TEST(QueryPlanSkeleton, ValidationChecksTreeStructureAndSetOrder)
+TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
 {
     registerStepsOnce();
-    auto skeleton = makeTestSkeleton();
+    auto outline = makeTestOutline();
 
-    skeleton.nodes[0].child_count = 2;  /// Declares two children, only one node follows.
-    EXPECT_FALSE(validateQueryPlanSkeleton(skeleton, 4, 4).ok());
-    skeleton.nodes[0].child_count = 1;
+    outline.nodes[0].child_count = 2;  /// Declares two children, only one node follows.
+    EXPECT_FALSE(validateQueryPlanOutline(outline, 4, 4).ok());
+    outline.nodes[0].child_count = 1;
 
-    PlanSkeleton::SetEntry set1;
+    PlanOutline::SetEntry set1;
     set1.hash.low64 = 10;
     set1.hash.high64 = 1;
     set1.kind = 2;
-    PlanSkeleton::SetEntry set2;
+    PlanOutline::SetEntry set2;
     set2.hash.low64 = 5;
     set2.hash.high64 = 0;
     set2.kind = 200;  /// Unknown kind.
-    skeleton.sets = {set1, set2};  /// Also not sorted by hash.
+    outline.sets = {set1, set2};  /// Also not sorted by hash.
 
-    auto result = validateQueryPlanSkeleton(skeleton, 4, 4);
+    auto result = validateQueryPlanOutline(outline, 4, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
 
-TEST(QueryPlanSkeleton, TruncatedSkeletonIsRejected)
+TEST(QueryPlanOutline, TruncatedOutlineIsRejected)
 {
     registerStepsOnce();
-    auto bytes = writeSkeletonToString(makeTestSkeleton());
+    auto bytes = writeOutlineToString(makeTestOutline());
 
     /// Truncation at every byte boundary must throw, never crash or misread.
     for (size_t cut = 0; cut < bytes.size(); ++cut)
     {
         std::string truncated = bytes.substr(0, cut);
         ReadBufferFromString in(truncated);
-        EXPECT_ANY_THROW(readQueryPlanSkeleton(in, 0)) << "no exception at cut " << cut;
+        EXPECT_ANY_THROW(readQueryPlanOutline(in, 0)) << "no exception at cut " << cut;
     }
 }
 
-TEST(QueryPlanSkeleton, TrailingBytesInsideFrameAreRejected)
+TEST(QueryPlanOutline, TrailingBytesInsideFrameAreRejected)
 {
     registerStepsOnce();
-    auto bytes = writeSkeletonToString(makeTestSkeleton());
+    auto bytes = writeOutlineToString(makeTestOutline());
 
-    /// Grow the declared frame size by one and append a byte: the skeleton content then ends
+    /// Grow the declared frame size by one and append a byte: the outline content then ends
     /// before its frame does, which must be rejected, not silently accepted.
     ReadBufferFromString size_in(bytes);
-    UInt64 skeleton_size = 0;
-    readVarUInt(skeleton_size, size_in);
+    UInt64 outline_size = 0;
+    readVarUInt(outline_size, size_in);
     size_t size_prefix_bytes = bytes.size() - size_in.available();
 
     WriteBufferFromOwnString patched;
-    writeVarUInt(skeleton_size + 1, patched);
+    writeVarUInt(outline_size + 1, patched);
     patched.write(bytes.data() + size_prefix_bytes, bytes.size() - size_prefix_bytes);
     writeChar('\0', patched);
     patched.finalize();
 
     ReadBufferFromString in(patched.str());
-    EXPECT_ANY_THROW(readQueryPlanSkeleton(in, 0));
+    EXPECT_ANY_THROW(readQueryPlanOutline(in, 0));
 }
 
-TEST(QueryPlanSkeleton, ExtensionBytesAreSkippedForFutureLayouts)
+TEST(QueryPlanOutline, ExtensionBytesAreSkippedForFutureLayouts)
 {
     registerStepsOnce();
-    auto skeleton = makeTestSkeleton();
-    skeleton.nodes[0].extension_bytes = "future skeleton fields";
+    auto outline = makeTestOutline();
+    outline.nodes[0].extension_bytes = "future outline fields";
 
-    auto bytes = writeSkeletonToString(skeleton);
+    auto bytes = writeOutlineToString(outline);
     ReadBufferFromString in(bytes);
-    auto restored = readQueryPlanSkeleton(in, 0);
+    auto restored = readQueryPlanOutline(in, 0);
 
     /// A reader that does not understand the extra bytes still reconstructs the shape.
-    EXPECT_EQ(restored.nodes[0].extension_bytes, "future skeleton fields");
-    EXPECT_TRUE(validateQueryPlanSkeleton(restored, 4, 4).ok());
-    EXPECT_FALSE(formatQueryPlanSkeleton(restored).empty());
+    EXPECT_EQ(restored.nodes[0].extension_bytes, "future outline fields");
+    EXPECT_TRUE(validateQueryPlanOutline(restored, 4, 4).ok());
+    EXPECT_FALSE(formatQueryPlanOutline(restored).empty());
 }
 
-TEST(QueryPlanSkeleton, FormatShowsShapeWithUnknownSteps)
+TEST(QueryPlanOutline, FormatShowsShapeWithUnknownSteps)
 {
     registerStepsOnce();
-    auto skeleton = makeTestSkeleton();
-    skeleton.nodes[1].step_name = "StepFromTheFuture";
-    skeleton.nodes[1].payload_size = 128;
+    auto outline = makeTestOutline();
+    outline.nodes[1].step_name = "StepFromTheFuture";
+    outline.nodes[1].payload_size = 128;
 
-    auto text = formatQueryPlanSkeleton(skeleton);
+    auto text = formatQueryPlanOutline(outline);
     EXPECT_NE(text.find("Expression"), std::string::npos);
     EXPECT_NE(text.find("StepFromTheFuture"), std::string::npos);
     EXPECT_NE(text.find("unknown step, 128 payload bytes"), std::string::npos);

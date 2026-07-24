@@ -26,9 +26,9 @@ struct IQueryPlanStep::Serialization
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
 
-    /// v4 skeleton streams: the payload format version this step is writing. Preset by the
+    /// v4 outline streams: the payload format version this step is writing. Preset by the
     /// framework to the step's registered maximum; a step that emits an older payload form
-    /// (e.g. toward an older stream version) must lower it, otherwise the skeleton would
+    /// (e.g. toward an older stream version) must lower it, otherwise the outline would
     /// advertise a format the bytes do not have and newer readers would misparse them.
     UInt64 step_format_version = 1;
 
@@ -68,13 +68,13 @@ struct IQueryPlanStep::Deserialization
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
     bool skipping = false;
 
-    /// v4 skeleton streams: the payload format version this step was written with (1 otherwise).
+    /// v4 outline streams: the payload format version this step was written with (1 otherwise).
     /// A reader may see a version above the one it knows; the tail fields are then ignorable by
     /// the append-only rule and are skipped via the payload frame.
     UInt64 step_format_version = 1;
 };
 
-/// Header encoding shared by the plan stream and the v4 skeleton section: column names and
+/// Header encoding shared by the plan stream and the v4 outline section: column names and
 /// encoded types only, constants are refilled by steps.
 void serializeQueryPlanHeader(const Block & header, WriteBuffer & out);
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity);

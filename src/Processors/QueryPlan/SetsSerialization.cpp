@@ -171,7 +171,7 @@ static UInt64 nestedPlanBodyMinReader(const String & body)
     ReadBufferFromMemory in(body.data(), body.size());
     UInt64 version = 0;
     readVarUInt(version, in);
-    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
         return version;
     UInt64 min_reader = 0;
     readVarUInt(min_reader, in);
@@ -181,17 +181,17 @@ static UInt64 nestedPlanBodyMinReader(const String & body)
 void serializeEnvelopeSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
-    PlanSkeleton & skeleton,
+    PlanOutline & outline,
     std::vector<String> & payloads,
     UInt64 & min_reader_plan_version)
 {
     auto ordered_sets = registry.entriesSortedByHash();
-    skeleton.sets.reserve(ordered_sets.size());
+    outline.sets.reserve(ordered_sets.size());
     payloads.reserve(ordered_sets.size());
 
     for (const auto & [hash, set_ptr] : ordered_sets)
     {
-        PlanSkeleton::SetEntry entry;
+        PlanOutline::SetEntry entry;
         entry.hash = hash;
 
         WriteBufferFromOwnString body;
@@ -256,7 +256,7 @@ void serializeEnvelopeSets(
         if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
             min_reader_plan_version = std::max(min_reader_plan_version, nestedPlanBodyMinReader(body.str()));
         entry.payload_size = body.str().size();
-        skeleton.sets.push_back(entry);
+        outline.sets.push_back(entry);
         payloads.push_back(body.str());
     }
 }
@@ -264,7 +264,7 @@ void serializeEnvelopeSets(
 QueryPlanAndSets deserializeEnvelopeSets(
     QueryPlan plan,
     DeserializedSetsRegistry & registry,
-    const PlanSkeleton & skeleton,
+    const PlanOutline & outline,
     ReadBuffer & in,
     const QueryPlan::SerializationFlags & flags,
     const ContextPtr & context,
@@ -273,7 +273,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
     QueryPlanAndSets res;
     res.plan = std::move(plan);
 
-    for (const auto & entry : skeleton.sets)
+    for (const auto & entry : outline.sets)
     {
         auto it = registry.sets.find(entry.hash);
         if (it == registry.sets.end())

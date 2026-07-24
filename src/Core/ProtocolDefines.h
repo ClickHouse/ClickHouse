@@ -66,18 +66,18 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-/// Version 4 is the skeleton-first framed envelope:
-/// `[version][min_reader_version][envelope_size][skeleton][step payloads][set payloads]`.
-/// The skeleton carries per-node names, step format versions, headers, framed settings and payload
+/// Version 4 is the outline-first framed envelope:
+/// `[version][min_reader_version][envelope_size][outline][step payloads][set payloads]`.
+/// The outline carries per-node names, step format versions, headers, framed settings and payload
 /// sizes, so a reader can validate the whole plan or render its shape without touching a payload,
 /// and steps may append ignorable payload fields without a version bump. `min_reader_version` is
 /// the oldest version able to read this particular plan, computed by the writer from the content;
 /// a reader accepts any stream whose `min_reader_version` it meets, even from a newer writer.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
-/// First version with the skeleton-first framed envelope.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON = 4;
+/// First version with the outline-first framed envelope.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 4;
 /// The distributed task path ships plans as an opaque string with no per-worker version
-/// negotiation yet, so it stays pinned to the last pre-skeleton version until workers advertise
+/// negotiation yet, so it stays pinned to the last pre-outline version until workers advertise
 /// their supported plan version. Bucketed (v2) and parallel-replicas (v3) features keep working.
 static constexpr auto DISTRIBUTED_TASK_QUERY_PLAN_SERIALIZATION_VERSION = 3;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a

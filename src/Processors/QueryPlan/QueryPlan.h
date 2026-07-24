@@ -36,7 +36,7 @@ class WriteBuffer;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-struct PlanSkeleton;
+struct PlanOutline;
 
 class Pipe;
 
@@ -226,13 +226,13 @@ private:
     friend void serializeEnvelopeSets(
         SerializedSetsRegistry & registry,
         const SerializationFlags & flags,
-        PlanSkeleton & skeleton,
+        PlanOutline & outline,
         std::vector<String> & payloads,
         UInt64 & min_reader_plan_version);
     friend QueryPlanAndSets deserializeEnvelopeSets(
         QueryPlan plan,
         DeserializedSetsRegistry & registry,
-        const PlanSkeleton & skeleton,
+        const PlanOutline & outline,
         ReadBuffer & in,
         const SerializationFlags & flags,
         const ContextPtr & context,
