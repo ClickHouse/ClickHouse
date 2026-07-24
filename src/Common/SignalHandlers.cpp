@@ -7,6 +7,7 @@
 #include <Common/FramePointers.h>
 #include <Common/ErrnoException.h>
 #include <Common/setThreadName.h>
+#include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -300,7 +301,11 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 }
 #endif
 
-void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal)
+void HandledSignals::addSignalHandler(
+    const std::vector<int> & signals,
+    signal_function handler,
+    bool register_signal,
+    const std::vector<int> & additional_masked_signals)
 {
     struct sigaction sa{};
     memset(&sa, 0, sizeof(sa));
@@ -311,11 +316,17 @@ void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_f
     sigemptyset(&sa.sa_mask);
     for (auto signal : signals)
         sigaddset(&sa.sa_mask, signal);
+    for (auto signal : additional_masked_signals)
+        sigaddset(&sa.sa_mask, signal);
 #else
     if (sigemptyset(&sa.sa_mask))
         throw Poco::Exception("Cannot set signal handler.");
 
     for (auto signal : signals)
+        if (sigaddset(&sa.sa_mask, signal))
+            throw Poco::Exception("Cannot set signal handler.");
+
+    for (auto signal : additional_masked_signals)
         if (sigaddset(&sa.sa_mask, signal))
             throw Poco::Exception("Cannot set signal handler.");
 #endif
@@ -798,7 +809,19 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 {
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
     /// NOTE: that it is also used by clickhouse-test wrapper
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The deadly handler captures the crashed thread's stack via StackTrace(ucontext_t), which uses the
+    /// shared thread-local unwind-fault recovery (asynchronous_stack_unwinding + sigjmp_buf). The query
+    /// profiler (SIGUSR1/SIGUSR2) and system.stack_trace (STACK_TRACE_SERVICE_SIGNAL) handlers use the
+    /// same recovery state and already mask each other; block them here too so they cannot interrupt the
+    /// deadly handler mid-unwind, clobber that buffer, and turn the next unwind fault into an invalid
+    /// siglongjmp or a second fatal signal.
+    const std::vector<int> unwind_recovery_signals{SIGUSR1, SIGUSR2, STACK_TRACE_SERVICE_SIGNAL};
+#else
+    const std::vector<int> unwind_recovery_signals;
+#endif
+    addSignalHandler(
+        {SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true, unwind_recovery_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);

@@ -1,5 +1,5 @@
 ---
-description: 'صفحة تشرح محلّل الاستعلامات في ClickHouse'
+description: 'صفحة تشرح المحلّل في ClickHouse'
 keywords: ['المحلّل']
 sidebarTitle: 'المحلّل'
 slug: /operations/analyzer
@@ -7,7 +7,7 @@ title: 'المحلّل'
 doc_type: 'reference'
 ---
 
-في الإصدار `24.3` من ClickHouse، كان محلّل الاستعلامات الجديد مفعّلًا افتراضيًا.
+في الإصدار `24.3` من ClickHouse، كان المحلّل مفعّلًا افتراضيًا.
 يمكنك الاطّلاع على مزيد من التفاصيل حول كيفية عمله [هنا](/ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
 <div id="known-incompatibilities">
@@ -66,6 +66,8 @@ FROM numbers(10)
 WHERE number > 5
 GROUP BY n
 ```
+
+لتسهيل الترحيل، يمكن لمحلّل الاستعلام تكرار إعادة الكتابة القديمة من `HAVING` إلى `WHERE` للمقترنات غير التجميعية المتصلة بـ AND. فعِّل `analyzer_compatibility_allow_non_aggregate_in_having = 1` لتمكين هذا السلوك. هذا الإعداد متاح منذ ClickHouse `26.7`. يُتجاهل هذا الإعداد مع `WITH CUBE` و`WITH ROLLUP` و`WITH TOTALS` و`GROUPING SETS`. تبقى المقترنات التي تحتوي على دوال تجميعية أو `grouping` أو دوال غير حتمية في `HAVING`؛ وإذا احتوى أي مقترن على دالة نافذة أو دالة ذات حالة (مثل `rowNumberInBlock`)، فستُعطَّل إعادة الكتابة لعبارة `HAVING` بالكامل، بما يطابق السلوك القديم.
 
 <div id="create-view-with-invalid-query">
   ### `CREATE VIEW` مع استعلام غير صالح
@@ -146,11 +148,11 @@ FULL JOIN t2 USING (payload);
   #### التعامل مع معدِّلات النوع للأعمدة في بند `USING`
 </div>
 
-في الإصدار الجديد من المحلّل، جرى توحيد قواعد تحديد النوع الأب المشترك للأعمدة المحددة في بند `USING` لإعطاء نتائج أكثر قابلية للتنبؤ،
+في المحلّل، جرى توحيد قواعد تحديد النوع الأعلى المشترك للأعمدة المحددة في بند `USING` لإعطاء نتائج أكثر قابلية للتنبؤ،
 خصوصًا عند التعامل مع معدِّلات النوع مثل `LowCardinality` و`Nullable`.
 
-* `LowCardinality(T)` و`T`: عند ضمّ عمود من النوع `LowCardinality(T)` إلى عمود من النوع `T`، سيكون النوع الأب المشترك الناتج هو `T`، ما يعني عمليًا تجاهل معدِّل `LowCardinality`.
-* `Nullable(T)` و`T`: عند ضمّ عمود من النوع `Nullable(T)` إلى عمود من النوع `T`، سيكون النوع الأب المشترك الناتج هو `Nullable(T)`، بما يضمن الحفاظ على خاصية قبول القيم `NULL`.
+* `LowCardinality(T)` و`T`: عند ضمّ عمود من النوع `LowCardinality(T)` إلى عمود من النوع `T`، سيكون النوع الأعلى المشترك الناتج هو `T`، ما يعني عمليًا تجاهل معدِّل `LowCardinality`.
+* `Nullable(T)` و`T`: عند ضمّ عمود من النوع `Nullable(T)` إلى عمود من النوع `T`، سيكون النوع الأعلى المشترك الناتج هو `Nullable(T)`، بما يضمن الحفاظ على خاصية قبول القيم `NULL`.
 
 على سبيل المثال:
 
@@ -232,7 +234,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
   ## الترحيل إلى Cloud
 </div>
 
-نعمل على تمكين محلّل الاستعلامات الجديد في جميع المثيلات التي يكون معطّلًا فيها حاليًا، وذلك لدعم تحسينات جديدة في الوظائف والأداء. يفرض هذا التغيير قواعد أكثر صرامة لتحديد النطاق في SQL، ما يتطلب من العملاء تحديث الاستعلامات غير المتوافقة يدويًا.
+نعمل على تمكين المحلّل في جميع المثيلات التي يكون معطّلًا فيها حاليًا، وذلك لدعم تحسينات جديدة في الوظائف والأداء. يفرض هذا التغيير قواعد أكثر صرامة لتحديد النطاق في SQL، ما يتطلب من العملاء تحديث الاستعلامات غير المتوافقة يدويًا.
 
 <div id="migration-workflow">
   ### سير عمل الترحيل
@@ -294,6 +296,24 @@ SELECT user_id, device_id FROM table GROUP BY user_id
 SELECT user_id, any(device_id) FROM table GROUP BY user_id
 -- OR
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+<div id="non-aggregated-columns-in-having">
+  ### الأعمدة غير المجمّعة في `HAVING`
+</div>
+
+الخطأ: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. رمز الاستثناء: 215
+
+السبب: كان المحلّل القديم ينقل بصمت الشروط غير التجميعية من مقترنات `AND` من `HAVING` إلى `WHERE`، ويعاملها كعوامل تصفية قبل التجميع. يلتزم المحلّل بـ SQL القياسية: لا يجوز أن يشير `HAVING` إلا إلى مفاتيح التجميع والدوال التجميعية.
+
+الحل: انقل الشرط من `HAVING` إلى `WHERE` يدويًا، أو فعّل `analyzer_compatibility_allow_non_aggregate_in_having = 1` (متاح منذ ClickHouse `26.7`) لاستعادة إعادة الكتابة القديمة كمساعدة في الترحيل. يتم تجاهل إعداد `compatibility` مع `WITH CUBE` و`WITH ROLLUP` و`WITH TOTALS` و`GROUPING SETS`. وتبقى الشروط التي تحتوي على دوال تجميعية أو `grouping` أو دوال غير حتمية داخل `HAVING`؛ وإذا احتوى أي شرط على دالة نافذة أو دالة ذات حالة (مثل `rowNumberInBlock`)، فسيتم تعطيل إعادة الكتابة لكل `HAVING`، بما يتوافق مع السلوك القديم.
+
+```sql
+/* ORIGINAL QUERY */
+SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
+
+/* FIXED QUERY */
+SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
 <div id="duplicate-cte-names">
