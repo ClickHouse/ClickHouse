@@ -135,6 +135,47 @@ void collectStringPaths(const Poco::Dynamic::Var & type, std::unordered_set<Stri
     }
 }
 
+/// Inserts current_path if optional, then recurses. `required` is current_path's own bit; children
+/// read theirs with getValue<bool> (throws on a missing mandatory flag, like the schema parser).
+/// A map key is always required per the Iceberg spec.
+void collectOptionalPaths(const Poco::Dynamic::Var & type, std::unordered_set<String> & result, const String & current_path, bool required)
+{
+    if (!required)
+        result.insert(current_path);
+
+    if (type.isString())
+        return;
+
+    // Mandatory members (key/value/element/type and the required flags) are read unconditionally so
+    // a malformed schema throws here, exactly as the schema parser does, rather than silently
+    // leaving a truly-optional path out of the set (which the writer would then emit as required).
+    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
+    auto type_str = type_object->getValue<String>(Iceberg::f_type);
+    if (type_str == "map")
+    {
+        collectOptionalPaths(type_object->get(Iceberg::f_key), result, Nested::concatenateName(current_path, "key"), true);
+        collectOptionalPaths(
+            type_object->get(Iceberg::f_value), result, Nested::concatenateName(current_path, "value"),
+            type_object->getValue<bool>(Iceberg::f_value_required));
+    }
+    else if (type_str == "list")
+    {
+        collectOptionalPaths(
+            type_object->get(Iceberg::f_element), result, Nested::concatenateName(current_path, "element"),
+            type_object->getValue<bool>(Iceberg::f_element_required));
+    }
+    else if (type_str == "struct")
+    {
+        auto fields = type_object->getArray(Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
+            collectOptionalPaths(field->get(Iceberg::f_type), result, child_path, field->getValue<bool>(Iceberg::f_required));
+        }
+    }
+}
+
 using namespace Iceberg;
 
 template <typename T>
@@ -820,6 +861,19 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergStringPaths(Poc
     return result;
 }
 
+std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_set<String> result;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        collectOptionalPaths(
+            current_object->get(Iceberg::f_type), result, current_object->getValue<String>(Iceberg::f_name),
+            current_object->getValue<bool>(Iceberg::f_required));
+    }
+    return result;
+}
+
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
@@ -828,13 +882,18 @@ ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
     return createColumnMapper(schema);
 }
 
-ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
+ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
 {
     auto column_mapper = std::make_shared<ColumnMapper>();
-    auto fields = schema_object->getArray(Iceberg::f_fields);
     column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields));
     column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
+    column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
     return column_mapper;
+}
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
+{
+    return createColumnMapperFromFields(schema_object->getArray(Iceberg::f_fields));
 }
 
 }

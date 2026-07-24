@@ -93,7 +93,12 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader head
 std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const String & column_path)
 {
     /// Nullable(T) maps to the same ORC node as T; only the Iceberg `required` flag differs.
-    const bool required = !type->isNullable();
+    /// A complex container (list/map/struct) is never wrapped in Nullable, so its Iceberg
+    /// optionality is not recoverable from the type: consult the per-path Iceberg metadata when
+    /// present, else fall back to the type (also for non-Iceberg writes and field-id-only mappers).
+    bool required = !type->isNullable();
+    if (column_mapper && column_mapper->hasIcebergRequiredInfo())
+        required = !column_mapper->isIcebergOptionalPath(column_path);
     const DataTypePtr unwrapped = removeNullable(type);
 
     std::unique_ptr<orc::Type> result;
