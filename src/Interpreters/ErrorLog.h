@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Interpreters/PeriodicLog.h>
-#include <Common/ErrorCodes.h>
 #include <Core/NamesAndAliases.h>
+#include <Interpreters/PeriodicLog.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/ErrorCodes.h>
 
 
 namespace DB
@@ -43,7 +43,7 @@ private:
         UInt64 remote = 0;
     };
     /// stepFunction and flushBufferToLog may be executed concurrently, hence the mutex
-    std::vector<ValuePair> previous_values TSA_GUARDED_BY(previous_values_mutex) = std::vector<ValuePair>(ErrorCodes::end());
+    std::vector<ValuePair> previous_values TSA_GUARDED_BY(previous_values_mutex) = std::vector<ValuePair>(ErrorCodes::count());
     mutable std::mutex previous_values_mutex;
 };
 

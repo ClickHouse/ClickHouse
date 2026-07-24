@@ -1,7 +1,14 @@
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <format>
+#include <iterator>
+#include <ranges>
+#include <span>
+#include <stdexcept>
 #include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <chrono>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -681,113 +688,169 @@
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
-    #define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M) APPLY_FOR_EXTERNAL_ERROR_CODES(M)
+#define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M) APPLY_FOR_EXTERNAL_ERROR_CODES(M)
 #else
-    #define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M)
+#define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M)
 #endif
 
 namespace DB
 {
 namespace ErrorCodes
 {
+
 #define M(VALUE, NAME) extern const ErrorCode NAME = VALUE;
-    APPLY_FOR_ERROR_CODES(M)
+APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1010;
-    ErrorPairHolder values[END + 1]{};
+ErrorValues values;
 
-    struct ErrorCodesNames
-    {
-        std::string_view names[END + 1];
-        ErrorCodesNames()
-        {
-#define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
-            APPLY_FOR_ERROR_CODES(M)
-#undef M
-        }
-    } static error_codes_names;
 
-    std::string_view getName(ErrorCode error_code)
+namespace
+{
+constexpr size_t COUNT = []()
+{
+    size_t i = 0;
+#define X(VALUE, NAME) i++;
+    APPLY_FOR_ERROR_CODES(X)
+#undef X
+    return i;
+}();
+
+#define X(VALUE, NAME) std::string_view{#NAME},
+std::array<std::string_view, COUNT> g_names{APPLY_FOR_ERROR_CODES(X)};
+#undef X
+
+class ErrorRegistry
+{
+public:
+    ErrorRegistry()
     {
-        if (error_code < 0 || error_code > END)
-            return std::string_view();
-        return error_codes_names.names[error_code];
+        size_t i = 0;
+#define X(VALUE, NAME) \
+    do \
+    { \
+        const bool inserted = index.emplace(VALUE, i++).second; \
+        chassert(inserted); \
+    } while (false);
+        APPLY_FOR_ERROR_CODES(X)
+#undef X
     }
 
-    ErrorCode getErrorCodeByName(std::string_view error_name)
+    static ErrorRegistry & get()
     {
-        for (int i = 0, end = ErrorCodes::end(); i < end; ++i)
+        static ErrorRegistry me;
+        return me;
+    }
+
+    ErrorPairHolder & operator[](ErrorCode code)
+    {
+        if (const auto found = index.find(code); found != index.end())
         {
-            std::string_view name = ErrorCodes::getName(i);
-
-            if (name.empty())
-                continue;
-
-            if (name == error_name)
-                return i;
+            return dense[found->second];
         }
+        throw std::runtime_error{std::format("out of range {}", code)};
+    }
+
+    ErrorCode clamp(ErrorCode code) const { return index.contains(code) ? code : std::prev(index.end())->first; }
+
+    std::string_view getName(std::span<const std::string_view> names, ErrorCode error_code) const { return names[index.at(error_code)]; }
+
+    ErrorCode getErrorCodeByName(std::span<const std::string_view> names, std::string_view error_name) const
+    {
+        auto found = std::ranges::find_if(
+            index.begin(), index.end(), [names, error_name](std::pair<ErrorCode, size_t> val) { return names[val.second] == error_name; });
+        if (found != index.end())
+        {
+            return found->first;
+        }
+
         throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     }
 
-    ErrorCode end() { return END + 1; }
+    std::ranges::subrange<ErrorArrayIndex::const_iterator> getIndex() const { return {index.cbegin(), index.cend()}; }
 
-    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
+private:
+    std::array<ErrorPairHolder, COUNT> dense{};
+    /// Index always points to correct entries and is sorted by ErrorCode
+    ErrorArrayIndex index;
+};
+}
+
+ErrorPairHolder & ErrorValues::operator[](ErrorCode idx)
+{
+    return ErrorRegistry::get()[idx];
+}
+
+size_t count()
+{
+    return COUNT;
+}
+
+std::string_view getName(ErrorCode error_code)
+{
+    auto new_code = ErrorRegistry::get().clamp(error_code);
+    if (new_code != error_code)
     {
-        if (error_code < 0 || error_code >= end())
-        {
-            /// For everything outside the range, use END.
-            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
-            error_code = end() - 1;
-        }
-
-        return values[error_code].increment(remote, message, format_string, trace);
+        return {};
     }
+    return ErrorRegistry::get().getName(g_names, error_code);
+}
 
-    void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & message)
-    {
-        if (error_code < 0 || error_code >= end())
-        {
-            /// For everything outside the range, use END.
-            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
-            error_code = end() - 1;
-        }
+ErrorCode getErrorCodeByName(std::string_view error_name)
+{
+    return ErrorRegistry::get().getErrorCodeByName(g_names, error_name);
+}
 
-        values[error_code].extendedMessage(remote, error_index, message);
-    }
+std::ranges::subrange<ErrorArrayIndex::const_iterator> getIndex()
+{
+    return ErrorRegistry::get().getIndex();
+}
 
-    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
-    {
-        const auto now = std::chrono::system_clock::now();
+size_t
+increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
+{
+    error_code = ErrorRegistry::get().clamp(error_code);
+    return ErrorRegistry::get()[error_code].increment(remote, message, format_string, trace);
+}
 
-        std::lock_guard lock(mutex);
-        auto & error = remote ? value.remote : value.local;
+void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & message)
+{
+    error_code = ErrorRegistry::get().clamp(error_code);
+    ErrorRegistry::get()[error_code].extendedMessage(remote, error_index, message);
+}
 
-        size_t error_index = error.count++;
-        error.message = message;
-        error.format_string = format_string;
-        error.trace = trace;
-        error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-        error.query_id = CurrentThread::getQueryId();
+size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
+{
+    const auto now = std::chrono::system_clock::now();
 
-        return error_index;
-    }
+    std::lock_guard lock(mutex);
+    auto & error = remote ? value.remote : value.local;
 
-    void ErrorPairHolder::extendedMessage(bool remote, size_t error_index, const std::string & new_message)
-    {
-        std::lock_guard lock(mutex);
-        auto & error = remote ? value.remote : value.local;
+    size_t error_index = error.count++;
+    error.message = message;
+    error.format_string = format_string;
+    error.trace = trace;
+    error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    error.query_id = CurrentThread::getQueryId();
 
-        /// This function is supposed to extend the current message.
-        if ((error.count == error_index + 1) && new_message.starts_with(error.message))
-            error.message = new_message;
-    }
+    return error_index;
+}
 
-    ErrorPair ErrorPairHolder::get()
-    {
-        std::lock_guard lock(mutex);
-        return value;
-    }
+void ErrorPairHolder::extendedMessage(bool remote, size_t error_index, const std::string & new_message)
+{
+    std::lock_guard lock(mutex);
+    auto & error = remote ? value.remote : value.local;
+
+    /// This function is supposed to extend the current message.
+    if ((error.count == error_index + 1) && new_message.starts_with(error.message))
+        error.message = new_message;
+}
+
+ErrorPair ErrorPairHolder::get()
+{
+    std::lock_guard lock(mutex);
+    return value;
+}
 }
 
 }
