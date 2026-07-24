@@ -30,15 +30,15 @@ collect_query_metrics_build_job = common_build_job_config.parametrize(
 )[0]
 collect_query_metrics_test_jobs = common_ft_job_config.set_name(
     JobNames.COLLECT_QUERY_METRICS
+).set_post_hooks(
+    ["python3 ./ci/jobs/scripts/job_hooks/upload_query_metrics_hook.py"]
 ).parametrize(
+    # No "parallel"/"sequential" flavor: a single job runs the whole stateless
+    # suite (both parallel and sequential tests) so the collected metrics cover
+    # every test in one place.
     Job.ParamSet(
-        parameter="arm_binary, parallel, collect metrics",
-        runs_on=RunnerLabels.ARM_MEDIUM_CPU,
-        requires=[ArtifactNames.CH_ARM_BINARY],
-    ),
-    Job.ParamSet(
-        parameter="arm_binary, sequential, collect metrics",
-        runs_on=RunnerLabels.ARM_SMALL,
+        parameter="arm_binary, collect metrics",
+        runs_on=RunnerLabels.ARM_MEDIUM,
         requires=[ArtifactNames.CH_ARM_BINARY],
     ),
 )

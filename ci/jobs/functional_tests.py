@@ -1308,6 +1308,21 @@ def main():
                 ).set_timing(stopwatch=diag_stopwatch)
             )
 
+    # Collect per-test peak memory directly from the live server (before it is
+    # terminated) and attach the resulting JSON to the job result. This is the
+    # preliminary query-metrics data set; it replaces dumping the raw system
+    # tables as TSV.
+    if is_collect_metrics:
+        metrics_file = f"{temp_dir}/test_memory_stats.json"
+        results.append(
+            Result.from_commands_run(
+                name="Collect query metrics",
+                command=lambda: CH.collect_test_memory_stats(metrics_file),
+            )
+        )
+        if Path(metrics_file).is_file():
+            debug_files.append(metrics_file)
+
     if args.debug:
         print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
         subprocess.call("clickhouse-client", shell=True)
@@ -1366,14 +1381,7 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            # `collect metrics` jobs dump the system.*_log tables and attach them
-            # to the result even on a passing run (the whole point of the job);
-            # on failure `all=True` already dumps them, so only force it here.
-            CH.prepare_logs(
-                all=test_result and not test_result.is_ok(),
-                dump_system_tables=is_collect_metrics,
-                info=info,
-            )
+            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
 
         results.append(
             Result.from_commands_run(

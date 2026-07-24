@@ -798,18 +798,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             except Exception as ex:
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
-    def prepare_logs(self, info, all=False, dump_system_tables=False):
+    def prepare_logs(self, info, all=False):
         res = []
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
-            # System tables are dumped on any failing run (`all`), and also when
-            # explicitly requested (e.g. the query-metrics collection job, which
-            # wants them attached even on a passing run).
-            if all or dump_system_tables:
-                res += self.dump_system_tables()
             if all:
                 res += self.debug_artifacts
+                res += self.dump_system_tables()
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
@@ -1245,6 +1241,46 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             scraping_system_table.set_status(Result.Status.FAIL)
             self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
+
+    def collect_test_memory_stats(self, out_file):
+        """Aggregate peak memory usage per test from `system.query_log` and write
+        it as a JSON object `{test_name: max_memory_usage_bytes}`.
+
+        The test name is recovered from `log_comment`, which `clickhouse-test`
+        tags every query with as `<test-file>-<testcase_database>`, where the
+        database is `test_<8 lowercase-alphanumeric chars>`. That trailing
+        `-test_<rand>` suffix is stripped so rows belonging to the same test
+        collapse to one key, and only queries carrying it are counted - tests
+        that override `log_comment` with a custom value for their own queries
+        cannot be attributed to a test this way and are skipped. Only
+        `QueryFinish` rows are considered - that is where `memory_usage` holds
+        the query peak.
+
+        The query is written to a file and run via `--queries-file` so that the
+        `$` regex anchor is not mangled by the shell.
+        """
+        query_file = f"{temp_dir}/test_memory_stats.sql"
+        query = (
+            "SELECT toJSONString(mapFromArrays(groupArray(test_name), groupArray(max_mem)))\n"
+            "FROM (\n"
+            "    SELECT replaceRegexpOne(log_comment, '-test_[a-z0-9]+$', '') AS test_name,\n"
+            "           max(memory_usage) AS max_mem\n"
+            "    FROM system.query_log\n"
+            "    WHERE type = 'QueryFinish' AND match(log_comment, '-test_[a-z0-9]+$')\n"
+            "    GROUP BY test_name\n"
+            ")\n"
+            "FORMAT TabSeparatedRaw\n"
+        )
+        with open(query_file, "w", encoding="utf-8") as f:
+            f.write(query)
+        if not Shell.check(
+            'clickhouse-client --query "SYSTEM FLUSH LOGS"', verbose=True
+        ):
+            return False
+        return Shell.check(
+            f"clickhouse-client --queries-file {query_file} > {out_file}",
+            verbose=True,
+        )
 
     @staticmethod
     def is_valid_uuid(val):
