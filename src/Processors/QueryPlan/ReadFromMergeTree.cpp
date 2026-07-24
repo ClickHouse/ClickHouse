@@ -3136,9 +3136,24 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
+    /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
+    /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
+    /// conversion-building request may legitimately be narrower than prefix_size (fixed middle key,
+    /// e.g. WHERE b = 1 ORDER BY a, c on key (a, b, c)); dropping it there would defeat the
+    /// optimization and, behind a join, re-enable the path the !uses_virtual_row guard blocks.
+    const bool widened_over_previous_request
+        = query_info.input_order_info && query_info.input_order_info->used_prefix_of_sorting_key_size < prefix_size;
+
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
+
+    /// The conversion only produces its own leading sort columns; the extra merge columns of a
+    /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
+    /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
+    if (widened_over_previous_request && virtual_row_conversion
+        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
+        resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
