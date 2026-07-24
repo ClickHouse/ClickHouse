@@ -63,23 +63,27 @@ if ! timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1; then
     # and skipping cleanup avoids blocking on the unresponsive server.
     echo "server died"
 else
-    # Server is alive: cleanup must genuinely complete. Stop any streaming query that outlived its
-    # client (else it holds the table locks and hangs the DROP / lingers into the end-of-run hung
-    # check), confirm the process list drains, then drop. If any step cannot complete within its bound
-    # we do NOT print "alive"; the resulting diff mismatch fails the test and surfaces the leak.
-    cleanup_ok=1
-    timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%' SYNC FORMAT Null" >/dev/null 2>&1 || cleanup_ok=0
-    drained=0
-    for _ in {1..60}; do
-        running=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%'" 2>/dev/null)
-        [ "$running" = "0" ] && { drained=1; break; }
-        sleep 0.5
-    done
-    [ "$drained" = "1" ] || cleanup_ok=0
-    timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_djs_left" >/dev/null 2>&1 || cleanup_ok=0
-    timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_djs_right" >/dev/null 2>&1 || cleanup_ok=0
-
-    if [ "$cleanup_ok" = "1" ]; then
+    # Server is alive: cleanup must genuinely complete, and must fail FAST. The moment any bounded step
+    # exceeds its timeout the outcome is already "cleanup incomplete", so stop right there instead of
+    # running the remaining drain/DROP work (which could otherwise burn minutes on a wedged-but-live
+    # server). A clean live server passes every step quickly and prints "alive"; any timeout skips the
+    # rest and prints "cleanup incomplete", whose diff mismatch fails the test and surfaces the leak.
+    cleanup() {
+        # Stop any streaming query that outlived its client (else it holds the table locks and hangs
+        # the DROP / lingers into the end-of-run hung check).
+        timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%' SYNC FORMAT Null" >/dev/null 2>&1 || return 1
+        # Confirm the process list drains; a probe that times out is a bounded step failing, so bail.
+        local running
+        for _ in {1..60}; do
+            running=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%'" 2>/dev/null) || return 1
+            [ "$running" = "0" ] && break
+            sleep 0.5
+        done
+        [ "$running" = "0" ] || return 1
+        timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_djs_left" >/dev/null 2>&1 || return 1
+        timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_djs_right" >/dev/null 2>&1 || return 1
+    }
+    if cleanup; then
         echo "alive"
     else
         echo "cleanup incomplete"
