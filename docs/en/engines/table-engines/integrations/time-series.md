@@ -137,6 +137,11 @@ The _samples_ table must have columns:
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
+When the `timestamp` and `value` columns are created automatically they get time-series compression codecs:
+`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(Gorilla, ZSTD(1))`. Near-monotonic timestamps barely
+compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
+Declare the columns explicitly to use different codecs.
+
 ### Tags table {#tags-table}
 
 The _tags_ table contains identifiers calculated for each combination of a metric name and tags.

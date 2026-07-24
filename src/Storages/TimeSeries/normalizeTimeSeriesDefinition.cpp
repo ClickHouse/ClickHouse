@@ -29,6 +29,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -391,8 +392,23 @@ namespace
                 /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
-                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
-                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
+
+                /// Auto-created "timestamp" and "value" columns get time-series codecs: under generic LZ4
+                /// near-monotonic millisecond timestamps barely compress and dominate the table size
+                /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
+                /// above are compatible: DoubleDelta takes DateTime64/DateTime/UInt32, Gorilla takes
+                /// Float64/Float32. Explicitly declared columns keep whatever the user wrote.
+                auto set_codec_for_new_column = [&](const char * codec_name)
+                {
+                    auto & decl = new_list->children.back()->as<ASTColumnDeclaration &>();
+                    decl.setCodec(makeASTFunction("CODEC",
+                        make_intrusive<ASTIdentifier>(codec_name),
+                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
+                };
+                if (add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
+                    set_codec_for_new_column("DoubleDelta");
+                if (add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
+                    set_codec_for_new_column("Gorilla");
 
                 break;
             }
