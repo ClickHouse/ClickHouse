@@ -1368,6 +1368,8 @@ Counting starts from 1 with the following logic:
 An optional argument `length` uses the following logic:
 - If `length` is positive, it means number of digits to take from offset
 - If `length` is negative, it means number of digits from the right of the number to exclude
+
+See also the [`substring`](/reference/functions/regular-functions/string-functions#substring) function, which performs the analogous operation on strings.
     
 
 **Syntax**
@@ -2992,6 +2994,13 @@ Introduced in: v1.1.0
 Checks if a specific column exists in a database table.
 For elements in a nested data structure, the function checks for the existence of a column.
 For the nested data structure itself, the function returns `0`.
+
+<Info>
+**Privilege `SHOW COLUMNS` is required**
+
+The function requires the `SHOW COLUMNS` privilege on the target table (the same grant needed by `DESCRIBE` and `SHOW CREATE TABLE`).
+Without it the call fails with `ACCESS_DENIED` instead of returning `1` or `0`, so column names cannot be probed without access.
+</Info>
     
 
 <Note>

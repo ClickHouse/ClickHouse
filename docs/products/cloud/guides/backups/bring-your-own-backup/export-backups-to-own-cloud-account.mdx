@@ -19,6 +19,8 @@ Cross-Cloud backups are only supported via the backup/restore commands outlined 
 
 ## Requirements {#requirements}
 
+Before you run a `BACKUP` command, make sure your ClickHouse user has the `BACKUP` privilege. The `default_role` in ClickHouse Cloud doesn't include this privilege. Contact [ClickHouse Support](https://clickhouse.com/support/program) to request it before exporting backups.
+
 You will need the following details to export/restore backups to your own CSP storage bucket.
 
 ### AWS {#aws}
