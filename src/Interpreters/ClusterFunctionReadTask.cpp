@@ -97,6 +97,20 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS);
     }
 
+    /// Fail closed: protocol < 3 omits `iceberg_info`, so workers rebuild a plain `ObjectInfo` and
+    /// skip equality / parquet position delete transforms — returning deleted rows.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA
+        && iceberg_info.has_value()
+        && (!iceberg_info->position_deletes_objects.empty() || !iceberg_info->equality_deletes_objects.empty()))
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `iceberg_info` with equality / position deletes "
+            "(minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA);
+    }
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 
