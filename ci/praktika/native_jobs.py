@@ -13,6 +13,7 @@ from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
 from .gh import GH
+from .gh_auth import GHAuth
 from .git import Git
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -25,16 +26,6 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
-
-
-# TODO: find the right place to not dublicate
-def _GH_Auth(force=False):
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return
-    from .gh_auth import GHAuth
-
-    if force or not Shell.check("gh auth status", verbose=True):
-        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -580,10 +571,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
-    try:
-        _GH_Auth(force=True)
-    except Exception as e:
-        print(f"WARNING: Failed to auth with GH: [{e}]")
+    if not GHAuth.auth(workflow, force=True, no_strict=True):
+        print("WARNING: Failed to auth with GH")
 
     # refresh PR data
     if env.PR_NUMBER > 0:
@@ -995,7 +984,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth()
+        GHAuth.auth(workflow, no_strict=True)
 
     update_final_report = False
     results = []

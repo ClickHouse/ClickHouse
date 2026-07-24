@@ -39,7 +39,7 @@ See the [Google interoperability docs](https://cloud.google.com/storage/docs/int
 | `format`                     | The [format](/reference/formats/index) of the file.                                                                                                                                        |
 | `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
 | `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
-| `partition_strategy` | Optional. `WILDCARD` (requires `{_partition_id}` in the path) or `HIVE` (Hive-style partitioned directories; no wildcards). |
+| `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. It is the default only when `compatibility` is older than `26.6`; otherwise, including when current defaults apply, the default is `hive`. |
 
 <Info>
 **GCS**
@@ -53,7 +53,7 @@ The GCS path is in this format as the endpoint for the Google XML API is differe
 and not ~~https://storage.cloud.google.com~~.
 </Info>
 
-Arguments can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+Arguments can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `url`, `format`, `structure`, `compression_method`, `partition_strategy` work in the same way, and some extra parameters are supported:
 
 | Parameter                     | Description                                                                                                                                                                                                                       |
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -195,6 +195,8 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 ## Partitioned Write {#partitioned-write}
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
+
+When `compatibility` is set to `26.6` or later, or when current defaults apply, `hive` is the default partition strategy. Because paths containing `{_partition_id}` require `wildcard`, the following examples set `partition_strategy='wildcard'` explicitly.
 
 **Examples**
 
