@@ -9,12 +9,12 @@ FROM system.merge_tree_settings
 WHERE name IN ('text_index_max_memory_usage_before_flush', 'text_index_max_processed_tokens_before_flush')
 ORDER BY name;
 
-SELECT change.previous_value, change.new_value
+SELECT tupleElement(change, 'previous_value'), tupleElement(change, 'new_value')
 FROM system.settings_changes
 ARRAY JOIN changes AS change
 WHERE type = 'MergeTree'
-    AND version = '26.7'
-    AND change.name = 'text_index_max_memory_usage_before_flush';
+    AND version = '26.8'
+    AND tupleElement(change, 'name') = 'text_index_max_memory_usage_before_flush';
 
 CREATE TABLE text_index_flush_settings
 (
