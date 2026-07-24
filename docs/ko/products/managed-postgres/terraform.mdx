@@ -14,8 +14,16 @@ import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 ClickHouse Managed Postgres 서비스는 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service)의 `clickhouse_postgres_service` 리소스를 사용해 생성하고 관리할 수 있습니다. 이 페이지에서는 이 리소스와 관련 데이터 소스를 위한 프로바이더 설정 및 구성 예시를 설명합니다.
 
 <Note>
-  이 리소스는 알파 단계이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다. 일반 프로바이더 빌드에 포함되어 있으며, 프로바이더 버전 **v3.17.1**부터 사용할 수 있습니다. 자세한 내용은 [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)를 확인하십시오.
+  이 리소스는 알파 단계이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다. 일반 프로바이더 빌드에 포함되어 있습니다. 이 페이지는 자격 증명 관리 방식이 변경된 프로바이더 버전 **v3.21.0** 이상을 문서화합니다. 이전 버전은 다르게 동작하며, 2026-07-31 기준으로 더 이상 올바르게 작동하지 않습니다. 자세한 내용은 [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)를 참조하십시오.
 </Note>
+
+<Warning>
+  **2026-07-31 이전에 프로바이더 v3.21.0으로 업그레이드하세요**
+
+  **2026-07-31**부터 Managed Postgres API는 응답에서 더 이상 슈퍼유저 password와 connection string을 반환하지 않습니다. 자격 증명은 서비스를 생성하거나 password를 재설정할 때만 반환됩니다. 프로바이더 버전 **v3.21.0 이상**은 이 변경 전후에 동일하게 동작합니다. 이전 프로바이더 버전은 API가 자격 증명을 다시 반환하는 동작에 의존합니다. 2026-07-31 기준으로 이러한 버전은 더 이상 `connection_string`을 채우지 않으며, 구성에 `password`를 지정하지 않고 서비스를 생성하면 생성 자체는 성공하더라도 생성된 password는 어디에도 저장되지 않습니다.
+
+  2026-07-31 이전에 업그레이드하십시오. Terraform state는 v3.21.0에서 첫 번째 계획 또는 적용 시 자동으로 마이그레이션됩니다. 서비스 중 서버가 생성한 password에 의존하는 항목이 있다면(구성에 `password`가 없는 경우), v3.21.0에서는 표준 서비스에 `password` 또는 `password_wo`가 필요하므로 먼저 `terraform state pull`로 해당 값을 복구한 뒤 구성에 선언하십시오.
+</Warning>
 
 <div id="provider-setup">
   ## 프로바이더 설정
@@ -28,7 +36,7 @@ terraform {
   required_providers {
     clickhouse = {
       source  = "ClickHouse/clickhouse"
-      version = ">= 3.17.1"
+      version = ">= 3.21.0"
     }
   }
 }
@@ -48,25 +56,27 @@ provider "clickhouse" {
 
 `clickhouse_postgres_service` 리소스에는 다음 인수가 있습니다:
 
-| 인수                         | 필수      | 설명                                                                                                                           |
-| -------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `name`                     | 예       | 서비스의 사람이 읽기 쉬운 이름입니다. 변경할 수 없으며, 값을 변경하면 서비스가 삭제된 후 다시 생성됩니다.                                                                |
-| `cloud_provider`           | 일반 생성 시 | 인스턴스를 호스팅하는 클라우드 제공업체입니다. 현재는 `aws`만 지원됩니다. 읽기 레플리카 또는 특정 시점 복원 시에는 생략하십시오(소스에서 상속됨).                                        |
-| `region`                   | 일반 생성 시 | 클라우드 리전입니다(예: `us-east-1`). 읽기 레플리카 또는 특정 시점 복원 시에는 생략하십시오(소스에서 상속됨).                                                        |
-| `size`                     | 일반 생성 시 | 인스턴스 크기(VM SKU)입니다(예: `m6gd.large`). 현재 위치에서 크기 조정할 수 있습니다. 특정 시점 복원 시에는 생략하십시오(복원된 인스턴스는 백업 크기로 시작함).                       |
-| `postgres_version`         | 아니요     | Postgres의 메이저 버전입니다(예: `18`). 메이저 버전을 변경하면 서비스가 삭제된 후 다시 생성됩니다.                                                              |
-| `ha_type`                  | 아니요     | 고가용성 모드입니다: `none`, `async`, 또는 `sync`. [고가용성](#high-availability)를 참조하십시오.                                     |
-| `password`                 | 아니요     | 슈퍼유저 비밀번호입니다. 생략하면 서버가 자동으로 생성합니다. (민감한) state에 저장됩니다.                                                                       |
-| `pg_config`                | 아니요     | 키-값 맵 형태의 Postgres 서버 매개변수입니다.                                                                                               |
-| `pgbouncer_config`         | 아니요     | 키-값 맵 형태의 PgBouncer 연결 풀러 매개변수입니다.                                                                                           |
-| `tags`                     | 아니요     | 키-값 맵 형태의 리소스 태그입니다.                                                                                                         |
-| `read_replica_of`          | 아니요     | 복제할 기본 서비스의 ID입니다. [읽기 레플리카](#read-replicas)를 참조하십시오. `restore_to_point_in_time`와는 함께 사용할 수 없습니다.                   |
-| `restore_to_point_in_time` | 아니요     | 다른 서비스를 특정 시점으로 복원하여 서비스를 생성합니다. [특정 시점 복원](#point-in-time-restore)를 참조하십시오. `read_replica_of`와는 함께 사용할 수 없습니다. |
+| 인수                         | 필수                                   | 설명                                                                                                                                  |
+| -------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                     | 예                                    | 서비스의 사람이 읽기 쉬운 이름입니다. 변경할 수 없으며, 값을 변경하면 서비스가 삭제된 후 다시 생성됩니다.                                                                       |
+| `cloud_provider`           | 일반 생성 시                              | 인스턴스를 호스팅하는 클라우드 제공업체입니다. 현재는 `aws`만 지원됩니다. 읽기 레플리카 또는 특정 시점 복원 시에는 생략하십시오(소스에서 상속됨).                                               |
+| `region`                   | 일반 생성 시                              | 클라우드 리전입니다(예: `us-east-1`). 읽기 레플리카 또는 특정 시점 복원 시에는 생략하십시오(소스에서 상속됨).                                                               |
+| `size`                     | 일반 생성 시                              | 인스턴스 크기(VM SKU)입니다(예: `m6gd.large`). 현재 위치에서 크기 조정할 수 있습니다. 특정 시점 복원 시에는 생략하십시오(복원된 인스턴스는 백업 크기로 시작함).                              |
+| `postgres_version`         | 아니요                                  | Postgres의 메이저 버전입니다(예: `18`). 메이저 버전을 변경하면 서비스가 삭제된 후 다시 생성됩니다.                                                                     |
+| `ha_type`                  | 아니요                                  | 고가용성 모드입니다: `none`, `async`, 또는 `sync`. [고가용성](#high-availability)를 참조하십시오.                                                         |
+| `password`                 | 일반 생성 시, 단 `password_wo`가 설정되지 않은 경우 | 구성에서 관리되는 슈퍼유저 비밀번호입니다. Terraform은 이를 API에서 다시 읽지 않습니다. (민감한) state에 저장됩니다. 읽기 레플리카 또는 특정 시점 복원 시에는 생략하십시오(각각 상속되거나 소스 백업의 값이 유지됨). |
+| `password_wo`              | 일반 생성 시, 단 `password`가 설정되지 않은 경우    | 쓰기 전용 슈퍼유저 비밀번호입니다. 서비스에는 적용되지만 state에는 저장되지 않습니다. `password_wo_version`이 필요하며, Terraform 1.11 이상이 필요합니다.                           |
+| `password_wo_version`      | `password_wo`와 함께                    | `password_wo`의 버전 번호입니다. 현재 `password_wo` 값으로 교체하려면 이 값을 변경하십시오.                                                                    |
+| `pg_config`                | 아니요                                  | 키-값 맵 형태의 Postgres 서버 매개변수입니다.                                                                                                      |
+| `pgbouncer_config`         | 아니요                                  | 키-값 맵 형태의 PgBouncer 연결 풀러 매개변수입니다.                                                                                                  |
+| `tags`                     | 아니요                                  | 키-값 맵 형태의 리소스 태그입니다.                                                                                                                |
+| `read_replica_of`          | 아니요                                  | 복제할 기본 서비스의 ID입니다. [읽기 레플리카](#read-replicas)를 참조하십시오. `restore_to_point_in_time`와는 함께 사용할 수 없습니다.                                   |
+| `restore_to_point_in_time` | 아니요                                  | 다른 서비스를 특정 시점으로 복원하여 서비스를 생성합니다. [특정 시점 복원](#point-in-time-restore)를 참조하십시오. `read_replica_of`와는 함께 사용할 수 없습니다.                     |
 
-다음 속성은 읽기 전용이며 생성 후 ClickHouse Cloud가 값을 채웁니다: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, `username`, 그리고 `connection_string`(민감 정보).
+다음 속성은 읽기 전용이며 생성 후 ClickHouse Cloud가 값을 채웁니다: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, 그리고 `username`. `connection_string` 속성은 없습니다(v3.21.0에서 제거됨). 연결 URI는 `hostname`, `port`, `username`, 그리고 선언한 비밀번호를 사용해 직접 구성하십시오. 예: `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
 
 <Warning>
-  `password`는 Terraform state에 평문으로 저장됩니다. 따라서 state 파일을 적절히 보호하십시오. 예를 들어 저장 시 암호화가 적용된 원격 백엔드를 사용할 수 있습니다. `password`를 생략하면 서버가 비밀번호를 생성하며, 프로바이더는 갱신할 때마다 이를 다시 읽어 state에 반영합니다.
+  The `password`는 Terraform state에 평문으로 저장됩니다. 따라서 state 파일을 적절히 보호하십시오. 예를 들어 저장 시 암호화가 적용된 원격 백엔드를 사용하거나, `password_wo`를 사용해 비밀번호가 state에 전혀 저장되지 않도록 하십시오.
 </Warning>
 
 <div id="create-a-service">
@@ -79,6 +89,7 @@ resource "clickhouse_postgres_service" "example" {
   cloud_provider = "aws"
   region         = "us-east-1"
   size           = "m6gd.large"
+  password       = var.postgres_password
 
   # High-availability mode — number of standby replicas:
   #   "none"  – primary only, no standby (default)
@@ -93,7 +104,7 @@ resource "clickhouse_postgres_service" "example" {
 }
 ```
 
-`password`를 직접 관리하려면 `password`를 설정하세요. 이 값은 최소 12자여야 하며, 소문자 1개 이상, 대문자 1개 이상, 숫자 1개 이상을 포함해야 합니다. 이를 생략하면 server가 자동으로 생성합니다.
+표준 서비스는 `password` 또는 `password_wo`를 선언해야 합니다. 이 값은 최소 12자여야 하며, 소문자 1개 이상, 대문자 1개 이상, 숫자 1개 이상을 포함해야 합니다. `password_wo`(`password_wo_version`과 함께 사용)는 동일한 `password` 규칙을 적용하지만 state에는 저장되지 않으며, 교체하려면 `password_wo_version`을 변경하세요. API는 자격 증명을 반환하지 않으므로 `password`는 Terraform만 유일하게 쓰도록 유지해야 합니다. Terraform 외부에서 `password`를 교체하면(console 또는 API) 이 변경은 감지되지 않으며, 다음 Terraform 기반 교체 시 선언된 값이 다시 적용됩니다.
 
 <div id="high-availability">
   ## 고가용성
@@ -169,11 +180,13 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 기존 서비스 가져오기
 </div>
 
-기존 Managed Postgres 서비스는 서비스 ID를 사용해 Terraform state로 가져올 수 있습니다. 가져오는 과정에서 비밀번호도 복원됩니다 — 서버가 `GET` 요청에 이를 그대로 반환합니다:
+기존 Managed Postgres 서비스는 서비스 ID를 사용해 Terraform state로 가져올 수 있습니다:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+가져오는 과정에서 비밀번호는 복원되지 않습니다(API가 이를 반환하지 않기 때문입니다). 가져온 후 처음 apply를 실행하면 서비스는 구성에 선언된 `password` 또는 `password_wo`로 교체됩니다.
 
 <div id="unsupported-operations">
   ## 지원되지 않는 작업

@@ -3,425 +3,420 @@ slug: /cloud/managed-postgres/quickstart
 sidebarTitle: '빠른 시작'
 title: 'Managed Postgres 빠른 시작'
 description: 'NVMe 기반 Postgres 성능을 경험하고 네이티브 ClickHouse 통합으로 실시간 분석을 추가해 보세요'
-keywords: ['managed postgres', '빠른 시작', '시작하기', '데이터베이스 생성', 'nvme', '성능']
+keywords: ['managed postgres', '빠른 시작', '시작하기', '데이터베이스 생성', 'nvme', '성능', 'clickhousectl', 'CLI', '자동화', 'AI 에이전트']
 doc_type: 'guide'
 ---
 
 import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
+import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
+<Visibility for="agents">
+  <QuickstartCLI />
+</Visibility>
 
-ClickHouse Managed Postgres는 NVMe 스토리지를 기반으로 하는 엔터프라이즈급 Postgres로, EBS와 같은 네트워크 연결형 스토리지와 비교해 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 더 빠른 성능을 제공합니다. 이 빠른 시작 가이드는 두 부분으로 나뉩니다:
+<Visibility for="humans">
+  <View title="CLI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
 
-* **Part 1:** NVMe Postgres를 시작하고 성능을 직접 경험합니다
-* **Part 2:** ClickHouse와 통합해 실시간 분석을 시작합니다
+    이 경로를 직접 따라 해도 되고, 스크립트로 자동화해도 되며, AI agent에 맡겨도 됩니다. 콘솔 버전은 **Cloud UI** 보기로 전환하세요.
 
-Managed Postgres는 현재 AWS의 여러 리전에서 제공되며, 비공개 프리뷰 기간에는 무료입니다.
+    <QuickstartCLI />
+  </View>
 
-**이 빠른 시작 가이드에서 수행할 작업은 다음과 같습니다.**
+  <View title="Cloud UI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
-* NVMe 기반 성능을 제공하는 Managed Postgres 인스턴스를 생성합니다
-* 샘플 이벤트 100만 개를 적재하고 NVMe 속도를 직접 확인합니다
-* 쿼리를 실행하고 낮은 지연 시간 성능을 경험합니다
-* 데이터를 ClickHouse로 복제하여 실시간 분석을 수행합니다
-* `pg_clickhouse`를 사용해 Postgres에서 ClickHouse를 직접 쿼리합니다
+    ClickHouse Managed Postgres는 NVMe 스토리지를 기반으로 하는 엔터프라이즈급 Postgres로, EBS와 같은 네트워크 연결 스토리지 대비 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 빠른 성능을 제공합니다. 이 quickstart는 두 부분으로 구성됩니다:
 
-<div id="part-1">
-  ## Part 1: NVMe Postgres 시작하기
-</div>
+    * **파트 1:** NVMe Postgres 시작하기 및 성능 체험하기
+    * **파트 2:** ClickHouse와 통합해 실시간 분석 시작하기
 
-<div id="create-postgres-database">
-  ### 데이터베이스 생성
-</div>
-
-새 Managed Postgres 서비스를 생성하려면 Cloud Console의 서비스 목록에서 **New service** 버튼을 클릭하십시오. 그러면 데이터베이스 유형으로 Postgres를 선택할 수 있습니다.
-
-<Image img="/images/managed-postgres/create-service.webp" alt="Managed Postgres 서비스 생성" size="md" border />
-
-데이터베이스 인스턴스 이름을 입력하고 **Create service**를 클릭하십시오. 그러면 Overview 페이지로 이동합니다.
-
-<Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres Overview" size="md" border />
-
-Managed Postgres 인스턴스는 3~5분 내에 프로비저닝되며, 이후 바로 사용할 수 있습니다.
-
-<div id="connect">
-  ### 데이터베이스에 연결하기
-</div>
-
-왼쪽 사이드바에서 [**Connect** 버튼](/ko/products/managed-postgres/connection)을 확인할 수 있습니다. 이 버튼을 클릭하면 여러 포맷으로 제공되는 연결 정보와 연결 문자열을 볼 수 있습니다.
-
-<Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres 연결 모달" size="md" border />
-
-`psql` 연결 문자열을 복사한 후 데이터베이스에 연결하세요. DBeaver 같은 Postgres 호환 클라이언트나 애플리케이션 라이브러리를 사용해도 됩니다.
-
-<div id="nvme-performance">
-  ### NVMe 성능 직접 체험하기
-</div>
-
-NVMe 기반 성능이 실제로 어느 정도인지 확인해 보겠습니다. 먼저 쿼리 실행 시간을 측정할 수 있도록 `psql`에서 타이밍을 활성화합니다:
-
-```sql
-\timing
-```
-
-이벤트와 사용자용 샘플 테이블 2개를 생성합니다:
-
-```sql
-CREATE TABLE events (
-   event_id SERIAL PRIMARY KEY,
-   event_name VARCHAR(255) NOT NULL,
-   event_type VARCHAR(100),
-   event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   event_data JSONB,
-   user_id INT,
-   user_ip INET,
-   is_active BOOLEAN DEFAULT TRUE,
-   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE users (
-   user_id SERIAL PRIMARY KEY,
-   name VARCHAR(100),
-   country VARCHAR(50),
-   platform VARCHAR(50)
-);
-```
-
-이제 이벤트 100만 개를 삽입한 뒤 NVMe 속도를 확인해 보세요:
-
-```sql
-INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
-SELECT
-   'Event ' || gs::text AS event_name,
-   CASE
-       WHEN random() < 0.5 THEN 'click'
-       WHEN random() < 0.75 THEN 'view'
-       WHEN random() < 0.9 THEN 'purchase'
-       WHEN random() < 0.98 THEN 'signup'
-       ELSE 'logout'
-   END AS event_type,
-   NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
-   jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
-   GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
-   ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
-FROM
-   generate_series(1, 1000000) gs;
-```
-
-```text
-INSERT 0 1000000
-Time: 3596.542 ms (00:03.597)
-```
-
-<Tip>
-  **NVMe 성능**
-
-  JSONB 데이터가 포함된 100만 개 행을 4초 이내에 삽입할 수 있습니다. EBS와 같은 네트워크 연결 스토리지를 사용하는 기존 클라우드 데이터베이스에서는 네트워크 왕복 지연 시간과 IOPS 스로틀링으로 인해 동일한 작업에 일반적으로 2~3배 더 오래 걸립니다. NVMe 스토리지는 스토리지를 컴퓨트에 물리적으로 직접 연결해 이러한 병목을 없앱니다.
-
-  성능은 인스턴스 크기, 현재 부하, 데이터 특성에 따라 달라집니다.
-</Tip>
-
-사용자 1,000명을 삽입합니다:
-
-```sql
-INSERT INTO users (name, country, platform)
-SELECT
-    first_names[first_idx] || ' ' || last_names[last_idx] AS name,
-    CASE
-        WHEN random() < 0.25 THEN 'India'
-        WHEN random() < 0.5 THEN 'USA'
-        WHEN random() < 0.7 THEN 'Germany'
-        WHEN random() < 0.85 THEN 'China'
-        ELSE 'Other'
-    END AS country,
-    CASE
-        WHEN random() < 0.2 THEN 'iOS'
-        WHEN random() < 0.4 THEN 'Android'
-        WHEN random() < 0.6 THEN 'Web'
-        WHEN random() < 0.75 THEN 'Windows'
-        WHEN random() < 0.9 THEN 'MacOS'
-        ELSE 'Linux'
-    END AS platform
-FROM
-    generate_series(1, 1000) AS seq
-    CROSS JOIN LATERAL (
-        SELECT
-            array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
-            array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
-            1 + (seq % 32) AS first_idx,
-            1 + ((seq / 32)::int % 32) AS last_idx
-    ) AS names;
-```
-
-<div id="run-queries">
-  ### 데이터에서 쿼리 실행하기
-</div>
-
-이제 NVMe 스토리지를 사용할 때 Postgres가 얼마나 빠르게 응답하는지 확인하기 위해 몇 가지 쿼리를 실행해 보겠습니다.
-
-**유형별로 이벤트 100만 개 집계:**
-
-```sql
-SELECT event_type, COUNT(*) as count 
-FROM events 
-GROUP BY event_type 
-ORDER BY count DESC;
-```
-
-```text
- event_type | count  
-------------+--------
- click      | 499523
- view       | 375644
- purchase   | 112473
- signup     |  12117
- logout     |    243
-(5 rows)
-
-Time: 114.883 ms
-```
-
-**JSONB 필터링과 날짜 범위를 사용하는 쿼리:**
-
-```sql
-SELECT COUNT(*) 
-FROM events 
-WHERE event_timestamp > NOW() - INTERVAL '30 days'
-  AND event_data->>'additional_info' LIKE 'info_5%';
-```
-
-```text
- count 
--------
-  9042
-(1 row)
+    Managed Postgres는 현재 AWS의 여러 리전에서 사용 가능하며, 퍼블릭 베타 단계입니다.
 
-Time: 109.294 ms
-```
+    **이 퀵스타트에서 수행할 작업:**
 
-**이벤트를 사용자와 조인하기:**
+    * NVMe 기반 고성능 관리형 Postgres 인스턴스를 생성하세요
+    * 100만 개의 샘플 이벤트를 적재하고 NVMe 속도를 직접 확인하세요
+    * 쿼리를 실행하고 낮은 지연 시간의 성능을 체험하세요
+    * 실시간 분석을 위해 데이터를 ClickHouse로 복제하세요
+    * `pg_clickhouse`를 사용해 Postgres에서 ClickHouse를 직접 쿼리하세요
 
-```sql
-SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
-FROM events e
-JOIN users u ON e.user_id = u.user_id
-GROUP BY u.country
-ORDER BY events DESC;
-```
+    ## 1부: NVMe Postgres 시작하기
 
-```text
- country | events | avg_json_size 
----------+--------+---------------
- USA     | 383748 |            52
- India   | 255990 |            52
- Germany | 223781 |            52
- China   | 127754 |            52
- Other   |   8727 |            52
-(5 rows)
+    ### 데이터베이스 생성
 
-Time: 224.670 ms
-```
+    새로운 관리형 Postgres 서비스를 생성하려면 Cloud Console의 서비스 목록에서 **New service** 버튼을 클릭하십시오. 이후 데이터베이스 유형으로 Postgres를 선택할 수 있습니다.
 
-<Info>
-  **Postgres가 준비되었습니다**
+    <Image img="/images/managed-postgres/create-service.webp" alt="관리형 Postgres 서비스 생성하기" size="md" border />
 
-  이제 트랜잭션 워크로드에 사용할 수 있는, 완전히 동작하는 고성능 Postgres 데이터베이스가 준비되었습니다.
+    데이터베이스 인스턴스의 이름을 입력하고 **Create service**를 클릭합니다. 개요(Overview) 페이지로 이동합니다.
+
+    <Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres 개요" size="md" border />
+
+    관리형 Postgres 인스턴스는 3~5분 내에 프로비저닝되어 사용 가능한 상태가 됩니다.
+
+    ### 데이터베이스에 연결하기
+
+    왼쪽 사이드바에서 [**Connect** 버튼](/ko/products/managed-postgres/connection)을 확인할 수 있습니다. 이 버튼을 클릭하면 접속 정보와 다양한 포맷의 연결 문자열(connection string)을 확인할 수 있습니다.
+
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres 연결 창" size="md" border />
+
+    `psql` 연결 문자열을 복사하여 데이터베이스에 연결하십시오. DBeaver와 같은 Postgres 호환 클라이언트나 애플리케이션 라이브러리를 사용할 수도 있습니다.
+
+    ### NVMe 성능 직접 체험하기
+
+    NVMe 기반 성능이 실제로 어느 정도인지 확인해 보겠습니다. 먼저 쿼리 실행 시간을 측정할 수 있도록 `psql`에서 타이밍을 활성화합니다:
+
+    ```sql
+    \timing
+    ```
+
+    이벤트와 사용자용 샘플 테이블 2개를 생성합니다:
+
+    ```sql
+    CREATE TABLE events (
+       event_id SERIAL PRIMARY KEY,
+       event_name VARCHAR(255) NOT NULL,
+       event_type VARCHAR(100),
+       event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       event_data JSONB,
+       user_id INT,
+       user_ip INET,
+       is_active BOOLEAN DEFAULT TRUE,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE users (
+       user_id SERIAL PRIMARY KEY,
+       name VARCHAR(100),
+       country VARCHAR(50),
+       platform VARCHAR(50)
+    );
+    ```
+
+    이제 이벤트 100만 개를 삽입한 뒤 NVMe 속도를 확인해 보세요:
+
+    ```sql
+    INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
+    SELECT
+       'Event ' || gs::text AS event_name,
+       CASE
+           WHEN random() < 0.5 THEN 'click'
+           WHEN random() < 0.75 THEN 'view'
+           WHEN random() < 0.9 THEN 'purchase'
+           WHEN random() < 0.98 THEN 'signup'
+           ELSE 'logout'
+       END AS event_type,
+       NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
+       jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
+       GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
+       ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
+    FROM
+       generate_series(1, 1000000) gs;
+    ```
+
+    ```text
+    INSERT 0 1000000
+    Time: 3596.542 ms (00:03.597)
+    ```
+
+    <Tip>
+      **NVMe 성능**
+
+      JSONB 데이터가 포함된 100만 개 행을 4초 이내에 삽입할 수 있습니다. EBS와 같은 네트워크 연결 스토리지를 사용하는 기존 클라우드 데이터베이스에서는 네트워크 왕복 지연 시간과 IOPS 스로틀링으로 인해 동일한 작업에 일반적으로 2~3배 더 오래 걸립니다. NVMe 스토리지는 스토리지를 컴퓨트에 물리적으로 직접 연결해 이러한 병목을 없앱니다.
+
+      성능은 인스턴스 크기, 현재 부하, 데이터 특성에 따라 달라집니다.
+    </Tip>
+
+    사용자 1,000명을 삽입합니다:
+
+    ```sql
+    INSERT INTO users (name, country, platform)
+    SELECT
+        first_names[first_idx] || ' ' || last_names[last_idx] AS name,
+        CASE
+            WHEN random() < 0.25 THEN 'India'
+            WHEN random() < 0.5 THEN 'USA'
+            WHEN random() < 0.7 THEN 'Germany'
+            WHEN random() < 0.85 THEN 'China'
+            ELSE 'Other'
+        END AS country,
+        CASE
+            WHEN random() < 0.2 THEN 'iOS'
+            WHEN random() < 0.4 THEN 'Android'
+            WHEN random() < 0.6 THEN 'Web'
+            WHEN random() < 0.75 THEN 'Windows'
+            WHEN random() < 0.9 THEN 'MacOS'
+            ELSE 'Linux'
+        END AS platform
+    FROM
+        generate_series(1, 1000) AS seq
+        CROSS JOIN LATERAL (
+            SELECT
+                array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
+                array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
+                1 + (seq % 32) AS first_idx,
+                1 + ((seq / 32)::int % 32) AS last_idx
+        ) AS names;
+    ```
+
+    ### 데이터에 쿼리 실행하기
+
+    이제 몇 가지 쿼리를 실행해 NVMe 스토리지에서 Postgres가 얼마나 빠르게 응답하는지 확인해 보겠습니다.
+
+    **이벤트 100만 개를 유형별로 집계합니다:**
+
+    ```sql
+    SELECT event_type, COUNT(*) as count 
+    FROM events 
+    GROUP BY event_type 
+    ORDER BY count DESC;
+    ```
+
+    ```text
+     event_type | count  
+    ------------+--------
+     click      | 499523
+     view       | 375644
+     purchase   | 112473
+     signup     |  12117
+     logout     |    243
+    (5 rows)
 
-  Part 2로 계속 진행하여 네이티브 ClickHouse 통합이 분석을 어떻게 한층 강화하는지 확인하세요.
-</Info>
+    Time: 114.883 ms
+    ```
 
-***
+    **JSONB 필터링 및 날짜 범위를 활용한 쿼리:**
 
-<div id="part-2">
-  ## 2부: ClickHouse로 실시간 분석 추가
-</div>
+    ```sql
+    SELECT COUNT(*) 
+    FROM events 
+    WHERE event_timestamp > NOW() - INTERVAL '30 days'
+      AND event_data->>'additional_info' LIKE 'info_5%';
+    ```
 
-Postgres는 트랜잭션 워크로드(OLTP)에 뛰어나고, ClickHouse는 대규모 데이터셋에 대한 분석 쿼리(OLAP)에 특화되어 있습니다. 두 시스템을 함께 사용하면 각자의 장점을 모두 활용할 수 있습니다.
+    ```text
+     count 
+    -------
+      9042
+    (1 row)
 
-* **Postgres**: 애플리케이션의 트랜잭션 데이터용(삽입, 업데이트, 단건 조회)
-* **ClickHouse**: 수십억 개의 행에 대한 1초 미만 지연의 분석용
+    Time: 109.294 ms
+    ```
 
-이 섹션에서는 Postgres 데이터를 ClickHouse로 복제하고, 이를 원활하게 쿼리하는 방법을 설명합니다.
+    **이벤트와 사용자 조인(join):**
 
-<div id="setup-integrate-clickhouse">
-  ### ClickHouse 통합 설정
-</div>
+    ```sql
+    SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
+    FROM events e
+    JOIN users u ON e.user_id = u.user_id
+    GROUP BY u.country
+    ORDER BY events DESC;
+    ```
 
-이제 Postgres에 테이블과 데이터가 준비되었으므로, 분석을 위해 해당 테이블을 ClickHouse로 복제하겠습니다. 먼저 사이드바에서 **ClickHouse integration**을 클릭합니다. 그런 다음 **Replicate data in ClickHouse**를 클릭합니다.
+    ```text
+     country | events | avg_json_size 
+    ---------+--------+---------------
+     USA     | 383748 |            52
+     India   | 255990 |            52
+     Germany | 223781 |            52
+     China   | 127754 |            52
+     Other   |   8727 |            52
+    (5 rows)
 
-<Image img="/images/managed-postgres/integration-landing.webp" alt="비어 있는 Managed Postgres 통합" size="md" border />
+    Time: 224.670 ms
+    ```
 
-다음 양식에서 통합 이름을 입력하고 복제 대상이 될 기존 ClickHouse 인스턴스를 선택할 수 있습니다. 아직 ClickHouse 인스턴스가 없다면 이 양식에서 바로 생성할 수도 있습니다.
+    <Info>
+      **Postgres가 준비되었습니다**
 
-<Info>
-  **중요**
+      이제 트랜잭션 워크로드에 사용할 수 있는 완전한 고성능 Postgres 데이터베이스가 준비되었습니다.
 
-  계속 진행하기 전에 선택한 ClickHouse 서비스가 Running 상태인지 확인하십시오.
-</Info>
+      파트 2로 이동하여 네이티브 ClickHouse 통합이 분석 성능을 어떻게 크게 향상시키는지 확인해 보세요.
+    </Info>
 
-<Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres 통합 양식" size="md" border />
+    ***
 
-**다음**을 클릭하면 테이블 선택기로 이동합니다. 여기서 해야 할 작업은 다음과 같습니다:
+    ## Part 2: ClickHouse로 실시간 분석 추가하기
 
-* 복제할 ClickHouse 데이터베이스를 선택합니다.
-* **public** 스키마를 펼친 다음, 앞서 생성한 users 테이블과 events 테이블을 선택합니다.
-* **Replicate data to ClickHouse**를 클릭합니다.
+    Postgres는 트랜잭션 워크로드(OLTP)에 탁월하고, ClickHouse는 대규모 데이터셋에 대한 분석 쿼리(OLAP)를 위해 특별히 설계되었습니다. 두 시스템을 통합하면 양쪽의 장점을 모두 활용할 수 있습니다:
 
-<Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres 테이블 선택기" size="md" border />
+    * 애플리케이션의 트랜잭션 데이터(삽입, 업데이트, 단건 조회)용 **Postgres**
+    * 수십억 개의 행을 1초 이내에 분석할 수 있는 **ClickHouse**
 
-복제 프로세스가 시작되면 통합 개요 페이지로 이동합니다. 첫 번째 통합인 경우 초기 인프라를 설정하는 데 2~3분 정도 걸릴 수 있습니다. 그동안 새 **pg&#95;clickhouse** 확장 기능을 살펴보겠습니다.
+    이 섹션에서는 Postgres 데이터를 ClickHouse로 복제하고 원활하게 쿼리하는 방법을 설명합니다.
 
-<div id="pg-clickhouse-extension">
-  ### Postgres에서 ClickHouse 쿨리하기
-</div>
+    ### ClickHouse 통합 설정
 
-`pg_clickhouse` 확장 기능을 사용하면 표준 SQL로 Postgres에서 ClickHouse 데이터를 직접 쿼리할 수 있습니다. 즉, 애플리케이션에서 Postgres를 트랜잭션 데이터와 분석 데이터를 모두 아우르는 단일 쿼리 계층으로 사용할 수 있습니다. 자세한 내용은 [전체 문서](/ko/products/managed-postgres/extensions/pg_clickhouse/introduction)를 참조하십시오.
+    이제 Postgres에 테이블과 데이터가 준비되었으니, 분석을 위해 테이블을 ClickHouse로 복제해 보겠습니다. 사이드바에서 **ClickHouse integration**을 클릭한 다음, **Replicate data in ClickHouse**를 클릭하십시오.
 
-확장 기능을 활성화하세요:
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres 통합이 비어 있습니다" size="md" border />
 
-```sql
-CREATE EXTENSION pg_clickhouse;
-```
+    다음 양식에서 통합의 이름을 입력하고 데이터를 복제할 기존 ClickHouse 인스턴스를 선택할 수 있습니다. ClickHouse 인스턴스가 아직 없는 경우, 이 양식에서 직접 생성할 수 있습니다.
 
-그런 다음 ClickHouse에 대한 외부 서버 연결을 생성하십시오. 보안 연결의 경우 포트 `8443`에서 `http` 드라이버를 사용하세요:
-
-```sql
-CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
-       OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
-```
-
-`<clickhouse_cloud_host>`는 ClickHouse 호스트명으로, `<database_name>`은 복제 설정 중에 선택한 데이터베이스로 바꾸십시오. 호스트명은 사이드바에서 **Connect**를 클릭하면 ClickHouse 서비스에서 확인할 수 있습니다.
-
-<Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="ClickHouse 호스트 가져오기" size="md" border />
-
-이제 Postgres 사용자를 ClickHouse 서비스의 자격 증명에 매핑합니다:
-
-```sql
-CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
-OPTIONS (user 'default', password '<clickhouse_password>');
-```
-
-이제 ClickHouse 테이블을 Postgres 스키마로 가져오세요:
-
-```sql
-CREATE SCHEMA organization;
-IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
-```
-
-`<database_name>`을 서버를 생성할 때 사용한 데이터베이스 이름과 동일하게 바꾸세요.
-
-이제 Postgres 클라이언트에서 모든 ClickHouse 테이블을 확인할 수 있습니다:
-
-```sql
-\det+ organization.*
-```
+    <Info>
+      **중요**
 
-<div id="analytics-after-integration">
-  ### 분석이 적용된 결과를 확인하세요
-</div>
+      계속하기 전에 선택한 ClickHouse 서비스가 Running 상태인지 확인하세요.
+    </Info>
 
-통합 페이지로 돌아가 보겠습니다. 초기 복제가 완료된 것을 확인할 수 있습니다. 세부 정보를 보려면 통합 이름을 클릭하세요.
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres 통합 폼" size="md" border />
 
-<Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres 분석 목록" size="md" border />
+    **다음**을 클릭하면 테이블 선택기로 이동합니다. 여기서 필요한 작업은 다음과 같습니다:
 
-서비스 이름을 클릭해 ClickHouse 콘솔을 열고 복제된 테이블을 확인하세요.
+    * 복제할 ClickHouse 데이터베이스를 선택합니다.
+    * **public** 스키마를 펼친 다음, 앞서 생성한 users 테이블과 events 테이블을 선택합니다.
+    * **Replicate data to ClickHouse**를 클릭합니다.
 
-<Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse의 Managed Postgres 복제된 테이블" size="md" border />
+    <Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres 테이블 선택기" size="md" border />
 
-<div id="performance-comparison">
-  ### Postgres와 ClickHouse 성능 비교
-</div>
+    복제 프로세스가 시작되면 통합 개요 페이지로 이동합니다. 첫 번째 통합의 경우 초기 인프라를 설정하는 데 2~3분이 소요될 수 있습니다. 그동안 새로운 **pg&#95;clickhouse** 확장 기능을 살펴보겠습니다.
 
-이제 몇 가지 분석 쿼리를 실행해 Postgres와 ClickHouse의 성능을 비교해 보겠습니다. 복제된 테이블은 `public_<table_name>` 명명 규칙을 따릅니다.
+    ### Postgres에서 ClickHouse 쿼리하기
 
-**쿼리 1: 활동량 기준 상위 사용자**
+    `pg_clickhouse` 확장 기능을 사용하면 표준 SQL로 Postgres에서 직접 ClickHouse 데이터를 쿼리할 수 있습니다. 즉, 애플리케이션이 트랜잭션 데이터와 분석 데이터 모두에 대해 Postgres를 통합 쿼리 레이어로 활용할 수 있습니다. 자세한 내용은 [전체 문서](/ko/products/managed-postgres/extensions/pg_clickhouse/introduction)를 참조하십시오.
 
-이 쿼리는 여러 집계를 사용해 가장 활발한 사용자를 찾습니다:
+    확장 기능을 활성화합니다:
 
-```sql
--- ClickHouse를 통해
-SELECT 
-    user_id,
-    COUNT(*) as total_events,
-    COUNT(DISTINCT event_type) as unique_event_types,
-    SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
-    MIN(event_timestamp) as first_event,
-    MAX(event_timestamp) as last_event
-FROM organization.public_events
-GROUP BY user_id
-ORDER BY total_events DESC
-LIMIT 10;
-```
+    ```sql
+    CREATE EXTENSION pg_clickhouse;
+    ```
 
-```text
- user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
----------+--------------+--------------------+-----------+----------------------------+----------------------------
-       1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
-       2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
-...
-(10 rows)
+    다음으로, ClickHouse에 대한 외부 서버 연결을 생성합니다. 보안 연결에는 포트 `8443`과 `http` 드라이버를 사용하십시오:
 
-Time: 163.898 ms   -- ClickHouse
-Time: 554.621 ms   -- Postgres에서 동일한 쿼리 실행 시
-```
+    ```sql
+    CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
+           OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
+    ```
+
+    `<clickhouse_cloud_host>`를 ClickHouse 호스트명으로, `<database_name>`을 복제 설정 시 선택한 데이터베이스 이름으로 대체하십시오. 호스트명은 사이드바에서 **Connect**를 클릭하여 ClickHouse 서비스에서 확인할 수 있습니다.
+
+    <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="ClickHouse 호스트 가져오기" size="md" border />
+
+    이제 Postgres 사용자를 ClickHouse 서비스 자격 증명에 매핑합니다:
+
+    ```sql
+    CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
+    OPTIONS (user 'default', password '<clickhouse_password>');
+    ```
 
-**쿼리 2: 국가 및 플랫폼별 사용자 참여도**
+    이제 ClickHouse 테이블을 Postgres 스키마로 가져옵니다:
+
+    ```sql
+    CREATE SCHEMA organization;
+    IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
+    ```
 
-이 쿼리는 이벤트와 사용자 데이터를 조인하여 참여 메트릭을 계산합니다:
+    `<database_name>`을 서버 생성 시 사용한 데이터베이스 이름으로 대체하십시오.
 
-```sql
--- ClickHouse를 통해
-SELECT 
-    u.country,
-    u.platform,
-    COUNT(DISTINCT e.user_id) as users,
-    COUNT(*) as total_events,
-    ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
-    SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
-FROM organization.public_events e
-JOIN organization.public_users u ON e.user_id = u.user_id
-GROUP BY u.country, u.platform
-ORDER BY total_events DESC
-LIMIT 10;
-```
+    이제 Postgres 클라이언트에서 ClickHouse 테이블을 모두 확인할 수 있습니다:
 
-```text
- country | platform | users | total_events | events_per_user | purchases 
----------+----------+-------+--------------+-----------------+-----------
- USA     | Android  |   115 |       109977 |             956 |     12388
- USA     | Web      |   108 |       105057 |             972 |     11847
- USA     | iOS      |    83 |        84594 |            1019 |      9565
- Germany | Android  |    85 |        77966 |             917 |      8852
- India   | Android  |    80 |        68095 |             851 |      7724
-...
-(10 rows)
+    ```sql
+    \det+ organization.*
+    ```
 
-Time: 170.353 ms   -- ClickHouse
-Time: 1245.560 ms  -- Postgres에서 동일한 쿼리
-```
+    ### 분석 기능을 직접 확인해 보세요
 
-**성능 비교:**
+    통합 페이지로 돌아가 확인해 보세요. 초기 복제가 완료된 것을 확인할 수 있습니다. 통합 이름을 클릭하면 세부 정보를 볼 수 있습니다.
 
-| 쿼리                  | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | 속도 향상 |
-| ------------------- | --------------- | ---------------------------------- | ----- |
-| 상위 사용자 (집계 5개)      | 555 ms          | 164 ms                             | 3.4x  |
-| 사용자 참여도 (JOIN + 집계) | 1,246 ms        | 170 ms                             | 7.3x  |
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres 분석 목록" size="md" border />
 
-<Tip>
-  **ClickHouse를 사용해야 할 때**
+    서비스 이름을 클릭하여 ClickHouse 콘솔을 열고 복제된 테이블을 확인하십시오.
 
-  이 100만 행 데이터셋에서도 ClickHouse는 JOIN과 여러 집계를 포함한 복잡한 분석 쿼리에서 3~~7배 더 빠른 성능을 제공합니다. 규모가 더 커지면(1억 행 이상) 차이는 더욱 두드러지며, ClickHouse의 열 지향 스토리지와 벡터화 실행을 통해 10~~100배의 속도 향상을 기대할 수 있습니다.
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse의 Managed Postgres 복제 테이블" size="md" border />
 
-  쿼리 시간은 인스턴스 크기, 서비스 간 네트워크 지연 시간, 데이터 특성, 현재 부하에 따라 달라집니다.
-</Tip>
+    ### Postgres와 ClickHouse 성능 비교
 
-<div id="cleanup">
-  ## 정리
-</div>
+    이제 몇 가지 분석 쿼리를 실행하여 Postgres와 ClickHouse 간의 성능을 비교해 보겠습니다. 복제된 테이블은 `public_<table_name>` 명명 규칙을 사용한다는 점에 유의하십시오.
 
-이 빠른 시작에서 생성한 리소스를 삭제하려면:
+    **쿼리 1: 활동량 기준 상위 사용자**
 
-1. 먼저 ClickHouse 서비스에서 ClickPipe 통합을 삭제합니다
-2. 그런 다음 Cloud Console에서 Managed Postgres 인스턴스를 삭제합니다
+    이 쿼리는 여러 집계 결과를 사용해 가장 활발하게 활동하는 사용자를 찾습니다:
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        user_id,
+        COUNT(*) as total_events,
+        COUNT(DISTINCT event_type) as unique_event_types,
+        SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
+        MIN(event_timestamp) as first_event,
+        MAX(event_timestamp) as last_event
+    FROM organization.public_events
+    GROUP BY user_id
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
+    ---------+--------------+--------------------+-----------+----------------------------+----------------------------
+           1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+           2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+    ...
+    (10 rows)
+
+    Time: 163.898 ms   -- ClickHouse
+    Time: 554.621 ms   -- Same query on Postgres
+    ```
+
+    **쿼리 2: 국가 및 플랫폼별 사용자 참여도**
+
+    이 쿼리는 이벤트와 사용자를 조인하여 참여 메트릭을 계산합니다:
+
+    ```sql
+    -- Via ClickHouse
+    SELECT 
+        u.country,
+        u.platform,
+        COUNT(DISTINCT e.user_id) as users,
+        COUNT(*) as total_events,
+        ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
+        SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
+    FROM organization.public_events e
+    JOIN organization.public_users u ON e.user_id = u.user_id
+    GROUP BY u.country, u.platform
+    ORDER BY total_events DESC
+    LIMIT 10;
+    ```
+
+    ```text
+     country | platform | users | total_events | events_per_user | purchases 
+    ---------+----------+-------+--------------+-----------------+-----------
+     USA     | Android  |   115 |       109977 |             956 |     12388
+     USA     | Web      |   108 |       105057 |             972 |     11847
+     USA     | iOS      |    83 |        84594 |            1019 |      9565
+     Germany | Android  |    85 |        77966 |             917 |      8852
+     India   | Android  |    80 |        68095 |             851 |      7724
+    ...
+    (10 rows)
+
+    Time: 170.353 ms   -- ClickHouse
+    Time: 1245.560 ms  -- Same query on Postgres
+    ```
+
+    **성능 비교:**
+
+    | 쿼리                  | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | 속도 향상 |
+    | ------------------- | --------------- | ---------------------------------- | ----- |
+    | 상위 사용자(집계 5개)       | 555 ms          | 164 ms                             | 3.4x  |
+    | 사용자 참여도 (JOIN + 집계) | 1,246 ms        | 170 ms                             | 7.3x  |
+
+    <Tip>
+      **ClickHouse를 사용해야 하는 경우**
+
+      이 100만 행 데이터셋에서도 ClickHouse는 조인과 여러 집계를 포함하는 복잡한 분석 쿼리에서 3~~7배 더 빠른 성능을 제공합니다. 규모가 더 커지면(1억 행 이상) 그 차이는 훨씬 더 커지며, ClickHouse의 열 지향 스토리지와 벡터화 실행은 10~~100배의 속도 향상을 제공할 수 있습니다.
+
+      쿼리 시간은 인스턴스 크기, 서비스 간 네트워크 지연 시간, 데이터 특성, 현재 부하에 따라 달라집니다.
+    </Tip>
+
+    ## 정리
+
+    이 빠른 시작에서 생성한 리소스를 삭제하려면 다음을 실행하십시오:
+
+    1. 먼저 ClickHouse 서비스에서 ClickPipe 통합을 삭제하십시오
+    2. 그런 다음 Cloud Console에서 Managed Postgres 인스턴스를 삭제하십시오
+  </View>
+</Visibility>

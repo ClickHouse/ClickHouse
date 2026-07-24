@@ -14,8 +14,16 @@ import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 可通过 [ClickHouse Terraform 提供商](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service) 中的 `clickhouse_postgres_service` 资源创建和管理 ClickHouse Managed Postgres 服务。本文介绍该资源及其配套数据源的 提供商 设置与配置示例。
 
 <Note>
-  此资源目前处于 alpha 阶段，其行为可能会在未来的 提供商 版本中发生变化。它随常规 提供商 build 一同发布，并从 提供商 版本 **v3.17.1** 开始可用——详情请参阅 [提供商 发行版](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)。
+  此资源目前处于 alpha 阶段，其行为可能会在未来的 提供商 版本中发生变化。它随常规 提供商 build 一同发布。本文档记录的是 提供商 版本 **v3.21.0** 及更高版本，这些版本更改了凭据的管理方式；更早版本的行为有所不同，并且截至 2026 年 7 月 31 日已无法再正常工作。详情请参阅 [提供商 发行版](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)。
 </Note>
+
+<Warning>
+  **请在 2026 年 7 月 31 日之前升级到 提供商 v3.21.0**
+
+  自 **2026 年 7 月 31 日** 起，Managed Postgres API 不再在响应中返回 超级用户 密码和 connection string；只有在创建 service 或重置其密码时才会返回凭据。提供商版本 **v3.21.0 及更高版本** 在此变更前后的行为完全一致。较旧的 提供商 版本依赖 API 回显凭据：截至 2026 年 7 月 31 日，这些版本将不再填充 `connection_string`，而且在未声明 `password` 的情况下创建的 service 虽然会成功，但系统生成的密码不会被记录到任何地方。
+
+  请在 2026 年 7 月 31 日之前完成升级。使用 v3.21.0 首次执行 plan 或 apply 时，您的 Terraform 状态 会自动迁移。如果您的任何 services 依赖 server 生成的密码 (即配置中没有 `password`) ，请先使用 `terraform state pull` 将其取回并显式声明，因为 v3.21.0 要求标准 service 必须提供 `password` 或 `password_wo`。
+</Warning>
 
 <div id="provider-setup">
   ## 提供商设置
@@ -28,7 +36,7 @@ terraform {
   required_providers {
     clickhouse = {
       source  = "ClickHouse/clickhouse"
-      version = ">= 3.17.1"
+      version = ">= 3.21.0"
     }
   }
 }
@@ -48,25 +56,27 @@ provider "clickhouse" {
 
 `clickhouse_postgres_service` 资源具有以下参数：
 
-| 参数                         | 必需      | 描述                                                                                |
-| -------------------------- | ------- | --------------------------------------------------------------------------------- |
-| `name`                     | 是       | 服务的易读名称。不可变——修改后会销毁并重新创建该服务。                                                      |
-| `cloud_provider`           | 标准创建时必填 | 托管该实例的云提供商。目前仅支持 `aws`。对于只读副本或时间点恢复，请省略 (将从源服务继承) 。                               |
-| `region`                   | 标准创建时必填 | 云区域 (例如 `us-east-1`) 。对于只读副本或时间点恢复，请省略 (将从源服务继承) 。                                |
-| `size`                     | 标准创建时必填 | 实例规格 (VM SKU) ，例如 `m6gd.large`。支持原地调整大小。对于时间点恢复，请省略 (恢复后的实例将使用备份时的规格启动) 。         |
-| `postgres_version`         | 否       | Postgres 主版本 (例如 `18`) 。更改主版本会销毁并重新创建该服务。                                         |
-| `ha_type`                  | 否       | 高可用模式：`none`、`async` 或 `sync`。请参见[高可用](#high-availability)。                       |
-| `password`                 | 否       | 超级用户密码。省略时由服务器自动生成。会存储在 (敏感) 状态中。                                                 |
-| `pg_config`                | 否       | 以键值映射形式提供的 Postgres 服务器参数。                                                        |
-| `pgbouncer_config`         | 否       | 以键值映射形式提供的 PgBouncer 连接池参数。                                                       |
-| `tags`                     | 否       | 以键值映射形式提供的资源标签。                                                                   |
-| `read_replica_of`          | 否       | 要复制的主服务 ID。请参见[只读副本](#read-replicas)。与 `restore_to_point_in_time` 互斥。             |
-| `restore_to_point_in_time` | 否       | 通过将另一个服务恢复到某个时间点来创建该服务。请参见[时间点恢复](#point-in-time-restore)。与 `read_replica_of` 互斥。 |
+| 参数                         | 必需                          | 描述                                                                                                |
+| -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `name`                     | 是                           | 服务的易读名称。不可变——修改后会销毁并重新创建该服务。                                                                      |
+| `cloud_provider`           | 标准创建时必填                     | 托管该实例的云提供商。目前仅支持 `aws`。对于只读副本或时间点恢复，请省略 (将从源服务继承) 。                                               |
+| `region`                   | 标准创建时必填                     | 云区域 (例如 `us-east-1`) 。对于只读副本或时间点恢复，请省略 (将从源服务继承) 。                                                |
+| `size`                     | 标准创建时必填                     | 实例规格 (VM SKU) ，例如 `m6gd.large`。支持原地调整大小。对于时间点恢复，请省略 (恢复后的实例将使用备份时的规格启动) 。                         |
+| `postgres_version`         | 否                           | Postgres 主版本 (例如 `18`) 。更改主版本会销毁并重新创建该服务。                                                         |
+| `ha_type`                  | 否                           | 高可用模式：`none`、`async` 或 `sync`。请参见[高可用](#high-availability)。                                       |
+| `password`                 | 标准创建时必填，除非设置了 `password_wo` | 由你的配置管理的超级用户密码。Terraform 不会从 API 中将其读回。会存储在 (敏感) 状态中。对于只读副本，请省略 (将继承)；对于时间点恢复，也请省略 (将保留源备份中的密码) 。 |
+| `password_wo`              | 标准创建时必填，除非设置了 `password`    | 只写超级用户密码：会应用到服务，但绝不会存储在状态中。需要 `password_wo_version`；需要 Terraform 1.11 或更高版本。                      |
+| `password_wo_version`      | 与 `password_wo` 一起使用        | `password_wo` 的版本号。更改它可轮换到当前的 `password_wo` 值。                                                    |
+| `pg_config`                | 否                           | 以键值映射形式提供的 Postgres 服务器参数。                                                                        |
+| `pgbouncer_config`         | 否                           | 以键值映射形式提供的 PgBouncer 连接池器参数。                                                                      |
+| `tags`                     | 否                           | 以键值映射形式提供的资源标签。                                                                                   |
+| `read_replica_of`          | 否                           | 要复制的主服务 ID。请参见[只读副本](#read-replicas)。与 `restore_to_point_in_time` 互斥。                             |
+| `restore_to_point_in_time` | 否                           | 通过将另一个服务恢复到某个时间点来创建该服务。请参见[时间点恢复](#point-in-time-restore)。与 `read_replica_of` 互斥。                 |
 
-以下属性为只读，并由 ClickHouse Cloud 在创建后填充：`id`、`state`、`created_at`、`is_primary`、`hostname`、`port`、`username` 和 `connection_string` (敏感) 。
+以下属性为只读，并由 ClickHouse Cloud 在创建后填充：`id`、`state`、`created_at`、`is_primary`、`hostname`、`port` 和 `username`。不存在 `connection_string` 属性 (已在 v3.21.0 中移除) ：请使用 `hostname`、`port`、`username` 以及你声明的密码来构建连接 URI，例如 `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`。
 
 <Warning>
-  `password` 会以明文形式存储在你的 Terraform 状态 中。请相应保护好 state 文件——例如，使用启用静态加密的远程后端。如果省略 `password`，服务器会生成一个密码，并且提供商会在每次 refresh 时将其读回 state。
+  The `password` 会以明文形式存储在你的 Terraform 状态中。请相应保护好 状态 文件，例如使用启用静态加密的远程后端，或者使用 `password_wo` 以使密码完全不进入状态。
 </Warning>
 
 <div id="create-a-service">
@@ -79,6 +89,7 @@ resource "clickhouse_postgres_service" "example" {
   cloud_provider = "aws"
   region         = "us-east-1"
   size           = "m6gd.large"
+  password       = var.postgres_password
 
   # High-availability mode — number of standby replicas:
   #   "none"  – primary only, no standby (default)
@@ -93,7 +104,7 @@ resource "clickhouse_postgres_service" "example" {
 }
 ```
 
-如果要自行管理密码，请设置 `password`——其长度必须至少为 12 个字符，且至少包含一个小写字母、一个大写字母和一个数字。若省略，server 会自动生成一个。
+标准 service 必须声明 `password` 或 `password_wo`。其值必须至少为 12 个字符，且至少包含一个小写字母、一个大写字母和一个数字。`password_wo` (连同 `password_wo_version`) 同样适用这些密码规则，但绝不会存储在状态中；如需轮换，请更改 `password_wo_version`。由于 API 不会返回凭据，Terraform 必须始终是密码的唯一写入方：如果在 Terraform 之外 (控制台或 API) 轮换了密码，Terraform 不会检测到，而下一次由 Terraform 驱动的轮换会重新写回已声明的值。
 
 <div id="high-availability">
   ## 高可用
@@ -169,11 +180,13 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 导入现有服务
 </div>
 
-现有的 Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中。导入时会一并恢复密码——服务器会在执行 `GET` 时回显该密码：
+现有的 Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中：
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+导入不会恢复密码 (API 不会返回该密码) 。导入后，首次执行 apply 时，服务会切换为你在配置中声明的 `password` 或 `password_wo`。
 
 <div id="unsupported-operations">
   ## 不支持的操作
