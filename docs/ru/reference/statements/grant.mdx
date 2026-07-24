@@ -191,6 +191,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
 Примеры того, как трактуется эта иерархия:
 
 * Привилегия `ALTER` включает все остальные привилегии `ALTER*`.
-* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` и `ALTER MODIFY CONSTRAINT`.
 
 Привилегии применяются на разных уровнях. Понимание уровня подсказывает, какой синтаксис доступен для привилегии.
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`. Уровень: `GROUP`. Псевдонимы: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. Уровень: `TABLE`. Псевдонимы: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. Уровень: `TABLE`. Псевдонимы: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. Уровень: `TABLE`. Псевдонимы: `MODIFY CONSTRAINT`
   * `ALTER TTL`. Уровень: `TABLE`. Псевдонимы: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Псевдонимы: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. Уровень: `TABLE`. Псевдонимы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 Примеры того, как работает эта иерархия:
 
 * Привилегия `ALTER` включает все остальные привилегии `ALTER*`.
-* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` и `ALTER MODIFY CONSTRAINT`.
 
 **Примечания**
 
@@ -628,7 +631,7 @@ GRANT CLUSTER ON *.* TO <username>
     * `SYSTEM DROP UNCOMPRESSED CACHE`. Уровень: `GLOBAL`. Псевдонимы: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. Уровень: `GROUP`
     * `SYSTEM RELOAD CONFIG`. Уровень: `GLOBAL`. Псевдонимы: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. Уровень: `GLOBAL`. Псевдонимы: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. Уровень: `GLOBAL`. Псевдонимы: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Уровень: `GLOBAL`. Псевдонимы: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. Уровень: `TABLE`. Псевдонимы: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. Уровень: `TABLE`. Псевдонимы: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -643,6 +646,8 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM FLUSH`. Уровень: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. Уровень: `TABLE`. Псевдонимы: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. Уровень: `GLOBAL`. Псевдонимы: `FLUSH LOGS`
+
+Команды `SYSTEM UNLOAD DICTIONARY` и `SYSTEM UNLOAD DICTIONARIES` используют ту же привилегию `SYSTEM RELOAD DICTIONARY`, поэтому пользователь с привилегией `SYSTEM RELOAD DICTIONARY` также может выгружать словари.
 
 Привилегия `SYSTEM RELOAD EMBEDDED DICTIONARIES` неявно предоставляется привилегией `SYSTEM RELOAD DICTIONARY ON *.*`.
 
@@ -774,9 +779,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. Псевдонимы: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. Псевдонимы: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Позволяет пользователю вызывать функции [dictGet](/ru/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ru/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictIsIn](/ru/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+Позволяет пользователю вызывать функции [dictGet](/ru/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ru/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictGetRoot](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetRoot), [dictGetChildren](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetChildren), [dictGetDescendants](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants), [dictIsIn](/ru/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
 
 Уровень привилегии: `DICTIONARY`.
 
