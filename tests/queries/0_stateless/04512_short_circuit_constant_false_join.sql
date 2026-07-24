@@ -45,6 +45,13 @@ SELECT count() FROM (
     LEFT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y
 ) WHERE explain ILIKE '%ReadNothing%';
 
+SELECT 'The setting = 0 disables the optimization (no ReadNothing)';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
+    INNER JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
+    SETTINGS query_plan_short_circuit_constant_false_join = 0
+) WHERE explain ILIKE '%ReadNothing%';
+
 -- Read-rows check: the non-contributing side must not be scanned. The runtime join can only
 -- cancel the probe side after the build side is filled, so a big build (right) side of a LEFT
 -- join was fully read before this optimization; here it is read as zero rows.
@@ -92,13 +99,6 @@ SELECT 'LEFT SEMI', a.x FROM (SELECT number AS x FROM numbers(5)) a
     LEFT SEMI JOIN (SELECT number AS y FROM numbers(3)) b ON a.x = b.y AND 1 = 2 ORDER BY a.x;
 SELECT 'LEFT ANTI', a.x FROM (SELECT number AS x FROM numbers(5)) a
     LEFT ANTI JOIN (SELECT number AS y FROM numbers(3)) b ON a.x = b.y AND 1 = 2 ORDER BY a.x;
-
--- Empty input propagation: an input that is already an empty source (WHERE false) collapses too.
-SELECT 'INNER with empty left input';
-SELECT a.x, b.y FROM (SELECT number AS x FROM numbers(5) WHERE 1 = 2) a
-    INNER JOIN (SELECT number AS y FROM numbers(3)) b ON a.x = b.y ORDER BY a.x, b.y;
-SELECT 'LEFT with empty right input', a.x, b.y FROM (SELECT number AS x FROM numbers(5)) a
-    LEFT JOIN (SELECT number AS y FROM numbers(3) WHERE 1 = 2) b ON a.x = b.y ORDER BY a.x, b.y;
 
 -- Validation is preserved: because the JoinStep is kept (not replaced by an empty source), an
 -- invalid constant-false join over a Join-engine table still throws instead of being silently

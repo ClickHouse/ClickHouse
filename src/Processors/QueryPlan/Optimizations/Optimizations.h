@@ -103,9 +103,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
-/// Short-circuit a JOIN with a constant-false ON condition (or an already-empty input):
-/// replace the whole join (INNER/CROSS/SEMI) or the non-contributing input (LEFT/RIGHT) with an
-/// empty source, so the non-contributing side is not read.
+/// Short-circuit a JOIN whose ON condition folds to a constant false: replace each input side that
+/// cannot contribute a row (both sides for INNER/CROSS/SEMI, the non-preserved side for LEFT/RIGHT)
+/// with an empty source, so the non-contributing side is not read. The JoinStep is kept in place so
+/// join validation still runs.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 /// Convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows

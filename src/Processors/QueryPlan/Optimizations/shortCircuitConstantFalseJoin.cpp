@@ -11,17 +11,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the subtree rooted at `node` provably produces zero rows.
-///
-/// Only a `ReadNothingStep` is treated as empty. A constant-false `FilterStep` is intentionally
-/// NOT considered empty: an aggregation with `WITH TOTALS`/`WITH ROLLUP`/`WITH CUBE` below the
-/// filter still emits the totals row, which bypasses the filter, so treating the filtered
-/// subtree as empty would drop that row (see 03788).
-static bool producesNoRows(const QueryPlan::Node * node)
-{
-    return node && typeid_cast<const ReadNothingStep *>(node->step.get()) != nullptr;
-}
-
 /// True if any conjunct of the ON expression is a constant that is always false.
 /// The ON expression is a list of AND-ed conjuncts, so a single always-false conjunct
 /// makes the whole condition false (e.g. `a.x = b.y AND a.t = 'A' AND a.t = 'B'`).
@@ -35,23 +24,23 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
     return false;
 }
 
-/// Short-circuit the read of an input side that can never contribute a row to the join result.
-///
-/// When no pair of rows can ever match (a constant-false ON condition, or an already-empty input),
-/// a side that is not "preserved" (whose unmatched rows are dropped) contributes nothing and does
-/// not need to be read at all. Such an input is replaced with an empty `ReadNothingStep` of the
-/// same header, so the non-contributing table is never scanned. For example:
-///   - `INNER/CROSS/SEMI` on a false condition: neither side is preserved, so both inputs are emptied
-///     and the (empty) result is produced without reading either table.
-///   - `LEFT ALL/ANY/ANTI` on a false condition: the left side is preserved, so only the right input
-///     is emptied; the join then emits every left row with NULL/default right columns as before.
+/// Short-circuit the read of an input side that can never contribute a row when the JOIN ON
+/// condition folds to a constant false (e.g. `ON 1 = 2`, `ON NULL`, or `ON a.x = b.y AND a.t = 'A'
+/// AND a.t = 'B'`). No pair of rows can match, so a side whose unmatched rows are dropped (a
+/// non-"preserved" side) contributes nothing and does not need to be read. Such an input is
+/// replaced with an empty `ReadNothingStep` of the same header, so the non-contributing table is
+/// never scanned. For example:
+///   - `INNER/CROSS/SEMI`: neither side is preserved, so both inputs are emptied and the (empty)
+///     result is produced without reading either table.
+///   - `LEFT ALL/ANY/ANTI`: the left side is preserved, so only the right input is emptied; the
+///     join then emits every left row with NULL/default right columns as before.
 ///   - `FULL`: both sides are preserved, so neither input can be dropped.
 ///
 /// The `JoinStepLogical` is deliberately kept in place (never replaced by an empty source): the
 /// logical-to-physical conversion still runs and performs join validation (StorageJoin key checks,
 /// ASOF/`INVALID_JOIN_ON_EXPRESSION`, etc.), so an invalid join keeps throwing exactly as before.
-/// This runs before `splitFilter`/`pushDownFilter` lower the constant-false condition onto an input,
-/// so the condition is still visible on the `JoinStepLogical` here.
+/// This runs before `splitFilter`/`pushDownFilter` lower the constant-false condition onto an
+/// input, so the condition is still visible on the `JoinStepLogical` here.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     auto * join = typeid_cast<JoinStepLogical *>(parent_node->step.get());
@@ -67,7 +56,7 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
     const auto kind = join_operator.kind;
     const auto strictness = join_operator.strictness;
 
-    /// Paste join is positional (no ON condition, no empty-propagation semantics here).
+    /// Paste join is positional and has no ON condition.
     if (isPaste(kind))
         return 0;
 
@@ -75,12 +64,7 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
     if (strictness == JoinStrictness::Asof)
         return 0;
 
-    /// A match is impossible when the ON condition folds to a constant false, or when an input is
-    /// already empty. Only then can a non-preserved side be safely dropped: its rows appear in the
-    /// result exclusively through matches, and there are none.
-    const bool match_impossible
-        = onConditionIsAlwaysFalse(*join) || producesNoRows(parent_node->children.front()) || producesNoRows(parent_node->children.back());
-    if (!match_impossible)
+    if (!onConditionIsAlwaysFalse(*join))
         return 0;
 
     /// A side is "preserved" when its unmatched rows are still emitted (NULL/default-extended):
