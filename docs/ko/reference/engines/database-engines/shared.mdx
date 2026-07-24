@@ -1,23 +1,19 @@
 ---
-description: 'ClickHouse Cloud에서 사용할 수 있는 `Shared` 데이터베이스 엔진을 설명하는 페이지입니다'
+description: 'ClickHouse Cloud에서 사용할 수 있는 `Shared` 데이터베이스 엔진을 설명하는 페이지'
 sidebarTitle: 'Shared'
 slug: /engines/database-engines/shared
 title: 'Shared'
-doc_type: 'reference'
+doc_type: '참고'
 ---
 
 import CloudOnlyBadge from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge />
 
-<div id="shared-database-engine">
-  # 공유 데이터베이스 엔진
-</div>
-
-`Shared` 데이터베이스 엔진은 [`SharedMergeTree`](/ko/products/cloud/features/infrastructure/shared-merge-tree)와 같은 상태 비저장 테이블 엔진을 사용하는 테이블이 포함된 데이터베이스를 관리하기 위해 Shared Catalog와 함께 사용됩니다.
+공유 데이터베이스 엔진은 [`SharedMergeTree`](/ko/products/cloud/features/infrastructure/shared-merge-tree)와 같은 상태 비저장 테이블 엔진을 사용하는 테이블이 포함된 데이터베이스를 관리하기 위해 Shared Catalog와 함께 사용됩니다.
 이러한 테이블 엔진은 영구 상태를 디스크에 기록하지 않으며 동적인 컴퓨트 환경과 호환됩니다.
 
-Cloud의 `Shared` 데이터베이스 엔진은 로컬 디스크에 대한 의존성을 없앱니다.
+Cloud의 공유 데이터베이스 엔진은 로컬 디스크에 대한 의존성을 없앱니다.
 이 엔진은 전적으로 메모리 내에서 동작하므로 CPU와 메모리만 필요합니다.
 
 <div id="how-it-works">

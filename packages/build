@@ -118,6 +118,8 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+="+debug"
 elif [[ $BUILD_TYPE =~ 'coverage' ]]; then
     VERSION_POSTFIX+="+coverage"
+elif [[ $BUILD_TYPE == 'cfi' ]]; then
+    VERSION_POSTFIX+="+cfi"
 fi
 
 if [[ "$PKG_ROOT" != "$SOURCE" ]]; then

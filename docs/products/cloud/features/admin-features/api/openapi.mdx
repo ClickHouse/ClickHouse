@@ -15,16 +15,28 @@ ClickHouse Cloud provides an API utilizing OpenAPI that allows you to programmat
 This document covers the ClickHouse Cloud API. For database API endpoints, please see [Cloud Endpoints API](/products/cloud/guides/sql-console/query-endpoints)
 </Note>
 
-1. You can use the **API Keys** tab on the left menu to create and manage your API keys.
+<Steps>
 
-  <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Keys tab" border/>
+<Step title="Open the API Keys page">
 
-2. The **API Keys** page will initially display a prompt to create your first API key as shown below. After your first key is created, you can create new keys using the `New API Key` button that appears in the top right corner.
+You can use the **API Keys** tab on the left menu to create and manage your API keys.
 
-  <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Keys page" border/>
-  
-3. To create an API key, specify the key name, permissions for the key, and expiration time, then click `Generate API Key`.
-<br/>
+<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Keys tab" border/>
+
+</Step>
+
+<Step title="Start creating an API key">
+
+The **API Keys** page will initially display a prompt to create your first API key as shown below. After your first key is created, you can create new keys using the `New API Key` button that appears in the top right corner.
+
+<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Keys page" border/>
+
+</Step>
+
+<Step title="Configure the API key">
+
+Specify the key name, permissions for the key, and expiration time.
+
 <Note>
 Permissions align with ClickHouse Cloud [predefined roles](/products/cloud/reference/security/console-roles). The developer role has read-only permissions for assigned services and the admin role has full read and write permissions.
 </Note>
@@ -35,13 +47,33 @@ Permissions align with ClickHouse Cloud [predefined roles](/products/cloud/refer
 To use API keys with [Query API Endpoints](/products/cloud/guides/sql-console/query-endpoints), set Organization Role to `Member` (minimum) and grant Service Role access to `Query Endpoints`.
 </Tip>
 
-  <Image img="/images/cloud/manage/openapi3.png" size="md" alt="Create API key form" border/>
+<Image img="/images/cloud/manage/openapi3.png" size="md" alt="Create API key form" border/>
 
-4. The next screen will display your Key ID and Key secret. Copy these values and put them somewhere safe, such as a vault. The values won't be displayed after you leave this screen.
+</Step>
 
-  <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API key details" border/>
+<Step title="Add allowed IP addresses">
 
-5. The ClickHouse Cloud API uses [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) to verify the validity of your API keys. Here is an example of how to use your API keys to send requests to the ClickHouse Cloud API using `curl`:
+To restrict which clients can use the API key, in the **Allow access to this API Key** section, select **Specific locations**. Enter an IP address or CIDR range, such as `203.0.113.1` or `203.0.113.0/24`, and add additional entries as needed.
+
+Query API endpoints respect API key-level IP allowlists. Because requests are proxied from within ClickHouse's infrastructure, service-level IP allowlists do not apply. See [IP Access Control](/cloud/features/query-api-endpoints#ip-access-control) for details.
+
+<Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Allowed IP addresses configured for an API key" border/>
+
+Click **Generate API Key** when you have finished configuring the key.
+
+</Step>
+
+<Step title="Save the API key credentials">
+
+The next screen will display your Key ID and Key secret. Copy these values and put them somewhere safe, such as a vault. The values won't be displayed after you leave this screen.
+
+<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API key details" border/>
+
+</Step>
+
+<Step title="Authenticate API requests">
+
+The ClickHouse Cloud API uses [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) to verify the validity of your API keys. Here is an example of how to use your API keys to send requests to the ClickHouse Cloud API using `curl`:
 
 ```bash
 $ KEY_ID=mykeyid
@@ -50,13 +82,21 @@ $ KEY_SECRET=mykeysecret
 $ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
 ```
 
-6. Returning to the **API Keys** page, you will see the key name, last four characters of the Key ID, permissions, status, expiration date, and creator. You're able to edit the key name, permissions, and expiration from this screen. Keys may also be disabled or deleted form this screen.
-<br/>
+</Step>
+
+<Step title="Manage existing API keys">
+
+Returning to the **API Keys** page, you will see the key name, last four characters of the Key ID, permissions, status, expiration date, and creator. You're able to edit the key name, permissions, and expiration from this screen. Keys may also be disabled or deleted from this screen.
+
 <Note>
 Deleting an API key is a permanent action. Any services using the key will immediately lose access to ClickHouse Cloud.
 </Note>
 
-  <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API Keys management page" border/>
+<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API Keys management page" border/>
+
+</Step>
+
+</Steps>
 
 ## Endpoints {#endpoints}
 
