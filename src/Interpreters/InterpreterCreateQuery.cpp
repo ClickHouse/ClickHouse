@@ -1300,7 +1300,7 @@ void InterpreterCreateQuery::validateViewSelectColumnSpellings(const ASTCreateQu
         {
             analyze_select(/*sensitive=*/ false);
         }
-        catch (...) /// An already-broken body is tolerated, matching `allow_materialized_view_with_bad_select`.
+        catch (...) /// Ok: an already-broken body is tolerated, matching `allow_materialized_view_with_bad_select`.
         {
             return;
         }
