@@ -5870,16 +5870,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 30 == 0)
                 {
                     /// Add or remove distinct to aggregate
-                    static const String distinctSuffix = "Distinct";
+                    static constexpr std::string_view distinctSuffix = "Distinct";
 
-                    if (endsWith(fn->name, distinctSuffix))
-                    {
-                        fn->name = fn->name.substr(0, fn->name.length() - distinctSuffix.size());
-                    }
+                    if (const auto pos = fn->name.find(distinctSuffix); pos != String::npos)
+                        fn->name.erase(pos, distinctSuffix.size());
                     else
-                    {
-                        fn->name = fn->name + distinctSuffix;
-                    }
+                        fn->name += distinctSuffix;
                 }
                 if (fuzz_rand() % 20 == 0)
                 {
