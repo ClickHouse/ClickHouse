@@ -9,6 +9,8 @@ title: 'Constraints on settings'
 doc_type: 'reference'
 ---
 
+# Constraints on settings
+
 ## Overview {#overview}
 
 In ClickHouse, "constraints" on settings refer to limitations and rules which

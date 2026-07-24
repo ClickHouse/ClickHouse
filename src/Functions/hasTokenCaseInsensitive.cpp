@@ -26,14 +26,7 @@ REGISTER_FUNCTION(HasTokenCaseInsensitive)
 {
     factory.registerFunction<FunctionHasTokenCaseInsensitive>(
         FunctionDocumentation{
-            .description = R"(
-Performs case insensitive lookup of needle in haystack using tokenbf_v1 index.
-
-:::note
-This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
-We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
-            )",
+            .description="Performs case insensitive lookup of needle in haystack using tokenbf_v1 index.",
             .syntax = "hasTokenCaseInsensitive(haystack, needle)",
             .introduced_in = {20, 1},
             .category = FunctionDocumentation::Category::StringSearch},
@@ -41,14 +34,7 @@ We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllT
 
     factory.registerFunction<FunctionHasTokenCaseInsensitiveOrNull>(
         FunctionDocumentation{
-            .description = R"(
-Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed.
-
-:::note
-This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
-We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
-            )",
+            .description="Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed.",
             .syntax = "hasTokenCaseInsensitiveOrNull(haystack, needle)",
             .introduced_in = {23, 1},
             .category = FunctionDocumentation::Category::StringSearch},

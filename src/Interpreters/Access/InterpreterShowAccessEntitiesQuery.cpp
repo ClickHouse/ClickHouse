@@ -151,7 +151,6 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             (order.empty() ? "" : " ORDER BY " + order);
 }
 
-void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

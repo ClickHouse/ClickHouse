@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Source, that allow to wait until processing of
 /// asynchronous insert for specified query_id will be finished.
-class WaitForAsyncInsertSource final : public ISource
+class WaitForAsyncInsertSource : public ISource
 {
 public:
     WaitForAsyncInsertSource(
@@ -30,7 +30,7 @@ public:
         , process_list_elem(std::move(process_list_elem_))
         , progress_callback(std::move(progress_callback_))
     {
-        chassert(insert_future.valid());
+        assert(insert_future.valid());
     }
 
     String getName() const override { return "WaitForAsyncInsert"; }

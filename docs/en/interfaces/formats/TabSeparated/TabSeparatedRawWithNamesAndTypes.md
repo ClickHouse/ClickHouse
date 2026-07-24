@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 | Input | Output | Alias                                             |
 |-------|--------|---------------------------------------------------|
-| ✔     | ✔      | `TSVRawWithNamesAndTypes`, `RawWithNamesAndTypes` |
+| ✔     | ✔      | `TSVRawWithNamesAndNames`, `RawWithNamesAndNames` |
 
 ## Description {#description}
 
