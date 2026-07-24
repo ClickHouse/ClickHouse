@@ -482,11 +482,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                             "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
                             "is incomplete.",
                             ai_response.raw_finish_reason);
-                    case FinishReason::ToolCall:
+                    case FinishReason::RequiresAction:
                         throw Exception(
                             ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
-                            "AI provider returned a tool-call response (finish_reason='{}') instead of a completed "
-                            "answer.",
+                            "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
+                            "returning a completed answer.",
                             ai_response.raw_finish_reason);
                 }
 

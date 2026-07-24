@@ -122,7 +122,7 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     else if (ai_response.raw_finish_reason == "content_filter")
         ai_response.finish_reason = FinishReason::ContentFilter;
     else if (ai_response.raw_finish_reason == "tool_calls" || ai_response.raw_finish_reason == "function_call")
-        ai_response.finish_reason = FinishReason::ToolCall;
+        ai_response.finish_reason = FinishReason::RequiresAction;
     else
         ai_response.finish_reason = FinishReason::Unknown;
 

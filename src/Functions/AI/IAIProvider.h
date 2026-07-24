@@ -73,7 +73,7 @@ enum class FinishReason : UInt8
     Complete, /// Full answer produced: natural end, a stop sequence, or Anthropic structured-output `tool_use`.
     Truncated, /// Output was cut off by a token limit (`max_tokens` / `length` / context window exceeded).
     ContentFilter, /// The provider withheld or filtered the content.
-    ToolCall, /// A tool-interaction signal we cannot consume as a final answer (e.g. OpenAI `tool_calls`, Anthropic `pause_turn`).
+    RequiresAction, /// Model stopped expecting the caller to act (run a tool / resume the turn), not a final answer (e.g. OpenAI `tool_calls`, Anthropic `pause_turn`).
     Unknown, /// Unrecognized finish reason, potentially new reason introduced in API update.
 };
 

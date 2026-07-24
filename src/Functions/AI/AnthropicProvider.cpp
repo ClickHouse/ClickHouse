@@ -126,7 +126,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     else if (ai_response.raw_finish_reason == "refusal")
         ai_response.finish_reason = FinishReason::ContentFilter;
     else if (ai_response.raw_finish_reason == "pause_turn")
-        ai_response.finish_reason = FinishReason::ToolCall;
+        ai_response.finish_reason = FinishReason::RequiresAction;
     else
         ai_response.finish_reason = FinishReason::Unknown;
 
