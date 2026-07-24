@@ -140,7 +140,7 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     auto & res_offsets = res_offsets_column->getData();
 
     size_t total_elements = 0;
-    /// First extract the offsets fromt he indexes
+    /// First extract the offsets from the indexes
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
