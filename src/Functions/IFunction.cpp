@@ -68,53 +68,65 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
     return true;
 }
 
-ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
+/// If the single-dictionary fast path applies (exactly one full LowCardinality argument and every
+/// other argument constant), replace that column with its nested dictionary, resize the constants
+/// to the dictionary size and return the dictionary indexes for the result. Otherwise return
+/// nullptr and leave args unchanged: the declared LowCardinality result type may rest on a
+/// constness that was lost at a pipeline boundary (e.g. a merged aggregation key), and the caller
+/// falls back to full materialization.
+ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments)
 {
-    size_t num_rows = input_rows_count;
-    ColumnPtr indexes;
-
-    /// Find first LowCardinality column and replace it with nested dictionary.
-    for (auto & column : args)
+    /// Scan first, mutate after: a second LowCardinality column may be discovered after the first
+    /// one, and args must stay intact for the caller's fallback.
+    const ColumnLowCardinality * low_cardinality_column = nullptr;
+    size_t low_cardinality_arg = 0;
+    for (size_t i = 0; i < args.size(); ++i)
     {
-        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+        if (const auto * lc = checkAndGetColumn<ColumnLowCardinality>(args[i].column.get()))
         {
-            /// Only a single LowCardinality column is supported now.
-            if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Default functions implementation for LowCardinality is supported only with a single LowCardinality argument.");
-
-            const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
-
-            if (can_be_executed_on_default_arguments)
-            {
-                /// Normal case, when function can be executed on values' default.
-                column.column = low_cardinality_column->getDictionary().getNestedColumn();
-                indexes = low_cardinality_column->getIndexesPtr();
-            }
-            else
-            {
-                /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
-                /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
-                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
-                column.column = dict_encoded.dictionary;
-                indexes = dict_encoded.indexes;
-            }
-
-            num_rows = column.column->size();
-            column.type = low_cardinality_type->getDictionaryType();
+            if (low_cardinality_column)
+                return nullptr;
+            low_cardinality_column = lc;
+            low_cardinality_arg = i;
         }
+        else if (!isColumnConst(*args[i].column))
+            return nullptr;
     }
 
-    /// Change size of constants.
-    for (auto & column : args)
+    if (!low_cardinality_column)
+        return nullptr;
+
+    auto & column = args[low_cardinality_arg];
+    const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
+    if (!low_cardinality_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
+
+    ColumnPtr indexes;
+    if (can_be_executed_on_default_arguments)
     {
-        if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+        /// Normal case, when function can be executed on values' default.
+        indexes = low_cardinality_column->getIndexesPtr();
+        column.column = low_cardinality_column->getDictionary().getNestedColumn();
+    }
+    else
+    {
+        /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+        /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
+        auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+        indexes = dict_encoded.indexes;
+        column.column = dict_encoded.dictionary;
+    }
+    column.type = low_cardinality_type->getDictionaryType();
+
+    /// Change size of constants.
+    size_t num_rows = column.column->size();
+    for (auto & arg : args)
+    {
+        if (const auto * column_const = checkAndGetColumn<ColumnConst>(arg.column.get()))
         {
-            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
-            column.type = recursiveRemoveLowCardinality(column.type);
+            arg.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            arg.type = recursiveRemoveLowCardinality(arg.type);
         }
     }
 
@@ -464,11 +476,29 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
-            ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
 
-            size_t new_input_rows_count
-                = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            /// getReturnType() chose a LowCardinality result type assuming the single-dictionary
+            /// fast path applies, but a constant argument can arrive as a non-constant column at
+            /// runtime and break that assumption. The helper returns the dictionary indexes on the
+            /// fast path (and resizes the constants to the dictionary size); it returns nullptr and
+            /// leaves the arguments intact when the assumption no longer holds, and we fall back to
+            /// full materialization.
+            ColumnPtr indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+                columns_without_low_cardinality, can_be_executed_on_default_arguments);
+
+            /// Fast path: the row count comes from the (resized) nested dictionary column. Fallback:
+            /// the constants keep their original row counts, so it is the original input_rows_count,
+            /// just like the non-LowCardinality result branch below.
+            size_t new_input_rows_count = input_rows_count;
+            if (indexes)
+            {
+                new_input_rows_count
+                    = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            }
+            else
+            {
+                convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
+            }
             checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);

@@ -56,6 +56,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"add_minmax_index_for_temporal_columns", trueOrFalseSetting},
     {"allow_coalescing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_commit_order_projection", trueOrFalseSetting},
+    {"allow_dimensions_outside_sorting_key", trueOrFalseSetting},
     {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
     {"allow_experimental_text_index_phrase_search", trueOrFalseSetting},
     {"allow_floating_point_partition_key", trueOrFalseSetting},
@@ -104,6 +105,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"compress_marks", trueOrFalseSetting},
     {"compress_per_column_in_compact_parts", trueOrFalseSetting},
     {"compress_primary_key", trueOrFalseSetting},
+    {"compute_exact_num_defaults_for_sparse_columns", trueOrFalseSetting},
     {"concurrent_part_removal_threshold",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); }, {}, false)},
@@ -119,6 +121,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'ignore'", "'throw'", "'drop'", "'rebuild'"},
          false)},
+    {"deduplication_hashes_cache_update_wait_ms", highRangeSetting},
     {"detach_not_byte_identical_parts", trueOrFalseSetting},
     {"detach_old_local_parts_when_cloning_replica", trueOrFalseSetting},
     {"disable_detach_partition_for_zero_copy_replication", trueOrFalseSetting},
@@ -1271,6 +1274,15 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     auto icebergTableSettings = dataLakeSettings;
     icebergTableSettings.insert(icebergTableOnlySettings.begin(), icebergTableOnlySettings.end());
 
+    /// Local lake engines get absolute dolor-managed paths; with a `disk` setting the server
+    /// resolves the path against that disk and rejects absolute paths (BAD_ARGUMENTS)
+    auto dataLakeLocalSettings = dataLakeSettings;
+    auto icebergLocalTableSettings = icebergTableSettings;
+    auto paimonLocalSettings = paimonSettings;
+    dataLakeLocalSettings.erase("disk");
+    icebergLocalTableSettings.erase("disk");
+    paimonLocalSettings.erase("disk");
+
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
@@ -1300,13 +1312,13 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLakeS3, dataLakeSettings},
          {DeltaLakeAzure, dataLakeSettings},
-         {DeltaLakeLocal, dataLakeSettings},
+         {DeltaLakeLocal, dataLakeLocalSettings},
          {IcebergS3, icebergTableSettings},
          {IcebergAzure, icebergTableSettings},
-         {IcebergLocal, icebergTableSettings},
+         {IcebergLocal, icebergLocalTableSettings},
          {PaimonS3, paimonSettings},
          {PaimonAzure, paimonSettings},
-         {PaimonLocal, paimonSettings},
+         {PaimonLocal, paimonLocalSettings},
          {Merge, {}},
          {Distributed, distributedTableSettings},
          {Dictionary, {}},
