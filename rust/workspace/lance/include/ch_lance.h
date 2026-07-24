@@ -11,8 +11,35 @@ extern "C" {
 struct ArrowArray;
 struct ArrowSchema;
 
+typedef uint32_t ch_lance_error_kind;
+
+enum
+{
+    CH_LANCE_ERROR_NONE = 0,
+    CH_LANCE_ERROR_INVALID_ARGUMENT = 1,
+    CH_LANCE_ERROR_NOT_FOUND = 2,
+    CH_LANCE_ERROR_PERMISSION_DENIED = 3,
+    CH_LANCE_ERROR_UNAUTHENTICATED = 4,
+    CH_LANCE_ERROR_CORRUPT_DATA = 5,
+    CH_LANCE_ERROR_UNSUPPORTED = 6,
+    CH_LANCE_ERROR_VERSION_NOT_FOUND = 7,
+    CH_LANCE_ERROR_STORAGE = 8,
+    CH_LANCE_ERROR_INTERNAL = 9,
+};
+
+typedef uint32_t ch_lance_error_origin;
+
+enum
+{
+    CH_LANCE_ERROR_ORIGIN_UNKNOWN = 0,
+    CH_LANCE_ERROR_ORIGIN_LOCAL = 1,
+    CH_LANCE_ERROR_ORIGIN_S3 = 2,
+};
+
 typedef struct ch_lance_error
 {
+    ch_lance_error_kind kind;
+    ch_lance_error_origin origin;
     char * message;
 } ch_lance_error;
 

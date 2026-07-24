@@ -26,6 +26,11 @@ struct ch_lance_scan;
 namespace DB::Lance
 {
 
+namespace ErrorMapping
+{
+int toClickHouseErrorCode(UInt32 kind, UInt32 origin);
+}
+
 struct DatasetOptions
 {
     String uri{};

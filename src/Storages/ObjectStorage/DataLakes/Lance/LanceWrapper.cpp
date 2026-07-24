@@ -18,7 +18,14 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int ACCESS_DENIED;
+extern const int AUTHENTICATION_FAILED;
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_OPEN_FILE;
+extern const int FILE_DOESNT_EXIST;
+extern const int INCORRECT_DATA;
+extern const int LOGICAL_ERROR;
+extern const int S3_ERROR;
 extern const int UNKNOWN_EXCEPTION;
 }
 }
@@ -26,24 +33,76 @@ extern const int UNKNOWN_EXCEPTION;
 namespace DB::Lance
 {
 
+namespace ErrorMapping
+{
+
+int toClickHouseErrorCode(UInt32 kind, UInt32 origin)
+{
+    switch (kind)
+    {
+        case CH_LANCE_ERROR_NONE:
+            return ErrorCodes::LOGICAL_ERROR;
+        case CH_LANCE_ERROR_INVALID_ARGUMENT:
+            return ErrorCodes::BAD_ARGUMENTS;
+        case CH_LANCE_ERROR_NOT_FOUND:
+            return ErrorCodes::FILE_DOESNT_EXIST;
+        case CH_LANCE_ERROR_PERMISSION_DENIED:
+            return ErrorCodes::ACCESS_DENIED;
+        case CH_LANCE_ERROR_UNAUTHENTICATED:
+            return ErrorCodes::AUTHENTICATION_FAILED;
+        case CH_LANCE_ERROR_CORRUPT_DATA:
+            return ErrorCodes::INCORRECT_DATA;
+        case CH_LANCE_ERROR_UNSUPPORTED:
+            return ErrorCodes::BAD_ARGUMENTS;
+        case CH_LANCE_ERROR_VERSION_NOT_FOUND:
+            return ErrorCodes::FILE_DOESNT_EXIST;
+        case CH_LANCE_ERROR_STORAGE:
+            if (origin == CH_LANCE_ERROR_ORIGIN_S3)
+                return ErrorCodes::S3_ERROR;
+            if (origin == CH_LANCE_ERROR_ORIGIN_LOCAL)
+                return ErrorCodes::CANNOT_OPEN_FILE;
+            return ErrorCodes::UNKNOWN_EXCEPTION;
+        case CH_LANCE_ERROR_INTERNAL:
+            return ErrorCodes::UNKNOWN_EXCEPTION;
+    }
+    return ErrorCodes::UNKNOWN_EXCEPTION;
+}
+
+}
+
 namespace
 {
 
-String takeError(ch_lance_error & error)
+struct LanceError
 {
-    String message = error.message ? error.message : "Unknown Lance error";
+    UInt32 kind;
+    UInt32 origin;
+    String message;
+};
+
+LanceError takeError(ch_lance_error & error)
+{
+    LanceError result
+    {
+        .kind = error.kind,
+        .origin = error.origin,
+        .message = error.message ? error.message : "Lance FFI error has no message",
+    };
     ch_lance_free_error(&error);
-    return message;
+    return result;
 }
 
 [[noreturn]] void throwLanceError(ch_lance_error & error, const String & operation = {})
 {
-    const auto lance_message = takeError(error);
-    const auto message = operation.empty() ? lance_message : fmt::format("{}: {}", operation, lance_message);
-    if (lance_message.starts_with("Unsupported Lance column"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+    const auto lance_error = takeError(error);
+    const auto message = operation.empty() ? lance_error.message : fmt::format("{}: {}", operation, lance_error.message);
+    if (lance_error.kind == CH_LANCE_ERROR_NONE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance FFI call failed without an error kind: {}", message);
 
-    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "{}", message);
+    const auto code = ErrorMapping::toClickHouseErrorCode(lance_error.kind, lance_error.origin);
+    if (lance_error.kind > CH_LANCE_ERROR_INTERNAL)
+        throw Exception(code, "Unknown Lance FFI error kind {}: {}", lance_error.kind, message);
+    throw Exception(code, "{}", message);
 }
 
 }
@@ -83,7 +142,7 @@ std::shared_ptr<arrow::RecordBatch> Scan::nextBatch() const
 
     auto record_batch = arrow::ImportRecordBatch(&array, &schema);
     if (!record_batch.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to import Lance Arrow record batch: {}", record_batch.status().ToString());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow record batch: {}", record_batch.status().ToString());
 
     return *record_batch;
 }
@@ -154,7 +213,7 @@ NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, Cont
 
     auto arrow_schema = arrow::ImportSchema(&schema);
     if (!arrow_schema.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to import Lance Arrow schema: {}", arrow_schema.status().ToString());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow schema: {}", arrow_schema.status().ToString());
 
     const auto format_settings = getFormatSettings(context);
     const auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
