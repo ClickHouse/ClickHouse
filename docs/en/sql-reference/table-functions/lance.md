@@ -47,6 +47,32 @@ Named arguments such as `access_key_id`, `secret_access_key`, `session_token`, `
 
 The dataset snapshot is pinned in the query metadata. Reads use the pinned snapshot state, so execution does not drift to a newer Lance dataset version while the query is running.
 
+## Data types {#data-types}
+
+`lanceS3` recursively converts the following Arrow types stored by Lance:
+
+| Arrow type | ClickHouse type |
+|---|---|
+| `Boolean` | `Bool` |
+| Signed and unsigned integers | Corresponding `Int8`–`Int64` or `UInt8`–`UInt64` type |
+| `Float16`, `Float32`, `Float64` | `Float32`, `Float32`, `Float64` |
+| `Utf8`, `LargeUtf8`, `Binary`, `LargeBinary` | `String` |
+| `FixedSizeBinary(N)` | `FixedString(N)` |
+| `Decimal128`, `Decimal256` | Corresponding `Decimal` type |
+| `Date32` | `Date32` |
+| `Timestamp` | `DateTime64` with scale `0`, `3`, `6`, or `9` |
+| `Time32`, `Time64` | `Time64` with the corresponding scale |
+| `Duration` | Corresponding `Interval` type |
+| `List`, `LargeList`, `FixedSizeList` | `Array` |
+| `Struct` | Named `Tuple` |
+| `Map` | `Map` |
+
+Nullability is preserved recursively for scalar fields, array elements, map values, and struct fields. A nullable Arrow `Struct` is inferred as `Nullable(Tuple(...))` when `enable_nullable_tuple_type = 1`.
+
+ClickHouse cannot represent a container-level `NULL` for `Array` or `Map`. A nullable Lance list or map schema can be read when all container values are present, but a row containing a container-level `NULL` returns an exception instead of converting it to an empty container. A nullable `Struct` value likewise returns an exception unless `enable_nullable_tuple_type = 1`.
+
+`Date64`, dictionary, union, run-end encoded, Arrow extension, and other unlisted types are rejected with an `Unsupported Lance column` exception. `Date64` is rejected because it has no lossless date-only ClickHouse mapping.
+
 ## Examples {#examples}
 
 Read a Lance dataset using explicit credentials:
