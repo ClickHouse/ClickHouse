@@ -4063,6 +4063,19 @@ class TestSuite:
         # Sorting after expansion would re-group equal names together
         # (for asc/desc order), destroying the round-robin interleaving.
         all_tests.sort(key=self.tests_in_suite_key_func)
+        # When the caller supplied an explicit list (--test-list-file), it maps
+        # each test to a position; run the tests in that order rather than the
+        # default numeric order, so a precomputed schedule (e.g. a
+        # duration-balanced one) is honored. The `--order`/shuffle randomization
+        # is skipped for an explicit list too (see `tests_in_suite_key_func` and
+        # the shuffle in `do_run_tests`), so the caller's order is preserved.
+        test_list_order = getattr(self.args, "test_list", None)
+        if test_list_order is not None:
+            all_tests.sort(
+                key=lambda t: test_list_order.get(
+                    test_identity(t), len(test_list_order)
+                )
+            )
         self.all_tests = self.apply_test_runs(all_tests)
 
         post_run_check_tests = []
@@ -6812,22 +6825,37 @@ if __name__ == "__main__":
 
     print("Using queries from '" + args.queries + "' directory")
 
-    # Load the exact-match test allowlist, if any. Normalizing every entry to
-    # `test_identity` up front means selection is a plain set-membership check.
+    # Load the exact test list, if any. It maps each test identity (see
+    # `test_identity`) to its position in the file, so selection is a plain
+    # membership check (`in`) while the caller's order is still available to
+    # order the run (see `TestSuite.__init__`).
     args.test_list = None
     if args.test_list_file:
+        # --test-list-file names the exact set of tests to run, so it is
+        # mutually exclusive with the other test-selection knobs. Combining it
+        # with --run-by-hash-* would hash-filter the "exact" list (silently
+        # dropping entries), and positional test-name patterns would further
+        # narrow it - either way the "exact list" contract would be false.
+        assert (
+            args.run_by_hash_num is None and args.run_by_hash_total is None
+        ), "--test-list-file is mutually exclusive with --run-by-hash-num/--run-by-hash-total"
+        assert (
+            not args.test
+        ), "--test-list-file is mutually exclusive with positional test name patterns"
         if not os.path.isfile(args.test_list_file):
             print(
                 f"Cannot access the --test-list-file: {args.test_list_file}",
                 file=sys.stderr,
             )
             sys.exit(1)
+        args.test_list = {}
         with open(args.test_list_file, encoding="utf-8") as list_file:
-            args.test_list = {
-                test_identity(line)
-                for line in list_file
-                if line.strip() and not line.lstrip().startswith("#")
-            }
+            for line in list_file:
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                # First occurrence wins the ordering position; duplicates in the
+                # file collapse to a single test (the run order is a total order).
+                args.test_list.setdefault(test_identity(line), len(args.test_list))
         print(
             f"Loaded {len(args.test_list)} test name(s) from '{args.test_list_file}'"
         )
