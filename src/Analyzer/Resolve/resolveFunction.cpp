@@ -155,7 +155,7 @@ static void flattenArraySubqueryOnRightOfIn(
         return;
 
     /// Wrap the subquery in `SELECT arrayJoin(<column>) FROM (<subquery>)`.
-    auto array_column_node = std::make_shared<ColumnNode>(subquery_projection_columns.front(), in_second_argument);
+    auto array_column_node = std::make_shared<ColumnNode>(subquery_projection_columns.front(), static_pointer_cast<ITableExpressionNode>(in_second_argument));
 
     auto array_join_function = std::make_shared<FunctionNode>("arrayJoin");
     array_join_function->getArguments().getNodes().push_back(std::move(array_column_node));
@@ -170,7 +170,7 @@ static void flattenArraySubqueryOnRightOfIn(
     auto flattened_subquery = std::make_shared<QueryNode>(Context::createCopy(context));
     flattened_subquery->setIsSubquery(true);
     flattened_subquery->getProjectionNode() = std::move(projection_list);
-    flattened_subquery->getJoinTree() = std::move(in_second_argument);
+    flattened_subquery->getJoinTreeNode() = std::move(in_second_argument);
     flattened_subquery->resolveProjectionColumns(NamesAndTypes{{element_name, element_type}});
 
     in_second_argument = std::move(flattened_subquery);
@@ -209,7 +209,7 @@ static void flattenArrayTableExpressionOnRightOfIn(
         return;
 
     /// Wrap the table as a `SELECT column FROM table` subquery, then flatten it like an array subquery.
-    auto column_node = std::make_shared<ColumnNode>(column, in_second_argument);
+    auto column_node = std::make_shared<ColumnNode>(column, static_pointer_cast<ITableExpressionNode>(in_second_argument));
 
     auto projection_list = std::make_shared<ListNode>();
     projection_list->getNodes().push_back(std::move(column_node));
@@ -217,7 +217,7 @@ static void flattenArrayTableExpressionOnRightOfIn(
     auto subquery = std::make_shared<QueryNode>(Context::createCopy(context));
     subquery->setIsSubquery(true);
     subquery->getProjectionNode() = std::move(projection_list);
-    subquery->getJoinTree() = in_second_argument;
+    subquery->getJoinTreeNode() = in_second_argument;
     subquery->resolveProjectionColumns(NamesAndTypes{column});
 
     in_second_argument = std::move(subquery);

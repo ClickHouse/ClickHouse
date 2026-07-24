@@ -726,7 +726,7 @@ static void formatHeaderExplainAnalyze(
 
 static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
 {
-    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+    for (const auto & node : extractTableExpressions(static_pointer_cast<ITableExpressionNode>(query_tree), /*add_array_join*/ false, /*recursive*/ true))
     {
         std::optional<TableExpressionModifiers> modifiers;
         if (const auto * table_node = node->as<TableNode>())
