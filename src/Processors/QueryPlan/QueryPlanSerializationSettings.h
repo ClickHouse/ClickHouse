@@ -78,6 +78,15 @@ struct QueryPlanSerializationSettings
     /// step-local value cannot be restored on the receiver, so the stream must carry it.
     bool max_memory_usage_is_step_local = false;
 
+    /// Whether the serializing join step's kind can resolve to an implementation that consults
+    /// `enable_join_in_memory_compression`. CROSS (and COMMA, always executed as CROSS) join keeps
+    /// its own dedicated threshold-based compression path and PASTE join stores no build side, so
+    /// their fragments must not be raised to the version carrying the setting - a pre-version-4
+    /// receiver would reject them during a rolling upgrade for a setting they never consume. Not a
+    /// serialized setting; it only feeds getMinRequiredVersion. Defaults to true so a step that
+    /// does not know its join kind keeps the conservative version bump.
+    bool join_kind_consumes_in_memory_compression = true;
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

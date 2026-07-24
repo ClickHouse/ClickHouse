@@ -1665,6 +1665,13 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
 {
     join_settings.updatePlanSettings(settings);
     sorting_settings.updatePlanSettings(settings);
+    /// CROSS/COMMA join keeps its own dedicated threshold-based compression path and PASTE join
+    /// stores no build side, so `enable_join_in_memory_compression` never applies to this step and
+    /// must not raise its fragment's minimum serialization version (a receiver that later rewrites
+    /// the cross join into an inner hash join simply plans without the setting, the same graceful
+    /// degradation as a pre-version-4 receiver). See getMinRequiredVersion.
+    settings.join_kind_consumes_in_memory_compression
+        = !isCrossOrComma(join_operator.kind) && !isPaste(join_operator.kind);
 }
 
 static void serializeNodeList(

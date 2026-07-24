@@ -132,6 +132,7 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::mak
 
 QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings)
     : max_memory_usage_is_step_local(settings.max_memory_usage_is_step_local)
+    , join_kind_consumes_in_memory_compression(settings.join_kind_consumes_in_memory_compression)
     , impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
 {
 }
@@ -220,7 +221,16 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// Both cases can only matter when the step's `join_algorithm` may pick a hash-family
     /// implementation: a step restricted to e.g. `full_sorting_merge` or `partial_merge` never
     /// consumes either setting, so its fragment stays readable by older receivers.
-    if (((*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression] || max_memory_usage_is_step_local)
+    /// The compression case is additionally keyed on the step's join kind
+    /// (join_kind_consumes_in_memory_compression): a CROSS JOIN executes as a HashJoin whatever
+    /// `join_algorithm` says, but explicitly keeps its own threshold-based compression path and
+    /// never consults `enable_join_in_memory_compression` - raising its fragment to version 4 for
+    /// it would only make older receivers reject a stream whose extra setting they would ignore
+    /// anyway. The step-local `max_memory_usage` case is not keyed on the kind: a cross join's
+    /// HashJoin still consumes `max_memory_usage` as its plain shrink trigger.
+    bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
+        && join_kind_consumes_in_memory_compression;
+    if ((compression_matters || max_memory_usage_is_step_local)
         && canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]))
         return 4;
     return 1;

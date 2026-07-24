@@ -134,6 +134,25 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
 
+    /// A join kind that never consults `enable_join_in_memory_compression` (CROSS/COMMA, which keep
+    /// a dedicated threshold-based compression path, and PASTE, which stores no build side - the
+    /// serializing step flags them via join_kind_consumes_in_memory_compression, see
+    /// JoinStepLogical::serializeSettings) must not raise the version even with compression enabled
+    /// and a hash-capable `join_algorithm`: a cross join executes as HashJoin whatever the
+    /// algorithm setting says, and bumping its fragment would make a version-3 receiver reject it
+    /// for a setting it would never consume.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings.join_kind_consumes_in_memory_compression = false;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        /// A step-local `max_memory_usage` still requires version 4 for such a kind: a cross join's
+        /// HashJoin consumes `max_memory_usage` as its plain shrink trigger.
+        settings.max_memory_usage_is_step_local = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
+
     /// A step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged by
     /// JoinSettings::updatePlanSettings) is the other case that requires version 4 even with
     /// compression off: the receiver's query context carries only the outer query's value, so an
