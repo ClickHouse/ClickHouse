@@ -122,6 +122,14 @@ bool isSilkSchedulerInitialized()
     return silk_scheduler_initialized.load();
 }
 
+uint64_t currentSilkFiberId()
+{
+    /// `FiberId` is a packed bitfield union over a `uint64_t`; `.raw` is the whole thing.
+    /// Zero-initialized (all-zero `raw`) off-fiber, and the per-CPU counter that feeds it is
+    /// seeded at 1 (see fiber.cpp), so a real fiber's id never collides with that sentinel.
+    return silk::FiberScheduler::getCurrentFiberId().raw;
+}
+
 }
 
 #else
@@ -136,6 +144,11 @@ void initializeSilkScheduler()
 bool isSilkSchedulerInitialized()
 {
     return false;
+}
+
+uint64_t currentSilkFiberId()
+{
+    return 0;
 }
 
 }
