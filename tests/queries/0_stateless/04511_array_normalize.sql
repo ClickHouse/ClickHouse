@@ -84,3 +84,13 @@ SELECT LpDistance((1, 2), (3, 4), toInt8(3)) = LpDistance((1, 2), (3, 4), 3.);
 -- A negative integer `p` is out of the valid range `[1, inf)`.
 SELECT LpNormalize([1, 2], toInt8(-2)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNormalize((1, 2), toInt8(-2)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- The type of `p` is validated during return-type inference as well, so analysis-only paths
+-- (such as `toTypeName`, where nothing is executed) reject a non-numeric `p` instead of
+-- advertising a return type, consistently with the tuple carriers.
+SELECT toTypeName(LpNormalize(materialize([1, 2]), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpNorm(materialize([1, 2]), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpDistance(materialize([1, 2]), materialize([3, 4]), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpNormalize(materialize((1, 2)), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpNorm(materialize((1, 2)), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpDistance(materialize((1, 2)), materialize((3, 4)), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

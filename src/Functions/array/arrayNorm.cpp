@@ -197,6 +197,9 @@ public:
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
 
+        if constexpr (std::is_same_v<Kernel, LpNorm>)
+            checkLpNormPArgumentType(*arguments[1].type, getName());
+
         switch (array_type->getNestedType()->getTypeId())
         {
             case TypeIndex::BFloat16:
@@ -396,6 +399,9 @@ public:
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
+
+        if constexpr (std::is_same_v<Kernel, LpNorm>)
+            checkLpNormPArgumentType(*arguments[1].type, getName());
 
         switch (array_type->getNestedType()->getTypeId())
         {

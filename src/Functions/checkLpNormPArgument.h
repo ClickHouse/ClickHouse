@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -24,6 +25,21 @@ inline void checkLpNormPArgument(Float64 p, const String & function_name)
         throw Exception(
             ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Second argument for function {} must be a finite number not less than one",
+            function_name);
+}
+
+/// Validate the type of the `p` argument during return-type inference, so analysis-only paths
+/// (e.g. `toTypeName`) reject a non-numeric `p` instead of advertising a return type, consistently
+/// with the tuple carriers, which type-check `p` while building `pow` in their `getReturnTypeImpl`.
+/// The accepted set matches `extractLpNormPArgument` below: every numeric type whose column is
+/// `isNumeric` (native and wide integers, floats), but not `Decimal`.
+inline void checkLpNormPArgumentType(const IDataType & p_type, const String & function_name)
+{
+    WhichDataType which(p_type);
+    if (!which.isInteger() && !which.isFloat())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument p of function {} must be a numeric constant",
             function_name);
 }
 

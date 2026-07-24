@@ -737,6 +737,10 @@ public:
 
             types.push_back(array_type->getNestedType());
         }
+
+        if constexpr (std::is_same_v<Kernel, LpDistance>)
+            checkLpNormPArgumentType(*arguments[2].type, getName());
+
         const DataTypePtr & common_type = getLeastSupertype(types);
         switch (common_type->getTypeId())
         {
