@@ -21,6 +21,24 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+# Test file extensions stripped to obtain a stable test identity. Kept in sync
+# with `TEST_FILE_EXTENSIONS`/`test_identity` in `tests/clickhouse-test`; `.sql.j2`
+# precedes `.sql` since the first matching suffix wins, and `.gen.sql` (rendered
+# from a template) maps back to the template's base name.
+_TEST_FILE_EXTENSIONS = (".gen.sql", ".sql.j2", ".sql", ".sh", ".py", ".expect")
+
+
+def test_identity(name):
+    """Normalize a test name to the same identity `clickhouse-test --list-tests`
+    and `--test-list-file` use (base name, extension stripped), so names from the
+    duration statistics match the listed tests."""
+    base = os.path.basename(name.strip())
+    for ext in _TEST_FILE_EXTENSIONS:
+        if base.endswith(ext):
+            return base[: -len(ext)]
+    return base
+
+
 # Substrings identifying a sanitizer build in a build type ("amd_asan_ubsan"),
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
 # job name. Sanitizer builds get the tighter server memory cap and reduced
