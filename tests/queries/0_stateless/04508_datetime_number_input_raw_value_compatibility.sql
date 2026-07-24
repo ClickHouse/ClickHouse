@@ -24,6 +24,14 @@ SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853}');
 SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853)');
 SET input_format_read_datetime_number_as_raw_value = 0;
 
+SELECT '-- Values: a fractional number falls back to SQL expression evaluation (seconds) regardless of the setting, as before 26.7';
+SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853.035)');
+SELECT t FROM format(Values, 't DateTime', '(1703363853.7)');
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853.035)');
+SELECT t FROM format(Values, 't DateTime', '(1703363853.7)');
+SET input_format_read_datetime_number_as_raw_value = 0;
+
 SELECT '-- DateTime: an unquoted integer is a whole number of seconds either way';
 SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853}');
 SET input_format_read_datetime_number_as_raw_value = 1;

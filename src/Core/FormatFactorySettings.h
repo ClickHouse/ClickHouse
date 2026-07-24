@@ -772,7 +772,10 @@ restore the behavior of versions up to and including 26.6, where a bare unquoted
 column was interpreted as the raw scaled value (ticks). The legacy path accepts only such a bare integer:
 with the setting enabled, a number with a fractional or exponent part is rejected by the row input paths
 (as before 26.7), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
-seconds for `DateTime64` and rejected for `DateTime` (also as before 26.7).
+seconds for `DateTime64` and rejected for `DateTime` (also as before 26.7). In the `Values` format itself,
+a number the streaming parser rejects then falls back to SQL expression evaluation and is read as seconds,
+both before 26.7 and with this setting enabled — so the `Values` behavior for a fractional number is the
+same in every configuration.
 
 This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path
 covers every format parsing fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and
