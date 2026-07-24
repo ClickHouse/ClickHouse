@@ -41,6 +41,7 @@ extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 
 namespace
 {
+#if USE_AZURE_BLOB_STORAGE
     bool isAzureConnectionKey(const String & key)
     {
         return key == "connection_string" || key == "storage_account_url";
@@ -50,6 +51,7 @@ namespace
     {
         return key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id";
     }
+#endif
 
     enum class AzureCredentialsType : uint8_t
     {
