@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Common/QueryFuzzer.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -81,8 +82,9 @@ TEST(QueryFuzzer, ExecuteAsFormatDoesNotCrash)
             }
             catch (...)
             {
-                /// The fuzzer can build queries whose mutation throws; unrelated to the
-                /// child/member ownership invariant under test.
+                /// The fuzzer can build queries whose mutation throws; that is fine (unrelated to the
+                /// child/member ownership invariant under test), we only require it does not crash.
+                (void)getCurrentExceptionMessage(false);
                 continue;
             }
 
@@ -94,6 +96,8 @@ TEST(QueryFuzzer, ExecuteAsFormatDoesNotCrash)
             }
             catch (...)
             {
+                /// A thrown formatting exception is fine, we only require it does not crash.
+                (void)getCurrentExceptionMessage(false);
             }
         }
     }
