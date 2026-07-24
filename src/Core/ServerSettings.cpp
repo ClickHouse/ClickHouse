@@ -1781,7 +1781,7 @@ If set to true, server settings will not be checked for correctness.
     DECLARE(String, named_collections_storage_type, "local", R"(
 The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
 `keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`. Configured in `<named_collections_storage><type>`.
-)", BaseSettingsHelpers::Flags::USE_NAME_AS_DISPLAY_NAME, "named_collections_storage.type") \
+)", 0, "named_collections_storage.type") \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
     DECLARE(UInt64, query_cache_max_entry_size_in_bytes, 1048576, R"(The maximum size in bytes SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_bytes") \
@@ -2192,11 +2192,12 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
+        String setting_path {setting.getPath()};
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
-        res_columns[0]->insert(setting.getDisplayName());
+        res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
         res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
         res_columns[2]->insert(setting.getDefaultValueString());
         res_columns[3]->insert(setting.isValueChanged());

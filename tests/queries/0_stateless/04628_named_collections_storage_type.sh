@@ -18,10 +18,7 @@ EOF
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG" --query "
     SELECT name, value, default, changed, type, changeable_without_restart
     FROM system.server_settings
-    WHERE name = 'named_collections_storage_type'"
+    WHERE name = 'named_collections_storage.type'"
 
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG" --query \
     "SELECT getServerSetting('named_collections_storage_type')"
-
-${CLICKHOUSE_LOCAL} --config-file "$CONFIG" --query \
-    "SELECT count() = 1 FROM system.server_settings WHERE name = 'logger.level'"

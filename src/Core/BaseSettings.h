@@ -51,7 +51,6 @@ struct BaseSettingsHelpers
         /// Flag indicating that changes from config can be picked up without server restart.
         /// Currently only works in CoordinationSettings.
         HOT_RELOAD = 0x80,
-        USE_NAME_AS_DISPLAY_NAME = 0x100, /// Use the setting name instead of its config path for display.
     };
 
     static SettingsTierType getTier(UInt64 flags);
@@ -276,7 +275,6 @@ public:
     public:
         const String & getName() const;
         std::string_view getPath() const;
-        std::string_view getDisplayName() const;
         Field getValue() const;
         void setValue(const Field & value);
         String getValueString() const;
@@ -1045,17 +1043,6 @@ bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
     return accessor->isHotReload(index);
 }
 
-template <typename TTraits>
-std::string_view BaseSettings<TTraits>::SettingFieldRef::getDisplayName() const
-{
-    if constexpr (Traits::allow_custom_settings)
-    {
-        if (custom_setting)
-            return getName();
-    }
-    return accessor->getDisplayName(index);
-}
-
 // ============================================================================
 // MACRO SYSTEM FOR DEFINING SETTINGS TRAITS
 // ============================================================================
@@ -1262,13 +1249,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             /* Metadata accessors (by index) */ \
             const String & getName(size_t index) const { return field_infos[index].name; } \
             std::string_view getPath(size_t index) const { return field_infos[index].path; } \
-            std::string_view getDisplayName(size_t index) const \
-            { \
-                const auto & info = field_infos[index]; \
-                if (info.path.empty() || info.flags & BaseSettingsHelpers::Flags::USE_NAME_AS_DISPLAY_NAME) \
-                    return info.name; \
-                return info.path; \
-            } \
             std::string_view getTypeName(size_t index) const { return field_infos[index].type; } \
             std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
