@@ -20,6 +20,7 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -314,7 +315,15 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
+            /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
+            /// then all repopulate from the metadata committed as of holding the lock.
+            if (auto metadata_cache = context->getQueryMetadataCache())
+            {
+                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
+                cache->clear();
+            }
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
             bool share_nested = true;

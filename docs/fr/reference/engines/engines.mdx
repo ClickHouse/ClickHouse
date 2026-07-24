@@ -1,11 +1,17 @@
 ---
-description: 'Page de sommaire pour les moteurs'
+description: 'Page de sommaire des moteurs'
 slug: /engines
 title: 'Moteurs'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Page                                                                    | Description                                                                                                                                                                                                                                            |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Moteurs de base de données](/fr/reference/engines/database-engines/index) | Les moteurs de base de données de ClickHouse vous permettent de travailler avec des tables et définissent la façon dont les données sont stockées et gérées. En savoir plus sur les différents moteurs de base de données disponibles dans ClickHouse. |
-| [Moteurs de table](/fr/reference/engines/table-engines/index)              | Les moteurs de table de ClickHouse constituent un concept fondamental qui détermine la façon dont les données sont stockées, écrites et lues. En savoir plus sur les différents moteurs de table disponibles dans ClickHouse.                          |
+<CardGroup cols={2}>
+  <Card title="Moteurs de base de données" icon="database" href="/fr/reference/engines/database-engines/index">
+    Les moteurs de base de données de ClickHouse vous permettent de travailler avec des tables et définissent la façon dont les données sont stockées et gérées.
+  </Card>
+
+  <Card title="Moteurs de table" icon="table" href="/fr/reference/engines/table-engines/index">
+    Dans ClickHouse, les moteurs de table sont un concept fondamental qui détermine la façon dont les données sont stockées, écrites et lues.
+  </Card>
+</CardGroup>
