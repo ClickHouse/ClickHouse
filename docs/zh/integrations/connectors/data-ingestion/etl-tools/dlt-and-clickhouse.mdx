@@ -30,9 +30,7 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step>
-    ### 初始化 dlt 项目
-
+  <Step title="初始化 dlt 项目" id="1-initialize-the-dlt-project">
     首先，按如下方式初始化一个新的 `dlt` 项目：
 
     ```bash
@@ -52,9 +50,7 @@ pip install "dlt[clickhouse]"
     或者使用 `pip install dlt[clickhouse]`，这会安装 `dlt` 库以及将 ClickHouse 用作目标端所需的必要依赖。
   </Step>
 
-  <Step>
-    ### 设置 ClickHouse 数据库
-
+  <Step title="设置 ClickHouse 数据库" id="2-setup-clickhouse-database">
     要将数据加载到 ClickHouse 中，你需要创建一个 ClickHouse 数据库。下面是大致步骤：
 
     1. 你可以使用现有的 ClickHouse 数据库，也可以新建一个。
@@ -72,9 +68,7 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step>
-    ### 添加凭据
-
+  <Step title="添加凭据" id="3-add-credentials">
     接下来，按如下所示在 `.dlt/secrets.toml` 文件中设置 ClickHouse 凭据：
 
     ```bash
@@ -88,7 +82,7 @@ pip install "dlt[clickhouse]"
     secure = 1                               # 如果使用 HTTPS，则设为 1，否则设为 0。
 
     [destination.clickhouse]
-    dataset_table_separator = "___"          # dataset 的表名分隔符。
+    dataset_table_separator = "___"          # 数据集的表名分隔符。
     ```
 
     <Info>

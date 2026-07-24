@@ -15,15 +15,11 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
 <Tabs>
   <Tab title="ClickStack المُدار">
     <Steps>
-      <Step>
-        ### المتطلبات المسبقة
-
+      <Step title="المتطلبات الأساسية" id="prerequisites-managed">
         يفترض هذا الدليل أنك أكملت [دليل البدء لـ Managed ClickStack](/ar/clickstack/deployment/managed)، وأن لديك مجمّع OpenTelemetry قيد التشغيل مع إتاحة نقطتَي نهاية OTLP gRPC (`4317`) وHTTP (`4318`) للوصول من الجهاز الذي تشغّل عليه `telemetrygen`. وإذا كنت قد [أمّنت المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام `OTLP_AUTH_TOKEN`، فاحتفظ بهذه القيمة في متناول اليد.
       </Step>
 
-      <Step>
-        ### تثبيت telemetrygen
-
+      <Step title="تثبيت telemetrygen" id="install-telemetrygen-managed">
         شغّل `telemetrygen` من صورة Docker الخاصة به (من دون الحاجة إلى التثبيت). عرّف مُغلِّفًا صغيرًا كي تبقى الأوامر أدناه واضحة؛ يتيح `--add-host` للحاوية الوصول إلى مُجمِّع يستمع على المضيف:
 
         ```shell
@@ -42,9 +38,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         ```
       </Step>
 
-      <Step>
-        ### تعيين متغيرات البيئة
-
+      <Step title="تعيين متغيرات البيئة" id="set-env-vars-managed">
         صدِّر رمز المصادقة إذا كان المُجمِّع محميًا:
 
         ```shell
@@ -67,9 +61,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         ```
       </Step>
 
-      <Step>
-        ### إنشاء السجلات
-
+      <Step title="إنشاء السجلات" id="generate-logs-managed">
         أرسل السجلات كمزيج واقعي من مستويات الشدة عبر الخدمات، بحيث تكون في معظمها معلوماتية، مع تحذير وخطأ بدلًا من أن تكون تدفقًا موحدًا واحدًا:
 
         ```shell
@@ -93,9 +85,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         * يضبط `--telemetry-attributes` السمات لكل سجل.
       </Step>
 
-      <Step>
-        ### أنشئ التتبعات
-
+      <Step title="أنشئ التتبعات" id="generate-traces-managed">
         أرسل تتبعات متعددة المقاطع من عدة خدمات سليمة بالإضافة إلى تبعية واحدة متعطلة. يمنح ذلك خريطة الخدمات شكلاً واقعيًا، بحيث تكون سليمة في معظمها مع خدمة واحدة تُظهر أخطاء، كما يملأ أيضًا طرق عرض الأخطاء:
 
         ```shell
@@ -121,9 +111,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         * يشغّل `--workers` عدة مولدات بالتوازي للحصول على حجم أكبر وتنوّع أكثر.
       </Step>
 
-      <Step>
-        ### أنشئ المقاييس
-
+      <Step title="أنشئ المقاييس" id="generate-metrics-managed">
         أرسل الأنواع الثلاثة الشائعة من المقاييس لكي تتضمن لوحات المعلومات عدّادات ومقاييس لحظية وتوزيعًا. وعلى عكس بعض المُولِّدات، يلتزم `telemetrygen` بخيار `--duration` للمقاييس، لذلك لا حاجة إلى إيقافه يدويًا:
 
         ```shell
@@ -135,9 +123,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         يقبل `--metric-type` القيم `Gauge` أو `Sum` أو `Histogram` أو `ExponentialHistogram`. ويُسمّي `--otlp-metric-name` السلسلة حتى تتمكن من العثور عليها في واجهة المستخدم، وتكون `--aggregation-temporality` إما `delta` أو `cumulative`.
       </Step>
 
-      <Step>
-        ### تحقّق في ClickStack
-
+      <Step title="تحقّق في ClickStack" id="verify-managed">
         افتح واجهة مستخدم ClickStack من وحدة تحكم ClickHouse Cloud. في عرض `Search`، اضبط النطاق الزمني على `Last 15 minutes` وبدّل المصدر بين `Logs` و`Traces`. صفِّ حسب `ServiceName` لرؤية الخدمات `frontend` و`checkout` و`cart` و`payment`، وحسب `SeverityText` للعثور على أسطر السجلات ذات مستوى التحذير والخطأ. افتح تتبّع `payment` لرؤية المقاطع الفرعية وحالة الخطأ. افتح `Chart Explorer`، وحدد `Metrics`، وأنشئ مخططًا لأحد أسماء المقاييس التي ضبطتها أعلاه (على سبيل المثال `http.server.requests`) للتحقق من إدخال المقاييس.
       </Step>
     </Steps>
@@ -145,16 +131,12 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
 
   <Tab title="ClickStack مفتوح المصدر">
     <Steps>
-      <Step>
-        ### المتطلبات الأساسية
-
+      <Step title="المتطلبات المسبقة" id="prerequisites-oss">
         يفترض هذا الدليل أنك شغّلت ClickStack مفتوح المصدر باستخدام [إرشادات الصورة المتكاملة](/ar/clickstack/getting-started/oss)، وأن نقطتَي نهاية OTLP (`4317` gRPC و`4318` HTTP) يمكن الوصول إليهما. كما ستحتاج إلى مفتاح API للإدخال من واجهة HyperDX ضمن `Team Settings > API Keys`.
       </Step>
 
-      <Step>
-        ### تثبيت telemetrygen
-
-        شغّل `telemetrygen` من صورة Docker الخاصة به (من دون الحاجة إلى تثبيت). عرّف مُغلِّفًا صغيرًا حتى تبقى الأوامر أدناه سهلة القراءة؛ ويتيح `--add-host` للحاوية الوصول إلى المجمّع الذي يستمع على المضيف:
+      <Step title="تثبيت telemetrygen" id="install-telemetrygen-oss">
+        شغّل `telemetrygen` من صورة Docker الخاصة به (من دون الحاجة إلى التثبيت). عرّف مُغلِّفًا صغيرًا كي تبقى الأوامر أدناه واضحة؛ يتيح `--add-host` للحاوية الوصول إلى مُجمِّع يستمع على المضيف:
 
         ```shell
         telemetrygen() {
@@ -164,7 +146,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         export OTEL_ENDPOINT=host.docker.internal:4317
         ```
 
-        أو ثبّت الملف التنفيذي باستخدام Go واستهدف `localhost` بدلًا من ذلك:
+        أو ثبّت الملف التنفيذي باستخدام Go، واستهدف `localhost` بدلًا من ذلك:
 
         ```shell
         go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
@@ -172,16 +154,14 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         ```
       </Step>
 
-      <Step>
-        ### تعيين متغيرات البيئة
-
+      <Step title="تعيين متغيرات البيئة" id="set-env-vars-oss">
         صدّر مفتاح API للإدخال:
 
         ```shell
         export CLICKSTACK_API_KEY=<your_ingestion_api_key>
         ```
 
-        عرّف مساعدًا صغيرًا باسم `tg` بحيث لا يحدّد كل أمر إلا ما يختلف (الخدمة، ومستوى الشدة، وstatus، والسمات):
+        عرّف أداة مساعدة صغيرة باسم `tg` بحيث لا يحدّد كل أمر إلا ما يتغيّر (الخدمة، مستوى الخطورة، الحالة، والسمات):
 
         ```shell
         tg() { local signal=$1; shift; telemetrygen "$signal" \
@@ -191,10 +171,8 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         ```
       </Step>
 
-      <Step>
-        ### ولّد السجلات
-
-        أرسل السجلات كمزيج واقعي من مستويات الخطورة عبر الخدمات، بحيث يغلب عليها الطابع المعلوماتي مع وجود تحذير وخطأ، بدلًا من تدفق موحّد واحد:
+      <Step title="إنشاء السجلات" id="generate-logs-oss">
+        أرسل السجلات كمزيج واقعي من مستويات الشدة عبر الخدمات، بحيث تكون في معظمها معلوماتية، مع تحذير وخطأ بدلًا من أن تكون تدفقًا موحدًا واحدًا:
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -209,10 +187,8 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         ```
       </Step>
 
-      <Step>
-        ### توليد التتبعات
-
-        أرسل تتبعات متعددة المقاطع من عدة خدمات تعمل بشكل سليم، إلى جانب اعتمادية واحدة فاشلة. يمنح ذلك خريطة الخدمات شكلاً واقعيًا، بحيث تكون سليمة في معظمها مع خدمة واحدة تُظهر أخطاء، كما يملأ أيضًا طرق عرض الأخطاء:
+      <Step title="أنشئ التتبعات" id="generate-traces-oss">
+        أرسل تتبعات متعددة المقاطع من عدة خدمات سليمة بالإضافة إلى تبعية واحدة متعطلة. يمنح ذلك خريطة الخدمات شكلاً واقعيًا، بحيث تكون سليمة في معظمها مع خدمة واحدة تُظهر أخطاء، كما يملأ أيضًا طرق عرض الأخطاء:
 
         ```shell
         # Healthy services: the bulk of the traffic, all spans Ok
@@ -229,9 +205,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         ```
       </Step>
 
-      <Step>
-        ### أنشئ المقاييس
-
+      <Step title="أنشئ المقاييس" id="generate-metrics-oss">
         أرسل الأنواع الثلاثة الشائعة للمقاييس لكي تتضمن المخططات عدّادًا ومقياسًا وتوزيعًا:
 
         ```shell
@@ -243,9 +217,7 @@ keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenT
         `--metric-type` يقبل `Gauge` أو `Sum` أو `Histogram` أو `ExponentialHistogram`.
       </Step>
 
-      <Step>
-        ### تحقّق في ClickStack
-
+      <Step title="تحقّق في ClickStack" id="verify-oss">
         زُر [http://localhost:8080](http://localhost:8080) لفتح واجهة ClickStack. في عرض `Search`، اضبط النطاق الزمني على `Last 15 minutes` وبدّل المصدر بين `Logs` و`Traces`. طبّق عامل تصفية على `ServiceName` لرؤية الخدمات `frontend` و`checkout` و`cart` و`payment`، وعلى `SeverityText` للعثور على أسطر السجل التحذيرية وأسطر سجل الأخطاء. افتح تتبّع `payment` لرؤية وحدات التتبّع الفرعية وحالة الخطأ. افتح `Chart Explorer`، وحدّد `Metrics`، ثم أنشئ مخططًا لأحد أسماء المقاييس التي عيّنتها أعلاه (على سبيل المثال `http.server.requests`) للتحقّق من إدخال المقاييس.
       </Step>
     </Steps>

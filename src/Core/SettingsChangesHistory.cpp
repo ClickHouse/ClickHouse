@@ -41,7 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
+            {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -72,7 +74,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
-            {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
             {"aggregation_in_order_shuffle", false, false, "New setting to parallelize aggregation-in-order by repartitioning the sorted input by the hash of the `GROUP BY` keys into independent shards, avoiding the single-threaded `FinishAggregatingInOrderTransform` funnel while keeping bounded memory. Applied only when the result order is not relied upon downstream."},
             {"aggregation_in_order_shuffle_max_buffered_bytes", 536870912, 536870912, "New setting that bounds the total bytes buffered by the repartitioning stage of `aggregation_in_order_shuffle`; exceeding it fails the query with a `TOO_MANY_ROWS_OR_BYTES` exception instead of buffering without limit."},

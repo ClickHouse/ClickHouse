@@ -449,6 +449,14 @@ ClickHouse admite códecs de uso general y códecs especializados.
 
 Los niveles de compresión altos son útiles en escenarios asimétricos, como comprimir una vez y descomprimir repetidamente. Los niveles más altos implican una mejor compresión y un mayor uso de CPU.
 
+<div id="zxc">
+  #### ZXC
+</div>
+
+`ZXC[(level)]` — algoritmo de compresión asimétrico [`algoritmo de compresión zxc`](https://github.com/hellobertrand/zxc) con `level` configurable. Niveles posibles: [1, 7]. Nivel predeterminado: 3.
+
+`ZXC` sacrifica velocidad de compresión a cambio de una descompresión muy rápida, con una relación de compresión entre `LZ4` y `ZSTD`. Es una buena opción para el patrón de comprimir una vez y descomprimir muchas veces, y ofrece la descompresión más rápida en núcleos ARM modernos. Los niveles más altos implican mejor compresión y una compresión más lenta, mientras que la descompresión sigue siendo rápida.
+
 <div id="zstd_qat">
   #### Obsoleto: ZSTD_QAT
 </div>
@@ -497,10 +505,16 @@ Estos códecs están diseñados para hacer que la compresión sea más eficaz ap
 
 <ExperimentalBadge />
 
-`ALP()` — Compresión adaptativa sin pérdidas para datos de coma flotante basada en el escalado decimal. ALP intenta representar cada valor como un entero escalado exacto mediante potencias de diez y, a continuación, comprime los enteros resultantes con Frame-of-Reference y empaquetado de bits. Los valores que no pueden representarse exactamente se almacenan como excepciones en bruto. Funciona mejor con números derivados de valores decimales (p. ej., mediciones, moneda). Es compatible con `Float32` y `Float64`. Para obtener más información, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP(variant)` — Compresión adaptativa sin pérdida para datos de coma flotante. Compatible con `Float32` y `Float64`. Para más detalles, consulta [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+El códec acepta un argumento opcional de variante:
+
+* `ALP()` o `ALP(AUTO)` (predeterminado) — Usa STD y recurre a RD en función del tamaño comprimido estimado.
+* `ALP(STD)` — Variante estándar de ALP. Representa cada valor como un entero escalado exacto usando potencias decimales y, después, comprime los enteros resultantes con Frame-of-Reference y empaquetado de bits. Los valores que no pueden representarse se almacenan como excepciones sin codificar. Funciona mejor con números procedentes de valores decimales (p. ej., mediciones, precios).
+* `ALP(RD)` — Variante Real Doubles. Reinterpreta el patrón de bits de cada valor y lo divide en una parte alta (signo + exponente + bits superiores de la mantisa) y una parte baja. Las partes altas se codifican mediante diccionario (hasta 8 entradas) y las partes bajas se empaquetan en bits. Funciona mejor cuando muchos valores comparten los mismos bits altos.
 
 <Note>
-  Este códec es experimental y requiere `SET allow_experimental_codecs = 1` para poder utilizarse.
+  Este códec es experimental y requiere `SET allow_experimental_codecs = 1` para poder usarlo.
 </Note>
 
 <div id="fpc">
@@ -508,6 +522,18 @@ Estos códecs están diseñados para hacer que la compresión sea más eficaz ap
 </div>
 
 `FPC(level, float_size)` - Predice repetidamente el siguiente valor de coma flotante de la secuencia usando el mejor de dos predictores; luego aplica XOR entre el valor real y el valor predicho, y comprime el resultado suprimiendo los ceros iniciales. Al igual que Gorilla, es eficiente para almacenar una serie de valores de coma flotante que cambian lentamente. Para valores de 64 bits (double), FPC es más rápido que Gorilla; para valores de 32 bits, el rendimiento puede variar. Posibles valores de `level`: 1-28; el valor predeterminado es 12. Posibles valores de `float_size`: 4, 8; el valor predeterminado es `sizeof(type)` si el tipo es Float. En todos los demás casos, es 4. Para obtener una descripción detallada del algoritmo, consulte [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+
+<div id="sz3">
+  #### SZ3
+</div>
+
+<ExperimentalBadge />
+
+`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - Un códec con pérdida, pero con error acotado ([SZ3 Lossy Compressor](https://szcompressor.org/)), para columnas de tipo Float32, Float64, Array(Float32) o Array(Float64). En el caso de las columnas de array, la compresión es más eficaz cuando todos los arrays tienen la misma longitud (en ese caso, se comprimen como vectores de ancho fijo); los arrays de distinta longitud también son compatibles y se comprimen como una secuencia plana de valores. El códec no se puede aplicar a columnas Map, porque sus claves se corromperían con la compresión con pérdida. Los valores admitidos para &#39;algorithm&#39; son `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` y `ALGO_INTERP`. Los valores admitidos para &#39;error&#95;bound&#95;mode&#39; son `ABS`, `REL`, `PSNR` y `ABS_AND_REL`. El argumento &#39;error&#95;bound&#39; es el error máximo y es de tipo Float64.
+
+<Note>
+  Este códec es experimental y requiere `SET allow_experimental_codecs = 1` para poder usarlo.
+</Note>
 
 <div id="t64">
   #### T64
