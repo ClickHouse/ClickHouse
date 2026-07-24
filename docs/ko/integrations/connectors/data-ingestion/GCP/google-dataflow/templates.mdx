@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Template'
+slug: /integrations/google-dataflow/templates
+description: 'Google Dataflow Template을 사용해 ClickHouse로 데이터를 수집할 수 있습니다'
+title: 'Google Dataflow Template'
+doc_type: 'guide'
+keywords: ['google dataflow', 'gcp', '데이터 파이프라인', 'Template', '배치 처리']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Google Dataflow Template을 사용하면 사용자 지정 코드를 작성하지 않고도 미리 만들어진 즉시 사용 가능한 데이터 파이프라인을 편리하게 실행할 수 있습니다. 이러한 Template은 일반적인 데이터 처리 작업을 간소화하도록 설계되었으며, [Apache Beam](https://beam.apache.org/)을 기반으로 구축되고 `ClickHouseIO`와 같은 커넥터를 활용해 ClickHouse 데이터베이스와 원활하게 통합됩니다. 이러한 Template을 Google Dataflow에서 실행하면 적은 노력으로도 높은 확장성을 갖춘 분산 데이터 처리를 구현할 수 있습니다.
+
+<div id="why-use-dataflow-templates">
+  ## Dataflow Template를 사용하는 이유
+</div>
+
+* **사용 편의성**: Template는 특정 사용 사례에 맞게 미리 구성된 파이프라인을 제공하므로 별도의 코딩이 필요하지 않습니다.
+* **확장성**: Dataflow는 파이프라인이 효율적으로 확장되도록 지원하며, 분산 처리를 통해 대량의 데이터를 처리합니다.
+* **비용 효율성**: 사용한 리소스에 대해서만 비용을 지불하면 되며, 파이프라인 실행 비용도 최적화할 수 있습니다.
+
+<div id="how-to-run-dataflow-templates">
+  ## Dataflow Template 실행 방법
+</div>
+
+현재는 ClickHouse 공식 Template을 Google Cloud Console, CLI 또는 Dataflow REST API를 통해 사용할 수 있습니다.
+자세한 단계별 안내는 [Google Dataflow Template에서 파이프라인 실행 가이드](https://cloud.google.com/dataflow/docs/templates/provided-templates)를 참조하십시오.
+
+<div id="list-of-clickhouse-templates">
+  ## ClickHouse Template 목록
+</div>
+
+* [BigQuery에서 ClickHouse로](/ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse)
+* [Pub/Sub에서 ClickHouse로](/ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse)
+* [GCS에서 ClickHouse로](https://github.com/ClickHouse/DataflowTemplates/issues/3) (곧 제공됩니다!)

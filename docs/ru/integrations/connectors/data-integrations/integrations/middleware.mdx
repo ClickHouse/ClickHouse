@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'middleware', 'обсервабилити', 'интеграция', 'мониторинг']
+description: 'Подключите Middleware к ClickHouse, чтобы отслеживать и анализировать метрики и журналы ClickHouse.'
+title: 'Подключение Middleware к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) — это облачная платформа обсервабилити для мониторинга инфраструктуры, журналов и производительности приложений.
+
+Вы можете подключить ClickHouse к Middleware, чтобы собирать и визуализировать телеметрию базы данных в рамках более широких процессов мониторинга.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Запущенный сервис ClickHouse (Cloud или самоуправляемый)
+* Доступ к хосту ClickHouse, порту, имени пользователя и паролю
+* Учетная запись Middleware
+
+<div id="connect-clickhouse-in-middleware">
+  ## Подключите ClickHouse в Middleware
+</div>
+
+1. Войдите в свою учетную запись Middleware.
+2. Перейдите в раздел **Интеграции** и найдите **ClickHouse**.
+3. Выберите интеграцию ClickHouse и введите сведения о подключении:
+   * Хост
+   * Порт
+   * База данных
+   * Имя пользователя
+   * Пароль
+4. Сохраните интеграцию и выполните проверку подключения.
+
+<div id="verify-data-collection">
+  ## Проверьте сбор данных
+</div>
+
+После настройки убедитесь, что метрики ClickHouse и/или журналы видны на панелях мониторинга Middleware.
+
+Если проверка подключения завершается ошибкой, убедитесь, что:
+
+* ClickHouse принимает входящие подключения от Middleware
+* настройки SSL/TLS соответствуют конечной точке ClickHouse
+* учётные данные и разрешения на доступ к базе данных указаны правильно
+
+<div id="additional-resources">
+  ## Дополнительные ресурсы
+</div>
+
+* [Веб-сайт Middleware](https://middleware.io/)

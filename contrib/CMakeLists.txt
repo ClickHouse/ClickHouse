@@ -49,6 +49,10 @@ disable_dummy_launchers_if_needed()
 
 # We need to add OpenSSL first so that all our projects use our own version instead of the system one.
 add_contrib (openssl-cmake openssl)  # Needed for delta-lake
+
+if (USE_MUSL)
+    add_contrib (musl-cmake musl)
+endif()
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
@@ -61,6 +65,9 @@ enable_dummy_launchers_if_needed()
 enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
+# mapbox-geometry must precede wagyu: the wagyu interface target links ch_contrib::mapbox_geometry.
+add_contrib (mapbox-geometry-cmake mapbox-geometry)
+add_contrib (wagyu-cmake wagyu)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (ipnsort-cmake ipnsort)
 add_contrib (driftsort-cmake driftsort)
@@ -78,9 +85,9 @@ add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
+add_contrib (libdeflate-cmake libdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
-add_contrib (libpng-cmake libpng) # requires: zlib
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -89,6 +96,7 @@ add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
+add_contrib (zxc-cmake zxc)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
@@ -143,8 +151,8 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
+add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
@@ -242,9 +250,11 @@ else()
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
 endif()
 option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+# `crc32c` is a small portable library used by both `google-cloud-cpp` and the snappy framing format
+# in `SnappyWriteBuffer`/`SnappyFramedReadBuffer`, so it is always built when libraries are enabled.
+add_contrib (crc32c-cmake crc32c)
 if(ENABLE_GOOGLE_CLOUD_CPP)
     add_contrib (nlohmann-json-cmake nlohmann-json)
-    add_contrib (crc32c-cmake crc32c)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
 else()
     message(STATUS "Not using Google Cloud Cpp")
@@ -264,6 +274,8 @@ add_contrib (clickstack-cmake clickstack)
 
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
+
+add_contrib (sz3-cmake sz3)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

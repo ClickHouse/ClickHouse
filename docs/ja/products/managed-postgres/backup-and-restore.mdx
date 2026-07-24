@@ -1,0 +1,53 @@
+---
+slug: /cloud/managed-postgres/backup-and-restore
+sidebarTitle: 'バックアップと復元'
+title: 'バックアップと復元'
+description: 'ClickHouse Managed Postgres のバックアップ戦略とポイントインタイム リカバリについて理解する'
+keywords: ['バックアップ', '復元', 'ポイントインタイム リカバリ', 'pitr', '災害復旧', 'Postgres バックアップ']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
+
+Managed Postgres は、自動バックアップとポイントインタイム リカバリにより、データの安全性と可用性を確保します。インスタンスの **バックアップ** ビューから、バックアップ履歴を確認したり、復元を開始したりできます。
+
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt="バックアップ履歴とポイントインタイム リカバリのオプションが表示されたバックアップ ビュー" size="lg" border />
+
+<div id="backups">
+  ## バックアップ
+</div>
+
+<div id="backup-frequency">
+  ### バックアップ頻度
+</div>
+
+Managed Postgres では、データベースのフルバックアップが毎日取得されます。フルバックアップに加えて、Write-Ahead Log (WAL) ファイルは 60 秒ごと、または WAL データが 16 MB 蓄積されるごとのいずれか早いタイミングでアーカイブされます。これにより、フルバックアップと継続的な WAL アーカイブを組み合わせることで、保持期間内の任意の時点にポイントインタイム リカバリを実行できます。
+
+<div id="retention-period">
+  ### 保持期間
+</div>
+
+バックアップは 7 日間保持されるため、データの消失や破損が発生した場合でも、復旧に十分な猶予があります。バックアップ保持期間をさらに長くする必要がある場合は、[support](https://clickhouse.com/support/program) にお問い合わせください。
+
+<div id="storage-and-durability">
+  ### ストレージと耐久性
+</div>
+
+バックアップはイレイジャーコーディングを用いて複数のサーバーに複製されるため、一部のストレージサーバーが利用できなくなっても引き続きアクセスできます。バックアップストレージはバケット単位で分離されており、各 Managed Postgres インスタンスには専用のストレージバケットが割り当てられ、認証情報のスコープもそのインスタンスのバックアップへのアクセスのみに限定されています。
+
+<div id="point-in-time-recovery">
+  ## ポイントインタイム リカバリ
+</div>
+
+ポイントインタイム リカバリを使用すると、バックアップ保持期間内の任意の時点にデータベースを復元できます。これは、誤って削除したデータの復旧やデータ破損への対処、または既知の正常な状態にロールバックする必要がある場合に役立ちます。
+
+ポイントインタイム リカバリを実行するには:
+
+1. Managed Postgres インスタンスの **バックアップ** ビューに移動します。
+2. **ポイントインタイム リカバリ** セクションで、復元先とする日付と時刻 (UTC) を選択します。
+3. **Restore to point in time** をクリックします。
+
+復元操作を実行すると、選択した時点のデータベースの状態を持つ新しい Managed Postgres インスタンスが作成されます。元のインスタンスは変更されないため、どのインスタンスを残すか判断する前に、復元したデータを確認できます。

@@ -1,0 +1,269 @@
+---
+description: 'مرجع USER'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
+doc_type: 'reference'
+---
+
+ينشئ [حسابات المستخدمين](/ar/concepts/features/security/access-rights#user-account-management).
+
+الصيغة:
+
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [IN access_storage_type]
+    [ROLE role [,...]]
+    [DEFAULT ROLE role [,...]]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+تسمح عبارة `ON CLUSTER` بإنشاء المستخدمين في العنقود، راجع [DDL الموزّع](/ar/reference/statements/distributed-ddl).
+
+<div id="identification">
+  ## تحديد الهوية
+</div>
+
+هناك عدة طرق لتحديد هوية المستخدم:
+
+* `IDENTIFIED WITH no_password`
+* `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+* `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
+* `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
+* `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+* `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+* `IDENTIFIED WITH bcrypt_password BY 'qwerty'`
+* `IDENTIFIED WITH bcrypt_hash BY 'hash'`
+* `IDENTIFIED WITH ldap SERVER 'server_name'`
+* `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
+* `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
+* `IDENTIFIED WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa', KEY 'another_public_key' TYPE 'ssh-ed25519'`
+* `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
+* `IDENTIFIED BY 'qwerty'`
+
+يمكن تعديل متطلبات تعقيد كلمة المرور في [config.xml](/ar/concepts/features/configuration/server-config/configuration-files). فيما يلي مثال على تهيئة تشترط أن تتكون كلمات المرور من 12 حرفًا على الأقل وأن تحتوي على رقم واحد. وتتطلب كل قاعدة من قواعد تعقيد كلمة المرور تعبيرًا نمطيًا لمطابقة كلمات المرور، بالإضافة إلى وصف للقاعدة نفسها.
+
+```xml
+<clickhouse>
+    <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+    </password_complexity>
+</clickhouse>
+```
+
+<Note>
+  في ClickHouse Cloud، يجب أن تستوفي كلمات المرور، افتراضيًا، متطلبات التعقيد التالية:
+
+  * أن تتكون من 12 محرفًا على الأقل
+  * أن تحتوي على رقم واحد على الأقل
+  * أن تحتوي على حرف كبير واحد على الأقل
+  * أن تحتوي على حرف صغير واحد على الأقل
+  * أن تحتوي على رمز خاص واحد على الأقل
+</Note>
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+1. اسم المستخدم التالي هو `name1` ولا يتطلب كلمة مرور، وهو ما لا يوفر بطبيعة الحال قدرًا كبيرًا من الأمان:
+
+   ```sql
+   CREATE USER name1 NOT IDENTIFIED
+   ```
+
+2. لتحديد كلمة مرور بنص واضح:
+
+   ```sql
+   CREATE USER name2 IDENTIFIED WITH plaintext_password BY 'my_password'
+   ```
+
+<Tip>
+  تُخزَّن كلمة المرور في ملف نصي لـ SQL داخل `/var/lib/clickhouse/access`، لذا فليس من الجيد استخدام `plaintext_password`. جرّب `sha256_password` بدلًا من ذلك، كما هو موضح تاليًا...
+</Tip>
+
+3. الخيار الأكثر شيوعًا هو استخدام كلمة مرور مُجزّأة باستخدام SHA-256. سيتولى ClickHouse تجزئة كلمة المرور نيابةً عنك عند تحديد `IDENTIFIED WITH sha256_password`. على سبيل المثال:
+
+   ```sql
+   CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
+   ```
+
+   يمكن للمستخدم `name3` الآن تسجيل الدخول باستخدام `my_password`، لكن كلمة المرور تُخزَّن على هيئة قيمة التجزئة المذكورة أعلاه. ويُنشأ ملف SQL التالي في `/var/lib/clickhouse/access` ويُنفَّذ عند بدء تشغيل الخادم:
+
+   ```bash
+   /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
+   ATTACH USER name3 IDENTIFIED WITH sha256_hash BY '0C268556C1680BEF0640AAC1E7187566704208398DA31F03D18C74F5C5BE5053' SALT '4FB16307F5E10048196966DD7E6876AE53DE6A1D1F625488482C75F14A5097C7';
+   ```
+
+<Tip>
+  إذا كنت قد أنشأت بالفعل قيمة hash وقيمة salt المقابلة لاسم مستخدم، فيمكنك استخدام `IDENTIFIED WITH sha256_hash BY 'hash'` أو `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`. وعند التعريف باستخدام `sha256_hash` مع `SALT`، يجب حساب hash من concatenation بين &#39;password&#39; و&#39;salt&#39;.
+</Tip>
+
+4. لا تكون `double_sha1_password` مطلوبة عادةً، لكنها تكون مفيدة عند العمل مع العملاء الذين يتطلبونها (مثل MySQL interface):
+
+   ```sql
+   CREATE USER name4 IDENTIFIED WITH double_sha1_password BY 'my_password'
+   ```
+
+   يُنشئ ClickHouse الاستعلام التالي ويشغّله:
+
+   ```response
+   CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
+   ```
+
+5. يُعد `bcrypt_password` الخيار الأكثر أمانًا لتخزين كلمات المرور. فهو يستخدم خوارزمية [bcrypt](https://en.wikipedia.org/wiki/Bcrypt)، وهي مقاومة لهجمات القوة الغاشمة حتى إذا أصبحت قيمة تجزئة كلمة المرور compromised.
+
+   ```sql
+   CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
+   ```
+
+   يقتصر طول كلمة المرور في هذه الطريقة على 72 حرفًا.
+   كما يمكن تعديل معلمة عامل العمل الخاصة بـ bcrypt، التي تحدد مقدار العمليات الحسابية والوقت اللازمين لحساب التجزئة والتحقق من كلمة المرور، في إعدادات الخادم:
+
+   ```xml
+   <bcrypt_workfactor>12</bcrypt_workfactor>
+   ```
+
+   يجب أن تكون قيمة عامل العمل بين 4 و31، والقيمة الافتراضية هي 12.
+
+<Warning>
+  بالنسبة إلى التطبيقات ذات المصادقة عالية التكرار،
+  فكّر في استخدام طرق مصادقة بديلة بسبب
+  الحمل الحسابي الإضافي لـ bcrypt عند ارتفاع قيم عامل العمل.
+</Warning>
+
+6. يمكن أيضًا حذف نوع كلمة المرور:
+
+   ```sql
+   CREATE USER name6 IDENTIFIED BY 'my_password'
+   ```
+
+   في هذه الحالة، سيستخدم ClickHouse نوع كلمة المرور الافتراضي المحدد في إعدادات الخادم:
+
+   ```xml
+   <default_password_type>sha256_password</default_password_type>
+   ```
+
+   أنواع كلمات المرور المتاحة هي: `plaintext_password`, `sha256_password`, `double_sha1_password`.
+
+7. يمكن تحديد عدة طرق مصادقة:
+
+   ```sql
+   CREATE USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3''
+   ```
+
+ملاحظات:
+
+1. قد لا تدعم الإصدارات الأقدم من ClickHouse صيغة تعدد طرق المصادقة. لذلك، إذا كان خادم ClickHouse يحتوي على مستخدمين من هذا النوع ثم جرى الرجوع به إلى إصدار لا يدعم ذلك، فسيصبح هؤلاء المستخدمون غير قابلين للاستخدام وستتعطل بعض العمليات المرتبطة بالمستخدمين. ولإجراء الرجوع إلى إصدار أقدم بسلاسة، يجب ضبط جميع المستخدمين بحيث تكون لكل منهم طريقة مصادقة واحدة فقط قبل الرجوع إلى إصدار أقدم. وبدلاً من ذلك، إذا جرى الرجوع بالخادم إلى إصدار أقدم من دون اتباع الإجراء الصحيح، فيجب حذف المستخدمين المتأثرين.
+2. لا يمكن أن يتعايش `no_password` مع طرق مصادقة أخرى لأسباب أمنية. لذلك، لا يمكنك تحديد
+   `no_password` إلا إذا كانت طريقة المصادقة الوحيدة في الاستعلام.
+
+<div id="user-host">
+  ## مضيف المستخدم
+</div>
+
+مضيف المستخدم هو المضيف الذي يمكن إنشاء اتصال منه بـ خادم ClickHouse. ويمكن تحديد المضيف في قسم `HOST` من الاستعلام بالطرق التالية:
+
+* `HOST IP 'ip_address_or_subnetwork'` — لا يمكن للمستخدم الاتصال بـ خادم ClickHouse إلا من عنوان IP المحدد أو من [شبكة فرعية](https://en.wikipedia.org/wiki/Subnetwork). أمثلة: `HOST IP '192.168.0.0/16'`، `HOST IP '2001:DB8::/32'`. للاستخدام في production، حدِّد عناصر `HOST IP` فقط (عناوين IP وأقنعتها)، لأن استخدام `host` و`host_regexp` قد يسبب latency إضافيًا.
+* `HOST ANY` — يمكن للمستخدم الاتصال من أي موقع. وهذا هو الخيار الافتراضي.
+* `HOST LOCAL` — لا يمكن للمستخدم الاتصال إلا محليًا.
+* `HOST NAME 'fqdn'` — يمكن تحديد مضيف المستخدم بصيغة FQDN. على سبيل المثال، `HOST NAME 'mysite.com'`.
+* `HOST REGEXP 'regexp'` — يمكنك استخدام التعبيرات النمطية [pcre](http://www.pcre.org/) عند تحديد مضيفات المستخدمين. على سبيل المثال، `HOST REGEXP '.*\.mysite\.com'`.
+* `HOST LIKE 'template'` — يتيح لك استخدام المعامل [LIKE](/ar/reference/functions/regular-functions/string-search-functions#like) لتطبيق filter على مضيفات المستخدمين. على سبيل المثال، `HOST LIKE '%'` يكافئ `HOST ANY`، بينما يقوم `HOST LIKE '%.mysite.com'` بتصفية جميع المضيفات ضمن النطاق `mysite.com`.
+
+هناك طريقة أخرى لتحديد المضيف، وهي استخدام صياغة `@` بعد username. أمثلة:
+
+* `CREATE USER mira@'127.0.0.1'` — يكافئ صياغة `HOST IP`.
+* `CREATE USER mira@'localhost'` — يكافئ صياغة `HOST LOCAL`.
+* `CREATE USER mira@'192.168.%.%'` — يكافئ صياغة `HOST LIKE`.
+
+<Tip>
+  يتعامل ClickHouse مع `user_name@'address'` باعتباره username كاملًا. لذلك، من الناحية التقنية، يمكنك إنشاء عدة مستخدمين لهم نفس `user_name` مع تراكيب مختلفة بعد `@`. ومع ذلك، لا نوصي بذلك.
+</Tip>
+
+<div id="valid-until-clause">
+  ## بند VALID UNTIL
+</div>
+
+يتيح لك هذا البند تحديد تاريخ انتهاء الصلاحية، ووقت الانتهاء اختياريًا، لطريقة مصادقة. ويقبل سلسلة نصية كمعلمة. يُنصح باستخدام التنسيق `YYYY-MM-DD [hh:mm:ss] [timezone]` لقيمة datetime، حيث يجب أن تكون `[timezone]` إزاحة رقمية مثل `+09:00` أو إحدى القيم `UTC`, `GMT`, `Z`, `MSK`, `MSD`؛ ولا يتم التعرّف على zones المسمّاة وفق IANA مثل `Asia/Tokyo` (راجع الملاحظة أدناه). وتكون قيمة هذه المعلمة افتراضيًا مساوية لـ `'infinity'`.
+لا يمكن تحديد بند `VALID UNTIL` إلا مع طريقة مصادقة، باستثناء الحالة التي لا يتم فيها تحديد أي طريقة مصادقة في الاستعلام. في هذه الحالة، سيُطبَّق بند `VALID UNTIL` على جميع طرق المصادقة الموجودة.
+
+أمثلة:
+
+* `CREATE USER name1 VALID UNTIL '2025-01-01'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
+* `CREATE USER name1 VALID UNTIL 'infinity'`
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+
+<Note>
+  تُحلَّل سلسلة datetime بواسطة `parseDateTimeBestEffort`، الذي لا يتعرّف إلا على رموز المنطقة الزمنية `UTC`, `GMT`, `Z`, `MSK`, `MSD`، والإزاحات الرقمية مثل `+09:00` أو `-05:00`. أما timezones المسمّاة وفق IANA مثل `Asia/Tokyo` أو `Europe/London` فغير مدعومة، كما أن الإزاحة الثابتة لا تكافئ منطقة IANA في المناطق التي تعتمد التوقيت الصيفي، لذا يجب حساب الإزاحة الصحيحة للتاريخ المحدد الذي تقوم بترميزه.
+</Note>
+
+<div id="grantees-clause">
+  ## بند GRANTEES
+</div>
+
+يحدّد المستخدمين أو الأدوار المسموح لهم بتلقّي [الامتيازات](/ar/reference/statements/grant#privileges) من هذا المستخدم، بشرط أن يكون هذا المستخدم قد مُنح أيضًا جميع امتيازات الوصول المطلوبة باستخدام [GRANT OPTION](/ar/reference/statements/grant#granting-privilege-syntax). خيارات بند `GRANTEES`:
+
+* `user` — يحدّد مستخدمًا يمكن لهذا المستخدم منح الامتيازات إليه.
+* `role` — يحدّد دورًا يمكن لهذا المستخدم منح الامتيازات إليه.
+* `ANY` — يمكن لهذا المستخدم منح الامتيازات لأي شخص. وهذا هو الإعداد الافتراضي.
+* `NONE` — لا يمكن لهذا المستخدم منح الامتيازات إلى أي شخص.
+
+يمكنك استثناء أي مستخدم أو دور باستخدام التعبير `EXCEPT`. على سبيل المثال: `CREATE USER user1 GRANTEES ANY EXCEPT user2`. وهذا يعني أنه إذا كانت بعض الامتيازات قد مُنحت إلى `user1` باستخدام `GRANT OPTION`، فسيتمكن من منح هذه الامتيازات لأي شخص باستثناء `user2`.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+أنشئ حساب المستخدم `mira` بكلمة المرور `qwerty`:
+
+```sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
+```
+
+يجب أن يشغّل `mira` تطبيق العميل على المضيف الذي يعمل عليه خادم ClickHouse.
+
+أنشئ حساب المستخدم `john` وعيّن الأدوار:
+
+```sql
+CREATE USER john ROLE role1, role2;
+```
+
+أنشئ حساب المستخدم `john`، وعيّن الأدوار واجعل بعضًا منها افتراضيًا:
+
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE role1;
+```
+
+أو
+
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
+```
+
+أنشئ حساب المستخدم `john` واسمح له بمنح امتيازاته للمستخدم صاحب الحساب `jack`:
+
+```sql
+CREATE USER john GRANTEES jack;
+```
+
+استخدم معلمة استعلام لإنشاء حساب المستخدم `john`:
+
+```sql
+SET param_user=john;
+CREATE USER {user:Identifier};
+```

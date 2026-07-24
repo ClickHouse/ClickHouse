@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- This test validates Statistics-based part pruning functionality when some parts have MinMax statistics
+-- This test validates Statistics-based part pruning functionality when some parts have basic statistics
 -- and other parts don't (parts inserted before statistics were added).
 SET explain_query_plan_default = 'legacy';
 
@@ -26,8 +26,8 @@ INSERT INTO test_stats_pruning_partial SELECT number, number FROM numbers(100);
 -- Part 2 (OLD): id [100, 199], value [1000, 1099] - Partition 1
 INSERT INTO test_stats_pruning_partial SELECT number + 100, number + 1000 FROM numbers(100);
 
--- ADD STATISTICS MinMax
-ALTER TABLE test_stats_pruning_partial ADD STATISTICS value TYPE MinMax;
+-- ADD STATISTICS basic
+ALTER TABLE test_stats_pruning_partial ADD STATISTICS value TYPE basic;
 
 -- Part 3 (NEW with statistics): id [200, 299], value [2000, 2099] - Partition 2
 INSERT INTO test_stats_pruning_partial SELECT number + 200, number + 2000 FROM numbers(100);
@@ -43,7 +43,7 @@ WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT cou
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000;
 
--- MATERIALIZE STATISTICS MinMax
+-- MATERIALIZE STATISTICS basic
 SET mutations_sync = 2;
 ALTER TABLE test_stats_pruning_partial MATERIALIZE STATISTICS ALL;
 

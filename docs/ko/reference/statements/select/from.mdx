@@ -1,0 +1,112 @@
+---
+description: '`FROM` 절에 대한 문서'
+sidebarTitle: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'FROM 절'
+doc_type: 'reference'
+---
+
+`FROM` 절은 데이터를 읽어올 소스를 지정합니다:
+
+* [테이블](/ko/reference/engines/table-engines/index)
+* [서브쿼리](/ko/reference/statements/select/index)
+* [테이블 함수](/ko/reference/functions/table-functions/index)
+
+`FROM` 절의 기능을 확장하기 위해 [JOIN](/ko/reference/statements/select/join) 및 [ARRAY JOIN](/ko/reference/statements/select/array-join) 절을 사용할 수도 있습니다.
+
+서브쿼리는 `FROM` 절 내 괄호 안에 지정할 수 있는 또 다른 `SELECT` 쿼리입니다.
+
+SQL 표준 `VALUES` 절도 테이블 표현식으로 사용할 수 있습니다:
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+자세한 내용은 [Values 테이블 함수](/ko/reference/functions/table-functions/values#sql-standard-values-clause)를 참조하십시오.
+
+`FROM`에는 쉼표로 구분된 여러 데이터 소스를 포함할 수 있으며, 이는 이들에 [CROSS JOIN](/ko/reference/statements/select/join)을 수행하는 것과 같습니다.
+
+`FROM`은 `SELECT` 절 앞에도 선택적으로 올 수 있습니다. 이는 표준 SQL을 ClickHouse에서 확장한 구문으로, `SELECT` SQL 문을 더 쉽게 읽을 수 있게 합니다. 예시:
+
+```sql
+FROM table
+SELECT *
+```
+
+<div id="final-modifier">
+  ## FINAL 수정자
+</div>
+
+`FINAL`을 지정하면 ClickHouse는 결과를 반환하기 전에 데이터를 완전히 머지합니다. 또한 해당 테이블 엔진에서 머지 중 수행되는 모든 데이터 변환도 적용합니다.
+
+다음 테이블 엔진을 사용하는 테이블에서 데이터를 조회할 때 적용할 수 있습니다:
+
+* `ReplacingMergeTree`
+* `SummingMergeTree`
+* `AggregatingMergeTree`
+* `CollapsingMergeTree`
+* `VersionedCollapsingMergeTree`
+
+`FINAL`이 포함된 `SELECT` 쿼리는 병렬로 실행됩니다. [max&#95;final&#95;threads](/ko/reference/settings/session-settings#max_final_threads) 설정은 사용되는 스레드 수를 제한합니다.
+
+<div id="drawbacks">
+  ### 단점
+</div>
+
+`FINAL`을 사용하는 쿼리는 `FINAL`을 사용하지 않는 유사한 쿼리보다 실행 속도가 다소 느립니다. 이유는 다음과 같습니다.
+
+* 쿼리 실행 중에 데이터가 머지됩니다.
+* `FINAL`이 포함된 쿼리는 쿼리에서 지정한 컬럼 외에도 프라이머리 키(primary key) 컬럼을 읽을 수 있습니다.
+
+`FINAL`은 일반적으로 머지 시점에 수행될 처리를 쿼리 시점에 메모리에서 수행해야 하므로 추가적인 컴퓨트 및 메모리 리소스가 필요합니다. 하지만 정확한 결과를 얻으려면 `FINAL`을 사용해야 하는 경우도 있습니다(데이터가 아직 완전히 머지되지 않았을 수 있기 때문입니다). 그래도 강제로 머지를 수행하기 위해 `OPTIMIZE`를 실행하는 것보다는 비용이 적게 듭니다.
+
+`FINAL`을 사용하는 대신, `MergeTree` 엔진의 백그라운드 프로세스가 아직 완료되지 않았다고 가정하는 다른 쿼리를 사용하고, 집계(예: 중복 제거)를 적용해 이를 처리할 수 있는 경우도 있습니다. 필요한 결과를 얻기 위해 쿼리에서 `FINAL`을 사용해야 한다면 사용해도 괜찮지만, 추가 처리가 필요하다는 점에 유의하십시오.
+
+`FINAL`은 세션 또는 사용자 프로필을 사용해 쿼리의 모든 테이블에 [FINAL](/ko/reference/settings/session-settings#final) 설정으로 자동 적용할 수 있습니다.
+
+<div id="example-usage">
+  ### 사용 예시
+</div>
+
+`FINAL` 키워드 사용
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+쿼리 수준 설정으로 `FINAL` 사용하기
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+세션 수준 설정으로 `FINAL` 사용하기
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
+
+<div id="aliases-and-final">
+  ### 별칭과 FINAL
+</div>
+
+테이블에 별칭이 있으면 `FINAL`은 별칭 뒤에 옵니다. 이는 테이블에 보통 별칭을 지정하는 [`JOIN`](/ko/reference/statements/select/join) 쿼리에서 가장 뚜렷하게 나타납니다.
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL`은 테이블 참조의 수정자이므로 전체 `table [AS alias]` 표현식 뒤에 와야 합니다. 이를 alias 앞에 배치하면(`FROM table1 FINAL AS t1`) 구문 오류가 발생합니다.
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+`FROM` 절이 생략되면 `system.one` 테이블에서 데이터를 읽습니다.
+`system.one` 테이블에는 정확히 1개의 행만 있습니다(이 테이블은 다른 DBMS의 DUAL 테이블과 같은 용도로 사용됩니다).
+
+쿼리를 실행할 때는 쿼리에 나열된 모든 컬럼을 해당 테이블에서 추출합니다. 외부 쿼리에 필요하지 않은 컬럼은 서브쿼리에서 제외됩니다.
+쿼리에 컬럼이 하나도 나열되지 않은 경우(예: `SELECT count() FROM t`)에도 행 수를 계산하기 위해 테이블에서 컬럼 하나를 추출합니다(가장 작은 컬럼이 우선 선택됩니다).

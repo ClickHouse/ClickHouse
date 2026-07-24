@@ -1,0 +1,244 @@
+---
+slug: /use-cases/data-lake/rest-catalog
+sidebarTitle: 'REST 카탈로그'
+title: 'REST 카탈로그'
+description: '이 가이드에서는 ClickHouse와 REST 카탈로그를 사용하여
+ 데이터를 쿼리하는 방법을 단계별로 안내합니다.'
+keywords: ['REST', 'Tabular', '데이터 레이크', 'Iceberg']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<Note>
+  REST 카탈로그와의 통합은 Iceberg 테이블에서만 작동합니다.
+  이 통합은 AWS S3와 기타 클라우드 스토리지 제공업체를 모두 지원합니다.
+</Note>
+
+ClickHouse는 여러 카탈로그(Unity, Glue, REST, Polaris 등)와의 통합을 지원합니다. 이 가이드에서는 ClickHouse와 [REST 카탈로그](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml/) 사양을 사용해 데이터를 쿼리하는 방법을 단계별로 안내합니다.
+
+REST 카탈로그는 Iceberg 카탈로그를 위한 표준화된 API 사양이며, 다음과 같은 다양한 플랫폼에서 지원됩니다.
+
+* **로컬 개발 환경** (`docker-compose` 설정 사용)
+* Tabular.io와 같은 **관리형 서비스**
+* **자체 호스팅** REST 카탈로그 구현
+
+<Note>
+  이 기능은 베타이므로, 다음을 사용해 활성화해야 합니다.
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## 로컬 개발 환경 설정
+</div>
+
+로컬에서 개발하고 테스트할 때는 컨테이너 기반의 REST 카탈로그 구성을 사용할 수 있습니다. 이 방식은 학습, 프로토타입 작성, 개발 환경에 적합합니다.
+
+<div id="local-prerequisites">
+  ### 사전 요구 사항
+</div>
+
+1. **Docker 및 Docker Compose**: Docker가 설치되어 실행 중인지 확인하십시오
+2. **샘플 설정**: 다양한 docker-compose 구성을 사용할 수 있습니다(아래의 대체 Docker 이미지 참조)
+
+<div id="setting-up-local-rest-catalog">
+  ### 로컬 REST 카탈로그 설정
+</div>
+
+테스트용 Iceberg 통합에 적합한 **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)** 와 같은 다양한 컨테이너 기반 REST 카탈로그 구현을 사용할 수 있습니다. 이 구현은 docker-compose를 통해 완전한 Spark + Iceberg + REST 카탈로그 환경을 제공합니다.
+
+**1단계:** 예시를 실행할 새 폴더를 만든 다음, [Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)의 구성으로 `docker-compose.yml` 파일을 만드십시오.
+
+**2단계:** 다음으로 `docker-compose.override.yml` 파일을 만들고, 아래 ClickHouse 컨테이너 구성을 해당 파일에 추가하십시오:
+
+```yaml
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    container_name: clickhouse
+    user: '0:0'  # 루트 권한 보장
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    volumes:
+      - ./clickhouse:/var/lib/clickhouse
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # 데이터셋 폴더 마운트
+    networks:
+      - iceberg_net
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DO_NOT_CHOWN=1
+      - CLICKHOUSE_PASSWORD=
+```
+
+**3단계:** 다음 명령을 실행하여 서비스를 시작하세요:
+
+```bash
+docker compose up
+```
+
+**4단계:** 모든 서비스가 준비될 때까지 기다리십시오. 다음 로그를 확인하세요:
+
+```bash
+docker-compose logs -f
+```
+
+<Note>
+  REST 카탈로그를 설정하려면 먼저 샘플 데이터가 Iceberg 테이블에 로드되어 있어야 합니다. ClickHouse에서 해당 테이블을 쿼리하기 전에 Spark 환경에서 테이블이 생성되고 데이터가 채워졌는지 확인하십시오. 테이블 사용 가능 여부는 사용하는 `docker-compose` 설정과 샘플 데이터 로딩 스크립트에 따라 달라집니다.
+</Note>
+
+<div id="connecting-to-local-rest-catalog">
+  ### 로컬 REST 카탈로그에 연결하기
+</div>
+
+ClickHouse 컨테이너에 접속하세요:
+
+```bash
+docker exec -it clickhouse clickhouse-client
+```
+
+그런 다음 REST 카탈로그에 연결되는 데이터베이스를 생성합니다:
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE demo
+ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
+SETTINGS 
+    catalog_type = 'rest', 
+    storage_endpoint = 'http://minio:9000/lakehouse', 
+    warehouse = 'demo'
+```
+
+<div id="querying-rest-catalog-tables-using-clickhouse">
+  ## ClickHouse를 사용한 REST 카탈로그 테이블 쿼리
+</div>
+
+이제 연결이 설정되었으므로 REST 카탈로그를 통해 쿼리를 실행할 수 있습니다. 예시:
+
+```sql
+USE demo;
+
+SHOW TABLES;
+```
+
+구성에 예시 데이터(예: 택시 데이터셋)가 포함되어 있다면 다음과 같은 테이블이 표시됩니다:
+
+```response
+┌─name──────────┐
+│ default.taxis │
+└───────────────┘
+```
+
+<Note>
+  테이블이 보이지 않는다면, 일반적으로 다음 중 하나에 해당합니다:
+
+  1. Spark 환경에서 아직 샘플 테이블을 생성하지 않았습니다
+  2. REST 카탈로그 서비스가 아직 완전히 초기화되지 않았습니다
+  3. 샘플 데이터 로딩이 아직 완료되지 않았습니다
+
+  테이블 생성 진행 상황은 Spark 로그에서 확인할 수 있습니다:
+
+  ```bash
+  docker-compose logs spark
+  ```
+</Note>
+
+테이블을 쿼리하려면(사용 가능한 경우):
+
+```sql
+SELECT count(*) FROM `default.taxis`;
+```
+
+```response
+┌─count()─┐
+│ 2171187 │
+└─────────┘
+```
+
+<Info>
+  **백틱이 필요합니다**
+
+  ClickHouse는 둘 이상의 네임스페이스를 지원하지 않으므로 백틱을 사용해야 합니다.
+</Info>
+
+테이블 DDL을 확인하려면:
+
+```sql
+SHOW CREATE TABLE `default.taxis`;
+```
+
+```response
+┌─statement─────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE demo.`default.taxis`                                                             │
+│ (                                                                                             │
+│     `VendorID` Nullable(Int64),                                                               │
+│     `tpep_pickup_datetime` Nullable(DateTime64(6)),                                           │
+│     `tpep_dropoff_datetime` Nullable(DateTime64(6)),                                          │
+│     `passenger_count` Nullable(Float64),                                                      │
+│     `trip_distance` Nullable(Float64),                                                        │
+│     `RatecodeID` Nullable(Float64),                                                           │
+│     `store_and_fwd_flag` Nullable(String),                                                    │
+│     `PULocationID` Nullable(Int64),                                                           │
+│     `DOLocationID` Nullable(Int64),                                                           │
+│     `payment_type` Nullable(Int64),                                                           │
+│     `fare_amount` Nullable(Float64),                                                          │
+│     `extra` Nullable(Float64),                                                                │
+│     `mta_tax` Nullable(Float64),                                                              │
+│     `tip_amount` Nullable(Float64),                                                           │
+│     `tolls_amount` Nullable(Float64),                                                         │
+│     `improvement_surcharge` Nullable(Float64),                                                │
+│     `total_amount` Nullable(Float64),                                                         │
+│     `congestion_surcharge` Nullable(Float64),                                                 │
+│     `airport_fee` Nullable(Float64)                                                           │
+│ )                                                                                             │
+│ ENGINE = Iceberg('http://minio:9000/lakehouse/warehouse/default/taxis/', 'admin', '[HIDDEN]') │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## 데이터 레이크에서 ClickHouse로 데이터 로드하기
+</div>
+
+REST 카탈로그에서 ClickHouse로 데이터를 로드해야 한다면, 먼저 로컬 ClickHouse 테이블을 생성합니다:
+
+```sql
+CREATE TABLE taxis
+(
+    `VendorID` Int64,
+    `tpep_pickup_datetime` DateTime64(6),
+    `tpep_dropoff_datetime` DateTime64(6),
+    `passenger_count` Float64,
+    `trip_distance` Float64,
+    `RatecodeID` Float64,
+    `store_and_fwd_flag` String,
+    `PULocationID` Int64,
+    `DOLocationID` Int64,
+    `payment_type` Int64,
+    `fare_amount` Float64,
+    `extra` Float64,
+    `mta_tax` Float64,
+    `tip_amount` Float64,
+    `tolls_amount` Float64,
+    `improvement_surcharge` Float64,
+    `total_amount` Float64,
+    `congestion_surcharge` Float64,
+    `airport_fee` Float64
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(tpep_pickup_datetime)
+ORDER BY (VendorID, tpep_pickup_datetime, PULocationID, DOLocationID);
+```
+
+그런 다음 `INSERT INTO SELECT`를 사용해 REST 카탈로그 테이블에서 데이터를 적재합니다:
+
+```sql
+INSERT INTO taxis 
+SELECT * FROM demo.`default.taxis`;
+```

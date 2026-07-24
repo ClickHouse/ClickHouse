@@ -1,0 +1,53 @@
+---
+date: 2025-01-10
+title: Por que o logging do ClickHouse é tão verboso por padrão?
+description: "Entenda por que os desenvolvedores do ClickHouse optaram por definir um nível de logging verboso por padrão."
+tags: ['Configurações']
+keywords: ['Logging padrão']
+---
+
+<div id="verbose-logging">
+  ## Logging detalhado
+</div>
+
+Uma coisa que frequentemente confunde novos usuários é que o ClickHouse gera muitas mensagens de logging, mesmo com carga leve.
+
+Isso acontece porque o nível de logging padrão, por razões históricas, é `trace` (em vez de `warning`, que seria o padrão em outros bancos de dados).
+
+Os desenvolvedores do ClickHouse argumentam que `trace` oferece muita visibilidade caso algo dê errado.
+
+Por outro lado, grandes volumes de logging significam que a system table `system.text_log` enche rapidamente e precisa ser mesclada em segundo plano.
+
+Se o banco de dados estiver operando de forma estável, os usuários podem reconfigurar o nível de log, como explicamos abaixo.
+
+<div id="change-the-log-level">
+  ## Altere o nível de log
+</div>
+
+Os diferentes níveis de log disponíveis estão documentados [aqui](/pt-BR/reference/settings/server-settings/settings#logger)
+
+Você precisará editar o arquivo de configuração do servidor ClickHouse (`/etc/clickhouse-server/config.xml`) para modificar o nível de log.
+
+O valor padrão é `trace`, mas você pode alterá-lo para o nível desejado. Veja o comentário abaixo:
+
+```
+<clickhouse>
+    <logger>
+        {/* Níveis possíveis [1]:
+
+          - none (desativa o logging)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test (não usar em produção)
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
+        <level>trace</level>
+... Restante do arquivo de configuração
+</clickhouse>
+```

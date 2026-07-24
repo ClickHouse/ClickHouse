@@ -160,7 +160,30 @@ public:
             }
             else if constexpr (std::is_same_v<FromType, ToType>)
             {
-                result = arguments[0].column;
+                if constexpr (IsDataTypeDecimal<ToType>)
+                {
+                    /// Same physical type, but the requested scale may differ from the source scale
+                    /// (e.g. reinterpret(Decimal(38, 33), 'Decimal128(2)') keys on the same TypeIndex).
+                    /// reinterpret relabels the scale without touching the raw values, so a verbatim
+                    /// return would leave the column's scale diverging from result_type. Rebuild the
+                    /// column with result_type's scale when they differ.
+                    const auto & col_from = assert_cast<const typename ToType::ColumnType &>(*arguments[0].column);
+                    const auto & to_data_type = static_cast<const ToType &>(*result_type);
+                    if (col_from.getScale() == to_data_type.getScale())
+                    {
+                        result = arguments[0].column;
+                    }
+                    else
+                    {
+                        auto col_to = numericColumnCreateHelper<ToType>(to_data_type);
+                        col_to->getData().assign(col_from.getData());
+                        result = std::move(col_to);
+                    }
+                }
+                else
+                {
+                    result = arguments[0].column;
+                }
 
                 return true;
             }
@@ -317,6 +340,24 @@ public:
 
                 result = std::move(col_res);
             }
+            else if (WhichDataType(from_type).isArray() && WhichDataType(result_type).isString())
+            {
+                /// Source is an Array of fixed size elements, destination is String.
+                /// callOnTwoTypeIndexes above does not dispatch on the Array type index, so this case
+                /// (the inverse of String/FixedString -> Array) is handled here. ColumnArray::getDataAt
+                /// exposes each row's elements as one contiguous byte range, which we copy verbatim.
+                /// Unlike the scalar executeToString, trailing zero bytes are NOT trimmed: the String ->
+                /// Array path requires the byte length to be an exact multiple of the element size and does
+                /// not pad, so trimming would break the round-trip (e.g. [toInt32(1)] would become a
+                /// 1-byte string that can no longer be reinterpreted as Array(Int32)).
+                const IColumn & src = *arguments[0].column;
+                MutableColumnPtr dst = result_type->createColumn();
+
+                ColumnString * dst_concrete = assert_cast<ColumnString *>(dst.get());
+                executeContiguousToString(src, *dst_concrete, input_rows_count);
+
+                result = std::move(dst);
+            }
             else
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -404,6 +445,41 @@ private:
 #else
             reverseMemcpy(&data_to[offset], data.data(), data.size());
 #endif
+            offset += data.size();
+            offsets_to[i] = offset;
+        }
+    }
+
+    /// Copies each row's contiguous byte range verbatim into a String, without the trailing-zero
+    /// trimming that executeToString does. Used for the Array -> String reinterpret, which must be an
+    /// exact byte-for-byte inverse of String -> Array (see the call site for why trimming is wrong here).
+    ///
+    /// The bytes are copied verbatim on every architecture, with no per-row or per-element byte-order
+    /// adjustment. This is deliberate and required for the round-trip: the String -> Array path
+    /// (`ColumnArray::insertData`) splits the string into element-sized chunks and stores each chunk into
+    /// the array element memory verbatim, with no byte swapping on any endianness, so the inverse must do
+    /// the same. Unlike the scalar `executeToString`, which reverses the whole row on big-endian to keep
+    /// the little-endian String convention, reversing here would break element order — e.g.
+    /// `[toUInt16(0x0102), toUInt16(0x0304)]` has in-memory bytes `01 02 03 04` on big-endian, and a
+    /// whole-row reverse yields `04 03 02 01`, which reads back as `[0x0403, 0x0201]` instead of the
+    /// original array.
+    static void NO_INLINE executeContiguousToString(const IColumn & src, ColumnString & dst, size_t input_rows_count)
+    {
+        ColumnString::Chars & data_to = dst.getChars();
+        ColumnString::Offsets & offsets_to = dst.getOffsets();
+        offsets_to.resize(input_rows_count);
+
+        ColumnString::Offset offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            std::string_view data = src.getDataAt(i);
+
+            data_to.resize(offset + data.size());
+            /// `data` can have a null pointer with zero size (e.g. an empty `Array` source, whose
+            /// `getDataAt` returns an empty range), and passing a null pointer to `memcpy` is undefined
+            /// behavior even when the size is zero. Skip the copy in that case.
+            if (!data.empty())
+                memcpy(&data_to[offset], data.data(), data.size());
             offset += data.size();
             offsets_to[i] = offset;
         }
@@ -1057,12 +1133,13 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
     factory.registerFunction<FunctionReinterpretAsUUID>(documentation_reinterpretAsUUID);
 
     FunctionDocumentation::Description description_reinterpretAsString = R"(
-Reinterprets the input value as a string (assuming little endian order).
-Null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.
+Reinterprets the input value as a string.
+For scalar values, the byte order is normalized to little endian, and null bytes at the end are ignored, for example, the function returns for UInt32 value 255 a string with a single character.
+For an `Array` of fixed-size elements, the element bytes are copied verbatim in their native in-memory order, without trimming trailing zero bytes and without normalizing to little endian, so the result can be reinterpreted back to the original `Array` type on any architecture.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsString = "reinterpretAsString(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsString = {
-        {"x", "Value to reinterpret to string.", {"(U)Int*", "Float*", "Date", "DateTime"}}
+        {"x", "Value to reinterpret to string.", {"(U)Int*", "Float*", "Date", "DateTime", "Array"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpretAsString = {"String containing bytes representing `x`.", {"String"}};
     FunctionDocumentation::Examples examples_reinterpretAsString = {
@@ -1077,6 +1154,17 @@ SELECT
 ┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
 │ A                                                      │ A                                         │
 └────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Array to String example",
+        R"(
+SELECT hex(reinterpretAsString([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8))) AS array_of_UInt8_to_string
+        )",
+        R"(
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
         )"
     }
     };
@@ -1118,10 +1206,11 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpret = R"(
 Uses the same source in-memory bytes sequence for the provided value `x` and reinterprets it to the destination type.
+When the destination type is `String`, a source `Array` is supported only if its element type is fixed size and contiguous in memory (for example, `Array(UInt8)` or `Array(FixedString(2))`); its element bytes are copied verbatim in their native in-memory order, so the result can be reinterpreted back to the original `Array` type on any architecture. Arrays whose elements are variable-length (for example, `Array(String)`) or nullable (for example, `Array(Nullable(Int32))`) are not supported.
     )";
     FunctionDocumentation::Syntax syntax_reinterpret = "reinterpret(x, type)";
     FunctionDocumentation::Arguments arguments_reinterpret = {
-        {"x", "Any type.", {"Any"}},
+        {"x", "Value to reinterpret. When reinterpreting to `String`, a source `Array` must have fixed-size, contiguous elements.", {"Any"}},
         {"type", "Destination type. If it is an array, then the array element type must be a fixed length type.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_reinterpret = {"Destination type value.", {"Any"}};
@@ -1148,6 +1237,17 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
 ┌─string_to_array_of_Float32─┐
 │ [5.626,6.626,5.626,6.626]  │
 └────────────────────────────┘
+        )"
+    },
+    {
+        "Array to String example",
+        R"(
+SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'String')) AS array_of_UInt8_to_string
+        )",
+        R"(
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
         )"
     }
     };

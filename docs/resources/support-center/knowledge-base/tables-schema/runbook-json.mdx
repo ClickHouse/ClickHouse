@@ -1,0 +1,261 @@
+---
+title: 'Runbook: JSON schema'
+description: 'Choose the right schema approach for JSON data in ClickHouse — typed columns, hybrid, native JSON, or String storage'
+date: 2026-03-20
+tags: ['Runbooks', 'Data Modelling']
+keywords: ['JSON', 'JSON type', 'schema design', 'type hints', 'max_dynamic_paths', 'semi-structured data', 'dynamic schema', 'JSONAsObject']
+---
+
+<Note>
+The JSON column type is production-ready from ClickHouse 25.3+. Earlier versions are not recommended for production use.
+</Note>
+
+Your data arrives as JSON. ClickHouse gives you several ways to store it, from fully typed columns to a raw String. The right choice depends on how predictable your schema is and whether you need field-level queries.
+
+**Scope:** This page covers schema design decisions for storing JSON data. It does not cover [JSON input/output formats](/reference/formats/JSON/JSON), [JSON functions](/reference/functions/regular-functions/json-functions), or query syntax. For background on the JSON column type itself, see [Use JSON where appropriate](/concepts/best-practices/json-type).
+
+**Assumes:** Familiarity with [ClickHouse table creation](/reference/statements/create/table), [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) basics, and column type syntax.
+
+## Quick decision {#quick-decision}
+- **If** every field has a known, stable type and the schema rarely changes
+  **→** [Typed columns](#typed-columns)
+- **If** most fields are stable but some section is dynamic or unpredictable
+  **→** [Hybrid (typed + JSON)](#hybrid)
+- **If** the entire structure is dynamic, with keys that appear and disappear across records
+  **→** [Native JSON column](#native-json)
+- **If** the dynamic fields are key-value pairs with a consistent value type (e.g., string tags, numeric metrics)
+  **→** [`Map`](#when-map-fits-better) instead of JSON
+- **If** you only store and retrieve the JSON blob without field-level queries
+  **→** [Opaque String storage](#opaque-storage)
+
+<Note>
+Don't confuse the JSON *format* with the JSON *column type*. You can insert JSON-formatted data (via `JSONEachRow`, etc.) into typed columns without using the `JSON` column type at all. The decision here is about column types, not input formats.
+</Note>
+
+## Approach details {#approach-details}
+### Typed columns {#typed-columns}
+**When to use:** The JSON structure is fully known at design time. Fields and types don't change between records. Even complex nested structures (arrays of objects, nested maps) can be expressed with [`Array`](/reference/data-types/array), [`Tuple`](/reference/data-types/tuple), and [`Nested`](/reference/data-types/nested-data-structures/index) types.
+
+**Trade-offs:** Schema changes require `ALTER TABLE`. Unexpected fields are silently dropped on insert unless the schema is updated.
+
+<Accordion title="Setup, verification, and gotchas">
+
+**Setup**
+
+```sql
+CREATE TABLE events
+(
+    `timestamp` DateTime,
+    `service`   LowCardinality(String),
+    `level`     Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+    `message`   String,
+    `host`      LowCardinality(String),
+    `duration_ms` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+**Verification**
+
+```sql
+-- Confirm column types match expectations
+DESCRIBE TABLE events FORMAT Vertical
+
+-- Insert and query to validate the schema handles your data
+INSERT INTO events FORMAT JSONEachRow
+{"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42}
+
+SELECT service, level, duration_ms FROM events WHERE service = 'api'
+```
+
+**Watch out for**
+
+- If you insert JSON data with `JSONEachRow` and the JSON contains fields not in the schema, ClickHouse drops them silently by default. Set [`input_format_skip_unknown_fields`](/reference/settings/formats#input_format_skip_unknown_fields) to `0` if you want errors instead.
+
+</Accordion>
+
+---
+
+### Hybrid (typed columns + JSON) {#hybrid}
+**When to use:** A core set of fields is stable (timestamps, IDs, status codes), but part of the payload is dynamic. Think user-defined attributes, tags, metadata, or extension fields that vary across records.
+
+**Trade-offs:** Full performance on typed columns, flexibility on the JSON column. The JSON column still carries insert overhead and storage cost for its dynamic portion.
+
+<Accordion title="Setup, verification, and gotchas">
+
+**Setup**
+
+```sql
+CREATE TABLE events
+(
+    `timestamp`  DateTime,
+    `service`    LowCardinality(String),
+    `level`      Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+    `message`    String,
+    `host`       LowCardinality(String),
+    `duration_ms` UInt32,
+    `attributes` JSON(
+        max_dynamic_paths = 256,
+        `http.status_code` UInt16,
+        `http.method` LowCardinality(String),
+        SKIP REGEXP 'debug\..*'
+    )
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+**Verification**
+
+```sql
+-- Insert sample data and inspect inferred paths
+INSERT INTO events FORMAT JSONEachRow
+{"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42,"attributes":{"http.status_code":200,"http.method":"GET","user.region":"eu-west","custom_tag":"abc"}}
+
+SELECT JSONAllPathsWithTypes(attributes)
+FROM events
+FORMAT PrettyJSONEachRow
+```
+
+**Watch out for**
+
+- Use [type hints](/reference/data-types/newjson) on JSON paths you know ahead of time. Hints bypass the discriminator column and store the path like a regular typed column, with the same performance and no overhead.
+- Use `SKIP` or `SKIP REGEXP` for paths you never query (debug metadata, internal tracing IDs) to save storage and reduce subcolumn count.
+- Set `max_dynamic_paths` proportional to the number of distinct paths you actually query. The default (1024) works for most cases. Lower it if your dynamic section is narrow.
+- Don't set `max_dynamic_paths` above 10,000. High values increase resource consumption and reduce efficiency.
+
+<Info>
+**Dotted keys**
+
+Keys with dots (e.g., `http.status_code`) are treated as nested paths by default, so `{"http.status_code": 200}` is stored the same as `{"http": {"status_code": 200}}`. This is common with OTel attributes. Use type hints to control how dotted paths are stored, or enable `json_type_escape_dots_in_keys` (25.8+).
+</Info>
+
+</Accordion>
+
+---
+
+### Native JSON column {#native-json}
+**When to use:** The structure is genuinely unpredictable, with keys that appear and disappear across records. User-generated schemas, plugin systems, or data-lake ingestion where you don't control the upstream schema.
+
+**Trade-offs:** Slower inserts than typed columns. Slower full-object reads than String. Storage overhead from subcolumn management. Works well for field-level queries on specific paths.
+
+<Accordion title="Setup, verification, and gotchas">
+
+**Setup**
+
+```sql
+CREATE TABLE dynamic_events
+(
+    `id`   UInt64,
+    `ts`   DateTime DEFAULT now(),
+    `data` JSON(
+        max_dynamic_paths = 512,
+        `event_type` LowCardinality(String),
+        `version` UInt8
+    )
+)
+ENGINE = MergeTree
+ORDER BY (data.event_type, ts)
+```
+
+Use [`JSONAsObject`](/reference/formats/JSON/JSONAsObject) format when inserting whole JSON documents into a JSON column. It treats each input line as a complete JSON object mapped to the column.
+
+**Verification**
+
+```sql
+INSERT INTO dynamic_events (id, data) FORMAT JSONEachRow
+{"id": 1, "data": {"event_type": "click", "version": 2, "page": "/home", "button_id": "cta-1"}}
+{"id": 2, "data": {"event_type": "purchase", "version": 1, "item_id": "SKU-99", "amount": 49.99, "currency": "USD"}}
+
+-- Check which paths ClickHouse detected and their types
+SELECT JSONAllPathsWithTypes(data) FROM dynamic_events FORMAT PrettyJSONEachRow
+
+-- Query a specific path
+SELECT data.page FROM dynamic_events WHERE data.event_type = 'click'
+```
+
+**Watch out for**
+
+- Without type hints, ClickHouse infers types per-path from the first values it sees. If `score` arrives as `"10"` (string) in one record and `10` (integer) in another, the path gets a discriminator column and queries become slower. Add hints for paths with known types.
+- When path count exceeds `max_dynamic_paths`, overflow values move to a [shared data structure](/reference/data-types/newjson#shared-data-structure) with reduced query performance. Monitor with [`JSONDynamicPaths()`](/reference/data-types/newjson#introspection-functions) and keep the limit below 10,000.
+- Each dynamic path supports up to `max_dynamic_types` (default 32) distinct data types. If a single path exceeds this, extra types fall back to shared variant storage. This rarely matters unless your data has highly inconsistent types for the same field.
+
+</Accordion>
+
+---
+
+### Opaque String storage {#opaque-storage}
+**When to use:** JSON documents are stored and retrieved whole, then passed through to an application, archived, or forwarded downstream. No field-level filtering or aggregation inside ClickHouse.
+
+**Trade-offs:** Fastest inserts and simplest schema. No field-level queries without runtime parsing (`JSONExtract` family), which is slow at scale.
+
+<Accordion title="Setup, verification, and gotchas">
+
+**Setup**
+
+```sql
+CREATE TABLE raw_events
+(
+    `id`        UInt64,
+    `received`  DateTime DEFAULT now(),
+    `payload`   String
+)
+ENGINE = MergeTree
+ORDER BY (received)
+```
+
+**Verification**
+
+```sql
+INSERT INTO raw_events (id, payload) VALUES
+(1, '{"type":"click","page":"/home"}'),
+(2, '{"type":"purchase","item":"SKU-99","amount":49.99}')
+
+-- Confirm data round-trips intact
+SELECT payload FROM raw_events WHERE id = 1
+
+-- Verify you can still parse fields ad-hoc when needed
+SELECT JSONExtractString(payload, 'type') AS event_type FROM raw_events
+```
+
+**Watch out for**
+
+- If requirements change and you later need field-level queries, you'll need to create a new table with typed or JSON columns and backfill the data. If there's any chance you'll query individual fields, start with the [hybrid approach](#hybrid) instead.
+- `JSONExtract` functions parse the string on every query. Acceptable for ad-hoc exploration, not for production dashboards or high-QPS workloads.
+- Consider compression codecs (`ZSTD`) on the String column if the JSON payloads are large — it compresses well.
+
+</Accordion>
+
+## Comparison {#comparison}
+| Dimension | Typed columns | Hybrid | Native JSON | String |
+|---|---|---|---|---|
+| **Insert throughput** | Fastest | Fast | Moderate | Fastest |
+| **Field-level queries** | Fastest | Fast (typed); good (hinted JSON) | Good (hinted); slower (dynamic) | Slow (runtime parsing) |
+| **Full-object reads** | Fast | Moderate | Slow | Fastest |
+| **Storage efficiency** | Best | Good | Moderate | Good (compresses well) |
+| **Schema flexibility** | None (`ALTER TABLE`) | Partial (rigid core, flexible tail) | Full | Full |
+| **Complexity** | Low | Medium | Medium–High | Low |
+
+## When Map fits better {#when-map-fits-better}
+If your dynamic fields are homogeneous key-value pairs — all values share the same type — [`Map(String, T)`](/reference/data-types/map) is simpler and more efficient than a JSON column. Common examples: string tags (`Map(String, String)`), numeric metrics (`Map(String, Float64)`), or feature flags (`Map(String, Bool)`).
+
+```sql
+CREATE TABLE tagged_events
+(
+    `timestamp` DateTime,
+    `service`   LowCardinality(String),
+    `tags`      Map(String, String)  -- e.g., {"env": "prod", "region": "us-east-1", "team": "platform"}
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+`Map` supports key-level filtering (`tags['env'] = 'prod'`), is cheaper to store than JSON, and avoids the subcolumn overhead of the JSON type. Note that key lookups scan the map linearly by default — fine for small tag sets, but for maps with 100+ keys consider [`with_buckets` serialization](/reference/data-types/map#bucketed-map-serialization). Use JSON when values have mixed types or the structure has nesting — use `Map` when it's flat key-value pairs with a uniform value type.
+
+## Related resources {#related-resources}
+- [Use JSON where appropriate](/concepts/best-practices/json-type) — when to use the JSON column type vs alternatives
+- [JSON data type reference](/reference/data-types/newjson) — full syntax for type hints, SKIP, max_dynamic_paths, and introspection functions
+- [Selecting data types](/concepts/best-practices/select-data-type) — general type selection guidance
+- [A New Powerful JSON Data Type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse) — deep dive on the JSON type's storage architecture
+- [JSON formats reference](/reference/formats/JSON/JSON) — input/output formats for JSON data (JSONEachRow, JSONAsObject, etc.)

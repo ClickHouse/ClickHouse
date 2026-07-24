@@ -1,0 +1,92 @@
+---
+title: كيفية تصدير البيانات من ClickHouse إلى ملف
+description: تعلّم طرقًا متعددة لتصدير البيانات من ClickHouse، بما في ذلك `INTO OUTFILE`، ومحرك الجدول File، وإعادة التوجيه في سطر الأوامر.
+date: 2023-03-22
+tags: ['تصدير البيانات']
+keywords: ['تصدير البيانات', 'INTO OUTFILE', 'محرك الجدول File']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-into-outfile-clause">
+  ## استخدام عبارة INTO OUTFILE
+</div>
+
+أضِف عبارة [INTO OUTFILE](/ar/reference/statements/select/into-outfile) إلى استعلامك.
+
+على سبيل المثال:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+بشكل افتراضي، يعتمد ClickHouse على امتداد اسم الملف لتحديد تنسيق الإخراج والضغط. على سبيل المثال، ستُصدَّر جميع الصفوف من `nyc_taxi` إلى `nyc_taxi.parquet` باستخدام تنسيق Parquet:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.parquet'
+```
+
+وسيكون الملف التالي ملفًا مضغوطًا مفصولًا بعلامات تبويب:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.tsv.gz'
+```
+
+إذا تعذّر على ClickHouse تحديد التنسيق من امتداد الملف، فسيكون [تنسيق الإخراج](/ar/reference/formats/index) الافتراضي لبيانات الإخراج هو [TabSeparated](/ar/reference/formats/index). ولتحديد [تنسيق الإخراج](/ar/reference/formats/index)، استخدم [عبارة FORMAT](/ar/reference/statements/select/format).
+
+على سبيل المثال:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.txt'
+FORMAT CSV
+```
+
+<div id="using-a-file-engine-table">
+  ## استخدام محرك الجدول File
+</div>
+
+خيار آخر يتمثل في استخدام محرك الجدول [File](/ar/reference/engines/table-engines/special/file)، حيث يستخدم ClickHouse الملف لتخزين البيانات. ويمكنك تنفيذ الاستعلامات وعمليات الإدراج مباشرةً على الملف.
+
+على سبيل المثال:
+
+```sql
+CREATE TABLE my_table (
+   x UInt32,
+   y String,
+   z DateTime
+)
+ENGINE = File(Parquet)
+```
+
+أدرِج بضعة صفوف:
+
+```sql
+INSERT INTO my_table VALUES
+   (1, 'Hello', now()),
+   (2, 'World', now()),
+   (3, 'Goodbye', now())
+```
+
+يُخزَّن الملف في مجلد `data` على خادم ClickHouse لديك — وتحديدًا في `/data/default/my_table` داخل ملف باسم `data.Parquet`.
+
+<Note>
+  يُعد استخدام محرك الجدول `File` مفيدًا للغاية لإنشاء الملفات على نظام الملفات لديك والاستعلام عنها، ولكن تذكّر أن جداول `File` ليست من نوع `MergeTree`، لذلك لن تحصل على جميع المزايا التي يوفرها `MergeTree`. استخدم `File` لسهولة تصدير البيانات من ClickHouse بصيغ مناسبة.
+</Note>
+
+<div id="using-command-line-redirection">
+  ## استخدام إعادة التوجيه من سطر الأوامر
+</div>
+
+```bash
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
+```
+
+انظر [clickhouse-client](/ar/concepts/features/interfaces/cli).

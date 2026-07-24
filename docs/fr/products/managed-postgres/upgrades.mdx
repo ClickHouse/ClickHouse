@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: 'Mises à niveau'
+title: 'Mises à niveau'
+description: 'Fonctionnement des mises à niveau de version de PostgreSQL dans ClickHouse Managed Postgres'
+keywords: ['mises à niveau de ClickHouse Managed Postgres', 'version de Postgres', 'mise à niveau mineure', 'mise à niveau majeure', 'fenêtre de maintenance']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+Managed Postgres gère les mises à niveau de version de PostgreSQL pour que vos instances restent sécurisées et à jour. Les mises à niveau mineures comme les mises à niveau de version majeure sont prises en charge avec une interruption minimale.
+
+<div id="maintenance-updates">
+  ## Mises à jour de maintenance
+</div>
+
+La maintenance régulière des instances PostgreSQL comprend les éléments suivants :
+
+* Les mises à niveau de versions mineures (par ex. de 17.4 à 17.5) incluent des corrections de bugs et des correctifs de sécurité du moteur PostgreSQL.
+* Les fonctionnalités du Managed Service. Améliorations du CDC native, de l’observability, de pg&#95;clickhouse et d’autres extensions.
+* Les correctifs du système d’exploitation et des composants système, y compris des correctifs de sécurité, des gains d’efficacité et d’autres améliorations.
+
+Ces opérations sont effectuées par basculement et n’entraînent généralement qu’une brève déconnexion, souvent de seulement quelques secondes.
+
+Pour les instances avec des [standbys](/fr/products/managed-postgres/high-availability) activés, la mise à niveau est d’abord appliquée au standby, puis un basculement est effectué afin de minimiser l’indisponibilité.
+
+<div id="maintenance-windows">
+  ## Fenêtres de maintenance
+</div>
+
+La fenêtre de maintenance par défaut est le dimanche, de 14:00 à 16:00 UTC.
+L’indisponibilité prévue est inférieure à 1 minute au cours de cette fenêtre.
+
+Pour les organizations du niveau Enterprise, Managed Postgres prend en charge les fenêtres de maintenance afin que les mises à niveau et les autres opérations de maintenance puissent être planifiées au moment le moins perturbant pour votre charge de travail. La prise en charge dans l’UI et l’API pour configurer les fenêtres de maintenance sera bientôt disponible. En attendant, contactez le [support](https://clickhouse.com/support/program) pour définir une fenêtre de maintenance pour votre instance.
+
+<div id="major-version-upgrades">
+  ## Mises à niveau de version majeure
+</div>
+
+Les mises à niveau de version majeure (par ex. de 17.x à 18.x) via l’UI et l’API arriveront prochainement.
+En attendant, contactez le [support](https://clickhouse.com/support/program) pour mettre à niveau votre instance Managed Postgres.

@@ -1,0 +1,128 @@
+---
+title: Calculemos pi con SQL
+description: ¡Es el Día de Pi! Calculemos pi con ClickHouse SQL
+date: 2023-03-14
+tags: ['Casos de uso']
+keywords: ['Calcular pi', 'SQL']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="its-pi-day-lets-calculate-pi-using-sql">
+  ## ¡Es el Día de Pi! Calculemos pi con SQL
+</div>
+
+¡Feliz Día de Pi! Se nos ocurrió que sería divertido calcular pi con consultas SQL en ClickHouse. Esto es lo que hemos logrado hasta ahora...
+
+1. Este ejemplo usa la table function `numbers_mt` de ClickHouse para devolver 1B filas y solo tarda 40 ms en calcularlo:
+
+```sql
+SELECT 4 * sum(if(number % 2, -1, 1) / ((number * 2) + 1)) AS pi
+FROM numbers_mt(1000000000.)
+
+┌────────────────pi─┐
+│ 3.141592652589797 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.432 sec. Processed 1.00 billion rows, 8.00 GB (2.32 billion rows/s., 18.53 GB/s.)
+```
+
+2. El siguiente ejemplo también procesa 1000 millones de números, aunque no tan rápido:
+
+```sql
+SELECT 3 + (4 * sum(if((number % 2) = 0, if((number % 4) = 0, -1 / ((number * (number + 1)) * (number + 2)), 1 / ((number * (number + 1)) * (number + 2))), 0))) AS pi
+FROM numbers_mt(2, 10000000000)
+
+┌─────────────────pi─┐
+│ 3.1415926525808087 │
+└────────────────────┘
+
+1 row in set. Elapsed: 9.825 sec. Processed 10.00 billion rows, 80.00 GB (1.02 billion rows/s., 8.14 GB/s.)
+```
+
+3. Este es, sin duda, nuestro favorito en ClickHouse (¡y el más preciso!):
+
+```sql
+SELECT pi()
+
+┌──────────────pi()─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.008 sec.
+```
+
+4. Quien hizo esto sabía de trigonometría:
+
+```sql
+SELECT 2 * asin(1) AS pi
+
+┌────────────────pi─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+5. Aquí tienes una API útil que te permite especificar el número de dígitos que quieres:
+
+```sql
+SELECT *
+FROM url('https://api.pi.delivery/v1/pi?start=0&numberOfDigits=100', 'JSONEachRow')
+
+┌───────────────content─┐
+│ 3.1415926535897933e99 │
+└───────────────────────┘
+
+1 row in set. Elapsed: 0.556 sec.
+```
+
+6. Este es ingenioso  - usa las funciones de distancia de ClickHouse:
+
+```sql
+WITH random_points AS
+    (
+        SELECT (rand64(1) / pow(2, 64), rand64(2) / pow(2, 64)) AS point
+        FROM numbers(1000000000)
+    )
+SELECT (4 * countIf(L2Norm(point) < 1)) / count() AS pi
+FROM random_points
+
+┌──────────pi─┐
+│ 3.141627208 │
+└─────────────┘
+
+1 row in set. Elapsed: 4.742 sec. Processed 1.00 billion rows, 8.00 GB (210.88 million rows/s., 1.69 GB/s.)
+```
+
+7. Si eres físico, quedarás satisfecho con este:
+
+```sql
+SELECT 22 / 7
+
+┌─────divide(22, 7)─┐
+│ 3.142857142857143 │
+└───────────────────┘
+```
+
+8. Otro método indirecto (este se lo debemos a Alexey Milovidov), preciso hasta 7 decimales y además rápido:
+
+```sql
+WITH
+    10 AS length,
+    (number / 1000000000.) * length AS x
+SELECT pow((2 * length) * avg(exp(-(x * x))), 2) AS pi
+FROM numbers_mt(1000000000.)
+
+┌─────────────────pi─┐
+│ 3.1415926890388595 │
+└────────────────────┘
+
+1 row in set. Elapsed: 1.245 sec. Processed 1.00 billion rows, 8.00 GB (803.25 million rows/s., 6.43 GB/s.)
+```
+
+<Note>
+  Si tienes más, nos encantaría que los compartieras. ¡Gracias!
+</Note>

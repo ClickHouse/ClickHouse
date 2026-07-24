@@ -88,6 +88,7 @@ struct PerformanceStatistics
     };
 
     /// Number of different algorithms to select from.
+    /// 0: 8-byte copies; 1: 16-byte copies with branchless small-offset match copy; 2: 32-byte copies.
     static constexpr size_t NUM_ELEMENTS = 3;
 
     /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.

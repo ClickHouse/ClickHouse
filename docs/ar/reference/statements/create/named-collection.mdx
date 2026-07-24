@@ -1,0 +1,38 @@
+---
+description: 'مرجع CREATE NAMED COLLECTION'
+sidebarTitle: 'مجموعة مسماة'
+slug: /sql-reference/statements/create/named-collection
+title: 'CREATE NAMED COLLECTION'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+ينشئ مجموعة مُسمّاة جديدة.
+
+**الصيغة**
+
+```sql
+CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+key_name1 = 'some value' [[NOT] OVERRIDABLE],
+key_name2 = 'some value' [[NOT] OVERRIDABLE],
+key_name3 = 'some value' [[NOT] OVERRIDABLE],
+...
+```
+
+**مثال**
+
+```sql
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+```
+
+**العبارات ذات الصلة**
+
+* [CREATE NAMED COLLECTION](/ar/reference/statements/alter/named-collection)
+* [DROP NAMED COLLECTION](/ar/reference/statements/drop#drop-function)
+
+**انظر أيضًا**
+
+* [دليل المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections)

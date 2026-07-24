@@ -378,6 +378,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
 
     if (!select_query_options.ignore_quota && select_query_options.to_stage == QueryProcessingStage::Complete)
         result.pipeline.setQuota(context->getQuota());
+    result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
     return result;
 }

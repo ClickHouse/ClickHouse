@@ -72,6 +72,10 @@ bool isCrashed();
 
 void blockSignals(const std::vector<int> & signals);
 
+/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
+/// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
+void resetHandledSignals();
+
 
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP, close log files (for new files to be opened later).

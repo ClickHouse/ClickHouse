@@ -1,0 +1,148 @@
+---
+title: Comment utiliser ARRAY JOIN pour extraire et interroger des attributs variables à l’aide des clés et des valeurs d’une map
+description: "Exemple simple pour illustrer comment utiliser ARRAY JOIN pour extraire et interroger des attributs variables à l’aide des clés et des valeurs d’une map"
+date: 2024-06-21
+tags: ['Fonctions']
+keywords: ['arrayJoin']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Question
+</div>
+
+Si j’ai des attributs variables dans une colonne qui utilise le type Map, comment puis-je les extraire et les utiliser dans des requêtes ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Voici un exemple simple d’extraction de clés et de valeurs à partir d’un champ attribut variable.
+Cette méthode créera des doublons apparents pour chaque ligne de la table source/brute. Cependant, comme les clés et les valeurs sont extraites, elles peuvent être placées dans la clé primaire ou dans une structure secondaire avec un index, comme un bloom filter.
+
+Dans cet exemple, nous avons essentiellement une source qui crée une table de métriques ; elle comporte plusieurs attributs pouvant s’appliquer dans un champ attributs contenant des maps. S’il existe des attributs toujours présents dans les enregistrements, il est préférable de les extraire dans leurs propres colonnes et de les alimenter.
+
+Vous devriez pouvoir simplement copier-coller pour voir quels seraient les résultats et ce que fait la vue matérialisée dans ce cas.
+
+Créez une base de données d’exemple :
+
+```
+create database db1;
+```
+
+Créez la table initiale qui contiendra les lignes et les attributs :
+
+```
+create table db1.table1_metric_map
+(
+  id UInt32,
+  timestamp DateTime,
+  metric_name String,
+  metric_value Int32,
+  attributes Map(String, String)
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+Insérez des lignes d’exemple dans la table.  La taille de l’échantillon est volontairement réduite afin que, lors de la création de la vue matérialisée, vous puissiez voir comment les lignes se multiplient pour chaque attribut.
+
+```
+insert into db1.table1_metric_map
+VALUES
+(1, '2023-09-20 00:01:00', 'ABC', 10, {'env':'prod','app':'app1','server':'server1'}),
+(2, '2023-09-20 00:01:00', 'ABC', 20,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(3, '2023-09-20 00:01:00', 'ABC', 30,{'env':'qa','app':'app1','server':'server1'}),
+(4, '2023-09-20 00:01:00', 'ABC', 40,{'env':'qa','app':'app2','server':'server1','dc':'dc1'}),
+(5, '2023-09-20 00:01:00', 'DEF', 50,{'env':'prod','app':'app1','server':'server2'}),
+(6, '2023-09-20 00:01:00', 'DEF', 60, {'env':'prod','app':'app2','server':'server1'}),
+(7, '2023-09-20 00:01:00', 'DEF', 70,{'env':'qa','app':'app1','server':'server1'}),
+(8, '2023-09-20 00:01:00', 'DEF', 80,{'env':'qa','app':'app2','server':'server1'}),
+(9, '2023-09-20 00:02:00', 'ABC', 90,{'env':'prod','app':'app1','server':'server1'}),
+(10, '2023-09-20 00:02:00', 'ABC', 100,{'env':'prod','app':'app1','server':'server2'}),
+(11, '2023-09-20 00:02:00', 'ABC', 110,{'env':'qa','app':'app1','server':'server1'}),
+(12, '2023-09-20 00:02:00', 'ABC', 120,{'env':'qa','app':'app1','server':'server1'}),
+(13, '2023-09-20 00:02:00', 'DEF', 130,{'env':'prod','app':'app1','server':'server1'}),
+(14, '2023-09-20 00:02:00', 'DEF', 140,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(15, '2023-09-20 00:02:00', 'DEF', 150,{'env':'qa','app':'app1','server':'server2'}),
+(16, '2023-09-20 00:02:00', 'DEF', 160,{'env':'qa','app':'app1','server':'server1','dc':'dc1'}),
+(17, '2023-09-20 00:03:00', 'ABC', 170,{'env':'prod','app':'app1','server':'server1'}),
+(18, '2023-09-20 00:03:00', 'ABC', 180,{'env':'prod','app':'app1','server':'server1'}),
+(19, '2023-09-20 00:03:00', 'ABC', 190,{'env':'qa','app':'app1','server':'server1'}),
+(20, '2023-09-20 00:03:00', 'ABC', 200,{'env':'qa','app':'app1','server':'server2'}),
+(21, '2023-09-20 00:03:00', 'DEF', 210,{'env':'prod','app':'app1','server':'server1'}),
+(22, '2023-09-20 00:03:00', 'DEF', 220,{'env':'prod','app':'app1','server':'server1'}),
+(23, '2023-09-20 00:03:00', 'DEF', 230,{'env':'qa','app':'app1','server':'server1'}),
+(24, '2023-09-20 00:03:00', 'DEF', 240,{'env':'qa','app':'app1','server':'server1'});
+```
+
+Nous pouvons ensuite créer une vue matérialisée avec ARRAY JOIN afin d’extraire les attributs de type Map vers des colonnes de clés et de valeurs.  À des fins de démonstration, l’exemple ci-dessous utilise une table implicite (avec la commande POPULATE et une table sous-jacente telle que `.inner.{uuid}...` ).  La bonne pratique recommandée consiste toutefois à utiliser une table explicite : vous définissez d’abord la table, puis créez à la place une vue matérialisée dessus avec la commande `TO`.
+
+```
+CREATE MATERIALIZED VIEW db1.table1_metric_map_mv
+ORDER BY id
+POPULATE AS
+select 
+  *, 
+  attributes.keys as attribute_keys, 
+  attributes.values as attribute_values
+from db1.table1_metric_map
+array join attributes
+where notEmpty(attributes.keys);
+```
+
+La nouvelle table contiendra davantage de lignes, avec les clés extraites, comme ceci :
+
+```
+SELECT *
+FROM db1.table1_metric_map_mv
+LIMIT 5
+
+Query id: b7384381-53af-4e3e-bc54-871f61c033a6
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┬─attributes───────────┬─attribute_keys─┬─attribute_values─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('env','prod')       │ env            │ prod             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('app','app1')       │ app            │ app1             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('server','server1') │ server         │ server1          │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('env','prod')       │ env            │ prod             │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('app','app2')       │ app            │ app2             │
+└────┴─────────────────────┴─────────────┴──────────────┴──────────────────────┴────────────────┴──────────────────┘
+```
+
+À partir de là, pour interroger les lignes ayant certains attributs, vous feriez quelque chose comme ceci :
+
+```
+SELECT
+    t1_app.id AS id,
+    timestamp,
+    metric_name,
+    metric_value
+FROM
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'app') AND (attribute_values = 'app1') AND (metric_name = 'ABC')
+) AS t1_app
+INNER JOIN
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'server') AND (attribute_values = 'server1')
+) AS t2_server ON t1_app.id = t2_server.id
+
+Query id: 72ce7f19-b02a-4b6e-81e7-a955f257436d
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │
+│  3 │ 2023-09-20 00:01:00 │ ABC         │           30 │
+│  9 │ 2023-09-20 00:02:00 │ ABC         │           90 │
+│ 11 │ 2023-09-20 00:02:00 │ ABC         │          110 │
+│ 12 │ 2023-09-20 00:02:00 │ ABC         │          120 │
+│ 17 │ 2023-09-20 00:03:00 │ ABC         │          170 │
+│ 18 │ 2023-09-20 00:03:00 │ ABC         │          180 │
+│ 19 │ 2023-09-20 00:03:00 │ ABC         │          190 │
+└────┴─────────────────────┴─────────────┴──────────────┘
+```

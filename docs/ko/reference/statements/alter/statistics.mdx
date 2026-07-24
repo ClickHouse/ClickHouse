@@ -1,0 +1,41 @@
+---
+description: '컬럼 통계 조작에 대한 문서'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: '컬럼 통계 조작'
+doc_type: '참고'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+다음 작업을 사용할 수 있습니다:
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - 테이블 메타데이터에 통계 설명을 추가합니다.
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - 테이블 메타데이터의 통계 설명을 수정합니다.
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - 지정된 컬럼의 메타데이터에서 통계를 제거하고, 해당 컬럼에 대한 모든 파트의 통계 객체를 모두 삭제합니다.
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - 지정된 컬럼에 대한 모든 파트의 통계 객체를 모두 삭제합니다. 통계 객체는 `ALTER TABLE MATERIALIZE STATISTICS`를 사용하여 다시 빌드할 수 있습니다.
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - 컬럼의 통계를 다시 빌드합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+처음 두 명령은 메타데이터만 변경하거나 파일만 삭제하므로 경량 작업입니다.
+
+또한 이 작업들은 복제되며, ZooKeeper를 통해 통계 메타데이터를 동기화합니다.
+
+<div id="example">
+  ## 예시:
+</div>
+
+두 개의 컬럼에 두 가지 통계 유형 추가:
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  통계는 [복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 변형을 포함한 [`*MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진 테이블에서만 지원됩니다.
+</Note>

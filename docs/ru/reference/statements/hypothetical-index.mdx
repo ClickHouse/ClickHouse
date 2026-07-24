@@ -1,0 +1,154 @@
+---
+description: 'Документация по гипотетическим индексам (what-if)'
+sidebarTitle: 'HYPOTHETICAL INDEX'
+slug: /sql-reference/statements/hypothetical-index
+title: 'Гипотетические индексы'
+doc_type: 'reference'
+---
+
+Гипотетические индексы — это виртуальные индексы пропуска данных, действующие в рамках сеанса, которые можно добавить к таблице семейства `MergeTree`, не создавая и не сохраняя их физически. Они существуют только в текущем сеансе и используются [`EXPLAIN WHATIF`](/ru/reference/statements/explain#explain-whatif) для оценки того, как реальный индекс пропуска данных повлиял бы на запрос — обычно это доля пропуска (какую часть меток можно было бы пропустить) и примерная стоимость в метках и байтах.
+
+Используйте гипотетические индексы, чтобы оценить потенциальные индексы до того, как нести затраты на их материализацию на диске.
+
+<div id="create-hypothetical-index">
+  ## CREATE HYPOTHETICAL INDEX
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+Синтаксис повторяет `ALTER TABLE ... ADD INDEX`, но индекс не строится и не записывается — в текущем сеансе сохраняется только описание индекса.
+
+* `name` — имя индекса; должно быть уникальным в рамках `(database, table)` для данного сеанса.
+* `expression` — столбец или выражение для индексирования.
+* `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`. `text` и `vector_similarity` не поддерживаются и отклоняются на этапе `CREATE`, поскольку их фактическая проверка в `ALTER TABLE ... ADD INDEX` зависит от настроек на уровне таблицы, которые хранилище, существующее только в рамках сеанса, не может воспроизвести.
+* `GRANULARITY value` — количество гранул данных на одну гранулу индекса. Значение по умолчанию — 1.
+
+Целевая таблица должна быть таблицей семейства MergeTree и находиться в базе данных `Atomic` (то есть иметь UUID). Таблицы без UUID — например, в устаревшей базе данных `Ordinary` или `MergeTree` со старым синтаксисом — отклоняются, поскольку хранилище сеанса использует UUID таблицы как ключ для гипотетических индексов.
+
+**Пример**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+<div id="evaluating-a-hypothetical-index-with-explain-whatif">
+  ## Оценка гипотетического индекса с помощью EXPLAIN WHATIF
+</div>
+
+Само по себе определение гипотетического индекса ничего не даёт — чтобы понять, как он повлияет на запрос, выполните [`EXPLAIN WHATIF`](/ru/reference/statements/explain#explain-whatif) для репрезентативного `SELECT`. Оценщик показывает применимость каждого рассматриваемого индекса, количество читаемых меток, итоговую долю пропускаемых данных и способ получения оценки (`empirical`, `statistical` или `applicability_only`).
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+Результат:
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+`est_bytes` — это оценка на основе среднего размера строки таблицы, поэтому точное значение зависит от хранилища и сжатия.
+
+Чтобы пропустить эмпирическое сканирование в памяти и вместо этого использовать оценку по [статистике столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), сначала задайте её для нужных столбцов (по умолчанию она отключена), дождитесь завершения мутации materialize, а затем отключите эмпирический способ оценки:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+См. справочную страницу [`EXPLAIN WHATIF`](/ru/reference/statements/explain#explain-whatif) с полным описанием схемы вывода и настроек.
+
+<div id="drop-hypothetical-index">
+  ## DROP HYPOTHETICAL INDEX
+</div>
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+Удаляет гипотетический индекс в текущем сеансе.
+
+<div id="drop-all-hypothetical-indexes">
+  ## DROP ALL HYPOTHETICAL INDEXES
+</div>
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+Очищает все гипотетические индексы, определённые в текущем сеансе, независимо от таблицы.
+
+<div id="scope-and-lifetime">
+  ## Область действия и время существования
+</div>
+
+* Гипотетические индексы существуют только в **текущем сеансе** — они невидимы для других сеансов и удаляются по завершении сеанса.
+* Создание или удаление такого индекса не приводит к построению какого-либо индекса и никак не влияет на обычные запросы к таблице. При эмпирическом `EXPLAIN WHATIF` данные таблицы действительно считываются, чтобы построить кандидатный индекс в памяти, и это сканирование засчитывается в лимиты чтения и квоты сеанса.
+* Просмотреть гипотетические индексы текущего сеанса можно через [`system.hypothetical_indexes`](/ru/reference/system-tables/hypothetical_indexes).
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+Кандидаты `text` и `vector_similarity` отклоняются на этапе `CREATE HYPOTHETICAL INDEX`, поскольку их фактическая проверка зависит от настроек на уровне таблицы, которые хранилище, доступное только в рамках сеанса, не может реплицировать.
+
+`EXPLAIN WHATIF` возвращает `status: not_applicable` для запросов с `FINAL` (прореживание по индексу пропуска данных взаимодействует с `PrimaryKeyExpand`), а также ошибку `NOT_IMPLEMENTED`, если запрос обслуживается из projection (индекс родительской таблицы не materialized в projection parts).
+
+Эмпирический `skip_ratio` — это **верхняя граница**: он учитывает каждую сохранившуюся гранулу независимо и не моделирует объединение разрывов seek-gap (`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`), а также сочетание кандидата с существующим индексом пропуска данных при дизъюнктивном предикате (`OR`). Поэтому реальный materialized индекс может читать чуть больше данных или, наоборот, выполнять pruning в случаях, которые эта оценка не отражает.
+
+<div id="required-privileges">
+  ## Необходимые привилегии
+</div>
+
+`CREATE HYPOTHETICAL INDEX` требует `SELECT` для столбцов, используемых в выражении индекса, — достаточно `SELECT` на уровне столбца (например, `GRANT SELECT(b)`), — поскольку эмпирический `EXPLAIN WHATIF` читает эти столбцы.
+
+`DROP HYPOTHETICAL INDEX` и `DROP ALL HYPOTHETICAL INDEXES` не требуют дополнительных привилегий; они лишь удаляют записи из локального хранилища сеанса.
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`EXPLAIN WHATIF`](/ru/reference/statements/explain#explain-whatif)
+* [`system.hypothetical_indexes`](/ru/reference/system-tables/hypothetical_indexes)
+* [Индексы пропуска данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)

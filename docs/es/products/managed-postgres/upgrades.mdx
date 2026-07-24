@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: 'Actualizaciones'
+title: 'Actualizaciones'
+description: 'Cómo funcionan las actualizaciones de versión de PostgreSQL en ClickHouse Managed Postgres'
+keywords: ['actualizaciones de ClickHouse Managed Postgres', 'versión de Postgres', 'actualización menor', 'actualización mayor', 'ventana de mantenimiento']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+Managed Postgres se encarga de las actualizaciones de versión de PostgreSQL para mantener sus instancias seguras y al día. Admite tanto actualizaciones de versiones menores como mayores, con una interrupción mínima.
+
+<div id="maintenance-updates">
+  ## Actualizaciones de mantenimiento
+</div>
+
+El mantenimiento periódico de las instancias de PostgreSQL incluye lo siguiente:
+
+* Las actualizaciones de versiones menores (por ejemplo, de 17.4 a 17.5) incluyen correcciones de errores y parches de seguridad del motor de PostgreSQL.
+* Funciones del servicio administrado. Mejoras en CDC nativo, observabilidad, pg&#95;clickhouse y otras extensiones.
+* Parches del sistema operativo y de los componentes del sistema, incluidas correcciones de seguridad, mejoras de eficiencia y otras mejoras.
+
+Estas tareas se realizan mediante failover y, por lo general, solo provocan una breve desconexión, que a menudo dura apenas unos segundos.
+
+En las instancias con [instancias en espera](/es/products/managed-postgres/high-availability) habilitadas, la actualización se aplica primero a la instancia en espera, seguida de un failover para minimizar el tiempo de inactividad.
+
+<div id="maintenance-windows">
+  ## Ventanas de mantenimiento
+</div>
+
+La ventana de mantenimiento predeterminada es de 14:00 a 16:00 UTC los domingos.
+El tiempo de inactividad previsto es de menos de 1 minuto dentro de esa ventana.
+
+Para las organizaciones del nivel Enterprise, Managed Postgres admite ventanas de mantenimiento para que las actualizaciones y otras operaciones de mantenimiento puedan programarse en el momento que menos afecte a su carga de trabajo. La compatibilidad en la UI y la API para configurar ventanas de mantenimiento estará disponible próximamente. Mientras tanto, póngase en contacto con [support](https://clickhouse.com/support/program) para configurar una ventana de mantenimiento para su instancia.
+
+<div id="major-version-upgrades">
+  ## Actualizaciones de versión mayor
+</div>
+
+Las actualizaciones de versión mayor (p. ej., de 17.x a 18.x) mediante la UI y la API estarán disponibles próximamente.
+Mientras tanto, ponte en contacto con [soporte](https://clickhouse.com/support/program) para actualizar tu instancia de Managed Postgres.
