@@ -26,6 +26,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
+    extern const SettingsBool optimize_and_compare_chain_as_index_hint;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
 }
@@ -2281,7 +2282,14 @@ private:
             /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
             if (andCompareChainHashBudgetExceeded())
                 return;
-            existing_conjuncts.emplace(argument);
+            /// A derived conjunct may already sit in the AND wrapped in `indexHint` (see below);
+            /// track the inner comparison so a repeated visit stays idempotent.
+            const auto * argument_function = argument->as<FunctionNode>();
+            if (argument_function && argument_function->getFunctionName() == "indexHint"
+                && argument_function->getArguments().getNodes().size() == 1)
+                existing_conjuncts.emplace(argument_function->getArguments().getNodes().front());
+            else
+                existing_conjuncts.emplace(argument);
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
@@ -2331,8 +2339,25 @@ private:
                             ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
                             auto add_result = addComparisonFilter(
                                 derived_conjunct_filters, left.first, std::move(derived_filter), true, getContext());
-                            if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
+                            if (add_result == AddComparisonFilterResult::ALWAYS_FALSE
+                                || !getSettings()[Setting::optimize_and_compare_chain_as_index_hint])
+                            {
                                 function_node.getArguments().getNodes().push_back(and_node);
+                            }
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
+                            {
+                                /// A derived conjunct never filters rows beyond the original chain, so as a
+                                /// plain condition it only costs per-row evaluation, and PREWHERE can even
+                                /// hoist an expensive derived expression to run on every row. Wrap it in
+                                /// `indexHint`: index analysis still sees the comparison and prunes, while
+                                /// execution treats it as constant `1`. Contradictions stay plain (branch
+                                /// above) so the next pass folds the AND to `false`.
+                                auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
+                                index_hint_node->getArguments().getNodes().push_back(and_node);
+                                index_hint_node->resolveAsFunction(
+                                    FunctionFactory::instance().get("indexHint", getContext()));
+                                function_node.getArguments().getNodes().push_back(index_hint_node);
+                            }
                         }
                     }
 
