@@ -37,6 +37,7 @@ MultipleFileWriter::MultipleFileWriter(
     , sample_block(sample_block_)
 {
     column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
+    column_mapper->setIcebergStringPaths(Iceberg::IcebergSchemaProcessor::collectIcebergStringPaths(schema_));
 }
 
 void MultipleFileWriter::startNewFile()
@@ -60,6 +61,8 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
+    /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
+    /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
         write_format, *buffer, *sample_block, context, format_settings, format_filter_info);

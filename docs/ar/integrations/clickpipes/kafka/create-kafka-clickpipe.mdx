@@ -17,46 +17,34 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن Deploy لـ Kafka ClickPipes وإدارتها يدويًا باستخدام ClickPipes UI، أو برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
 <Steps>
-  <Step>
-    ## انتقل إلى مصادر البيانات
-
+  <Step title="انتقل إلى مصادر البيانات" id="1-load-sql-console">
     اختر زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر الواردات" size="md" />
   </Step>
 
-  <Step>
-    ## اختر مصدر البيانات
-
+  <Step title="اختر مصدر البيانات" id="2-select-data-source">
     اختر مصدر بيانات Kafka من القائمة.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="اختر نوع مصدر البيانات" size="md" />
   </Step>
 
-  <Step>
-    ## إعداد مصدر البيانات
-
+  <Step title="إعداد مصدر البيانات" id="3-configure-data-source">
     املأ النموذج بإدخال اسم لـ ClickPipe، ووصف (اختياري)، وبيانات الاعتماد، وتفاصيل الاتصال الأخرى.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="املأ تفاصيل الاتصال" size="md" />
   </Step>
 
-  <Step>
-    ## تهيئة schema registry (اختياري)
-
+  <Step title="تهيئة schema registry (اختياري)" id="4-configure-your-schema-registry">
     يلزم وجود schema صالح لموضوعات Avro وProtobuf. راجع [Schema registries](/ar/integrations/clickpipes/kafka/schema-registries) لمزيد من التفاصيل حول كيفية تهيئة schema registry.
   </Step>
 
-  <Step>
-    ## تكوين Reverse Private Endpoint (اختياري)
-
+  <Step title="تكوين Reverse Private Endpoint (اختياري)" id="5-configure-reverse-private-endpoint">
     قم بتكوين Reverse Private Endpoint للسماح لـ ClickPipes بالاتصال بعنقود Kafka لديك عبر AWS PrivateLink.
     راجع [وثائق AWS PrivateLink](/ar/integrations/clickpipes/aws-privatelink) لمزيد من المعلومات.
   </Step>
 
-  <Step>
-    ## تكوين نفق SSH (اختياري)
-
+  <Step title="تكوين نفق SSH (اختياري)" id="6-configure-ssh-tunneling">
     يمكنك استخدام نفق SSH إذا كان وسيط Kafka لديك غير متاح عبر الإنترنت العام. وبدلًا من الاتصال المباشر، ينشئ ClickPipes اتصال SSH إلى مضيف Bastion (وهو خادم في شبكتك متاح عبر الإنترنت العام)، ثم يمرّر الحركة من خلاله إلى وسيط Kafka على شبكتك الخاصة.
 
     1. فعّل زر التبديل &quot;SSH Tunnel&quot;.
@@ -75,17 +63,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ## حدّد الموضوع
-
+  <Step title="حدّد الموضوع" id="7-select-your-topic">
     حدّد الموضوع، وستعرض واجهة المستخدم مستندًا نموذجيًا منه.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="حدّد الموضوع" size="md" />
   </Step>
 
-  <Step>
-    ## هيّئ جدول الوجهة
-
+  <Step title="هيّئ جدول الوجهة" id="8-configure-your-destination-table">
     في الخطوة التالية، يمكنك تحديد ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول حالي. اتبع الإرشادات المعروضة على الشاشة لتعديل اسم الجدول وبنيته وإعداداته. ويمكنك رؤية معاينة فورية لتغييراتك في جدول العينة بالأعلى.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="هيّئ الجدول وبنيته وإعداداته" size="md" />
@@ -95,9 +79,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="هيّئ عناصر التحكم المتقدمة" size="md" />
   </Step>
 
-  <Step>
-    ## تكوين الأذونات
-
+  <Step title="تكوين الأذونات" id="9-configure-permissions">
     سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى جدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
 
     * `Full access`: يمنح وصولًا كاملًا إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم Materialized View أو Dictionary مع جدول الوجهة.
@@ -106,9 +88,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" size="md" />
   </Step>
 
-  <Step>
-    ## إتمام الإعداد
-
+  <Step title="إتمام الإعداد" id="10-complete-setup">
     سيؤدي النقر على &quot;Create ClickPipe&quot; إلى إنشاء ClickPipe وتشغيله. وسيظهر الآن ضمن قسم مصادر البيانات.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" size="md" />
