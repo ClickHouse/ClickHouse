@@ -238,10 +238,16 @@ def main():
                 f"command -v geesefs && geesefs --version 2>&1 | grep -qF {_GEESEFS_VERSION.lstrip('v')} ||"
                 f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
                 f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
-                "command -v createrepo_c || sudo apt-get install -y createrepo-c ||:",
+                # `apt-get update` before each install: the runner's apt index can
+                # be stale and point at a superseded package version (e.g.
+                # `libarchive-dev 3.6.0-1ubuntu1.7`) that Ubuntu already removed
+                # from the mirror pool, which makes `apt-get install` fail with a
+                # 404. Refreshing the index first resolves to the current version.
+                "command -v createrepo_c || (sudo apt-get update && sudo apt-get install -y createrepo-c) ||:",
                 # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
                 # Ubuntu Jammy only has 5.3.0, so build from source if needed.
                 "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
+                "  sudo apt-get update &&"
                 "  sudo apt-get install -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
                 "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
                 "  cd /tmp/reprepro-src &&"
