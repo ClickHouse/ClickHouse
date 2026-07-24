@@ -308,7 +308,9 @@ Pipe StorageSQLite::read(
             LiteralEscapingStyle::StandardSQL,
             "",
             remote_table_or_query.getTableName(),
-            context_);
+            context_,
+            {},
+            NameSet{"like", "notLike"});
     }
     LOG_TRACE(log, "Query: {}", query);
 

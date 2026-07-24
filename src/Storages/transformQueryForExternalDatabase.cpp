@@ -195,7 +195,11 @@ bool fieldContainsNulByte(const Field & field)
     }
 }
 
-bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns, LiteralEscapingStyle literal_escaping_style)
+bool isCompatible(
+    ASTPtr & node,
+    const NamesAndTypesList & available_columns,
+    LiteralEscapingStyle literal_escaping_style,
+    const NameSet & unsupported_functions)
 {
     if (auto * function = node->as<ASTFunction>())
     {
@@ -206,6 +210,9 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns, Li
             throw Exception(ErrorCodes::LOGICAL_ERROR, "function->arguments is not set");
 
         String name = function->name;
+
+        if (unsupported_functions.contains(name))
+            return false;
 
         if (!(name == "and"
             || name == "or"
@@ -255,7 +262,7 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns, Li
             return false;
 
         for (auto & expr : function->arguments->children)
-            if (!isCompatible(expr, available_columns, literal_escaping_style))
+            if (!isCompatible(expr, available_columns, literal_escaping_style, unsupported_functions))
                 return false;
 
         /// When the parser's fast-path literal conversion produces
@@ -411,7 +418,8 @@ String transformQueryForExternalDatabaseImpl(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    const NameSet & unsupported_functions)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
@@ -442,7 +450,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where, available_columns, literal_escaping_style))
+        if (isCompatible(original_where, available_columns, literal_escaping_style, unsupported_functions))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -465,7 +473,7 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem, available_columns, literal_escaping_style))
+                        if (isCompatible(elem, available_columns, literal_escaping_style, unsupported_functions))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);
@@ -527,7 +535,8 @@ String transformQueryForExternalDatabase(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    const NameSet & unsupported_functions)
 {
     if (!query_info.syntax_analyzer_result)
     {
@@ -553,7 +562,8 @@ String transformQueryForExternalDatabase(
             database,
             table,
             context,
-            limit);
+            limit,
+            unsupported_functions);
     }
 
     auto clone_query = query_info.query->clone();
@@ -566,7 +576,8 @@ String transformQueryForExternalDatabase(
         database,
         table,
         context,
-        limit);
+        limit,
+        unsupported_functions);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)

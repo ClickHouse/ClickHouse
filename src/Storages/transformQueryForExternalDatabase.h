@@ -23,6 +23,9 @@ class IAST;
   *
   * If limit is passed additionally apply LIMIT in result query.
   *
+  * Functions listed in `unsupported_functions` are kept for local filtering even if they are otherwise
+  * compatible. This lets a caller exclude operators whose semantics differ in its external database.
+  *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   *
   * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
@@ -37,7 +40,8 @@ String transformQueryForExternalDatabase(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit = {});
+    std::optional<size_t> limit = {},
+    const NameSet & unsupported_functions = {});
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can
