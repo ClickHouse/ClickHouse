@@ -195,13 +195,11 @@ SELECT uniqCombined(number) FROM numbers(1e10);
         )",
         R"(
 ┌─uniqCombined64(number)─┐
-│             9998568925 │
+│             9998568925 │ -- 10.00 billion
 └────────────────────────┘
-approximately 10.00 billion
 ┌─uniqCombined(number)─┐
-│           5545308725 │
+│           5545308725 │ -- 5.55 billion
 └──────────────────────┘
-approximately 5.55 billion
         )"
     }
     };

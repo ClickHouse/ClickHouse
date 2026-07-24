@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -113,12 +112,7 @@ void registerBackupEngineMemory(BackupFactory & factory)
         }
     };
 
-    auto destination_identity_fn = [](const BackupInfo &, ContextPtr) -> Strings
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Memory backup destinations do not have a persistent identity");
-    };
-
-    factory.registerBackupEngine("Memory", creator_fn, destination_identity_fn);
+    factory.registerBackupEngine("Memory", creator_fn);
 }
 
 }

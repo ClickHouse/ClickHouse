@@ -10,8 +10,6 @@
 -- The fix adds a content-based, order-independent hash to FutureSetFromTuple and uses it
 -- in the constant comparison instead of getField().
 
-SET explain_query_plan_default = 'legacy';
-
 DROP TABLE IF EXISTS t_sumif_proj;
 
 CREATE TABLE t_sumif_proj

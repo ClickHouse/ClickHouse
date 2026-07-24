@@ -25,7 +25,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
@@ -97,14 +96,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & context = scope.context;
 
-    /// Scalar subqueries in table function arguments are executed even in only-analyze mode.
-    /// The table function is resolved into a storage during analysis (its header is needed),
-    /// so it requires real argument values rather than type-only placeholders. Otherwise
-    /// a placeholder would be passed to the table function, e.g. an empty URL to `s3`:
-    /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
-    /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
-    const bool only_analyze_subquery = only_analyze && !table_function_arguments_in_resolve_process;
-
     Block scalar_block;
 
     auto node_without_alias = node->clone();
@@ -113,7 +104,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    bool can_use_global_scalars = !only_analyze && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
 
     auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
 
@@ -185,7 +176,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
-        options.only_analyze = only_analyze_subquery;
+        options.only_analyze = only_analyze;
 
         /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
         /// Force CTE materialization in the sub-plan so that the pipeline execution
@@ -231,7 +222,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
         };
 
-        if (only_analyze_subquery)
+        if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
             scalar_block = *interpreter->getSampleBlock();
@@ -275,7 +266,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
                 io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
                 io.pipeline.setQuota(subquery_context->getQuota());
-                io.pipeline.setNormalizedQueryHash(subquery_context->getNormalizedQueryHash());
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
@@ -390,7 +380,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze_subquery ? "_analyze" : "");
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
