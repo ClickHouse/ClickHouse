@@ -22,8 +22,9 @@ SELECT count() FROM
 );
 
 -- Constant aggregate-state columns. The constant-value comparison in the block structure check
--- must be skipped for them: comparing aggregate states as `Field` throws when the aggregate
--- function type names differ, even though the states are compatible by state representation.
+-- must relax the aggregate-state leaves: comparing aggregate states as `Field` throws when the
+-- aggregate function type names differ, even though the states are compatible by state
+-- representation.
 SELECT count() FROM
 (
     SELECT arrayReduce('quantileState(0.5)', [1]) AS s
@@ -70,3 +71,26 @@ SELECT count() FROM
     SELECT toLowCardinality(1) AS n, map('-1', 'b') AS m FROM numbers(2)
 )
 SETTINGS allow_suspicious_types_in_order_by = 1;
+
+-- The relaxation of the constant-value comparison must apply only to the aggregate-state leaves.
+-- A constant `Tuple` whose aggregate-state element is compatible between the branches but whose
+-- scalar element differs holds genuinely different constants: they must not be collapsed into a
+-- single header constant, and the scalar element must keep the per-branch values.
+SELECT t.2 AS scalar FROM
+(
+    SELECT tuple(arrayReduce('quantileState(0.5)', [1]), 1) AS t
+    UNION ALL
+    SELECT tuple(arrayReduce('quantilesState(0.9)', [1]), 2) AS t
+)
+ORDER BY scalar;
+
+-- The same for top-level constant aggregate states with different serialized state bytes: the
+-- states are compatible by state representation, but they are different constants and must keep
+-- the per-branch values.
+SELECT finalizeAggregation(s) AS v FROM
+(
+    SELECT arrayReduce('quantileState(0.5)', [1]) AS s
+    UNION ALL
+    SELECT arrayReduce('quantileState(0.7)', [2]) AS s
+)
+ORDER BY v;

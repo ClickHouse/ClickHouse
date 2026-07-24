@@ -144,14 +144,44 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
     return true;
 }
 
-static bool containsAggregateStateColumn(const IColumn & column)
-{
-    if (typeid_cast<const ColumnAggregateFunction *>(&column))
-        return true;
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected);
 
-    bool found = false;
-    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
-    return found;
+static bool haveCompatibleConstantValueVectors(const FieldVector & actual, const FieldVector & expected)
+{
+    if (actual.size() != expected.size())
+        return false;
+
+    for (size_t i = 0; i < actual.size(); ++i)
+        if (!haveCompatibleConstantValues(actual[i], expected[i]))
+            return false;
+
+    return true;
+}
+
+/// Compares two constant values, relaxing only the aggregate-state leaves: the `Field` comparison
+/// of aggregate states throws when the aggregate function type names differ, even when the states
+/// are compatible by `haveSameStateRepresentation` (which the type and column structure checks
+/// have already established at this point). For such leaves compare only the serialized state, so
+/// that genuinely different constants — including a differing non-aggregate element next to a
+/// compatible aggregate state inside the same `Tuple` — are still reported as a mismatch.
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected)
+{
+    if (actual.getType() != expected.getType())
+        return false;
+
+    switch (actual.getType())
+    {
+        case Field::Types::AggregateFunctionState:
+            return actual.safeGet<AggregateFunctionStateData>().data == expected.safeGet<AggregateFunctionStateData>().data;
+        case Field::Types::Array:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Array>(), expected.safeGet<Array>());
+        case Field::Types::Tuple:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Tuple>(), expected.safeGet<Tuple>());
+        case Field::Types::Map:
+            return haveCompatibleConstantValueVectors(actual.safeGet<Map>(), expected.safeGet<Map>());
+        default:
+            return actual == expected;
+    }
 }
 
 template <typename ReturnType>
@@ -200,17 +230,12 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     }
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
-        && !actual.column->empty() && !expected.column->empty() /// don't check values in empty columns
-        /// Constant aggregate-state values cannot be compared here: the `Field` comparison of
-        /// aggregate states throws when the aggregate function type names differ, even when the
-        /// states are compatible by `haveSameStateRepresentation` (already checked above). The
-        /// types are equal at this point, so checking one side is enough.
-        && !containsAggregateStateColumn(assert_cast<const ColumnConst &>(*actual.column).getDataColumn()))
+        && !actual.column->empty() && !expected.column->empty()) /// don't check values in empty columns
     {
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
-        if (actual_value != expected_value)
+        if (!haveCompatibleConstantValues(actual_value, expected_value))
             return onError<ReturnType>(code,
                     "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
                     context_description,
