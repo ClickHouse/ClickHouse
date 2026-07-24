@@ -14,10 +14,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Processors/Formats/Impl/SQLiteCommon.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
-
-#include <string_view>
 
 
 namespace DB
@@ -103,25 +102,27 @@ NameSet DatabaseSQLite::fetchTablesList() const
     /// rather than a single-character wildcard. Otherwise a genuine user table such as `sqliteX`
     /// would be excluded together with the internal `sqlite_*` tables and stay hidden from
     /// `SHOW TABLES`, `DatabaseSQLite::empty` and table discovery.
-    std::string query = "SELECT name FROM sqlite_master "
-                        "WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'";
+    static const String query = "SELECT name FROM sqlite_master "
+                                "WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'";
 
-    auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** /* col_names */) -> int
-    {
-        for (int i = 0; i < col_num; ++i)
-            static_cast<std::unordered_set<std::string> *>(res)->insert(data_by_col[i]);
-        return 0;
-    };
+    /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db.get(), query);
 
-    char * err_message = nullptr;
-    int status = sqlite3_exec(sqlite_db.get(), query.c_str(), callback_get_data, &tables, &err_message);
-    if (status != SQLITE_OK)
+    while (true)
     {
-        String err_msg(err_message);
-        sqlite3_free(err_message);
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot fetch sqlite database tables. Error status: {}. Message: {}",
-                        status, err_msg);
+        int status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(statement.get());
+        if (status == SQLITE_DONE)
+            break;
+
+        if (status != SQLITE_ROW)
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Cannot fetch sqlite database tables. Error status: {}. Message: {}",
+                            status, sqlite3_errmsg(sqlite_db.get()));
+
+        const auto * name_data = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
+        int name_size = sqlite3_column_bytes(statement.get(), 0);
+        tables.insert(String(name_data ? name_data : "", static_cast<size_t>(name_size)));
     }
 
     return tables;
@@ -137,24 +138,20 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     /// SQLite string literals have no escape sequences (only an embedded quote is doubled), so any
     /// backslash-style textual escaping would make the existence check miss a valid table whose name
     /// contains e.g. a newline or a tab.
-    static constexpr std::string_view query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?";
+    static const String query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?";
 
-    sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(sqlite_db.get(), query.data(), static_cast<int>(query.size()), &compiled_stmt, nullptr);
+    /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db.get(), query);
+    sqlite3_stmt * compiled_stmt = statement.get();
+
+    int status = sqlite3_bind_text64(compiled_stmt, 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Cannot check sqlite table. Error status: {}. Message: {}",
                         status, sqlite3_errmsg(sqlite_db.get()));
 
-    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> statement(compiled_stmt, sqlite3_finalize);
-
-    status = sqlite3_bind_text64(compiled_stmt, 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot check sqlite table. Error status: {}. Message: {}",
-                        status, sqlite3_errmsg(sqlite_db.get()));
-
-    status = sqlite3_step(compiled_stmt);
+    status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
     if (status == SQLITE_ROW)
         return true;
     if (status == SQLITE_DONE)

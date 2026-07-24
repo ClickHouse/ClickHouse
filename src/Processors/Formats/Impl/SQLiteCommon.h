@@ -16,8 +16,12 @@
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/copyData.h>
 #    include <Poco/String.h>
+#    include <Common/CurrentThread.h>
 #    include <Common/Exception.h>
 #    include <Common/NaNUtils.h>
+#    include <Common/ThreadStatus.h>
+
+#    include <base/sleep.h>
 
 #    include <sqlite3.h>
 
@@ -152,6 +156,50 @@ inline SQLiteStatementPtr prepareSQLiteStatement(sqlite3 * db, const String & qu
     int status = sqlite3_prepare_v2(db, query.c_str(), static_cast<int>(query.size() + 1), &statement, nullptr);
     checkSQLiteStatus(db, status, fmt::format("Cannot prepare SQLite query: {}", query));
     return SQLiteStatementPtr(statement, sqlite3_finalize);
+}
+
+/// How long to sleep between retries when another connection holds a lock on the database (SQLITE_BUSY),
+/// matching the retry back-off of the scan paths (`SQLiteSource`, `SQLiteStatementReader`).
+constexpr UInt64 sqlite_busy_retry_sleep_ms = 10;
+
+/// Whether to keep waiting for a locked database. Metadata lookups run on a query thread (schema
+/// inference, `DESCRIBE`, the existence checks of the `SQLite` database engine), so a `KILL QUERY`
+/// stops the wait; the retry then surfaces the underlying SQLITE_BUSY error to the caller.
+inline bool keepWaitingForSQLiteLock()
+{
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        return false;
+    sleepForMilliseconds(sqlite_busy_retry_sleep_ms);
+    return true;
+}
+
+/// Prepare that idles instead of failing while another connection holds an exclusive lock on the database
+/// (loading the schema during `sqlite3_prepare_v2` needs a shared lock and returns SQLITE_BUSY otherwise).
+/// Used by the metadata paths that run before a scan starts, mirroring the retry loop of the scan paths.
+inline SQLiteStatementPtr prepareSQLiteStatementRetryOnBusy(sqlite3 * db, const String & query)
+{
+    while (true)
+    {
+        sqlite3_stmt * statement = nullptr;
+        int status = sqlite3_prepare_v2(db, query.c_str(), static_cast<int>(query.size() + 1), &statement, nullptr);
+        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock())
+            continue;
+        checkSQLiteStatus(db, status, fmt::format("Cannot prepare SQLite query: {}", query));
+        return SQLiteStatementPtr(statement, sqlite3_finalize);
+    }
+}
+
+/// Step that idles instead of failing while the database is locked. Returns the first status other than
+/// SQLITE_BUSY (normally SQLITE_ROW or SQLITE_DONE); the caller interprets and reports other statuses.
+inline int stepSQLiteStatementRetryOnBusy(sqlite3_stmt * statement)
+{
+    while (true)
+    {
+        int status = sqlite3_step(statement);
+        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock())
+            continue;
+        return status;
+    }
 }
 
 inline void bindSQLiteTextValue(

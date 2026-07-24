@@ -1,0 +1,7 @@
+DESCRIBE file over a locked database:
+x	Nullable(Int64)					
+sqlite table function over a locked database:
+42
+SQLite database engine over a locked database:
+t
+42

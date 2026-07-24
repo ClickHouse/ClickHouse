@@ -10,9 +10,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/Formats/Impl/SQLiteCommon.h>
 #include <Poco/String.h>
-
-#include <string_view>
 
 
 namespace DB
@@ -56,18 +55,14 @@ std::optional<ColumnsDescription> fetchSQLiteTableStructure(sqlite3 * connection
     /// (only an embedded quote is doubled, a backslash or a control character stays literal), so any
     /// backslash-style textual escaping of the name would make the lookup miss a table whose name contains
     /// e.g. a newline or a tab; a bound parameter with an explicit length hands the name over byte-faithfully.
-    static constexpr std::string_view query = R"(SELECT "name", "type", "notnull", "hidden" FROM pragma_table_xinfo(?))";
+    static const String query = R"(SELECT "name", "type", "notnull", "hidden" FROM pragma_table_xinfo(?))";
 
-    sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(connection, query.data(), static_cast<int>(query.size()), &compiled_stmt, nullptr);
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Failed to prepare SQLite table structure query. Status: {}. Message: {}",
-                        status, sqlite3_errmsg(connection));
+    /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(connection, query);
+    sqlite3_stmt * compiled_stmt = statement.get();
 
-    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> statement(compiled_stmt, sqlite3_finalize);
-
-    status = sqlite3_bind_text64(compiled_stmt, 1, sqlite_table_name.data(), sqlite_table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
+    int status = sqlite3_bind_text64(compiled_stmt, 1, sqlite_table_name.data(), sqlite_table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Failed to bind the table name for the SQLite table structure query. Status: {}. Message: {}",
@@ -75,7 +70,7 @@ std::optional<ColumnsDescription> fetchSQLiteTableStructure(sqlite3 * connection
 
     while (true)
     {
-        status = sqlite3_step(compiled_stmt);
+        status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
         if (status == SQLITE_DONE)
             break;
 

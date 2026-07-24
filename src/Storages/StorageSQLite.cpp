@@ -26,7 +26,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
-#include <base/scope_guard.h>
 
 namespace
 {
@@ -688,14 +687,10 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
     /// the declared types of the underlying table columns; expression columns fall back to Nullable(String).
     const auto wrapped = "SELECT * FROM (" + query + ") AS __subquery";
 
-    sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(sqlite_db, wrapped.c_str(), static_cast<int>(wrapped.size() + 1), &compiled_stmt, nullptr);
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot prepare SQLite query. Status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
-
-    SCOPE_EXIT({ sqlite3_finalize(compiled_stmt); });
+    /// Preparing loads the database schema and needs a shared lock; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db, wrapped);
+    sqlite3_stmt * compiled_stmt = statement.get();
 
     const int column_count = sqlite3_column_count(compiled_stmt);
     if (column_count == 0)
