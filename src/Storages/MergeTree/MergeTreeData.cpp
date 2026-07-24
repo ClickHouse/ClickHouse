@@ -407,6 +407,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace FailPoints
@@ -415,6 +416,11 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+
+    /// Deterministically simulates a leadership lease that went stale in the middle of the
+    /// strict takeover scan, right before it would replay a skipped detach/remove of a
+    /// broken/duplicate part on shared storage.
+    extern const char merge_tree_leader_election_stale_lease_during_takeover_scan[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -3181,6 +3187,26 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     UInt64 suspicious_broken_parts_bytes = 0;
     const auto settings = getSettings();
 
+    /// The strict takeover scan runs on the heartbeat thread, which cannot renew the lease
+    /// while it executes this scan — so scanning and loading the earlier parts can consume
+    /// most of `leader_election_session_timeout`, after which another node may legitimately
+    /// take over. Replaying a skipped detach/remove on shared storage as a stale leader
+    /// would violate the single-writer contract, so re-check lease freshness immediately
+    /// before EACH replayed detach/remove and abort the takeover once it flips false
+    /// (mirroring the per-write lease rechecks in `loadMutations`). The exception propagates
+    /// to the takeover callback, which relinquishes leadership locally and retries on a
+    /// later heartbeat.
+    auto assert_lease_fresh_before_cleanup = [this](const String & part_name, std::string_view action)
+    {
+        bool lease_is_fresh = mayMutateSharedStorage();
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_during_takeover_scan, { lease_is_fresh = false; });
+        if (!lease_is_fresh)
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "The leader lease was not renewed within the session timeout while scanning parts "
+                "during leadership takeover; refusing to {} part {} as a possibly stale leader",
+                action, part_name);
+    };
+
     for (const auto & my_part : parts_to_add)
     {
         auto res = loadDataPartWithRetries(
@@ -3217,6 +3243,7 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
                         (*settings)[MergeTreeSetting::max_suspicious_broken_parts].value,
                         formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes].value));
 
+                assert_lease_fresh_before_cleanup(res.part->name, "detach broken");
                 LOG_ERROR(log, "Detaching broken part {} discovered during leadership takeover", res.part->name);
                 res.part->renameToDetached("broken-on-start", /*ignore_error=*/ false); /// detached parts must not have '_' in prefixes
             }
@@ -3230,6 +3257,7 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
             /// place; only the lease-holding leader may remove it from shared storage.
             if (strict_takeover)
             {
+                assert_lease_fresh_before_cleanup(res.part->name, "remove duplicate");
                 LOG_ERROR(log, "Removing duplicate part {} discovered during leadership takeover", res.part->getDataPartStorage().getFullPath());
                 res.part->remove();
             }

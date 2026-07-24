@@ -1411,3 +1411,130 @@ def test_detach_rejected_before_writing_detached_copy(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_TAKEOVER_SCAN = "12345678-abcd-abcd-abcd-12345678ab13"
+
+
+def test_takeover_scan_aborts_on_stale_lease_before_cleanup(started_cluster):
+    """
+    Regression for the lease fence inside the strict takeover scan: the replayed cleanup of a
+    broken part (`renameToDetached` in `loadNewlyAppearedParts` with `strict_takeover`) runs on
+    the heartbeat thread, which cannot renew the lease meanwhile, so scanning/loading earlier
+    parts can outlast `leader_election_session_timeout`. A stale leader must abort the takeover
+    before mutating shared storage instead of detaching/removing parts another node may already
+    own.
+
+    The `merge_tree_leader_election_stale_lease_during_takeover_scan` failpoint simulates
+    exactly that: the lease check right before the replayed detach/remove reports stale. The
+    takeover must fail (the table stays read-only) and the broken part must stay untouched
+    under its active name; once the failpoint is cleared, the next takeover attempt must
+    detach it and enable writes.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "merge_tree_leader_election_stale_lease_during_takeover_scan"
+    table = "test_takeover_scan_fence"
+    node1.query(
+        f"""
+        CREATE TABLE {table} UUID '{SHARED_UUID_TAKEOVER_SCAN}' (x UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {TABLE_SETTINGS}
+        """
+    )
+    try:
+        wait_for_leader([node1], table_name=table)
+
+        # Two separate parts; merges are stopped so the part we corrupt survives as-is.
+        node1.query(f"SYSTEM STOP MERGES {table}")
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        node1.query(f"INSERT INTO {table} VALUES (4), (5)")
+
+        part_name = node1.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND rows = 2"
+        ).strip()
+        assert part_name, "Could not find the two-row part to corrupt"
+
+        # Release the table on node1 so node2 can take over the lease.
+        node1.query(f"DETACH TABLE {table} PERMANENTLY")
+
+        # Corrupt the part on shared storage, so node2's read-only pre-lease loading skips it
+        # and its takeover scan is the first point that would detach it.
+        key_prefix = find_part_object_key_prefix(SHARED_UUID_TAKEOVER_SCAN, part_name)
+        assert key_prefix, f"Could not locate part {part_name} on the object storage"
+        payload = b"broken by test_takeover_scan_aborts_on_stale_lease_before_cleanup"
+        started_cluster.minio_client.put_object(
+            started_cluster.minio_bucket,
+            key_prefix + "checksums.txt",
+            io.BytesIO(payload),
+            len(payload),
+        )
+
+        # Enable the failpoint BEFORE the table exists on node2, so every takeover attempt
+        # observes a stale lease at the cleanup fence — no race with the election task.
+        node2.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            node2.query(
+                f"""
+                ATTACH TABLE {table} UUID '{SHARED_UUID_TAKEOVER_SCAN}' (x UInt64)
+                ENGINE = MergeTree ORDER BY x
+                SETTINGS {TABLE_SETTINGS}
+                """
+            )
+
+            # Every takeover attempt must abort at the fence: the table stays read-only and
+            # reads keep working (the broken part is simply not loaded).
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                assert not is_leader(node2, table_name=table), (
+                    "node2 enabled writes despite the stale lease at the takeover-scan fence"
+                )
+                assert (
+                    node2.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+                    == "1\n2\n3"
+                )
+                time.sleep(2)
+
+            # The aborted takeovers must not have mutated shared storage: no detached copy,
+            # and the broken part still sits under its active name.
+            detached = node2.query(
+                f"SELECT name FROM system.detached_parts WHERE database = currentDatabase()"
+                f" AND table = '{table}'"
+            ).strip()
+            assert detached == "", (
+                f"The aborted takeover still detached parts on shared storage: {detached!r}"
+            )
+            assert find_part_object_key_prefix(SHARED_UUID_TAKEOVER_SCAN, part_name), (
+                "The aborted takeover removed or renamed the broken part on shared storage"
+            )
+        finally:
+            node2.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared, the next takeover attempt replays the skipped cleanup:
+        # the broken part is detached and writes are enabled.
+        wait_for_leader([node2], table_name=table)
+        assert (
+            node2.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            == "1\n2\n3"
+        )
+        detached = node2.query(
+            f"SELECT name FROM system.detached_parts WHERE database = currentDatabase()"
+            f" AND table = '{table}'"
+        ).strip()
+        assert "broken-on-start" in detached, (
+            f"Expected a broken-on-start detached part, got: {detached!r}"
+        )
+    finally:
+        try:
+            node2.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
