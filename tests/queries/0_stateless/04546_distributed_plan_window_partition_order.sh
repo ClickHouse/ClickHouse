@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
+# Tags: no-old-analyzer, no-random-settings
 # no-old-analyzer: make_distributed_plan requires the analyzer.
+# no-random-settings: the test pins a precise set of settings to force the distributed task's sort to
+# fan out; randomized settings (e.g. max_rows_to_group_by, optimize_read_in_order, extremes) make
+# make_distributed_plan reject the query, so the comparison would not run.
 
 # A PARTITION BY window under make_distributed_plan=1 must produce the same result as the
 # non-distributed plan. Regression test for a bug where a task's partitioned sort fans out to several

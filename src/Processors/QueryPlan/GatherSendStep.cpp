@@ -54,7 +54,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* always_read_till_end */ false,
                 /* rows_sources_write_buf */ nullptr,
                 /* filter_column_name */ std::nullopt,
-                /* blocks_are_granules_size */ false));
+                /* use_average_block_sizes */ false));
     }
     else
     {
