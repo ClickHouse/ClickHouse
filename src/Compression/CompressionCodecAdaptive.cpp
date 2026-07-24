@@ -1,5 +1,9 @@
 #include <Compression/CompressionCodecAdaptive.h>
 
+#include <algorithm>
+#include <array>
+#include <span>
+#include <string_view>
 #include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
@@ -12,11 +16,6 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
-
-#include <algorithm>
-#include <array>
-#include <span>
-#include <string_view>
 
 
 namespace DB

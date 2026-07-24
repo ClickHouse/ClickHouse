@@ -1,22 +1,24 @@
-#include <gtest/gtest.h>
-
+#include <atomic>
+#include <cstring>
+#include <thread>
+#include <vector>
 #include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
+#include <Core/Defines.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
+#include <gtest/gtest.h>
 #include <Common/PODArray.h>
-
-#include <atomic>
-#include <cstring>
-#include <thread>
-#include <vector>
 
 using namespace DB;
 
@@ -141,6 +143,27 @@ TEST(AdaptiveCodecPool, MultipleCodecAggregatesEncryption)
     EXPECT_TRUE(factory.get("LZ4, AES_128_GCM_SIV")->isEncryption());
     EXPECT_FALSE(factory.get("LZ4")->isEncryption());
     EXPECT_FALSE(factory.get("LZ4, ZSTD")->isEncryption());
+}
+
+TEST(CompressionCodecFactory, IsDefaultCodec)
+{
+    const auto codec = [](const String & expr)
+    {
+        ParserCodec parser;
+        const String query = "(" + expr + ")";
+        ASTPtr parsed = parseQuery(parser, query, /*max_query_size=*/0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        return CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+            parsed, /*column_type=*/nullptr, /*sanity_check=*/true, /*allow_experimental_codecs=*/false);
+    };
+
+    /// No CODEC clause resolves to the default codec.
+    EXPECT_TRUE(CompressionCodecFactory::isDefaultCodec(nullptr));
+    EXPECT_TRUE(CompressionCodecFactory::isDefaultCodec(codec("Default")));
+
+    /// Anything else is an explicit user choice, even a chain containing Default.
+    EXPECT_FALSE(CompressionCodecFactory::isDefaultCodec(codec("LZ4")));
+    EXPECT_FALSE(CompressionCodecFactory::isDefaultCodec(codec("ZSTD(3)")));
+    EXPECT_FALSE(CompressionCodecFactory::isDefaultCodec(codec("Delta, Default")));
 }
 
 TEST(AdaptiveCodecSelector, MonotonicNarrowIntegersPickT64)

@@ -4,6 +4,7 @@
       "group": "ClickPipes for Object Storage",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "integrations/clickpipes/home",
         {
           "group": "Amazon S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -30,13 +31,13 @@
             "integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "integrations/clickpipes/home"
+      ]
     },
     {
       "group": "ClickPipes for Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "integrations/clickpipes/postgres/index",
         "integrations/clickpipes/postgres/deduplication",
         "integrations/clickpipes/postgres/ordering-keys",
         "integrations/clickpipes/postgres/toast",
@@ -76,20 +77,19 @@
             "integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "ClickPipes for Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "integrations/clickpipes/kafka/index",
         "integrations/clickpipes/kafka/create-kafka-clickpipe",
         "integrations/clickpipes/kafka/schema-registries",
         "integrations/clickpipes/kafka/reference",
         "integrations/clickpipes/kafka/best-practices",
         "integrations/clickpipes/kafka/faq"
-      ],
-      "root": "integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "ClickPipes for Kinesis",
@@ -97,8 +97,7 @@
       "pages": [
         "integrations/clickpipes/kinesis/overview",
         "integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "ClickPipes for GCP Pub/Sub",
@@ -106,13 +105,13 @@
       "pages": [
         "integrations/clickpipes/pubsub/overview",
         "integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "ClickPipes for MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "integrations/clickpipes/mysql/index",
         "integrations/clickpipes/mysql/faq",
         "integrations/clickpipes/mysql/datatypes",
         "integrations/clickpipes/mysql/parallel-initial-load",
@@ -142,13 +141,13 @@
             "integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "ClickPipes for MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "integrations/clickpipes/mongodb/index",
         "integrations/clickpipes/mongodb/datatypes",
         "integrations/clickpipes/mongodb/quickstart",
         "integrations/clickpipes/mongodb/lifecycle",
@@ -173,8 +172,7 @@
             "integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "ClickPipes for BigQuery",

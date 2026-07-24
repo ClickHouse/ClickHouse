@@ -11,7 +11,10 @@ import { Image } from "/snippets/es/components/Image.jsx";
 import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Con ClickHouse Cloud, nunca tendrá que preocuparse por aplicar parches ni por las actualizaciones. Implementamos periódicamente actualizaciones que incluyen correcciones, nuevas características y mejoras de rendimiento. Para consultar la lista completa de novedades de ClickHouse, consulte nuestro [changelog de Cloud](/es/resources/changelogs/cloud/2026).
+Con ClickHouse Cloud, nunca tendrá que preocuparse por aplicar parches ni por las actualizaciones. Implementamos periódicamente actualizaciones que incluyen correcciones, nuevas características y mejoras de rendimiento.
+
+* Para consultar la lista completa de novedades de ClickHouse, consulte nuestro [changelog de Cloud](/es/resources/changelogs/cloud/2026)
+* Para conocer el calendario de publicación de versiones, consulte la página de [estado de lanzamiento](/es/resources/changelogs/cloud/release-status)
 
 <Note>
   Estamos introduciendo un nuevo mecanismo de actualización, un concepto al que llamamos &quot;make before break&quot; (o MBB). Con este nuevo enfoque, añadimos réplicas actualizadas antes de retirar las antiguas durante la operación de actualización. Esto se traduce en actualizaciones más fluidas y menos disruptivas para las cargas de trabajo activas.
@@ -54,12 +57,12 @@ Los tres canales de lanzamiento son:
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Canal de lanzamiento Fast release (actualizaciones anticipadas)
+  ### Canal de lanzamiento rápido (actualizaciones anticipadas)
 </div>
 
-<ScalePlanFeatureBadge feature="El canal de lanzamiento Fast release" />
+<ScalePlanFeatureBadge feature="El canal de lanzamiento rápido" />
 
-Además del calendario de actualizaciones habitual, ofrecemos un canal de lanzamiento **Fast release** si desea que sus servicios reciban actualizaciones antes del calendario de versiones habitual.
+Además del calendario de actualizaciones habitual, ofrecemos un **canal de lanzamiento rápido** si desea que sus servicios reciban actualizaciones antes del calendario de versiones habitual.
 
 En concreto, los servicios:
 
@@ -74,7 +77,7 @@ Puede modificar el calendario de versiones del servicio en la consola de Cloud, 
 
 <br />
 
-Este canal de lanzamiento **Fast release** es adecuado para probar nuevas funciones en entornos no críticos. **No se recomienda para cargas de trabajo de producción con requisitos estrictos de tiempo de actividad y fiabilidad.**
+Este canal de lanzamiento **rápido** es adecuado para probar nuevas funciones en entornos no críticos. **No se recomienda para cargas de trabajo de producción con requisitos estrictos de tiempo de actividad y fiabilidad.**
 
 <div id="regular-release-channel">
   ### Canal de lanzamiento regular
