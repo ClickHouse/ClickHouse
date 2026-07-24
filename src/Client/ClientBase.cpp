@@ -4174,14 +4174,17 @@ void ClientBase::validateClientConfiguration()
     }
 
     /// Numeric keys whose values are read lazily at their use sites (the reads there keep
-    /// their fallbacks; this check only guarantees they cannot throw mid-query).
-    for (const auto * key : {"chime-threshold-seconds", "profile-events-delay-ms", "history_max_entries", "suggestion_limit"})
+    /// their fallbacks; this check only guarantees they cannot throw mid-query). Each key must be
+    /// validated with the same parser (and thus the same range) as its eventual read site,
+    /// otherwise a value that is only out of range for the narrower consumer would pass here
+    /// and still throw later.
+    auto validate_numeric_key = [&](const char * key, auto && parse)
     {
         if (!config.has(key))
-            continue;
+            return;
         try
         {
-            config.getUInt64(key);
+            parse(key);
         }
         catch (const Poco::Exception &)
         {
@@ -4189,7 +4192,15 @@ void ClientBase::validateClientConfiguration()
                 "Invalid value '{}' for the '{}' configuration key: expected a number",
                 config.getString(key), key);
         }
-    }
+    };
+
+    /// Read via getUInt64 in ClientBase::onProfileEvents and ClientBase::processParsedSingleQuery.
+    validate_numeric_key("chime-threshold-seconds", [&](const char * key) { config.getUInt64(key); });
+    validate_numeric_key("profile-events-delay-ms", [&](const char * key) { config.getUInt64(key); });
+    /// Read via getUInt in ClientBase::runInteractive.
+    validate_numeric_key("history_max_entries", [&](const char * key) { config.getUInt(key); });
+    /// Read via getInt in Client::connect and ClientBase::runInteractive.
+    validate_numeric_key("suggestion_limit", [&](const char * key) { config.getInt(key); });
 }
 
 void ClientBase::runInteractive()
