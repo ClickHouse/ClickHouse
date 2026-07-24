@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+Introduit dans : v26.7.0
+
+Découpe le texte en n-grammes en utilisant la même tokenisation qu&#39;un dictionnaire Naive Bayes (le layout [`NAIVE_BAYES`](/fr/reference/statements/create/dictionary/layouts/naive-bayes)) : mode `byte`, `codepoint` ou `token`, avec padding optionnel aux limites. Utilisez-le pour créer les données d&#39;entraînement pré-agrégées `(ngram, class_id, count)` qu&#39;utilise un tel dictionnaire, afin que les n-grammes d&#39;entraînement correspondent exactement à ce que produit [`naiveBayesClassifier`](/fr/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) au moment de l&#39;exécution de la query.
+
+**Syntaxe**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**Arguments**
+
+* `text` — Texte à découper en n-grammes. [`String`](/fr/reference/data-types/string)
+* `n` — Taille des n-grammes, de 1 à 1024. [`const UInt`](/fr/reference/data-types/int-uint)
+* `mode` — Mode de segmentation en tokens : &#39;byte&#39;, &#39;codepoint&#39; ou &#39;token&#39;. [`const String`](/fr/reference/data-types/string)
+* `start_token` — Facultatif. Jeton de délimitation ajouté en préfixe (n-1) fois à l’entrée ; un nombre pour &#39;byte&#39;/&#39;codepoint&#39;, un littéral pour &#39;token&#39;. Une valeur vide signifie qu’aucun remplissage n’est appliqué. [`const String`](/fr/reference/data-types/string)
+* `end_token` — Facultatif. Jeton de délimitation ajouté en suffixe (n-1) fois à l’entrée. [`const String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Les n-grammes du texte d’entrée. [`Array(String)`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Bigrammes de tokens**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**Bigrammes de tokens avec padding aux limites**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**Bigrammes d’octets avec remplissage en bordure (résultat affiché en hexadécimal)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**Bigrammes de points de code avec remplissage en bordure (résultat affiché en hexadécimal)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>
@@ -302,7 +370,7 @@ splitByChar(separator, s[, max_substrings])
 
 **Valeur renvoyée**
 
-Retourne un tableau des sous-chaînes sélectionnées. [`Array(String)`](/fr/reference/data-types/array)
+Renvoie un tableau des sous-chaînes sélectionnées. [`Array(String)`](/fr/reference/data-types/array)
 
 **Exemples**
 

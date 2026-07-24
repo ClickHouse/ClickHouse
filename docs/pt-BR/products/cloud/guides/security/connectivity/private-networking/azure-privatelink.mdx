@@ -16,6 +16,10 @@ Este guia mostra como usar o Azure Private Link para fornecer conectividade priv
 
 <Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Visão geral do PrivateLink" background="white" />
 
+<Warning>
+  O Azure Private Link oferece suporte apenas a conexões iniciadas da sua VNet do Azure para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VNet, como um banco de dados privado.
+</Warning>
+
 O Azure oferece suporte à conectividade entre regiões por meio do Private Link. Isso permite estabelecer conexões entre VNets localizadas em diferentes regiões onde você tem serviços do ClickHouse implantados.
 
 <Note>
@@ -109,7 +113,7 @@ Anote o `endpointServiceId`. Você vai usá-lo na próxima etapa.
 Nesta seção, vamos criar um Private Endpoint no Azure. Você pode usar o Azure Portal ou o Terraform.
 
 <div id="option-1-using-azure-portal-to-create-a-private-endpoint-in-azure">
-  ### Opção 1: Usar o Azure Portal para criar um Private Endpoint no Azure
+  ### Opção 1: usar o Azure Portal para criar um endpoint privado no Azure
 </div>
 
 No Azure Portal, abra **Private Link Center → Private Endpoints**.
@@ -124,13 +128,13 @@ Abra a caixa de diálogo de criação do Private Endpoint clicando no botão **C
 
 Na tela a seguir, especifique as opções abaixo:
 
-* **Subscription** / **Resource Group**: Escolha a assinatura do Azure e o grupo de recursos do Private Endpoint.
-* **Name**: Defina um nome para o **Private Endpoint**.
-* **Region**: Escolha a região em que a VNet implantada, que será conectada ao ClickHouse Cloud via Private Link, está localizada.
+* **Subscription** / **Resource Group**: escolha a assinatura do Azure e o grupo de recursos do Private Endpoint.
+* **Name**: defina um nome para o **Private Endpoint**.
+* **Region**: escolha a região em que está a VNet implantada que será conectada ao ClickHouse Cloud via Private Link.
 
 Depois de concluir as etapas acima, clique no botão **Next: Resource**.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Criar Private Endpoint Basic" border />
+<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Criar Private Endpoint Básico" border />
 
 ***
 
@@ -144,16 +148,16 @@ Clique no botão **Next: Virtual Network**.
 
 ***
 
-* **Virtual network**: Escolha a VNet que você deseja conectar ao ClickHouse Cloud usando Private Link
-* **Subnet**: Escolha a sub-rede em que o Private Endpoint será criado
+* **Virtual network**: escolha a VNet que você quer conectar ao ClickHouse Cloud usando Private Link
+* **Subnet**: escolha a sub-rede em que o Private Endpoint será criado
 
 Opcional:
 
-* **Application security group**: Você pode anexar um ASG ao Private Endpoint e usá-lo em Network Security Groups para filtrar o tráfego de rede de/para o Private Endpoint.
+* **Application security group**: você pode anexar um ASG ao Private Endpoint e usá-lo em Network Security Groups para filtrar o tráfego de rede de/para o Private Endpoint.
 
 Clique no botão **Next: DNS**.
 
-<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Seleção da Virtual Network do Private Endpoint" border />
+<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Seleção de rede virtual do Private Endpoint" border />
 
 Clique no botão **Next: Tags**.
 
@@ -161,7 +165,7 @@ Clique no botão **Next: Tags**.
 
 <Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Configuração de DNS do Private Endpoint" border />
 
-Opcionalmente, você pode adicionar tags ao seu Private Endpoint.
+Opcionalmente, você pode adicionar tags ao Private Endpoint.
 
 Clique no botão **Next: Review + create**.
 
@@ -173,7 +177,7 @@ Por fim, clique no botão **Create**.
 
 <Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Revisão do Private Endpoint" border />
 
-O **Connection status** do Private Endpoint criado ficará com o estado **Pending**. Ele mudará para o estado **Approved** assim que você adicionar esse Private Endpoint à lista de permissões do serviço.
+O **Connection status** do Private Endpoint criado ficará no estado **Pending**. Ele mudará para **Approved** assim que você adicionar esse Private Endpoint à lista de permissões do serviço.
 
 Abra a interface de rede associada ao Private Endpoint e copie o **Private IPv4 address** (10.0.0.4 neste exemplo); você precisará dessa informação nas próximas etapas.
 

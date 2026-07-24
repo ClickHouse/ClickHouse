@@ -2,8 +2,8 @@
 sidebarTitle: 'Chat'
 slug: /cloud/features/ai-ml/agents/chat
 title: 'Chat'
-description: 'Conversas, favoritos, ramificação, conversas múltiplas e compartilhamento de chats no ClickHouse Agents'
-keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'chat', 'conversas', 'favoritos', 'ramificação', 'compartilhar', 'conversas múltiplas']
+description: 'Conversas, favoritos, conversas fixadas, fork, atalhos de teclado e compartilhamento de chats no ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'chat', 'conversas', 'favoritos', 'conversas fixadas', 'atalhos de teclado', 'fork', 'compartilhar']
 doc_type: 'reference'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge />
 
-A interface de chat no ClickHouse Agents permite gerenciar conversas, ramificações, comparação lado a lado e compartilhamento.
+A interface de chat no ClickHouse Agents permite gerenciar conversas, forks e compartilhamento.
 
 <Image img="/images/cloud/agent-builder/chat/chat.webp" alt="Interface de chat do ClickHouse Agent mostrando a navegação à esquerda, o cabeçalho com a identidade do agente e o composer" size="lg" />
 
@@ -37,34 +37,28 @@ Marque uma mensagem ou uma conversa inteira como favorita para encontrá-la rapi
 
 <Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="Cabeçalho do chat com o ícone de favorito destacado e a dica de ferramenta Add Bookmarks visível" size="lg" />
 
-<div id="forking">
-  ## ramificação
+<div id="pinned-conversations">
+  ## Conversas fixadas
 </div>
 
-O ramificação cria uma nova conversa a partir de uma mensagem específica. Você pode usá-lo para explorar um caminho alternativo sem afetar a conversa original.
+Fixe uma conversa para mantê-la no topo da barra lateral, separada do histórico agrupado por data logo abaixo. Abra o menu de opções da conversa (o ícone de três pontos) na barra lateral e selecione **Fixar**. As conversas fixadas aparecem em uma seção **Fixadas** acima dos grupos **Hoje**, **Ontem** e dos mais antigos.
+
+Para desafixar, abra o mesmo menu e selecione **Desafixar**.
+
+<div id="forking">
+  ## Forking
+</div>
+
+O fork cria uma nova conversa a partir de uma mensagem específica. Você pode usá-lo para explorar um caminho alternativo sem alterar a thread original.
 Há três modos de fork disponíveis:
 
-* **Somente mensagens visíveis** - permite copiar o caminho direto até a mensagem em que o fork foi criado.
+* **Somente mensagens visíveis** - permite copiar o caminho direto até a mensagem bifurcada.
 * **Incluir ramificações relacionadas** - permite copiar o caminho principal mais todas as ramificações existentes.
-* **Incluir tudo até aqui** - permite copiar tudo até a mensagem em que o fork foi criado.
+* **Incluir tudo até aqui** - permite copiar tudo até a mensagem bifurcada.
 
 As conversas criadas por fork são independentes, portanto as alterações não são sincronizadas de volta com a original.
 
 <Image img="/images/cloud/agent-builder/chat/fork.webp" alt="Caixa de diálogo de seleção de opção de fork mostrando três ícones de modo de fork, as caixas de seleção Start fork here e Remember e a barra de ferramentas de ação da mensagem abaixo" size="lg" />
-
-<div id="multi-conversation">
-  ## conversa múltipla
-</div>
-
-O conversa múltipla coloca duas conversas lado a lado e envia o mesmo prompt para ambas. Use esse recurso para comparar respostas entre modelos ou fazer testes A/B com diferentes configurações de agente.
-
-Clique no botão **+** no cabeçalho do chat para abrir uma conversa paralela ao lado da atual.
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="Cabeçalho do chat com o botão Add multi-conversation destacado e um indicador + ClickHouse Agent acima do composer" size="lg" />
-
-As duas conversas passam então a ficar lado a lado e recebem o mesmo prompt:
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="Visualização do conversa múltipla com duas conversas do ClickHouse Agent em execução lado a lado, ambas executando as mesmas chamadas da ferramenta run_select_query" size="lg" />
 
 <div id="sharing-chats">
   ## Compartilhar conversas
@@ -74,6 +68,8 @@ Gere um link compartilhável para qualquer conversa para enviá-la a um colega d
 
 As edições em mensagens existentes aparecem na visualização compartilhada; mensagens adicionadas após a geração do link não aparecem.
 
+Qualquer pessoa que visualizar um link compartilhado pode continuar a conversa na própria conta clicando em **Continue this chat**. Isso copia a conversa — incluindo a ramificação que a pessoa está visualizando — para o histórico dela como uma nova conversa privada, sem alterar a sua conversa original.
+
 Para compartilhar uma conversa, abra o menu dela na barra lateral e selecione **Share**:
 
 <Image img="/images/cloud/agent-builder/chat/share.webp" alt="Menu da conversa na barra lateral com as opções Share, Rename, Duplicate, Archive e Delete visíveis" size="lg" />
@@ -81,3 +77,36 @@ Para compartilhar uma conversa, abra o menu dela na barra lateral e selecione **
 Em seguida, clique em **Create link** na caixa de diálogo de compartilhamento:
 
 <Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="Caixa de diálogo Share link to chat com o botão Create link e uma observação de que seu nome e quaisquer mensagens adicionadas após o compartilhamento permanecem privados" size="md" />
+
+<div id="keyboard-shortcuts">
+  ## Atalhos de teclado
+</div>
+
+Abra a referência de atalhos de teclado com `Cmd+Shift+/` (`Ctrl+Shift+/` no Windows e Linux) ou pelo menu da conta, em **Ajuda** → **Atalhos de teclado**. Todos os atalhos podem ser personalizados: clique em uma linha na caixa de diálogo para registrar uma nova combinação e use **Redefinir tudo para os padrões** para restaurar os atalhos padrão.
+
+Os atalhos padrão são:
+
+| Ação                               | macOS                 | Windows e Linux        |
+| ---------------------------------- | --------------------- | ---------------------- |
+| Mostrar atalhos de teclado         | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| Novo chat                          | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| Ir para o campo de entrada do chat | `Shift+Esc`           | `Shift+Esc`            |
+| Fazer upload de arquivo            | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| Copiar a última resposta           | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| Enviar mensagem                    | `Cmd+Enter`           | `Ctrl+Enter`           |
+| Alternar a barra lateral           | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| Abrir o seletor de modelo          | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| Ir para a Busca                    | `Cmd+/`               | `Ctrl+/`               |
+| Abrir configurações                | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| Favoritar conversa                 | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| Parar geração                      | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| Regenerar resposta                 | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| Editar a última mensagem           | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| Continuar resposta                 | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| Copiar o último bloco de código    | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| Rolar até o topo                   | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| Rolar até o fim                    | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| Arquivar conversa                  | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| Excluir conversa                   | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+
+Você também pode atribuir seus próprios atalhos para abrir painéis como agents, Prompts, arquivos e favoritos — eles não têm teclas padrão.

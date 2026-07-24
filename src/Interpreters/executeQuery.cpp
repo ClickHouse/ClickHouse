@@ -1941,9 +1941,17 @@ static BlockIO executeQueryImpl(
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if (process_list_entry->getQueryStatus()->isKilled())
+            auto query_status = process_list_entry->getQueryStatus();
+            if (query_status->isKilled())
+            {
+                /// The deadline (max_execution_time) can fire while the query is still pending (e.g. slow to
+                /// analyze/plan). Report it as a timeout, not a generic cancellation, so callers see the same
+                /// TIMEOUT_EXCEEDED they would get had the deadline fired during execution.
+                if (query_status->getCancelReason() == CancelReason::TIMEOUT)
+                    query_status->throwIfKilled();
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+                    "Query '{}' is killed in pending state", query_status->getInfo().client_info.current_query_id);
+            }
         }
 
         /// Hold element of process list till end of query execution.
