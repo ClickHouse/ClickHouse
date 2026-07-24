@@ -47,6 +47,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -133,6 +134,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -369,6 +371,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
         server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
+
+    /// Create the dedicated MergeTree metadata arena pool before any parts are loaded, same as the
+    /// server. Without this `clickhouse-local` would ignore `jemalloc_merge_tree_arenas`.
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],

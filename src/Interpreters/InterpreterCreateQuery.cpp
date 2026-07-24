@@ -1996,9 +1996,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+
+    /// Re-check inferred column types only for a fresh, persisted table: the pre-construction check
+    /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
+    /// not subject to this check on load.
+    if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
+        checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
+
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -2034,11 +2041,11 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context);
+    checkForUnsupportedColumns(storage, mode, context, is_temporary);
 }
 catch (...)
 {
@@ -2080,7 +2087,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext());
+            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2280,7 +2287,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext());
+    validateStorage(*res, mode, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2698,6 +2705,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (!is_plain_create && !interpreter_rename.renamedInsteadOfExchange())
         {
+            /// After the exchange the temporary name holds the replaced table, which may be of a different
+            /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
+            if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
+                ast_drop->is_dictionary = replaced->isDictionary();
             /// `pre_swap_check` already gated this; bypass to avoid double-consuming
             /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
@@ -2761,7 +2772,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext());
+        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
         return res;
     };
 

@@ -91,6 +91,11 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// setting `s3_load_table_anonymously_if_credentials_restricted`.
     configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
 
+    /// Only a user-issued `CREATE` may apply the `file_like_engine_default_partition_strategy`
+    /// default; ATTACH / startup / RESTORE / replicated-DDL replay must load pre-existing
+    /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
+    configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
+
     /// Server-internal log-pipeline object storage tables live in the `system` database and are named
     /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
     /// safe internal marker. These tables must never abort server startup when server-managed credentials are
@@ -440,7 +445,8 @@ ENGINE = S3(
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
-           'CSV')
+           'CSV',
+           partition_strategy='wildcard')
 PARTITION BY column3
 ```
 
