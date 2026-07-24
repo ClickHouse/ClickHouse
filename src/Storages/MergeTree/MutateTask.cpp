@@ -2294,6 +2294,9 @@ private:
                     auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
                     hardlinked_files.insert(file_name_with_projection_prefix);
                 }
+
+                ctx->new_data_part->getDataPartStorage().commitTransaction();
+                ctx->new_data_part->getDataPartStorage().beginTransaction();
             }
         }
 
@@ -2599,6 +2602,9 @@ private:
                         hardlinked_files.insert(file_name_with_projection_prefix);
                     }
                 }
+
+                ctx->new_data_part->getDataPartStorage().commitTransaction();
+                ctx->new_data_part->getDataPartStorage().beginTransaction();
             }
         }
 
