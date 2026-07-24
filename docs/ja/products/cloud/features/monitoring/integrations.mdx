@@ -8,22 +8,75 @@ doc_type: 'guide'
 ---
 
 import CommunityMonitoring from '/snippets/ja/_community_monitoring.mdx';
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <div id="direct-datadog">
-  ## Datadog との直接インテグレーション
+  ## Datadogインテグレーション
 </div>
 
-Datadog は、システムテーブルを直接クエリする ClickHouse 監視プラグインをエージェント向けに提供しています。このインテグレーションにより、`clusterAllReplicas` 機能を通じてクラスターを認識した包括的なデータベース監視が可能になります。
+DatadogでClickHouseのデプロイメントを監視するために、ClickHouseでは、さまざまなデプロイメントモードに対応した複数のインテグレーションを提供しています。それぞれに利点とトレードオフがあり、ClickHouseが提供するものもあれば、Datadogが提供するものもあります。以下のインテグレーションは推奨順に並んでいます。
 
-<Warning>
-  **ClickHouse Cloud では非推奨**
+| インテグレーション                                                                                 | ドキュメント                                                                                         | デプロイメント     | シグナル              |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | ----------------- |
+| [ClickHouse Cloud Datadog APIインテグレーション](#clickhouse-cloud-datadog-api-integration) *(推奨)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | メトリクス             |
+| [ClickHouse Cloud Prometheusインテグレーション](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/integrations/prometheus)                                                | Cloud       | メトリクス             |
+| [ClickHouse Datadog Agentインテグレーション](#clickhouse-datadog-agent-integration)                | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | ログ、メトリクス          |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                         | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | ログ、メトリクス、クエリインサイト |
 
-  システムテーブルをクエリする Datadog エージェントの直接インテグレーションは、コスト最適化のためのアイドル動作と互換性がなく、Cloud のプロキシレイヤーにも運用上の制約があるため、ClickHouse Cloud へのデプロイには推奨されません。
-</Warning>
+<div id="clickhouse-cloud-datadog-api-integration">
+  ### ClickHouse Cloud Datadog API インテグレーション
+</div>
 
-代わりに、Datadog の [Agent](https://docs.datadoghq.com/agent/?tab=Linux) と [OpenMetrics インテグレーション](https://docs.datadoghq.com/integrations/openmetrics/) を使用して、ClickHouse Cloud の Prometheus エンドポイントからメトリクスを収集してください。この方法であれば、サービスのアイドル動作を尊重しつつ、監視ワークロードと本番ワークロードの運用上の分離を維持できます。設定方法については、[Datadog の Prometheus および OpenMetrics インテグレーション のドキュメント](https://docs.datadoghq.com/integrations/openmetrics/) を参照してください。
+<PrivatePreviewBadge />
 
-Prometheus エンドポイントの設定の詳細については、[Prometheus インテグレーション ページ](/ja/products/cloud/features/monitoring/prometheus#integrating-with-datadog)を参照してください。
+Datadog で ClickHouse Cloud のサービスレベルのメトリクスを利用するには、この方法が推奨されます。
+
+Datadog アカウントを ClickHouse Cloud に OAuth ハンドシェイクで接続します (Datadog のインテグレーションタイルにある **Connect Accounts**) 。その後、ClickHouse Cloud がサービスレベルのメトリクスを Datadog にプッシュするため、Datadog がサービスを直接ポーリングする必要はありません。
+
+* **Cloud のみ** — OSS 版 ClickHouse には適していません
+* メトリクスは Datadog でカスタムメトリクスとしては扱われません
+* サービスがアイドル状態になるのを防ぐものではありません
+* あらかじめ設定されたダッシュボードとモニターが付属します
+
+オンボーディング手順については、[Datadog の ClickHouse Cloud インテグレーションガイド](https://docs.datadoghq.com/integrations/clickhouse-cloud/) を参照してください。
+
+<div id="clickhouse-cloud-prometheus-integration">
+  ### ClickHouse Cloud Prometheus インテグレーション
+</div>
+
+ClickHouse Cloud からサービスレベルおよび組織レベルのテレメトリーを収集する、最も一般的で汎用性の高い方法です。
+
+Datadog Agent を [OpenMetrics インテグレーション](https://docs.datadoghq.com/integrations/openmetrics/)で設定し、ClickHouse Cloud API を定期的にポーリングしてメトリクスを収集します。設定の詳細については、[Prometheus インテグレーションのページ](/integrations/prometheus#integrating-with-datadog)を参照してください。
+
+* **Cloud のみ** — OSS 版 ClickHouse には適していません
+* メトリクスは Datadog で **カスタムメトリクス** として扱われます
+* サービスが**アイドル状態になる**のを防ぐものではありません
+
+<div id="clickhouse-datadog-agent-integration">
+  ### ClickHouse Datadog Agentインテグレーション
+</div>
+
+OSS版ClickHouseサービスからDatadogにデータを取り込む、最も一般的な方法です。いくつか注意点はありますが、ClickHouse Cloudでも利用できます。
+
+Datadog Agentは定期的にClickHouseインスタンスをポーリングし、メトリクスとログを収集します。このインテグレーションには、あらかじめ設定されたダッシュボード一式が付属しています。
+
+**OSS ClickHouse:** ログとメトリクスを完全にサポート。
+
+**ClickHouse Cloud (部分サポート) :**
+
+* メトリクスのみ — ログはサポートされていません
+* `datadog-agent` ではなく `datadog-cluster-agent` が必要
+* **サービスがアイドル状態に移行しなくなります**
+
+<div id="clickhouse-datadog-dbm">
+  ### ClickHouse Datadog DBM
+</div>
+
+ClickHouse 向けの Database Monitoring (DBM) は、Datadog が開発・保守しています。Datadog Agent を設定して ClickHouse インスタンスからシステムテーブルのデータを収集することで動作し、ClickHouse Cloud Console がネイティブで提供するものと同様に、クエリレベルのパフォーマンス分析情報を得られます。ClickHouse はこのインテグレーションには関与していないため、問題がある場合は ClickHouse ではなく Datadog にお問い合わせください。
+
+* メトリクスは無料です。ログとシステムテーブルデータのインジェストには追加料金がかかります
+* **OSS ClickHouse:** 完全対応
+* **ClickHouse Cloud (部分対応) :** `datadog-agent` ではなく `datadog-cluster-agent` が必要です。**サービスがアイドル状態になるのを防ぎます**
 
 <CommunityMonitoring />
 
@@ -33,4 +86,4 @@ Prometheus エンドポイントの設定の詳細については、[Prometheus 
 
 Billing &amp; Usage API を使用すると、Cloud 組織の請求および使用状況の記録にプログラム経由でアクセスできます。これは、カスタムのコスト監視ダッシュボードを構築したり、請求データを既存の財務レポートのワークフローに統合したりする場合に役立ちます。
 
-API リファレンスの詳細については、[請求 API ドキュメント](/ja/api-reference/organization/get-list-of-available-organizations#tag/Billing)を参照してください。
+API リファレンスの詳細については、[請求 API ドキュメント](/ja/products/cloud/api-reference/billing/get-organization-usage-costs)を参照してください。

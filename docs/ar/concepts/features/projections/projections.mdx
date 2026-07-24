@@ -211,10 +211,10 @@ WHERE query_id='<query_id>'
 ```
 
 <div id="using-projections-to-speed-up-UK-price-paid">
-  ### استخدام الإسقاطات لتسريع استعلامات أسعار العقارات المدفوعة في المملكة المتحدة
+  ### استخدام الإسقاط لتسريع استعلامات أسعار العقارات المدفوعة في المملكة المتحدة
 </div>
 
-لتوضيح كيف يمكن استخدام الإسقاطات لتسريع أداء الاستعلامات، دعونا
+لتوضيح كيف يمكن استخدام الإسقاط لتسريع أداء الاستعلامات، دعونا
 نلقِ نظرة على مثال يستخدم مجموعة بيانات من الواقع. في هذا المثال سنستخدم
 الجدول من دليلنا العملي [UK Property Price Paid](/ar/get-started/sample-datasets/uk-price-paid)
 والذي يحتوي على 30.03 مليون صف. هذه المجموعة من البيانات متاحة أيضًا ضمن بيئة
@@ -264,7 +264,7 @@ ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-لنرَ ما إذا كان بإمكاننا تسريع هذا الاستعلام باستخدام projections.
+لنرَ ما إذا كان بإمكاننا تسريع هذا الاستعلام باستخدام الإسقاط.
 
 للحفاظ على الجدول والنتائج الأصليين، سننشئ جدولًا جديدًا وننسخ البيانات باستخدام `INSERT INTO SELECT`:
 
@@ -707,6 +707,6 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
   ## محتوى ذو صلة
 </div>
 
-* [مقدمة عملية عن الفهارس الأولية في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [مقدمة عملية عن الفهارس الأساسية في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [العروض المادية](/ar/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/ar/reference/statements/alter/projection)
