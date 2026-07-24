@@ -526,6 +526,57 @@ function reset()
     assert_eq('structural leave before rebuild: the entry stays clean after the rebuild bails', left_entry_after.url.includes('param_x'), false);
     assert_eq('structural leave before rebuild: the target tab is unaffected', active().query, 'SELECT 42');
 
+    /// A placeholder-removing edit made while the tab's OWN restore is still pending (a
+    /// Back/Forward re-activation: the tab's entry is already current, and `restoreEditor` is
+    /// awaiting tokenization), followed by a structural leave before the restore commits: the
+    /// live `param_*` inputs are unsafe to read in that window (they still hold the previous
+    /// tab's values), but the tab-owned snapshot must still be pruned against the captured text —
+    /// otherwise the entry written for the left tab pairs the new draft with the saved binding of
+    /// the removed placeholder (`/play?param_y=2#SELECT ...`), and the activation that follows
+    /// supersedes both the restore's tail and the edit's rebuild, so nothing repairs it. A
+    /// placeholder that SURVIVES the edit must keep its saved binding (conservative scan).
+    reset();
+    await run('SELECT 1');
+    const home_tab = active();
+    const revisit_tab = sandbox.makeTab();
+    revisit_tab.query = 'SELECT {y:Int32}, {z:Int32}';
+    revisit_tab.params = { y: '2', z: '3' };
+    sandbox.tabs.push(revisit_tab);
+    await sandbox.switchToTab(revisit_tab.id);             /// first visit: entry created, restore committed
+    await sandbox.switchToTab(home_tab.id);                /// leave normally: a forward entry for the home tab
+    const revisit_idx = sandbox.history.stack.findIndex(e => e.state && e.state.tabId === revisit_tab.id);
+    sandbox.history.idx = revisit_idx;                     /// emulate Back: the tab's entry is current again
+    sandbox.history._sync();
+    sandbox.tokenize = async q =>
+    {
+        const hold = tokenize_hold;                        /// captured at CALL time, per tokenization
+        const tokens = await real_tokenize(q);
+        if (hold) await hold;
+        return tokens;
+    };
+    let release_revisit_restore;
+    tokenize_hold = new Promise(resolve => { release_revisit_restore = resolve; });
+    const pending_revisit = sandbox.activateTab(revisit_tab.id);   /// what the popstate handler kicks off; held
+    let release_revisit_edit;
+    tokenize_hold = new Promise(resolve => { release_revisit_edit = resolve; });
+    const revisit_edit = type('SELECT {z:Int32}');         /// removes y mid-restore; rebuild gated
+    tokenize_hold = null;                                  /// the leave's own activation must not be gated
+    await sandbox.switchToTab(home_tab.id);                /// structural leave during the pending restore
+    const revisit_entry = sandbox.history.stack[revisit_idx];
+    assert_params('leave during pending restore: the capture prunes the removed saved binding', revisit_tab.params, { z: '3' });
+    assert_eq('leave during pending restore: no stale param_y in the left tab\'s entry', revisit_entry.url.includes('param_y'), false);
+    assert_eq('leave during pending restore: the surviving saved binding stays in the entry', revisit_entry.url.includes('param_z=3'), true);
+    assert_eq('leave during pending restore: the entry carries the new draft', revisit_entry.state.query, 'SELECT {z:Int32}');
+    release_revisit_restore();                             /// the superseded restore's tail bails
+    release_revisit_edit();                                /// the superseded rebuild bails
+    await pending_revisit;
+    await revisit_edit;
+    await drain();
+    sandbox.tokenize = real_tokenize;
+    assert_params('leave during pending restore: the superseded tails leave the pruned map', revisit_tab.params, { z: '3' });
+    assert_eq('leave during pending restore: the entry stays clean after the tails bail', sandbox.history.stack[revisit_idx].url.includes('param_y'), false);
+    assert_eq('leave during pending restore: the home tab is restored intact', active().query, 'SELECT 1');
+
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
 EOF

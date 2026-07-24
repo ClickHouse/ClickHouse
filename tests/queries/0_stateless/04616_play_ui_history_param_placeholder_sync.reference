@@ -51,4 +51,11 @@ structural leave before rebuild: the diverged draft has no run=1
 structural leave before rebuild: the superseded rebuild leaves the pruned map
 structural leave before rebuild: the entry stays clean after the rebuild bails
 structural leave before rebuild: the target tab is unaffected
+leave during pending restore: the capture prunes the removed saved binding
+leave during pending restore: no stale param_y in the left tab's entry
+leave during pending restore: the surviving saved binding stays in the entry
+leave during pending restore: the entry carries the new draft
+leave during pending restore: the superseded tails leave the pruned map
+leave during pending restore: the entry stays clean after the tails bail
+leave during pending restore: the home tab is restored intact
 OK

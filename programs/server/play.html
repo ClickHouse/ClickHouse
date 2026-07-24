@@ -7911,11 +7911,13 @@ function captureActiveTab() {
     /// While an activation is restoring this tab's parameter inputs (after the `updateQueryParams`
     /// await in `restoreEditor`, before `setParamValues`), the `param_*` DOM inputs still hold the
     /// previously active tab's values. Snapshotting them now would overwrite this tab's own
-    /// parameters with the previous tab's. Skip the capture until a restore commits (which nulls
-    /// the token); `tab.query` is safe (set before the await). A run that supersedes the restore
-    /// keeps the guard armed only until that restore's tail commits (its tail runs even when a
-    /// same-tab run superseded the activation, so the guard is not latched indefinitely); a switch
-    /// to another tab hands the guard to that tab's own restore.
+    /// parameters with the previous tab's, so in that window the tab-owned snapshot (`tab.params`)
+    /// is the only safe source; `tab.query` is always safe (set before the await, kept in sync by
+    /// `onQueryInput` for edits made during it). A run that supersedes the restore keeps the guard
+    /// armed only until that restore's tail commits (its tail runs even when a same-tab run
+    /// superseded the activation, so the guard is not latched indefinitely, and it overwrites
+    /// `tab.params` wholesale, so a capture taken during the window cannot outlive the restore);
+    /// a switch to another tab hands the guard to that tab's own restore.
     ///
     /// The live `param_*` inputs can also lag the editor TEXT: an edit that removes a placeholder
     /// updates `tab.query` synchronously (`onQueryInput`), but the input is only removed by the
@@ -7926,15 +7928,18 @@ function captureActiveTab() {
     /// so nothing repairs the stale entry afterwards. Prune the snapshot against the text just
     /// captured, with the same conservative scan `saveHistory` uses for its rebuild race
     /// (`queryMentionsParam`): a binding is dropped only when its placeholder is certainly gone
-    /// from the text, which is exactly what the superseded rebuild would have concluded.
-    if (params_restore_pending_token === null) {
-        const values = getParamValues();
-        const pruned = {};
-        for (const name of Object.keys(values)) {
-            if (queryMentionsParam(tab.query, name)) pruned[name] = values[name];
-        }
-        tab.params = pruned;
+    /// from the text, which is exactly what the superseded rebuild would have concluded. The same
+    /// lag exists during the restore window (an edit that removed a placeholder before the restore
+    /// committed), so the tab-owned snapshot is pruned the same way there — otherwise a structural
+    /// write in that window would pair the new draft with the tab's saved binding for the removed
+    /// placeholder, and the activation that follows supersedes both the restore's tail and the
+    /// edit's rebuild, leaving the stale entry unrepaired.
+    const source = params_restore_pending_token === null ? getParamValues() : (tab.params || {});
+    const pruned = {};
+    for (const name of Object.keys(source)) {
+        if (queryMentionsParam(tab.query, name)) pruned[name] = source[name];
     }
+    tab.params = pruned;
 }
 
 /// Abort a tab's in-flight query (if any) and supersede its run generation so its late responses
