@@ -465,7 +465,7 @@ def test_system_queue_metadata(started_cluster, engine_name):
                 int,
                 node.query(
                     f"""
-                    SELECT processed_nodes, processing_nodes, failed_nodes
+                    SELECT processed_nodes_count, processing_nodes_count, failed_nodes_count
                     FROM {system_table}
                     WHERE zookeeper_path ilike '%{keeper_path}%'
                     """
@@ -491,7 +491,7 @@ def test_system_queue_metadata(started_cluster, engine_name):
             int,
             node.query(
                 f"""
-                SELECT length(processed), length(processing), length(failed)
+                SELECT length(processed_nodes), length(processing_nodes), length(failed_nodes)
                 FROM {system_table}
                 WHERE zookeeper_path ilike '%{keeper_path}%'
                 """
@@ -508,7 +508,7 @@ def test_system_queue_metadata(started_cluster, engine_name):
     # which includes its path.
     failed_value = node.query(
         f"""
-        SELECT arrayJoin(mapValues(failed))
+        SELECT arrayJoin(mapValues(failed_nodes))
         FROM {system_table}
         WHERE zookeeper_path ilike '%{keeper_path}%'
         """
@@ -552,13 +552,14 @@ def test_system_queue_metadata_ordered(started_cluster):
         time.sleep(1)
     assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    # In ordered mode there are no per-file processed nodes, so processed_nodes
-    # is NULL and the last processed pointer is exposed via processed_path.
+    # In ordered mode there are no per-file processed nodes, so
+    # processed_nodes_count is NULL and the last processed pointer is exposed
+    # via processed_path.
     assert (
         "1"
         == node.query(
             f"""
-            SELECT processed_nodes IS NULL
+            SELECT processed_nodes_count IS NULL
             FROM system.s3_queue_metadata
             WHERE zookeeper_path ilike '%{keeper_path}%'
             """
@@ -571,7 +572,7 @@ def test_system_queue_metadata_ordered(started_cluster):
             int,
             node.query(
                 f"""
-                SELECT processing_nodes, failed_nodes
+                SELECT processing_nodes_count, failed_nodes_count
                 FROM system.s3_queue_metadata
                 WHERE zookeeper_path ilike '%{keeper_path}%'
                 """
@@ -641,12 +642,12 @@ def test_system_queue_metadata_ordered_buckets(started_cluster):
         time.sleep(1)
     assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    # processed_nodes is NULL in ordered mode.
+    # processed_nodes_count is NULL in ordered mode.
     assert (
         "1"
         == node.query(
             f"""
-            SELECT processed_nodes IS NULL
+            SELECT processed_nodes_count IS NULL
             FROM system.s3_queue_metadata
             WHERE zookeeper_path ilike '%{keeper_path}%'
             """
@@ -729,12 +730,12 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
         time.sleep(1)
     assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    # processed_nodes is NULL in ordered mode.
+    # processed_nodes_count is NULL in ordered mode.
     assert (
         "1"
         == node.query(
             f"""
-            SELECT processed_nodes IS NULL
+            SELECT processed_nodes_count IS NULL
             FROM system.s3_queue_metadata
             WHERE zookeeper_path ilike '%{keeper_path}%'
             """
@@ -831,12 +832,12 @@ def test_system_queue_metadata_ordered_partitioned_buckets(started_cluster):
         time.sleep(1)
     assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    # processed_nodes is NULL in ordered mode.
+    # processed_nodes_count is NULL in ordered mode.
     assert (
         "1"
         == node.query(
             f"""
-            SELECT processed_nodes IS NULL
+            SELECT processed_nodes_count IS NULL
             FROM system.s3_queue_metadata
             WHERE zookeeper_path ilike '%{keeper_path}%'
             """
@@ -997,5 +998,88 @@ def test_system_queue_metadata_auxiliary_keeper(started_cluster):
         """
     )
     assert files_path in processed_path_value
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_reads_only_selected_columns(started_cluster):
+    # The map columns are documented as "fetched only when this column is
+    # selected". Verify that against the keeper request counters: selecting only
+    # `zookeeper_path` issues no folder reads, selecting only the `*_count`
+    # columns issues a cheap `exists` stat (no listing, no data reads), and
+    # selecting a map column lists the folder's children.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_reads_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 5
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+    for _ in range(60):
+        if files_to_generate == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    where = f"WHERE zookeeper_path ilike '%{keeper_path}%'"
+
+    def keeper_ops(columns):
+        # Run the query with a unique id and read the ZooKeeper request counters
+        # it accumulated from query_log. `list` = getChildren (listing a folder),
+        # `read` = data reads (single or batched get), `exists` = stat only.
+        query_id = f"{table_name}_{generate_random_string()}"
+        node.query(
+            f"SELECT {columns} FROM system.s3_queue_metadata {where}",
+            query_id=query_id,
+        )
+        node.query("SYSTEM FLUSH LOGS")
+        row = (
+            node.query(
+                f"""
+                SELECT
+                    ProfileEvents['ZooKeeperList'],
+                    ProfileEvents['ZooKeeperMultiRead'] + ProfileEvents['ZooKeeperGet'],
+                    ProfileEvents['ZooKeeperExists']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1
+                """
+            )
+            .strip()
+            .split("\t")
+        )
+        return dict(zip(("list", "read", "exists"), map(int, row)))
+
+    # Only `zookeeper_path` (served from the in-memory factory): no folder reads.
+    ops = keeper_ops("zookeeper_path")
+    assert ops["list"] == 0, ops
+    assert ops["read"] == 0, ops
+    assert ops["exists"] == 0, ops
+
+    # Only the `*_count` columns: a cheap `exists` per folder, but no child
+    # listing and no data reads.
+    ops = keeper_ops("processed_nodes_count, processing_nodes_count, failed_nodes_count")
+    assert ops["exists"] >= 1, ops
+    assert ops["list"] == 0, ops
+    assert ops["read"] == 0, ops
+
+    # A map column must list the folder's children (and read their data).
+    ops = keeper_ops("processed_nodes")
+    assert ops["list"] >= 1, ops
 
     node.query(f"DROP TABLE {table_name} SYNC")
