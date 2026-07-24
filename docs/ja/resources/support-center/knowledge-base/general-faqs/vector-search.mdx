@@ -25,51 +25,47 @@ keywords: ['ベクトル検索']
 
 以下では、ベクトル検索に ClickHouse を使う方法を簡単なチュートリアルで紹介します。
 
-<div id="1-create-embeddings">
-  ## 1. 埋め込みベクトル を作成する
-</div>
+<Steps>
+  <Step title="埋め込みを作成する">
+    データ (ドキュメント、イメージ、または構造化データ) は、*埋め込み* に変換する必要があります。埋め込みの作成には、[OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) またはオープンソースの Python ライブラリ [SentenceTransformers](https://www.sbert.net/) を使用することを推奨します。
 
-データ (ドキュメント、画像、または構造化データ) は、*埋め込みベクトル* に変換する必要があります。埋め込みベクトル の作成には、[OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) またはオープンソースの Python ライブラリ [SentenceTransformers](https://www.sbert.net/) を使用することをおすすめします。
+    埋め込みは、データを表す多数の浮動小数点数の配列と考えることができます。詳しくは、[埋め込みについて詳しく学べる OpenAI のガイド](https://developers.openai.com/api/docs/guides/embeddings) を参照してください。
+  </Step>
 
-埋め込み は、データを表現する多数の浮動小数点数の配列だと考えることができます。埋め込みベクトル の詳細については、[OpenAI のこちらのガイドをご覧ください](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings)。
+  <Step title="埋め込みを保存する">
+    埋め込みを生成したら、それらを ClickHouse に保存する必要があります。各埋め込みは個別の行に保存し、フィルタリング、集計、分析のためのメタデータを含めることができます。以下は、キャプション付きのイメージを保存できるテーブルの例です。
 
-<div id="2-store-the-embeddings">
-  ## 2. 埋め込みベクトルを保存する
-</div>
+    ```sql
+    CREATE TABLE images
+    (
+    	`_file` LowCardinality(String),
+    	`caption` String,
+    	`image_embedding` Array(Float32)
+    )
+    ENGINE = MergeTree;
+    ```
+  </Step>
 
-埋め込みベクトルを生成したら、それらを ClickHouse に保存する必要があります。各埋め込みベクトルは個別の行に保存し、フィルタリング、集計、分析に使用するメタデータを含めることもできます。以下は、キャプション付き画像を保存できるテーブルの例です。
+  <Step title="関連する埋め込みを検索する">
+    データセット内で犬の写真を検索したいとします。`cosineDistance` のような距離関数を使えば、犬のイメージの埋め込みを使って、関連するイメージを検索できます。
 
-```sql
-CREATE TABLE images
-(
-	`_file` LowCardinality(String),
-	`caption` String,
-	`image_embedding` Array(Float32)
-)
-ENGINE = MergeTree;
-```
+    ```sql
+    SELECT
+        _file,
+    	caption,
+    	cosineDistance(
+            -- 入力した犬の写真の埋め込み
+            [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+            image_embedding
+        ) AS score
+    FROM images
+    ORDER BY score ASC
+    LIMIT 10
+    ```
 
-<div id="3-search-for-related-embeddings">
-  ## 3. 関連する埋め込みベクトルを検索する
-</div>
-
-データセット内の犬の画像を検索したいとします。`cosineDistance` のような距離関数を使って犬の画像の埋め込みを取得し、関連する画像を検索できます。
-
-```sql
-SELECT
-    _file,
-	caption,
-	cosineDistance(
-        -- 「入力」犬画像の埋め込み
-        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
-        image_embedding
-    ) AS score
-FROM images
-ORDER BY score ASC
-LIMIT 10
-```
-
-このクエリは、指定した犬の画像に最も関連性が高いと考えられる上位10件の画像の`_file`名と`caption`を返します。
+    このクエリは、指定した犬のイメージに関連している可能性が最も高い上位 10 件のイメージについて、`_file` 名と `caption` を返します。
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## 参考資料
