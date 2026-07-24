@@ -181,9 +181,14 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     /// `format_csv_allow_single_quotes` is disabled (the default), so the native single-quoted form is
     /// dispatched to the quoted serialization for them. Other scalar types (numbers, dates, `UUID`, ...)
     /// handle both quote kinds in `deserializeTextCSV` itself, and their `deserializeTextQuoted` would
-    /// reject quotes, so they always take the CSV branch. For `Nullable` types, an element starting with
-    /// `N`/`n` is dispatched to the quoted serialization, which recognizes the `NULL` keyword of the native
-    /// form with rollback (and otherwise falls through to the nested quoted parse, e.g. `NaN` for floats).
+    /// reject quotes, so they always take the CSV branch. For `Nullable` types with a non-string-like
+    /// nested type, an element starting with `N`/`n` is dispatched to the quoted serialization, which
+    /// recognizes the `NULL` keyword of the native form with rollback (and otherwise falls through to the
+    /// nested quoted parse, e.g. `NaN` for floats); the released CSV element parse rejected `NULL`/`null`
+    /// for these types, so this is purely additive. String-like `Nullable` arguments must NOT take that
+    /// dispatch: the released CSV element parse accepted arbitrary unquoted words as string values,
+    /// including ones starting with `N`/`n` (`[NaN,"a"]` produced the string 'NaN', and `[NULL,"a"]`
+    /// produced the STRING 'NULL', not a null), so they always take the CSV branch too.
     const auto unwrapped_type = removeNullable(removeLowCardinality(value_type));
     const bool quoted_form_is_string = isStringOrFixedString(unwrapped_type) || isEnum(unwrapped_type);
     const bool is_nullable = value_type->isNullable() || value_type->isLowCardinalityNullable();
@@ -202,7 +207,7 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
         }
         first = false;
         const char first_char = istr.eof() ? 0 : *istr.position();
-        if ((quoted_form_is_string && first_char == '\'') || (is_nullable && (first_char == 'N' || first_char == 'n')))
+        if ((quoted_form_is_string && first_char == '\'') || (!quoted_form_is_string && is_nullable && (first_char == 'N' || first_char == 'n')))
             elem_serialization->deserializeTextQuoted(*tmp_column, istr, settings);
         else
             elem_serialization->deserializeTextCSV(*tmp_column, istr, settings);
