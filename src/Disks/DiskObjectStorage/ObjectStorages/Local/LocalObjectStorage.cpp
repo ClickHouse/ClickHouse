@@ -56,13 +56,20 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
-    auto norm_base = fs::weakly_canonical(fs::path(base_path).lexically_normal());
+    auto configured_base = fs::path(base_path).lexically_normal();
 
-    if (fileOrSymlinkPathStartsWith(path, norm_base.string()) && pathStartsWith(path, norm_base.string()))
-        return path;
+    auto is_inside = [&](const String & candidate)
+    {
+        return fileOrSymlinkPathStartsWith(candidate, configured_base.string())
+            && pathStartsWith(candidate, configured_base.string());
+    };
 
-    auto combined = (norm_base / path).lexically_normal().string();
-    if (fileOrSymlinkPathStartsWith(combined, norm_base.string()) && pathStartsWith(combined, norm_base.string()))
+    auto norm_path = fs::path(path).lexically_normal().string();
+    if (is_inside(norm_path))
+        return norm_path;
+
+    auto combined = (configured_base / path).lexically_normal().string();
+    if (is_inside(combined))
         return combined;
 
     auto path_canonical = fs::weakly_canonical(fs::path(path).lexically_normal());
@@ -71,7 +78,7 @@ String resolvePathRelativelyToBase(const String & path, const String & base_path
         "Path `{}` which was canonicalized to `{}` is outside the table path directory : `{}`",
         path,
         path_canonical.string(),
-        norm_base.string());
+        configured_base.string());
 }
 
 String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path) const
