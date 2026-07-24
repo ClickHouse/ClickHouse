@@ -7,10 +7,12 @@
 #include <IO/SilkFiberJob.h>
 #include <IO/SilkFiberStreamSocketImpl.h>
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
+#include <IO/SocketPeerClosed.h>
 #include <IO/tests/gtest_silk_environment.h>
 
 #include <Common/Exception.h>
 #include <Common/SilkThrottler.h>
+#include <Common/Stopwatch.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
 
 #include <silk/fibers/fiber.h>
@@ -291,6 +293,79 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 
     client_future.wait();
     peer.close();
+}
+
+
+/// Secure-only: the bug is TLS-specific (`silkBioRead`/`silkBioWrite` ignoring `O_NONBLOCK`
+/// surfaces through `SSL_peek`, not through a raw, BIO-less socket read). Reuses the
+/// `SecurePolicy policy` member from the typed fixture rather than redeclaring it.
+using SilkFiberSecureSocketTest = SilkFiberSocketTest<SecurePolicy>;
+
+
+TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
+{
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        uint64_t * elapsed_us;
+        DB::SocketState * state;
+    };
+
+    uint64_t elapsed_us = 0;
+    DB::SocketState state = DB::SocketState::Closed;
+
+    silk::FiberFuture client_future;
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
+        {
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
+
+            /// Drive the TLS handshake to completion and drain the exchange, so that by the time
+            /// of the probe below the connection is idle: alive, but with nothing pending.
+            socket.sendBytes("x", 1);
+            char pong[1] = {};
+            EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+
+            /// A long receive timeout. Pre-fix, `silkBioRead` ignores `O_NONBLOCK` and always
+            /// parks the caller in a fiber wait up to this timeout, so a slow probe below proves
+            /// the bug; a fast one proves the fix.
+            socket.setReceiveTimeout(Poco::Timespan(5, 0));
+
+            /// The actual production sequence (`DB::getSocketState(StreamSocket)`, the core of the
+            /// connection pool's staleness check in `HTTPConnectionPool.cpp`): it flips the fd
+            /// non-blocking with a raw `fcntl` - not `Socket::setBlocking`, which silk sockets
+            /// reject - and calls `SSL_peek`, which reaches OpenSSL's socket BIO, i.e. `silkBioRead`.
+            Stopwatch watch;
+            *p->state = DB::getSocketState(socket);
+            *p->elapsed_us = watch.elapsedMicroseconds();
+
+            socket.close();
+            return 0;
+        },
+        Params{port, policy.makeClient(), &elapsed_us, &state},
+        &client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char ping[1] = {};
+    ASSERT_EQ(peer.receiveBytes(ping, sizeof(ping)), 1);
+    peer.sendBytes("y", 1);
+
+    /// Keep `peer` connected and silent until the probe above has run, so the connection is
+    /// genuinely idle (alive, no pending data) rather than closed.
+    client_future.wait();
+    peer.close();
+
+    EXPECT_EQ(state, DB::SocketState::Idle);
+    EXPECT_LT(elapsed_us, 500'000U)
+        << "getSocketState() took " << elapsed_us
+        << "us: silkBioRead ignored O_NONBLOCK and blocked on the receive timeout instead of "
+           "returning EAGAIN immediately";
 }
 
 
