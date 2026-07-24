@@ -38,16 +38,18 @@ EXPLAIN header = 1 SELECT tupleElement(n, 1) FROM t_nested ARRAY JOIN n ORDER BY
 DROP TABLE t_nested;
 
 -- General case: ARRAY JOIN with two independent arrays, only one used.
+-- The unused array a is NOT pruned: a and b must have equal per-row sizes, which is validated at
+-- execution, so a is retained to keep that check (issue #111747).
 DROP TABLE IF EXISTS t_two_arrays;
 CREATE TABLE t_two_arrays (a Array(Int64), b Array(Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_two_arrays VALUES ([1, 2], [3, 4]);
 
 SELECT b FROM t_two_arrays ARRAY JOIN a, b ORDER BY b;
 
--- Verify: column a should be pruned from ARRAY JOIN, only b remains.
+-- Verify: both a and b remain in the ARRAY JOIN so their sizes are validated.
 EXPLAIN QUERY TREE SELECT b FROM t_two_arrays ARRAY JOIN a, b ORDER BY b;
 
--- Verify with EXPLAIN header=1 that only b is read from storage.
+-- Verify with EXPLAIN header=1 that both a and b are read from storage.
 EXPLAIN header = 1 SELECT b FROM t_two_arrays ARRAY JOIN a, b ORDER BY b;
 
 DROP TABLE t_two_arrays;

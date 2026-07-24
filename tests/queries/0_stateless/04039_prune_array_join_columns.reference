@@ -219,15 +219,18 @@ QUERY id: 0
       TABLE EXPRESSION
         TABLE id: 4, alias: __table2, table_name: default.t_two_arrays
       JOIN EXPRESSIONS
-        LIST id: 5, nodes: 1
-          COLUMN id: 6, alias: __array_join_exp_2, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Int64, source_id: 3
             EXPRESSION
-              COLUMN id: 7, column_name: b, result_type: Array(Int64), source_id: 4
+              COLUMN id: 7, column_name: a, result_type: Array(Int64), source_id: 4
+          COLUMN id: 8, alias: __array_join_exp_2, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+            EXPRESSION
+              COLUMN id: 9, column_name: b, result_type: Array(Int64), source_id: 4
   ORDER BY
-    LIST id: 8, nodes: 1
-      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+    LIST id: 10, nodes: 1
+      SORT id: 11, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION b
-          COLUMN id: 10, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+          COLUMN id: 12, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
 Expression (Project names)
 Header: b Int64
   Sorting (Sorting for ORDER BY)
@@ -235,8 +238,11 @@ Header: b Int64
     Expression ((Before ORDER BY + Projection))
     Header: __array_join_exp_2 Int64
       ArrayJoin (ARRAY JOIN)
-      Header: __array_join_exp_2 Int64
+      Header: __array_join_exp_1 Int64
+              __array_join_exp_2 Int64
         Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
-        Header: __array_join_exp_2 Array(Int64)
+        Header: __array_join_exp_1 Array(Int64)
+                __array_join_exp_2 Array(Int64)
           ReadFromMergeTree (default.t_two_arrays)
-          Header: b Array(Int64)
+          Header: a Array(Int64)
+                  b Array(Int64)

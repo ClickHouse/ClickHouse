@@ -1,0 +1,12 @@
+Mismatched sizes: every projection must throw, matching SELECT *
+Matching sizes: count() and projection are unchanged
+3
+x
+y
+z
+3
+Single-array ARRAY JOIN is unaffected
+3
+x
+y
+z

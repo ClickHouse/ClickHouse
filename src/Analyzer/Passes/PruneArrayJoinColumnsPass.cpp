@@ -46,8 +46,6 @@ struct ExpressionUsage
     std::vector<std::string> nested_subcolumn_names;
 
     bool hasNested() const { return !nested_subcolumn_names.empty(); }
-
-    bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
 
 /// Key: (ArrayJoinNode raw ptr, column name) → ExpressionUsage.
@@ -414,33 +412,12 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
 
         auto & join_expressions = array_join_node->getJoinExpressions().getNodes();
 
-        /// 3a: Remove entire unused ARRAY JOIN expressions.
-        {
-            QueryTreeNodes kept;
-            kept.reserve(join_expressions.size());
+        /// Whole unused ARRAY JOIN expressions must NOT be removed: a multi-expression aligned
+        /// ARRAY JOIN validates that all joined arrays have equal per-row sizes only at execution
+        /// (ArrayJoinResultIterator), so dropping an unused sibling would skip that check. Unused
+        /// nested() subcolumns are still pruned below; nested() validates the retained arguments.
 
-            for (auto & join_expr : join_expressions)
-            {
-                auto * column_node = join_expr->as<ColumnNode>();
-                if (!column_node)
-                {
-                    kept.push_back(std::move(join_expr));
-                    continue;
-                }
-
-                auto expr_it = expressions_usage.find(column_node->getColumnName());
-                if (expr_it == expressions_usage.end() || expr_it->second.isUsed())
-                    kept.push_back(std::move(join_expr));
-            }
-
-            /// Keep at least one expression to preserve row multiplication.
-            if (kept.empty() && !join_expressions.empty())
-                kept.push_back(std::move(join_expressions[0]));
-
-            join_expressions = std::move(kept);
-        }
-
-        /// 3b: Prune unused nested() subcolumn arguments.
+        /// Prune unused nested() subcolumn arguments.
         for (auto & join_expr : join_expressions)
         {
             auto * column_node = join_expr->as<ColumnNode>();
