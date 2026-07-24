@@ -18,6 +18,7 @@
 #include <Storages/MutationCommands.h>
 
 #include <memory>
+#include <mutex>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
@@ -211,6 +212,11 @@ protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
+    /// Resolve the deferred hive partitioning sample path. Requires listing the object storage.
+    void resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context);
+
+    VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -235,6 +241,10 @@ protected:
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+
+    /// Set only in the constructor when hive partitioning detection is deferred to the first use.
+    bool hive_partitioning_sample_path_deferred = false;
+    std::once_flag hive_partitioning_resolution_flag;
 
     LoggerPtr log;
 
