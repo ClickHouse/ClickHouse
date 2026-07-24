@@ -1264,19 +1264,44 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     if (deduplication_window != 0 && !disk->existsDirectory(logs_dir))
         disk->createDirectories(logs_dir);
 
-    /// While deduplication was disabled, the unfinished-compaction marker of a failed
-    /// compaction was deliberately left alone: load skips both the history replay and
-    /// the marker with a window of zero, keeping the marker for the next load with
-    /// deduplication enabled to act on. But re-enabling deduplication here would start
-    /// appending new records to exactly the stale files the marker fences off, and the
-    /// next restart would then discard those new records - covering committed inserts -
-    /// together with the stale ones. So act on the marker now, the same way a load with
-    /// deduplication enabled would have: discard the suspect history (and clear the
-    /// marker) before writing anything new. Only the disabled-to-enabled transition
-    /// needs this; while deduplication stays enabled a failed compaction's recovery is
-    /// handled precisely, per stale file, by prepareToWrite.
-    if (was_disabled && deduplication_window != 0)
-        discardHistoryAfterUnfinishedCompaction();
+    if (deduplication_window != 0)
+    {
+        /// This setter is the one path that can rotate the log or reopen a writer
+        /// without going through addPart or dropPart, which run prepareToWrite before
+        /// touching anything. Run the same recovery barrier here: retry neutralizing
+        /// the stale files a failed compaction left behind - after their cleanup
+        /// failed, compact tracks them only in the process-local pending set, not in
+        /// `existing_logs` - and clear the unfinished-compaction marker only once none
+        /// remains. Without this, the rotation below could reclaim the one pending
+        /// orphan slot (rotate rewrites `current_log_number + 1` and takes it off the
+        /// pending set) while the on-disk marker stayed active, so the next restart
+        /// would discard the records committed after this ALTER and wrongly accept -
+        /// and duplicate - their retries; and the re-enabling path below would clear
+        /// the marker through discardHistoryAfterUnfinishedCompaction while a stale
+        /// file it knows nothing of still held its content, so a restart before the
+        /// next operation would replay that file as ordinary history - resurrecting
+        /// block ids or forgetting committed ones. Fails closed - the ALTER throws and
+        /// can be retried - while the disk does not let the stale files be neutralized.
+        prepareToWrite();
+
+        /// While deduplication was disabled, the unfinished-compaction marker of a failed
+        /// compaction was deliberately left alone: load skips both the history replay and
+        /// the marker with a window of zero, keeping the marker for the next load with
+        /// deduplication enabled to act on. But re-enabling deduplication here would start
+        /// appending new records to exactly the stale files the marker fences off, and the
+        /// next restart would then discard those new records - covering committed inserts -
+        /// together with the stale ones. So act on the marker now, the same way a load with
+        /// deduplication enabled would have: discard the suspect history (and clear the
+        /// marker) before writing anything new. Only the disabled-to-enabled transition
+        /// needs this; while deduplication stays enabled a failed compaction's recovery is
+        /// handled precisely, per stale file, by prepareToWrite. The barrier above runs
+        /// first for the same-process transition: when the stale files are still known
+        /// precisely, they are neutralized (and the marker cleared) without discarding
+        /// the history, so this discard only fires when the marker was left by a previous
+        /// process, whose precise knowledge is gone.
+        if (was_disabled)
+            discardHistoryAfterUnfinishedCompaction();
+    }
 
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();

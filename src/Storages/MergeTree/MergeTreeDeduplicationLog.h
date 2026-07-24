@@ -349,11 +349,20 @@ private:
     /// records together with the stale ones. Discards a live `current_writer` along
     /// with the file it appends to and re-points `current_log_number` at the newest
     /// surviving file, so the caller can rotate to a fresh one.
+    /// Precondition: `orphan_logs_pending_neutralization` is empty. Only the files
+    /// registered in `existing_logs` are discarded here, so a stale file tracked only
+    /// in the pending set would survive with its content while the marker below is
+    /// cleared. Both callers guarantee it: load runs in a fresh process (the set is
+    /// process-local), and setDeduplicationWindowSize drains the set through
+    /// prepareToWrite before calling this.
     void discardHistoryAfterUnfinishedCompaction();
 
     /// Bring the log back to a writable, consistent state before an operation writes
     /// new records; called at the start of addPart and dropPart, before anything is
     /// written, so a throw here fails the operation cleanly and it can be retried.
+    /// Also called from setDeduplicationWindowSize - the one path that can rotate the
+    /// log or reopen a writer without an addPart or dropPart in front - before it
+    /// rotates, clears the marker, or discards history, for the same reason.
     /// Two kinds of damage from an earlier failure are repaired:
     /// - A file left behind by a failed compaction that could neither be removed nor
     ///   emptied (see neutralizeOrphanLog). Retry the neutralization; if it still
