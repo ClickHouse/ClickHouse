@@ -491,12 +491,13 @@ TEST_F(ResidencyEquivalence, TwoTierFoldMatchesExecutorGeometry)
     expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/SEGMENT / 2, "two-tier");
 }
 
-/// The EXTEND gate: a sequential stream crossing `plan_end` grows the plan in
-/// place instead of rebuilding it. The unaligned start makes the cold miss
-/// cells straddle the (unaligned) plan end, so every extension also exercises
-/// the straddle-cell dedup against the old entries' writers; the retention cap
-/// bounds the held span, so full rebuilds still happen - just 3x plan-window
-/// apart instead of every window.
+/// The EXTEND+SLIDE gate: a sequential stream crossing `plan_end` grows the
+/// plan in place instead of rebuilding it - ONE observation for the whole
+/// stream - while every extension slides the passed territory out, so the
+/// retained span (entries and held buffers) is bounded by the reuse reach
+/// plus the plan window, not by the stream length. The unaligned start makes
+/// the cold miss cells straddle the (unaligned) plan end, so every extension
+/// also exercises the straddle-cell dedup against the old entries' writers.
 TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
 {
     auto fc = makeFileCache("extend_gate");
@@ -523,14 +524,19 @@ TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
     ASSERT_EQ(served.size(), want);
     EXPECT_EQ(served, content.substr(start, want)) << "extended plans must serve the same bytes";
 
-    /// One observation per retention epoch (3x plan ceiling) instead of one per
-    /// plan window; the crossings in between are extensions.
+    /// One observation for the whole stream; every plan_end crossing extends.
     const size_t ceiling = std::max(WINDOW, PLAN_WINDOW);
-    const size_t epochs = (want + 3 * ceiling - 1) / (3 * ceiling);
-    const auto obs = inspect(executor).observationCount();
-    const auto ext = inspect(executor).extensionCount();
-    EXPECT_LE(obs, epochs + 1) << "plan_end crossings must extend, not rebuild";
-    EXPECT_GE(ext, 2 * epochs - 2) << "extensions must carry the crossings between rebuilds";
+    EXPECT_EQ(inspect(executor).observationCount(), 1u) << "plan_end crossings must extend, not rebuild";
+    EXPECT_GE(inspect(executor).extensionCount(), want / ceiling - 2)
+        << "extensions must carry the crossings";
+
+    /// The slide keeps the retained span bounded: plan_start follows the cursor
+    /// at the reuse reach, and the passed entries are released.
+    const auto snap = inspect(executor).planGeometry();
+    ASSERT_TRUE(snap);
+    EXPECT_GE(snap->plan_start, FILE_SIZE - MIN_BYTES_FOR_SEEK - ceiling - SEGMENT)
+        << "plan_start must slide behind the cursor";
+    EXPECT_LE(snap->entries.size(), 8u) << "released entries must not accumulate";
 }
 
 /// The REUSE gate: seeks landing inside the live plan span keep the plan and

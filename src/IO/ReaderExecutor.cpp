@@ -331,18 +331,14 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
         /// EXTEND vs RESTART: a contiguous-forward need - the cursor still inside
         /// (or at the end of) the live span, only more look-ahead wanted - grows
         /// the plan in place, keeping the held buffers, the bank and the fill-lane
-        /// epoch. Anything else (no plan, backward cursor) rebuilds from scratch.
-        /// The retention cap bounds the held buffers (readers pin segments,
-        /// writers hold cells) accumulated over the extended span until
-        /// release-behind trims them incrementally: past the cap, a rebuild
-        /// releases everything behind the cursor.
+        /// epoch; each extension also SLIDES the released territory out, so the
+        /// retained span stays bounded by the reuse reach plus the plan window.
+        /// Anything else (no plan, backward cursor) rebuilds from scratch.
         const auto & g = read_plan.geometry();
         const bool live_plan = g && g->plan_end > g->plan_start;
         const bool contiguous_forward = live_plan
             && position_phys >= g->plan_start && position_phys <= g->plan_end;
-        const bool within_retention = live_plan
-            && position_phys - g->plan_start < 3 * effectivePlanCeiling();
-        if (contiguous_forward && within_retention)
+        if (contiguous_forward)
             extendPlan(position_phys);
         else
             observeAndSchedule(position_phys);
@@ -2701,11 +2697,37 @@ void ReaderExecutor::extendPlan(size_t position_phys)
     /// so the extension publishes a NEW geometry - the old entries copied, the
     /// extension's appended - while `read_plan.tiers` grows in the same order,
     /// keeping the 1:1 positional mapping. Pressure is resampled per extension.
+    ///
+    /// SLIDE: entries the cursor has fully passed are released with the copy -
+    /// their hit readers drop (the view dtor runs the deferred LRU bumps) and
+    /// their writers finalize (complete-or-abandoned cells) - so the retained
+    /// span, not the stream length, bounds the held buffers. The release line
+    /// is the REUSE reach (`min_bytes_for_seek`): anything a near seek could
+    /// swing back to stays held; anything below it would RESTART anyway. A
+    /// partially-passed entry is kept whole. `plan_start` advances to the
+    /// line, so the reuse gate and `covers` refuse the released territory.
+    const size_t release_line
+        = position_phys > min_bytes_for_seek ? position_phys - min_bytes_for_seek : 0;
     auto geom = std::make_shared<CoverageMap>();
-    geom->plan_start = old_geom->plan_start;
+    geom->plan_start = std::min(std::max(old_geom->plan_start, release_line), position_phys);
     geom->plan_end = target_end;
     geom->pressure_level = memoryPressureMonitor().currentLevel();
-    geom->entries = old_geom->entries;
+    for (size_t i = 0; i < old_geom->entries.size(); ++i)
+    {
+        const auto & entry = old_geom->entries[i];
+        bool passed = true;
+        for (const auto & run : entry.resident)
+            passed = passed && run.end() <= release_line;
+        for (const auto & cell : entry.aligned_miss)
+            passed = passed && cell.end() <= release_line;
+        if (passed)
+            continue;
+        const size_t kept = geom->entries.size();
+        geom->entries.push_back(entry);
+        if (kept != i)
+            read_plan.tiers[kept] = std::move(read_plan.tiers[i]);
+    }
+    read_plan.tiers.resize(geom->entries.size());
     emitObservation(caches, pieces, *geom, read_plan.tiers);
     chassert(geom->entries.size() == read_plan.tiers.size());
     read_plan.geometry_snapshot = std::move(geom);
