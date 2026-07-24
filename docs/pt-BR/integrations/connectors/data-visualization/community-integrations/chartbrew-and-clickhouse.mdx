@@ -32,93 +32,85 @@ Neste guia, você vai conectar o Chartbrew ao ClickHouse, executar uma consulta 
   Se você não tiver um dataset para usar, poderá adicionar um dos exemplos. Este guia usa o dataset [UK Price Paid](/pt-BR/get-started/sample-datasets/uk-price-paid).
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúna os dados da conexão
-</div>
+<Steps>
+  <Step title="Reúna seus detalhes de conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Conecte o Chartbrew ao ClickHouse" id="2-connect-chartbrew-to-clickhouse">
+    1. Faça login no [Chartbrew](https://chartbrew.com/login) e acesse a aba **Connections**.
 
-<div id="2-connect-chartbrew-to-clickhouse">
-  ## 2. Conecte o Chartbrew ao ClickHouse
-</div>
+    2. Clique em **Create connection** e selecione **ClickHouse** entre as opções de banco de dados disponíveis.
 
-1. Faça login no [Chartbrew](https://chartbrew.com/login) e acesse a aba **Connections**.
+       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Selecione a conexão ClickHouse no Chartbrew" />
 
-2. Clique em **Create connection** e selecione **ClickHouse** entre as opções de banco de dados disponíveis.
+    3. Insira os detalhes de conexão do seu banco de dados ClickHouse:
 
-   <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Selecione a conexão ClickHouse no Chartbrew" />
+       * **Display Name**: Um nome para identificar a conexão no Chartbrew.
+       * **Host**: O hostname ou endereço IP do seu servidor ClickHouse.
+       * **Port**: Normalmente, `8443` para conexões HTTPS.
+       * **Database Name**: O banco de dados ao qual você deseja se conectar.
+       * **Username**: Seu nome de usuário do ClickHouse.
+       * **Password**: Sua senha do ClickHouse.
 
-3. Insira os detalhes de conexão do seu banco de dados ClickHouse:
+       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Configurações de conexão do ClickHouse no Chartbrew" />
 
-   * **Display Name**: Um nome para identificar a conexão no Chartbrew.
-   * **Host**: O hostname ou endereço IP do seu servidor ClickHouse.
-   * **Port**: Normalmente, `8443` para conexões HTTPS.
-   * **Database Name**: O banco de dados ao qual você deseja se conectar.
-   * **Username**: Seu nome de usuário do ClickHouse.
-   * **Password**: Sua senha do ClickHouse.
+    4. Clique em **Test connection** para verificar se o Chartbrew consegue se conectar ao ClickHouse.
 
-   <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Configurações de conexão do ClickHouse no Chartbrew" />
+    5. Se o teste for bem-sucedido, clique em **Save connection**. O Chartbrew recuperará automaticamente o esquema do ClickHouse.
 
-4. Clique em **Test connection** para verificar se o Chartbrew consegue se conectar ao ClickHouse.
+       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Esquema JSON do ClickHouse no Chartbrew" />
+  </Step>
 
-5. Se o teste for bem-sucedido, clique em **Save connection**. O Chartbrew recuperará automaticamente o esquema do ClickHouse.
+  <Step title="Crie um dataset e execute uma consulta SQL" id="3-create-a-dataset-and-run-a-sql-query">
+    1. Clique no botão **Create dataset** ou acesse a aba **Datasets** para criar um.
+    2. Selecione a conexão ClickHouse que você criou anteriormente.
 
-   <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Schema JSON do ClickHouse no Chartbrew" />
+    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="Selecione a conexão ClickHouse para o dataset" />
 
-<div id="3-create-a-dataset-and-run-a-sql-query">
-  ## 3. Crie um dataset e execute uma consulta SQL
-</div>
+    Escreva uma consulta SQL para obter os dados que você deseja visualizar. Por exemplo, esta consulta calcula o preço médio pago por ano no dataset `uk_price_paid`:
 
-1. Clique no botão **Criar dataset** ou vá até a aba **Datasets** para criar um.
-2. Selecione a conexão do ClickHouse que você criou anteriormente.
+    ```sql
+    SELECT toYear(date) AS year, avg(price) AS avg_price
+    FROM uk_price_paid
+    GROUP BY year
+    ORDER BY year;
+    ```
 
-<Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="Selecione a conexão do ClickHouse para o dataset" />
+    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Consulta SQL do ClickHouse no Chartbrew" />
 
-Escreva uma consulta SQL para buscar os dados que você quer visualizar. Por exemplo, esta consulta calcula o preço médio pago por ano a partir do dataset `uk_price_paid`:
+    Clique em **Run query** para buscar os dados.
 
-```sql
-  SELECT toYear(date) AS year, avg(price) AS avg_price
-  FROM uk_price_paid
-  GROUP BY year
-  ORDER BY year;
-```
+    Se você não tiver certeza de como escrever a consulta, pode usar o **assistente de IA do Chartbrew** para gerar consultas SQL com base no esquema do seu banco de dados.
 
-<Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="consulta SQL do ClickHouse no Chartbrew" />
+    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Assistente de IA para SQL do ClickHouse no Chartbrew" />
 
-Clique em **Run query** para obter os dados.
+    Assim que os dados forem obtidos, clique em **Configure dataset** para configurar os parâmetros da visualização.
+  </Step>
 
-Se você não tiver certeza de como escrever a consulta, pode usar o **assistente de IA do Chartbrew** para gerar consultas SQL com base no esquema do seu banco de dados.
+  <Step title="Crie uma visualização" id="4-create-a-visualization">
+    1. Defina uma métrica (valor numérico) e uma dimensão (valor categórico) para sua visualização.
+    2. Visualize o dataset para garantir que os resultados da consulta estejam estruturados corretamente.
+    3. Escolha um tipo de gráfico (por exemplo, gráfico de linhas, gráfico de barras ou gráfico de pizza) e adicione-o ao seu dashboard.
+    4. Clique em **Complete dataset** para finalizar a configuração.
 
-<Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="assistente de IA SQL do ClickHouse no Chartbrew" />
+    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="Dashboard do Chartbrew com dados do ClickHouse" />
 
-Depois que os dados forem obtidos, clique em **Configure dataset** para definir os parâmetros da visualização.
+    Você pode criar quantos datasets quiser para visualizar diferentes aspectos dos seus dados. Com esses datasets, você pode criar vários dashboards para acompanhar diferentes métricas.
 
-<div id="4-create-a-visualization">
-  ## 4. Criar uma visualização
-</div>
+    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Dashboard do Chartbrew com dados do ClickHouse" />
+  </Step>
 
-1. Defina uma métrica (valor numérico) e uma dimensão (valor categórico) para sua visualização.
-2. Pré-visualize o dataset para garantir que os resultados da consulta estejam estruturados corretamente.
-3. Escolha um tipo de gráfico (por exemplo, gráfico de linhas, gráfico de barras, gráfico de pizza) e adicione-o ao seu dashboard.
-4. Clique em **Complete dataset** para finalizar a configuração.
+  <Step title="Automatize as atualizações de dados" id="5-automate-data-updates">
+    Para manter seu dashboard atualizado, você pode agendar atualizações automáticas dos dados:
 
-<Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="Dashboard do Chartbrew com dados do ClickHouse" />
+    1. Clique no ícone de calendário ao lado do botão de atualização do dataset.
+    2. Configure o intervalo de atualização (por exemplo, a cada hora ou diariamente).
+    3. Salve as configurações para ativar a atualização automática.
 
-Você pode criar quantos datasets quiser para visualizar diferentes aspectos dos seus dados. Com esses datasets, você pode criar vários dashboards para acompanhar diferentes métricas.
-
-<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Dashboard do Chartbrew com dados do ClickHouse" />
-
-<div id="5-automate-data-updates">
-  ## 5. Automatize as atualizações de dados
-</div>
-
-Para manter seu dashboard atualizado, você pode programar atualizações automáticas dos dados:
-
-1. Clique no ícone de calendário ao lado do botão de atualização do dataset.
-2. Configure o intervalo de atualização (por exemplo, a cada hora, diariamente).
-3. Salve as configurações para ativar a atualização automática.
-
-<Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Configurações de atualização do dataset no Chartbrew" />
+    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Configurações de atualização do dataset no Chartbrew" />
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Saiba mais

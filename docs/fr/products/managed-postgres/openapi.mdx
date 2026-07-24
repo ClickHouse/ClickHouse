@@ -83,7 +83,13 @@ ceci :
   ## CRUD
 </div>
 
-Voyons le cycle de vie d’un service Postgres.
+Examinons le cycle de vie d’un service Postgres.
+
+<Warning>
+  **Masquage des identifiants à partir du 31 juillet 2026**
+
+  À compter du **31 juillet 2026**, l’API ne renvoie plus les propriétés `password` et `connectionString` dans ses réponses. Elles n’apparaissent plus que dans la réponse [create](#create) et dans la réponse [réinitialisation du mot de passe] lorsque la requête ne contenait aucun mot de passe. Nous vous recommandons d’enregistrer les identifiants à partir de la réponse [create](#create). Si vous gérez des services avec Terraform, mettez à niveau le provider vers la version **v3.21.0 ou ultérieure** avant le 31 juillet 2026 (voir la [référence Terraform](/fr/products/managed-postgres/terraform)).
+</Warning>
 
 <div id="create">
   ### Créer
@@ -112,12 +118,13 @@ create_data='{
 }'
 ```
 
-Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type :
+Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type. Enregistrez la réponse pour avoir accès aux informations d’authentification qu’elle renvoie :
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 En cas de réussite, une nouvelle instance sera créée et ses informations seront renvoyées,
@@ -160,7 +167,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-Le résultat sera similaire au JSON renvoyé lors de la création, mais surveillez
+Le résultat sera similaire au JSON renvoyé lors de la création (mais sans les propriétés `password` et `connectionString` après le 31 juillet 2026), mais surveillez
 le `state` ; lorsqu&#39;il passe à `running`, le serveur est prêt :
 
 ```bash
@@ -173,15 +180,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-Vous pouvez maintenant utiliser la propriété `connectionString` pour vous connecter, par exemple à l’aide de
-[psql] :
+Vous pouvez maintenant utiliser la propriété `connectionString` enregistrée à partir de la réponse de création
+pour vous connecter, par exemple à l’aide de [psql] :
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -390,7 +393,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-La réponse contient le même agrégat que l’endpoint de liste sous
+La réponse contient le même agrégat que le point de terminaison de liste sous
 `aggregate`, ainsi qu’un tableau `recentExecutions`. Chaque exécution inclut les
 compteurs complets par exécution — E/S des blocs partagés et temporaires, temps
 CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes compteurs que le
@@ -440,25 +443,27 @@ de compteurs documenté dans [per-execution counters].
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Gestion des clés API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "Spécification OpenAPI pour ClickHouse Cloud : Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "Référence API ClickHouse Cloud : Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "Récupérer la liste des services Postgres d’une organisation"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "Récupérer la liste des services Postgres d’une organisation"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "Créer un nouveau service Postgres"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "Créer un nouveau service Postgres"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs : psql — terminal interactif PostgreSQL"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "Mettre à jour un service PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "Mettre à jour un service PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396 : JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs : configuration du serveur"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Mettre à jour la configuration d’un service Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Mettre à jour la configuration d’un service Postgres"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "Supprimer un service PostgreSQL"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "Supprimer un service PostgreSQL"
 
-[endpoint Prometheus]: /products/managed-postgres/monitoring/prometheus "Managed Postgres endpoint Prometheus"
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Réinitialiser le mot de passe du superutilisateur d’un service Postgres"
+
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres point de terminaison Prometheus"
 
 [metrics reference]: /products/managed-postgres/monitoring/metrics "Référence des métriques de Managed Postgres"
 
@@ -468,6 +473,6 @@ de compteurs documenté dans [per-execution counters].
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Compteurs par exécution de Query insights"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Lister les modèles de requêtes lentes Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Lister les modèles de requêtes lentes Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "Récupérer un modèle de requête lente Postgres avec les exécutions récentes"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obtenir un modèle de requête lente Postgres avec les exécutions récentes"

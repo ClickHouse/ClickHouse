@@ -1,7 +1,7 @@
--- A failed DETACH DICTIONARY ... PERMANENTLY (rejected because a dependent object exists) must leave
--- the dictionary fully usable. The dependency check that rejects the operation runs after the storage is
--- shut down, which for a dictionary deregisters it from the loader; without an atomic rollback the
--- dictionary stays attached but unusable (BAD_ARGUMENTS on use).
+-- A DETACH DICTIONARY ... PERMANENTLY rejected because a dependent object exists must leave the
+-- dictionary fully usable. Here the dependent exists before the detach, so the pre-shutdown dependency
+-- check rejects it before the dictionary is shut down. The concurrent-registration path (rejected after
+-- shutdown, restored by the rollback) is covered by 04628_detach_permanently_dict_dependency_race.sh.
 
 DROP DICTIONARY IF EXISTS d_atomic;
 DROP TABLE IF EXISTS dep_atomic;

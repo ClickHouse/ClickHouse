@@ -41,6 +41,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char drop_database_before_exclusive_ddl_lock[];
+    extern const char detach_permanently_pause_before_remove_dependencies[];
 }
 
 namespace Setting
@@ -287,6 +288,16 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else
                 table->checkTableCanBeDetached();
 
+            bool check_ref_deps = false;
+            bool check_loading_deps = false;
+            if (query.permanently)
+            {
+                /// Check dependencies before `flushAndShutdown` so a failed check leaves the storage untouched.
+                check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+                check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            }
+
             table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
@@ -295,17 +306,17 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             if (query.permanently)
             {
-                /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
-                bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+                /// The pre-shutdown check above rejects pre-existing dependents; a dependent registered
+                /// concurrently (after that check) still makes removeDependencies throw here, after
+                /// flushAndShutdown already deregistered a dictionary from the loader. Restore it so the
+                /// rejected DETACH PERMANENTLY leaves the dictionary usable.
+                FailPointInjection::pauseFailPoint(FailPoints::detach_permanently_pause_before_remove_dependencies);
                 try
                 {
                     DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 }
                 catch (...)
                 {
-                    /// removeDependencies re-checks dependents and can throw after flushAndShutdown already ran;
-                    /// for a dictionary that shutdown deregistered it from the loader, so restore it to keep DETACH atomic.
                     if (auto * dictionary = dynamic_cast<StorageDictionary *>(table.get()))
                         dictionary->restoreDictionaryConfigurationInRepository();
                     throw;

@@ -1,0 +1,127 @@
+---
+title: 'إعدادات الجلسة prefer_*'
+sidebarTitle: 'prefer_*'
+toc_max_heading_level: 2
+description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة prefer_*.'
+doc_type: 'reference'
+---
+
+{/*بداية_مُولَّدة_تلقائيًا*/}
+
+import CloudOnlyBadge from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import VersionHistory from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
+
+هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+
+<div id="prefer_column_name_to_alias">
+  ## prefer_column_name_to_alias
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يُمكّن أو يعطّل استخدام أسماء الأعمدة الأصلية بدلًا من الأسماء المستعارة في تعبيرات الاستعلام وبنوده. وتبرز أهميته خصوصًا عندما يكون الاسم المستعار مطابقًا لاسم العمود؛ راجع [Expression Aliases](/ar/reference/syntax#notes-on-usage). فعّل هذا الإعداد لجعل قواعد استخدام الأسماء المستعارة في ClickHouse أكثر توافقًا مع معظم محركات قواعد البيانات الأخرى.
+
+القيم الممكنة:
+
+* 0 — يُستبدل اسم العمود بالاسم المستعار.
+* 1 — لا يُستبدل اسم العمود بالاسم المستعار.
+
+**مثال**
+
+الفرق بين حالتي التمكين والتعطيل:
+
+الاستعلام:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+النتيجة:
+
+```text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+الاستعلام:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+النتيجة:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
+<div id="prefer_external_sort_block_bytes">
+  ## prefer_external_sort_block_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16744704" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "فضّل الحد الأقصى لحجم الكتلة بالبايتات للفرز الخارجي، وقلّل استهلاك الذاكرة أثناء الدمج."}]}]} />
+
+فضّل الحد الأقصى لحجم الكتلة بالبايتات للفرز الخارجي، وقلّل استهلاك الذاكرة أثناء الدمج.
+
+<div id="prefer_global_in_and_join">
+  ## prefer_global_in_and_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يُفعّل استبدال معاملي `IN`/`JOIN` بـ `GLOBAL IN`/`GLOBAL JOIN`.
+
+القيم الممكنة:
+
+* 0 — معطّل. لا يتم استبدال معاملي `IN`/`JOIN` بـ `GLOBAL IN`/`GLOBAL JOIN`.
+* 1 — مفعّل. يتم استبدال معاملي `IN`/`JOIN` بـ `GLOBAL IN`/`GLOBAL JOIN`.
+
+**الاستخدام**
+
+مع أن `SET distributed_product_mode=global` يمكنه تغيير سلوك الاستعلامات في الجداول الموزعة، فإنه لا يناسب الجداول المحلية أو الجداول القادمة من مصادر خارجية. وهنا تظهر أهمية الإعداد `prefer_global_in_and_join`.
+
+على سبيل المثال، قد تكون لدينا عُقد لخدمة الاستعلامات تحتوي على جداول محلية غير مناسبة للتوزيع. في هذه الحالة نحتاج إلى توزيع بياناتها ديناميكيًا أثناء المعالجة الموزعة باستخدام الكلمة المفتاحية `GLOBAL` — `GLOBAL IN`/`GLOBAL JOIN`.
+
+ومن حالات الاستخدام الأخرى لـ `prefer_global_in_and_join` الوصول إلى الجداول المُنشأة باستخدام محركات خارجية. يساعد هذا الإعداد على تقليل عدد الاستدعاءات إلى المصادر الخارجية عند ربط مثل هذه الجداول: استدعاء واحد فقط لكل استعلام.
+
+**انظر أيضًا:**
+
+* [الاستعلامات الفرعية الموزعة](/ar/reference/statements/in#distributed-subqueries) لمزيد من المعلومات حول كيفية استخدام `GLOBAL IN`/`GLOBAL JOIN`
+
+<div id="prefer_localhost_replica">
+  ## prefer_localhost_replica
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يُفعِّل/يُعطِّل تفضيل استخدام النسخة المتماثلة على localhost عند معالجة الاستعلامات الموزعة.
+
+القيم الممكنة:
+
+* 1 — يرسل ClickHouse دائمًا الاستعلام إلى النسخة المتماثلة على localhost إذا كانت موجودة.
+* 0 — يستخدم ClickHouse استراتيجية موازنة التحميل المحددة في الإعداد [load&#95;balancing](/ar/reference/settings/session-settings/load-balancing#load_balancing).
+
+<Note>
+  عطّل هذا الإعداد إذا كنت تستخدم [max&#95;parallel&#95;replicas](/ar/reference/settings/session-settings/max#max_parallel_replicas) بدون [parallel&#95;replicas&#95;custom&#95;key](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key).
+  إذا كان [parallel&#95;replicas&#95;custom&#95;key](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) مضبوطًا، فعطّل هذا الإعداد فقط إذا كان يُستخدم على عنقود يحتوي على عدة أجزاء وعدة نسخ متماثلة.
+  أما إذا كان يُستخدم على عنقود يحتوي على جزء واحد وعدة نسخ متماثلة، فسيكون لتعطيل هذا الإعداد آثار سلبية.
+</Note>
+
+<div id="prefer_warmed_unmerged_parts_seconds">
+  ## prefer_warmed_unmerged_parts_seconds
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Int64" default_value="0" />
+
+لا يكون لهذا الإعداد أي تأثير إلا في ClickHouse Cloud. إذا كان عمر جزء مدموج أقل من هذا العدد من الثواني ولم يكن مُسخَّنًا مسبقًا (راجع [cache&#95;populated&#95;by&#95;fetch](/ar/reference/settings/merge-tree-settings#cache_populated_by_fetch))، وكانت جميع أجزائه المصدر متاحة ومُسخَّنة مسبقًا، فستقرأ استعلامات SELECT من تلك الأجزاء بدلًا منه. ينطبق هذا فقط على Replicated-/SharedMergeTree. لاحظ أن هذا لا يتحقق إلا مما إذا كان CacheWarmer قد عالج الجزء؛ فإذا كان الجزء قد جُلِب إلى الذاكرة المؤقتة بوسيلة أخرى، فسيظل يُعتبر باردًا إلى أن يعالجه CacheWarmer؛ وإذا كان قد سُخِّن ثم أُخرج من الذاكرة المؤقتة، فسيظل يُعتبر دافئًا.
+
+{/*AUTOGENERATED_END*/}

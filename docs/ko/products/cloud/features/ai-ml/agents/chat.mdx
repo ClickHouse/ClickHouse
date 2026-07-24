@@ -2,8 +2,8 @@
 sidebarTitle: '채팅'
 slug: /cloud/features/ai-ml/agents/chat
 title: '채팅'
-description: 'ClickHouse Agents의 대화, 북마크, 포크, 멀티 대화 및 채팅 공유'
-keywords: ['AI', 'ClickHouse Cloud', 'agents', '채팅', '대화', '북마크', '포크', '공유', '멀티 대화']
+description: 'ClickHouse Agents의 대화, 북마크, 고정된 대화, 포크, 키보드 단축키 및 채팅 공유'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', '채팅', '대화', '북마크', '고정된 대화', '키보드 단축키', '포크', '공유']
 doc_type: 'reference'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge />
 
-ClickHouse Agents의 채팅 화면에서는 대화, 브랜치, 나란히 비교, 공유를 처리합니다.
+ClickHouse Agents의 채팅 화면에서는 대화, 브랜치, 공유를 처리합니다.
 
 <Image img="/images/cloud/agent-builder/chat/chat.webp" alt="왼쪽 탐색, 에이전트 아이덴티티 헤더, 메시지 컴포저를 보여주는 ClickHouse Agent 채팅 화면" size="lg" />
 
@@ -37,12 +37,20 @@ ClickHouse Agents의 채팅 화면에서는 대화, 브랜치, 나란히 비교,
 
 <Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="북마크 아이콘이 강조 표시되고 「Add Bookmarks」 툴팁이 표시된 채팅 헤더" size="lg" />
 
+<div id="pinned-conversations">
+  ## 고정된 대화
+</div>
+
+대화를 고정하면 사이드바 맨 위에 표시되어, 아래에 있는 날짜별 이력과 구분됩니다. 사이드바에서 해당 대화의 옵션 메뉴(점 3개 아이콘)를 열고 **Pin**을 선택하세요. 고정된 대화는 **Today**, **Yesterday** 및 그보다 이전 그룹 위의 **Pinned** 섹션에 모입니다.
+
+고정을 해제하려면 같은 메뉴를 열고 **Unpin**을 선택하세요.
+
 <div id="forking">
   ## 포킹
 </div>
 
-포킹은 특정 메시지에서 새 대화를 분기해 만듭니다. 원래 대화 흐름을 방해하지 않고 다른 경로를 탐색할 때 사용할 수 있습니다.
-포크 모드는 3가지가 있습니다.
+포킹은 특정 메시지에서 분기된 새 대화를 만듭니다. 원래 스레드를 방해하지 않고 다른 경로를 탐색할 때 사용할 수 있습니다.
+사용할 수 있는 포크 모드는 3가지입니다.
 
 * **표시된 메시지만** - 포크된 메시지까지의 직접 경로만 복사할 수 있습니다.
 * **관련 분기 포함** - 기본 경로와 기존 분기를 함께 복사할 수 있습니다.
@@ -52,20 +60,6 @@ ClickHouse Agents의 채팅 화면에서는 대화, 브랜치, 나란히 비교,
 
 <Image img="/images/cloud/agent-builder/chat/fork.webp" alt="3가지 포크 모드 아이콘, Start fork here 및 Remember 체크박스, 그리고 아래의 메시지 작업 도구 모음을 보여 주는 포크 옵션 선택 대화상자" size="lg" />
 
-<div id="multi-conversation">
-  ## 멀티 대화
-</div>
-
-멀티 대화는 두 개의 대화를 나란히 표시하고 동일한 프롬프트를 둘 다에 전송합니다. 모델 간 응답을 비교하거나 서로 다른 에이전트 구성을 A/B 테스트하는 데 사용할 수 있습니다.
-
-현재 대화와 나란히 병렬 대화를 만들려면 채팅 헤더의 **+** 버튼을 클릭하세요.
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="멀티 대화 추가 버튼이 강조 표시된 채팅 헤더와 컴포저 위의 + ClickHouse Agent 표시" size="lg" />
-
-그러면 두 대화가 나란히 표시되고 동일한 프롬프트를 받습니다:
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="두 개의 ClickHouse Agent 대화가 나란히 실행되며 둘 다 동일한 run_select_query 도구 호출을 수행하는 멀티 대화 화면" size="lg" />
-
 <div id="sharing-chats">
   ## 채팅 공유
 </div>
@@ -74,6 +68,8 @@ ClickHouse Agents의 채팅 화면에서는 대화, 브랜치, 나란히 비교,
 
 기존 메시지를 수정하면 공유 보기에도 반영되지만, 링크를 생성한 후에 추가된 메시지는 표시되지 않습니다.
 
+공유 링크를 보는 누구나 **Continue this chat**를 클릭해 자신의 계정에서 해당 대화를 이어갈 수 있습니다. 그러면 보고 있는 분기를 포함한 대화가 새로운 비공개 대화로 이력에 복사되며, 원래 대화는 그대로 유지됩니다.
+
 대화를 공유하려면 사이드바에서 해당 대화의 메뉴를 열고 **Share**를 선택하세요:
 
 <Image img="/images/cloud/agent-builder/chat/share.webp" alt="사이드바의 대화 메뉴에 Share, Rename, Duplicate, Archive, Delete 옵션이 표시된 모습" size="lg" />
@@ -81,3 +77,36 @@ ClickHouse Agents의 채팅 화면에서는 대화, 브랜치, 나란히 비교,
 그런 다음 공유 대화상자에서 **Create link**를 클릭하세요:
 
 <Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="채팅 공유 링크 대화상자에 Create link 버튼과 공유 후 추가된 메시지 및 이름은 비공개로 유지된다는 안내가 표시된 모습" size="md" />
+
+<div id="keyboard-shortcuts">
+  ## 키보드 단축키
+</div>
+
+`Cmd+Shift+/`(Windows 및 Linux에서는 `Ctrl+Shift+/`)를 사용하거나 계정 메뉴의 **Help** → **Keyboard shortcuts**에서 키보드 단축키 참고를 여십시오. 모든 단축키는 사용자 지정할 수 있습니다. 대화상자에서 행을 클릭해 새 키 조합을 지정하고, **Reset all to defaults**를 사용해 기본값으로 되돌리십시오.
+
+기본 단축키는 다음과 같습니다.
+
+| 동작              | macOS                 | Windows 및 Linux        |
+| --------------- | --------------------- | ---------------------- |
+| 키보드 단축키 표시      | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| 새 채팅            | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| 채팅 입력창으로 포커스 이동 | `Shift+Esc`           | `Shift+Esc`            |
+| 파일 업로드          | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| 마지막 응답 복사       | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| 메시지 전송          | `Cmd+Enter`           | `Ctrl+Enter`           |
+| 사이드바 표시 전환      | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| 모델 선택기 열기       | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| 검색으로 포커스 이동     | `Cmd+/`               | `Ctrl+/`               |
+| 설정 열기           | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| 대화 북마크          | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| 생성 중지           | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| 응답 다시 생성        | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| 마지막 메시지 편집      | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| 응답 이어서 생성       | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| 마지막 코드 블록 복사    | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| 맨 위로 스크롤        | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| 맨 아래로 스크롤       | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| 대화 보관           | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| 대화 삭제           | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+
+또한 agents, prompts, files, bookmarks 같은 패널을 여는 단축키를 직접 지정할 수도 있습니다. 이들에는 기본 키가 없습니다.
