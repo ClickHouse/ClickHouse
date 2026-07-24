@@ -1,0 +1,551 @@
+/// Equivalence harness for the residency iterator (the rolling-plan S0 gate):
+/// walking a span with `ResidencyIterator::lookAt` and folding the resolutions
+/// must reproduce EXACTLY the geometry `observeAndSchedule`'s flat batch probe
+/// builds - same resident runs, same surviving miss cells, same prune - over
+/// real providers (FileCache tiling, partial segments, page blocks) and
+/// randomized layouts. The iterator probes first (read-only), the executor
+/// probes the same untouched cache state after, and the two observations are
+/// compared entry by entry.
+
+#include <IO/ResidencyIterator.h>
+
+#include <IO/ChainedBuffers.h>
+#include <IO/DiskCacheProvider.h>
+#include <IO/ICacheProvider.h>
+#include <IO/IFileBasedSourceReader.h>
+#include <IO/LongConnectionLimit.h>
+#include <IO/PageCacheProvider.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReaderExecutor.h>
+#include <IO/tests/ReaderExecutorInspector.h>
+
+#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/tests/gtest_global_context.h>
+
+#include <Core/Defines.h>
+#include <Core/ServerUUID.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
+
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/Util/XMLConfiguration.h>
+
+#include <gtest/gtest.h>
+
+#include <cstring>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <random>
+#include <unordered_map>
+
+namespace fs = std::filesystem;
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
+    extern const FileCacheSettingsFileCachePolicy cache_policy;
+}
+
+using namespace DB;
+
+namespace
+{
+
+/// Compressed production geometry (same scheme as the metric harness): all
+/// size ratios preserved so the tiling/prune shapes match production.
+constexpr size_t SEGMENT = 32 * 1024;
+constexpr size_t ALIGNMENT = 4 * 1024;
+constexpr size_t WINDOW = 8 * 1024;
+constexpr size_t BLOCK = 1024;
+constexpr size_t MIN_BYTES_FOR_SEEK = 2 * 1024;
+constexpr size_t MAX_TAIL_FOR_DRAIN = 512;
+constexpr size_t PLAN_WINDOW = 4 * WINDOW;
+constexpr size_t FILE_SIZE = 32 * SEGMENT;
+
+/// In-memory source honoring `setReadUntilPosition`, so the executor exercises
+/// its production connection paths.
+class MemBoundedBuffer : public ReadBufferFromFileBase
+{
+public:
+    explicit MemBoundedBuffer(String data_)
+        : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), data(std::move(data_)) {}
+
+    String getFileName() const override { return "MemBoundedBuffer"; }
+    bool supportsRightBoundedReads() const override { return true; }
+    void setReadUntilPosition(size_t p) override { read_until = p; }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence == SEEK_SET)
+            file_offset = static_cast<size_t>(off);
+        else if (whence == SEEK_CUR)
+            file_offset += static_cast<size_t>(off);
+        resetWorkingBuffer();
+        return static_cast<off_t>(file_offset);
+    }
+
+    off_t getPosition() override { return static_cast<off_t>(file_offset); }
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset; }
+
+private:
+    bool nextImpl() override
+    {
+        const size_t end = read_until ? std::min(*read_until, data.size()) : data.size();
+        if (file_offset >= end)
+            return false;
+        const size_t n = std::min(end - file_offset, internal_buffer.size());
+        memcpy(internal_buffer.begin(), data.data() + file_offset, n);
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
+        file_offset += n;
+        return true;
+    }
+
+    String data;
+    size_t file_offset = 0;
+    std::optional<size_t> read_until;
+};
+
+class MemBoundedSource : public IFileBasedSourceReader
+{
+public:
+    explicit MemBoundedSource(std::unordered_map<String, String> data_) : data(std::move(data_)) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    {
+        auto it = data.find(object.remote_path);
+        if (it == data.end())
+            return nullptr;
+        return std::make_unique<MemBoundedBuffer>(it->second);
+    }
+
+    String name() const override { return "MemBoundedSource"; }
+
+private:
+    std::unordered_map<String, String> data;
+};
+
+String makePattern(size_t size)
+{
+    String s;
+    s.resize(size);
+    for (size_t i = 0; i < size; ++i)
+        s[i] = static_cast<char>('A' + (i % 26));
+    return s;
+}
+
+/// A contiguous file-level chain carrying the true pattern bytes of
+/// `[offset, offset + size)`.
+ChainedBuffers patternChain(const String & content, size_t offset, size_t size)
+{
+    ChainedBuffers r;
+    auto buf = std::make_shared<OwnedChainedBuffer>(size);
+    std::memcpy(buf->data(), content.data() + offset, size);
+    r.append(ChainedBufferNode{std::move(buf), 0, size, offset});
+    return r;
+}
+
+class ResidencyEquivalence : public ::testing::Test
+{
+public:
+    ResidencyEquivalence()
+    {
+        current_thread = nullptr;
+        getContext();
+    }
+    ~ResidencyEquivalence() override { current_thread = MainThreadStatus::get(); }
+
+    void SetUp() override
+    {
+        ServerUUID::setRandomForUnitTests();
+        thread_status.emplace();
+
+        Poco::XML::DOMParser dom_parser;
+        std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+        getMutableContext().context->setConfig(config);
+
+        query_context = Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("residency_equivalence");
+        query_scope_holder.emplace(QueryScope::create(query_context));
+
+        cache_root = fs::current_path() / "residency_equivalence_cache";
+        if (fs::exists(cache_root))
+            fs::remove_all(cache_root);
+        fs::create_directories(cache_root);
+
+        content = makePattern(FILE_SIZE);
+        data = {{"obj", content}};
+        objects.clear();
+        objects.emplace_back("obj", "", FILE_SIZE);
+    }
+
+    void TearDown() override
+    {
+        query_scope_holder.reset();
+        query_context.reset();
+        thread_status.reset();
+        if (fs::exists(cache_root))
+            fs::remove_all(cache_root);
+    }
+
+    std::shared_ptr<FileCache> makeFileCache(const String & name)
+    {
+        FileCacheSettings settings;
+        settings[FileCacheSetting::path] = (cache_root / name).string();
+        settings[FileCacheSetting::max_size] = 64u << 20;
+        settings[FileCacheSetting::max_elements] = 100000;
+        settings[FileCacheSetting::max_file_segment_size] = SEGMENT;
+        settings[FileCacheSetting::boundary_alignment] = ALIGNMENT;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+        auto fc = std::make_shared<FileCache>(name, settings);
+        fc->initialize();
+        return fc;
+    }
+
+    std::shared_ptr<DiskCacheProvider> makeDiskProvider(const std::shared_ptr<FileCache> & fc)
+    {
+        FilesystemCacheSettings cache_settings;
+        cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+        cache_settings.boundary_alignment = ALIGNMENT;
+        return std::make_shared<DiskCacheProvider>(fc, cache_settings, /*query_id_=*/"q");
+    }
+
+    static std::shared_ptr<PageCache> makePageCache()
+    {
+        constexpr size_t cap = 64ull << 20;
+        return std::make_shared<PageCache>(
+            std::chrono::milliseconds(2000), "LRU", 0.5,
+            /*min_size_in_bytes=*/cap, /*max_size_in_bytes=*/cap,
+            /*free_memory_ratio=*/0.0, /*num_shards=*/1);
+    }
+
+    static std::shared_ptr<PageCacheProvider> makePageProvider(const std::shared_ptr<PageCache> & pc)
+    {
+        PageCacheFile file;
+        file.path = "obj";
+        return std::make_shared<PageCacheProvider>(
+            pc, std::move(file), BLOCK, /*inject_eviction=*/false,
+            /*bypass_if_missing=*/false, FILE_SIZE);
+    }
+
+    ReaderExecutor::Options makeOptions() const
+    {
+        ReaderExecutor::Options options;
+        options.window_size = WINDOW;
+        options.min_bytes_for_seek = MIN_BYTES_FOR_SEEK;
+        options.block_size = BLOCK;
+        options.log_file_path = {};
+        options.max_tail_for_drain = MAX_TAIL_FOR_DRAIN;
+        options.long_connection_limit = std::make_shared<LongConnectionLimit>(0);
+        options.plan_look_ahead_max_window = PLAN_WINDOW;
+        return options;
+    }
+
+    /// Read `[offset, offset + want)` through a fresh executor over `caches`,
+    /// populating them - the layout builder.
+    void warmReads(
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches,
+        const std::vector<std::pair<size_t, size_t>> & reads)
+    {
+        auto src = std::make_shared<MemBoundedSource>(data);
+        ReaderExecutor executor(src, objects, std::move(caches), makeOptions());
+        for (const auto & [offset, want] : reads)
+        {
+            if (static_cast<size_t>(executor.getPosition()) != offset)
+                executor.seek(offset);
+            const size_t end = offset + want;
+            size_t got = 0;
+            while (got < want)
+            {
+                executor.setReadExtent(std::min(end, executor.getPosition() + WINDOW));
+                auto chain = executor.readNextWindow();
+                if (chain.empty())
+                    break;
+                got += chain.range().size;
+            }
+            ASSERT_EQ(got, want);
+        }
+    }
+
+    /// Leave a PARTIALLY_DOWNLOADED segment behind: open a writer over one
+    /// explicit cell and commit only a prefix under a claim.
+    void fabricatePartialCell(ICacheProvider & provider, ByteRange cell, size_t prefix)
+    {
+        auto view = std::make_unique<CacheView>();
+        view->miss_entries.push_back(MissEntry{cell, nullptr});
+        provider.openWriteBuffers(objects.front(), /*object_file_offset=*/0, *view);
+        ASSERT_EQ(view->misses().size(), 1u);
+        auto & writer = *view->misses().front().writer;
+        auto claim = writer.claim(writer.range());
+        ASSERT_EQ(writer.write(patternChain(content, cell.offset, prefix)), prefix);
+    }
+
+    ByteRange expectedSpan(size_t start) const
+    {
+        const size_t end = std::min(start + std::max(WINDOW, PLAN_WINDOW), FILE_SIZE);
+        return ByteRange{start, end - start};
+    }
+
+    static VectorWithMemoryTracking<ResolutionFold::TierTraits>
+    traitsOf(const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain)
+    {
+        VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
+        for (const auto & p : chain)
+            traits.push_back(ResolutionFold::TierTraits{p->tier(), p->fillsWholeCell(), p->populatesOnMiss()});
+        return traits;
+    }
+
+    /// Walk `span` with the iterator, checking the stride tiling invariants,
+    /// and fold the resolutions into geometry entries.
+    VectorWithMemoryTracking<GeometryEntry> foldOverSpan(
+        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain, ByteRange span)
+    {
+        ResidencyIterator it(chain, objects.front(), /*object_file_offset=*/0, span);
+        ResolutionFold fold(traitsOf(chain), span);
+        size_t pos = span.offset;
+        while (pos < span.end())
+        {
+            const auto res = it.lookAt(pos);
+            EXPECT_EQ(res.range.offset, pos) << "stride must start at the looked-at position";
+            EXPECT_GT(res.range.size, 0u) << "stride must advance, pos=" << pos;
+            EXPECT_LE(res.range.end(), span.end()) << "stride must stay within the span, pos=" << pos;
+            EXPECT_EQ(res.tiers.size(), chain.size());
+            fold.add(res);
+            pos = res.range.end();
+        }
+        EXPECT_EQ(pos, span.end()) << "strides must tile the span exactly";
+        return fold.finish();
+    }
+
+    /// The equivalence gate: iterated fold vs the live executor's plan geometry
+    /// over the identical cache state. The iterator goes FIRST - its probe is
+    /// read-only, while the executor's plan opens write buffers (creating
+    /// segments) and its serve fills them.
+    void expectFoldMatchesExecutor(
+        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & iterator_chain,
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches,
+        size_t start,
+        const String & label)
+    {
+        const ByteRange span = expectedSpan(start);
+        const auto folded = foldOverSpan(iterator_chain, span);
+
+        auto src = std::make_shared<MemBoundedSource>(data);
+        ReaderExecutor executor(src, objects, std::move(executor_caches), makeOptions());
+        if (start != 0)
+            executor.seek(start);
+        executor.setReadExtent(FILE_SIZE);
+        auto chain = executor.readNextWindow();
+        ASSERT_FALSE(chain.empty()) << label;
+
+        auto snap = inspect(executor).planGeometry();
+        ASSERT_TRUE(snap) << label;
+        ASSERT_EQ(snap->plan_start, span.offset) << label;
+        ASSERT_EQ(snap->plan_end, span.end()) << label;
+
+        ASSERT_EQ(folded.size(), snap->entries.size()) << label << ": entry count";
+        for (size_t i = 0; i < folded.size(); ++i)
+        {
+            const auto & f = folded[i];
+            const auto & e = snap->entries[i];
+            EXPECT_EQ(f.tier, e.tier) << label << ": entry " << i;
+            EXPECT_EQ(f.whole_cell, e.whole_cell) << label << ": entry " << i;
+
+            ASSERT_EQ(f.resident.size(), e.resident.size()) << label << ": entry " << i << " resident count";
+            for (size_t k = 0; k < f.resident.size(); ++k)
+            {
+                EXPECT_EQ(f.resident[k].offset, e.resident[k].offset) << label << ": entry " << i << " resident " << k;
+                EXPECT_EQ(f.resident[k].size, e.resident[k].size) << label << ": entry " << i << " resident " << k;
+            }
+
+            ASSERT_EQ(f.aligned_miss.size(), e.aligned_miss.size()) << label << ": entry " << i << " cell count";
+            for (size_t k = 0; k < f.aligned_miss.size(); ++k)
+            {
+                EXPECT_EQ(f.aligned_miss[k].offset, e.aligned_miss[k].offset) << label << ": entry " << i << " cell " << k;
+                EXPECT_EQ(f.aligned_miss[k].size, e.aligned_miss[k].size) << label << ": entry " << i << " cell " << k;
+            }
+        }
+    }
+
+    std::optional<ThreadStatus> thread_status;
+    ContextMutablePtr query_context;
+    std::optional<QueryScope> query_scope_holder;
+    fs::path cache_root;
+
+    String content;
+    std::unordered_map<String, String> data;
+    StoredObjects objects;
+};
+
+/// The iterator's own invariants: strides tile, a backward lookAt rewinds and
+/// re-resolves the identical column.
+TEST_F(ResidencyEquivalence, StridesTileTheSpanAndRewind)
+{
+    auto fc = makeFileCache("strides");
+    warmReads({makeDiskProvider(fc)}, {{SEGMENT, SEGMENT}, {4 * SEGMENT, 2 * SEGMENT}});
+    fabricatePartialCell(*makeDiskProvider(fc), ByteRange{8 * SEGMENT, SEGMENT}, SEGMENT / 4);
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> chain;
+    chain.push_back(makeDiskProvider(fc));
+    const ByteRange span{0, 10 * SEGMENT};
+
+    ResidencyIterator it(chain, objects.front(), 0, span);
+    std::vector<ChainResolution> forward;
+    size_t pos = span.offset;
+    while (pos < span.end())
+    {
+        forward.push_back(it.lookAt(pos));
+        pos = forward.back().range.end();
+    }
+    EXPECT_GT(forward.size(), 3u);
+
+    for (auto walked = forward.rbegin(); walked != forward.rend(); ++walked)
+    {
+        const auto again = it.lookAt(walked->range.offset);
+        EXPECT_EQ(again.range.offset, walked->range.offset);
+        EXPECT_EQ(again.range.size, walked->range.size);
+        ASSERT_EQ(again.tiers.size(), walked->tiers.size());
+        for (size_t i = 0; i < again.tiers.size(); ++i)
+        {
+            EXPECT_EQ(again.tiers[i].state, walked->tiers[i].state);
+            EXPECT_EQ(again.tiers[i].extent.offset, walked->tiers[i].extent.offset);
+            EXPECT_EQ(again.tiers[i].extent.size, walked->tiers[i].extent.size);
+        }
+    }
+}
+
+TEST_F(ResidencyEquivalence, DiskTierFoldMatchesExecutorGeometry)
+{
+    auto fc = makeFileCache("disk_tier");
+    warmReads({makeDiskProvider(fc)}, {{0, SEGMENT}, {3 * SEGMENT + ALIGNMENT, SEGMENT}});
+    fabricatePartialCell(*makeDiskProvider(fc), ByteRange{6 * SEGMENT, SEGMENT}, SEGMENT / 2);
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
+    iterator_chain.push_back(makeDiskProvider(fc));
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
+    executor_caches.push_back(makeDiskProvider(fc));
+
+    expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/ALIGNMENT / 2, "disk");
+}
+
+TEST_F(ResidencyEquivalence, PageTierFoldMatchesExecutorGeometry)
+{
+    auto pc = makePageCache();
+    /// The edge blocks are warmed so both span edges land INSIDE resident
+    /// blocks: page hits are block-ceiled and overhang the span, which is the
+    /// one case where the fold's hit clamp differs from the raw view.
+    warmReads({makePageProvider(pc)}, {{0, 2 * BLOCK}, {2 * BLOCK, 6 * BLOCK}, {32 * BLOCK, 2 * BLOCK}});
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
+    iterator_chain.push_back(makePageProvider(pc));
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
+    executor_caches.push_back(makePageProvider(pc));
+
+    expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/BLOCK / 2, "page");
+}
+
+TEST_F(ResidencyEquivalence, TwoTierFoldMatchesExecutorGeometry)
+{
+    auto fc = makeFileCache("two_tier");
+    auto pc = makePageCache();
+
+    /// Both tiers over one region (page hits prune nothing of fs - fs holds it
+    /// too), fs-only over another (page cells become promote targets over the
+    /// fs hit), plus a partial fs cell.
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> both;
+        both.push_back(makePageProvider(pc));
+        both.push_back(makeDiskProvider(fc));
+        warmReads(std::move(both), {{0, 2 * SEGMENT}});
+    }
+    warmReads({makeDiskProvider(fc)}, {{4 * SEGMENT, SEGMENT}});
+    fabricatePartialCell(*makeDiskProvider(fc), ByteRange{7 * SEGMENT, SEGMENT}, SEGMENT / 4);
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
+    iterator_chain.push_back(makePageProvider(pc));
+    iterator_chain.push_back(makeDiskProvider(fc));
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
+    executor_caches.push_back(makePageProvider(pc));
+    executor_caches.push_back(makeDiskProvider(fc));
+
+    expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/SEGMENT / 2, "two-tier");
+}
+
+/// Randomized layout matrix: deterministic pseudo-randomness on purpose.
+TEST_F(ResidencyEquivalence, RandomizedTwoTierMatrix)
+{
+    std::mt19937 rng(12345); /// NOLINT(cert-msc32-c,cert-msc51-cpp)
+
+    for (size_t round = 0; round < 8; ++round)
+    {
+        auto fc = makeFileCache("matrix_" + std::to_string(round));
+        auto pc = makePageCache();
+
+        const size_t start = rng() % (FILE_SIZE - PLAN_WINDOW);
+
+        /// Half the rounds warm the blocks containing the span's edges, so
+        /// block-ceiled page hits straddle the span boundaries.
+        if (rng() % 2)
+        {
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> edge;
+            edge.push_back(makePageProvider(pc));
+            const size_t head_block = start / BLOCK * BLOCK;
+            const size_t tail_block = std::min(start + PLAN_WINDOW, FILE_SIZE - 1) / BLOCK * BLOCK;
+            warmReads(std::move(edge), {{head_block, BLOCK}, {tail_block, BLOCK}});
+        }
+
+        const size_t chain_warms = rng() % 3;
+        for (size_t w = 0; w < chain_warms; ++w)
+        {
+            const size_t off = (rng() % (FILE_SIZE / BLOCK)) * BLOCK;
+            const size_t want = std::min<size_t>(FILE_SIZE - off, (1 + rng() % 8) * BLOCK);
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> both;
+            both.push_back(makePageProvider(pc));
+            both.push_back(makeDiskProvider(fc));
+            warmReads(std::move(both), {{off, want}});
+        }
+
+        const size_t fs_warms = rng() % 3;
+        for (size_t w = 0; w < fs_warms; ++w)
+        {
+            const size_t off = (rng() % (FILE_SIZE / ALIGNMENT)) * ALIGNMENT;
+            const size_t want = std::min<size_t>(FILE_SIZE - off, (1 + rng() % 4) * ALIGNMENT);
+            warmReads({makeDiskProvider(fc)}, {{off, want}});
+        }
+
+        if (rng() % 2)
+        {
+            const size_t cell_idx = rng() % (FILE_SIZE / SEGMENT);
+            const size_t prefix = ALIGNMENT * (1 + rng() % 3);
+            fabricatePartialCell(
+                *makeDiskProvider(fc), ByteRange{cell_idx * SEGMENT, SEGMENT}, std::min(prefix, SEGMENT - 1));
+        }
+
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
+        iterator_chain.push_back(makePageProvider(pc));
+        iterator_chain.push_back(makeDiskProvider(fc));
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
+        executor_caches.push_back(makePageProvider(pc));
+        executor_caches.push_back(makeDiskProvider(fc));
+
+        expectFoldMatchesExecutor(
+            iterator_chain, std::move(executor_caches), start,
+            "round " + std::to_string(round) + " start " + std::to_string(start));
+    }
+}
+
+}
