@@ -4,7 +4,8 @@
 # a floating-point multiplication. The scaled value must be range-checked before the cast to UInt64:
 # an out-of-range value used to be undefined behavior (found by the AST fuzzer with UBSan).
 # Quota types without an output denominator (e.g. `queries`) must reject invalid literals too:
-# a negative integer used to wrap around to 18446744073709551615 instead of throwing.
+# a negative integer used to wrap around to 18446744073709551615 instead of throwing,
+# and a positive fractional literal used to be silently truncated (MAX queries = 1.5 became 1).
 # Quoted (string-literal) limits go through a size-suffix parse that used to skip overflow checking,
 # so an out-of-range quoted value silently wrapped around before the range checks; it must throw now.
 # Note: a `--` comment attached to a hinted query would shadow its test hint, so the queries below carry no leading SQL comments.
@@ -30,6 +31,7 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = nan; -- { clientErr
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1e-400; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1.5; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1e20; -- { clientError CANNOT_CONVERT_TYPE }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = inf; -- { clientError CANNOT_CONVERT_TYPE }
 

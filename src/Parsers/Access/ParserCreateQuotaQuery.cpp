@@ -176,6 +176,16 @@ namespace
                 || (max_field.getType() == Field::Types::Float64 && std::signbit(max_field.safeGet<Float64>()));
             if (is_negative)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+            /// Reject a fractional literal for an integer quota type: FieldVisitorConvertToNumber would
+            /// silently truncate it (e.g. MAX queries = 1.5 would become 1 and round-trip differently),
+            /// while the users.xml path rejects the same input. A non-finite value passes through here
+            /// and is rejected by the range check inside FieldVisitorConvertToNumber.
+            if (max_field.getType() == Field::Types::Float64)
+            {
+                Float64 value = max_field.safeGet<Float64>();
+                if (std::isfinite(value) && std::floor(value) != value)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value must be an integer");
+            }
             max_value = fieldToNumber<QuotaValue>(max_field);
         }
         else
