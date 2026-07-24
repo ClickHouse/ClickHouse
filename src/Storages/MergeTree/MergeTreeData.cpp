@@ -8483,7 +8483,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                     auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
                     if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
                     {
-                        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                        const auto * arguments_ast = inner_tuple->arguments->as<ASTExpressionList>();
                         if (arguments_ast)
                             partition_ast_fields_count = arguments_ast->children.size();
                         else
@@ -8550,15 +8550,21 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     {
         /// Function tuple(...) requires at least one argument, so empty key is a special case
         chassert(!partition_ast_fields_count);
-        chassert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
-        chassert(partition_value_ast->as<ASTFunction>()->name == "tuple");
-        chassert(partition_value_ast->as<ASTFunction>()->arguments);
-        auto args = partition_value_ast->as<ASTFunction>()->arguments;
-        if (!args)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
-        bool empty_tuple = partition_value_ast->as<ASTFunction>()->arguments->children.empty();
-        if (!empty_tuple)
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+        const auto * function_ast = partition_value_ast->as<ASTFunction>();
+        if (function_ast && function_ast->name == "tuple")
+        {
+            if (!function_ast->arguments)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
+            if (!function_ast->arguments->children.empty())
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+        }
+        else
+        {
+            /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`.
+            Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+            if (partition_key_value.getType() != Field::Types::Tuple || !partition_key_value.safeGet<Tuple>().empty())
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+        }
     }
     else if (fields_count == 1)
     {
@@ -8585,6 +8591,18 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         }
         /// Simple partition key, need to evaluate and cast
         Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+
+        /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
+        /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
+        if (partition_key_value.getType() == Field::Types::Tuple && !isTuple(key_sample_block.getByPosition(0).type))
+        {
+            Tuple tuple_value = partition_key_value.safeGet<Tuple>();
+            if (tuple_value.size() != 1)
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Wrong number of fields in the partition expression: {}, must be: 1", tuple_value.size());
+            partition_key_value = std::move(tuple_value[0]);
+        }
+
         partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
     }
     else
