@@ -22,6 +22,7 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
@@ -2892,12 +2893,14 @@ void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
 
     /// By default, echoing and formatting are enabled in interactive mode and disabled in batch mode.
     /// In `clickhouse-local`, `--verbose` enables echoing as well (historical behavior, opt-in here).
+    /// ConfigHelper::getBool treats the self-closing (empty) tag form (e.g. <echo/>)
+    /// as `true`, which raw Poco boolean parsing would reject.
     const bool echo_default = is_interactive || (verbose_implies_echo && config.getBool("verbose", false));
-    echo_queries = config.getBool("echo", echo_default);
-    echo_query_formatted = config.getBool("echo-formatted", is_interactive);
-    echo_query_id = config.getBool("echo-query-id", is_interactive);
+    echo_queries = ConfigHelper::getBool(config, "echo", echo_default);
+    echo_query_formatted = ConfigHelper::getBool(config, "echo-formatted", is_interactive);
+    echo_query_id = ConfigHelper::getBool(config, "echo-query-id", is_interactive);
     echo_query_separator = config.getString("echo-query-separator", "");
-    highlight_queries = config.getBool("highlight", true);
+    highlight_queries = ConfigHelper::getBool(config, "highlight", true);
 }
 
 
@@ -4251,7 +4254,7 @@ void ClientBase::runInteractive()
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
-    if (getClientConfiguration().getBool("highlight", true))
+    if (ConfigHelper::getBool(getClientConfiguration(), "highlight", true))
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
@@ -4308,8 +4311,8 @@ void ClientBase::runInteractive()
         /// Hints need color, so they are enabled only together with highlighting.
         /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
         /// turns off autocompletion entirely, including the hints.
-        .enable_hints = getClientConfiguration().getBool("hints", true)
-            && getClientConfiguration().getBool("highlight", true)
+        .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
             && !getClientConfiguration().getBool("disable_suggestion", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
