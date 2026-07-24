@@ -33,17 +33,15 @@ Antes de conectarte, asegúrate de tener lo siguiente:
 El usuario dedicado necesita privilegios `SELECT` sobre las tablas que quiera consultar, así como sobre las tablas `system` (para detectar el esquema).
 
 ```sql
--- Ejemplo: Otorgar acceso de lectura a una base de datos específica
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- Otorgar acceso a los metadatos del sistema
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step>
-    ## Reúne los datos de conexión
-
+  <Step title="Reúne los datos de conexión" id="step-1-gather-connection-details">
     Para conectarte a ClickHouse mediante HTTP(S), necesitarás esta información:
 
     | **Parámetro**     | **Descripción**                                                                                         |
@@ -59,9 +57,7 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Ubicación del botón Connect en la consola de ClickHouse Cloud" border />
   </Step>
 
-  <Step>
-    ## Configura el acceso de red
-
+  <Step title="Configura el acceso de red" id="step-2-configure-network-access">
     Como Holistics es una aplicación en la nube, sus servidores deben poder acceder a tu base de datos. Tienes dos opciones:
 
     1. **Conexión directa (recomendada):** Añade las direcciones IP de Holistics a la lista de permitidas de tu firewall o a la IP Access List de ClickHouse Cloud. Puedes consultar la lista de IP en la guía de [IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
@@ -71,9 +67,7 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **Túnel SSH inverso:** Si tu base de datos está en una red privada (VPC) y no puede exponerse públicamente, usa un [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
 
-  <Step>
-    ## Agrega una fuente de datos en Holistics
-
+  <Step title="Agrega una fuente de datos en Holistics" id="step-3-add-data-source-in-holistics">
     1. En Holistics, ve a **Settings → Fuentes de datos**.
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Navegación a fuentes de datos en la configuración de Holistics" border />

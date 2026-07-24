@@ -25,30 +25,26 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 点击 **在 ClickHouse 中复制数据**，开始设置你的 ClickPipe。
 
 <Steps>
-  <Step>
-    ## 配置复制服务
-
+  <Step title="配置复制服务" id="configure-replication-service">
     填写复制设置：
 
     * **集成名称**：此 ClickPipe 的名称
     * **ClickHouse 服务**：选择现有的 ClickHouse Cloud 服务或创建一个新的
     * **Postgres 数据库**：要从中复制的源数据库
     * **复制方法**：选择以下之一：
-      * **初始加载 + CDC (变更数据捕获)&#x20;**：导入现有数据，并使用后续变更持续更新表 (推荐)
+      * **初始加载 + CDC (变更数据捕获)**：导入现有数据，并使用后续变更持续更新表 (推荐)
       * **仅初始加载**：对现有数据执行一次性快照，不进行持续更新
-      * **仅 CDC (变更数据捕获)&#x20;**：跳过初始快照，仅捕获后续变更
+      * **仅 CDC (变更数据捕获)**：跳过初始快照，仅捕获后续变更
 
     <Image img="/images/managed-postgres/replication-service-step.webp" alt="复制服务配置，显示集成名称、目标服务和复制方法选项" size="md" border />
 
-    点击 **下一步** 继续。
+    Click **下一步** 继续。
   </Step>
 
-  <Step>
-    ## 配置复制设置
-
+  <Step title="配置复制设置" id="replication-settings">
     微调数据复制方式：
 
-    * **同步间隔 (秒)&#x20;**：从 Postgres 拉取变更的频率 (默认：60)
+    * **同步间隔 (秒)**：从 Postgres 拉取变更的频率 (默认：60)
     * **初始加载的并行线程数**：初始快照期间使用的线程数 (默认：4)
     * **拉取批次大小**：复制期间每个批次拉取的行数 (默认：100000)
     * **快照中每个分区的行数**：初始快照期间每个分区包含的行数 (默认：100000)
@@ -56,33 +52,29 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="复制设置步骤，显示同步间隔、并行线程、拉取批次大小和快照配置选项" size="md" border />
 
-    点击 **下一步** 继续。
+    Click **下一步** 继续。
   </Step>
 
-  <Step>
-    ## 选择要复制的表
-
+  <Step title="选择要复制的表" id="select-tables">
     选择目标数据库，并选择要复制的表：
 
     * **目标数据库**：选择现有的 ClickHouse 数据库或创建一个新的
     * **默认目标表名加上 schema 名称前缀**：添加 Postgres schema 作为前缀，以避免命名冲突
-    * **保留源中的 NULL 值**：保留 NULL 值，而不是将其转换为默认值
+    * **保留源中的 NULL 值**：保留 NULL 值，而不是将其转换为类型默认值。此设置适用于管道中的所有表，并且在管道创建后无法更改。
     * **在合并期间移除已删除的行**：对于 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表，会在后台合并期间物理删除已删除的行
 
     展开各个 schema 并选择要复制的单个表。你还可以自定义目标表名和列设置。
 
     <Image img="/images/managed-postgres/select-tables-step.webp" alt="选择表步骤，显示数据库选择、复制选项，以及按 schema 分组的表选择器" size="md" border />
 
-    点击 **将数据复制到 ClickHouse** 开始复制。
+    Click **将数据复制到 ClickHouse** 开始复制。
   </Step>
 
-  <Step>
-    ## 监控你的 ClickPipe
-
+  <Step title="监控你的 ClickPipe" id="monitor-clickpipe">
     ClickPipe 启动后，你会在同一菜单中看到它。所有数据的初始快照可能需要一些时间，具体取决于你的表大小。
 
     <Image img="/images/managed-postgres/integration-running.webp" alt="ClickHouse 集成列表，显示一个处于运行中的 ClickPipe 及其目标服务和状态" size="md" border />
 
-    点击集成名称可查看详细状态、监控进度、查看错误并管理 ClickPipe。参见 [Postgres ClickPipe 的生命周期](/zh/integrations/clickpipes/postgres/lifecycle)，了解 ClickPipe 可能处于的不同状态。
+    点击集成名称可查看详细状态、监控进度、查看错误并管理 ClickPipe。参见 [Postgres ClickPipe 的生命周期](/zh/integrations/clickpipes/postgres/lifecycle) 来了解 ClickPipe 可能处于的不同状态。
   </Step>
 </Steps>

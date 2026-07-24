@@ -22,9 +22,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step>
-    ## 创建 ClickHouse 部署
-
+  <Step title="创建 ClickHouse 部署" id="1-create-a-clickhouse-deployment">
     本指南基于 Ubuntu 20.04 编写，且 ClickHouse 是在以下主机上通过 DEB 软件包 (使用 apt) 安装的。域名为 `marsnet.local`：
 
     | Host      | IP Address    |
@@ -38,9 +36,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ## 创建 TLS 证书
-
+  <Step title="创建 TLS 证书" id="2-create-tls-certificates">
     <Note>
       自签名证书仅用于演示，不应在生产环境中使用。应创建证书签名请求，并由组织进行签名，再使用将在设置中配置的 CA 证书链进行验证。不过，这些步骤可用于配置和测试相关设置，之后再替换为实际使用的证书。
     </Note>
@@ -90,9 +86,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 创建并配置用于存储证书和密钥的目录
-
+  <Step title="创建并配置用于存储证书和密钥的目录" id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       这一步必须在每个节点上执行。请在每台主机上使用相应的证书和密钥。
     </Note>
@@ -123,9 +117,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 使用 ClickHouse Keeper 配置基础版集群环境
-
+  <Step title="使用 ClickHouse Keeper 配置基础版集群环境" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     在此部署环境中，每个节点均使用以下 ClickHouse Keeper 配置。每台服务器都有其独立的 `<server_id>`。 (例如，节点 `chnode1` 对应 `<server_id>1</server_id>`，其余节点以此类推。)
 
     <Note>
@@ -250,9 +242,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 在 ClickHouse 节点上配置 TLS 接口
-
+  <Step title="在 ClickHouse 节点上配置 TLS 接口" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     以下设置需要在 ClickHouse server 的 `config.xml` 中配置：
 
     1. 为部署设置显示名称 (可选) ：
@@ -359,9 +349,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 测试
-
+  <Step title="测试" id="6-testing">
     1. 逐个启动所有节点：
        ```bash
        service clickhouse-server start

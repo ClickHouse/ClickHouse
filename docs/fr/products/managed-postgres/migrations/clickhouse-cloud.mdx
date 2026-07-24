@@ -28,111 +28,103 @@ ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre
 
 * **Propagation des DDL** : la réplication continue (CDC) capture les opérations DML ainsi que `ADD COLUMN`. Les autres modifications DDL, comme `DROP COLUMN` et `ALTER COLUMN`, ne sont pas propagées et doivent être appliquées manuellement sur la cible.
 
-<div id="step-1-connect">
-  ## Étape 1 : Connectez-vous à votre base de données source
-</div>
+<Steps>
+  <Step title="Connectez-vous à votre base de données source" id="step-1-connect">
+    Ouvrez la [console ClickHouse Cloud](https://clickhouse.cloud) et sélectionnez votre service Managed Postgres.
 
-Ouvrez la [console ClickHouse Cloud](https://clickhouse.cloud) et sélectionnez votre service Managed Postgres.
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Carte du service Managed Postgres dans la liste des services ClickHouse Cloud" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Carte du service Managed Postgres dans la liste des services ClickHouse Cloud" size="lg" border />
+    Dans la barre latérale de gauche, cliquez sur **Data sources**.
 
-Dans la barre latérale de gauche, cliquez sur **Data sources**.
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrée Data sources dans la barre latérale du service Managed Postgres" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrée Data sources dans la barre latérale du service Managed Postgres" size="lg" border />
+    Cliquez sur **Start import**.
 
-Cliquez sur **Start import**.
+    <Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Page Data sources avec le bouton Start import" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Page Data sources avec le bouton Start import" size="lg" border />
+    Renseignez les informations de connexion de votre base de données PostgreSQL source : hôte, port, nom d&#39;utilisateur, mot de passe et nom de la base de données. Activez **TLS** si votre source l&#39;exige.
 
-Renseignez les informations de connexion de votre base de données PostgreSQL source : hôte, port, nom d&#39;utilisateur, mot de passe et nom de la base de données. Activez **TLS** si votre source l&#39;exige.
+    Si vous avez besoin d&#39;une connexion privée à votre base de données source, vous pouvez opter pour un **tunnel SSH** et fournir les informations SSH nécessaires. Cela permet à la migration de se connecter en toute sécurité à des bases de données qui ne sont pas accessibles publiquement.
 
-Si vous avez besoin d&#39;une connexion privée à votre base de données source, vous pouvez utiliser un **tunnel SSH** et fournir les informations SSH nécessaires. Cela permet à la migration de se connecter en toute sécurité à des bases de données qui ne sont pas accessibles publiquement.
+    Choisissez une méthode d&#39;ingestion :
 
-Choisissez une méthode d&#39;ingestion :
+    * **Chargement initial + CDC** — copie les données existantes, puis maintient la cible synchronisée avec les modifications en cours.
+    * **Chargement initial uniquement** — copie unique, sans réplication continue.
+    * **CDC uniquement** — ignore la copie initiale et réplique uniquement les nouvelles modifications à partir de ce moment.
 
-* **Chargement initial + CDC** — copie les données existantes, puis maintient la cible synchronisée avec les modifications ultérieures.
-* **Chargement initial uniquement** — copie unique, sans réplication continue.
-* **CDC uniquement** — ignore la copie initiale et réplique uniquement les nouvelles modifications à partir de ce moment.
+    <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Étape 1 : formulaire de connexion à la base de données source avec options de méthode d'ingestion" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Étape 1 : formulaire de connexion à la base de données source avec options de méthode d'ingestion" size="lg" border />
+    Cliquez sur **Suivant**.
+  </Step>
 
-Cliquez sur **Next**.
+  <Step title="Exportez le schéma de votre base de données" id="step-2-export-schema">
+    L’assistant affiche une commande `pg_dump` préremplie avec les informations de connexion de votre source. Exécutez-la dans un terminal :
 
-<div id="step-2-export-schema">
-  ## Étape 2 : Exportez le schéma de votre base de données
-</div>
+    <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Étape 2 : commande pg_dump pour l’export du schéma" size="lg" border />
 
-L’assistant affiche une commande `pg_dump` préremplie avec les détails de connexion de votre source. Exécutez-la dans un terminal :
+    ```shell
+    pg_dump \
+      -h <source_host> \
+      -U <source_user> \
+      -d <source_database> \
+      --schema-only \
+      -f pg.sql
+    ```
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Étape 2 : commande pg_dump pour l’export du schéma" size="lg" border />
+    Cela crée `pg.sql` dans votre répertoire courant.
 
-```shell
-pg_dump \
-  -h <source_host> \
-  -U <source_user> \
-  -d <source_database> \
-  --schema-only \
-  -f pg.sql
-```
+    <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Sortie du terminal après l’exécution de pg_dump" size="lg" border />
 
-Cette commande crée `pg.sql` dans le répertoire courant.
+    Cliquez sur **Next**.
+  </Step>
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Sortie du terminal après l’exécution de pg_dump" size="lg" border />
+  <Step title="Importez le schéma dans votre service Managed Postgres" id="step-3-import-schema">
+    Sélectionnez la base de données de destination dans la liste déroulante, ou cliquez sur **Create a new database** pour en créer une.
 
-Cliquez sur **Suivant**.
+    L’assistant affiche une commande `psql` pour appliquer le dump du schéma à votre service Managed Postgres. Exécutez-la dans un terminal :
 
-<div id="step-3-import-schema">
-  ## Étape 3 : Importez le schéma dans votre service Managed Postgres
-</div>
+    <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Étape 3 : commande psql pour l’import du schéma" size="lg" border />
 
-Sélectionnez la base de données de destination dans la liste déroulante, ou cliquez sur **Créer une nouvelle base de données** pour en créer une.
+    ```shell
+    psql \
+      -h <target_host> \
+      -p 5432 \
+      -U <target_user> \
+      -d <target_database> \
+      -f pg.sql
+    ```
 
-L’assistant affiche une commande `psql` pour appliquer le dump de schéma à votre service Managed Postgres. Exécutez-la dans un terminal :
+    <Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Sortie du terminal après l’exécution de l’import du schéma avec psql" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Étape 3 : commande psql pour l’import du schéma" size="lg" border />
+    Cliquez sur **Next**.
+  </Step>
 
-```shell
-psql \
-  -h <target_host> \
-  -p 5432 \
-  -U <target_user> \
-  -d <target_database> \
-  -f pg.sql
-```
+  <Step title="Configurez les paramètres d’ingestion" id="step-4-ingestion-settings">
+    Indiquez la publication à utiliser pour la réplication logique. Si vous laissez ce champ vide, une publication sera créée automatiquement.
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Sortie du terminal après l’import du schéma avec psql" size="lg" border />
+    Développez **Advanced replication settings** pour ajuster le débit :
 
-Cliquez sur **Suivant**.
+    | Paramètre                                     | Valeur par défaut | Description                                                  |
+    | --------------------------------------------- | ----------------- | ------------------------------------------------------------ |
+    | Intervalle de synchronisation (secondes)      | 10                | Fréquence d’interrogation du slot de réplication             |
+    | Threads parallèles pour le chargement initial | 4                 | Nombre de threads pour la phase de copie en masse            |
+    | Pull batch size                               | 100,000           | Lignes récupérées par lot de réplication                     |
+    | Nombre de lignes de snapshot par partition    | 100000            | Taille de partition pour les snapshots de grandes tables     |
+    | Nombre de tables en snapshot en parallèle     | 1                 | Nombre de tables dont le snapshot est effectué simultanément |
 
-<div id="step-4-ingestion-settings">
-  ## Étape 4 : Configurer les paramètres d’ingestion
-</div>
+    <Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Étape 4 : formulaire des paramètres d’ingestion avec options de publication et de réplication avancées" size="lg" border />
 
-Indiquez la publication à utiliser pour la réplication logique. Si vous laissez ce champ vide, une publication est créée automatiquement.
+    Cliquez sur **Next**.
+  </Step>
 
-Développez **Paramètres avancés de réplication** pour ajuster le débit :
+  <Step title="Sélectionnez les tables" id="step-5-select-tables">
+    Sélectionnez les tables que vous souhaitez répliquer. Les tables sont regroupées par schéma. Sélectionnez des tables individuellement ou développez un schéma pour toutes les sélectionner.
 
-| Paramètre                                     | Par défaut | Description                                              |
-| --------------------------------------------- | ---------- | -------------------------------------------------------- |
-| Intervalle de synchronisation (secondes)      | 10         | Fréquence d’interrogation du slot de réplication         |
-| Threads parallèles pour le chargement initial | 4          | Nombre de threads pour la phase de copie en masse        |
-| Taille du lot d’extraction                    | 100,000    | Lignes récupérées par lot de réplication                 |
-| Nombre de lignes du snapshot par partition    | 100000     | Taille de partition pour les snapshots de grandes tables |
-| Nombre de tables du snapshot en parallèle     | 1          | Nombre de tables traitées simultanément pour le snapshot |
+    <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Étape 5 : sélecteur de tables regroupées par schéma avec le bouton Create migration" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Étape 4 : formulaire des paramètres d’ingestion avec publication et options avancées de réplication" size="lg" border />
-
-Cliquez sur **Next**.
-
-<div id="step-5-select-tables">
-  ## Étape 5 : Sélectionner des tables
-</div>
-
-Sélectionnez les tables que vous souhaitez répliquer. Les tables sont regroupées par schéma. Sélectionnez des tables individuellement ou développez un schéma pour les sélectionner toutes.
-
-<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Étape 5 : sélecteur de tables regroupées par schéma avec le bouton Créer une migration" size="lg" border />
-
-Cliquez sur **Créer une migration**.
+    Cliquez sur **Create migration**.
+  </Step>
+</Steps>
 
 <div id="monitor">
   ## Surveiller la migration
@@ -214,5 +206,5 @@ SELECT pg_drop_replication_slot('<slot_name>');
 </div>
 
 * [Guide de démarrage rapide de Managed Postgres](/fr/products/managed-postgres/quickstart)
-* [Détails de connexion de Managed Postgres](/fr/products/managed-postgres/connection)
-* [FAQ ClickPipes pour Postgres](/fr/integrations/clickpipes/postgres/faq)
+* [Paramètres de connexion de Managed Postgres](/fr/products/managed-postgres/connection)
+* [FAQ de ClickPipes pour Postgres](/fr/integrations/clickpipes/postgres/faq)
