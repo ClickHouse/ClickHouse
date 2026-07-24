@@ -766,7 +766,8 @@ Chunk StorageObjectStorageSource::generate()
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !hasNonEmptyExcludedRows(reader.getObjectInfo()->data_lake_metadata))
+            && !hasNonEmptyExcludedRows(reader.getObjectInfo()->data_lake_metadata)
+            && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -958,11 +959,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// Also skip when excluded_rows is present: ConstChunkGenerator bypasses DeletionVectorTransform, and the
     /// schema row-count cache key does not include deletion-vector identity (data files are immutable under
     /// Iceberg while DVs change independently).
+    /// Also skip when file_bucket_info is set: the cache key is file identity only, while bucketed tasks
+    /// only cover a subset of row groups.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
     const bool can_use_count_cache = need_only_count && !headers_requested
         && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
-        && !hasNonEmptyExcludedRows(object_info->data_lake_metadata);
+        && !hasNonEmptyExcludedRows(object_info->data_lake_metadata)
+        && !object_info->file_bucket_info;
 
     std::optional<size_t> num_rows_from_cache = can_use_count_cache ? try_get_num_rows_from_cache() : std::nullopt;
 
