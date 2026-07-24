@@ -83,7 +83,13 @@ como:
   ## CRUD
 </div>
 
-Vamos analisar o ciclo de vida de um serviço Postgres.
+Vamos examinar o ciclo de vida de um serviço Postgres.
+
+<Warning>
+  **Ocultação de credenciais a partir de 31 de julho de 2026**
+
+  A partir de **31 de julho de 2026**, a API não retorna mais as propriedades `password` e `connectionString` em suas respostas. Elas aparecem apenas na resposta de [criação](#create) e na resposta de [redefinição de senha] quando a solicitação não inclui senha. Recomendamos que você capture as credenciais da resposta de [criação](#create). Se você gerencia serviços com Terraform, faça upgrade do provider para a versão **v3.21.0 ou posterior** antes de 31 de julho de 2026 (consulte a [referência do Terraform](/pt-BR/products/managed-postgres/terraform)).
+</Warning>
 
 <div id="create">
   ### Criar
@@ -113,12 +119,13 @@ create_data='{
 ```
 
 Agora use esses dados para criar uma nova instância; observe que isso requer o cabeçalho
-Content-Type:
+Content-Type. Salve a resposta para ter acesso às credenciais retornadas:
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 Em caso de sucesso, uma nova instância será criada e as informações sobre ela serão retornadas,
@@ -161,7 +168,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-A saída será semelhante ao JSON retornado na criação, mas fique de olho
+A saída será semelhante ao JSON retornado na criação (mas sem as propriedades `password` e `connectionString` após 31 de julho de 2026), mas fique de olho
 em `state`; quando ele mudar para `running`, o servidor estará pronto:
 
 ```bash
@@ -174,15 +181,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-Agora você pode usar a propriedade `connectionString` para se conectar, por exemplo, usando
-[psql]:
+Agora você pode usar a propriedade `connectionString` salva da resposta de criação
+para se conectar, por exemplo, usando [psql]:
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -449,23 +452,25 @@ de contadores documentado em [contadores por execução].
 
 [chaves de API]: /products/cloud/features/admin-features/api/openapi "Gerenciar chaves de API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "Especificação OpenAPI para ClickHouse Cloud: Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "Referência da ClickHouse Cloud API: Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "Buscar a lista de serviços Postgres de uma organização"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "Buscar a lista de serviços Postgres de uma organização"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "Criar um novo serviço Postgres"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "Criar um novo serviço Postgres"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "Documentação do PostgreSQL: psql — terminal interativo do PostgreSQL"
 
-[API de patch]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "Atualizar um serviço PostgreSQL"
+[API de patch]: /products/cloud/api-reference/postgres/postgres-service-patch "Atualizar um serviço PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 
 [Configuração do Postgres]: https://www.postgresql.org/docs/18/runtime-config.html "Documentação do PostgreSQL: Configuração do servidor"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Atualizar a configuração de um serviço Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Substituir a configuração do serviço Postgres"
 
-[API de exclusão]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "Excluir um serviço PostgreSQL"
+[API de exclusão]: /products/cloud/api-reference/postgres/postgres-service-delete "Excluir um serviço PostgreSQL"
+
+[redefinição de senha]: /products/cloud/api-reference/postgres/postgres-service-set-password "Redefinir a senha de superusuário de um serviço Postgres"
 
 [endpoint do Prometheus]: /products/managed-postgres/monitoring/prometheus "Endpoint do Prometheus do Managed Postgres"
 
@@ -477,6 +482,6 @@ de contadores documentado em [contadores por execução].
 
 [contadores por execução]: /products/managed-postgres/monitoring/query-insights#counters "Contadores por execução do Query Insights"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Listar padrões de consultas lentas do Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Listar padrões de consultas lentas do Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "Obter um padrão de consulta lenta do Postgres com execuções recentes"
+[API de padrão de consulta lenta]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obter um padrão de consulta lenta do Postgres com execuções recentes"

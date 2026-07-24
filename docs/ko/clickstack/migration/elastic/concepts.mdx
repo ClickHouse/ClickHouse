@@ -75,7 +75,7 @@ Elasticsearch는 인덱싱 전에 문서를 변환하기 위해 프로세서(`en
   ### 쿼리 언어
 </div>
 
-Elasticsearch는 [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl), [ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql), [EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql), [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql)(Lucene 스타일) 쿼리를 포함한 [여러 쿼리 언어](https://www.elastic.co/docs/explore-analyze/query-filter/languages)를 지원하지만, 조인 지원은 제한적이며 [`ES|QL`](https://www.elastic.co/guide/en/elasticsearch/reference/8.x/esql-commands.html#esql-lookup-join)을 통해 **left outer joins**만 사용할 수 있습니다. ClickHouse는 [모든 조인 유형](/ko/reference/statements/select/join#supported-types-of-join), [윈도우 함수](/ko/reference/functions/window-functions/index), 서브쿼리(상관 서브쿼리 포함), CTE를 포함한 **전체 SQL 구문**을 지원합니다. 이는 관측성 신호를 비즈니스 데이터 또는 인프라 데이터와 연관시켜 분석해야 할 때 큰 장점입니다.
+Elasticsearch는 [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl), [ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql), [EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql), [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql)(Lucene 스타일) 쿼리를 포함한 [여러 쿼리 언어](https://www.elastic.co/docs/explore-analyze/query-filter/languages)를 지원하지만, 조인 지원은 제한적이며 [`ES|QL`](https://www.elastic.co/docs/reference/query-languages/esql/commands/lookup-join)을 통해 **left outer joins**만 사용할 수 있습니다. ClickHouse는 [모든 조인 유형](/ko/reference/statements/select/join#supported-types-of-join), [윈도우 함수](/ko/reference/functions/window-functions/index), 서브쿼리(상관 서브쿼리 포함), CTE를 포함한 **전체 SQL 구문**을 지원합니다. 이는 관측성 신호를 비즈니스 데이터 또는 인프라 데이터와 연관시켜 분석해야 할 때 큰 장점입니다.
 
 ClickStack에서는 전환을 쉽게 할 수 있도록 [UI에서 Lucene 호환 검색 인터페이스를 제공](/ko/clickstack/features/search)하며, 동시에 ClickHouse 백엔드를 통한 전체 SQL 지원도 제공합니다. 이 구문은 [Elastic query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) 구문과 유사합니다. 이 구문을 정확히 비교하려면 [&quot;ClickStack과 Elastic에서 검색하기&quot;](/ko/clickstack/migration/elastic/search)를 참조하십시오.
 
@@ -93,7 +93,7 @@ Elasticsearch는 JSON(및 [제한적인 CSV](https://www.elastic.co/docs/referen
 
 <Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
 
-세그먼트 분할(sharding) 개념은 Elasticsearch의 확장성 모델에서 기본입니다. 각 ① [**인덱스**](https://www.elastic.co/blog/what-is-an-elasticsearch-index)는 **세그먼트**로 분할되며, 각 세그먼트는 디스크에 세그먼트로 저장된 물리적 Lucene 인덱스입니다. 세그먼트는 복원력을 위해 replica 세그먼트라고 불리는 하나 이상의 물리적 복사본을 가질 수 있습니다. 확장성을 위해 세그먼트와 리플리카는 여러 노드에 분산될 수 있습니다. 단일 세그먼트 ②는 하나 이상의 불변 세그먼트로 구성됩니다. 세그먼트는 Elasticsearch의 기반이 되는 인덱싱 및 검색 기능을 제공하는 Java 라이브러리인 Lucene의 기본 인덱싱 구조입니다.
+세그먼트 분할(sharding) 개념은 Elasticsearch의 확장성 모델에서 기본입니다. 각 ① [**인덱스**](https://www.elastic.co/blog/what-is-an-elasticsearch-index)는 **세그먼트**로 분할되며, 각 세그먼트는 디스크에 세그먼트로 저장된 물리적 Lucene 인덱스입니다. 세그먼트는 복원력을 위해 replica 세그먼트라고 불리는 하나 이상의 물리적 복사본을 가질 수 있습니다. 확장성을 위해 세그먼트와 레플리카는 여러 노드에 분산될 수 있습니다. 단일 세그먼트 ②는 하나 이상의 불변 세그먼트로 구성됩니다. 세그먼트는 Elasticsearch의 기반이 되는 인덱싱 및 검색 기능을 제공하는 Java 라이브러리인 Lucene의 기본 인덱싱 구조입니다.
 
 <Info>
   **Elasticsearch의 삽입 처리**
@@ -101,7 +101,7 @@ Elasticsearch는 JSON(및 [제한적인 CSV](https://www.elastic.co/docs/referen
   Ⓐ 새로 삽입된 문서들은 Ⓑ 먼저 메모리 내 인덱싱 버퍼로 들어가며 기본적으로 1초마다 플러시됩니다. 라우팅 공식이 플러시된 문서의 대상 세그먼트를 결정하고, 세그먼트에 대해 새로운 세그먼트가 디스크에 기록됩니다. 쿼리 효율을 높이고 삭제되거나 업데이트된 문서의 물리적 삭제를 가능하게 하기 위해 세그먼트는 백그라운드에서 지속적으로 더 큰 세그먼트로 병합되어 최대 크기 5GB에 도달할 때까지 합쳐집니다. 그러나 더 큰 세그먼트로 강제 병합하는 것도 가능합니다.
 </Info>
 
-Elasticsearch는 [JVM 힙 및 메타데이터 오버헤드](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)를 이유로 세그먼트 크기를 약 [50GB 혹은 2억 문서](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)로 권장합니다. 각 세그먼트가 가지는 오버헤드에 대한 자세한 내용은 [여기](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead)를 참조하세요. 세그먼트당 [20억 문서의 하드 리미트](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit)도 존재합니다. Elasticsearch는 세그먼트 전체에 쿼리를 병렬화하지만 각 세그먼트는 **단일 스레드**로 처리되므로 과도한 세그먼트 분할은 비용이 많이 들고 역효과를 낳습니다. 이는 성능 확장을 위해 더 많은 세그먼트(및 노드)가 필요하다는 점에서 세그먼트 분할과 확장을 밀접하게 결합합니다.
+Elasticsearch는 [JVM 힙 및 메타데이터 오버헤드](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead)를 이유로 세그먼트 크기를 약 [50GB 혹은 2억 문서](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)로 권장합니다. 세그먼트당 [20억 문서의 하드 리미트](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit)도 존재합니다. Elasticsearch는 세그먼트 전체에 쿼리를 병렬화하지만 각 세그먼트는 **단일 스레드**로 처리되므로 과도한 세그먼트 분할은 비용이 많이 들고 역효과를 낳습니다. 이는 성능 확장을 위해 더 많은 세그먼트(및 노드)가 필요하다는 점에서 세그먼트 분할과 확장을 밀접하게 결합합니다.
 
 Elasticsearch는 빠른 검색을 위해 모든 필드를 [**역색인(inverted indices)**](https://www.elastic.co/docs/manage-data/data-store/index-basics)으로 인덱싱하며, 집계, 정렬 및 스크립트된 필드 접근을 위해 선택적으로 [**doc values**](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/doc-values)를 사용합니다. 숫자 및 지리 필드는 지리공간 데이터 및 숫자·날짜 범위 검색을 위해 [Block K-D 트리](https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf)를 사용합니다.
 
@@ -109,7 +109,7 @@ Elasticsearch는 빠른 검색을 위해 모든 필드를 [**역색인(inverted 
 
 Elasticsearch에서 [인덱스 매핑](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html)(ClickHouse의 테이블 스키마에 해당)은 필드 유형과 이 영속성 및 쿼리에 사용되는 데이터 구조를 제어합니다.
 
-반대로 ClickHouse는 **열 지향(column-oriented)** 입니다 — 각 컬럼은 독립적으로 저장되지만 항상 테이블의 기본/정렬 키로 정렬됩니다. 이 정렬은 ClickHouse가 쿼리 실행 중 데이터를 효율적으로 건너뛰게 해주는 [희소 기본 인덱스(sparse primary indexes)](/ko/concepts/core-concepts/primary-indexes)를 가능하게 합니다. 쿼리가 기본 키 필드로 필터링할 때 ClickHouse는 각 컬럼의 관련 부분만 읽어 디스크 I/O를 크게 줄이고 성능을 향상시킵니다 — 모든 컬럼에 전체 인덱스가 없어도 그렇습니다.
+반대로 ClickHouse는 **컬럼 지향(column-oriented)** 입니다 — 각 컬럼은 독립적으로 저장되지만 항상 테이블의 기본/정렬 키로 정렬됩니다. 이 정렬은 ClickHouse가 쿼리 실행 중 데이터를 효율적으로 건너뛰게 해주는 [희소 프라이머리 인덱스(sparse primary indexes)](/ko/concepts/core-concepts/primary-indexes)를 가능하게 합니다. 쿼리가 기본 키 필드로 필터링할 때 ClickHouse는 각 컬럼의 관련 부분만 읽어 디스크 I/O를 크게 줄이고 성능을 향상시킵니다 — 모든 컬럼에 전체 인덱스가 없어도 그렇습니다.
 
 <Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
 
@@ -170,7 +170,7 @@ ClickHouse의 `SELECT count(*) FROM ... GROUP BY ...` SQL 쿼리에 해당하는
 
 Elasticsearch의 이 집계는 조회 대상 데이터가 여러 세그먼트에 걸쳐 있을 때 [「top-N」 쿼리 결과를 추정](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error)합니다(예: count 기준 상위 10개 호스트). 이러한 추정은 속도를 높이지만 정확도를 떨어뜨릴 수 있습니다. 이 오류는 [`doc_count_error_upper_bound`를 확인](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error)하고 `shard_size` 매개변수를 늘려 줄일 수 있지만, 그 대가로 메모리 사용량이 늘고 쿼리 성능이 저하됩니다.
 
-또한 Elasticsearch는 모든 버킷 집계에 대해 [`size` 설정](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size)이 필요합니다. 즉, 제한을 명시적으로 설정하지 않으면 모든 고유 그룹을 반환할 수 없습니다. 카디널리티가 높은 집계는 [`max_buckets` 제한](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets)에 도달할 위험이 있거나, 대개 복잡하고 비효율적인 [composite aggregation](https://www.elastic.co/docs/reference/aggregations/bucket/composite-aggregation)으로 페이지네이션해야 합니다.
+또한 Elasticsearch는 모든 버킷 집계에 대해 [`size` 설정](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size)이 필요합니다. 즉, 제한을 명시적으로 설정하지 않으면 모든 고유 그룹을 반환할 수 없습니다. 카디널리티가 높은 집계는 [`max_buckets` 제한](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets)에 도달할 위험이 있거나, 대개 복잡하고 비효율적인 [composite aggregation](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-composite-aggregation)으로 페이지네이션해야 합니다.
 
 반면 ClickHouse는 별도 설정 없이 기본적으로 정확한 집계를 수행합니다. `count(*)`와 같은 함수는 추가 구성 없이도 정확한 결과를 반환하므로, 쿼리 동작이 더 단순하고 예측 가능해집니다.
 

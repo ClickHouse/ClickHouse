@@ -12,10 +12,6 @@ import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/Pri
 
 <PrivatePreviewBadge />
 
-<Note>
-  SCIMプロビジョニングはプライベートプレビューです。
-</Note>
-
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
 ClickHouse Cloud は、ユーザーとグループのライフサイクルを自動管理するための SCIM 2.0 (System for Cross-domain Identity Management) をサポートしています。IDプロバイダーに接続すると、ClickHouse Cloud アプリケーションに割り当てたすべてのユーザーが、適切なロールで組織内に自動的に作成されます。プロファイルの更新も自動的に反映され、IdP からユーザーを削除すると、そのユーザーのアクセス権も削除されます。手動で招待したり、不要なアカウントが残ったりすることはありません。
@@ -48,9 +44,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
 </div>
 
 <Steps>
-  <Step>
-    ### SCIM を有効にする
-
+  <Step title="SCIM を有効にする" id="enable-scim-provisioning">
     組織管理者として **ClickHouse Cloud Console** にサインインし、**組織設定 → SAML and SCIM settings → SCIM Configuration** を開きます。
 
     ![組織設定で SCIM 設定タブに移動する](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -68,9 +62,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     これをコピーしてください。後で Okta に貼り付けます。
   </Step>
 
-  <Step>
-    ### SCIM アクセストークンを生成する
-
+  <Step title="SCIM アクセストークンを生成する" id="generate-scim-token">
     `Create an API key` セクションで有効期限を選択します。
 
     <Tip>
@@ -84,9 +76,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     ![新しい SCIM API key を生成する](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### ロールマッピングを定義する
-
+  <Step title="ロールマッピングを定義する" id="define-role-mapping">
     SCIM Configuration パネルで **Map roles in &quot;Users and roles&quot;** をクリックします (または **Users and roles → Roles** から直接移動します)。
 
     SCIM グループは名前に基づいて ClickHouse Cloud のロールに紐付けられます。あわせて次のルールに注意してください。
@@ -103,9 +93,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
 </div>
 
 <Steps>
-  <Step>
-    ### Okta で ClickHouse Cloud アプリケーションを開く
-
+  <Step title="Okta で ClickHouse Cloud アプリケーションを開く" id="open-clickhouse-cloud-app">
     **Okta Admin Console** で **Applications → Applications** に移動し、ClickHouse Cloud の SAML SSO 設定時に作成したアプリケーションを検索して開きます。
 
     まだ SAML アプリケーションを作成していない場合は、先に [SAML SSO setup guide](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) に従ってください。SCIM プロビジョニングは同じアプリケーションで設定します。
@@ -119,9 +107,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     ![アプリケーションに Provisioning タブが表示された状態](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### Okta を SCIM エンドポイントに接続する
-
+  <Step title="Okta を SCIM エンドポイントに接続する" id="connect-okta-scim">
     アプリケーションの **Provisioning** タブを開き、`Edit` をクリックします。フォームに必要事項を入力します。
 
     * **SCIM connector base URL** — 先ほどの SCIM エンドポイント URL。
@@ -147,9 +133,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     `Save` をクリックします。
   </Step>
 
-  <Step>
-    ### Provisioning の動作を設定する
-
+  <Step title="Provisioning の動作を設定する" id="configure-provisioning-behavior">
     引き続き **Provisioning** タブで、左側のサイドバーにある `To App` をクリックします。`Edit` をクリックし、以下を有効にします。
 
     | 設定                     | 操作  | 内容                                                   |
@@ -166,9 +150,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     ![Provisioning の設定を保存して Sign On タブに戻る](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### ユーザー属性をマッピングする
-
+  <Step title="ユーザー属性をマッピングする" id="map-user-attributes">
     Okta と ClickHouse Cloud で、どのユーザーフィールドを対応付けるか一致している必要があります。**Provisioning** タブで `To App` をクリックし、アプリケーションの **Attribute Mappings** を確認してください。通常は Okta SAML アプリケーションのデフォルト設定で問題ありませんが、以下の表を確認してください。
 
     | Okta 属性           | ClickHouse Cloud (SCIM) 属性 | 必須                                  |
@@ -189,9 +171,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     </Warning>
   </Step>
 
-  <Step>
-    ### グループをプッシュしてユーザーを割り当てる
-
+  <Step title="グループをプッシュしてユーザーを割り当てる" id="push-groups-and-assign-users">
     ここでロールが自動的に適用されます。
 
     **Okta でグループを作成します。** 先ほど設定した各ロールマッピングに対して、**表示名が完全に一致する** Okta グループを作成するか、既存のグループを特定します。たとえば、マッピングが `ClickHouse-Admins → Admin` であれば、Okta で `ClickHouse-Admins` という名前のグループを作成します。
@@ -251,88 +231,107 @@ Provisioning の設定が完了したら、ClickHouse Cloud Console の **Settin
   ## 本番環境向けのベストプラクティス
 </div>
 
-**トークンは定期的にローテーションしてください。** SCIMトークンのローテーションを忘れないよう、カレンダーにリマインダーを設定してください。推奨頻度は12か月ごと、またはそのトークンを把握していた管理者が退職した場合は直ちに実施することです。ClickHouse Cloud では、プロビジョニングを止めずにローテーションできるよう、組織ごとに2つのアクティブなトークンを利用できます。
+<div id="rotate-tokens">
+  ### トークンは定期的にローテーションしてください
+</div>
 
-**直接割り当てではなく、グループを使ってください。** アプリケーションにユーザーを直接割り当てることもできますが、すぐに監査しづらくなります。Okta のグループ経由で割り当てれば、アクセスレビューやロール変更を1か所で管理できます。
+SCIMトークンのローテーションを忘れないよう、カレンダーにリマインダーを設定してください。推奨頻度は12か月ごと、またはそのトークンを把握していた管理者が退職した場合は直ちに実施することです。ClickHouse Cloud では、プロビジョニングを止めずにローテーションできるよう、組織ごとに2つのアクティブなトークンを利用できます。
 
-**監査ログを確認してください。** ユーザーの作成、無効化、プロファイル更新など、あらゆる SCIM アクションは ClickHouse Cloud の監査ログに記録されます。[Audit logging](/ja/products/cloud/reference/security/audit-logging)を参照してください。ログは定期的に確認し、特に大量のプロビジョニングが発生した後は注意して確認してください。
+<div id="use-groups">
+  ### 直接割り当てではなく、グループを使ってください
+</div>
 
-**適切なデフォルトロールを設定してください。** Okta ユーザーがアプリケーションに割り当てられていても、どのプッシュ済みグループにも含まれていない場合は、**Default role** で作成されます。設定ミスがあっても安全に失敗するよう、ユーザーが*最低限の操作は*行える範囲で、最も制限の厳しいロールを選んでください。
+アプリケーションにユーザーを直接割り当てることもできますが、すぐに監査しづらくなります。Okta のグループ経由で割り当てれば、アクセスレビューやロール変更を1か所で管理できます。
 
-**SCIM と手動招待を同時に使わないでください。** SCIM を有効にしたら、メンバーシップは Okta 経由で管理し、同じユーザーに手動招待を送らないでください。両方を混在させると、どちらを正とすべきかが不明確になり、重複が発生することがあります。
+<div id="review-audit-log">
+  ### 監査ログを確認してください
+</div>
 
-**失敗したプロビジョニングタスクを監視してください。** Okta は失敗したプロビジョニング呼び出しを再試行しますが、最終的には **Tasks** キューに保留します。このキューを IT チームが普段監視しているダッシュボードに追加するか、Okta の webhook やメールアラートを使って、継続的な失敗を検知してください。
+ユーザーの作成、無効化、プロファイル更新など、あらゆる SCIM アクションは ClickHouse Cloud の監査ログに記録されます。[Audit logging](/ja/products/cloud/reference/security/audit-logging)を参照してください。ログは定期的に確認し、特に大量のプロビジョニングが発生した後は注意して確認してください。
+
+<div id="default-role">
+  ### 適切なデフォルトロールを設定してください。
+</div>
+
+Okta ユーザーがアプリケーションに割り当てられていても、どのプッシュ済みグループにも含まれていない場合は、**Default role** で作成されます。設定ミスがあっても安全に失敗するよう、ユーザーが*最低限の操作は*行える範囲で、最も制限の厳しいロールを選んでください。
+
+<div id="avoid-manual-invites">
+  ### SCIM と手動招待を同時に使わないでください
+</div>
+
+SCIM を有効にしたら、メンバーシップは Okta 経由で管理し、同じユーザーに手動招待を送らないでください。両方を混在させると、どちらを正とすべきかが不明確になり、重複が発生することがあります。
+
+<div id="monitor-failed-tasks">
+  ### 失敗したプロビジョニングタスクを監視してください
+</div>
+
+Okta は失敗したプロビジョニング呼び出しを再試行しますが、最終的には **Tasks** キューに保留します。このキューを IT チームが普段監視しているダッシュボードに追加するか、Okta の webhook やメールアラートを使って、継続的な失敗を検知してください。
 
 <div id="troubleshooting">
   ## トラブルシューティング
 </div>
 
-<div id="test-credentials-fails">
-  ### Okta で &quot;Test connector configuration&quot; が失敗する
-</div>
+<AccordionGroup>
+  <Accordion title="Okta で &#x22;Test connector configuration&#x22; が失敗する">
+    * ClickHouse Cloud Console で SCIM が**有効**になっていることを確認します。
+    * Okta の**base URL** が、Cloud Console に表示されている SCIM エンドポイント URL と完全に一致していることを確認します。組織 ID が正しい必要があります。
+    * **トークンのキーとシークレット**が、前後に空白を含まず貼り付けられていることを確認します。
+    * トークンをローテーションした場合は、以前の組み合わせではなく、**新しい**キーとシークレットを使用していることを確認します。
+  </Accordion>
 
-* ClickHouse Cloud Console で SCIM が **有効** になっていることを確認してください。
-* Okta の **base URL** が、Cloud Console に表示されている SCIM のエンドポイント URL と完全に一致していることを確認してください。組織 ID が正しい必要があります。
-* **トークンのキーとシークレット** を、先頭や末尾に空白を含めずに貼り付けていることを確認してください。
-* トークンをローテーションした場合は、以前の組ではなく、**新しい** キーとシークレットを使用していることを確認してください。
+  <Accordion title="ユーザーは作成されるが権限がない">
+    * 想定しているロールに対して、**Map roles in &quot;Users and roles&quot;** に行を追加していることを確認します。
+    * Okta のグループ名が、マッピング内の SCIM グループ名と**完全に**一致していることを確認します。大文字小文字やハイフンも含めて一致している必要があります。
+    * 一部のユーザーを意図的にグループなしでプロビジョニングする設計の場合は、**Default role** が設定されていることを確認します。
+  </Accordion>
 
-<div id="users-no-permissions">
-  ### ユーザーは作成されるが、権限が付与されない
-</div>
+  <Accordion title="メンバー一覧に重複ユーザーが表示される">
+    通常は、Okta と過去の手動招待との間でメールアドレスの大文字小文字が一致していないことが原因です。Members 一覧から重複したユーザーを削除し、その後 Okta でそのユーザーの割り当てを解除してから再割り当てし、あらためてプロビジョニングしてください。
+  </Accordion>
 
-* 想定しているロールについて、**Map roles in &quot;Users and roles&quot;** に行が追加されていることを確認してください。
-* Okta のグループ名が、マッピング内の SCIM グループ名と**完全に**一致していること (大文字・小文字やハイフンを含む) を確認してください。
-* 設計上、意図的に一部のユーザーをグループなしでプロビジョニングしている場合は、**Default role** が設定されていることを確認してください。
+  <Accordion title="グループのプッシュが &#x22;displayName not recognised&#x22; で失敗する">
+    Okta のグループ名が、ClickHouse Cloud で設定されているマッピングと一致していません。Okta のグループ名を変更するか、SCIM Configuration パネル (または **Users and roles → Roles**) から **Map roles in &quot;Users and roles&quot;** にマッピングを追加してください。
+  </Accordion>
 
-<div id="duplicate-user">
-  ### メンバーリスト内の重複ユーザー
-</div>
+  <Accordion title="無効化されたユーザーが引き続きメンバーとして表示される">
+    Okta で無効化が反映されるまで最大 1 分かかることがあります。数分経ってもユーザーが引き続きメンバーとして表示される場合は、Okta の **Provisioning → View Logs** で無効化タスクのエラーを確認してください。
+  </Accordion>
 
-通常は、Okta と過去の手動招待でメールアドレスの大文字・小文字の不一致があることが原因です。Members リストから重複した項目を削除し、その後 Okta でそのユーザーの割り当てを解除してから再度割り当て、あらためてプロビジョニングしてください。
+  <Accordion title="SCIM トークンをローテーションしたら Okta が失敗するようになった">
+    Okta で**同じ SCIM アプリケーション**の認証情報を更新したことを確認してください。更新後、`Test Connector Configuration` をクリックして確認します。プロビジョニングが正常な状態に戻ったら、ClickHouse Cloud Console で古いトークンを取り消します。
+  </Accordion>
 
-<div id="group-display-name">
-  ### グループのプッシュが &quot;displayName not recognised&quot; で失敗する
-</div>
-
-Okta のグループ名が、ClickHouse Cloud で設定されているマッピングと一致していません。Okta のグループ名を変更するか、SCIM Configuration パネルの **Map roles in &quot;Users and roles&quot;** でマッピングを追加してください (または **Users and roles → Roles** から追加します) 。
-
-<div id="deactivated-users-remaining">
-  ### 無効化したユーザーが引き続きメンバーとして表示される
-</div>
-
-Okta で無効化が反映されるまで、最大 1 分かかることがあります。数分経ってもそのユーザーがまだメンバーのままである場合は、Okta の **Provisioning → View Logs** で、無効化タスクに関するエラーがないか確認してください。
-
-<div id="token-rotation-issue">
-  ### SCIMトークンをローテーションした後、Okta でエラーが発生するようになりました
-</div>
-
-Okta の**同じ SCIM アプリケーション**で認証情報を更新したことを確認してください。更新後、`Test Connector Configuration` をクリックして確認します。Provisioning が再び緑色になったら、ClickHouse Cloud Console で古いトークンを取り消してください。
-
-<div id="lost-token">
-  ### SCIM トークンを紛失した場合
-</div>
-
-トークンは再取得できません。ClickHouse Cloud Console の **組織設定 → SAML and SCIM settings → SCIM Configuration** で、紛失したトークンを取り消して新しいトークンを生成し、Okta の認証情報を更新してください。
+  <Accordion title="SCIM トークンを紛失した">
+    トークンは復元できません。ClickHouse Cloud Console の **組織設定 → SAML and SCIM settings → SCIM Configuration** で、紛失したトークンを取り消して新しいものを生成し、その後 Okta の認証情報を更新してください。
+  </Accordion>
+</AccordionGroup>
 
 <div id="faq">
   ## よくある質問
 </div>
 
-**SCIM を使う前に SAML SSO は必要ですか？**
-はい。SCIM はユーザーアカウントを作成しますが、その認証は ClickHouse Cloud が SAML 経由で行います。先に [SAML SSO](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) を設定してください。
+<AccordionGroup>
+  <Accordion title="SCIM を使う前に SAML SSO は必要ですか？">
+    はい。SCIM はユーザーアカウントを作成しますが、その認証は ClickHouse Cloud が SAML 経由で行います。先に [SAML SSO](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) を設定してください。
+  </Accordion>
 
-**SCIM は Microsoft Entra ID、OneLogin、またはその他の SCIM 2.0 IdP で動作しますか？**
-公式には、いいえ — 現時点でテスト済みかつサポート対象なのは Okta のみです。エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証は Basic Auth のみに制限されているため、Basic Auth で認証できない IdP では動作しません。その他の Basic Auth 対応 SCIM 2.0 IdP も実際には動作する可能性がありますが、保証はありません。
+  <Accordion title="SCIM は Microsoft Entra ID、OneLogin、またはその他の SCIM 2.0 IdP で動作しますか？">
+    公式には、いいえ — 現時点でテスト済みかつサポート対象なのは Okta のみです。エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証は Basic Auth のみに制限されているため、Basic Auth で認証できない IdP では動作しません。その他の Basic Auth 対応 SCIM 2.0 IdP も実際には動作する可能性がありますが、保証はありません。
+  </Accordion>
 
-**Okta での変更はどれくらいで ClickHouse Cloud に反映されますか？**
-ほとんどの操作は数秒以内に反映されます。大量の変更 (大規模なグループのプッシュ) は、規模によってはさらに時間がかかることがありますが、一時的なエラーに対しては Okta が自動的に再試行します。
+  <Accordion title="Okta での変更はどれくらいで ClickHouse Cloud に反映されますか？">
+    ほとんどの操作は数秒以内に反映されます。大量の変更 (大規模なグループのプッシュ) は、規模によってはさらに時間がかかることがありますが、一時的なエラーに対しては Okta が自動的に再試行します。
+  </Accordion>
 
-**1 つの Okta テナントから複数の ClickHouse Cloud 組織をプロビジョニングできますか？**
-はい — 組織ごとに、それぞれ専用の SCIM エンドポイント URL とトークンを使ってアプリケーションを 1 つずつインストールしてください。必要に応じて、同じ Okta グループを各アプリケーションに push できます。
+  <Accordion title="1 つの Okta テナントから複数の ClickHouse Cloud 組織をプロビジョニングできますか？">
+    はい — 組織ごとに、それぞれ専用の SCIM エンドポイント URL とトークンを使ってアプリケーションを 1 つずつインストールしてください。必要に応じて、同じ Okta グループを各アプリケーションに push できます。
+  </Accordion>
 
-**行き詰まった場合は、どこでサポートを受けられますか？**
-ClickHouse Cloud Console の **Help → Contact support** からサポートチケットを作成し、次の情報を含めてください。
+  <Accordion title="行き詰まった場合は、どこでサポートを受けられますか？">
+    ClickHouse Cloud Console の **Help → Contact support** からサポートチケットを作成し、次の情報を含めてください。
 
-* 組織 ID
-* Okta アプリケーション ID
-* Okta のログにある、失敗したタスクまたはテストのスクリーンショット
+    * 組織 ID
+    * Okta アプリケーション ID
+    * Okta のログにある、失敗したタスクまたはテストのスクリーンショット
+  </Accordion>
+</AccordionGroup>

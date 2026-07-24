@@ -41,9 +41,7 @@ GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step>
-    ## اجمع تفاصيل الاتصال
-
+  <Step title="اجمع تفاصيل الاتصال" id="step-1-gather-connection-details">
     للاتصال بـ ClickHouse عبر HTTP(S)، ستحتاج إلى المعلومات التالية:
 
     | **المعلمة**       | **الوصف**                                                                                      |
@@ -59,9 +57,7 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="موضع زر Connect في وحدة تحكم ClickHouse Cloud" border />
   </Step>
 
-  <Step>
-    ## اضبط الوصول إلى الشبكة
-
+  <Step title="اضبط الوصول إلى الشبكة" id="step-2-configure-network-access">
     بما أن Holistics تطبيق قائم على السحابة، يجب أن تتمكن خوادمه من الوصول إلى قاعدة بياناتك. لديك خياران:
 
     1. **اتصال مباشر (موصى به):** اسمح بعناوين IP الخاصة بـ Holistics في جدار الحماية لديك أو في IP Access List الخاصة بـ ClickHouse Cloud. يمكنك العثور على قائمة عناوين IP في [دليل IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
@@ -71,9 +67,7 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **نفق SSH عكسي:** إذا كانت قاعدة بياناتك موجودة في شبكة خاصة ‏(VPC) ولا يمكن إتاحتها على الإنترنت العام، فاستخدم [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
 
-  <Step>
-    ## أضف مصدر بيانات في Holistics
-
+  <Step title="أضف مصدر بيانات في Holistics" id="step-3-add-data-source-in-holistics">
     1. في Holistics، انتقل إلى **Settings → Data Sources**.
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="الانتقال إلى Data Sources في إعدادات Holistics" border />
