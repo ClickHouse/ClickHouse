@@ -404,7 +404,9 @@ struct ReplaceRegexpImpl
         };
         HashMap<std::string_view, CachedResult> results_cache;
         bool map_enabled = true;
-        size_t next_distinct_ratio_check = 4096;
+        /// Blocks smaller than this never trigger a ratio check, so the map is never disabled for them.
+        /// Starts low so small max_block_size settings and naturally short blocks still benefit.
+        size_t next_distinct_ratio_check = 256;
 
         const char * prev_hs_data = nullptr;
         size_t prev_hs_length = 0;
@@ -449,7 +451,7 @@ struct ReplaceRegexpImpl
             if (map_enabled)
             {
                 typename HashMap<std::string_view, CachedResult>::LookupResult it;
-                bool inserted;
+                bool inserted = false;
                 results_cache.emplace(std::string_view(hs_data, hs_length), it, inserted);
                 if (!inserted)
                     copy_cached(it->getMapped());
