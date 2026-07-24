@@ -119,12 +119,14 @@ if __name__ == "__main__":
                 f"--jq '.[] | select(.filename == \"{settings_history_file}\") | .patch'",
                 verbose=True,
             )
-            if not patch.strip():
-                # The file is in changed_files but no patch came back (e.g. GitHub omits the
-                # patch for very large diffs). We cannot determine the changed settings, so
-                # fail closed instead of assuming there is nothing to check.
+            if patch.strip() in ("", "null"):
+                # The file is in changed_files but no usable patch came back. GitHub omits the
+                # per-file patch for very large diffs; the `.patch` field is then null, which
+                # `jq -r` prints as the literal string "null". We cannot determine the changed
+                # settings, so fail closed instead of assuming there is nothing to check.
                 raise RuntimeError(
-                    f"empty patch returned for changed file {settings_history_file}"
+                    f"no patch returned for changed file {settings_history_file} "
+                    "(GitHub omits the patch for very large diffs)"
                 )
             with open(settings_history_file, "r", encoding="utf-8", errors="ignore") as f:
                 file_lines = f.read().splitlines()
