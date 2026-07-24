@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
+            {"explain_syntax_single_record", false, true, "From 26.8, `EXPLAIN SYNTAX` returns the reformatted query as a single record (with embedded newlines) instead of one record per line. Set this to `false` to restore the pre-26.8 one-record-per-line output."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -75,7 +76,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
             {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
-            {"explain_syntax_single_record", false, true, "From 26.7, `EXPLAIN SYNTAX` returns the reformatted query as a single record (with embedded newlines) instead of one record per line. Set this to `false` to restore the pre-26.7 one-record-per-line output."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"use_partition_minmax_for_primary_key_pruning", false, true, "New setting to use the part's partition minmax to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key."},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},

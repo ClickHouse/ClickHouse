@@ -2604,7 +2604,7 @@ Return `EXPLAIN SYNTAX` output as a single record (with embedded newlines) inste
 
 Specifying the `single_record` option explicitly in the `EXPLAIN SYNTAX` statement (for example, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) always overrides this setting.
 
-Set to `false` to restore the pre-26.7 one-record-per-line output, or set `compatibility` to any version older than `26.7`.
+Set to `false` to restore the pre-26.8 one-record-per-line output, or set `compatibility` to any version older than `26.8`.
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(

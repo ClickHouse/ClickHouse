@@ -24,7 +24,7 @@ SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 
 -- The EXPLAIN-local single_record option still wins over the explain_syntax_single_record setting.
 SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2) SETTINGS explain_syntax_single_record = 0);
 
--- compatibility = '26.6' predates explain_syntax_single_record, so it restores the pre-26.7
+-- compatibility = '26.6' predates explain_syntax_single_record, so it restores the pre-26.8
 -- default (single_record = 0): the multi-line reformatted query is returned as several records
 -- again. This is the upgrade-safe legacy path old clients rely on instead of editing every query.
 -- (This must precede any explicit SET of explain_syntax_single_record below, because compatibility
