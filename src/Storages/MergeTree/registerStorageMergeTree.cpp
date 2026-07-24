@@ -756,11 +756,41 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
+            ///
+            /// Also reject a UK element that names a non-stored column: an existing
+            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
+            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
+            /// dense-index rebuild (`part->getColumns()`) both read the stored
+            /// block, so such a column would be absent at runtime. `getKeyFromAST`
+            /// below resolves against physical + virtual columns, so it would let a
+            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
+            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
+            /// gives a clear reason. A name that matches no column at all (not
+            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
-                auto is_plain_identifier = [](const ASTPtr & node) -> bool
+                auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
                 {
-                    return node && node->as<ASTIdentifier>() != nullptr;
+                    return node ? node->as<ASTIdentifier>() : nullptr;
+                };
+                auto reject_non_physical = [&](const ASTIdentifier & ident)
+                {
+                    const String & name = ident.name();
+                    /// Virtual columns (`_part`, `_part_offset`, ...) are not in
+                    /// `metadata.columns` but ARE resolvable by `getKeyFromAST`
+                    /// (it sees physical + virtual), so a virtual UK element would
+                    /// pass DDL and then crash the first INSERT on
+                    /// `block.getByName(...)`. Reject it here.
+                    if (metadata.virtuals.has(name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY columns must be real stored columns; "
+                            "virtual columns such as `{}` are not allowed",
+                            name);
+                    if (metadata.columns.has(name) && !metadata.columns.hasPhysical(name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` must be a physical (stored) column; "
+                            "ALIAS and EPHEMERAL columns are not allowed",
+                            name);
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -770,7 +800,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     {
                         for (const auto & child : as_function->arguments->children)
                         {
-                            if (!is_plain_identifier(child))
+                            const auto * ident = is_plain_identifier(child);
+                            if (!ident)
                             {
                                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "UNIQUE KEY must be a list of column identifiers. "
@@ -778,10 +809,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                                     "only bare column names are allowed.",
                                     child ? child->formatForErrorMessage() : String("<null>"));
                             }
+                            reject_non_physical(*ident);
                         }
                     }
                 }
-                else if (!is_plain_identifier(uk_ast))
+                else if (const auto * ident = is_plain_identifier(uk_ast))
+                {
+                    reject_non_physical(*ident);
+                }
+                else
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "UNIQUE KEY must be a list of column identifiers. "
