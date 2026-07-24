@@ -5660,7 +5660,6 @@ bool StorageReplicatedMergeTree::fetchPart(
 
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         part = get_part();
 
         if (!to_detached)
@@ -5727,7 +5726,7 @@ bool StorageReplicatedMergeTree::fetchPart(
             part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
         }
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         /// The same part is being written right now (but probably it's not committed yet).
         /// We will check the need for fetch later.
@@ -5835,7 +5834,6 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
 
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         part = get_part();
 
         if (part->getDataPartStorage().getDiskName() != replaced_disk->getName())
@@ -5844,7 +5842,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
         auto replaced_path = fs::path(replaced_part_path);
         part->getDataPartStorage().rename(replaced_path.parent_path(), replaced_path.filename(), nullptr, true, false);
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         /// The same part is being written right now (but probably it's not committed yet).
         /// We will check the need for fetch later.

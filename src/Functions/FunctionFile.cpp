@@ -164,7 +164,7 @@ public:
                     throw;
 
                 if (e.code() != ErrorCodes::CANNOT_OPEN_FILE && e.code() != ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
-                    e.recordToSystemErrors();
+                    e.recordToSystemErrors(/* force */ true);
 
                 if (vec_null_map_to)
                     (*vec_null_map_to)[row] = true;

@@ -425,7 +425,6 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
     size_t col_size = column.size();
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         res = readFieldImpl(tmp_buf, column, type, serialization);
         /// Check if we parsed the whole field successfully.
         if (!field.empty() && !tmp_buf.eof())
@@ -434,7 +433,7 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
     catch (Exception & e)
     {
         if (!isParseError(e.code()))
-            e.recordToSystemErrors();
+            throw;
         is_bad_value = true;
     }
 

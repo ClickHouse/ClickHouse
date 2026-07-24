@@ -520,7 +520,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                             /// background metrics thread, so do not pollute the error log /
                             /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
                             if (e.code() != ErrorCodes::TABLE_IS_READ_ONLY)
-                                e.recordToSystemErrors();
+                                e.recordToSystemErrors(/* force */ true);
                             auto level = e.code() == ErrorCodes::TABLE_IS_READ_ONLY
                                 ? LogsLevel::debug
                                 : LogsLevel::error;

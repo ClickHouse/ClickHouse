@@ -2859,7 +2859,7 @@ struct ConvertImplGenericFromString
                 if constexpr (throw_on_error)
                     throw;
                 if (!isParseError(e.code()))
-                    e.recordToSystemErrors();
+                    e.recordToSystemErrors(/* force */ true);
                 /// Check if exception happened after we inserted the value
                 /// (deserializeWholeText should not do it, but let's check anyway).
                 if (column_to.size() > i)

@@ -60,7 +60,7 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
                 && e.code() != ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR
                 && e.code() != ErrorCodes::CANNOT_SEEK_THROUGH_FILE
                 && e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
             /// As for now it's ok to just overwrite it, because persistency in not essential.
             LOG_ERROR(log, "Cannot read server UUID from file {}: {}. Will overwrite it",
                       server_uuid_file.string(), getCurrentExceptionMessage(true));

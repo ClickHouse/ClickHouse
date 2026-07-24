@@ -83,7 +83,7 @@ std::optional<off_t> SeekableReadBuffer::tryGetPosition()
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::UNSUPPORTED_METHOD)
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
         return std::nullopt;
     }
     catch (...) // Ok: tryGetPosition is a try-pattern

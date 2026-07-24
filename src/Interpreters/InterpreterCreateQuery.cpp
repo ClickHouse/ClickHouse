@@ -1093,7 +1093,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 e.recordToSystemErrors();
                 throw;
             }
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
         }
         catch (...)
         {
@@ -1178,7 +1178,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 e.recordToSystemErrors();
                 throw;
             }
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
             check_columns = false;
         }
     }
@@ -2161,7 +2161,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             if (create.if_not_exists)
             {
                 if (e.code() != ErrorCodes::TABLE_ALREADY_EXISTS)
-                    e.recordToSystemErrors();
+                    e.recordToSystemErrors(/* force */ true);
                 return false;
             }
             e.recordToSystemErrors();
@@ -2532,7 +2532,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                     if (create.if_not_exists)
                     {
                         if (e.code() != ErrorCodes::TABLE_ALREADY_EXISTS)
-                            e.recordToSystemErrors();
+                            e.recordToSystemErrors(/* force */ true);
                         return {};
                     }
                     e.recordToSystemErrors();

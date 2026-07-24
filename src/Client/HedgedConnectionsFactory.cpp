@@ -2,6 +2,7 @@
 
 #include <Client/HedgedConnectionsFactory.h>
 #include <base/sort.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ProtocolDefines.h>
@@ -283,7 +284,16 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallbac
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    replicas[index].connection_establisher->resume();
+    try
+    {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
+        replicas[index].connection_establisher->resume();
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
+    }
 
     if (replicas[index].connection_establisher->isCancelled())
         return State::CANNOT_CHOOSE;

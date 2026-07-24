@@ -164,9 +164,10 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     error_index = handleErrorCode(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
-void Exception::recordToSystemErrors()
+void Exception::recordToSystemErrors(bool force)
 {
-    if (suppress_error_codes_depth == 0 && error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
+    if ((force || suppress_error_codes_depth == 0)
+        && error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
         error_index = ErrorCodes::increment(code(), remote, message(), std::string(message_format_string), getStackFramePointers());
 }
 

@@ -473,7 +473,7 @@ void IAccessStorage::removeReferencesToRemovedIDs(const std::unordered_set<UUID>
                 /// will be reconciled on the next reload. Don't fail the whole cascade.
                 if (e.code() == ErrorCodes::ACCESS_STORAGE_READONLY)
                     continue;
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
                 tryLogCurrentException(getLogger(),
                     "while removing references to dropped access entities from " + outputID(dependent_id));
             }

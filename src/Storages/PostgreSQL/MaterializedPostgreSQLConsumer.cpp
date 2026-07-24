@@ -75,7 +75,6 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     {
         try
         {
-            Exception::SuppressErrorCodesScope suppress_error_codes;
             storages.emplace(table_name, StorageData(storage_info, log));
         }
         catch (Exception & e)
@@ -232,7 +231,6 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
 
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (column_type_and_name.type->isNullable())
         {
             ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*column);
@@ -1012,7 +1010,6 @@ bool MaterializedPostgreSQLConsumer::consume()
 
             try
             {
-                Exception::SuppressErrorCodesScope suppress_error_codes;
                 /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
                 processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }

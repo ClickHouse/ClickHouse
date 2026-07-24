@@ -564,7 +564,7 @@ static bool getRMVCoordinationInfo(
     }
     catch (Exception & e)
     {
-        e.recordToSystemErrors();
+        e.recordToSystemErrors(/* force */ true);
         tryLogCurrentException(log, "Unable to get coordination information: " + *coordination_path);
         return false;
     }

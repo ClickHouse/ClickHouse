@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <memory>
-#include <optional>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -1009,10 +1008,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
                     StoragePtr storage = nullptr;
                     try
                     {
-                        std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
-                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access]
-                            && !keep_unresolved_tables)
-                            suppress_error_codes.emplace();
+                        Exception::SuppressErrorCodesScope suppress_error_codes;
                         LOG_INFO(log, "Get table information for table {}", table_name);
                         storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
                     }
@@ -1048,9 +1044,12 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
                                     error_code,
                                     table_name,
                                     error_message);
-                                promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
-                                    error_code,
-                                    enhanced_message)));
+                                {
+                                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                                    promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                        error_code,
+                                        enhanced_message)));
+                                }
                                 return;
                             }
                         }
@@ -1081,7 +1080,16 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
         /// futures[future_index].get() rethrows for the general-purpose path when metadata
         /// access is required (see the per-table catch above), preserving the original
         /// abort-on-error contract for consumers that dereference the storage unconditionally.
-        auto table_ptr = futures[future_index].get();
+        StoragePtr table_ptr;
+        try
+        {
+            table_ptr = futures[future_index].get();
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
         future_index++;
 
         /// For the system.tables path keep a row even when the storage could not be resolved

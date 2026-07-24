@@ -552,7 +552,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
             {
                 if (auto * e = current_exception_cast<Exception *>())
-                    e->recordToSystemErrors();
+                    e->recordToSystemErrors(/* force */ true);
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
                     "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
@@ -588,7 +588,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         if (isRetryableException(std::current_exception()))
         {
             if (auto * e = current_exception_cast<Exception *>())
-                e->recordToSystemErrors();
+                e->recordToSystemErrors(/* force */ true);
             LOG_DEBUG(
                 getLogger("checkDataPart"),
                 "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));

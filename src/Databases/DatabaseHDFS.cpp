@@ -172,7 +172,7 @@ StoragePtr DatabaseHDFS::tryGetTable(const String & name, ContextPtr context_) c
             || e.code() == ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE)
         {
             if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
             return nullptr;
         }
         e.recordToSystemErrors();

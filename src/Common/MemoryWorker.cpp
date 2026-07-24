@@ -69,7 +69,7 @@ void recordUnexpectedMemoryMetricException(std::exception_ptr exception)
     catch (Exception & e)
     {
         if (!isExpectedMemoryMetricError(e.code()))
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
     }
     catch (...)
     {

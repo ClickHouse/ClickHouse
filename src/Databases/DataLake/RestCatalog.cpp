@@ -1328,15 +1328,16 @@ bool RestCatalog::tryGetTableMetadata(
     catch (DB::HTTPException & ex)
     {
         LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
-        if (ex.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            ex.recordToSystemErrors();
-        return false;
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            return false;
+        ex.recordToSystemErrors();
+        throw;
     }
     catch (DB::Exception & ex)
     {
         LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
         ex.recordToSystemErrors();
-        return false;
+        throw;
     }
 }
 

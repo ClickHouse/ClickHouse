@@ -107,15 +107,18 @@ namespace
 
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
+            bool resolved = false;
+            UInt8 deterministic = 0;
+            UInt8 higher_order = 0;
             try
             {
                 Exception::SuppressErrorCodesScope suppress_error_codes;
                 auto resolver = factory.tryGet(name, context);
                 if (resolver)
                 {
-                    res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
-                    res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
-                    return;
+                    deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
+                    higher_order = resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0};
+                    resolved = true;
                 }
             }
             catch (...)
@@ -125,6 +128,13 @@ namespace
                     "Cannot resolve function {} for introspection: {}",
                     name,
                     getCurrentExceptionMessage(/* with_stacktrace */ false));
+            }
+
+            if (resolved)
+            {
+                res_columns[14]->insert(deterministic);
+                res_columns[15]->insert(higher_order);
+                return;
             }
         }
         res_columns[14]->insertDefault();

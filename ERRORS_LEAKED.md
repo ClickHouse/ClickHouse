@@ -7,9 +7,10 @@ backtracking, a non-throwing API, or a fallback which succeeds is currently visi
 
 The fix pattern is a narrow `Exception::SuppressErrorCodesScope` around the speculative operation.
 If a suppressed `DB::Exception` is later propagated, it must first call `recordToSystemErrors`.
-Scopes maintain a thread-local nesting depth, and `recordToSystemErrors` records only after every
-surrounding scope has unwound. The scope must not cover the fallback itself or a replacement exception
-describing terminal failure.
+Scopes maintain a thread-local nesting depth, and recording normally waits for every surrounding scope
+to unwind so the owning retry or fallback can decide whether the error is terminal. The force flag is
+reserved for unexpected exceptions that are consumed while an outer scope remains active. The scope
+must not cover the fallback itself or a replacement exception describing terminal failure.
 
 ## Classification
 
@@ -136,11 +137,11 @@ sites after those exclusions.
 | STOR-005 | `StorageSystemDetachedParts`, `StorageSystemKeeperSnapshots`, `StorageSystemKeeperChangelogs`, `StorageSystemDDLWorkerQueue`, `StorageSystemIcebergHistory`, `StorageSystemIcebergFiles`, `StorageSystemZooKeeperInfo`, and `StorageSystemDictionaries` | Per-object failures become result defaults, error columns, or omitted stale rows. | Scope each isolated row probe; preserve terminal table-read failures. | Partially fixed |
 | STOR-006 | `StatusRequestsPool` consumers in `StorageSystemReplicas` and `StorageSystemDatabaseReplicas` | `ABORTED` status requests are omitted. | Suppress `ABORTED`; record other future exceptions before propagation. | Fixed |
 | STOR-007 | `WhatIfIndexEstimator`, `WhatIfStatisticalEstimator`, `ConditionTemplate`, `KeyCondition`, and statistics selectivity estimators | Failed optional estimates disable optimization. | Scope each estimate. | Fixed |
-| STOR-008 | `MergeTreeDataSelectExecutor` and `MergeTreeCommittingBlock` probes | Failed optional analysis/finalization path uses conservative behavior. | Scope only accepted fallback branch. | Fixed |
+| STOR-008 | `MergeTreeDataSelectExecutor` and `MergeTreeCommittingBlock` probes | Failed optional analysis/finalization path uses conservative behavior. | Suppress optional analysis only; retain malformed committing-block state as durable-state telemetry. | Partially fixed |
 | STOR-009 | `DataPartStorageOnDiskPacked` and `IMergeTreeDataPart` optional statistics/codec/projection/minmax metadata | Missing or old metadata uses legacy/default behavior. | Scope each optional read; record corruption/retryable propagation where applicable. | Partially fixed |
 | STOR-010 | `checkDataPart` result-producing catches | Validation errors are returned in check results. | Suppress only exceptions represented in successful result rows. | Fixed |
 | STOR-011 | MergeTree temporary-lock retries | Intermediate `PART_IS_TEMPORARILY_LOCKED` or `ABORTED` can later succeed. | Scope attempts; record timeout/non-retryable terminal error. | Fixed |
-| STOR-012 | `StorageReplicatedMergeTree` detached/fetched-part races | Concurrent moves/creates select another valid path. | Scope expected races; record every terminal failure. | Fixed |
+| STOR-012 | `StorageReplicatedMergeTree` detached/fetched-part races | Concurrent moves/creates select another valid path. | A broad scope would hide caller-handled fetch retries; keep telemetry until the construction boundary can be narrowed. | Deferred |
 | STOR-013 | `StorageReplicatedMergeTree` local clone/fetch and queue compatibility fallbacks | Incompatible local data falls back to remote fetch or legacy parsing. | Scope probes; preserve final fetch/parse failure. | Partially fixed |
 | STOR-014 | `StorageReplicatedMergeTree` replica refresh, status, fetch retries, `CHECK TABLE`, and backup metadata fallback | Optional status fields, retries, or fallback metadata can succeed. | Scope per attempt/probe; record terminal and retryable propagation. | Partially fixed |
 | STOR-015 | `getStructureOfRemoteTable` | Failed shards are tried until another provides structure. | Scope attempts; final `NO_REMOTE_SHARD_AVAILABLE` remains recorded. | Fixed |
@@ -154,7 +155,7 @@ sites after those exclusions.
 | STOR-023 | `checkAndGetLiteralArgument` | Failed literal conversion returns an expected negative result. | Scope conversion. | Fixed |
 | STOR-024 | `StorageObjectStorage` and source optional pruning/metadata probes | Failure uses conservative object reading. | Scope optional analysis. | Fixed |
 | STOR-025 | `KeeperHandlingConsumer` | `ZNODEEXISTS` means another consumer owns the lock. | Suppress expected lock conflict. | Fixed |
-| STOR-026 | `MaterializedPostgreSQLConsumer` | Expected structure mismatch or bad value uses configured fallback/default. | Scope tolerant mode; preserve strict failure. | Fixed |
+| STOR-026 | `MaterializedPostgreSQLConsumer` | Structure mismatch, bad source values, or malformed replication messages degrade replicated data or table coverage. | Retain telemetry even though the consumer continues. | Keep telemetry |
 | STOR-027 | `DistributedAsyncInsertBatch` | Split retries/per-file aggregation can recover. | Scope attempts; record terminal file failure. | Fixed |
 | STOR-028 | Paimon latest-snapshot hint | Failed `LATEST` hint falls back to snapshot listing. | Scope hint probe. | Deferred |
 | STOR-029 | Delta Lake total rows/bytes and token refresh | Optional totals become null; stale token retries. | Scope probes/attempts; record exhausted refresh. | Partially fixed |
@@ -284,7 +285,7 @@ The following broad categories were reviewed and are intentionally not suppressi
 
 ## Verification requirements
 
-Each fix needs evidence for both sides of the contract:
+Each distinct suppression pattern needs evidence for both sides of the contract:
 
 1. The handled path succeeds or returns its documented negative/default value without changing the
    relevant local error count or attributing an entry in `system.error_log` to the query.
@@ -292,20 +293,21 @@ Each fix needs evidence for both sides of the contract:
 
 Query-level tests should use unique query IDs and the assertion pattern from
 `04613_values_expression_fallback_no_system_errors.sh`. Unit tests can compare
-`ErrorCodes::getErrorCodeByName` counters as in `gtest_exception.cpp`.
+`ErrorCodes::values` counters as in `gtest_exception.cpp`.
 
 ## Current verification
 
-The current implementation status is 122 fixed groups (including `VALUES-001`), 10 partially fixed
-groups, 25 deferred groups, 34 policy decisions, and 3 groups which intentionally keep telemetry.
+The table statuses above are the current audit result. Verification completed for this pass:
 
-Verification completed for this pass:
-
-- `unit_tests_dbms` and `clickhouse` build successfully without warnings.
-- The focused `Exception` and `ExecutionStatus` unit tests passed 1,200,000 executions over 200,000
-  repetitions in 56 seconds.
-- `04626_handled_fallbacks_no_system_errors` passed 20/20 repetitions in 58 seconds.
-- `04613_values_expression_fallback_no_system_errors` passed 20/20 repetitions in 53 seconds.
-- Six existing tolerant conversion/parser/function tests passed 600/600 repetitions in 61 seconds.
-- The two existing Protobuf nested-layout fallback tests passed 140/140 repetitions in 54 seconds.
-- `check_cpp.sh` completed successfully and `various_checks.sh` produced no findings.
+- `unit_tests_dbms` and `clickhouse` built successfully without warnings.
+- The focused `Exception` and `ExecutionStatus` unit tests passed 1,200,000 executions over 150,000
+  repetitions in 54 seconds.
+- `04628_handled_fallbacks_no_system_errors` passed 11/11 repetitions in 59 seconds, including
+  recovered and exhausted HTTP retry and URL failover controls.
+- `04613_values_expression_fallback_no_system_errors` passed 20/20 repetitions in 54 seconds.
+- Six existing tolerant conversion, parser, and function tests passed 600/600 repetitions.
+- The two existing Protobuf nested-layout fallback tests passed 140/140 serialized repetitions.
+- The row-format suppression scope is outside the row loop, so it executes once per block instead of
+  once per row or CSV field. A before/after performance run remains for CI.
+- `various_checks.sh` produced no findings. `check_cpp.sh` reported no source findings and emitted only its
+  allow-setting list ordering warning from `comm`.

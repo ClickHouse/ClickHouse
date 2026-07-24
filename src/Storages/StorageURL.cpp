@@ -134,21 +134,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace
 {
-    void recordCurrentExceptionToSystemErrors()
-    {
-        try
-        {
-            throw;
-        }
-        catch (Exception & e)
-        {
-            e.recordToSystemErrors();
-        }
-        catch (...)
-        {
-        }
-    }
-
     void recordCurrentExceptionIfPolicy()
     {
         try
@@ -158,7 +143,7 @@ namespace
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::ACCESS_DENIED || e.code() == ErrorCodes::UNACCEPTABLE_URL)
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
         }
         catch (...)
         {
@@ -629,7 +614,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::exception_ptr last_exception;
     ReadSettings read_settings = context_->getReadSettings();
 
-    size_t options = std::distance(option, end);
+    const size_t options = std::distance(option, end);
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
@@ -671,22 +656,11 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
         catch (...)
         {
-            if (options == 1)
-            {
-                recordCurrentExceptionToSystemErrors();
-                throw;
-            }
-
             recordCurrentExceptionIfPolicy();
-
             last_exception = std::current_exception();
-
             if (first_exception_message.empty())
                 first_exception_message = getCurrentExceptionMessage(false);
-
             tryLogCurrentException(__PRETTY_FUNCTION__);
-
-            continue;
         }
     }
 
@@ -695,7 +669,27 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     if (last_skipped_empty_res.second)
         return last_skipped_empty_res;
 
-    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
+    if (last_exception && options == 1)
+    {
+        try
+        {
+            std::rethrow_exception(last_exception);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
+
+    if (last_exception)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
 }
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
@@ -2437,7 +2431,6 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     }
     catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
     {
-        recordCurrentExceptionIfPolicy();
         return nullptr;
     }
 

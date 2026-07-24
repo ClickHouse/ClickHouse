@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 
-#include <Common/Exception.h>
 #include <Storages/StorageMergeTree.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -69,7 +68,6 @@ CommittingBlock::Op deserializeCommittingBlockOpFromString(const std::string & r
 {
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         if (!representation.starts_with("operation"))
             return CommittingBlock::Op::Unknown;
 

@@ -722,7 +722,7 @@ public:
             }
 
             if (!expected_torn_tail)
-                ex.recordToSystemErrors();
+                ex.recordToSystemErrors(/* force */ true);
 
             result.error = true;
             LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());

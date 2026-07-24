@@ -109,6 +109,7 @@ Chunk IRowInputFormat::read()
         bool continue_reading = true;
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
         size_t total_bytes = 0;
+        Exception::SuppressErrorCodesScope suppress_error_codes;
 
         size_t max_block_size_rows = params.max_block_size_rows;
         size_t max_block_size_bytes = params.max_block_size_bytes;
@@ -144,10 +145,7 @@ Chunk IRowInputFormat::read()
             try
             {
                 info.read_columns.clear();
-                {
-                    Exception::SuppressErrorCodesScope suppress_error_codes;
-                    continue_reading = readRow(columns, info);
-                }
+                continue_reading = readRow(columns, info);
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
@@ -194,10 +192,7 @@ Chunk IRowInputFormat::read()
                 /// (skipToNextLineOrEOF/ignore/eof -> next()), tripping chassert(!isCanceled()).
                 if (!isParseError(e.code()) || getReadBuffer().isCanceled())
                 {
-                    if (params.connection_handling && isConnectionError(e.code()))
-                        e.recordToSystemErrors();
-                    else
-                        e.recordToSystemErrors();
+                    e.recordToSystemErrors();
                     throw;
                 }
 
@@ -262,7 +257,10 @@ Chunk IRowInputFormat::read()
             /// from the buffer itself. A throwing read self-cancels the buffer, and
             /// getDiagnosticInfo() reads from it (eof() -> next()), tripping chassert(!isCanceled()).
             if (!isParseError(e.code()) || getReadBuffer().isCanceled())
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
 
             String verbose_diagnostic;
             try
@@ -281,6 +279,7 @@ Chunk IRowInputFormat::read()
 
             e.addMessage(fmt::format("(at row {})\n", total_rows));
             e.addMessage(verbose_diagnostic);
+            e.recordToSystemErrors();
             throw;
         }
 

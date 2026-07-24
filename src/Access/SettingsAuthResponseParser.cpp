@@ -56,7 +56,7 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
             && e.code() != ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP
             && e.code() != ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH
             && e.code() != ErrorCodes::UNKNOWN_SETTING)
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
         LOG_INFO(getLogger("HTTPAuthentication"), "Failed to parse settings from authentication response. Skip it.");
     }
     catch (...)

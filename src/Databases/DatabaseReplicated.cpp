@@ -367,7 +367,7 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
         if (code != ErrorCodes::KEEPER_EXCEPTION
             && code != ErrorCodes::ALL_CONNECTION_TRIES_FAILED
             && code != ErrorCodes::NO_ACTIVE_REPLICAS)
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
         if (code == ErrorCodes::KEEPER_EXCEPTION
             || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
             || code == ErrorCodes::NO_ACTIVE_REPLICAS)
@@ -411,7 +411,7 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
         if (code != ErrorCodes::KEEPER_EXCEPTION
             && code != ErrorCodes::ALL_CONNECTION_TRIES_FAILED
             && code != ErrorCodes::NO_ACTIVE_REPLICAS)
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
         if (code == ErrorCodes::KEEPER_EXCEPTION
             || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
             || code == ErrorCodes::NO_ACTIVE_REPLICAS)
@@ -642,7 +642,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         /// unexpected at the default `error` level.
         const auto code = getCurrentExceptionCode();
         if (code != ErrorCodes::KEEPER_EXCEPTION && code != ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
         if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
             tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         else
@@ -2982,7 +2982,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::LOGICAL_ERROR)
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
             tryLogCurrentException(log);
         }
         catch (...)

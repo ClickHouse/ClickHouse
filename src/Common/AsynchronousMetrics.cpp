@@ -92,7 +92,7 @@ void recordUnexpectedOSMetricException(std::exception_ptr exception)
     catch (Exception & e)
     {
         if (!isExpectedOSMetricError(e.code()))
-            e.recordToSystemErrors();
+            e.recordToSystemErrors(/* force */ true);
     }
     catch (...)
     {

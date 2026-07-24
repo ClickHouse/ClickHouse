@@ -165,7 +165,7 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
             || e.code() == ErrorCodes::UNACCEPTABLE_URL)
         {
             if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
             return nullptr;
         }
         e.recordToSystemErrors();

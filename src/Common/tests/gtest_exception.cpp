@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <thread>
 
 namespace DB
 {
@@ -49,8 +50,6 @@ TEST(Exception, RecordToSystemErrorsRespectsSuppression)
         EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count);
     }
 
-    suppressed.recordToSystemErrors();
-    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count + 1);
     suppressed.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), suppressed_count + 1);
 
@@ -116,6 +115,43 @@ TEST(Exception, OutermostCallerControlsRecording)
     }
 
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+}
+
+TEST(Exception, ForcedRecordingBypassesNestedSuppression)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    Exception nested;
+
+    {
+        Exception::SuppressErrorCodesScope outer_scope;
+        {
+            Exception::SuppressErrorCodesScope inner_scope;
+            nested = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "unexpected consumed error");
+        }
+
+        nested.recordToSystemErrors(/* force */ true);
+        EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+    }
+
+    nested.recordToSystemErrors(/* force */ true);
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+}
+
+TEST(Exception, SuppressionIsThreadLocal)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+
+    Exception suppressed;
+    {
+        Exception::SuppressErrorCodesScope scope;
+        suppressed = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "suppressed on current thread");
+        std::thread other_thread([] { Exception(ErrorCodes::CANNOT_PARSE_TEXT, "recorded on another thread"); });
+        other_thread.join();
+    }
+
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+    suppressed.recordToSystemErrors();
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 2);
 }
 
 }

@@ -319,6 +319,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             callable();
             return;
         }
@@ -369,7 +370,19 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           error_message,
                           attempt, read_settings.http_settings.max_tries);
 
-            std::rethrow_exception(exception);
+            try
+            {
+                std::rethrow_exception(exception);
+            }
+            catch (Exception & e)
+            {
+                e.recordToSystemErrors();
+                throw;
+            }
+            catch (...)
+            {
+                throw;
+            }
         }
         else
         {
