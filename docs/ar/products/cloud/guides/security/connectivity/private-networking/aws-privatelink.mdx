@@ -13,6 +13,10 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 يمكنك استخدام [AWS PrivateLink](https://aws.amazon.com/privatelink/) لإنشاء اتصال آمن بين شبكات VPC، وخدمات AWS، وأنظمتك المحلية، وClickHouse Cloud، من دون تعريض حركة المرور إلى الإنترنت العام. توضح هذه الوثيقة الخطوات اللازمة للاتصال بـ ClickHouse Cloud باستخدام AWS PrivateLink.
 
+<Warning>
+  يدعم AWS PrivateLink فقط الاتصالات التي تبدأ من AWS VPC الخاصة بك إلى ClickHouse Cloud. ولا يمكن استخدامه للاتصالات التي تبدأ من ClickHouse Cloud إلى الخدمات الموجودة في VPC الخاصة بك، مثل [قاعدة بيانات خاصة](#connecting-to-a-remote-database).
+</Warning>
+
 لحصر الوصول إلى خدمات ClickHouse Cloud الخاصة بك عبر عناوين AWS PrivateLink فقط، اتبع الإرشادات التي يوفرها ClickHouse Cloud بشأن [قوائم الوصول حسب عنوان IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 <Note>
@@ -93,7 +97,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 <Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="نقاط النهاية الخاصة" border />
 
-دوّن `Service name` و`DNS name`، ثم [انتقل إلى الخطوة التالية](#create-aws-endpoint).
+دوّن `Service name` و`اسم DNS`، ثم [انتقل إلى الخطوة التالية](#create-aws-endpoint).
 
 <div id="option-2-api">
   #### الخيار 2: واجهة برمجة تطبيقات
@@ -155,7 +159,7 @@ jq .result
 
 افتح AWS Console وانتقل إلى **VPC** → **Endpoints** → **Create endpoints**.
 
-حدِّد **Endpoint services that use NLBs and GWLBs**، ثم استخدم `Service name`<sup>console</sup> أو `endpointServiceId`<sup>API</sup> الذي حصلت عليه من خطوة [Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info) في حقل **Service Name**. انقر على **Verify service**:
+حدِّد **Endpoint services that use NLBs and GWLBs**، ثم استخدم `Service name`<sup>console</sup> أو `endpointServiceId`<sup>واجهة برمجة تطبيقات</sup> الذي حصلت عليه من خطوة [Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info) في حقل **Service Name**. انقر على **Verify service**:
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="إعدادات نقطة نهاية AWS PrivateLink" border />
 
@@ -419,10 +423,8 @@ jq .result.privateEndpointIds
   ### الاتصال بقاعدة بيانات بعيدة
 </div>
 
-لنفترض أنك تحاول استخدام table functions الخاصة بـ [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud للاتصال بقاعدة بياناتك المستضافة داخل Amazon Web Services (AWS) VPC. لا يمكن استخدام AWS PrivateLink لتأمين هذا الاتصال. فـ PrivateLink اتصال أحادي الاتجاه. إذ يتيح لشبكتك الداخلية أو لـ Amazon VPC الاتصال بـ ClickHouse Cloud بشكل آمن، لكنه لا يتيح لـ ClickHouse Cloud الاتصال بشبكتك الداخلية.
-
 وفقًا لـ [وثائق AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-> استخدم AWS PrivateLink عندما يكون لديك إعداد عميل/خادم وتريد منح VPC مستهلكة واحدة أو أكثر وصولًا أحادي الاتجاه إلى خدمة محددة أو مجموعة من المثيلات في VPC الخاصة بمزوّد الخدمة. ولا يمكن إلا للعملاء الموجودين في VPC المستهلكة بدء اتصال بالخدمة الموجودة في VPC الخاصة بمزوّد الخدمة.
+> استخدم AWS PrivateLink عندما يكون لديك إعداد عميل/خادم وتريد منح VPC مستهلك واحد أو أكثر وصولًا أحادي الاتجاه إلى خدمة محددة أو إلى مجموعة من المثيلات داخل VPC الخاص بمزوّد الخدمة. ولا يمكن إلا للعملاء الموجودين في VPC المستهلك بدء اتصال بالخدمة الموجودة في VPC الخاص بمزوّد الخدمة.
 
-للقيام بذلك، اضبط Security Groups في AWS للسماح باتصالات من ClickHouse Cloud إلى خدمة قاعدة البيانات الداخلية/الخاصة لديك. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، بالإضافة إلى [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).
+لتوصيل دوال الجداول [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud بقاعدة بيانات مستضافة في AWS VPC لديك، اضبط مجموعات الأمان في AWS للسماح باتصالات من ClickHouse Cloud. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، إلى جانب [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).

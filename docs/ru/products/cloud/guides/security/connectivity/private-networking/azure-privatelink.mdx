@@ -16,6 +16,10 @@ import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge
 
 <Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Обзор PrivateLink" background="white" />
 
+<Warning>
+  Azure Private Link поддерживает только подключения, инициируемые из вашей Azure VNet к ClickHouse Cloud. Его нельзя использовать для подключений, инициируемых из ClickHouse Cloud к сервисам в вашей VNet, например к частной базе данных.
+</Warning>
+
 Azure поддерживает межрегиональное подключение через Private Link. Это позволяет устанавливать соединения между VNet, расположенными в разных регионах, где у вас развернуты сервисы ClickHouse.
 
 <Note>
@@ -24,7 +28,7 @@ Azure поддерживает межрегиональное подключен
 
 **Чтобы включить Azure Private Link, выполните следующие шаги:**
 
-1. Получите alias подключения Azure для Private Link
+1. Получите псевдоним подключения Azure для Private Link
 2. Создайте частную конечную точку в Azure
 3. Добавьте Resource ID частной конечной точки в организацию ClickHouse Cloud
 4. Добавьте Resource ID частной конечной точки в список разрешённых для ваших сервисов
@@ -51,7 +55,7 @@ ClickHouse старается группировать ваши сервисы, 
   ### Вариант 1: консоль ClickHouse Cloud
 </div>
 
-В консоли ClickHouse Cloud откройте сервис, к которому вы хотите подключиться через PrivateLink, затем откройте меню **Настройки**. Нажмите кнопку **Настроить частную конечную точку**. Запишите `Service name` и `DNS name` — они понадобятся для настройки Private Link.
+В консоли ClickHouse Cloud откройте сервис, к которому вы хотите подключиться через PrivateLink, затем откройте меню **Настройки**. Нажмите кнопку **Set up private endpoint**. Запишите `Service name` и `DNS name` — они понадобятся для настройки Private Link.
 
 <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="Частные конечные точки" border />
 
@@ -109,16 +113,16 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 В этом разделе мы создадим частную конечную точку в Azure. Для этого можно использовать либо Azure Portal, либо Terraform.
 
 <div id="option-1-using-azure-portal-to-create-a-private-endpoint-in-azure">
-  ### Вариант 1: Использование Azure Portal для создания частной конечной точки в Azure
+  ### Вариант 1: Создание частной конечной точки в Azure через Azure Portal
 </div>
 
 В Azure Portal откройте **Private Link Center → Private Endpoints**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Открытие Azure Private Center" border />
+<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Откройте Azure Private Center" border />
 
 Откройте диалог создания частной конечной точки, нажав кнопку **Create**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Открытие Azure Private Center" border />
+<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Откройте Azure Private Center" border />
 
 ***
 
@@ -130,21 +134,21 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 После этого нажмите кнопку **Next: Resource**.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Создание частной конечной точки: Basic" border />
+<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Создание частной конечной точки: основные параметры" border />
 
 ***
 
 Выберите вариант **Connect to an Azure resource by resource ID or alias**.
 
-В поле **Resource ID or alias** используйте `endpointServiceId`, полученный на шаге [Obtain Azure connection alias for Private Link](#obtain-azure-connection-alias-for-private-link).
+В поле **Resource ID or alias** укажите `endpointServiceId`, полученный на шаге [Получение псевдонима подключения Azure для Private Link](#obtain-azure-connection-alias-for-private-link).
 
 Нажмите кнопку **Next: Virtual Network**.
 
-<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Выбор ресурса для частной конечной точки" border />
+<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Выбор ресурса частной конечной точки" border />
 
 ***
 
-* **Virtual network**: выберите VNet, которую хотите подключить к ClickHouse Cloud через Private Link
+* **Virtual network**: выберите VNet, которую нужно подключить к ClickHouse Cloud с помощью Private Link
 * **Subnet**: выберите подсеть, в которой будет создана частная конечная точка
 
 Необязательно:
@@ -161,7 +165,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Настройка DNS для частной конечной точки" border />
 
-При необходимости вы можете добавить теги к своей частной конечной точке.
+При желании вы можете добавить теги к своей частной конечной точке.
 
 Нажмите кнопку **Next: Review + create**.
 
@@ -173,11 +177,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Проверка частной конечной точки" border />
 
-У созданной частной конечной точки **Connection status** будет иметь состояние **Pending**. Оно изменится на **Approved**, как только вы добавите эту частную конечную точку в список разрешённых для сервиса.
+**Connection status** созданной частной конечной точки будет иметь состояние **Pending**. Оно изменится на **Approved**, как только вы добавите эту частную конечную точку в список разрешённых сервиса.
 
-Откройте сетевой интерфейс, связанный с частной конечной точкой, и скопируйте **Private IPv4 address** (в этом примере — 10.0.0.4) — эта информация понадобится вам на следующих шагах.
+Откройте сетевой интерфейс, связанный с частной конечной точкой, и скопируйте **частный IPv4-адрес** (в этом примере `10.0.0.4`) — эта информация понадобится на следующих шагах.
 
-<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="IPv4-адрес частной конечной точки" border />
+<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="IP-адрес частной конечной точки" border />
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
   ### Вариант 2: Создание частной конечной точки в Azure с помощью Terraform
@@ -314,7 +318,7 @@ Address: 10.0.0.4
   ## Добавьте Resource ID частной конечной точки в организацию ClickHouse Cloud
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### Вариант 1: консоль ClickHouse Cloud
 </div>
 
@@ -390,7 +394,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 По умолчанию сервис ClickHouse Cloud недоступен через Private Link, даже если подключение по Private Link одобрено и установлено. Вам нужно явно добавить Resource ID частной конечной точки для каждого сервиса, который должен быть доступен через Private Link.
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### Вариант 1: консоль ClickHouse Cloud
 </div>
 

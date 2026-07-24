@@ -32,11 +32,10 @@ import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يوفّر [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) حوكمة مركزية لبيانات lakehouse في Databricks.
 
-يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. ومع ClickHouse، يمكنك الاستعلام من جداول Unity Catalog بكلٍّ من Delta وIceberg.
+يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. ومع ClickHouse، يمكنك الاستعلام من جداول Delta وIceberg في Unity Catalog التي تستخدم مواقع external storage.
 
 <Note>
-  يعمل التكامل مع Unity Catalog مع الجداول المُدارة والجداول الخارجية.
-  هذا التكامل مدعوم حاليًا على AWS فقط.
+  هذا التكامل مدعوم حاليًا على AWS فقط. الجداول الموجودة على Databricks managed storage غير مدعومة لأن Unity Catalog لا يوفّر credential vending لتلك المواقع. راجع [مرجع Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) للحصول على التفاصيل.
 </Note>
 
 <div id="configuring-unity-in-databricks">

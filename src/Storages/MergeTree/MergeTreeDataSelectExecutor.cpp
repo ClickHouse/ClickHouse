@@ -1928,9 +1928,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
-    std::vector<bool> reverse_flags;
+
+    /// Which key columns are reverse-sorted.
+    const KeyOrder & key_order = key_condition.getKeyOrder();
+    chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
     const auto index = part->getIndex();
     const bool use_sparse_pk_representation
@@ -2016,7 +2018,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             chassert(i < index->size());
             chassert(index->at(i));
             index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-            reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
         }
 
         /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
@@ -2067,16 +2068,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < num_analyzed_key_columns; ++i)
             {
                 if (i < index->size())
-                {
                     index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                    reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
-                }
                 else
-                {
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();
-                    reverse_flags.push_back(false);
-                }
 
                 key_types.emplace_back(primary_key.data_types[i]);
             }
@@ -2118,7 +2113,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// bound of a key column by its key index. For key columns without per-mark values (not loaded in the
     /// in-memory index) these bounds are the only information: `KeyCondition` analyses them as constant
     /// coordinates whose range is the bound.
-    /// Partition minmax index is always stored in value-ascending order, so we do not need to consider reverse_flags here.
+    /// Partition minmax index is always stored in value-ascending order, so key column direction does not matter here.
     Hyperrectangle index_bounds;
     index_bounds.reserve(num_analyzed_key_columns);
     for (size_t i = 0; i < num_analyzed_key_columns; ++i)
@@ -2157,31 +2152,24 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: the unknown boundary of every loaded key column is a virtual infinity. For a
-                    /// non-reversed column it is +inf, and the boundaries are equal only when the value at
-                    /// range.begin is also +inf, i.e. when it is NULL (create_field_ref maps NULL to +inf, and
-                    /// NULLs are stored physically last for a non-reversed column, so the granule is NULL up to
-                    /// the end of the part). For a reversed column the unknown boundary is -inf, and no value at
-                    /// range.begin can be -inf (a NULL maps to +inf), so its boundaries are never known to be
-                    /// equal. A non-nullable column is never NULL, so its boundaries are never equal either.
+                    /// Last mark: the boundary at the unknown physical end of the part is the column's
+                    /// directional extreme. The boundaries are known to be equal only when the range
+                    /// starts with a NULL and NULLs are stored physically last on the column — then the
+                    /// column is NULL up to the end of the part (NULL's value-space stand-in, +inf,
+                    /// equals the extreme). A non-nullable column is never NULL, so its boundaries are
+                    /// never known to be equal.
                     for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = !reverse_flags[i] && col->isNullAt(range.begin);
+                        equal_boundaries_mask[i] = col->isNullAt(range.begin) && key_order.nullsAreStoredLast(i);
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-
-                        /// If reverse_flags[key_col] is true, the right points to sparse_key_left[sparse_pos].
-                        right = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
                     }
                 }
                 else
@@ -2202,12 +2190,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-                        create_field_ref(range.end, key_col, right);
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
                     }
                 }
 
@@ -2225,36 +2209,35 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                    {
+                        create_field_ref(range.begin, i, index_left[i]);
+                        /// The value at the unknown physical end of the part is the directional extreme.
+                        index_right[i] = key_order.physicalEndExtreme(i);
+                    }
                     else
-                        /// If reverse_flags[i] is true, the left points to index_right[i].
-                        left = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
-
-                    /// If reverse_flags[i] is true, the right points to index_left[i].
-                    right = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                    {
+                        /// Key column not loaded in the in-memory index: unknown at both boundaries.
+                        /// The (start, end) extreme pair makes the decomposition take the whole
+                        /// universe at this column, a safe over-approximation.
+                        index_left[i] = key_order.physicalStartExtreme(i);
+                        index_right[i] = key_order.physicalEndExtreme(i);
+                    }
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.end, i, index_right[i]);
                     }
                     else
                     {
-                        /// If reverse_flags[i] is true, the left points to index_right[i].
-                        left = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
-
-                        /// If reverse_flags[i] is true, the right points to index_left[i].
-                        right = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                        index_left[i] = key_order.physicalStartExtreme(i);
+                        index_right[i] = key_order.physicalEndExtreme(i);
                     }
                 }
             }
