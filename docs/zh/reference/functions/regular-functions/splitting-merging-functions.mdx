@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+引入版本：v26.7.0
+
+使用与朴素贝叶斯字典 ([`NAIVE_BAYES`](/zh/reference/statements/create/dictionary/layouts/naive-bayes) 布局) 相同的分词方式将文本拆分为 n-gram：`byte`、`codepoint` 或 `token` 模式，并可选择添加边界填充。可用它来构建这类字典所需的预聚合 `(ngram, class_id, count)` 训练数据，从而确保训练用 n-gram 与 [`naiveBayesClassifier`](/zh/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) 在查询时生成的结果完全一致。
+
+**语法**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**参数**
+
+* `text` — 要拆分为 n-gram 的文本。[`String`](/zh/reference/data-types/string)
+* `n` — N-gram 的大小，范围为 1 到 1024。[`const UInt`](/zh/reference/data-types/int-uint)
+* `mode` — 分词模式：&#39;byte&#39;、&#39;codepoint&#39; 或 &#39;token&#39;。[`const String`](/zh/reference/data-types/string)
+* `start_token` — 可选。边界标记，会在输入开头前置 (n-1) 次；对于 &#39;byte&#39;/&#39;codepoint&#39; 为数值，对于 &#39;token&#39; 为字面量。空字符串表示不填充。[`const String`](/zh/reference/data-types/string)
+* `end_token` — 可选。边界标记，会在输入末尾追加 (n-1) 次。[`const String`](/zh/reference/data-types/string)
+
+**返回值**
+
+输入文本的 n-gram。[`Array(String)`](/zh/reference/data-types/array)
+
+**示例**
+
+**标记二元组**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**带边界填充的标记二元组**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**带边界填充的字节二元组 (结果以十六进制表示)&#x20;**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**带边界填充的码点二元组 (结果以十六进制显示)&#x20;**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>

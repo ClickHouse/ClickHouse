@@ -32,11 +32,10 @@ import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) обеспечивает централизованное управление данными lakehouse в Databricks.
 
-Databricks поддерживает несколько форматов данных для своего lakehouse. В ClickHouse можно выполнять запросы к таблицам Unity Catalog как к таблицам Delta и Iceberg.
+Databricks поддерживает несколько форматов данных для своего lakehouse. В ClickHouse можно выполнять запросы к таблицам Delta и Iceberg в Unity Catalog, использующим внешние хранилища.
 
 <Note>
-  Интеграция с Unity Catalog работает как с управляемыми, так и с внешними таблицами.
-  В настоящее время эта интеграция поддерживается только в AWS.
+  В настоящее время эта интеграция поддерживается только в AWS. Таблицы в управляемом хранилище Databricks не поддерживаются, поскольку Unity Catalog не предоставляет учетные данные для этих расположений. Подробности см. в [справочнике по Unity Catalog](/ru/guides/use-cases/data-warehousing/unity-catalog).
 </Note>
 
 <div id="configuring-unity-in-databricks">

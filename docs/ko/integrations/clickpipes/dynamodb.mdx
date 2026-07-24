@@ -22,133 +22,121 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * [PostgreSQL과 ClickHouse를 사용한 Change Data Capture (CDC) - 1부](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1?loc=docs-rockest-migrations)
 * [PostgreSQL과 ClickHouse를 사용한 Change Data Capture (CDC) - 2부](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-2?loc=docs-rockest-migrations)
 
-<div id="1-set-up-kinesis-stream">
-  ## 1. Kinesis 스트림 설정
-</div>
+<Steps>
+  <Step title="Kinesis 스트림 설정" id="1-set-up-kinesis-stream">
+    먼저 DynamoDB 테이블에서 Kinesis 스트림을 활성화하여 변경 사항을 실시간으로 캡처해야 합니다. 데이터가 누락되지 않도록 스냅샷을 생성하기 전에 이 작업을 수행하는 것이 좋습니다.
+    AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)에서 확인하십시오.
 
-먼저 변경 사항을 실시간으로 capture할 수 있도록 DynamoDB 테이블에서 Kinesis 스트림을 활성화하십시오. 데이터 누락을 방지하려면 스냅샷을 생성하기 전에 이 작업을 수행해야 합니다.
-AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)에서 확인할 수 있습니다.
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis 스트림" border />
+  </Step>
 
-<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis Stream" border />
+  <Step title="스냅샷 생성" id="2-create-the-snapshot">
+    다음으로 DynamoDB 테이블의 스냅샷을 생성합니다. 이는 AWS에서 S3로 내보내기를 통해 수행할 수 있습니다. AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html)에서 확인할 수 있습니다.
+    **DynamoDB JSON 포맷으로 &quot;Full export&quot;를 수행해야 합니다.**
 
-<div id="2-create-the-snapshot">
-  ## 2. 스냅샷 생성
-</div>
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="DynamoDB S3 내보내기" border />
+  </Step>
 
-다음으로 DynamoDB 테이블의 스냅샷을 생성합니다. 이는 AWS의 S3 내보내기 기능을 통해 수행할 수 있습니다. AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html)에서 확인할 수 있습니다.
-**DynamoDB JSON 포맷으로 &quot;Full export&quot;를 수행하십시오.**
+  <Step title="ClickHouse에 스냅샷 로드하기" id="3-load-the-snapshot-into-clickhouse">
+    ### 필요한 테이블 생성
 
-<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="DynamoDB S3 내보내기" border />
+    DynamoDB의 스냅샷 데이터는 다음과 같은 형식입니다:
 
-<div id="3-load-the-snapshot-into-clickhouse">
-  ## 3. ClickHouse에 스냅샷을 로드합니다
-</div>
+    ```json
+    {
+      "age": {
+        "N": "26"
+      },
+      "first_name": {
+        "S": "sally"
+      },
+      "id": {
+        "S": "0A556908-F72B-4BE6-9048-9E60715358D4"
+      }
+    }
+    ```
 
-<div id="create-necessary-tables">
-  ### 필요한 테이블 생성
-</div>
+    데이터가 중첩된 형식이라는 점에 유의하십시오. 이 데이터를 ClickHouse에 로드하기 전에 평탄화해야 합니다. 이는 ClickHouse의 materialized view에서 `JSONExtract` 함수를 사용해 수행할 수 있습니다.
 
-DynamoDB의 스냅샷 데이터는 다음과 같은 형식입니다:
+    다음과 같이 3개의 테이블을 생성해야 합니다:
 
-```json
-{
-  "age": {
-    "N": "26"
-  },
-  "first_name": {
-    "S": "sally"
-  },
-  "id": {
-    "S": "0A556908-F72B-4BE6-9048-9E60715358D4"
-  }
-}
-```
+    1. DynamoDB의 원시 데이터를 저장하는 테이블
+    2. 최종 평탄화된 데이터를 저장하는 테이블(대상 테이블)
+    3. 데이터를 평탄화하는 materialized view
 
-데이터가 중첩된 형식이라는 점에 유의하십시오. 이 데이터를 ClickHouse에 로드하기 전에 평탄화해야 합니다. 이는 ClickHouse의 materialized view에서 `JSONExtract` 함수를 사용해 수행할 수 있습니다.
+    위의 DynamoDB 데이터 예시를 기준으로 하면 ClickHouse 테이블은 다음과 같습니다:
 
-다음과 같이 3개의 테이블을 생성해야 합니다:
+    ```sql
+    /* Snapshot table */
+    CREATE TABLE IF NOT EXISTS "default"."snapshot"
+    (
+        `item` String
+    )
+    ORDER BY tuple();
 
-1. DynamoDB의 원시 데이터를 저장하는 테이블
-2. 최종 평탄화된 데이터를 저장하는 테이블(대상 테이블)
-3. 데이터를 평탄화하는 materialized view
+    /* Table for final flattened data */
+    CREATE MATERIALIZED VIEW IF NOT EXISTS "default"."snapshot_mv" TO "default"."destination" AS
+    SELECT
+        JSONExtractString(item, 'id', 'S') AS id,
+        JSONExtractInt(item, 'age', 'N') AS age,
+        JSONExtractString(item, 'first_name', 'S') AS first_name
+    FROM "default"."snapshot";
 
-위의 DynamoDB 데이터 예시를 기준으로 하면 ClickHouse 테이블은 다음과 같습니다:
+    /* Table for final flattened data */
+    CREATE TABLE IF NOT EXISTS "default"."destination" (
+        "id" String,
+        "first_name" String,
+        "age" Int8,
+        "version" Int64
+    )
+    ENGINE ReplacingMergeTree("version")
+    ORDER BY id;
+    ```
 
-```sql
-/* 스냅샷 테이블 */
-CREATE TABLE IF NOT EXISTS "default"."snapshot"
-(
-    `item` String
-)
-ORDER BY tuple();
+    대상 테이블에는 다음과 같은 요구 사항이 있습니다:
 
-/* 최종 평탄화된 데이터를 위한 테이블 */
-CREATE MATERIALIZED VIEW IF NOT EXISTS "default"."snapshot_mv" TO "default"."destination" AS
-SELECT
-    JSONExtractString(item, 'id', 'S') AS id,
-    JSONExtractInt(item, 'age', 'N') AS age,
-    JSONExtractString(item, 'first_name', 'S') AS first_name
-FROM "default"."snapshot";
+    * 이 테이블은 `ReplacingMergeTree` 테이블이어야 합니다
+    * 테이블에는 `version` 컬럼이 있어야 합니다
+      * 이후 단계에서는 Kinesis 스트림의 `ApproximateCreationDateTime` 필드를 `version` 컬럼에 매핑합니다.
+    * 테이블은 파티션 키를 정렬 키(`ORDER BY`로 지정)로 사용해야 합니다
+      * 동일한 정렬 키를 가진 행은 `version` 컬럼을 기준으로 중복 제거됩니다.
 
-/* 최종 평탄화된 데이터를 위한 테이블 */
-CREATE TABLE IF NOT EXISTS "default"."destination" (
-    "id" String,
-    "first_name" String,
-    "age" Int8,
-    "version" Int64
-)
-ENGINE ReplacingMergeTree("version")
-ORDER BY id;
-```
+    ### 스냅샷 ClickPipe 생성
 
-대상 테이블에는 다음과 같은 요구 사항이 있습니다:
+    이제 S3의 스냅샷 데이터를 ClickHouse로 로드하는 ClickPipe를 생성할 수 있습니다. [여기](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)의 S3 ClickPipe 가이드를 따르되, 다음 설정을 사용하십시오:
 
-* 이 테이블은 `ReplacingMergeTree` 테이블이어야 합니다
-* 테이블에는 `version` 컬럼이 있어야 합니다
-  * 이후 단계에서는 Kinesis 스트림의 `ApproximateCreationDateTime` 필드를 `version` 컬럼에 매핑합니다.
-* 테이블은 파티션 키를 정렬 키(`ORDER BY`로 지정)로 사용해야 합니다
-  * 동일한 정렬 키를 가진 행은 `version` 컬럼을 기준으로 중복 제거됩니다.
+    * **수집 경로**: S3에서 내보낸 JSON 파일의 경로를 찾아야 합니다. 경로는 다음과 같은 형식입니다:
 
-<div id="create-the-snapshot-clickpipe">
-  ### 스냅샷 ClickPipe 생성
-</div>
+    ```text
+    https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
+    ```
 
-이제 S3의 스냅샷 데이터를 ClickHouse로 로드할 ClickPipe를 생성할 수 있습니다. [여기](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)의 S3 ClickPipe 가이드를 따르되, 다음 설정을 사용하세요:
+    * **포맷**: JSONEachRow
+    * **테이블**: 스냅샷 테이블(예: 위 예시의 `default.snapshot`)
 
-* **수집 경로**: S3에서 내보낸 JSON 파일의 경로를 찾아야 합니다. 경로는 대략 다음과 같은 형태입니다:
+    생성이 완료되면 스냅샷 테이블과 대상 테이블에 데이터가 적재되기 시작합니다. 다음 단계로 진행하기 전에 스냅샷 로드가 완료될 때까지 기다릴 필요는 없습니다.
+  </Step>
 
-```text
-https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
-```
+  <Step title="Kinesis ClickPipe 생성" id="4-create-the-kinesis-clickpipe">
+    이제 Kinesis 스트림의 실시간 변경 사항을 캡처하도록 Kinesis ClickPipe를 설정할 수 있습니다. [여기](/ko/integrations/clickpipes/kinesis/overview)의 Kinesis ClickPipe 가이드를 따르되, 다음 설정을 사용하십시오:
 
-* **포맷**: JSONEachRow
-* **테이블**: 스냅샷 테이블(예: 위 예시의 `default.snapshot`)
+    * **Stream**: 1단계에서 사용한 Kinesis 스트림
+    * **Table**: 대상 테이블(예: 위 예시의 `default.destination`)
+    * **Flatten object**: true
+    * **Column mappings**:
+      * `ApproximateCreationDateTime`: `version`
+      * 아래와 같이 다른 필드를 해당 대상 컬럼에 매핑합니다
 
-생성되면 데이터가 스냅샷 테이블과 대상 테이블에 채워지기 시작합니다. 다음 단계로 진행하기 전에 스냅샷 적재가 완료될 때까지 기다릴 필요는 없습니다.
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="DynamoDB 컬럼 매핑" border />
+  </Step>
 
-<div id="4-create-the-kinesis-clickpipe">
-  ## 4. Kinesis ClickPipe 생성
-</div>
+  <Step title="정리(선택 사항)" id="5-cleanup-optional">
+    스냅샷 ClickPipe 작업이 완료되면 스냅샷 테이블과 materialized view를 삭제할 수 있습니다.
 
-이제 Kinesis 스트림의 실시간 변경 사항을 포착하도록 Kinesis ClickPipe를 설정할 수 있습니다. [여기](/ko/integrations/clickpipes/kinesis/overview)에 있는 Kinesis ClickPipe 가이드를 따르되, 다음 설정을 사용하십시오.
-
-* **스트림**: 1단계에서 사용한 Kinesis 스트림
-* **테이블**: 대상 테이블(예: 위 예시의 `default.destination`)
-* **객체 평탄화**: true
-* **컬럼 매핑**:
-  * `ApproximateCreationDateTime`: `version`
-  * 아래와 같이 다른 필드도 적절한 대상 컬럼에 매핑하십시오
-
-<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="DynamoDB 컬럼 매핑" border />
-
-<div id="5-cleanup-optional">
-  ## 5. 정리 (선택 사항)
-</div>
-
-스냅샷 ClickPipe가 완료되면 스냅샷 테이블과 materialized view를 삭제할 수 있습니다.
-
-```sql
-DROP TABLE IF EXISTS "default"."snapshot";
-DROP TABLE IF EXISTS "default"."snapshot_clickpipes_error";
-DROP VIEW IF EXISTS "default"."snapshot_mv";
-```
+    ```sql
+    DROP TABLE IF EXISTS "default"."snapshot";
+    DROP TABLE IF EXISTS "default"."snapshot_clickpipes_error";
+    DROP VIEW IF EXISTS "default"."snapshot_mv";
+    ```
+  </Step>
+</Steps>

@@ -24,9 +24,7 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
 <a href="https://www.airbyte.com/" target="_blank">Airbyte</a> はオープンソースのデータインテグレーションプラットフォームです。<a href="https://airbyte.com/blog/why-the-future-of-etl-is-not-elt-but-el" target="_blank">ELT</a> データパイプラインを作成でき、140 を超えるコネクタが標準で用意されています。このステップバイステップのチュートリアルでは、Airbyte で ClickHouse を宛先として接続し、サンプルデータセットを読み込む方法を紹介します。
 
 <Steps>
-  <Step>
-    ## Airbyte をダウンロードして実行する
-
+  <Step title="Airbyte をダウンロードして実行する" id="1-download-and-run-airbyte">
     1. Airbyte は Docker 上で動作し、`docker-compose` を使用します。Docker の最新バージョンをダウンロードしてインストールしてください。
 
     2. 公式の GitHub repository をクローンし、お好みのターミナルで `docker-compose up` を実行して Airbyte をデプロイします。
@@ -42,13 +40,11 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
        <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="Airbyte バナー" />
 
     <Note>
-      または、<a href="https://docs.airbyte.com/deploying-airbyte/on-cloud" target="_blank">Airbyte Cloud</a> にサインアップして利用することもできます
+      または、<a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a> にサインアップして利用することもできます
     </Note>
   </Step>
 
-  <Step>
-    ## ClickHouse を宛先として追加する
-
+  <Step title="ClickHouse を宛先として追加する" id="2-add-clickhouse-as-a-destination">
     このセクションでは、ClickHouse インスタンスを宛先として追加する方法を説明します。
 
     1. ClickHouse サーバーを起動するか (Airbyte は ClickHouse バージョン `21.8.10.19` 以降に対応しています) 、ClickHouse Cloud アカウントにログインします。
@@ -78,9 +74,7 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
     </Note>
   </Step>
 
-  <Step>
-    ## データセットをソースとして追加する
-
+  <Step title="データセットをソースとして追加する" id="3-add-a-dataset-as-a-source">
     このチュートリアルで使用するサンプルデータセットは、<a href="/ja/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a> (<a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a> 上) です。このチュートリアルでは、このデータセットのうち 2022 年 1 月分に相当するサブセットを使用します。
 
     1. Airbyte で &quot;Sources&quot; ページを開き、file タイプの新しいソースを追加します。
@@ -98,9 +92,7 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
     3. これで、Airbyte にソースファイルが追加されました。
   </Step>
 
-  <Step>
-    ## 接続を作成してデータセットをClickHouseに読み込む
-
+  <Step title="接続を作成してデータセットをClickHouseに読み込む" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. Airbyte で、&quot;Connections&quot; ページを選択し、新しい接続を追加します
 
     <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="Airbyte で接続を追加する" />

@@ -6,6 +6,8 @@ title: 'MaterializedPostgreSQL'
 doc_type: 'reference'
 ---
 
+{/*بداية_تم_إنشاؤه_تلقائيًا*/}
+
 import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
@@ -17,7 +19,7 @@ import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBad
   يُوصى لمستخدمي ClickHouse Cloud باستخدام [ClickPipes](/ar/integrations/clickpipes/home) لنسخ PostgreSQL إلى ClickHouse. ويدعم ذلك أصلاً CDC (التقاط تغييرات البيانات) عالي الأداء لـ PostgreSQL.
 </Note>
 
-ينشئ قاعدة بيانات في ClickHouse تحتوي على جداول من قاعدة بيانات PostgreSQL. في البداية، تنشئ قاعدة البيانات التي تستخدم المحرك `MaterializedPostgreSQL` لقطة لقاعدة بيانات PostgreSQL وتحمّل الجداول المطلوبة. ويمكن أن تشمل الجداول المطلوبة أي subset من الجداول من أي subset من المخططات ضمن قاعدة البيانات المحددة. وبالتزامن مع إنشاء لقطة، يحصل محرك قاعدة البيانات على LSN، وبعد تنفيذ dump أولي للجداول يبدأ في سحب التحديثات من WAL. بعد إنشاء قاعدة البيانات، لا تتم إضافة الجداول التي تُضاف لاحقاً إلى قاعدة بيانات PostgreSQL تلقائياً إلى النسخ المتماثل. ويجب إضافتها يدوياً باستخدام الاستعلام `ATTACH TABLE db.table`.
+ينشئ قاعدة بيانات في ClickHouse تحتوي على جداول من قاعدة بيانات PostgreSQL. في البداية، تنشئ قاعدة البيانات التي تستخدم المحرك `MaterializedPostgreSQL` لقطة لقاعدة بيانات PostgreSQL وتحمّل الجداول المطلوبة. ويمكن أن تشمل الجداول المطلوبة أي subset من الجداول من أي subset من المخططات ضمن قاعدة البيانات المحددة. وبالتزامن مع إنشاء لقطة، يحصل محرك قاعدة البيانات على LSN، وبعد تنفيذ تفريغ أولي للجداول يبدأ في سحب التحديثات من WAL. بعد إنشاء قاعدة البيانات، لا تتم إضافة الجداول التي تُضاف لاحقاً إلى قاعدة بيانات PostgreSQL تلقائياً إلى النسخ المتماثل. ويجب إضافتها يدوياً باستخدام الاستعلام `ATTACH TABLE db.table`.
 
 يُنفَّذ النسخ المتماثل باستخدام PostgreSQL Logical Replication Protocol، الذي لا يسمح بتكرار DDL، لكنه يتيح معرفة ما إذا كانت قد حدثت breaking changes تؤثر في النسخ المتماثل (مثل تغيير نوع العمود أو إضافة الأعمدة/إزالتها). تُكتشف هذه التغييرات، وعندها تتوقف الجداول المعنية عن تلقي التحديثات. في هذه الحالة، يجب استخدام استعلامي `ATTACH` و `DETACH PERMANENTLY` لإعادة تحميل الجدول بالكامل. وإذا كان DDL لا يعطّل النسخ المتماثل (على سبيل المثال، إعادة تسمية عمود)، فسيستمر الجدول في تلقي التحديثات (تتم عملية insertion حسب الموضع).
 
@@ -185,7 +187,7 @@ WHERE oid = 'postgres_table'::regclass;
 يمكن أن يتضمن كل جدول مجموعة فرعية من الأعمدة المُكرَّرة بين قوسين. وإذا أُهملت المجموعة الفرعية من الأعمدة، فستُكرَّر جميع أعمدة الجدول.
 
 ```sql
-    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
 ```
 
 القيمة الافتراضية: قائمة فارغة — وهذا يعني أنه ستتم عملية النسخ المتماثل لقاعدة بيانات PostgreSQL بالكامل.
@@ -227,17 +229,17 @@ WHERE oid = 'postgres_table'::regclass;
 سلسلة نصية تُحدِّد لقطة لقطة سيتم انطلاقًا منها إجراء [التفريغ الأولي لجداول PostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql). يجب استخدامها بالاقتران مع `materialized_postgresql_replication_slot`.
 
 ```sql
-    CREATE DATABASE database1
-    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
-    SELECT * FROM database1.table1;
+SELECT * FROM database1.table1;
 ```
 
 يمكن تغيير الإعدادات، عند الحاجة، باستخدام استعلام DDL. لكن لا يمكن تغيير الإعداد `materialized_postgresql_tables_list`. ولتحديث قائمة الجداول في هذا الإعداد، استخدم استعلام `ATTACH TABLE`.
 
 ```sql
-    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 <div id="materialized_postgresql_use_unique_replication_consumer_identifier">
@@ -246,6 +248,15 @@ WHERE oid = 'postgres_table'::regclass;
 
 استخدم معرّف مستهلك فريدًا لعملية النسخ المتماثل. القيمة الافتراضية: `0`.
 إذا ضُبطت القيمة على `1`، فسيُسمح بإعداد عدة جداول `MaterializedPostgreSQL` تشير إلى جدول `PostgreSQL` نفسه.
+
+<div id="materialized-postgresql-use-extended-date-and-time-types">
+  ### `materialized_postgresql_use_extended_date_and_time_types`
+</div>
+
+يربط أنواع PostgreSQL `date` و`timestamp`/`timestamptz` بالنوعين `Date32` و`DateTime64` في ClickHouse، لأنهما يغطيان نطاق القيم الأوسع لهذه الأنواع في PostgreSQL. القيمة الافتراضية: `1`.
+إذا ضُبط على `0`، فستُستخدم بدلًا من ذلك الأنواع الأضيق `Date` و`DateTime` (إذ لا يمكن تمثيل القيم الواقعة خارج نطاقها أو التي تتضمن دقة أجزاء من الثانية).
+
+لا يتحكم هذا الإعداد إلا في أنواع الأعمدة التي يحددها استنتاج النوع عند إنشاء الجداول المتداخلة، لذا يجب تحديده عند تنفيذ `CREATE DATABASE`. ولا يمكن تغييره بعد ذلك باستخدام `ALTER DATABASE ... MODIFY SETTING` (إذ تحتفظ الجداول المتداخلة التي أُنشئت بالفعل بأنواع أعمدتها الثابتة، ويُرفض مثل هذا التغيير)؛ أعد إنشاء قاعدة البيانات لتغييره. ولا ينطبق هذا على محرك الجداول `MaterializedPostgreSQL`، حيث تُصرَّح أنواع الأعمدة صراحةً.
 
 <div id="notes">
   ## ملاحظات
@@ -311,13 +322,13 @@ WHERE oid = 'postgres_table'::regclass;
   ### الأذونات المطلوبة
 </div>
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- امتياز إنشاء الاستعلام.
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- امتياز إنشاء الاستعلام.
 
-2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- امتياز replication.
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- امتياز النسخ المتماثل.
 
-3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- امتياز replication أو superuser.
+3. [pg&#95;drop&#95;replication&#95;slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- امتياز النسخ المتماثل أو superuser.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- مالك publication (أي `username` في engine ‏MaterializedPostgreSQL نفسه).
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- مالك publication (أي `username` في engine ‏MaterializedPostgreSQL نفسه).
 
 يمكن تجنب تنفيذ الأمرين `2` و`3` وتجنّب الحاجة إلى هذه الأذونات. استخدم الإعدادين `materialized_postgresql_replication_slot` و`materialized_postgresql_snapshot`، ولكن بحذر شديد.
 
@@ -328,3 +339,33 @@ WHERE oid = 'postgres_table'::regclass;
 2. pg&#95;replication&#95;slots
 
 3. pg&#95;publication&#95;tables
+
+<div id="backup-and-restore">
+  ### النسخ الاحتياطي والاستعادة
+</div>
+
+يمكن أخذ نسخة احتياطية من قاعدة بيانات `MaterializedPostgreSQL`. تُخزَّن بيانات كل جدول مُكرَّر في جدول `ReplacingMergeTree` متداخل، لذلك يشمل الأمر `BACKUP DATABASE` هذه البيانات عبر التفويض إلى الجدول المتداخل.
+
+```sql
+BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
+```
+
+إن استعادة قاعدة بيانات أو جدول `MaterializedPostgreSQL` **في موضعه غير مدعومة**. إذ يبدأ كائن `MaterializedPostgreSQL` المستعاد فورًا في النسخ المتماثل من مصدر PostgreSQL المباشر، لذا فإن استعادة لقطة من النسخة الاحتياطية فوقه ستؤدي إلى خلط اللقطة بالحالة الحالية للمصدر البعيد. لذلك تفشل عملية RESTORE عمدًا في هذه الحالة. بدلاً من ذلك، استعد البيانات الملتقطة إلى جداول `ReplacingMergeTree` عادية:
+
+* في نسخة احتياطية لقاعدة بيانات، يكون التعريف المخزن لكل جدول هو بالفعل جدول `ReplacingMergeTree` المتداخل الاصطناعي (وليس المحرك `MaterializedPostgreSQL`)، لذلك يمكن استعادة كل جدول مباشرةً إلى جدول جديد غير موجود بعد:
+
+  ```sql
+  RESTORE TABLE postgres_db.table1 AS restored_db.table1
+  FROM Disk('backups', 'postgres_db.zip')
+  SETTINGS allow_different_table_def = 1;
+  ```
+
+* بالنسبة إلى نسخة احتياطية لجدول `MaterializedPostgreSQL` مستقل، يكون التعريف المخزن هو المحرك `MaterializedPostgreSQL` نفسه. أنشئ مسبقًا جدول `ReplacingMergeTree` بالبنية نفسها الخاصة بالجدول المتداخل (بما في ذلك العمودان `_sign` و `_version`) ثم استعد البيانات إليه:
+
+  ```sql
+  RESTORE TABLE src AS existing_replacing_mergetree
+  FROM Disk('backups', 'table.zip')
+  SETTINGS allow_different_table_def = 1;
+  ```
+
+{/*AUTOGENERATED_END*/}

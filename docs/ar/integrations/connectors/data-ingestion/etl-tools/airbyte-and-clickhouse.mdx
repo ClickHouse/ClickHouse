@@ -24,9 +24,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 <a href="https://www.airbyte.com/" target="_blank">Airbyte</a> هي منصة مفتوحة المصدر لتكامل البيانات. تتيح إنشاء مسارات بيانات <a href="https://airbyte.com/blog/why-the-future-of-etl-is-not-elt-but-el" target="_blank">ELT</a>، وتأتي مع أكثر من 140 موصلًا جاهزًا للاستخدام. يوضّح هذا الدليل العملي خطوة بخطوة كيفية توصيل Airbyte بـ ClickHouse كوجهة وتحميل مجموعة بيانات تجريبية.
 
 <Steps>
-  <Step>
-    ## نزّل Airbyte وشغّله
-
+  <Step title="نزّل Airbyte وشغّله" id="1-download-and-run-airbyte">
     1. يعمل Airbyte باستخدام Docker ويستخدم `docker-compose`. تأكد من تنزيل أحدث إصدارات Docker وتثبيتها.
 
     2. انشر Airbyte عبر استنساخ مستودع GitHub الرسمي وتشغيل `docker-compose up` في الطرفية التي تفضّلها:
@@ -42,13 +40,11 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
        <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="شعار Airbyte" />
 
     <Note>
-      بدلاً من ذلك، يمكنك إنشاء حساب واستخدام <a href="https://docs.airbyte.com/deploying-airbyte/on-cloud" target="_blank">Airbyte Cloud</a>
+      بدلاً من ذلك، يمكنك إنشاء حساب واستخدام <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
     </Note>
   </Step>
 
-  <Step>
-    ## إضافة ClickHouse كوجهة
-
+  <Step title="إضافة ClickHouse كوجهة" id="2-add-clickhouse-as-a-destination">
     في هذا القسم، سنوضح كيفية إضافة مثيل ClickHouse كوجهة.
 
     1. شغّل خادم ClickHouse لديك (يتوافق Airbyte مع ClickHouse بالإصدار `21.8.10.19` أو أحدث) أو سجّل الدخول إلى حسابك السحابي في ClickHouse:
@@ -78,9 +74,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     </Note>
   </Step>
 
-  <Step>
-    ## أضف مجموعة بيانات كمصدر
-
+  <Step title="أضف مجموعة بيانات كمصدر" id="3-add-a-dataset-as-a-source">
     مجموعة البيانات التجريبية التي سنستخدمها هي <a href="/ar/get-started/sample-datasets/nyc-taxi" target="_blank">بيانات سيارات الأجرة في مدينة نيويورك</a> (على <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">Github</a>). في هذا الدليل العملي، سنستخدم مجموعة فرعية من هذه البيانات تخص شهر يناير 2022.
 
     1. من داخل Airbyte، انتقل إلى صفحة &quot;Sources&quot; وأضف مصدرًا جديدًا من نوع ملف.
@@ -98,9 +92,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     3. تهانينا! لقد أضفت الآن ملفًا مصدرًا في Airbyte.
   </Step>
 
-  <Step>
-    ## إنشاء اتصال وتحميل مجموعة البيانات إلى ClickHouse
-
+  <Step title="إنشاء اتصال وتحميل مجموعة البيانات إلى ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. ضمن Airbyte، انتقِل إلى صفحة &quot;Connections&quot; وأضِف اتصالًا جديدًا
 
     <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="أضِف اتصالًا في Airbyte" />

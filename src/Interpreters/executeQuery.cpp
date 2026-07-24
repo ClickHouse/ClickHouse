@@ -718,7 +718,7 @@ static void logQueryFinishImpl(
             double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
-                "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                "Read {} rows, {} in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
@@ -1020,7 +1020,7 @@ void logExceptionBeforeStart(
     }
 }
 
-static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1482,7 +1482,14 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
             if (txn->getState() == MergeTreeTransaction::COMMITTED)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
-            bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
+            /// `EXPLAIN ANALYZE` executes the inner `SELECT`, so after a transaction has failed it must
+            /// be rejected exactly like the query it wraps. Other `EXPLAIN` kinds do not execute the
+            /// inner query (they only print a plan) and stay special, as do transaction-control
+            /// statements so that a failed transaction can still be rolled back.
+            const auto * explain_query = out_ast ? out_ast->as<ASTExplainQuery>() : nullptr;
+            const bool is_executing_explain_analyze = explain_query && explain_query->getKind() == ASTExplainQuery::Analyze;
+            bool is_special_query = out_ast
+                && (out_ast->as<ASTTransactionControl>() || (explain_query && !is_executing_explain_analyze));
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
@@ -1934,9 +1941,17 @@ static BlockIO executeQueryImpl(
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if (process_list_entry->getQueryStatus()->isKilled())
+            auto query_status = process_list_entry->getQueryStatus();
+            if (query_status->isKilled())
+            {
+                /// The deadline (max_execution_time) can fire while the query is still pending (e.g. slow to
+                /// analyze/plan). Report it as a timeout, not a generic cancellation, so callers see the same
+                /// TIMEOUT_EXCEEDED they would get had the deadline fired during execution.
+                if (query_status->getCancelReason() == CancelReason::TIMEOUT)
+                    query_status->throwIfKilled();
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+                    "Query '{}' is killed in pending state", query_status->getInfo().client_info.current_query_id);
+            }
         }
 
         /// Hold element of process list till end of query execution.
