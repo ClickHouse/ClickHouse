@@ -51,9 +51,9 @@ ClickHouse 提供官方 Tableau 连接器，并已在
   ## 在 Tableau 中配置 ClickHouse 数据源
 </div>
 
-现在你已经安装并配置好了 `clickhouse-jdbc` 驱动程序，接下来看看如何在 Tableau 中定义一个数据源，以连接到 ClickHouse 中的 **TPCD** 数据库。
+现在你已经安装并配置好了 `clickhouse-jdbc` 驱动，接下来看看如何在 Tableau 中定义一个数据源，以连接到 ClickHouse 中的 **TPCD** 数据库。
 
-1. 启动 Tableau。 (如果它已经在运行，请先重启。)
+1. 启动 Tableau。 (如果它已经在运行，请先重启。) 
 
 2. 在左侧菜单中，点击 **To a Server** 部分下的 **More**。在可用连接器列表中搜索 **ClickHouse by ClickHouse**：
 
@@ -79,11 +79,11 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 <br />
 
-6. 输入连接信息：
+6. 输入连接详细信息：
 
    | 设置       | 值                                       |
    | -------- | --------------------------------------- |
-   | Server   | **你的 ClickHouse 主机名 (不带任何前缀或后缀)&#x20;**&#x20;|
+   | Server   | **你的 ClickHouse 主机名 (不带任何前缀或后缀)&#x20;** |
    | Port     | **8443**                                |
    | Database | **default**                             |
    | Username | **default**                             |
@@ -96,20 +96,20 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 <br />
 
 <Note>
-  我们的 ClickHouse 数据库名为 **TPCD**，但你必须在上面的对话框中将 **Database** 设为 **default**，然后
+  我们的 ClickHouse database 名为 **TPCD**，但你必须在上面的对话框中将 **Database** 设为 **default**，然后
   在下一步中将 **Schema** 选择为 **TPCD**。 (这很可能是连接器中的一个 bug 导致的，因此这种行为
-  以后可能会改变，但目前你必须使用 **default** 作为数据库。)
+  以后可能会改变，但目前你必须使用 **default** 作为 database。) 
 </Note>
 
 7. 点击 **Sign In** 按钮后，你应该会看到一个新的 Tableau 工作簿：
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_newworkbook.webp" alt="显示初始连接界面和 database 选择选项的新 Tableau workbook" border />
+<Image size="md" img="/images/integrations/data-visualization/tableau_newworkbook.webp" alt="显示初始连接界面和数据库选择选项的新 Tableau 工作簿" border />
 
 <br />
 
 8. 从 **Schema** 下拉菜单中选择 **TPCD**，你应该会看到 **TPCD** 中的表列表：
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_tpcdschema.webp" alt="Tableau schema 选择界面，显示 TPCD database 中的表，包括 CUSTOMER、LINEITEM、NATION、ORDERS 等" border />
+<Image size="md" img="/images/integrations/data-visualization/tableau_tpcdschema.webp" alt="Tableau schema 选择界面，显示 TPCD 数据库中的表，包括 CUSTOMER、LINEITEM、NATION、ORDERS 等" border />
 
 <br />
 

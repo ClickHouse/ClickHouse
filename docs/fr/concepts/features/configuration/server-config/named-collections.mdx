@@ -375,6 +375,8 @@ Pour la description des paramètres, voir [postgresql](/fr/reference/functions/t
 * `username` pour `user`
 * `db` pour `database`.
 
+Les paramètres du pool de connexions du [moteur de table PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` et les autres paramètres `postgresql_*`) peuvent également être stockés dans la collection ou être transmis sous forme de surcharges `key = value`. Ils s’appliquent au moteur de table `PostgreSQL`, à la fonction de table `postgresql` et au moteur de base de données `PostgreSQL` ; une clause `SETTINGS` explicite sur une table a préséance sur les valeurs de la collection.
+
 Le paramètre `addresses_expr` est utilisé dans une collection à la place de `host:port`. Ce paramètre est facultatif, car d&#39;autres le sont également : `host`, `hostname`, `port`. Le pseudo-code ci-dessous explique l&#39;ordre de priorité :
 
 ```sql

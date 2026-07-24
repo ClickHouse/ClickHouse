@@ -35,77 +35,69 @@ picture-in-picture"
   </Frame>
 </div>
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúna os detalhes da conexão
-</div>
+<Steps>
+  <Step title="Reúna os detalhes da sua conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Criando um usuário somente leitura" id="2-making-a-read-only-user">
+    Ao conectar o ClickHouse a uma ferramenta de visualização de dados como o Grafana, recomenda-se criar um usuário somente leitura para proteger seus dados contra modificações indesejadas.
 
-<div id="2-making-a-read-only-user">
-  ## 2. Criar um usuário somente leitura
-</div>
+    O Grafana não valida se as consultas são seguras. As consultas podem conter qualquer instrução SQL, incluindo `DELETE` e `INSERT`.
 
-Ao conectar o ClickHouse a uma ferramenta de visualização de dados como o Grafana, recomenda-se criar um usuário somente leitura para proteger seus dados contra modificações indesejadas.
+    Para configurar um usuário somente leitura, siga estas etapas:
 
-O Grafana não valida se as consultas são seguras. As consultas podem conter qualquer instrução SQL, incluindo `DELETE` e `INSERT`.
+    1. Crie um perfil de usuário `readonly` seguindo o guia [Creating Users and Roles in ClickHouse](/pt-BR/concepts/features/security/access-rights).
+    2. Certifique-se de que o usuário `readonly` tenha permissão suficiente para modificar a configuração `max_execution_time` exigida pelo [cliente clickhouse-go](https://github.com/ClickHouse/clickhouse-go).
+    3. Se você estiver usando uma instância pública do ClickHouse, não é recomendável definir `readonly=2` no perfil `readonly`. Em vez disso, mantenha `readonly=1` e defina o tipo de constraint de `max_execution_time` como [changeable&#95;in&#95;readonly](/pt-BR/concepts/features/configuration/settings/constraints-on-settings) para permitir a modificação dessa configuração.
+  </Step>
 
-Para configurar um usuário somente leitura, siga estas etapas:
+  <Step title="Instale o plugin ClickHouse para Grafana" id="3--install-the-clickhouse-plugin-for-grafana">
+    Antes que o Grafana possa se conectar ao ClickHouse, você precisa instalar o plugin apropriado do Grafana. Supondo que você esteja conectado ao Grafana, siga estas etapas:
 
-1. Crie um perfil de usuário `readonly` seguindo o guia [Criando usuários e roles no ClickHouse](/pt-BR/concepts/features/security/access-rights).
-2. Certifique-se de que o usuário `readonly` tenha permissão suficiente para modificar a configuração `max_execution_time` exigida pelo cliente [clickhouse-go](https://github.com/ClickHouse/clickhouse-go).
-3. Se você estiver usando uma instância pública do ClickHouse, não é recomendável definir `readonly=2` no perfil `readonly`. Em vez disso, mantenha `readonly=1` e defina o tipo de restrição de `max_execution_time` como [changeable&#95;in&#95;readonly](/pt-BR/concepts/features/configuration/settings/constraints-on-settings) para permitir a alteração dessa configuração.
+    1. Na página **Connections** na barra lateral, selecione a aba **Add new connection**.
 
-<div id="3--install-the-clickhouse-plugin-for-grafana">
-  ## 3.  Instale o plugin do ClickHouse para o Grafana
-</div>
+    2. Procure por **ClickHouse** e clique no plugin assinado pela Grafana Labs:
 
-Antes que o Grafana possa se conectar ao ClickHouse, você precisa instalar o plugin apropriado para o Grafana. Supondo que você já esteja conectado ao Grafana, siga estas etapas:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="Selecione o plugin ClickHouse na página de conexões" border />
 
-1. Na página **Connections** da barra lateral, selecione a aba **Add new connection**.
+    3. Na próxima tela, clique no botão **Install**:
 
-2. Procure por **ClickHouse** e clique no plugin assinado da Grafana Labs:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="Instale o plugin ClickHouse" border />
+  </Step>
 
-   <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="Selecione o plugin do ClickHouse na página Connections" border />
+  <Step title="Defina uma fonte de dados do ClickHouse" id="4-define-a-clickhouse-data-source">
+    1. Quando a instalação for concluída, clique no botão **Add new data source**. (Você também pode adicionar uma fonte de dados pela aba **Data sources** na página **Connections**.)
 
-3. Na tela seguinte, clique no botão **Install**:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="Criar uma fonte de dados do ClickHouse" border />
 
-   <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="Instale o plugin do ClickHouse" border />
+    2. Role a página para baixo e localize o tipo de fonte de dados **ClickHouse** ou pesquise por ele na barra de busca da página **Add data source**. Selecione a fonte de dados **ClickHouse** e a página a seguir será exibida:
 
-<div id="4-define-a-clickhouse-data-source">
-  ## 4. Defina uma fonte de dados do ClickHouse
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="Página de configuração da conexão" border />
 
-1. Quando a instalação for concluída, clique no botão **Add new data source**. (Você também pode adicionar uma fonte de dados pela aba **Data sources** na página **Connections**.)
+    3. Insira as configurações do servidor e as credenciais. As principais configurações são:
 
-   <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="Criar uma fonte de dados do ClickHouse" border />
+    * **Server host address:** o hostname do seu serviço ClickHouse.
+    * **Server port:** a porta do seu serviço ClickHouse. Ela varia conforme a configuração do servidor e o protocolo.
+    * **Protocol** o protocolo usado para se conectar ao seu serviço ClickHouse.
+    * **Secure connection** habilite esta opção se o seu servidor exigir uma conexão segura.
+    * **Username** e **Password**: insira as credenciais do seu usuário do ClickHouse. Se você não tiver configurado nenhum usuário, tente `default` como nome de usuário. Recomendamos [configurar um usuário somente leitura](#2-making-a-read-only-user).
 
-2. Role a página para baixo e localize o tipo de fonte de dados **ClickHouse** ou pesquise por ele na barra de busca da página **Add data source**. Selecione a fonte de dados **ClickHouse** e a página a seguir será exibida:
+    Para ver mais configurações, consulte a documentação de [configuração do plugin](/pt-BR/integrations/connectors/data-visualization/grafana/config).
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="Página de configuração da conexão" border />
+    4. Clique no botão **Save &amp; test** para verificar se o Grafana consegue se conectar ao seu serviço ClickHouse. Se a conexão for bem-sucedida, você verá a mensagem **Data source is working**:
 
-3. Insira as configurações do servidor e as credenciais. As principais configurações são:
+       <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Selecione Save & test" border />
+  </Step>
 
-* **Server host address:** o hostname do seu serviço ClickHouse.
-* **Server port:** a porta do seu serviço ClickHouse. Ela varia conforme a configuração do servidor e o protocolo.
-* **Protocol** o protocolo usado para se conectar ao seu serviço ClickHouse.
-* **Secure connection** habilite esta opção se o seu servidor exigir uma conexão segura.
-* **Username** e **Password**: insira as credenciais do seu usuário do ClickHouse. Se você não tiver configurado nenhum usuário, tente `default` como nome de usuário. Recomendamos [configurar um usuário somente leitura](#2-making-a-read-only-user).
+  <Step title="Próximos passos" id="5-next-steps">
+    Sua fonte de dados agora está pronta para uso! Saiba mais sobre como criar consultas com o [query builder](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder).
 
-Para ver mais configurações, consulte a documentação de [configuração do plugin](/pt-BR/integrations/connectors/data-visualization/grafana/config).
+    Para mais detalhes sobre configuração, consulte a documentação de [configuração do plugin](/pt-BR/integrations/connectors/data-visualization/grafana/config).
 
-4. Clique no botão **Save &amp; test** para verificar se o Grafana consegue se conectar ao seu serviço ClickHouse. Se a conexão for bem-sucedida, você verá a mensagem **Data source is working**:
-
-   <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Selecione Save & test" border />
-
-<div id="5-next-steps">
-  ## 5. Próximos passos
-</div>
-
-Sua fonte de dados já está pronta para uso! Saiba mais sobre como criar consultas com o [construtor de consultas](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder).
-
-Para mais detalhes sobre a configuração, consulte a documentação de [configuração do plugin](/pt-BR/integrations/connectors/data-visualization/grafana/config).
-
-Se estiver procurando mais informações que não estejam incluídas nesta documentação, consulte o [repositório do plugin no GitHub](https://github.com/grafana/clickhouse-datasource).
+    Se você estiver procurando mais informações que não estão incluídas nesta documentação, consulte o [repositório do plugin no GitHub](https://github.com/grafana/clickhouse-datasource).
+  </Step>
+</Steps>
 
 <div id="upgrading-plugin-versions">
   ## Atualizando versões do plugin

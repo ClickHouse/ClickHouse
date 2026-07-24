@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
@@ -17,7 +17,7 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a>은 스트리밍 CDC(Change Data Capture)와 스트림 처리를 전문으로 하는 실시간 데이터 통합 플랫폼입니다. Apache Kafka, Apache Flink, Debezium을 사용하는 고처리량의 확장 가능한 스택을 기반으로 구축되었으며, SaaS 또는 BYOC(Bring Your Own Cloud) 배포 방식의 완전 관리형 서비스로 제공됩니다.
+<a href="https://streamkap.com/" target="_blank">Streamkap</a>은 스트리밍 CDC(변경 데이터 캡처)와 스트림 처리를 전문으로 하는 실시간 데이터 통합 플랫폼입니다. Apache Kafka, Apache Flink, Debezium을 사용하는 고처리량의 확장 가능한 스택을 기반으로 구축되었으며, SaaS 또는 BYOC(Bring Your Own Cloud) 배포 방식의 완전 관리형 서비스로 제공됩니다.
 
 Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href="https://streamkap.com/connectors" target="_blank">그 외 다양한 데이터 소스</a>의 모든 삽입, 업데이트, 삭제를 밀리초 단위의 지연 시간으로 ClickHouse에 직접 스트리밍할 수 있습니다.
 
@@ -45,56 +45,50 @@ Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href=
 이 가이드는 Streamkap 파이프라인을 설정해 데이터를 ClickHouse에 적재하는 방법을 개괄적으로 설명합니다.
 
 <div id="prerequisites">
-  ### 사전 준비 사항
+  ### 사전 요구 사항
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap 계정</a>.
-* ClickHouse 클러스터 연결 정보: 호스트명, 포트, 사용자명, 비밀번호.
-* CDC가 가능하도록 구성된 원본 데이터베이스(예: PostgreSQL, SQL Server). 자세한 설정 가이드는 Streamkap 문서에서 확인할 수 있습니다.
+* ClickHouse 클러스터 연결 정보: 호스트명, Port, Username, Password.
+* CDC를 허용하도록 구성된 원본 데이터베이스(예: PostgreSQL, SQL Server). 자세한 설정 가이드는 Streamkap 문서에서 확인할 수 있습니다.
 
-<div id="configure-clickhouse-source">
-  ### 1단계: Streamkap에서 소스 구성
-</div>
+<Steps>
+  <Step title="Streamkap에서 원본 구성" id="configure-clickhouse-source">
+    1. Streamkap 계정에 로그인합니다.
+    2. 사이드바에서 **Connectors**로 이동한 다음 **Sources** 탭을 선택합니다.
+    3. **+ Add**를 클릭하고 원본 데이터베이스 유형(예: SQL Server RDS)을 선택합니다.
+    4. 엔드포인트, 포트, 데이터베이스 이름, 사용자 자격 증명을 포함한 연결 정보를 입력합니다.
+    5. 커넥터를 저장합니다.
+  </Step>
 
-1. Streamkap 계정에 로그인합니다.
-2. 사이드바에서 **Connectors**로 이동한 다음 **Sources** 탭을 선택합니다.
-3. **+ Add**를 클릭하고 원본 데이터베이스 유형(예: SQL Server RDS)을 선택합니다.
-4. 엔드포인트, 포트, 데이터베이스 이름, 사용자 자격 증명을 포함한 연결 정보를 입력합니다.
-5. 커넥터를 저장합니다.
+  <Step title="ClickHouse 대상 구성" id="configure-clickhouse-dest">
+    1. **Connectors** 섹션에서 **Destinations** 탭을 선택합니다.
+    2. **+ Add**를 클릭하고 목록에서 **ClickHouse**를 선택합니다.
+    3. ClickHouse 서비스의 연결 정보를 입력합니다:
+       * **Hostname:** ClickHouse 인스턴스의 호스트명입니다(예: `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port:** 보안 HTTPS 포트로, 일반적으로 `8443`입니다
+       * **Username and Password:** ClickHouse 사용자의 자격 증명입니다
+       * **Database:** ClickHouse의 대상 데이터베이스 이름입니다
+    4. 대상을 저장합니다.
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### 2단계: ClickHouse 대상 구성
-</div>
+  <Step title="파이프라인 생성 및 실행" id="run-pipeline">
+    1. 사이드바에서 **Pipelines**로 이동하고 **+ Create**를 클릭합니다.
+    2. 방금 구성한 원본와 대상을 선택합니다.
+    3. 스트리밍할 스키마와 테이블을 선택합니다.
+    4. 파이프라인 이름을 지정하고 **Save**를 클릭합니다.
 
-1. **Connectors** 섹션에서 **Destinations** 탭을 선택합니다.
-2. **+ Add**를 클릭하고 목록에서 **ClickHouse**를 선택합니다.
-3. ClickHouse 서비스의 연결 정보를 입력합니다:
-   * **Hostname:** ClickHouse 인스턴스의 호스트명입니다(예: `abc123.us-west-2.aws.clickhouse.cloud`)
-   * **Port:** 보안 HTTPS 포트로, 일반적으로 `8443`입니다
-   * **Username and Password:** ClickHouse 사용자의 자격 증명입니다
-   * **Database:** ClickHouse의 대상 데이터베이스 이름입니다
-4. 대상을 저장합니다.
+    생성이 완료되면 파이프라인이 활성화됩니다. Streamkap은 먼저 기존 데이터의 스냅샷을 생성한 다음, 이후 발생하는 새로운 변경 사항의 스트리밍을 시작합니다.
+  </Step>
 
-<div id="run-pipeline">
-  ### 3단계: 파이프라인 생성 및 실행
-</div>
+  <Step title="ClickHouse에서 데이터 확인" id="verify-data-clickhoouse">
+    ClickHouse 클러스터에 연결하고 쿼리를 실행하여 대상 테이블에 데이터가 들어오는지 확인합니다.
 
-1. 사이드바에서 **Pipelines**로 이동한 다음 **+ Create**를 클릭합니다.
-2. 방금 구성한 Source와 Destination을 선택합니다.
-3. 스트리밍할 스키마와 테이블을 선택합니다.
-4. 파이프라인 이름을 지정한 다음 **Save**를 클릭합니다.
-
-파이프라인이 생성되면 활성화됩니다. Streamkap은 먼저 기존 데이터의 스냅샷을 만든 다음, 이후 발생하는 새 변경 사항을 스트리밍하기 시작합니다.
-
-<div id="verify-data-clickhoouse">
-  ### 4단계: ClickHouse에서 데이터 확인
-</div>
-
-ClickHouse 클러스터에 연결한 다음 쿼리를 실행하여 데이터가 대상 테이블에 수신되는지 확인합니다.
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## ClickHouse에서의 작동 방식

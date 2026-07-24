@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 يمكن لـ Omni الاتصال بـ ClickHouse Cloud أو بعملية نشر محلية عبر مصدر بيانات ClickHouse الرسمي.
 
-<div id="1-gather-your-connection-details">
-  ## 1. اجمع تفاصيل الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="أنشئ مصدر بيانات ClickHouse" id="2-create-a-clickhouse-data-source">
+    انتقل إلى Admin -&gt; Connections وانقر على زر &quot;Add Connection&quot; في الزاوية العلوية اليمنى.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. أنشئ مصدر بيانات ClickHouse
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="واجهة إدارة Omni تعرض زر Add Connection في قسم Connections" border />
 
-انتقل إلى Admin -&gt; Connections وانقر على زر &quot;Add Connection&quot; في الزاوية العلوية اليمنى.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="واجهة Admin في Omni تعرض زر Add Connection في قسم Connections" border />
+    حدِّد `ClickHouse`. أدخل بيانات الاعتماد الخاصة بك في النموذج.
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="واجهة تهيئة اتصال Omni لـ ClickHouse تعرض حقول نموذج بيانات الاعتماد" border />
 
-حدِّد `ClickHouse`. أدخل بيانات الاعتماد الخاصة بك في النموذج.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="واجهة إعداد الاتصال في Omni لـ ClickHouse تعرض حقول نموذج بيانات الاعتماد" border />
-
-<br />
-
-يمكنك الآن تنفيذ query على البيانات من ClickHouse وتصورها في Omni.
+    يمكنك الآن الاستعلام عن البيانات من ClickHouse وعرضها بصريًا في Omni.
+  </Step>
+</Steps>
