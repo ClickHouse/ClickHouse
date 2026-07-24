@@ -84,6 +84,17 @@ if (ARCH_AARCH64)
         if (NOT FLAGS)
             MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")
         endif()
+
+        # If the native host doesn't actually support SVE (e.g. Graviton 2), intermediate build-time
+        # tools (protoc, llvm-tablegen, ...) will SIGILL as soon as they run, well after CMake configuration succeeded.
+        if (ENABLE_SVE_GLOBALLY)
+            execute_process(
+                COMMAND grep -P "^(?=.*\\bsve\\b)" /proc/cpuinfo
+                OUTPUT_VARIABLE SVE_FLAGS)
+            if (NOT SVE_FLAGS)
+                MESSAGE(FATAL_ERROR "The build machine does not support SVE, try to run cmake with -DENABLE_SVE_GLOBALLY=0")
+            endif()
+        endif()
     endif()
 
 elseif (ARCH_PPC64LE)
