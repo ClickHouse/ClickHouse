@@ -20,42 +20,32 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن أن تتضمن الأدوار المخصصة مجموعةً من أذونات المؤسسة والخدمة وقاعدة البيانات. ويمكن تطبيق الأذونات على جميع الخدمات وقواعد البيانات أو على مجموعة فرعية منها.
 
 <Steps>
-  <Step>
-    ### الوصول إلى إعدادات المؤسسة واختيار `Users and roles`
-
+  <Step title="الوصول إلى إعدادات المؤسسة واختيار `Users and roles`" id="users-and-roles-1">
     من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### اختر علامة التبويب `Roles`
-
+  <Step title={<>اختر علامة التبويب <code>Roles</code></>} id="roles-tab">
     اختر علامة التبويب `Roles` من أعلى منتصف الشاشة.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### اختر `Create new role` من أعلى اليمين
-
+  <Step title={<>اختر <code>Create new role</code> من أعلى اليمين</>} id="create-new-role">
     اختر الزر `Create new role` في أعلى يمين الشاشة.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### سمِّ الدور
-
+  <Step title="سمِّ الدور" id="name-the-role">
     أدخل اسمًا وصفيًا للدور. سيكون هذا هو الاسم الذي ستراه عند تعيين الأدوار للمستخدمين ولمفاتيح API.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### انقر على `Allow` وحدد نطاق الأذونات
-
-    انقر على الزر `Allow` واختر أذونات المؤسسة و/أو الخدمة و/أو قاعدة البيانات. للاطلاع على وصف جميع الأذونات، راجع [أدوار Console والأذونات](/ar/products/cloud/reference/security/console-roles).
+  <Step title={<>انقر على <code>Allow</code> وحدد نطاق الأذونات</>} id="scope-permissions">
+    انقر على الزر `Allow` واختر أذونات المؤسسة و/أو الخدمة و/أو قاعدة البيانات. للاطلاع على وصف جميع الأذونات، راجع [Console roles and permissions](/ar/products/cloud/reference/security/console-roles).
 
     <Tip>
       تأكد من أن المستخدمين الذين سيسجلون الدخول إلى Console لديهم كحد أدنى أذونات Organization &gt; Access organization.
@@ -70,9 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### راجع دورك الجديد
-
+  <Step title="راجع دورك الجديد" id="review-role">
     راجع الأذونات المعيَّنة إلى دورك الجديد قبل الإنهاء. انقر على `Create role` عند الانتهاء.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />

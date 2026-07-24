@@ -25,64 +25,56 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭하십시오.
 
 <Steps>
-  <Step>
-    ## 복제 서비스 구성
+  <Step title="복제 서비스 구성" id="configure-replication-service">
+    Fill in the 복제 settings:
 
-    복제 설정을 입력합니다.
+    * **Integration name**: A name for this ClickPipe
+    * **ClickHouse 서비스**: Select an existing ClickHouse Cloud service or create a new one
+    * **Postgres database**: The source database to replicate from
+    * **복제 method**: Choose one of:
+      * **Initial load + CDC**: Import existing data and keep tables updated with new changes (recommended)
+      * **Initial load only**: One-time snapshot of existing data with no ongoing updates
+      * **CDC only**: Skip the initial snapshot and only capture new changes going forward
 
-    * **Integration name**: 이 ClickPipe의 이름
-    * **ClickHouse 서비스**: 기존 ClickHouse Cloud 서비스를 선택하거나 새로 생성합니다
-    * **Postgres database**: 복제할 원본 데이터베이스
-    * **Replication method**: 다음 중 하나를 선택합니다.
-      * **Initial load + CDC**: 기존 데이터를 가져오고 이후 새 변경 사항이 생기면 테이블을 계속 업데이트합니다(권장)
-      * **Initial load only**: 지속적인 업데이트 없이 기존 데이터를 한 번만 스냅샷으로 가져옵니다
-      * **CDC only**: 초기 스냅샷은 건너뛰고 이후 발생하는 새 변경 사항만 캡처합니다
+    <Image img="/images/managed-postgres/replication-service-step.webp" alt="Replication service configuration showing integration name, destination service, and replication method options" size="md" border />
 
-    <Image img="/images/managed-postgres/replication-service-step.webp" alt="통합 이름, 대상 서비스, 복제 방법 옵션을 보여주는 복제 서비스 구성" size="md" border />
-
-    계속하려면 **다음**을 클릭하십시오.
+    Click **Next** to proceed.
   </Step>
 
-  <Step>
-    ## 복제 설정 구성
+  <Step title="Configure 복제 settings" id="replication-settings">
+    Fine-tune how data is replicated:
 
-    데이터가 복제되는 방식을 세부적으로 조정합니다.
+    * **Sync interval (seconds)**: How often changes are pulled from Postgres (default: 60)
+    * **Parallel threads for initial load**: Number of threads used during the initial snapshot (default: 4)
+    * **Pull batch size**: Number of rows fetched per batch during 복제 (default: 100000)
+    * **Snapshot number of rows per partition**: Rows per partition during the initial snapshot (default: 100000)
+    * **Snapshot number of tables in parallel**: How many tables are snapshotted concurrently (default: 1)
 
-    * **Sync interval (seconds)**: Postgres에서 변경 사항을 가져오는 주기입니다(기본값: 60)
-    * **Parallel threads for initial load**: 초기 스냅샷 중 사용하는 스레드 수입니다(기본값: 4)
-    * **Pull batch size**: 복제 중 배치당 가져오는 행 수입니다(기본값: 100000)
-    * **Snapshot number of rows per partition**: 초기 스냅샷 중 파티션당 행 수입니다(기본값: 100000)
-    * **Snapshot number of tables in parallel**: 동시에 스냅샷하는 테이블 수입니다(기본값: 1)
+    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="Replication settings step showing sync interval, parallel threads, pull batch size, and snapshot configuration options" size="md" border />
 
-    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="동기화 간격, 병렬 스레드, pull batch 크기, 스냅샷 구성 옵션을 보여주는 복제 설정 단계" size="md" border />
-
-    계속하려면 **다음**을 클릭하십시오.
+    Click **Next** to proceed.
   </Step>
 
-  <Step>
-    ## 복제할 테이블 선택
+  <Step title="Select tables to replicate" id="select-tables">
+    Choose a destination database and select which tables to replicate:
 
-    대상 데이터베이스를 선택한 다음 복제할 테이블을 선택합니다.
+    * **Destination database**: Select an existing ClickHouse database or create a new one
+    * **Prefix default destination table names with schema name**: Adds the Postgres schema as a prefix to avoid naming conflicts
+    * **Preserve NULL values from source**: Maintains NULL values instead of converting to type defaults. 이 설정은 파이프의 모든 테이블에 적용되며, 파이프를 만든 후에는 변경할 수 없습니다.
+    * **Remove deleted rows during merges**: For [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, physically removes deleted rows during background merges
 
-    * **Destination database**: 기존 ClickHouse 데이터베이스를 선택하거나 새로 생성합니다
-    * **Prefix default destination table names with schema name**: 이름 충돌을 방지하기 위해 Postgres 스키마 이름을 접두사로 추가합니다
-    * **Preserve NULL values from source**: 기본값으로 변환하지 않고 원본의 NULL 값을 유지합니다
-    * **Remove deleted rows during merges**: [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블에서 백그라운드 머지 중 삭제된 행을 물리적으로 제거합니다
+    Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.
 
-    스키마를 펼쳐 복제할 개별 테이블을 선택하십시오. 대상 테이블 이름과 컬럼 설정도 사용자 지정할 수 있습니다.
+    <Image img="/images/managed-postgres/select-tables-step.webp" alt="Select tables step showing database selection, 복제 options, and table picker grouped by schema" size="md" border />
 
-    <Image img="/images/managed-postgres/select-tables-step.webp" alt="데이터베이스 선택, 복제 옵션, 스키마별로 그룹화된 테이블 선택기를 보여주는 테이블 선택 단계" size="md" border />
-
-    복제를 시작하려면 **Replicate data to ClickHouse**를 클릭하십시오.
+    Click **Replicate data to ClickHouse** to start the 복제.
   </Step>
 
-  <Step>
-    ## ClickPipe 모니터링
+  <Step title="Monitor your ClickPipe" id="monitor-clickpipe">
+    Once the ClickPipe starts, you&#39;ll see it listed in the same menu. The initial snapshot of all data may take some time depending on the size of your tables.
 
-    ClickPipe가 시작되면 동일한 메뉴에 표시됩니다. 모든 데이터의 초기 스냅샷은 테이블 크기에 따라 다소 시간이 걸릴 수 있습니다.
+    <Image img="/images/managed-postgres/integration-running.webp" alt="ClickHouse integration list showing a running ClickPipe with its destination service and status" size="md" border />
 
-    <Image img="/images/managed-postgres/integration-running.webp" alt="대상 서비스와 status가 표시된 실행 중인 ClickPipe를 보여주는 ClickHouse integration 목록" size="md" border />
-
-    자세한 status를 확인하고, 진행 상황을 모니터링하고, 오류를 확인하고, ClickPipe를 관리하려면 통합 이름을 클릭하십시오. ClickPipe가 가질 수 있는 다양한 상태를 이해하려면 [Lifecycle of a Postgres ClickPipe](/ko/integrations/clickpipes/postgres/lifecycle)를 참조하십시오.
+    Click on the integration name to view detailed status, monitor progress, view errors, and manage the ClickPipe. See [Lifecycle of a Postgres ClickPipe](/ko/integrations/clickpipes/postgres/lifecycle) to understand the different states your ClickPipe may be in.
   </Step>
 </Steps>

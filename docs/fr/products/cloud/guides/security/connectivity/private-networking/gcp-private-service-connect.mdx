@@ -19,6 +19,8 @@ Les producteurs de services publient leurs applications à destination des conso
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Vue d’ensemble de Private Service Connect" border />
 
 <Warning>
+  GCP Private Service Connect prend uniquement en charge les connexions initiées depuis votre VPC GCP vers ClickHouse Cloud. Il ne peut pas être utilisé pour des connexions initiées depuis ClickHouse Cloud vers des services de votre VPC, comme une [base de données privée](#connecting-to-a-remote-database).
+
   Par défaut, un service ClickHouse n’est pas accessible via une connexion Private Service Connect, même si la connexion PSC est approuvée et établie ; vous devez ajouter explicitement l’ID PSC à la liste d’autorisation au niveau de l’instance en effectuant l’[étape](#add-endpoint-id-to-services-allow-list) ci-dessous.
 </Warning>
 
@@ -26,7 +28,7 @@ Les producteurs de services publient leurs applications à destination des conso
 
 1. Les régions utilisant Global Access doivent appartenir au même VPC.
 2. Global Access doit être explicitement activé au niveau du PSC (voir la capture d’écran ci-dessous).
-3. Assurez-vous que les règles de votre firewall ne bloquent pas l’accès à PSC depuis d’autres régions.
+3. Assurez-vous que les règles de votre pare-feu ne bloquent pas l’accès à PSC depuis d’autres régions.
 4. Gardez à l’esprit que des frais de transfert de données inter-régions sur GCP peuvent s’appliquer.
 
 La connectivité inter-régions n’est pas prise en charge. Les régions du producteur et du consommateur doivent être identiques. Cependant, vous pouvez vous connecter depuis d’autres régions au sein de votre VPC en activant [Global Access](https://cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) au niveau de Private Service Connect (PSC).
@@ -91,7 +93,7 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 </div>
 
 <div id="option-1-clickhouse-cloud-console">
-  ### Option 1 : ClickHouse Cloud console
+  ### Option 1 : console ClickHouse Cloud
 </div>
 
 Dans la console ClickHouse Cloud, ouvrez le service que vous souhaitez connecter via Private Service Connect, puis ouvrez le menu **Settings**. Cliquez sur le bouton **Set up private endpoint**. Notez le **Service name** (`endpointServiceId`) et le **DNS name** (`privateDnsHostname`). Vous les utiliserez aux étapes suivantes.
@@ -139,7 +141,7 @@ Dans cette section, vous allez créer un point de terminaison de service.
 Tout d’abord, vous allez créer une Private Service Connection.
 
 <div id="option-1-using-google-cloud-console">
-  #### Option 1: Utiliser la console Google Cloud
+  #### Option 1 : Utiliser la console Google Cloud
 </div>
 
 Dans la console Google Cloud, accédez à **Network services -&gt; Private Service Connect**.
@@ -149,8 +151,8 @@ Dans la console Google Cloud, accédez à **Network services -&gt; Private Servi
 Ouvrez la boîte de dialogue de création de Private Service Connect en cliquant sur le bouton **Connect Endpoint**.
 
 * **Target** : utilisez **Published service**
-* **Target service** : utilisez `endpointServiceId`<sup>API</sup> ou `Service name`<sup>console</sup> obtenu à l’étape [Obtain GCP service attachment for Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
-* **Endpoint name** : définissez un nom pour le **Endpoint name** PSC.
+* **Target service** : utilisez `endpointServiceId`<sup>API</sup> ou `Service name`<sup>console</sup> à l’étape [Obtain GCP service attachment for Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
+* **Endpoint name** : définissez un nom pour l’**Endpoint name** PSC.
 * **Network/Subnetwork/IP address** : choisissez le réseau à utiliser pour la connexion. Vous devrez créer une adresse IP ou utiliser une adresse existante pour le point de terminaison Private Service Connect. Dans notre exemple, nous avons créé au préalable une adresse nommée **your-ip-address** et lui avons attribué l’adresse IP `10.128.0.2`.
 * Pour rendre le point de terminaison accessible depuis n’importe quelle région, vous pouvez cocher la case **Enable global access**.
 
@@ -303,7 +305,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 Vous devez ajouter un Endpoint ID à la liste d’autorisation de chaque instance devant être accessible via Private Service Connect.
 
-<div id="option-1-clickhouse-cloud-console-1">
+<div id="option-1-clickhouse-cloud-console">
   ### Option 1 : console ClickHouse Cloud
 </div>
 
@@ -471,13 +473,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
   ### Connexion à une base de données distante
 </div>
 
-Supposons que vous essayiez d&#39;utiliser les [fonctions de table MySQL](/fr/reference/functions/table-functions/mysql) ou [PostgreSQL](/fr/reference/functions/table-functions/postgresql) dans ClickHouse Cloud et de vous connecter à votre base de données hébergée sur GCP. GCP PSC ne peut pas être utilisé pour sécuriser cette connexion. PSC est une connexion à sens unique, unidirectionnelle. Il permet à votre réseau interne ou à votre VPC GCP de se connecter en toute sécurité à ClickHouse Cloud, mais il ne permet pas à ClickHouse Cloud de se connecter à votre réseau interne.
-
 Selon la [documentation GCP Private Service Connect](https://cloud.google.com/vpc/docs/private-service-connect) :
 
 > Conception orientée service : les services producteurs sont publiés via des équilibreurs de charge qui exposent une adresse IP unique au réseau VPC consommateur. Le trafic du consommateur qui accède aux services producteurs est unidirectionnel et ne peut accéder qu&#39;à l&#39;adresse IP du service, plutôt qu&#39;à l&#39;ensemble d&#39;un réseau VPC appairé.
 
-Pour cela, configurez les règles de pare-feu de votre VPC GCP afin d&#39;autoriser les connexions depuis ClickHouse Cloud vers votre service de base de données interne/privé. Consultez les [adresses IP de sortie par défaut des régions ClickHouse Cloud](/fr/products/cloud/guides/data-sources/cloud-endpoints-api), ainsi que les [adresses IP statiques disponibles](https://api.clickhouse.cloud/static-ips.json).
+Pour connecter les [fonctions de table MySQL](/fr/reference/functions/table-functions/mysql) ou [PostgreSQL](/fr/reference/functions/table-functions/postgresql) dans ClickHouse Cloud à une base de données hébergée dans votre VPC GCP, configurez les règles de pare-feu de votre VPC GCP afin d&#39;autoriser les connexions depuis ClickHouse Cloud. Consultez les [adresses IP de sortie par défaut des régions ClickHouse Cloud](/fr/products/cloud/guides/data-sources/cloud-endpoints-api), ainsi que les [adresses IP statiques disponibles](https://api.clickhouse.cloud/static-ips.json).
 
 <div id="more-information">
   ## Informations complémentaires

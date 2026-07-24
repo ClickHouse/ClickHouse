@@ -577,35 +577,42 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->disk = global_ctx->space_reservation->getDisk();
     auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
 
-    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and
-    /// the resulting `IMergeTreeDataPart` constructed below live for the merged part's lifetime.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    std::optional<MergeTreeDataPartBuilder> builder;
-    if (global_ctx->parent_part)
-    {
-        /// Take the non-initializing variant, so nothing is seeded from an existing directory; see
-        /// `IMergeTreeDataPart::getProjectionPartBuilder` for the rationale.
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
-        builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
-        builder->withParentPart(global_ctx->parent_part);
-    }
-    else
-    {
-        /// The temporary directory name is deterministic (`tmp_merge_<part>`), so an interrupted merge
-        /// can leave a stale leftover behind; claim the name and reclaim the leftover BEFORE the part
-        /// storage is constructed, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+    /// The `SingleDiskVolume`, `DataPartStorageOnDiskFull`, and `IMergeTreeDataPart` constructed
+    /// here are stored on the merged part and live for its whole lifetime, so route them into the
+    /// dedicated arena (same as `MergeTreeData::loadDataPart` / `DataPartsExchange`). The rest of
+    /// `prepare` (storage snapshot, column extraction, pipeline/transform setup) is merge-lifetime
+    /// scratch and is deliberately left in the default per-CPU arenas.
+    /// The temporary directory name is deterministic (`tmp_merge_<part>`), so an interrupted merge
+    /// can leave a stale leftover behind; claim the name and reclaim the leftover BEFORE the part
+    /// storage is constructed, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+    /// Projection merges write nested inside the parent's temporary directory, which has no claim.
+    if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
 
-        auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
-        builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings(), PartDirIntent::CreateFresh));
-        builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+        std::optional<MergeTreeDataPartBuilder> builder;
+        if (global_ctx->parent_part)
+        {
+            /// Take the non-initializing variant, so nothing is seeded from an existing directory; see
+            /// `IMergeTreeDataPart::getProjectionPartBuilder` for the rationale.
+            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
+            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
+            builder->withParentPart(global_ctx->parent_part);
+        }
+        else
+        {
+            auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
+            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings(), PartDirIntent::CreateFresh));
+            builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
+        }
+
+        builder->withPartInfo(global_ctx->future_part->part_info);
+        builder->withPartType(global_ctx->future_part->part_format.part_type);
+
+        global_ctx->new_data_part = std::move(*builder).build();
     }
-
-    builder->withPartInfo(global_ctx->future_part->part_info);
-    builder->withPartType(global_ctx->future_part->part_format.part_type);
-
-    global_ctx->new_data_part = std::move(*builder).build();
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
     /// For top-level merges the claim above already reclaimed any stale leftover, and true concurrency
@@ -812,7 +819,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (part->isEmpty())
                 continue;
 
-            global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
+            {
+                /// Populate the merged part's minmax index in the parts arena (the object and the
+                /// hyperrectangle/Field allocations of `merge` both land there).
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
+            }
             const auto & result_statistics = global_ctx->gathered_data.statistics;
 
             if (result_statistics.empty())
@@ -877,6 +889,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
+
+    /// partition / ttl_infos / minmax / expired_columns (and patch source parts) are populated
+    /// above interleaved with merge-only scratch, so they were allocated in the default arenas.
+    /// Re-home them into the dedicated arena; the interleaved scratch stays out.
+    global_ctx->new_data_part->moveMetadataToDedicatedArena();
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -1592,7 +1609,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)
+        {
+            /// Same rationale as the horizontal-stage `merge` above: keep the row-reducing merge's
+            /// incrementally-built minmax index in the parts arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns);
+        }
 
         calculateProjections(block, starting_offset);
 

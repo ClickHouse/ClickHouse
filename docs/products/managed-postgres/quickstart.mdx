@@ -3,12 +3,32 @@ slug: /cloud/managed-postgres/quickstart
 sidebarTitle: 'Quickstart'
 title: 'Quickstart for Managed Postgres'
 description: 'Experience NVMe-powered Postgres performance and add real-time analytics with native ClickHouse integration'
-keywords: ['managed postgres', 'quickstart', 'getting started', 'create database', 'nvme', 'performance']
+keywords: ['managed postgres', 'quickstart', 'getting started', 'create database', 'nvme', 'performance', 'clickhousectl', 'CLI', 'automation', 'AI agents']
 doc_type: 'guide'
 ---
 
 import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
+import QuickstartCLI from "/snippets/managed-postgres/_quickstart_cli.mdx";
+
+<Visibility for="agents">
+
+<QuickstartCLI />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="CLI">
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<QuickstartCLI />
+
+</View>
+
+<View title="Cloud UI">
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
@@ -17,7 +37,7 @@ ClickHouse Managed Postgres is enterprise-grade Postgres backed by NVMe storage,
 - **Part 1:** Get started with NVMe Postgres and experience its performance
 - **Part 2:** Unlock real-time analytics by integrating with ClickHouse
 
-Managed Postgres is currently available on AWS in several regions and is free during private preview.
+Managed Postgres is currently available on AWS in several regions and is in public beta.
 
 **In this quickstart, you will:**
 - Create a Managed Postgres instance with NVMe-powered performance
@@ -394,3 +414,6 @@ To delete the resources created in this quickstart:
 
 1. First, delete the ClickPipe integration from the ClickHouse service
 2. Then, delete the Managed Postgres instance from the Cloud Console
+
+</View>
+</Visibility>

@@ -35,9 +35,7 @@ ClickHouse — один из готовых коннекторов BladePipe, к
 В будущем список поддерживаемых источников будет расширен.
 
 <Steps>
-  <Step>
-    ## Скачивание и запуск BladePipe
-
+  <Step title="Скачивание и запуск BladePipe" id="1-run-bladepipe">
     1. Войдите в <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
 
     2. Следуйте инструкциям в <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Install Worker (Docker)</a> или <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Install Worker (Binary)</a>, чтобы скачать и установить воркер BladePipe.
@@ -47,9 +45,7 @@ ClickHouse — один из готовых коннекторов BladePipe, к
     </Note>
   </Step>
 
-  <Step>
-    ## Добавьте ClickHouse в качестве целевого назначения
-
+  <Step title="Добавьте ClickHouse в качестве целевого назначения" id="2-add-clickhouse-as-a-target">
     <Note>
       1. BladePipe поддерживает ClickHouse версии `20.12.3.3` и выше.
       2. Чтобы использовать ClickHouse в качестве целевого назначения, убедитесь, что у пользователя есть разрешения SELECT, INSERT и базовые DDL-разрешения.
@@ -64,9 +60,7 @@ ClickHouse — один из готовых коннекторов BladePipe, к
     3. Нажмите &quot;Добавить источник данных&quot; внизу страницы — экземпляр ClickHouse будет добавлен.
   </Step>
 
-  <Step>
-    ## Добавление MySQL в качестве источника
-
+  <Step title="Добавление MySQL в качестве источника" id="3-add-mysql-as-a-source">
     В этом руководстве мы используем экземпляр MySQL в качестве источника и покажем, как загрузить данные из MySQL в ClickHouse.
 
     <Note>
@@ -82,9 +76,7 @@ ClickHouse — один из готовых коннекторов BladePipe, к
     3. Нажмите внизу &quot;Add DataSource&quot;, и экземпляр MySQL будет добавлен.
   </Step>
 
-  <Step>
-    ## Создайте конвейер
-
+  <Step title="Создайте конвейер" id="4-create-a-pipeline">
     1. В BladePipe нажмите &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
 
     2. Выберите добавленные экземпляры MySQL и ClickHouse и нажмите &quot;Test Connection&quot;, чтобы убедиться, что BladePipe подключён к ним. Затем выберите базы данных, которые нужно перенести.
@@ -103,9 +95,7 @@ ClickHouse — один из готовых коннекторов BladePipe, к
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob запущен" />
   </Step>
 
-  <Step>
-    ## Проверьте данные
-
+  <Step title="Проверьте данные" id="5-verify-the-data">
     1. Остановите запись данных в экземпляре MySQL и дождитесь, пока ClickHouse завершит слияние данных.
 
     <Note>
