@@ -47,6 +47,12 @@ FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
 ORDER BY o.k
 SETTINGS empty_result_for_aggregation_by_empty_set = 1;
 
+-- The same setting on the SUBQUERY's own SETTINGS context must also disable the restore: the empty group
+-- stays NULL even though the outer query leaves the setting at 0 (the gate reads the subquery node's context).
+SELECT o.k, (SELECT count() FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS i WHERE i.k = o.k AND i.flag = 1 SETTINGS empty_result_for_aggregation_by_empty_set = 1) AS c
+FROM values('k UInt8, flag UInt8', (1, 0), (2, 1)) AS o
+ORDER BY o.k;
+
 -- Matches on every outer row (no empty group) is unaffected.
 SELECT o.k, (SELECT count() FROM values('k UInt8', (1), (2), (2)) AS i WHERE i.k = o.k) AS c
 FROM values('k UInt8', (1), (2)) AS o
@@ -100,3 +106,10 @@ WHERE explain ILIKE '%ifNull(%quantilesExact%';
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT countOrNull() FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
 WHERE explain ILIKE '%ifNull(%countOrNull%';
+
+-- A composite (Tuple) result inherits returns_default_when_only_null (quantilesExactTuple) but its empty value
+-- ([0],[0]) is not the type default ([],[]), so the restore must not apply (only plain-number results are). The
+-- empty group keeps the natural join-fill; assert no ifNull wrapper is added for it.
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT quantilesExactTuple(0.5)(i.t) FROM (SELECT 2 AS k, (5, 6)::Tuple(UInt64, UInt64) AS t) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
+WHERE explain ILIKE '%ifNull(%quantilesExactTuple%';

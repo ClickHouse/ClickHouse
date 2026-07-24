@@ -107,7 +107,7 @@ void makeInternalDecorrelationJoinUnbounded(JoinStepLogical & join_step)
 /// True only for a bare aggregate projection with `returns_default_when_only_null`, a Nullable result, no
 /// GROUP BY / HAVING / DISTINCT / LIMIT / OFFSET, and `empty_result_for_aggregation_by_empty_set` off. In that
 /// case the aggregate cannot produce NULL over a non-empty group, so a post-join NULL is exactly an empty group.
-bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree)
 {
     const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
@@ -117,7 +117,9 @@ bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree
         || query_node->hasLimit() || query_node->hasOffset())
         return false;
 
-    if (context->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
+    /// The subquery node's own context, not the outer query's: a per-subquery
+    /// `SETTINGS empty_result_for_aggregation_by_empty_set = 1` must keep the empty group NULL.
+    if (query_node->getContext()->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
         return false;
 
     const auto & projection_nodes = query_node->getProjection().getNodes();
@@ -128,11 +130,11 @@ bool scalarSubqueryRestoresEmptyGroupDefault(const QueryTreeNodePtr & query_tree
     if (!function_node || !function_node->isAggregateFunction())
         return false;
 
-    /// Require a non-Nullable natural type that becomes Nullable: an already-Nullable aggregate may return a
-    /// real NULL over a non-empty group, and a type that cannot be made Nullable (e.g. an `Array`) is join-filled
-    /// with its own default rather than NULL, so the `ifNull` restore below neither applies nor is unambiguous.
+    /// The restore substitutes the natural type's default (0). That equals the aggregate's empty-input value only
+    /// for a plain non-Nullable number: an already-Nullable aggregate may return a real NULL over a non-empty
+    /// group, and a composite result (Array/Tuple/etc.) has a structured empty value that is not its type default.
     auto natural_type = function_node->getResultType();
-    if (natural_type->isNullable() || !makeNullableOrLowCardinalityNullableSafe(natural_type)->isNullable())
+    if (natural_type->isNullable() || !isNumber(natural_type))
         return false;
 
     auto properties = AggregateFunctionFactory::instance().tryGetProperties(function_node->getFunctionName(), NullsAction::EMPTY);
@@ -809,8 +811,7 @@ void buildQueryPlanForCorrelatedSubquery(
             buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
 
             /// Decide before the join consumes the tree (see the helper for the exact restorable case).
-            bool restore_empty_group_default = scalarSubqueryRestoresEmptyGroupDefault(
-                correlated_subquery.query_tree, planner_context->getQueryContext());
+            bool restore_empty_group_default = scalarSubqueryRestoresEmptyGroupDefault(correlated_subquery.query_tree);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             query_plan = buildLogicalJoin(
