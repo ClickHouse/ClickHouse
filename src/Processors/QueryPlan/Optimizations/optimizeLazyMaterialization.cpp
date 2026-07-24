@@ -464,18 +464,20 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// reached, and deferring the unneeded ones pays off the same way as with a sort.
     QueryPlan::Node * chain_top_node = root.children.front();
 
+    bool allow_unordered_output = false;
+
     if (sorting_step)
     {
         if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
             return false;
 
         reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
+        allow_unordered_output = sorting_step->allowsUnorderedOutput();
 
         chain_top_node = root.children.front()->children.front();
     }
 
     const auto limit = limit_step->getLimit();
-    const bool allow_unordered_output = sorting_step->allowsUnorderedOutput();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
 
