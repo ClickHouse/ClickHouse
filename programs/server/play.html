@@ -1692,6 +1692,21 @@
             color: var(--misc-text-color);
         }
 
+        /* On touch devices, mobile Safari automatically zooms the whole page when the user
+           focuses a form control whose font is smaller than 16px. With the `device-width`
+           viewport above, our 11pt controls fall below that threshold, so tapping the query
+           editor would jump the page. Raise the typography of the controls to 16px, together
+           with every layer that must mirror the textarea's metrics character-for-character
+           (`#query-backdrop`, `#completion-mirror`, `.completion-entry`) and the `#url_status`
+           overlay that sits on the URL input, so the highlighting overlay stays aligned. */
+        @media (hover: none) and (pointer: coarse)
+        {
+            input, textarea, #query-backdrop, #completion-mirror, .completion-entry, #url_status
+            {
+                font-size: 16px;
+            }
+        }
+
         /* Prevents a different color when Chromium auto-fills inputs from the list. */
         input:-webkit-autofill,
         input:-webkit-autofill:hover,
