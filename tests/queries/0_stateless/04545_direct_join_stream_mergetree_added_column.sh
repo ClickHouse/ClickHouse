@@ -2,20 +2,6 @@
 # Tags: long, no-parallel-replicas
 # no-parallel-replicas: direct JOIN over a MergeTree right table is a single-node lookup.
 
-# Regression test for a use-of-uninitialized-value (found by the AST fuzzer under MSan) in a
-# `direct` JOIN whose right MergeTree table is read with the `STREAM` keyword.
-#
-# The direct-join lookup (DirectJoinMergeTreeEntity) rebuilds its lookup pipeline repeatedly over
-# a StorageSnapshot shared with every clone of that plan. The strip-parts optimization in
-# ReadFromMergeTree::initializePipeline used to mutate that shared snapshot in place
-# (`storage_snapshot->data = std::move(...)`), so one pipeline build destroyed a SnapshotData
-# whose `mutations_snapshot` shared_ptr was still read by an overlapping build. Projecting a
-# column added by ALTER ... ADD COLUMN drives the `mutations_snapshot` path.
-#
-# The crash is scheduling-dependent (independent of max_threads), so we spawn the streaming query
-# several times and assert the server never dies. Before the fix the server aborts within a
-# handful of iterations under MSan.
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -26,32 +12,51 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_djs_right"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_djs_left (id UInt64) ENGINE = MergeTree ORDER BY id"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_djs_right (id UInt64, value String) ENGINE = MergeTree ORDER BY id"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_djs_right VALUES (1, 'a')"
-# One matching left key (1) and one non-matching (99), each its own part, so the lookup takes
-# both the found and the not-found (default-filling) paths across separate blocks.
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_djs_left VALUES (1)"
+# Seven probe keys (1..6 and 99), each in its own part (one INSERT each); only key 1 matches the
+# right table, the rest take the not-found path. With `max_block_size=1` the direct-join lookup
+# pipeline is rebuilt per left block, so several builds run over the shared `StorageSnapshot` and
+# overlap, which is what the bug needs.
+for k in 1 2 3 4 5 6; do
+    $CLICKHOUSE_CLIENT -q "INSERT INTO t_djs_left VALUES ($k)"
+done
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_djs_left VALUES (99)"
-# new_col is not physically present in the pre-ALTER right part.
+# new_col is not physically present in the pre-ALTER right part; projecting it drives the
+# mutations_snapshot path that reads the shared snapshot the strip optimization replaces.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_djs_right ADD COLUMN new_col String DEFAULT 'default_value'"
 
-# The bug only exists on the direct-join path; confirm the query actually uses it (and would fail
-# loudly here if planning changed and it silently stopped exercising the fixed code).
-$CLICKHOUSE_CLIENT --enable_analyzer=1 --join_algorithm=direct -q "
+# The bug is on the direct-join path; confirm the exact STREAM query below actually plans through it
+# (and fail loudly if planning changed and it silently stopped exercising the fixed code, e.g. if the
+# STREAM query started to be rejected before the lookup pipeline is built).
+$CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct -q "
     SELECT countIf(explain LIKE '%DirectKeyValueJoin%') > 0
-    FROM (EXPLAIN PLAN SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r ON l.id = r.id)"
+    FROM (EXPLAIN PLAN SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r STREAM ON l.id = r.id)"
 
-# A STREAM read never terminates on its own, so run it in the background and kill it each time.
-# enable_analyzer=1 and join_algorithm=direct are pinned (they are the contract, CI randomizes
-# enable_analyzer); max_block_size=1 rebuilds the lookup pipeline per left block, maximising the
-# overlap that triggered the bug.
+# Sanity-check the direct join itself: the bounded (non-STREAM) form must return the matching row
+# with the ALTER-added column filled. Only key 1 matches.
+$CLICKHOUSE_CLIENT --enable_analyzer=1 --join_algorithm=direct -q "
+    SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r ON l.id = r.id ORDER BY l.id"
+
+# Only the STREAM form takes the changed snapshot path: the planner disables parts-snapshot removal
+# for a direct-join lookup (`PlannerJoinTree`, "not to remove parts snapshot"), and
+# `ReadFromMergeTree` re-enables it only for `isStream`. So the streaming query below is what
+# exercises the fix. A STREAM read is continuous and does not terminate on its own; the
+# use-of-uninitialized-value is hit while the lookup pipeline is (re)built at query start, so a short
+# window per query is enough and we just repeat it. `max_block_size=1` maximises the per-block
+# pipeline rebuilds that create the overlap. On the pre-fix server this aborts under MSan in the loop.
 query="SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r STREAM ON l.id = r.id"
-for _ in {1..20}; do
-    timeout 3 $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 -q "$query" >/dev/null 2>&1 &
-    bg_pid=$!
-    sleep 1
-    kill "$bg_pid" 2>/dev/null
-    wait "$bg_pid" 2>/dev/null
+for _ in {1..25}; do
+    timeout 1 $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 --query_id="djs_${CLICKHOUSE_DATABASE}_$RANDOM" -q "$query" >/dev/null 2>&1
     # If the server died the next query fails; surface it instead of the expected "alive".
     $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1 || { echo "server died"; break; }
+done
+
+# Stop any streaming query that outlived its client so it does not hold the table locks (which would
+# hang the DROP below and leave the end-of-run hung check with a lingering query).
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%' SYNC FORMAT Null" 2>/dev/null
+for _ in {1..60}; do
+    running=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%'" 2>/dev/null)
+    [ "${running:-1}" = "0" ] && break
+    sleep 0.5
 done
 
 echo "alive"

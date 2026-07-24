@@ -3841,8 +3841,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
 
         /// Rebind to a private snapshot clone instead of mutating `storage_snapshot->data` in place:
-        /// the snapshot is shared across clones of this step (see clone()), and a direct join rebuilds
-        /// its lookup pipeline repeatedly, so an in-place replace could destroy a SnapshotData still
+        /// the snapshot is shared across clones of this step (see `clone`), and a direct join rebuilds
+        /// its lookup pipeline repeatedly, so an in-place replace could destroy a `SnapshotData` still
         /// read by an overlapping build.
         storage_snapshot = storage_snapshot->clone(std::move(stripped_snapshot_data));
     }
