@@ -283,6 +283,11 @@ TEST(BackupInfo, CopyCredentialsDoesNotModifyDestinationOnFailure)
         [&] { (void)BackupFactory::instance().copyCredentials(source, destination, getContext().context, &malformed_expected); },
         ErrorCodes::BAD_ARGUMENTS);
     EXPECT_EQ(destination.toString(), original_destination);
+
+    auto unsupported_destination = BackupInfo::fromString("S3(url = 'https://s3.example.com/base')");
+    const String original_unsupported_destination = unsupported_destination.toString();
+    EXPECT_FALSE(BackupFactory::instance().copyCredentials(source, unsupported_destination, getContext().context));
+    EXPECT_EQ(unsupported_destination.toString(), original_unsupported_destination);
 }
 
 

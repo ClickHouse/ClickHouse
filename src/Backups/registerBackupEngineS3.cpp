@@ -132,7 +132,13 @@ namespace
     bool copyS3Credentials(
         const BackupInfo & source, BackupInfo & destination, ContextPtr context, const BackupInfo * expected_credentials)
     {
-        if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3)
+        if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3
+            || (destination.args.size() != 1 && destination.args.size() != 3))
+            return false;
+        if (source.args[0].getType() != Field::Types::Which::String
+            || source.args[1].getType() != Field::Types::Which::String
+            || source.args[2].getType() != Field::Types::Which::String
+            || destination.args[0].getType() != Field::Types::Which::String)
             return false;
 
         BackupInfo new_destination = destination;
