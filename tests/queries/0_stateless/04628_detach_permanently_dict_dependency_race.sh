@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings
+# Tags: no-fasttest, no-parallel, no-random-settings
+# no-fasttest: relies on a failpoint (libfiu), which the fast-test build does not include.
 # A dependency registered concurrently (after the pre-shutdown check passes) makes
 # DETACH DICTIONARY ... PERMANENTLY throw HAVE_DEPENDENT_OBJECTS after the dictionary was already
 # shut down and deregistered from the loader. The rejected detach must leave the dictionary usable.
