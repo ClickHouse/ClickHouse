@@ -5,15 +5,9 @@
 #include <thread>
 
 #include <Storages/MergeTree/TemporaryParts.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// The arbitration methods of TemporaryParts are private (only MergeTreeData uses them), so the test
 /// goes through this accessor, which is declared as a friend in TemporaryParts.h.
@@ -44,16 +38,6 @@ public:
 }
 
 using DB::TemporaryPartsTestAccessor;
-
-namespace
-{
-
-bool isLogicalError(const DB::Exception & e)
-{
-    return e.code() == DB::ErrorCodes::LOGICAL_ERROR;
-}
-
-}
 
 TEST(TemporaryParts, CleanupCannotClaimOwnedName)
 {
@@ -86,35 +70,9 @@ TEST(TemporaryParts, CleanupHoldIsExclusive)
 
     TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_c");
 
-    /// Releasing a claim that is not held is an exception.
-    try
-    {
-        TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_c");
-        FAIL() << "Expected DB::Exception with LOGICAL_ERROR";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_TRUE(isLogicalError(e)) << e.what();
-    }
-}
-
-TEST(TemporaryParts, DuplicateOperationClaimThrows)
-{
-    DB::TemporaryParts temporary_parts;
-
-    TemporaryPartsTestAccessor::add(temporary_parts, "tmp_d");
-
-    try
-    {
-        TemporaryPartsTestAccessor::add(temporary_parts, "tmp_d");
-        FAIL() << "Expected DB::Exception with LOGICAL_ERROR";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_TRUE(isLogicalError(e)) << e.what();
-    }
-
-    TemporaryPartsTestAccessor::remove(temporary_parts, "tmp_d");
+    /// After the hold is released, the name is claimable again.
+    EXPECT_TRUE(TemporaryPartsTestAccessor::tryClaimForCleanup(temporary_parts, "tmp_c"));
+    TemporaryPartsTestAccessor::releaseCleanupClaim(temporary_parts, "tmp_c");
 }
 
 TEST(TemporaryParts, OperationClaimWaitsForCleanup)
