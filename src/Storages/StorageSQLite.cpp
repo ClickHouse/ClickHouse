@@ -491,9 +491,11 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
 
-    openConnectionIfNeeded(
-        /* throw_on_error */ true,
-        /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
+    /// A write must never materialize a missing SQLite database either: this storage never creates the
+    /// remote table or schema itself, so a freshly created empty database could not satisfy the insert
+    /// anyway - the file would be left behind as junk after the `INSERT` fails with "no such table".
+    /// Fail closed on a missing file, exactly like the read path and the `sqlite` table function.
+    openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// insert's metadata snapshot is taken; this covers any path that reaches `write` without that hook.
