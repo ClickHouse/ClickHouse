@@ -21,10 +21,14 @@ namespace ErrorCodes
 
 namespace
 {
-class FunctionReverse final : public IFunction
+class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionReverse>();
+    }
 
     String getName() const override
     {
@@ -115,16 +119,13 @@ public:
 
 
 /// Also works with arrays.
-class ReverseOverloadResolver final : public IFunctionOverloadResolver
+class ReverseOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextPtr context)
-        : array_reverse(FunctionFactory::instance().get("arrayReverse", context))
-    {
-    }
+    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -134,9 +135,9 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return array_reverse->build(arguments);
+            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            std::make_shared<FunctionReverse>(),
+            FunctionReverse::create(context),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
@@ -144,7 +145,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return FunctionReverse{}.getReturnTypeImpl(arguments); }
 
 private:
-    FunctionOverloadResolverPtr array_reverse;
+    ContextPtr context;
 };
 
 }

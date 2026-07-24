@@ -132,8 +132,6 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
-    WatchesSnapshot getWatchesSnapshot() const;
-
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback,
@@ -239,11 +237,6 @@ public:
 
     int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
-    Int64 getLastReceivedTimestamp() const override
-    {
-        return last_received_timestamp_us.load(std::memory_order_relaxed);
-    }
-
 private:
     const Int32 send_receive_os_threads_nice_value;
 
@@ -308,11 +301,8 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacksWithCreateInfo = std::unordered_map<WatchCallbackPtrOrEventPtr, WatchCreateInfo>;
-    using WatchesWithCreateInfo = std::unordered_map<String, WatchCallbacksWithCreateInfo>;
-
-    WatchesWithCreateInfo watches TSA_GUARDED_BY(watches_mutex);
-    WatchesWithCreateInfo list_watches TSA_GUARDED_BY(watches_mutex);
+    Watches watches TSA_GUARDED_BY(watches_mutex);
+    Watches list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
@@ -385,12 +375,6 @@ private:
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     std::atomic<int64_t> last_zxid_seen;
-
-    /// Timestamp of the last data received from the server (any kind: response,
-    /// heartbeat, or watch event), in microseconds since `steady_clock` epoch.
-    /// Updated by `receiveThread` after each `receiveEvent` call.
-    /// Read by sync wrappers via `getLastReceivedTimestamp` for progress-based timeout.
-    std::atomic<Int64> last_received_timestamp_us{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

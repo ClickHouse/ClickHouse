@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 
 
 #include <memory>
@@ -17,7 +18,6 @@
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
-#include <unordered_set>
 namespace DB::Iceberg
 {
 
@@ -83,8 +83,6 @@ class IcebergSchemaProcessor
     using Node = ActionsDAG::Node;
 
 public:
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
-
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
@@ -95,12 +93,9 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
-
-    /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
-    static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -133,7 +128,6 @@ private:
         const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
 
     mutable SharedMutex mutex;
-    bool allow_geo_parser = true;
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

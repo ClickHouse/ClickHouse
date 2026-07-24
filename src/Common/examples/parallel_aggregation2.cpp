@@ -18,7 +18,14 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-#include <Examples/clickhouse_examples.h>
+
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
+
+using Key = UInt64;
+using Value = UInt64;
+using Source = std::vector<Key>;
 
 
 namespace CurrentMetrics
@@ -27,16 +34,6 @@ namespace CurrentMetrics
     extern const Metric LocalThreadActive;
     extern const Metric LocalThreadScheduled;
 }
-
-namespace
-{
-
-using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
-using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
-
-using Key = UInt64;
-using Value = UInt64;
-using Source = std::vector<Key>;
 
 template <typename Map>
 struct AggregateIndependent
@@ -61,7 +58,7 @@ struct AggregateIndependent
                 for (auto it = begin; it != end; ++it)
                 {
                     typename Map::LookupResult place;
-                    bool inserted = {};
+                    bool inserted;
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
@@ -102,15 +99,15 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        chassert(place != nullptr);
+                        assert(place != nullptr);
                         updater(place->getMapped()); // NOLINT
                         continue;
                     }
                     prev_key = *it;
 
-                    bool inserted = {};
+                    bool inserted;
                     map.emplace(*it, place, inserted);
-                    chassert(place != nullptr);
+                    assert(place != nullptr);
 
                     if (inserted)
                         creator(place->getMapped());
@@ -192,7 +189,7 @@ struct MergeParallelForTwoLevelTable
                 for (size_t i = 0; i < num_maps; ++i)
                     section[i] = &source_maps[i]->impls[bucket];
 
-                typename Map::Impl * res = nullptr;
+                typename Map::Impl * res;
                 ImplMerge::execute(section.data(), num_maps, res, merger, pool);
             });
 
@@ -239,7 +236,7 @@ struct Work
         for (size_t i = 0; i < num_maps; ++i)
             intermediate_results_ptrs[i] = intermediate_results[i].get();
 
-        Map * result_map = nullptr;
+        Map * result_map;
         Merge::execute(intermediate_results_ptrs.data(), num_maps, result_map, std::forward<Merger>(merger), pool);
 
         watch.stop();
@@ -279,9 +276,8 @@ struct Merger
     void operator()(Value & dst, const Value & src) const { dst += src; }
 };
 
-}
 
-int mainEntryExampleParallelAggregation2(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);

@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class SquashingTransform final : public ExceptionKeepingTransform
+class SquashingTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingTransform(
@@ -32,7 +32,7 @@ private:
     Chunk finish_chunk;
 };
 
-class SimpleSquashingChunksTransform final : public IInflatingTransform
+class SimpleSquashingChunksTransform : public IInflatingTransform
 {
 public:
     explicit SimpleSquashingChunksTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);

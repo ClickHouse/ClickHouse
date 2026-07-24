@@ -4,8 +4,8 @@
 #include <base/types.h>
 #include <base/defines.h>
 
+#include <cassert>
 #include <atomic>
-#include <limits>
 #include <memory>
 #include <system_error>
 #include <cerrno>
@@ -24,7 +24,7 @@ static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 
 inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
 {
-    struct timespec ts{};
+    struct timespec ts;
     if (0 != clock_gettime(clock_type, &ts))
         throw std::system_error(std::error_code(errno, std::system_category()));
     return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
@@ -45,7 +45,7 @@ inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type =
         return current_time;
 
     /// Something probably went completely wrong if time stepped back for more than 1 second.
-    chassert(prev_time - current_time <= 1000000000ULL);
+    assert(prev_time - current_time <= 1000000000ULL);
     return prev_time;
 }
 
@@ -111,7 +111,7 @@ public:
       */
     bool compareAndRestart(double seconds)
     {
-        UInt64 threshold = secondsToNanoseconds(seconds);
+        UInt64 threshold = static_cast<UInt64>(seconds * 1000000000.0);
         UInt64 current_start_ns = start_ns;
         UInt64 current_ns = nanoseconds(current_start_ns);
 
@@ -155,7 +155,7 @@ public:
       */
     Lock compareAndRestartDeferred(double seconds)
     {
-        UInt64 threshold = secondsToNanoseconds(seconds);
+        UInt64 threshold = UInt64(seconds * 1000000000.0);
         UInt64 current_start_ns = start_ns;
         UInt64 current_ns = nanoseconds(current_start_ns);
 
@@ -179,21 +179,4 @@ private:
 
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds(UInt64 prev_time) const { return clock_gettime_ns_adjusted(prev_time, clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
-
-    /// Convert seconds to nanoseconds with saturation. Avoids UB when `seconds` is so large
-    /// that `seconds * 1e9` falls outside the representable range of `UInt64` — which can
-    /// happen when a `UInt64` interval setting tuned to an extreme value is fed in via a
-    /// `static_cast<double>` at the call site. Saturating at half of `UInt64::max` also
-    /// keeps `current_start_ns + threshold` from wrapping inside the compare-and-restart
-    /// loop, so an "essentially infinite" threshold behaves as "never restart".
-    static UInt64 secondsToNanoseconds(double seconds)
-    {
-        if (seconds <= 0.0)
-            return 0;
-        constexpr UInt64 max_ns = std::numeric_limits<UInt64>::max() / 2;
-        const double ns = seconds * 1000000000.0;
-        if (ns >= static_cast<double>(max_ns))
-            return max_ns;
-        return static_cast<UInt64>(ns);
-    }
 };

@@ -196,32 +196,12 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
     return blob_prefix + blob_name;
 }
 
-/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
-/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
-/// connection string or blob URL has malformed components. These are user-input
-/// errors but must be translated to DB::Exception, otherwise they propagate to
-/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
-/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
-/// "Logical error" abort.
-[[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
-{
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Failed to parse Azure connection string or blob URL: {}", e.what());
-}
-
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
-        try
-        {
-            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
-        }
-        catch (const std::logic_error & e)
-        {
-            translateAzureSdkParseError(e);
-        }
+        auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
+        return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
     }
 
     return endpoint.storage_account_url;
@@ -229,50 +209,36 @@ String ConnectionParams::getConnectionURL() const
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
-    try
+    return std::visit([this]<typename T>(const T & auth)
     {
-        return std::visit([this]<typename T>(const T & auth)
-        {
-            if constexpr (std::is_same_v<T, ConnectionString>)
-                return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
-            else
-                return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
-        }, auth_method);
-    }
-    catch (const std::logic_error & e)
-    {
-        translateAzureSdkParseError(e);
-    }
+        if constexpr (std::is_same_v<T, ConnectionString>)
+            return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
+        else
+            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
+    }, auth_method);
 }
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    try
+    if (!endpoint.sas_auth.empty())
     {
-        if (!endpoint.sas_auth.empty())
+        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+    }
+
+    return std::visit([this]<typename T>(const T & auth)
+    {
+        if constexpr (std::is_same_v<T, ConnectionString>)
         {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
         }
-
-        return std::visit([this]<typename T>(const T & auth)
+        else
         {
-            if constexpr (std::is_same_v<T, ConnectionString>)
-            {
-                auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-            }
-            else
-            {
-                RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-            }
-        }, auth_method);
-    }
-    catch (const std::logic_error & e)
-    {
-        translateAzureSdkParseError(e);
-    }
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
+    }, auth_method);
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
@@ -691,17 +657,15 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
-        /// Accept both the modern `<object_storage_type>azure</object_storage_type>` and the legacy
-        /// `<type>azure_blob_storage</type>` declaration forms. Without the latter, an endpoint
-        /// declared the legacy way is never loaded into the map, so its settings are silently lost.
-        String disk_type;
         if (config.has(config_prefix + "." + key + ".object_storage_type"))
-            disk_type = config.getString(config_prefix + "." + key + ".object_storage_type");
-        else if (config.has(config_prefix + "." + key + ".type"))
-            disk_type = config.getString(config_prefix + "." + key + ".type");
-
-        if (disk_type == "azure" || disk_type == "azure_blob_storage")
         {
+            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
+            {
+                /// Then its not an azure config
+                continue;
+            }
+
             const auto key_path = config_prefix + "." + key;
             String endpoint_path = key_path + ".connection_string";
 
@@ -716,7 +680,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
                     if (!config.has(endpoint_path))
                     {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
-                                        disk_type);
+                                        object_storage_type);
                     }
                 }
             }

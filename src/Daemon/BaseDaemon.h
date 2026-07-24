@@ -18,7 +18,6 @@
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/StatusFile.h>
 #include <Loggers/Loggers.h>
 
@@ -157,7 +156,7 @@ protected:
     Poco::Thread signal_listener_thread;
     std::unique_ptr<SignalListener> signal_listener;
 
-    DB::MapWithMemoryTracking<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
+    std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;

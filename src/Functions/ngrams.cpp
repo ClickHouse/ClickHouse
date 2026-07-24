@@ -16,7 +16,7 @@
 namespace DB
 {
 
-class FunctionNgrams final : public IFunction
+class FunctionNgrams : public IFunction
 {
 public:
 

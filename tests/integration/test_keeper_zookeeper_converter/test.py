@@ -19,119 +19,35 @@ node = cluster.add_instance(
 
 
 def start_zookeeper():
-    # `zkServer.sh start` only keeps the freshly launched JVM for one second
-    # before it checks that the process is still alive, and it reports an
-    # opaque "FAILED TO START" (exit code 1) as soon as that racy check loses.
-    # On a busy CI host the JVM can be slow to come up or transiently killed,
-    # while a healthy server becomes reachable well after that. So instead of
-    # trusting the script's exit code, wait until ZooKeeper actually serves a
-    # real client request (a bare TCP accept can happen before the server is
-    # able to do that), clean up any half-started JVM between attempts (a
-    # lingering one keeps the client port busy and makes every retry fail),
-    # and on terminal failure dump the daemon logs together with the start
-    # script's own output.
-    last_start_output = ""
-    for attempt in range(3):
-        last_start_output = node.exec_in_container(
-            ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start 2>&1"],
-            nothrow=True,
-        )
-
-        if _wait_zk_client_ready(timeout=60):
-            return
-
-        if attempt < 2:
-            stop_zookeeper()
-            time.sleep(3)
-
-    dump_zookeeper_logs()
-    raise Exception(
-        "ZooKeeper did not become ready after multiple attempts. "
-        "Last `zkServer.sh start` output:\n" + last_start_output
-    )
-
-
-def _wait_zk_client_ready(timeout):
-    # Elsewhere in the harness ZooKeeper is only considered ready once a real
-    # Kazoo request succeeds (see `get_genuine_zk` and
-    # `ClickHouseCluster.wait_zookeeper_to_start`), so probe readiness the
-    # same way here instead of relying on a bare TCP connect.
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    for attempt in range(5):
         try:
-            conn = cluster.get_kazoo_client(
-                "node", timeout=5.0, retries=1, external_port=2181
+            node.exec_in_container(
+                ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"]
             )
-            try:
-                conn.get_children("/")
-                return True
-            finally:
-                conn.stop()
+            return
         except Exception:
-            time.sleep(0.5)
-
-    return False
-
-
-# pgrep / pkill -f match against the full command line, which includes the
-# pgrep / pkill process itself. The bracket expression `[o]rg` is a standard
-# trick that keeps `pgrep -f` from matching its own shell process: pgrep's
-# argv contains the literal string `[o]rg.apache.zookeeper.server` (the
-# brackets are passed through verbatim by bash because they are inside single
-# quotes), and the regex `[o]rg\.apache\.zookeeper\.server` does not match
-# that literal string (it needs `o` as the first character, not `[`).
-ZK_JVM_PATTERN = "[o]rg\\.apache\\.zookeeper\\.server"
-
-
-def _zk_jvm_running():
-    return bool(
-        node.exec_in_container(
-            ["bash", "-c", f"pgrep -f '{ZK_JVM_PATTERN}' || true"],
-            nothrow=True,
-        ).strip()
-    )
-
-
-def dump_zookeeper_logs():
-    # `zkServer.sh start` does not report why the JVM failed to start; the
-    # reason is written to the daemon output and the log4j log inside the
-    # container, so surface them to make such failures diagnosable from the CI
-    # artifacts instead of leaving only an opaque "FAILED TO START".
-    logs = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "tail -n 100 /opt/zookeeper/logs/*.out /opt/zookeeper/logs/*.log "
-            "2>/dev/null || true",
-        ],
-        nothrow=True,
-    )
-    print("ZooKeeper daemon logs after failed start:\n" + logs)
+            if attempt == 4:
+                raise
+            time.sleep(3)
 
 
 def stop_zookeeper():
-    # `zkServer.sh stop` sends a single SIGTERM to the JVM, removes the PID
-    # file, and returns — it does not wait for the JVM to actually exit and
-    # has no SIGKILL fallback. Under sanitizer-heavy CI builds the JVM can
-    # take a long time to run its shutdown hooks, so we have to do the wait
-    # ourselves and force-kill the JVM if it does not exit in time.
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
-    sigterm_deadline = time.time() + 60
-    while _zk_jvm_running():
-        if time.time() > sigterm_deadline:
-            # SIGTERM did not stop the JVM in time. The JVM is just an
-            # external dependency used to populate test data, so a hard
-            # kill is acceptable — we do not need a clean shutdown.
-            print("ZooKeeper JVM did not exit 60s after SIGTERM; sending SIGKILL")
-            node.exec_in_container(
-                ["bash", "-c", f"pkill -9 -f '{ZK_JVM_PATTERN}' || true"],
-            )
-            sigkill_deadline = time.time() + 10
-            while _zk_jvm_running():
-                if time.time() > sigkill_deadline:
-                    raise Exception("Failed to stop ZooKeeper even after SIGKILL")
-                time.sleep(0.2)
-            return
+    timeout = time.time() + 60
+    # get_process_pid("zookeeper") uses the regex '^[^ ]*zookeeper' which only
+    # matches the first word of the command line. The ZooKeeper Java process
+    # starts with "java -Dzookeeper..." so it never matches. Use a direct pgrep
+    # for the ZooKeeper main class to properly detect the running JVM.
+    # The bracket expression [o]rg is a standard trick to keep pgrep -f from
+    # matching the shell process that is running pgrep itself (its argv
+    # contains the literal string '[o]rg.apache.zookeeper.server', which the
+    # regex '[o]rg.apache.zookeeper.server' does not match).
+    while node.exec_in_container(
+        ["bash", "-c", "pgrep -f '[o]rg\\.apache\\.zookeeper\\.server' || true"],
+        nothrow=True,
+    ).strip():
+        if time.time() > timeout:
+            raise Exception("Failed to stop ZooKeeper in 60 secs")
         time.sleep(0.2)
 
 

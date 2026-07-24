@@ -363,7 +363,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     pcg64 generator(randomSeed());
     std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
 
-    for (const auto & tp : available_topic_partitions_copy)
+    for (const auto & tp : available_topic_partitions)
     {
         if (tmp_locks.size() >= tmp_locks_quota)
             break;
