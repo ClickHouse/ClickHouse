@@ -59,6 +59,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
+    extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
 }
 
 namespace
@@ -461,6 +463,32 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 quota.recordAttempt();
 
                 auto ai_response = provider->call(ai_request, timeouts);
+
+                /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
+                switch (ai_response.finish_reason)
+                {
+                    case FinishReason::Complete:
+                    case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
+                        break;
+                    case FinishReason::Truncated:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
+                            "AI provider returned a truncated response (finish_reason='{}'): the model hit the "
+                            "token limit before completing its answer. Increase max_tokens or reduce the input.",
+                            ai_response.raw_finish_reason);
+                    case FinishReason::ContentFilter:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                            "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
+                            "is incomplete.",
+                            ai_response.raw_finish_reason);
+                    case FinishReason::ToolCall:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                            "AI provider returned a tool-call response (finish_reason='{}') instead of a completed "
+                            "answer.",
+                            ai_response.raw_finish_reason);
+                }
 
                 quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;

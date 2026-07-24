@@ -25,6 +25,16 @@ Endpoints:
       element, exercising the duplicate-index rejection path.
   POST /v1/embeddings_wrong_count    — returns one fewer entry than requested, exercising the
       cardinality mismatch path.
+  POST /v1/chat/truncated            — returns HTTP 200 with a valid body but `finish_reason="length"`
+      (model hit max_tokens). Exercises the truncated-response rejection path.
+  POST /v1/chat/content_filter       — HTTP 200 with `finish_reason="content_filter"` (content
+      withheld). Exercises the incomplete-response rejection path.
+  POST /v1/chat/unknown_reason       — HTTP 200 with an unrecognized `finish_reason`; must be
+      accepted as complete, not misclassified as truncation.
+  POST /v1/anthropic/stop_sequence   — Anthropic-shaped HTTP 200 with `stop_reason="stop_sequence"`,
+      a complete answer that must NOT be rejected as truncated.
+  POST /v1/anthropic/max_tokens      — Anthropic-shaped HTTP 200 with `stop_reason="max_tokens"`,
+      a truncated answer that must be rejected.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
       the url table function (and so the AI functions) retries.
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
@@ -82,18 +92,28 @@ def build_structured_response(json_schema, user_message):
     return json.dumps(result)
 
 
-def make_success_response(content, prompt_tokens=10, completion_tokens=5):
+def make_success_response(content, prompt_tokens=10, completion_tokens=5, finish_reason="stop"):
     return {
         "choices": [
             {
                 "message": {"content": content},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
         },
+    }
+
+
+def make_anthropic_response(content, stop_reason="end_turn", input_tokens=10, output_tokens=5):
+    """Anthropic-shaped success body. Used to test the Anthropic `stop_reason` normalization,
+    notably that `stop_sequence` is a complete answer, not a truncation."""
+    return {
+        "content": [{"type": "text", "text": content}],
+        "stop_reason": stop_reason,
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
     }
 
 
@@ -202,6 +222,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 content = user_msg
 
             self._send_json(200, make_success_response(content))
+            return
+
+        if parsed.path == "/v1/chat/truncated":
+            # A well-formed HTTP 200 response whose body is valid but reports that the model hit the
+            # max_tokens limit (`finish_reason="length"`). The returned text is therefore truncated
+            # and the AI functions must reject it rather than silently return the partial content.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="length"))
+            return
+
+        if parsed.path == "/v1/chat/content_filter":
+            # HTTP 200 with `finish_reason="content_filter"`: the provider withheld content, so the
+            # answer is incomplete and must be rejected.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="content_filter"))
+            return
+
+        if parsed.path == "/v1/chat/unknown_reason":
+            # HTTP 200 with an unrecognized `finish_reason`. Must be accepted (treated as complete)
+            # rather than misclassified as truncation.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="some_future_reason"))
+            return
+
+        if parsed.path == "/v1/anthropic/stop_sequence":
+            # Anthropic-shaped 200 with `stop_reason="stop_sequence"`: a complete answer produced by
+            # hitting a caller stop sequence. Must NOT be rejected as truncated.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="stop_sequence"))
+            return
+
+        if parsed.path == "/v1/anthropic/max_tokens":
+            # Anthropic-shaped 200 with `stop_reason="max_tokens"`: a truncated answer that must be
+            # rejected.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="max_tokens"))
             return
 
         if parsed.path == "/v1/error":

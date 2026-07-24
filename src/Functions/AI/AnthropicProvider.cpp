@@ -112,13 +112,20 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     AIResponse ai_response;
 
-    String anthropic_stop_reason = json_obj->optValue<String>("stop_reason", "end_turn");
-    if (anthropic_stop_reason == "max_tokens")
-        ai_response.finish_reason = "length";
-    else if (anthropic_stop_reason == "end_turn")
-        ai_response.finish_reason = "stop";
+    /// Map Anthropic's `stop_reason` onto the canonical `FinishReason`. An absent field defaults to
+    /// `end_turn` (a normal completion). Both `end_turn` and `stop_sequence` are complete answers;
+    /// only a token/context limit counts as truncation.
+    ai_response.raw_finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
+    if (ai_response.raw_finish_reason == "end_turn" || ai_response.raw_finish_reason == "stop_sequence")
+        ai_response.finish_reason = FinishReason::Complete;
+    else if (ai_response.raw_finish_reason == "max_tokens" || ai_response.raw_finish_reason == "model_context_window_exceeded")
+        ai_response.finish_reason = FinishReason::Truncated;
+    else if (ai_response.raw_finish_reason == "refusal")
+        ai_response.finish_reason = FinishReason::ContentFilter;
+    else if (ai_response.raw_finish_reason == "tool_use" || ai_response.raw_finish_reason == "pause_turn")
+        ai_response.finish_reason = FinishReason::ToolCall;
     else
-        ai_response.finish_reason = anthropic_stop_reason;
+        ai_response.finish_reason = FinishReason::Unknown;
 
     auto content = json_obj->getArray("content");
     if (!content)

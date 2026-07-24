@@ -66,6 +66,17 @@ struct AIRequest
     String function_name;
 };
 
+/// Canonical, provider-independent reason the model stopped generating. Each provider maps its
+/// native vocabulary onto these values.
+enum class FinishReason : UInt8
+{
+    Complete, /// Full answer produced: a natural end, or a caller-supplied stop sequence was hit.
+    Truncated, /// Output was cut off by a token limit (`max_tokens` / `length` / context window exceeded).
+    ContentFilter, /// The provider withheld or filtered the content.
+    ToolCall, /// The model wants to call a tool. Not expected — text functions send no tools.
+    Unknown, /// Unrecognized finish reason, potentially new reason introduced in API update.
+};
+
 /// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
 struct AIResponse
 {
@@ -78,9 +89,11 @@ struct AIResponse
     /// Number of tokens in the generated output, as reported by the provider. Used for quota tracking.
     UInt64 output_tokens = 0;
 
-    /// Why the model stopped generating. Common values: "stop" (natural end),
-    /// "length" (hit max_tokens limit), "end_turn" (Anthropic equivalent of stop).
-    String finish_reason;
+    /// Canonical reason the model stopped generating, normalized from the provider's native value.
+    FinishReason finish_reason = FinishReason::Complete;
+
+    /// The provider's raw native reason string, kept verbatim for diagnostics in error messages.
+    String raw_finish_reason;
 };
 
 /** Parameters for a single AI embedding request.
