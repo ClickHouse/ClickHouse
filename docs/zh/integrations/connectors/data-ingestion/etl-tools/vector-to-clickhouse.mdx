@@ -21,7 +21,7 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 能够实时分析日志，对生产应用至关重要。
 ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://clickhouse.com/blog/log-compression-170x)) 以及对海量数据的快速聚合能力，非常适合存储和分析日志数据。
 
-本指南将向你展示如何使用流行的数据管道 [Vector](https://vector.dev/docs/about/what-is-vector/)，对 Nginx 日志文件进行 tail 并将其发送到 ClickHouse。
+本指南将向你展示如何使用流行的数据管道 [Vector](https://vector.dev/docs/introduction/)，对 Nginx 日志文件进行 tail 并将其发送到 ClickHouse。
 下面的步骤同样适用于 tail 任何类型的日志文件。
 
 **前置条件：**
@@ -30,9 +30,7 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
 * 你已安装 Vector
 
 <Steps>
-  <Step>
-    ## 创建数据库和表
-
+  <Step title="创建数据库和表" id="1-create-a-database-and-table">
     定义一个用于存储日志事件的表：
 
     1. 先创建一个名为 `nginxdb` 的新数据库：
@@ -56,9 +54,7 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
     </Note>
   </Step>
 
-  <Step>
-    ## 配置 Nginx
-
+  <Step title="配置 Nginx" id="2--configure-nginx">
     在这一步中，您将了解如何配置 Nginx 日志。
 
     1. 以下 `access_log` 属性会以 **combined** 格式将日志写入 `/var/log/nginx/my_access.log`。
@@ -87,9 +83,7 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
     ```
   </Step>
 
-  <Step>
-    ## 配置 Vector
-
+  <Step title="配置 Vector" id="3-configure-vector">
     Vector 用于收集、转换并将日志、指标和链路追踪 (统称为 **sources**) 路由到许多不同的厂商平台 (称为 **sinks**) ，并且开箱即用地支持 ClickHouse。
     sources 和 sinks 在名为 **vector.toml** 的配置文件中定义。
 
@@ -121,9 +115,7 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="以表格形式查看 ClickHouse 日志" />
   </Step>
 
-  <Step>
-    ## 解析日志
-
+  <Step title="解析日志" id="4-parse-the-logs">
     将日志存储在 ClickHouse 中固然很好，但将每个事件存储为单一字符串并不利于深入的数据分析。
     接下来，我们将介绍如何使用 [materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view) 解析日志事件。
 
@@ -163,7 +155,7 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
 
     在查看最终的 `CREATE MATERIALIZED VIEW` 命令之前，让我们先了解几个用于清理数据的函数。
     例如，`RequestMethod` 的值为 `"GET`，其中包含一个多余的双引号。
-    您可以使用 [`trimBoth` (别名 `trim`) ](/zh/reference/functions/regular-functions/string-functions#trimBoth) 函数去除该双引号：
+    您可以使用 [`trimBoth` (别名 `trim`)](/zh/reference/functions/regular-functions/string-functions#trimBoth) 函数去除该双引号：
 
     ```sql
     SELECT trim(LEADING '"' FROM '"GET')

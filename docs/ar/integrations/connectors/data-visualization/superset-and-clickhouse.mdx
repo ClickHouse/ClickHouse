@@ -37,112 +37,104 @@ import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupporte
   إذا لم تكن لديك مجموعة بيانات للعمل عليها، يمكنك إضافة إحدى المجموعات التجريبية. يستخدم هذا الدليل مجموعة بيانات [UK Price Paid](/ar/get-started/sample-datasets/uk-price-paid)، لذا يمكنك اختيارها. وهناك عدة أمثلة أخرى يمكنك الاطلاع عليها ضمن الفئة نفسها في الوثائق.
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. جهّز تفاصيل الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="تثبيت برنامج التشغيل" id="2-install-the-driver">
+    1. يستخدم Superset برنامج التشغيل `clickhouse-connect` للاتصال بـ ClickHouse. تتوفر تفاصيل `clickhouse-connect` على <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a>، ويمكن تثبيته باستخدام الأمر التالي:
 
-<div id="2-install-the-driver">
-  ## 2. تثبيت برنامج التشغيل
-</div>
+       ```console
+       pip install clickhouse-connect
+       ```
 
-1. يستخدم Superset برنامج التشغيل `clickhouse-connect` للاتصال بـ ClickHouse. يمكنك الاطّلاع على تفاصيل `clickhouse-connect` على <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a>، ويمكن تثبيته باستخدام الأمر التالي:
+    <Info>
+      **إعداد Docker Compose**
 
-   ```console
-   pip install clickhouse-connect
-   ```
+      بالنسبة إلى عمليات التثبيت المستندة إلى Docker، راجع [دليل تهيئة قاعدة البيانات في Superset](https://superset.apache.org/user-docs/6.0.0/configuration/databases/) للحصول على إرشادات حول إضافة `clickhouse-connect` إلى الحاوية الخاصة بك.
+    </Info>
 
-<Info>
-  **إعداد Docker Compose**
+    2. ابدأ Superset (أو أعد تشغيله).
+  </Step>
 
-  بالنسبة إلى عمليات التثبيت المستندة إلى Docker، راجع [دليل تهيئة قاعدة بيانات Superset](https://superset.apache.org/docs/configuration/databases/#clickhouse) للحصول على إرشادات حول إضافة `clickhouse-connect` إلى الحاوية.
-</Info>
+  <Step title="توصيل Superset بـ ClickHouse" id="3-connect-superset-to-clickhouse">
+    1. في Superset، اختر **البيانات** من القائمة العلوية ثم **قواعد البيانات** من القائمة المنسدلة. أضف قاعدة بيانات جديدة بالنقر على الزر **+ قاعدة بيانات**:
 
-2. شغّل Superset (أو أعد تشغيله).
+    <Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="واجهة Superset تعرض قائمة قاعدة البيانات مع تمييز زر + قاعدة بيانات" border />
 
-<div id="3-connect-superset-to-clickhouse">
-  ## 3. وصّل Superset بـ ClickHouse
-</div>
+    <br />
 
-1. داخل Superset، اختر **Data** من القائمة العلوية ثم **Databases** من القائمة المنسدلة. أضِف قاعدة بيانات جديدة بالنقر على زر **+ Database**:
+    2. في الخطوة الأولى، اختر **ClickHouse Connect** كنوع قاعدة البيانات:
 
-<Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="واجهة Superset تعرض قائمة Database مع تمييز زر + Database" border />
+    <Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="معالج اتصال قاعدة البيانات في Superset مع تحديد خيار ClickHouse Connect" border />
 
-<br />
+    <br />
 
-2. في الخطوة الأولى، اختر **ClickHouse Connect** كنوع قاعدة البيانات:
+    3. في الخطوة الثانية:
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="معالج اتصال قاعدة البيانات في Superset مع تحديد خيار ClickHouse Connect" border />
+    * فعّل SSL أو عطّله.
+    * أدخل معلومات الاتصال التي جمعتها سابقًا
+    * حدّد **اسم العرض**: يمكن أن يكون أي اسم تفضله. إذا كنت ستتصل بعدة قواعد بيانات ClickHouse، فاجعل الاسم أكثر وصفًا.
 
-<br />
+    <Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="نموذج تهيئة الاتصال في Superset يعرض معلمات اتصال ClickHouse" border />
 
-3. في الخطوة الثانية:
+    <br />
 
-* اضبط SSL على التشغيل أو الإيقاف.
-* أدخل معلومات الاتصال التي جمعتها سابقًا.
-* حدِّد **DISPLAY NAME**: يمكن أن يكون أي اسم تفضله. وإذا كنت ستتصل بعدة قواعد بيانات ClickHouse، فاجعل الاسم أكثر وصفًا.
+    4. انقر على الزرين **اتصال** ثم **إنهاء** لإكمال معالج الإعداد، ومن المفترض أن تظهر قاعدة بياناتك في قائمة قواعد البيانات.
+  </Step>
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="نموذج إعداد الاتصال في Superset يعرض معلمات اتصال ClickHouse" border />
+  <Step title="إضافة مجموعة بيانات" id="4-add-a-dataset">
+    1. للتفاعل مع بيانات ClickHouse الخاصة بك باستخدام Superset، تحتاج إلى تعريف ***مجموعة بيانات***. من القائمة العلوية في Superset، اختر **البيانات**، ثم **مجموعات البيانات** من القائمة المنسدلة.
 
-<br />
+    2. انقر زر إضافة مجموعة بيانات. اختر قاعدة البيانات الجديدة كمصدر البيانات، وستظهر لك الجداول المعرّفة في قاعدة بياناتك:
 
-4. انقر على الزرين **CONNECT** ثم **FINISH** لإكمال معالج الإعداد، ومن المفترض أن تظهر قاعدة بياناتك في قائمة قواعد البيانات.
+    <Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="نافذة إنشاء مجموعة بيانات في Superset تعرض الجداول المتاحة من قاعدة بيانات ClickHouse" border />
 
-<div id="4-add-a-dataset">
-  ## 4. إضافة مجموعة بيانات
-</div>
+    <br />
 
-1. للتعامل مع بيانات ClickHouse في Superset، تحتاج إلى تعريف ***مجموعة بيانات***. من القائمة العلوية في Superset، اختر **Data**، ثم **Datasets** من القائمة المنسدلة.
+    3. انقر زر **إضافة** أسفل نافذة الحوار، وسيظهر جدولك في قائمة مجموعات البيانات. وبذلك تصبح جاهزًا لإنشاء لوحة معلومات وتحليل بيانات ClickHouse الخاصة بك!
+  </Step>
 
-2. انقر على زر إضافة مجموعة بيانات. اختر قاعدة البيانات الجديدة كمصدر بيانات، وستظهر لك الجداول المعرّفة في قاعدة البيانات:
+  <Step title="إنشاء المخططات ولوحة معلومات في Superset" id="5--creating-charts-and-a-dashboard-in-superset">
+    إذا كانت لديك خبرة سابقة مع Superset، فسيبدو لك هذا القسم مألوفًا جدًا. أما إذا كنت جديدًا على Superset، فهو... يشبه كثيرًا من أدوات التصور الرائعة الأخرى المتاحة — فالبدء به لا يستغرق وقتًا طويلًا، لكنك ستتعلم التفاصيل والفروق الدقيقة تدريجيًا مع الاستخدام.
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="مربع حوار إنشاء مجموعة بيانات في Superset يعرض الجداول المتاحة من قاعدة بيانات ClickHouse" border />
+    1. تبدأ بلوحة معلومات. من القائمة العلوية في Superset، اختر **لوحات المعلومات**. انقر الزر الموجود في أعلى اليمين لإضافة لوحة معلومات جديدة. تحمل لوحة المعلومات التالية اسم **أسعار العقارات في المملكة المتحدة**:
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="لوحة معلومات Superset فارغة باسم أسعار العقارات في المملكة المتحدة وجاهزة لإضافة المخططات" border />
 
-3. انقر على زر **ADD** أسفل مربع الحوار، وسيظهر جدولك في قائمة مجموعات البيانات. وبذلك تصبح جاهزًا لإنشاء لوحة معلومات وتحليل بيانات ClickHouse!
+    <br />
 
-<div id="5--creating-charts-and-a-dashboard-in-superset">
-  ## 5.  إنشاء المخططات ولوحة معلومات في Superset
-</div>
+    2. لإنشاء مخطط جديد، اختر **المخططات** من القائمة العلوية وانقر الزر لإضافة مخطط جديد. ستظهر لك خيارات كثيرة. يوضح المثال التالي مخطط **مخطط دائري** باستخدام مجموعة البيانات **uk&#95;price&#95;paid** من القائمة المنسدلة **اختر مجموعة بيانات**:
 
-إذا كانت لديك خبرة سابقة مع Superset، فسيبدو لك هذا القسم مألوفًا جدًا. أما إذا كنت جديدًا على Superset، فهو... يشبه كثيرًا من أدوات التصور الرائعة الأخرى المتاحة — فالبدء به لا يستغرق وقتًا طويلًا، لكنك ستتعلم التفاصيل والفروق الدقيقة تدريجيًا مع الاستخدام.
+    <Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="واجهة إنشاء المخططات في Superset مع تحديد نوع التصور مخطط دائري" border />
 
-1. تبدأ بلوحة معلومات. من القائمة العلوية في Superset، اختر **لوحات المعلومات**. انقر الزر الموجود في أعلى اليمين لإضافة لوحة معلومات جديدة. تحمل لوحة المعلومات التالية اسم **أسعار العقارات في المملكة المتحدة**:
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="لوحة معلومات Superset فارغة باسم أسعار العقارات في المملكة المتحدة وجاهزة لإضافة المخططات" border />
+    3. تحتاج المخططات الدائرية في Superset إلى **بُعد** و**مقياس**، أما بقية الإعدادات فهي اختيارية. يمكنك اختيار الحقول التي تريدها للبُعد والمقياس، ويستخدم هذا المثال حقل ClickHouse ‏`district` كبُعد و`AVG(price)` كمقياس.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="إعداد البُعد مع تحديد الحقل district للمخطط الدائري" border />
 
-2. لإنشاء مخطط جديد، اختر **المخططات** من القائمة العلوية وانقر الزر لإضافة مخطط جديد. ستظهر لك خيارات كثيرة. يوضح المثال التالي مخطط **مخطط دائري** باستخدام مجموعة البيانات **uk&#95;price&#95;paid** من القائمة المنسدلة **اختر مجموعة بيانات**:
+    <Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="إعداد المقياس مع دالة التجميع AVG(price) للمخطط الدائري" border />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="واجهة إنشاء المخططات في Superset مع تحديد نوع التصور مخطط دائري" border />
+    <br />
 
-<br />
+    5. إذا كنت تفضل المخططات الحلقية على المخططات الدائرية، فيمكنك ضبط ذلك، إلى جانب خيارات أخرى، ضمن **تخصيص**:
 
-3. تحتاج المخططات الدائرية في Superset إلى **بُعد** و**مقياس**، أما بقية الإعدادات فهي اختيارية. يمكنك اختيار الحقول التي تريدها للبُعد والمقياس، ويستخدم هذا المثال حقل ClickHouse ‏`district` كبُعد و`AVG(price)` كمقياس.
+    <Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="لوحة التخصيص التي تعرض خيار المخطط الحلقي وإعدادات أخرى لتهيئة المخطط الدائري" border />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="إعداد البُعد مع تحديد الحقل district للمخطط الدائري" border />
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="إعداد المقياس مع دالة التجميع AVG(price) للمخطط الدائري" border />
+    6. انقر زر **حفظ** لحفظ المخطط، ثم اختر **أسعار العقارات في المملكة المتحدة** من القائمة المنسدلة **إضافة إلى لوحة المعلومات**، وبعد ذلك يؤدي **حفظ والانتقال إلى لوحة المعلومات** إلى حفظ المخطط وإضافته إلى لوحة المعلومات:
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="نافذة حفظ المخطط مع قائمة منسدلة لاختيار لوحة المعلومات وزر حفظ والانتقال إلى لوحة المعلومات" border />
 
-5. إذا كنت تفضل المخططات الحلقية على المخططات الدائرية، فيمكنك ضبط ذلك، إلى جانب خيارات أخرى، ضمن **تخصيص**:
+    <br />
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="لوحة التخصيص التي تعرض خيار المخطط الحلقي وإعدادات أخرى لتهيئة المخطط الدائري" border />
+    7. هذا كل ما في الأمر. إن إنشاء لوحات معلومات في Superset استنادًا إلى البيانات المخزنة في ClickHouse يفتح أمامك عالمًا كاملًا من تحليلات البيانات فائقة السرعة!
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="لوحة معلومات Superset مكتملة مع عدة تصورات لبيانات أسعار العقارات في المملكة المتحدة من ClickHouse" border />
 
-6. انقر زر **حفظ** لحفظ المخطط، ثم اختر **أسعار العقارات في المملكة المتحدة** من القائمة المنسدلة **إضافة إلى لوحة المعلومات**، وبعد ذلك يؤدي **حفظ والانتقال إلى لوحة المعلومات** إلى حفظ المخطط وإضافته إلى لوحة المعلومات:
-
-<Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="نافذة حفظ المخطط مع قائمة منسدلة لاختيار لوحة المعلومات وزر حفظ والانتقال إلى لوحة المعلومات" border />
-
-<br />
-
-7. هذا كل ما في الأمر. إن إنشاء لوحات معلومات في Superset استنادًا إلى البيانات المخزنة في ClickHouse يفتح أمامك عالمًا كاملًا من تحليلات البيانات فائقة السرعة!
-
-<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="لوحة معلومات Superset مكتملة مع عدة تصورات لبيانات أسعار العقارات في المملكة المتحدة من ClickHouse" border />
-
-<br />
+    <br />
+  </Step>
+</Steps>

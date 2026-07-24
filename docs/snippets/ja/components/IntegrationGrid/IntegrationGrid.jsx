@@ -170,17 +170,17 @@ export const IntegrationGrid = () => {
 
   function getSectionDescription(type) {
     const descriptions = {
-      ClickPipes: "ClickPipesは、多様なソースから大量のデータを取り込む作業を、数回のクリックで完結させるインテグレーションエンジンです。",
-      "Data ingestion": "ClickHouseでデータパイプラインを効率化しましょう！シームレスなインテグレーションにより、効率的なインジェストを実現し、リアルタイム分析を最適化します。",
-      "Data visualization": "データのストーリーを可視化しましょう！ClickHouseのインテグレーションがビジュアライゼーションを強化し、インサイトをより鮮明で実用的なものにします。",
-      "SQL client": "使い慣れたSQLクライアントツールとインターフェースを使用して、ClickHouseデータベースにアクセスし、クエリを実行できます。",
-      "Language client": "慣れ親しんだ言語でコーディングしましょう！ClickHouseのLanguage clientインテグレーションにより、複数のプログラミング言語でスムーズにデータアクセスが可能になります。",
-      "AI/ML": "統合されたMLツールとフレームワークを活用して、機械学習およびAIワークロードにClickHouseを役立てましょう。",
+      ClickPipes: "ClickPipesは、多様なソースから大量のデータを取り込む作業を、数クリックで簡単に実現できるインテグレーションエンジンです。",
+      "Data ingestion": "ClickHouseでデータパイプラインを効率化しましょう。シームレスなインテグレーションにより、データを効率的にインジェストし、リアルタイム分析を最適化できます。",
+      "Data visualization": "データをより鮮やかに可視化しましょう。ClickHouseのインテグレーションにより、インサイトをより明確かつ実用的に引き出せます。",
+      "SQL client": "使い慣れたSQLクライアントツールやインターフェースを使用して、ClickHouseデータベースにアクセスし、クエリを実行できます。",
+      "Language client": "使い慣れた言語で開発しましょう。ClickHouseのLanguage clientインテグレーションにより、複数のプログラミング言語からスムーズにデータへアクセスできます。",
+      "AI/ML": "統合されたMLツールやフレームワークを活用して、機械学習やAIのワークロードにClickHouseを活用しましょう。",
       "Data management": "専用の管理ツールを使用して、ClickHouseのデータを管理・監視・最適化しましょう。",
-      "Data integration": "既存のデータインフラストラクチャおよびワークフローにClickHouseを統合しましょう。",
-      "Security governance": "ClickHouse環境にセキュリティおよびガバナンスフレームワークを導入しましょう。"
+      "Data integration": "既存のデータインフラストラクチャやワークフローにClickHouseを統合しましょう。",
+      "Security governance": "ClickHouse環境にセキュリティとガバナンスのフレームワークを導入しましょう。"
     }
-    return descriptions[type] || "専用のツールおよびサービスとClickHouseを統合しましょう。"
+    return descriptions[type] || "専用ツールやサービスとClickHouseを連携できます。"
   }
 
   // Plain render function (not a component) so cards reconcile by key instead of
@@ -335,7 +335,7 @@ export const IntegrationGrid = () => {
           }
 
           if (integrations.length === 0) {
-            setError("Unable to load integrations. Please try refreshing the page.")
+            setError("インテグレーションを読み込めません。ページを更新してください。")
           }
         } finally {
           setLoading(false)
@@ -514,8 +514,8 @@ export const IntegrationGrid = () => {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-600 dark:text-red-400">インテグレーションの読み込みに失敗しました: {error}</p>
-        <p className="text-gray-600 dark:text-gray-400">ページを更新してください。</p>
+        <p className="text-red-600 dark:text-red-400">Failed to load integrations: {error}</p>
+        <p className="text-gray-600 dark:text-gray-400">Please try refreshing the page.</p>
       </div>
     )
   }
@@ -732,7 +732,7 @@ export const IntegrationGrid = () => {
 
         {filteredIntegrations.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-600 dark:text-gray-400 text-lg">条件に一致するインテグレーションが見つかりませんでした。</p>
+            <p className="text-gray-600 dark:text-gray-400 text-lg">条件に一致するインテグレーションは見つかりませんでした。</p>
           </div>
         )}
       </div>

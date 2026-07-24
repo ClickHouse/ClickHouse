@@ -13,6 +13,10 @@ import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge
 
 [AWS PrivateLink](https://aws.amazon.com/privatelink/) を使用すると、トラフィックをパブリックインターネットに公開することなく、VPC、AWS のサービス、自社運用のシステム、ClickHouse Cloud の間で安全な接続を確立できます。このドキュメントでは、AWS PrivateLink を使用して ClickHouse Cloud に接続する手順の概要を説明します。
 
+<Warning>
+  AWS PrivateLink がサポートするのは、お使いの AWS VPC から ClickHouse Cloud への接続のみです。[プライベートデータベース](#connecting-to-a-remote-database) など、ClickHouse Cloud からお使いの VPC 内のサービスへの接続には使用できません。
+</Warning>
+
 ClickHouse Cloud サービスへのアクセスを AWS PrivateLink のアドレス経由のみに制限するには、ClickHouse Cloud の [IP Access Lists](/ja/products/cloud/guides/security/connectivity/setting-ip-filters) の手順に従ってください。
 
 <Note>
@@ -173,7 +177,7 @@ PrivateLink 経由でクロスリージョン接続を確立する場合は、&q
   セキュリティグループでポート `443`、`8443`、`9440`、`3306` が許可されていることを確認してください。
 </Note>
 
-VPC Endpoint を作成したら、`Endpoint ID` の値を控えておいてください。後続の手順で必要になります。
+VPC エンドポイント を作成したら、`Endpoint ID` の値を控えておいてください。後続の手順で必要になります。
 
 <Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC Endpoint ID" border />
 
@@ -419,10 +423,8 @@ jq .result.privateEndpointIds
   ### リモートデータベースへの接続
 </div>
 
-ClickHouse Cloud で [MySQL](/ja/reference/functions/table-functions/mysql) または [PostgreSQL](/ja/reference/functions/table-functions/postgresql) のテーブル関数を使用して、Amazon Web Services (AWS) の VPC でホストされているデータベースに接続しようとしているとします。この接続を安全に確立するために AWS PrivateLink を使用することはできません。PrivateLink は一方向の接続だからです。内部ネットワークまたは Amazon VPC から ClickHouse Cloud へ安全に接続することはできますが、ClickHouse Cloud から内部ネットワークへ接続することはできません。
+[AWS PrivateLink のドキュメント](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html) によると、次のとおりです。
 
-[AWS PrivateLink documentation](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html) には、次のように記載されています。
+> AWS PrivateLink は、クライアント/サーバー構成において、1 つ以上の consumer VPC から、service provider VPC 内の特定のサービスまたはインスタンス群への単方向アクセスを許可したい場合に使用します。service provider VPC 内のサービスへの接続を開始できるのは、consumer VPC 内のクライアントのみです。
 
-> クライアント/サーバー構成で、1 つ以上の consumer VPC から service provider VPC 内の特定の service または一連のインスタンスに対して一方向アクセスを許可したい場合は、AWS PrivateLink を使用します。service provider VPC 内の service への接続を開始できるのは、consumer VPC 内のクライアントのみです。
-
-これを行うには、AWS のセキュリティグループを設定して、ClickHouse Cloud から内部またはプライベートなデータベースサービスへの接続を許可してください。[ClickHouse Cloud の各 Region のデフォルトの egress IP アドレス](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) と、[利用可能な静的 IP アドレス](https://api.clickhouse.cloud/static-ips.json) を確認してください。
+ClickHouse Cloud で [MySQL](/ja/reference/functions/table-functions/mysql) または [PostgreSQL](/ja/reference/functions/table-functions/postgresql) のテーブル関数を、AWS VPC でホストされているデータベースに接続するには、AWS のセキュリティグループを設定し、ClickHouse Cloud からの接続を許可してください。[ClickHouse Cloud の各リージョンにおけるデフォルトの egress IP アドレス](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) と、[利用可能な静的 IP アドレス](https://api.clickhouse.cloud/static-ips.json) を確認してください。
