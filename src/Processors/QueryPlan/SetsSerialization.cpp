@@ -283,17 +283,16 @@ QueryPlanAndSets deserializeEnvelopeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
 
-        /// Check against the remaining buffer before allocating: a hostile size must not cause a
-        /// huge allocation only for readStrict to throw afterwards.
+        /// A hostile size must not read past the end of the envelope.
         if (entry.payload_size > in.available())
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Serialized set {}_{} declares {} payload bytes but only {} remain",
                 entry.hash.low64, entry.hash.high64, entry.payload_size, in.available());
 
-        String payload;
-        payload.resize(entry.payload_size);
-        in.readStrict(payload.data(), payload.size());
-        ReadBufferFromMemory body(payload.data(), payload.size());
+        /// The check above proves the frame is present in the current buffer, so it can be read in
+        /// place. Copying it out first would double the memory a large set needs while decoding.
+        ReadBufferFromMemory body(in.position(), entry.payload_size);
+        in.ignore(entry.payload_size);
 
         if (entry.kind == UInt8(SetSerializationKind::StorageSet))
         {

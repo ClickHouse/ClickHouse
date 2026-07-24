@@ -53,6 +53,37 @@ public:
     }
 };
 
+/// Writes payload bytes its own reader never consumes, so every stream carrying it has a step
+/// payload tail. The format version it declares decides whether that tail is legitimate.
+class TestTailStep : public ISourceStep
+{
+public:
+    TestTailStep(SharedHeader header_, UInt64 declared_format_version_)
+        : ISourceStep(std::move(header_)), declared_format_version(declared_format_version_)
+    {
+    }
+
+    String getName() const override { return "TestTailStep"; }
+
+    void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override { }
+
+    bool isSerializable() const override { return true; }
+
+    void serialize(Serialization & ctx) const override
+    {
+        ctx.step_format_version = declared_format_version;
+        writeVarUInt(UInt64(12345), ctx.out);
+    }
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx)
+    {
+        return std::make_unique<TestTailStep>(ctx.output_header, 1);
+    }
+
+private:
+    UInt64 declared_format_version;
+};
+
 void registerStepsOnce()
 {
     static std::once_flag flag;
@@ -68,6 +99,9 @@ void registerStepsOnce()
         info.max_step_format_version = 2;
         info.min_plan_version_for_step_version[2] = 5;
         QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
+
+        /// Known up to payload format 1, so a tail is only acceptable above that.
+        QueryPlanStepRegistry::instance().registerStep("TestTailStep", TestTailStep::deserialize);
     });
 }
 
@@ -234,6 +268,30 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     /// Requests above the supported version clamp to the current one.
     plan.ensureSerialized(current + 100);
     EXPECT_EQ(plan.getSerializedData(current + 100), current_bytes);
+}
+
+TEST(QueryPlanSerialization, PayloadTailIsRejectedAtAKnownStepFormat)
+{
+    registerStepsOnce();
+
+    QueryPlan plan;
+    plan.addStep(std::make_unique<TestTailStep>(makeTestHeader(), /*declared_format_version=*/1));
+
+    /// Format 1 is a format this build knows in full, so bytes the step did not read mean the
+    /// stream is corrupt rather than newer.
+    EXPECT_THROW(deserializePlan(serializePlan(plan)), Exception);
+}
+
+TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
+{
+    registerStepsOnce();
+
+    QueryPlan plan;
+    plan.addStep(std::make_unique<TestTailStep>(makeTestHeader(), /*declared_format_version=*/5));
+
+    /// The same unread bytes are an ignorable append once the payload declares a format this
+    /// build does not know: that is what keeps a rolling upgrade working.
+    EXPECT_NO_THROW(deserializePlan(serializePlan(plan)));
 }
 
 TEST(QueryPlanSerialization, ConcurrentSendersGetTheWholePlan)

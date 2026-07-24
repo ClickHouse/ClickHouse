@@ -242,17 +242,26 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
     /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate.
     chassert(min_reader_plan_version <= flags.version);
 
-    WriteBufferFromOwnString envelope;
-    writeQueryPlanOutline(outline, envelope);
+    /// Only the outline is materialized here: its size plus the payload sizes give the envelope
+    /// size the reader needs up front, so the payloads go straight to `out`. Assembling the whole
+    /// envelope first would hold another full copy of a plan that can carry large `IN` sets.
+    WriteBufferFromOwnString outline_bytes;
+    writeQueryPlanOutline(outline, outline_bytes);
+    outline_bytes.finalize();
+
+    size_t envelope_size = outline_bytes.str().size();
     for (const auto & payload : payloads)
-        envelope.write(payload.data(), payload.size());
+        envelope_size += payload.size();
     for (const auto & payload : set_payloads)
-        envelope.write(payload.data(), payload.size());
-    envelope.finalize();
+        envelope_size += payload.size();
 
     writeVarUInt(min_reader_plan_version, out);
-    writeVarUInt(envelope.str().size(), out);
-    out.write(envelope.str().data(), envelope.str().size());
+    writeVarUInt(envelope_size, out);
+    out.write(outline_bytes.str().data(), outline_bytes.str().size());
+    for (const auto & payload : payloads)
+        out.write(payload.data(), payload.size());
+    for (const auto & payload : set_payloads)
+        out.write(payload.data(), payload.size());
 }
 
 QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
@@ -367,8 +376,21 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
                 outline_node.step_name, output_header->dumpStructure());
 
-        /// A payload tail the step did not consume is a newer, ignorable extension of its format;
-        /// the frame makes it skippable by construction.
+        /// A tail is only legitimate when the writer used a payload format this binary does not
+        /// know: every change to a payload, an ignorable append included, bumps
+        /// `step_format_version`. At a format we do know, leftover bytes mean a corrupt stream or
+        /// a writer bug, and accepting them would let a malformed plan run.
+        if (!payload.eof())
+        {
+            const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
+            UInt64 known_format_version = info ? info->max_step_format_version : 1;
+            if (outline_node.step_format_version <= known_format_version)
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Step {} left {} of its {} payload bytes unread at step format version {}, "
+                    "which this server knows in full",
+                    outline_node.step_name, payload.available(), outline_node.payload_size,
+                    outline_node.step_format_version);
+        }
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(children));
         nodes_by_index[idx] = &node;
