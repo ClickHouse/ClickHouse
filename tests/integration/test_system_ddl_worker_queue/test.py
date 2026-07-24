@@ -5,17 +5,25 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+_main_configs = [
+    "configs/remote_servers.xml",
+    # display_secrets_in_show_and_select must be enabled server-side so that
+    # privileged users (with the displaySecretsInShowAndSelect access right and the
+    # format_display_secrets_in_show_and_select query setting) can see secrets.
+    "configs/display_secrets.xml",
+]
+
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node1", main_configs=_main_configs, with_zookeeper=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node2", main_configs=_main_configs, with_zookeeper=True
 )
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node3", main_configs=_main_configs, with_zookeeper=True
 )
 node4 = cluster.add_instance(
-    "node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node4", main_configs=_main_configs, with_zookeeper=True
 )
 
 nodes = [node1, node2, node3, node4]
@@ -179,4 +187,5 @@ def test_distributed_ddl_rubbish(started_cluster):
         f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster DROP COLUMN somenewcolumn",
         settings={"replication_alter_partitions_sync": "2"},
     )
+
 
