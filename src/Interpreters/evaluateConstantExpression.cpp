@@ -64,14 +64,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// NOTE (transitional bridge B1, see `.cursor/projects/valueref-pilot/BRIDGES.md`): this helper is a
-/// temporary compatibility shim for the legacy `Field`-returning API. It re-adds a `Field`
-/// materialization (against the goal of removing `Field`) purely to preserve behavior: without it a
-/// literal round-trips through the size-1 column and `operator[]` canonicalizes tags (`Bool`->`UInt64`),
-/// so e.g. `values('x String', true)` returns `'1'` instead of `'true'`. It is used at both literal
-/// sites in the impl below (the original `node`, and an AST that `TreeRewriter` folds into a literal).
-/// Delete this together with the `Field`-returning `evaluateConstantExpression` once its callers move
-/// to the column API.
+/// NOTE: this helper is a temporary compatibility shim for the legacy `Field`-returning API. It
+/// re-adds a `Field` materialization (which the ongoing removal of `Field` aims to avoid) purely to
+/// preserve behavior: without it a literal round-trips through the size-1 column and `operator[]`
+/// canonicalizes tags (`Bool`->`UInt64`), so e.g. `values('x String', true)` returns `'1'` instead of
+/// `'true'`. It is used at both literal sites in the impl below (the original `node`, and an AST that
+/// `TreeRewriter` folds into a literal). Delete this together with the `Field`-returning
+/// `evaluateConstantExpression` once its callers move to the column API (`evaluateConstantExpressionAsColumn`).
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
@@ -88,8 +87,9 @@ static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(AS
     return {type->createColumnConst(1, field), type};
 }
 
-/// `literal_out` (transitional bridge B1): a literal result can arise either directly (`node` is an
-/// `ASTLiteral`) or after `TreeRewriter::analyze` folds a non-literal into one. When `literal_out` is
+/// `literal_out` (the compatibility shim documented on `getFieldAndDataTypeFromLiteral`): a literal
+/// result can arise either directly (`node` is an `ASTLiteral`) or after `TreeRewriter::analyze` folds
+/// a non-literal into one. When `literal_out` is
 /// non-null (the `Field`-returning API is calling), such a literal is handed back through it as a
 /// tag-preserving `Field` and NO column is built (the function returns `std::nullopt`); when it is
 /// null (the column API is calling), the size-1 column is built as usual. This keeps the legacy
@@ -240,7 +240,7 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 
 /// Materialize the column result into the legacy `Field` result. Used by the `Field`-returning
 /// entry points below (for callers not yet migrated to the column API) for NON-literal nodes only;
-/// literal nodes take the tag-preserving fast path (transitional bridge B1). Reading the value back
+/// literal nodes take the tag-preserving fast path (see `getFieldAndDataTypeFromLiteral`). Reading the value back
 /// with `operator[]` canonicalizes nested tags (`Bool`->`UInt64`), matching the historical behavior
 /// of the non-literal path, which also returned `(*result_column)[0]`.
 static std::optional<EvaluateConstantExpressionResult> materializeToField(std::optional<EvaluateConstantExpressionColumnResult> column_result)

@@ -14,9 +14,8 @@ using namespace DB;
 /// scalar `Bool`) must stay `Bool`, not collapse to `UInt64`. Callers still convert this `Field`
 /// (e.g. `TableFunctionValues`), so a collapsed tag changes results: `values('x String', true)` would
 /// return `'1'` instead of `'true'`. Literal nodes therefore take a tag-preserving fast path instead
-/// of round-tripping through the size-1 column (transitional bridge B1, see
-/// `.cursor/projects/valueref-pilot/BRIDGES.md` - this fast path is removed together with the
-/// `Field`-returning API once its callers move to the column API).
+/// of round-tripping through the size-1 column - a temporary compatibility shim that is removed
+/// together with the `Field`-returning API once its callers move to the column API.
 TEST(EvaluateConstantExpression, LiteralPreservesNestedBoolTags)
 {
     const auto & context = getContext().context;
