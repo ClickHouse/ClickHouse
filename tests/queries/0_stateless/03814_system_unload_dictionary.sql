@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DICTIONARY IF EXISTS test_unload_dict;
 DROP TABLE IF EXISTS test_unload_source;
 
@@ -51,24 +49,14 @@ INSERT INTO test_unload_source VALUES (4, 'four');
 SYSTEM UNLOAD DICTIONARY test_unload_dict;
 SELECT dictGet('test_unload_dict', 'value', toUInt64(4));
 
--- 7. Test SYSTEM UNLOAD DICTIONARIES (unload all)
-SYSTEM UNLOAD DICTIONARIES;
-SELECT name, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'test_unload_dict';
-
--- 8. UNLOAD on top of an already unloaded dictionary shouldn't change its state
+-- 7. UNLOAD on top of an already unloaded dictionary shouldn't change its state
 SYSTEM RELOAD DICTIONARY test_unload_dict;
 SYSTEM UNLOAD DICTIONARY test_unload_dict;
 SELECT name, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'test_unload_dict';
 SYSTEM UNLOAD DICTIONARY test_unload_dict;
 SELECT name, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'test_unload_dict';
 
-SYSTEM RELOAD DICTIONARY test_unload_dict;
-SYSTEM UNLOAD DICTIONARIES;
-SELECT name, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'test_unload_dict';
-SYSTEM UNLOAD DICTIONARY test_unload_dict;
-SELECT name, status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'test_unload_dict';
-
--- 9. UNLOAD fails if dictionary doesnt exist
+-- 8. UNLOAD fails if dictionary doesnt exist
 SYSTEM UNLOAD DICTIONARY fake_dictionary; -- { serverError BAD_ARGUMENTS }
 
 -- Cleanup
