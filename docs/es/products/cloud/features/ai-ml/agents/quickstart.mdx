@@ -26,17 +26,13 @@ Cree un agente personalizado en la consola de Cloud y ejecute una consulta en le
 </div>
 
 <Steps>
-  <Step>
-    ### Inicia ClickHouse Agents
-
+  <Step title="Inicia ClickHouse Agents" id="launch-agents">
     Desde tu servicio de Cloud, haz clic en **ClickHouse agents** en la barra lateral izquierda para abrir el launchpad de agentes. Haz clic en **Launch ClickHouse agents** para abrir Agent Builder.
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Navegación del servicio de Cloud con ClickHouse agents (Beta) seleccionado, mostrando el launchpad con el botón Launch ClickHouse agents" size="lg" />
   </Step>
 
-  <Step>
-    ### Crea el agente
-
+  <Step title="Crea el agente" id="create-the-agent">
     En Agent Builder, haz clic en **Create New Agent** en la parte superior del panel izquierdo. Completa los campos principales:
 
     * **Name** - un identificador breve para tu agente.
@@ -48,9 +44,7 @@ Cree un agente personalizado en la consola de Cloud y ejecute una consulta en le
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Panel de Agent Builder que muestra el menú desplegable Create New Agent, los campos del formulario (Name, Description, Category, Instructions, Model) y la sección Capabilities" size="lg" />
   </Step>
 
-  <Step>
-    ### Añade capacidades y herramientas
-
+  <Step title="Añade capacidades y herramientas" id="attach-tools">
     Las capacidades y herramientas del agente se gestionan en dos lugares.
 
     **Capabilities** en el panel principal — funciones nativas como [Run Code](/es/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Web Search](/es/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/es/products/cloud/features/ai-ml/agents/builder/mcp-servers) y [Skills](/es/products/cloud/features/ai-ml/agents/builder/skills). Activa las que necesite el agente.
@@ -65,14 +59,12 @@ Cree un agente personalizado en la consola de Cloud y ejecute una consulta en le
 
     <Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Modal de Agent Tools que muestra una cuadrícula de integraciones de terceros, incluidas Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator y Stable Diffusion" size="lg" />
 
-    Los [Subagents](/es/products/cloud/features/ai-ml/agents/builder/subagents) se configuran en **Advanced settings** — consulta la página de subagents para obtener más información.
+    [Subagents](/es/products/cloud/features/ai-ml/agents/builder/subagents) se configuran en **Advanced settings** — consulta la página de subagents para obtener más información.
 
     Puedes cambiar las capacidades y herramientas asociadas en cualquier momento.
   </Step>
 
-  <Step>
-    ### Ejecuta una consulta
-
+  <Step title="Ejecuta una consulta" id="run-a-query">
     Guarda el agente, abre una nueva conversación y selecciona tu agente en el selector de agentes. Escribe una pregunta — por ejemplo, *&quot;¿Cuáles son mis 10 tablas con más filas esta semana?&quot;* — y el agente planificará, llamará a las herramientas según sea necesario y devolverá una respuesta.
 
     <Image img="/images/cloud/agent-builder/chat-query.webp" alt="Intercambio de chat que muestra la pregunta '¿Cuáles son mis 10 tablas con más filas esta semana?' y la respuesta del agente: una tabla Markdown con la clasificación de las 10 tablas con más filas entre servicios, con Key Observations debajo" size="lg" />
@@ -80,8 +72,8 @@ Cree un agente personalizado en la consola de Cloud y ejecute una consulta en le
 </Steps>
 
 <div id="next-steps">
-  ## Siguientes pasos
+  ## Próximos pasos
 </div>
 
-* [Comparte el agente](/es/products/cloud/features/ai-ml/agents/sharing-and-access) con tu equipo.
+* [Comparte el agente](/es/products/cloud/features/ai-ml/agents/sharing-and-access) con los miembros de tu equipo.
 * Publícalo en el [marketplace](/es/products/cloud/features/ai-ml/agents/marketplace) una vez que el agente sea estable.

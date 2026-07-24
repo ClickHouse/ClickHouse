@@ -75,7 +75,13 @@ Postgres 服务器。输出应类似于：
   ## CRUD
 </div>
 
-下面来了解 Postgres 服务 的生命周期。
+下面来了解 Postgres 服务的生命周期。
+
+<Warning>
+  **自 2026 年 7 月 31 日起对凭据进行脱敏处理**
+
+  自 **2026 年 7 月 31 日**起，API 的响应将不再返回 `password` 和 `connectionString` 属性。只有在 [create](#create) 响应中，以及请求未包含密码时的 [password reset] 响应中，才会返回这些属性。我们建议从 [create](#create) 响应中保存凭据。如果你使用 Terraform 管理服务，请在 2026 年 7 月 31 日之前将提供商升级到 **v3.21.0 或更高版本** (参见 [Terraform Reference](/zh/products/managed-postgres/terraform)) 。
+</Warning>
 
 <div id="create">
   ### 创建
@@ -104,12 +110,14 @@ create_data='{
 }'
 ```
 
-现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头：
+现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头。保存响应，
+以便获取其返回的凭证：
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 成功后，将创建一个新的实例并返回其相关信息，
@@ -152,7 +160,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-输出将与创建操作返回的 JSON 类似，但请留意 `state`；当它变为 `running` 时，服务器即表示已就绪：
+输出将与创建操作返回的 JSON 类似 (但在 2026 年 7 月 31 日之后将不再包含 `password` 和 `connectionString` 属性) ，但请留意
+`state`；当它变为 `running` 时，服务器即表示已就绪：
 
 ```bash
 curl -s --user "$KEY_ID:$KEY_SECRET" \
@@ -164,15 +173,10 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-现在可以使用 `connectionString` 属性进行连接，例如通过
-[psql]：
+现在可以使用创建响应中保存的 `connectionString` 属性进行连接，例如通过 [psql]：
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -432,23 +436,25 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "管理 API 密钥"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "ClickHouse Cloud 的 Postgres OpenAPI 规范"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "ClickHouse Cloud API 参考文档：Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "获取组织的 Postgres 服务 列表"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "获取组织的 Postgres 服务 列表"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "创建新的 Postgres 服务"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "创建新的 Postgres 服务"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs：psql — PostgreSQL 交互式终端"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "更新 PostgreSQL 服务"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "更新 PostgreSQL 服务"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396：JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs：服务器配置"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "更新 Postgres 服务 配置"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "替换 Postgres 服务 配置"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "删除 PostgreSQL 服务"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "删除 PostgreSQL 服务"
+
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "重置 Postgres 服务 superuser 的密码"
 
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus 端点"
 
@@ -460,6 +466,6 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Query Insights 的单次执行计数器"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "列出 Postgres 慢查询模式"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "列出 Postgres 慢查询模式"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "获取带有近期执行记录的 Postgres 慢查询模式"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "获取包含最近执行记录的 Postgres 慢查询模式"

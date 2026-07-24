@@ -2,8 +2,8 @@
 sidebarTitle: 'الدردشة'
 slug: /cloud/features/ai-ml/agents/chat
 title: 'الدردشة'
-description: 'المحادثات، والإشارات المرجعية، والتفريع، والمحادثات المتعددة، ومشاركة الدردشات في ClickHouse Agents'
-keywords: ['AI', 'ClickHouse Cloud', 'الوكلاء', 'الدردشة', 'المحادثات', 'الإشارات المرجعية', 'التفريع', 'المشاركة', 'المحادثات المتعددة']
+description: 'المحادثات، والإشارات المرجعية، والمحادثات المثبتة، والتفريع، واختصارات لوحة المفاتيح، ومشاركة الدردشات في ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'الوكلاء', 'الدردشة', 'المحادثات', 'الإشارات المرجعية', 'المحادثات المثبتة', 'اختصارات لوحة المفاتيح', 'التفريع', 'المشاركة']
 doc_type: 'مرجع'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge />
 
-توفّر واجهة الدردشة في ClickHouse Agents المحادثات، والتفريع، والمقارنة جنبًا إلى جنب، والمشاركة.
+توفّر واجهة الدردشة في ClickHouse Agents المحادثات، والتفريع، والمشاركة.
 
 <Image img="/images/cloud/agent-builder/chat/chat.webp" alt="واجهة الدردشة في ClickHouse Agent تعرض شريط التنقل الأيسر، وترويسة هوية الوكيل، ومربع الكتابة" size="lg" />
 
@@ -37,6 +37,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="رأس الدردشة مع تمييز أيقونة الإشارة المرجعية وظهور تلميح الأداة &#x22;إضافة إشارات مرجعية&#x22;" size="lg" />
 
+<div id="pinned-conversations">
+  ## المحادثات المثبّتة
+</div>
+
+ثبّت محادثة لتبقى في أعلى الشريط الجانبي، منفصلة عن السجل المجمّع حسب التاريخ أدناه. افتح قائمة خيارات المحادثة (أيقونة النقاط الثلاث) في الشريط الجانبي، ثم اختر **تثبيت**. تظهر المحادثات المثبّتة في قسم **المثبتة** أعلى مجموعات **اليوم** و**الأمس** والمجموعات الأقدم.
+
+لإلغاء التثبيت، افتح القائمة نفسها ثم اختر **إلغاء التثبيت**.
+
 <div id="forking">
   ## التفريع
 </div>
@@ -52,20 +60,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/cloud/agent-builder/chat/fork.webp" alt="حدِّد خيارًا للتفريع في مربع حوار يعرض ثلاثة رموز لأوضاع التفريع، وخانتي الاختيار Start fork here وRemember، وشريط إجراءات الرسالة في الأسفل" size="lg" />
 
-<div id="multi-conversation">
-  ## المحادثة المتعددة
-</div>
-
-تشغِّل ميزة المحادثة المتعددة محادثتَين جنبًا إلى جنب، وترسل الموجّه نفسه إلى كلتيهما. استخدمها لمقارنة الاستجابات بين النماذج أو لإجراء اختبار A/B لإعدادات الوكيل مختلفة.
-
-انقر على زر **+** في رأس الدردشة لبدء محادثة موازية إلى جانب المحادثة الحالية.
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="رأس الدردشة مع تمييز زر إضافة محادثة متعددة، ومؤشر + ClickHouse Agent أعلى منطقة الكتابة" size="lg" />
-
-بعد ذلك، تظهر المحادثتان جنبًا إلى جنب وتتلقّيان الموجّه نفسه:
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="عرض المحادثة المتعددة مع محادثتَي ClickHouse Agent تعملان جنبًا إلى جنب، وكلتاهما تنفذان استدعاءات الأداة run_select_query نفسها" size="lg" />
-
 <div id="sharing-chats">
   ## مشاركة المحادثات
 </div>
@@ -74,6 +68,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تظهر التعديلات على الرسائل الحالية في العرض المُشارَك؛ أما الرسائل التي تُضاف بعد إنشاء الرابط فلا تظهر فيه.
 
+يمكن لأي شخص يعرض رابطًا مُشارَكًا متابعة المحادثة في حسابه الخاص بالنقر على **Continue this chat**. يؤدي ذلك إلى نسخ المحادثة — بما في ذلك التفرع الذي يعرضه — إلى سجله كمحادثة جديدة وخاصة، مع ترك محادثتك الأصلية دون أي تغيير.
+
 لمشاركة محادثة، افتح قائمتها من الشريط الجانبي وحدد **Share**:
 
 <Image img="/images/cloud/agent-builder/chat/share.webp" alt="قائمة المحادثة في الشريط الجانبي مع ظهور خيارات Share وRename وDuplicate وArchive وDelete" size="lg" />
@@ -81,3 +77,36 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ثم انقر على **Create link** في مربع حوار المشاركة:
 
 <Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="مربع حوار مشاركة رابط إلى الدردشة مع زر Create link وملاحظة تفيد بأن اسمك وأي رسائل تُضاف بعد المشاركة تبقى خاصة" size="md" />
+
+<div id="keyboard-shortcuts">
+  ## اختصارات لوحة المفاتيح
+</div>
+
+افتح مرجع اختصارات لوحة المفاتيح باستخدام `Cmd+Shift+/` (أو `Ctrl+Shift+/` على Windows وLinux)، أو من قائمة الحساب ضمن **Help** → **Keyboard shortcuts**. كل اختصار قابل للتخصيص: انقر على صف في مربع الحوار لتسجيل تركيبة جديدة، واستخدم **Reset all to defaults** لإعادة التعيين.
+
+الاختصارات الافتراضية هي:
+
+| الإجراء                         | macOS                 | Windows وLinux         |
+| ------------------------------- | --------------------- | ---------------------- |
+| عرض اختصارات لوحة المفاتيح      | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| دردشة جديدة                     | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| التركيز على حقل إدخال الدردشة   | `Shift+Esc`           | `Shift+Esc`            |
+| تحميل ملف                       | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| نسخ آخر رد                      | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| إرسال الرسالة                   | `Cmd+Enter`           | `Ctrl+Enter`           |
+| إظهار/إخفاء الشريط الجانبي      | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| فتح محدد النموذج                | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| التركيز على البحث               | `Cmd+/`               | `Ctrl+/`               |
+| فتح الإعدادات                   | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| إضافة إشارة مرجعية إلى المحادثة | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| إيقاف التوليد                   | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| إعادة توليد الرد                | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| تعديل آخر رسالة                 | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| متابعة الرد                     | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| نسخ آخر كتلة شيفرة              | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| التمرير إلى الأعلى              | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| التمرير إلى الأسفل              | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| أرشفة المحادثة                  | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| حذف المحادثة                    | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+
+يمكنك أيضًا تعيين اختصاراتك الخاصة لفتح لوحات مثل agents وprompts وfiles وbookmarks — ولا توجد مفاتيح افتراضية لها.
