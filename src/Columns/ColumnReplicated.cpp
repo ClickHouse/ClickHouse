@@ -144,7 +144,7 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        total_elements += src_offsets[row] - src_offsets[row - 1];
+        total_elements += src_offsets.sizeAt(row) - src_offsets.offSetAt(row);
         res_offsets[i] = total_elements;
     }
     /// Now, insert the entire row (multiple columns) on each iteration
@@ -153,7 +153,7 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+        res_data->insertRangeFrom(src_data, src_offsets.offSetAt(row), src_offsets.sizeAt(row) - src_offsets.offSetAt(row));
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));

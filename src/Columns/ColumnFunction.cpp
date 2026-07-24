@@ -427,8 +427,8 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
     auto captured_column = column;
-    /// Keep replicated captures lazy if allowed: functions inside the lambda handle
-    /// ColumnReplicated arguments themselves (see IExecutableFunction::execute).
+    /// Keep replicated captures lazy if allowed: some functions inside the lambda handle
+    /// ColumnReplicated arguments themselves
     if (!allow_lazy_replicated_captures)
         captured_column.column = captured_column.column->convertToFullColumnIfReplicated();
     captured_column.column = captured_column.column->convertToFullColumnIfSparse();
