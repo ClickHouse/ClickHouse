@@ -73,7 +73,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     /// paths, see `MergeTreeData::claimTemporaryPartDirectory`) or reclaimed as a nested projection
     /// leftover (see `IMergeTreeDataPart::getProjectionPartBuilder`); any future path that forgets
     /// fails loudly here in debug and sanitizer CI instead of silently writing into stale data.
-    chassert(intent == PartDirIntent::OpenExisting || !part_storage->exists());
+    chassert(intent != PartDirIntent::CreateFresh || !part_storage->exists());
 
     if (parent_part && data.format_version == MERGE_TREE_DATA_OLD_FORMAT_VERSION)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create projection part in MergeTree table created in old syntax");

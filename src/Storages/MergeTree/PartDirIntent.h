@@ -21,6 +21,11 @@ enum class PartDirIntent : uint8_t
     /// directory claim (`MergeTreeData::claimTemporaryPartDirectory`): initialize
     /// granularity from settings, read nothing from disk.
     CreateFresh,
+    /// Constructing a part object for an existing part whose metadata is provided by the caller
+    /// (e.g. deserialized from another replica instead of being probed from shared storage): like
+    /// `CreateFresh` nothing is read from disk, but the directory may legitimately exist, so the
+    /// clean-directory assertion does not apply.
+    OpenExistingWithoutProbing,
 };
 
 }

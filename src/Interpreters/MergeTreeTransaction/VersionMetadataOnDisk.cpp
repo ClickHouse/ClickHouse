@@ -40,8 +40,8 @@ VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_dat
 {
     log = ::getLogger("VersionMetadataOnDisk");
     /// A `CreateFresh` directory is guaranteed clean (claimed and reclaimed before construction), so it
-    /// cannot contain `txn_version.txt`: keep the member-initializer value of `is_persist_deferrable`
-    /// (true) instead of probing the disk.
+    /// cannot contain `txn_version.txt`, and `OpenExistingWithoutProbing` must not read from disk at
+    /// all: keep the member-initializer value of `is_persist_deferrable` (true) instead of probing.
     if (intent == PartDirIntent::OpenExisting)
         is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
     LOG_TEST(
