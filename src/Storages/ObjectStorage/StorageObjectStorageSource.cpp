@@ -1194,8 +1194,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
-
+        /// Deletion vectors (and selection vectors) address absolute file row numbers via
+        /// `ChunkInfoRowNumbers`. Iceberg equality deletes use a plain `FilterTransform` that
+        /// shrinks the chunk without maintaining `applied_filter`, so DV must run first —
+        /// otherwise later DV filtering maps dense post-equality indices to the wrong file rows.
         if (hasNonEmptyExcludedRows(object_info->data_lake_metadata))
         {
             builder.addSimpleTransform([&](const SharedHeader & header)
@@ -1203,6 +1205,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
             });
         }
+
+        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         std::optional<ActionsDAG> schema_transform;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
