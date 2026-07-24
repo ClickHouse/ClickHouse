@@ -398,6 +398,7 @@ def main():
         not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
+        and not is_llvm_coverage
         and not is_per_test_coverage
         and not args.test
     ):
