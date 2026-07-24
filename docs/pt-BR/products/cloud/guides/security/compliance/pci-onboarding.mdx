@@ -14,16 +14,14 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <EnterprisePlanFeatureBadge feature="conformidade com PCI" />
 
-O ClickHouse oferece serviços em conformidade com o Payment Card Industry Data Security Standard (PCI-DSS) e é auditado de acordo com os requisitos de provedor de serviços Nível 1. Os clientes podem processar números de conta primária (PAN) nesses serviços ativando esse recurso e implantando serviços em uma região compatível.
+O ClickHouse oferece serviços em conformidade com o Payment Card Industry Data Security Standard (PCI-DSS) e é auditado de acordo com os requisitos de provedor de serviços Nível 1. Os clientes podem processar números de conta primária (PAN) nesses serviços ativando esse recurso e implantando serviços em uma região em conformidade com PCI.
 
 Para mais informações sobre o programa de compliance do ClickHouse e a disponibilidade de relatórios de auditoria de terceiros, consulte nossa [visão geral de compliance](/pt-BR/products/cloud/reference/security/compliance-overview). Para obter uma cópia do nosso documento de responsabilidade compartilhada do PCI, visite nosso [Trust Center](https://trust.clickhouse.com). Além disso, os clientes devem consultar nossa página de [recursos de segurança](/pt-BR/products/cloud/features/security) para selecionar e implementar controles de segurança adequados para seus workloads.
 
-Esta página descreve o processo para habilitar a implantação de serviços compatíveis com PCI no ClickHouse Cloud.
+Esta página descreve o processo para habilitar a implantação de serviços em conformidade com PCI no ClickHouse Cloud.
 
 <Steps>
-  <Step>
-    ### Inscreva-se nos serviços Enterprise
-
+  <Step title="Inscreva-se nos serviços Enterprise" id="sign-up-for-enterprise">
     1. Selecione o nome da sua organização no canto inferior esquerdo do console.
     2. Clique em **Billing**.
     3. Verifique seu **Plan** no canto superior esquerdo.
@@ -31,9 +29,7 @@ Esta página descreve o processo para habilitar a implantação de serviços com
     5. Selecione **Switch to Enterprise**.
   </Step>
 
-  <Step>
-    ### Habilite o PCI para a sua organização
-
+  <Step title="Habilite o PCI para a sua organização" id="enable-hipaa">
     1. Selecione o nome da sua organização no canto inferior esquerdo do console.
     2. Clique em **Organization details**.
     3. Ative **Enable PCI**.
@@ -53,9 +49,7 @@ Esta página descreve o processo para habilitar a implantação de serviços com
     <br />
   </Step>
 
-  <Step>
-    ### Implante serviços em regiões em conformidade com PCI
-
+  <Step title="Implante serviços em regiões em conformidade com PCI" id="deploy-pci-regions">
     1. Selecione **New service** no canto superior esquerdo da tela inicial do console
     2. Altere o **Tipo de região** para **HIPAA compliant**
 
@@ -67,7 +61,7 @@ Esta página descreve o processo para habilitar a implantação de serviços com
 
     3. Insira um nome para o serviço e preencha as demais informações
 
-    Para ver uma lista completa de provedores de Cloud e serviços compatíveis com PCI, consulte nossa página [Supported cloud regions](/pt-BR/products/cloud/reference/supported-regions).
+    Para ver uma lista completa de provedores de Cloud e serviços em conformidade com PCI, consulte nossa página [Supported cloud regions](/pt-BR/products/cloud/reference/supported-regions).
   </Step>
 </Steps>
 

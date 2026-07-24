@@ -124,6 +124,7 @@ class WriteBuffer;
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
+    M(CLASS_NAME, UniqueKeyProbeImplementation) \
     M(CLASS_NAME, SkipUnavailableShardsMode)
 
 

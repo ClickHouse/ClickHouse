@@ -443,7 +443,7 @@ RequestPage:    /filter/27|13 ,27|  5 ,p53
 SeverityText:   INFO
 SeverityNumber:  9
 
-1 fila en el conjunto. Elapsed: 0.010 sec.
+1 row in set. Elapsed: 0.010 sec.
 ```
 
 A continuación se muestra una vista materializada equivalente, que extrae columnas de la columna `Body` mediante funciones JSON:
@@ -648,7 +648,7 @@ Además, aunque los timestamps se benefician de la codificación delta en térmi
 <Image img="/images/use-cases/observability/observability-12.webp" alt="Observabilidad y diccionarios" size="md" />
 
 Esto resulta útil en distintos escenarios: desde enriquecer sobre la marcha los datos ingeridos sin ralentizar el proceso de ingestión hasta mejorar el rendimiento general de las consultas, con un beneficio especial para los JOINs.
-Aunque en los casos de uso de observabilidad rara vez se necesitan joins, los diccionarios siguen siendo útiles para tareas de enriquecimiento, tanto en el tiempo de inserción como en el tiempo de consulta. A continuación, proporcionamos ejemplos de ambos casos.
+Aunque en los casos de uso de observabilidad rara vez se necesitan joins, los diccionarios siguen siendo útiles para tareas de enriquecimiento, tanto en tiempo de inserción como en tiempo de consulta. A continuación, proporcionamos ejemplos de ambos casos.
 
 <Info>
   **Aceleración de joins**
@@ -1555,7 +1555,7 @@ WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
 │           0 │     1   │                    │
 └─────────────┴─────────┴────────────────────┘
 
-1 fila en el conjunto. Elapsed: 0.008 sec.
+1 row in set. Elapsed: 0.008 sec.
 ```
 
 Si repetimos la consulta anterior, podemos ver que el rendimiento ha mejorado significativamente a costa de un mayor almacenamiento (consulta [&quot;Medir el tamaño y la compresión de las tablas&quot;](#measuring-table-size--compression) para saber cómo medirlo).
@@ -1989,11 +1989,11 @@ El tipo Map es habitual en los esquemas de OTel. Este tipo requiere que los valo
 Si consultas con frecuencia una clave concreta, considera moverla a su propia columna dedicada en el nivel raíz. Normalmente, esta es una tarea que surge como respuesta a patrones de acceso comunes después del despliegue, y puede ser difícil de prever antes de pasar a producción. Consulta [&quot;Gestionar cambios de esquema&quot;](/es/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes) para saber cómo modificar tu esquema después del despliegue.
 
 <div id="measuring-table-size--compression">
-  ## Medir el tamaño y la compresión de las tablas
+  ## Medir el tamaño y la compresión de una tabla
 </div>
 
 Una de las principales razones por las que ClickHouse se utiliza para la observabilidad es la compresión.
 
-Además de reducir drásticamente los costes de almacenamiento, tener menos datos en disco implica menos E/S y consultas e inserciones más rápidas. La reducción de E/S compensará con creces la sobrecarga en CPU de cualquier algoritmo de compresión. Por lo tanto, mejorar la compresión de los datos debe ser la prioridad al trabajar para garantizar que las consultas de ClickHouse sean rápidas.
+Además de reducir drásticamente los costos de almacenamiento, tener menos datos en disco implica menos E/S y consultas e inserciones más rápidas. La reducción de E/S compensa con creces la sobrecarga en CPU de cualquier algoritmo de compresión. Por lo tanto, mejorar la compresión de los datos debería ser la prioridad al buscar que las consultas de ClickHouse sean rápidas.
 
 Puedes encontrar más información sobre cómo medir la compresión [aquí](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
