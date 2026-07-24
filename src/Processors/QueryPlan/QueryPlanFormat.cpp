@@ -201,6 +201,13 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
+            /// A masked secret constant is named by its `[HIDDEN...]` placeholder during planning (the
+            /// name is the cross-server-stable mask carrier, and the legacy plan dump shows it too). Its
+            /// column still holds the real value so the query can execute, so render the placeholder
+            /// name rather than reading the secret out of the column.
+            if (node->result_name.contains("[HIDDEN"))
+                return node->result_name;
+
             if (!node->column)
                 return node->result_name;
 

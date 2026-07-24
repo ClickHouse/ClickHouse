@@ -1223,17 +1223,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             };
             /// A secret value can be an expression, not a bare literal (e.g. an `encrypt` key built as
             /// `leftPad('...', 16, '*')`, including one inlined from a SQL UDF body). Hide every
-            /// constant inside it so no fragment of the secret leaks through any of those surfaces.
-            std::function<void(const QueryTreeNodePtr &)> mask_secret_constants = [&](const QueryTreeNodePtr & subtree)
+            /// constant inside it so no fragment of the secret leaks; returns whether any literal was
+            /// hidden. A slot that carries no literal (a plaintext like `toString(number)` or a key
+            /// held in a column) exposes nothing in the query text, so it is left as is.
+            std::function<bool(const QueryTreeNodePtr &)> mask_secret_constants = [&](const QueryTreeNodePtr & subtree)
             {
                 if (auto * constant = subtree->as<ConstantNode>())
                 {
                     assign_mask(*constant);
-                    return;
+                    return true;
                 }
+                bool masked_any = false;
                 for (const auto & child : subtree->getChildren())
                     if (child)
-                        mask_secret_constants(child);
+                        masked_any |= mask_secret_constants(child);
+                return masked_any;
             };
 
             forEachSecretArgumentNode(
@@ -1243,11 +1247,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     if (auto * constant = secret_node->as<ConstantNode>())
                         arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
-                    else
-                    {
-                        mask_secret_constants(secret_node);
+                    else if (mask_secret_constants(secret_node))
                         arguments_projection_names[n] = "[HIDDEN]";
-                    }
                 });
         }
     }

@@ -14,3 +14,12 @@ EXPLAIN QUERY TREE SELECT encrypt('aes-128-ecb', 'plaintext', leftPad('SEKRIT_DE
 
 -- Result column name (projection name): the derived-key literal must not appear in the header either.
 DESCRIBE (SELECT encrypt('aes-128-ecb', 'plaintext', leftPad('SEKRIT_DERIVEDKEY', 16, '*')));
+
+-- The ActionsDAG dump of EXPLAIN actions must hide the derived-key literal too. The pretty format
+-- (the default) reads the constant value straight from the column, so it has to consult the masked
+-- name instead of the raw value; the legacy format already relies on that name. viewExplain lets us
+-- assert that no fragment leaks without dumping the config-dependent plan into the reference.
+SELECT countIf(explain LIKE '%SEKRIT_DAGKEY%') AS pretty_dag_leaks
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (SELECT encrypt('aes-128-ecb', materialize('plaintext'), leftPad('SEKRIT_DAGKEY', 16, '*')) FROM numbers(1)));
+SELECT countIf(explain LIKE '%SEKRIT_DAGKEY%') AS legacy_dag_leaks
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 0', (SELECT encrypt('aes-128-ecb', materialize('plaintext'), leftPad('SEKRIT_DAGKEY', 16, '*')) FROM numbers(1)));
