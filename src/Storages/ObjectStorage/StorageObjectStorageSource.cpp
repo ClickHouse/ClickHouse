@@ -237,6 +237,24 @@ static bool restoreRequestedInputs(ActionsDAG & dag, const NamesAndTypesList & r
     return added;
 }
 
+/// Resolve `name` (e.g. `time_struct.a`) as a subcolumn of one of the `header`'s columns.
+/// Returns a `NameAndTypePair` with the storage-name/subcolumn split, or nothing if `name`
+/// is not a subcolumn of any column in `header`.
+static std::optional<NameAndTypePair> resolveSubcolumnFromHeader(const Block & header, const String & name)
+{
+    for (const auto & column : header)
+    {
+        const auto & parent_name = column.name;
+        if (name.size() <= parent_name.size() + 1 || !name.starts_with(parent_name) || name[parent_name.size()] != '.')
+            continue;
+
+        String subcolumn_name = name.substr(parent_name.size() + 1);
+        if (auto subcolumn_type = column.type->tryGetSubcolumnType(subcolumn_name))
+            return NameAndTypePair(parent_name, subcolumn_name, column.type, subcolumn_type);
+    }
+    return std::nullopt;
+}
+
 static FilterDAGInfoPtr prepareFallbackFilter(const FilterDAGInfoPtr & filter, const NamesAndTypesList & requested_columns)
 {
     if (!filter)
@@ -1295,6 +1313,49 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
+        }
+
+        if (stripped_row_level_filter || stripped_prewhere_info)
+        {
+            /// The stripped filters can reference subcolumns (e.g. a `PREWHERE` condition on
+            /// `time_struct.a`, allowed by `getSupportedPrewhereColumnsForFormat`), while the
+            /// block at this point can contain only whole storage columns: the schema-evolution
+            /// transform above outputs full columns (`time_struct`). Extract such subcolumns
+            /// before the fallback `FilterTransform`s, otherwise their header update throws
+            /// `NOT_FOUND_COLUMN_IN_BLOCK`.
+            const Block & current_header = builder.getHeader();
+            NamesAndTypesList columns_with_extracted_subcolumns;
+            for (const auto & column : current_header)
+                columns_with_extracted_subcolumns.emplace_back(column.name, column.type);
+
+            bool need_subcolumn_extraction = false;
+            NameSet seen_filter_inputs;
+            auto add_missing_subcolumn_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    if (current_header.has(required.name) || !seen_filter_inputs.insert(required.name).second)
+                        continue;
+
+                    if (auto subcolumn = resolveSubcolumnFromHeader(current_header, required.name))
+                    {
+                        columns_with_extracted_subcolumns.push_back(std::move(*subcolumn));
+                        need_subcolumn_extraction = true;
+                    }
+                }
+            };
+            if (stripped_row_level_filter)
+                add_missing_subcolumn_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_missing_subcolumn_inputs(stripped_prewhere_info->prewhere_actions);
+
+            if (need_subcolumn_extraction)
+            {
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExtractColumnsTransform>(header, columns_with_extracted_subcolumns);
+                });
+            }
         }
 
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
