@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -264,12 +266,16 @@ try
     if (part->isEmpty())
         return true;
 
-    /// Sets for subqueries and table references would be built again by the fallback path.
-    for (const auto & predicate : predicates)
-        if (containsSubqueryOrTableReference(*predicate))
-            return false;
-
     ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
+
+    /// SQL UDF bodies are allowed to contain subqueries and table reads; TreeRewriter expands
+    /// them below, so the guard must run after the same substitution, not on the raw predicate.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(condition, context);
+
+    /// Sets for subqueries and table references would be built again by the fallback path.
+    if (containsSubqueryOrTableReference(*condition))
+        return false;
 
     auto syntax_result = TreeRewriter(context).analyze(
         condition,
