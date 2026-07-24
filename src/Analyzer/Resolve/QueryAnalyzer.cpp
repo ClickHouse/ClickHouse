@@ -68,6 +68,7 @@
 
 #include <Access/EnabledRowPolicies.h>
 
+#include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 
@@ -4591,6 +4592,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     QueryTreeNodes result_table_function_arguments;
 
     auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+
+    bool previous_table_function_arguments_in_resolve_process = table_function_arguments_in_resolve_process;
+    table_function_arguments_in_resolve_process = true;
+    SCOPE_EXIT({ table_function_arguments_in_resolve_process = previous_table_function_arguments_in_resolve_process; });
 
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
