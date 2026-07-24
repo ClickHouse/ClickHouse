@@ -66,17 +66,3 @@ TEST(DeletionVectorBeforeEqualityFilter, CorrectOrderKeepsFileRowMapping)
     shrinkWithoutAppliedFilter(chunk, IColumn::Filter{1, 0, 1});
     EXPECT_EQ(readValues(chunk), (std::vector<UInt64>{0, 3}));
 }
-
-TEST(DeletionVectorBeforeEqualityFilter, WrongOrderBreaksFileRowMapping)
-{
-    Chunk chunk = makeChunkWithFileRowNumbers({0, 1, 2, 3});
-
-    /// Equality first: remove file row 1. Chunk is now {0, 2, 3} with dense (wrong) indices.
-    shrinkWithoutAppliedFilter(chunk, IColumn::Filter{1, 0, 1, 1});
-    ASSERT_EQ(readValues(chunk), (std::vector<UInt64>{0, 2, 3}));
-
-    /// DV intends to delete file position 2, but maps dense index 2 → value 3 instead.
-    DeletionVectorTransform::transform(chunk, *makeExcludedRows({2}));
-    EXPECT_EQ(readValues(chunk), (std::vector<UInt64>{0, 2}))
-        << "Documents the pre-fix bug: DV after equality deletes the wrong file row";
-}

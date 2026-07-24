@@ -238,6 +238,19 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
+/// Count-from-files cache key is data-file identity only. Skip when row filtering can change
+/// independently (DVs / selection vectors, Iceberg eq/pos deletes) or when the task is a bucket subset.
+static bool canUseCountFromFilesCache(const ObjectInfoPtr & object_info)
+{
+    if (hasNonEmptyExcludedRows(object_info->data_lake_metadata) || object_info->file_bucket_info)
+        return false;
+#if USE_AVRO
+    if (hasIcebergEqualityDeletes(object_info) || hasIcebergPositionDeletes(object_info))
+        return false;
+#endif
+    return true;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -765,14 +778,8 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !hasNonEmptyExcludedRows(reader.getObjectInfo()->data_lake_metadata)
-            && !reader.getObjectInfo()->file_bucket_info
-#if USE_AVRO
-            && !hasIcebergEqualityDeletes(reader.getObjectInfo())
-            && !hasIcebergPositionDeletes(reader.getObjectInfo())
-#endif
-            )
+            && !format_filter_info->filter_actions_dag
+            && canUseCountFromFilesCache(reader.getObjectInfo()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -961,32 +968,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
     /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
-    /// Also skip when excluded_rows is present: ConstChunkGenerator bypasses DeletionVectorTransform, and the
-    /// schema row-count cache key does not include deletion-vector identity (data files are immutable under
-    /// Iceberg while DVs change independently).
-    /// Also skip when file_bucket_info is set: the cache key is file identity only, while bucketed tasks
-    /// only cover a subset of row groups.
-    /// Also skip when Iceberg equality/position deletes are attached: ConstChunkGenerator skips
-    /// `addDeleteTransformers`, and the cache key does not include delete-file identity.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
 #if USE_AVRO
-    const bool has_iceberg_equality_deletes = hasIcebergEqualityDeletes(object_info);
-    const bool has_iceberg_position_deletes = hasIcebergPositionDeletes(object_info);
-#else
-    const bool has_iceberg_equality_deletes = false;
-    const bool has_iceberg_position_deletes = false;
-#endif
-
     /// Equality deletes filter by column values; need_only_count emits default-filled chunks.
-    const bool effective_need_only_count = need_only_count && !has_iceberg_equality_deletes;
+    const bool effective_need_only_count = need_only_count && !hasIcebergEqualityDeletes(object_info);
+#else
+    const bool effective_need_only_count = need_only_count;
+#endif
 
     const bool can_use_count_cache = effective_need_only_count && !headers_requested
         && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
-        && !hasNonEmptyExcludedRows(object_info->data_lake_metadata)
-        && !object_info->file_bucket_info
-        && !has_iceberg_equality_deletes
-        && !has_iceberg_position_deletes;
+        && canUseCountFromFilesCache(object_info);
 
     std::optional<size_t> num_rows_from_cache = can_use_count_cache ? try_get_num_rows_from_cache() : std::nullopt;
 
