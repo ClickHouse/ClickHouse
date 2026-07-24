@@ -131,6 +131,14 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
         equality_delete_object->resolved_schema_id);
 }
 
+ObjectInfoPtr IcebergDataObjectInfo::clone() const
+{
+    auto result = std::make_shared<IcebergDataObjectInfo>(relative_path_with_metadata, info);
+    result->data_lake_metadata = data_lake_metadata;
+    result->file_bucket_info = file_bucket_info;
+    return result;
+}
+
 #endif
 
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const

@@ -90,6 +90,9 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     void addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path);
 
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
+
+    ObjectInfoPtr clone() const override;
+
     Iceberg::IcebergObjectSerializableInfo info;
 };
 
