@@ -22,3 +22,6 @@ ${CLICKHOUSE_LOCAL} --config-file "$CONFIG" --query "
 
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG" --query \
     "SELECT getServerSetting('named_collections_storage_type')"
+
+${CLICKHOUSE_LOCAL} --config-file "$CONFIG" --query \
+    "SELECT count() = 1 FROM system.server_settings WHERE name = 'logger.level'"

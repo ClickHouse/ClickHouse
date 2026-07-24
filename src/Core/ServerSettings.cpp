@@ -1482,10 +1482,6 @@ Possible values: -20 to 19.
 If enabled, every ZooKeeper request must have a component name set via `Coordination::setCurrentComponent`. Throws a `LOGICAL_ERROR` exception if the component is missing.
 )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
-    DECLARE(String, named_collections_storage_type, "local", R"(
-The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
-`keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`. Configured in `<named_collections_storage><type>`.
-)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
@@ -1782,6 +1778,10 @@ If set to true, server settings will not be checked for correctness.
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+    DECLARE(String, named_collections_storage_type, "local", R"(
+The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
+`keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`. Configured in `<named_collections_storage><type>`.
+)", BaseSettingsHelpers::Flags::USE_NAME_AS_DISPLAY_NAME, "named_collections_storage.type") \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
     DECLARE(UInt64, query_cache_max_entry_size_in_bytes, 1048576, R"(The maximum size in bytes SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_bytes") \
@@ -1889,8 +1889,6 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     {
         const auto & name = setting.getName();
         String path {setting.getPath()};
-        if (name == "named_collections_storage_type")
-            path = "named_collections_storage.type";
         const String * path_or_name = path.empty() ? &name : &path;
         try
         {
@@ -2194,12 +2192,11 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        String setting_path {setting.getPath()};
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
-        res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
+        res_columns[0]->insert(setting.getDisplayName());
         res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
         res_columns[2]->insert(setting.getDefaultValueString());
         res_columns[3]->insert(setting.isValueChanged());
