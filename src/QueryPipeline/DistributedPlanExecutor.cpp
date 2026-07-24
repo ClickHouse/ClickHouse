@@ -1,3 +1,4 @@
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <memory>
@@ -225,16 +226,19 @@ public:
         has_data.notify_all();
     }
 
-    Chunk getChunk()
+    /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
+    /// An empty chunk is the producer's end-of-data marker (also reported when cancelled).
+    std::optional<Chunk> getChunk(std::chrono::milliseconds timeout)
     {
         LOG_TEST(log, "Waiting for chunk from exchange '{}'", name);
 
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
-            has_data.wait(lock, [this] { return !chunks.empty() || cancelled; });
+            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled; }))
+                return std::nullopt;
             if (chunks.empty())
-                return {};   /// Cancelled: report end of data.
+                return Chunk{};   /// Cancelled: report end of data.
             chunk = std::move(chunks.front());
             chunks.pop_front();
         }
@@ -370,12 +374,21 @@ private:
 
         String getName() const override { return "SourceFromInMemoryExchange"; }
 
-        Chunk generate() override
+        std::optional<Chunk> tryGenerate() override
         {
-            return exchange->getChunk();
+            /// A processor must not block the pipeline thread, so wait with a timeout. On the
+            /// timeout, push a chunk with no rows: a source that yields without producing output
+            /// stays ready and gets rescheduled at once, monopolizing the thread, while pushed
+            /// output makes the port full and lets other processors run.
+            auto chunk = exchange->getChunk(std::chrono::milliseconds(10));
+            if (!chunk)
+                return Chunk(getPort().getHeader().cloneEmptyColumns(), 0);
+            if (chunk->empty())
+                return std::nullopt;   /// End-of-data marker.
+            return std::move(*chunk);
         }
 
-        /// Wake a generate() blocked in getChunk; pipeline cancellation alone cannot interrupt it.
+        /// Wake the timed wait so the source finishes right away instead of on its next poll.
         void onCancel() noexcept override
         {
             exchange->cancel();
