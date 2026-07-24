@@ -1211,20 +1211,43 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
-            /// This tree is used for execution, so only the display mask of constants can be set;
-            /// a non-constant value cannot be masked here (ordinary functions carry secrets in
-            /// constants only).
+            /// This tree is used for execution, so the value itself cannot be rewritten; only the
+            /// display mask of its constants can be set. `setMaskId` is a display flag, so it hides
+            /// the literal in projection names, `EXPLAIN QUERY TREE` and the `EXPLAIN actions = 1`
+            /// ActionsDAG (see PlannerActionsVisitor) without changing what is executed.
+            auto assign_mask = [&](ConstantNode & constant)
+            {
+                auto mask = scope.projection_mask_map->insert({constant.getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                constant.setMaskId(mask);
+                return mask;
+            };
+            /// A secret value can be an expression, not a bare literal (e.g. an `encrypt` key built as
+            /// `leftPad('...', 16, '*')`, including one inlined from a SQL UDF body). Hide every
+            /// constant inside it so no fragment of the secret leaks through any of those surfaces.
+            std::function<void(const QueryTreeNodePtr &)> mask_secret_constants = [&](const QueryTreeNodePtr & subtree)
+            {
+                if (auto * constant = subtree->as<ConstantNode>())
+                {
+                    assign_mask(*constant);
+                    return;
+                }
+                for (const auto & child : subtree->getChildren())
+                    if (child)
+                        mask_secret_constants(child);
+            };
+
             forEachSecretArgumentNode(
                 argument_nodes,
                 secret_arguments,
                 [&](size_t n, QueryTreeNodePtr & secret_node)
                 {
-                    auto * constant = secret_node->as<ConstantNode>();
-                    if (!constant)
-                        return;
-                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
-                    constant->setMaskId(mask);
-                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
+                    if (auto * constant = secret_node->as<ConstantNode>())
+                        arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
+                    else
+                    {
+                        mask_secret_constants(secret_node);
+                        arguments_projection_names[n] = "[HIDDEN]";
+                    }
                 });
         }
     }

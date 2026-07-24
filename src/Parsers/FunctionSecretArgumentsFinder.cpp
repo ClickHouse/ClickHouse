@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
@@ -89,7 +90,7 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
                             if (maskS3URICredentials(url))
-                                result.replaced_arguments[i] = "url = '" + url + "'";
+                                result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
                         {
@@ -121,30 +122,63 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
     return positional;
 }
 
-void FunctionSecretArgumentsFinder::maskS3PositionalSecrets(const std::vector<size_t> & positional, size_t url_slot)
+void FunctionSecretArgumentsFinder::maskS3PositionalSecrets(
+    const std::vector<size_t> & positional, size_t url_slot, bool with_structure)
 {
-    /// NOSIGN forms carry no positional credentials at any length, e.g. the five-positional
-    /// s3(source, NOSIGN, format, structure, compression_method), which is longer than the callers'
-    /// early-out windows.
-    String second_arg;
-    const bool second_is_string
-        = url_slot + 1 < positional.size() && tryGetStringFromArgument(positional[url_slot + 1], &second_arg);
-    if (second_is_string && boost::iequals(second_arg, "NOSIGN"))
+    /// The parser (`S3StorageParsedArguments::fromAST`) selects the signature from the positional
+    /// `count` (the number of arguments from `url` on) and `with_structure`, disambiguating only
+    /// NOSIGN and format-vs-secret by looking at an argument's value. Across every signature the only
+    /// credential positionals are `secret_access_key` at slot 2 and `session_token` at slot 3, so we
+    /// reproduce the parser's per-count decision for just those two slots.
+    ///
+    /// Value tests fail closed: an unevaluable expression is not recognized as NOSIGN or a format, so
+    /// the slot that would then be a credential is masked. A query built from a computed format thus
+    /// loses that non-secret argument in the AST dump, which is safe. The query-tree path resolves such
+    /// expressions to constants first, so it classifies them exactly.
+    if (url_slot >= positional.size())
         return;
+    const size_t count = positional.size() - url_slot;
 
-    if (url_slot + 2 >= positional.size())
-        return;
-    markSecretArgument(positional[url_slot + 2]);
+    auto value_is = [&](size_t slot, auto && predicate) -> bool
+    {
+        String value;
+        return url_slot + slot < positional.size()
+            && tryGetStringFromArgument(positional[url_slot + slot], &value) && predicate(value);
+    };
+    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return boost::iequals(v, "NOSIGN"); }); };
+    auto is_format = [&](size_t slot) { return value_is(slot, [](const String & v) { return v == "auto" || KnownFormatNames::instance().exists(v); }); };
 
-    if (url_slot + 3 >= positional.size())
-        return;
-    if (second_is_string && (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg)))
-        return;
-    String token_arg;
-    if (tryGetStringFromArgument(positional[url_slot + 3], &token_arg)
-        && (token_arg == "auto" || KnownFormatNames::instance().exists(token_arg)))
-        return;
-    markSecretArgument(positional[url_slot + 3]);
+    bool secret_access_key = false; /// slot 2
+    bool session_token = false;     /// slot 3
+    switch (count)
+    {
+        case 0: case 1: case 2: /// url only, or url + format/NOSIGN
+            break;
+        case 3:
+            secret_access_key = !is_nosign(1) && !is_format(1);
+            break;
+        case 4:
+            secret_access_key = !is_nosign(1) && !(with_structure && is_format(1));
+            session_token = secret_access_key && !is_format(3);
+            break;
+        case 5:
+            secret_access_key = !with_structure || !is_nosign(1);
+            session_token = secret_access_key && !is_format(3);
+            break;
+        case 6:
+            secret_access_key = true;
+            session_token = !with_structure || !is_format(3);
+            break;
+        default: /// count >= 7: access-key form only, both credential slots always present
+            secret_access_key = true;
+            session_token = true;
+            break;
+    }
+
+    if (secret_access_key)
+        markSecretArgument(positional[url_slot + 2]);
+    if (session_token)
+        markSecretArgument(positional[url_slot + 3]);
 }
 
 void FunctionSecretArgumentsFinder::maskS3PositionalsFrom(const std::vector<size_t> & positional, size_t first_slot)
@@ -167,7 +201,7 @@ void FunctionSecretArgumentsFinder::maskS3UrlArgument(const std::vector<size_t> 
         return;
     }
     if (maskS3URICredentials(url))
-        result.replaced_arguments[positional[url_slot]] = "'" + url + "'";
+        result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
 void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
@@ -419,24 +453,24 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
     const auto positional = classifyS3Arguments();
     maskS3UrlArgument(positional, url_slot);
 
-    /// We should check other arguments first because we don't need to do any replacement in case of
-    /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
-    /// s3('url', 'format', 'structure' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
-    if ((url_slot + 3 <= positional.size()) && (positional.size() <= url_slot + 4))
+    /// The table function accepts a positional `structure`, unless a `structure = ...` named override
+    /// is given (the parser then turns `with_structure` off). The parser evaluates key expressions, so
+    /// an unevaluable key might resolve to `structure`; treat any unreadable key as disabling it too.
+    /// This fails closed: `with_structure = false` only ever masks the same slots or more.
+    bool with_structure = true;
+    for (size_t i = 0; i < function->arguments->size(); ++i)
     {
-        String second_arg;
-        if (tryGetStringFromArgument(positional[url_slot + 1], &second_arg))
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+            continue;
+        String key;
+        if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true) || key == "structure")
         {
-            if (boost::iequals(second_arg, "NOSIGN"))
-                return; /// The argument after 'url' is "NOSIGN".
-
-            if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
-                return; /// The argument after 'url' is a format: s3('url', 'format', ...)
+            with_structure = false;
+            break;
         }
     }
-
-    /// s3('url', 'aws_access_key_id', 'aws_secret_access_key' [, 'session_token'], ...)
-    maskS3PositionalSecrets(positional, url_slot);
+    maskS3PositionalSecrets(positional, url_slot, with_structure);
 }
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
@@ -702,9 +736,10 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findMongoDBSecretArguments();
     }
-    else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS")
-             || (engine_name == "DeltaLake") || (engine_name == "Hudi")
+    else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
+             || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")
              || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
+             || (engine_name == "Paimon") || (engine_name == "PaimonS3")
              || (engine_name == "S3Queue"))
     {
         /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
@@ -773,27 +808,8 @@ void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
     const auto positional = classifyS3Arguments();
     maskS3UrlArgument(positional, 0);
 
-    /// We should check other arguments first because we don't need to do any replacement in case of
-    /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
-    /// S3('url', 'format', 'compression' [, extra_credentials(..)] [, headers(..)])
-    if ((3 <= positional.size()) && (positional.size() <= 4))
-    {
-        String second_arg;
-        if (tryGetStringFromArgument(positional[1], &second_arg))
-        {
-            if (boost::iequals(second_arg, "NOSIGN"))
-                return; /// The argument after 'url' is "NOSIGN".
-
-            if (positional.size() == 3)
-            {
-                if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
-                    return; /// The argument after 'url' is a format: S3('url', 'format', ...)
-            }
-        }
-    }
-
-    /// S3('url', 'aws_access_key_id', 'aws_secret_access_key' [, 'session_token'] [, 'format', ...])
-    maskS3PositionalSecrets(positional, 0);
+    /// The table engine takes its structure from the column list, never as an argument.
+    maskS3PositionalSecrets(positional, 0, /* with_structure= */ false);
 }
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArguments()
@@ -977,21 +993,28 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                 {
                     /// A `url` override can itself carry credentials (userinfo, presign parameters).
                     has_secret |= maskS3URICredentials(value);
-                    replacement += "'" + value + "'";
+                    replacement += quoteString(value);
                 }
                 else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
                 {
                     /// A non-string scalar override, e.g. `use_environment_credentials = 1`.
                     replacement += literal_text;
                 }
-                else
+                else if (key == "url")
                 {
-                    /// Cannot reconstruct the value safely (e.g. a url built from an expression, which
-                    /// can embed credentials in its pieces); hide it rather than leak. This counts as a
-                    /// secret: otherwise a replacement whose only hidden part is this value would be
-                    /// discarded below and the original expression would be formatted verbatim.
+                    /// A url built from an expression can embed credentials in its pieces, which we
+                    /// cannot evaluate here; hide it rather than leak. This counts as a secret:
+                    /// otherwise a replacement whose only hidden part is this value would be discarded
+                    /// below and the original expression would be formatted verbatim.
                     replacement += "'[HIDDEN]'";
                     has_secret = true;
+                }
+                else
+                {
+                    /// A non-secret named value that is an expression (e.g. `filename = concat(...)`),
+                    /// which the backup named-collection path accepts. It carries no credential, so keep
+                    /// it visible (nested secrets, if any, are hidden by the formatter).
+                    replacement += key_value->arguments->at(1)->getText();
                 }
             }
             else
@@ -1025,7 +1048,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     String cred_value;
                     if (isNonSecretExtraCredentialsKey(cred_key)
                         && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
-                        masked_map += cred_key + " = '" + cred_value + "'";
+                        masked_map += cred_key + " = " + quoteString(cred_value);
                     else
                         masked_map += cred_key + " = '[HIDDEN]'";
                 }
@@ -1058,7 +1081,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         {
             /// The url positional can itself carry credentials (userinfo, presign parameters).
             has_secret |= maskS3URICredentials(arg_value);
-            replacement += "'" + arg_value + "'";
+            replacement += quoteString(arg_value);
         }
         else
         {
@@ -1094,15 +1117,13 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
             return;
         }
         /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
-        /// the locator accepts exactly one or three positionals; the valid triple carries its secret at
-        /// slot 2. Any other positional count is invalid but logged before validation, and the intended
-        /// slots are unknowable, so fail closed on everything after the url.
+        /// the locator accepts exactly one or three positionals; the valid triple keeps the url and
+        /// access_key_id visible and hides the secret at slot 2. Any other positional count is invalid
+        /// but logged before validation, and the intended slots are unknowable, so fail closed on
+        /// everything after the url.
         const auto positional = classifyS3Arguments(0, /* positionals_allowed_after_named= */ true);
         maskS3UrlArgument(positional, 0);
-        if (positional.size() == 3)
-            markSecretArgument(positional[2]);
-        else if (positional.size() > 1)
-            maskS3PositionalsFrom(positional, 1);
+        maskS3PositionalsFrom(positional, positional.size() == 3 ? 2 : 1);
     }
     else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
     {

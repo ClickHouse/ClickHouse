@@ -28,6 +28,9 @@ public:
         /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
         /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
         virtual bool tryGetLiteralText(String * res) const = 0;
+        /// The SQL text of the argument, whatever its kind (literal, identifier or expression). Lets a
+        /// reconstructor keep a non-secret named value like `filename = concat('back', 'up')` visible.
+        virtual String getText() const = 0;
     };
     class Arguments
     {
@@ -127,11 +130,12 @@ protected:
     /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
     std::vector<size_t> classifyS3Arguments(size_t start = 0, bool positionals_allowed_after_named = false);
 
-    /// Masks the positional secrets of the explicit-url S3 form: `secret_access_key` at slot
-    /// `url_slot + 2`, and a positional `session_token` at slot `url_slot + 3` unless that slot is
-    /// actually the format, mirroring the parser's disambiguation. NOSIGN and `s3('url', 'format', ...)`
-    /// forms carry no positional secrets at slot 3+.
-    void maskS3PositionalSecrets(const std::vector<size_t> & positional, size_t url_slot);
+    /// Masks the positional secrets (`secret_access_key`, `session_token`) of the explicit-url S3
+    /// form, selecting the signature by argument count and `with_structure` exactly like the parser
+    /// (`S3StorageParsedArguments::fromAST`). `positional` is the positional-only argument list, `url`
+    /// at `url_slot` (1 for `s3Cluster`, 0 otherwise). Value-based disambiguations (NOSIGN, format)
+    /// fail closed on an unevaluable expression: the potential credential slot is masked.
+    void maskS3PositionalSecrets(const std::vector<size_t> & positional, size_t url_slot, bool with_structure);
 
     /// For S3 locators that accept nothing positional beyond `secret_access_key` (the S3 database
     /// engine and the backup S3 destination): mask every positional from `first_slot` on, failing

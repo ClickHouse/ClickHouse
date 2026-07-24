@@ -46,6 +46,31 @@ ENGINE = S3('http://localhost:11111/test/04510exprfmt', 'ak', 'SEKRIT_SAK', conc
 SHOW CREATE TABLE t_04510_exprfmt SETTINGS format_display_secrets_in_show_and_select = 0;
 DROP TABLE t_04510_exprfmt;
 
+-- Five positional arguments in the engine form (no positional structure) is the access-key signature,
+-- not a NOSIGN one: NOSIGN sits in the access_key_id slot and the following argument is the
+-- secret_access_key, which must be hidden even though the leading token reads as NOSIGN.
+DROP TABLE IF EXISTS t_04510_nosign5;
+CREATE TABLE t_04510_nosign5 (x UInt8)
+ENGINE = S3('http://localhost:11111/test/04510nosign5', NOSIGN, 'SEKRIT_NOSIGNSAK', 'CSV', 'none');
+SHOW CREATE TABLE t_04510_nosign5 SETTINGS format_display_secrets_in_show_and_select = 0;
+DROP TABLE t_04510_nosign5;
+
+-- Six positional arguments in the engine form fix the session_token at the 4th slot regardless of its
+-- value, so a session_token that happens to spell a registered format name must still be hidden.
+DROP TABLE IF EXISTS t_04510_parqtok;
+CREATE TABLE t_04510_parqtok (x UInt8)
+ENGINE = S3('http://localhost:11111/test/04510parqtok', 'ak', 'SEKRIT_PARQSAK', 'Parquet', 'CSV', 'none');
+SHOW CREATE TABLE t_04510_parqtok SETTINGS format_display_secrets_in_show_and_select = 0;
+DROP TABLE t_04510_parqtok;
+
+-- Every S3-backed table engine shares the S3 credential signature, so SHOW CREATE must hide the
+-- secret_access_key for the whole family (GCS, the data-lake engines, ...), not only for `S3`.
+DROP TABLE IF EXISTS t_04510_gcs;
+CREATE TABLE t_04510_gcs (x UInt8)
+ENGINE = GCS('http://localhost:11111/test/04510gcs', 'ak', 'SEKRIT_GCSSAK', 'TSV');
+SHOW CREATE TABLE t_04510_gcs SETTINGS format_display_secrets_in_show_and_select = 0;
+DROP TABLE t_04510_gcs;
+
 -- The forms below all fail at analysis (empty host / missing collection) before any network access,
 -- and are logged with secrets replaced. Each carries a unique marker checked by the final assertion.
 
@@ -107,10 +132,22 @@ SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
                  concat('session_', 'token') = 'SEKRIT_EXPRTOK',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- A `structure = ...` override given as a constant expression is evaluated by the parser, which then
+-- drops the positional structure slot: the leading positional is then a secret_access_key, not a
+-- format, and must be hidden even though it reads as a format name. The masker cannot evaluate the
+-- key, so it fails closed and drops the positional structure slot for any unevaluable key.
+SELECT * FROM s3('url_exprstruct', 'CSV', 'SEKRIT_EXPRSTRUCT', 'TSV',
+                 concat('struc', 'ture') = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
 -- The URL itself can carry credentials: the userinfo and presigned-URL query parameters must be
 -- masked while the host, path and non-credential parameters stay visible. The one-character bucket
 -- makes S3 URI validation reject the query before any network access.
 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG&partNumber=7',
+                 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
+-- A retained URL part can legally contain an apostrophe; the partially-masked url must be re-emitted
+-- as a properly escaped SQL literal (not by naive quoting, which would produce a broken statement).
+SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x/o''clock?X-Amz-Signature=SEKRIT_SIG',
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- A url built from a constant expression is evaluated by the parser and can embed credentials in
@@ -203,6 +240,11 @@ CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
 CREATE DATABASE db_04510_ncenv ENGINE = Backup('', S3(nc_dbenv_missing,
                  secret_access_key = 'SEKRIT_DBENVKEY', use_environment_credentials = 1)); -- { serverError BAD_ARGUMENTS }
 
+-- A non-secret named value built from a constant expression (e.g. filename) is accepted by the backup
+-- named-collection path and carries no credential, so it stays visible; only url would fail closed.
+CREATE DATABASE db_04510_ncexpr ENGINE = Backup('', S3(nc_dbexpr_missing,
+                 secret_access_key = 'SEKRIT_DBEXPRKEY', filename = concat('back', 'up'))); -- { serverError BAD_ARGUMENTS }
+
 -- The reconstructor masks everything after the url on an invalid positional count too.
 CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
                  access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -251,6 +293,10 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/
 -- A named url override is an `equals` node in the tree; its credential-bearing value must be hidden.
 -- Without passes the collection need not exist.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3(nc_04510_missing, url = 'https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', structure = 'x UInt8');
+
+-- A table function can sit under a UNION (or any other carrier); the dump masking visitor must descend
+-- into every node, not only query/join carriers, or the secret leaks in the tree dump.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_UNIONSAK', 'TSV', 'x UInt8') UNION ALL SELECT 1;
 
 SYSTEM FLUSH LOGS query_log;
 
