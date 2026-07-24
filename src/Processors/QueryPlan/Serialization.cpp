@@ -157,6 +157,7 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
 
     PlanSkeleton skeleton;
     std::vector<String> payloads;
+    UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
 
     /// Pre-order walk (children pushed in reverse); Delayed* steps are elided as in the legacy walk.
     std::stack<Node *> stack;
@@ -195,6 +196,27 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
         /// skeleton must advertise the format of the bytes actually written.
         skeleton_node.step_format_version = ctx.step_format_version;
         skeleton_node.payload_size = payload.str().size();
+
+        /// "Needed to read" for this node: the step's registry requirements for the format
+        /// actually written, its value-dependent requirements, and the header's type encodings.
+        UInt64 node_min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
+        if (info)
+        {
+            node_min_reader = std::max(node_min_reader, info->introduced_in_plan_version);
+            for (const auto & [step_version, min_plan_version] : info->min_plan_version_for_step_version)
+                if (ctx.step_format_version >= step_version)
+                    node_min_reader = std::max(node_min_reader, min_plan_version);
+        }
+        node_min_reader = std::max(node_min_reader, ctx.min_reader_version);
+        if (skeleton_node.header)
+            for (const auto & column : *skeleton_node.header)
+                node_min_reader = std::max(node_min_reader, minReaderVersionForType(*column.type));
+        for (const auto & entry : skeleton_node.settings)
+            node_min_reader = std::max(node_min_reader, QueryPlanSerializationSettings::minReaderVersionForEntry(entry));
+
+        skeleton_node.min_reader_plan_version = node_min_reader;
+        min_reader_plan_version = std::max(min_reader_plan_version, node_min_reader);
+
         skeleton.nodes.push_back(std::move(skeleton_node));
         payloads.push_back(payload.str());
 
@@ -203,7 +225,11 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
     }
 
     std::vector<String> set_payloads;
-    serializeEnvelopeSets(registry, flags, skeleton, set_payloads);
+    serializeEnvelopeSets(registry, flags, skeleton, set_payloads, min_reader_plan_version);
+
+    /// An honest writer never requires a reader newer than the version it writes: features are
+    /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate.
+    chassert(min_reader_plan_version <= flags.version);
 
     WriteBufferFromOwnString envelope;
     writeQueryPlanSkeleton(skeleton, envelope);
@@ -213,11 +239,12 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
         envelope.write(payload.data(), payload.size());
     envelope.finalize();
 
+    writeVarUInt(min_reader_plan_version, out);
     writeVarUInt(envelope.str().size(), out);
     out.write(envelope.str().data(), envelope.str().size());
 }
 
-QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
+QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
 {
     UInt64 envelope_size = 0;
     readVarUInt(envelope_size, in);
@@ -245,7 +272,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
 
     /// One pass over the skeleton reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
-    auto validation = validateQueryPlanSkeleton(skeleton, flags.version);
+    auto validation = validateQueryPlanSkeleton(skeleton, flags.version, min_reader_plan_version);
     if (!validation.ok())
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan cannot be deserialized: {}", validation.describe());
@@ -393,15 +420,28 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     UInt64 version = 0;
     readVarUInt(version, in);
 
+    SerializationFlags flags{.version = version, .skip_data = skip_data};
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+    {
+        /// Acceptance is decided by the content's "needed to read" version, not by the writer's
+        /// version: a newer writer's plan is readable as long as everything above this reader's
+        /// knowledge is ignorable, which the writer's fold guarantees for min_reader <= supported.
+        UInt64 min_reader_plan_version = 0;
+        readVarUInt(min_reader_plan_version, in);
+
+        if (min_reader_plan_version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The query plan requires serialization version {} while this server supports up to {}",
+                min_reader_plan_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+        return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version);
+    }
+
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-
-    SerializationFlags flags{.version = version, .skip_data = skip_data};
-
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
-        return deserializeEnvelope(in, context, flags, max_type_complexity);
 
     return deserialize(in, context, flags, max_type_complexity);
 }

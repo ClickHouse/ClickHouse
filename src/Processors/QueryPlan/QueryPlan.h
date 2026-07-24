@@ -218,7 +218,7 @@ private:
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
     void serializeEnvelope(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
-    static QueryPlanAndSets deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
@@ -227,7 +227,8 @@ private:
         SerializedSetsRegistry & registry,
         const SerializationFlags & flags,
         PlanSkeleton & skeleton,
-        std::vector<String> & payloads);
+        std::vector<String> & payloads,
+        UInt64 & min_reader_plan_version);
     friend QueryPlanAndSets deserializeEnvelopeSets(
         QueryPlan plan,
         DeserializedSetsRegistry & registry,

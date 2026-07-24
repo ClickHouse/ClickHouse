@@ -31,6 +31,14 @@ struct IQueryPlanStep::Serialization
     /// (e.g. toward an older stream version) must lower it, otherwise the skeleton would
     /// advertise a format the bytes do not have and newer readers would misparse them.
     UInt64 step_format_version = 1;
+
+    /// The oldest plan version able to read what was actually written so far ("needed to read").
+    /// A step raises it on the exact line that writes value-dependent content an old reader must
+    /// understand to execute correctly (e.g. a semantic flag) - without this the content would be
+    /// skipped as ignorable and an old reader would silently produce different results.
+    UInt64 min_reader_version = 0;
+
+    void requireReaderVersion(UInt64 version_) { min_reader_version = std::max(min_reader_version, version_); }
 };
 
 struct SerializedSetsRegistry;

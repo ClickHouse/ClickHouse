@@ -75,6 +75,12 @@ struct QueryPlanSerializationSettings
 
     /// Changed settings as skeleton entries.
     std::vector<SerializedEntry> getChangedEntries() const;
+
+    /// The oldest plan version whose readers understand this entry ("needed to read"). All
+    /// current settings and value encodings predate the skeleton format, so this returns the
+    /// base version; a setting or value variant introduced later must raise it here so plans
+    /// carrying it demand new enough readers (unless the entry is wire-flagged ignorable).
+    static UInt64 minReaderVersionForEntry(const SerializedEntry & entry);
     /// Apply entries: unknown entries are skipped when marked ignorable, rejected otherwise;
     /// a value that does not consume exactly its frame is rejected.
     void applyEntries(const std::vector<SerializedEntry> & entries);

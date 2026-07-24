@@ -39,6 +39,10 @@ struct PlanSkeleton
         UInt64 child_count = 0;
         String step_name;                       /// QueryPlanStepRegistry key
         UInt64 step_format_version = 1;
+        /// The oldest plan version able to read this node's content ("needed to read"), computed
+        /// by the writer from the step's registry info, its value-dependent requirements, header
+        /// types and settings. Lets a rejection name the blocking step.
+        UInt64 min_reader_plan_version = 0;
         bool has_output_header = false;
         String step_description;
         SharedHeader header;                    /// nullptr iff !has_output_header
@@ -82,10 +86,18 @@ struct QueryPlanSkeletonValidationResult
 
 /// Capability check against this binary's registry and settings: verifies the reader has the
 /// handlers and metadata needed to decode the plan (step names, step format versions vs the
-/// registry info, non-ignorable settings, set kinds, structural consistency). It does not check
-/// that payload bytes are well-formed, nor that referenced tables exist. Collects all issues
-/// over a syntactically parseable skeleton.
-QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton & skeleton, UInt64 plan_version);
+/// registry info, non-ignorable settings, set kinds, structural consistency), and cross-checks
+/// the writer's declared per-node "needed to read" versions against this binary's registry info
+/// (a writer that undercounted is reported instead of silently misexecuting on old readers).
+/// It does not check that payload bytes are well-formed, nor that referenced tables exist.
+/// Collects all issues over a syntactically parseable skeleton.
+QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(
+    const PlanSkeleton & skeleton, UInt64 plan_version, UInt64 head_min_reader_plan_version);
+
+/// The oldest plan version whose readers understand this type's binary encoding. All current
+/// encodings predate the skeleton format, so this returns the base version; a new `BinaryTypeIndex`
+/// entry must add its introduced-at version here so plans using it demand new enough readers.
+UInt64 minReaderVersionForType(const IDataType & type);
 
 /// EXPLAIN-style rendering from the skeleton alone. Unknown steps render as placeholders with
 /// their payload size; no payload is decoded and no catalog/storage work is done.
@@ -93,11 +105,15 @@ String formatQueryPlanSkeleton(const PlanSkeleton & skeleton);
 
 /// Envelope sets channel (Section C): fills skeleton.sets (sorted by hash) and one payload per
 /// entry. A subquery set's payload is a complete serialized plan (with its own leading version).
+/// Also raises min_reader_plan_version with the sets' own requirements: tuple-set column types
+/// and, for subquery sets, the nested plan's declared "needed to read" version (recursively, so
+/// an old reader can never accept the outer stream and fail mid-set decode).
 void serializeEnvelopeSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
     PlanSkeleton & skeleton,
-    std::vector<String> & payloads);
+    std::vector<String> & payloads,
+    UInt64 & min_reader_plan_version);
 
 /// Reads Section C per the skeleton's set entries; every payload must consume its frame exactly.
 QueryPlanAndSets deserializeEnvelopeSets(

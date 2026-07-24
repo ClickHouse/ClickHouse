@@ -10,6 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 
+#include <Core/ProtocolDefines.h>
+
 #include <Common/Exception.h>
 
 #include <fmt/format.h>
@@ -43,6 +45,7 @@ void writeSkeletonBody(const PlanSkeleton & skeleton, WriteBuffer & out)
         writeVarUInt(node.child_count, out);
         writeStringBinary(node.step_name, out);
         writeVarUInt(node.step_format_version, out);
+        writeVarUInt(node.min_reader_plan_version, out);
 
         UInt8 node_flags = node.has_output_header ? 1 : 0;
         writeIntBinary(node_flags, out);
@@ -109,6 +112,7 @@ PlanSkeleton readSkeletonBody(ReadBuffer & in, size_t max_type_complexity)
         node.child_count = readCappedVarUInt(in, MAX_SKELETON_NODES, "node children");
         readStringBinary(node.step_name, in, MAX_SKELETON_FIELD_BYTES);
         readVarUInt(node.step_format_version, in);
+        readVarUInt(node.min_reader_plan_version, in);
 
         UInt8 node_flags = 0;
         readIntBinary(node_flags, in);
@@ -202,7 +206,8 @@ String QueryPlanSkeletonValidationResult::describe() const
     return fmt::format("{}", fmt::join(issues, "; "));
 }
 
-QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton & skeleton, UInt64 plan_version)
+QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(
+    const PlanSkeleton & skeleton, UInt64 plan_version, UInt64 head_min_reader_plan_version)
 {
     QueryPlanSkeletonValidationResult result;
     const auto & registry = QueryPlanStepRegistry::instance();
@@ -248,6 +253,25 @@ QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton &
         if (node.step_format_version == 0)
             result.issues.push_back(fmt::format("step '{}' has format version 0", node.step_name));
 
+        /// Writer-honesty cross-checks: a node's declared "needed to read" version must cover the
+        /// static requirements this binary knows about, and the head value must cover every node.
+        /// A writer that undercounted would otherwise make old readers silently misexecute.
+        if (const auto * info = registry.getStepSerializationInfo(node.step_name))
+        {
+            UInt64 static_requirement = info->introduced_in_plan_version;
+            for (const auto & [step_version, min_plan_version] : info->min_plan_version_for_step_version)
+                if (node.step_format_version >= step_version)
+                    static_requirement = std::max(static_requirement, min_plan_version);
+            if (static_requirement > node.min_reader_plan_version)
+                result.issues.push_back(fmt::format(
+                    "step '{}' (node #{}) declares reader version {} but its registry info requires {}",
+                    node.step_name, i, node.min_reader_plan_version, static_requirement));
+        }
+        if (node.min_reader_plan_version > head_min_reader_plan_version)
+            result.issues.push_back(fmt::format(
+                "step '{}' (node #{}) requires reader version {} above the plan's declared {}",
+                node.step_name, i, node.min_reader_plan_version, head_min_reader_plan_version));
+
         /// Parents read their input headers from their children, so only the root may lack one.
         if (i != 0 && !node.has_output_header)
             result.issues.push_back(fmt::format("non-root step '{}' (node #{}) has no output header", node.step_name, i));
@@ -278,6 +302,14 @@ QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton &
     }
 
     return result;
+}
+
+UInt64 minReaderVersionForType(const IDataType &)
+{
+    /// Every type encoding in existence predates the skeleton format. A new `BinaryTypeIndex`
+    /// entry must return its introduced-at version here, otherwise old readers would fail while
+    /// decoding a header or set payload instead of rejecting the plan up front.
+    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
 }
 
 String formatQueryPlanSkeleton(const PlanSkeleton & skeleton)

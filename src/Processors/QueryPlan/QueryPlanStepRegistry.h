@@ -23,6 +23,10 @@ public:
         /// step format version -> minimum plan version that may carry it.
         /// Versions not listed are ignorable-extended and safe to prefix-read.
         std::map<UInt64, UInt64> min_plan_version_for_step_version;
+        /// The plan version this step name first appeared in. A step name unknown to a reader is
+        /// inherently must-understand, so plans containing the step need at least this version.
+        /// 0 means "as old as serialization itself" (folded to the base version).
+        UInt64 introduced_in_plan_version = 0;
     };
 
     QueryPlanStepRegistry() = default;

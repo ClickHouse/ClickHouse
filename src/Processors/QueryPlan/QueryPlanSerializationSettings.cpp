@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB
 {
@@ -152,6 +153,14 @@ void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
 void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
 {
     impl->readBinary(in);
+}
+
+UInt64 QueryPlanSerializationSettings::minReaderVersionForEntry(const SerializedEntry &)
+{
+    /// All current settings and value encodings predate the skeleton format. A non-ignorable
+    /// setting introduced later must return its introduced-at version here (an ignorable one
+    /// never raises the floor: readers skip it by the wire flag).
+    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON;
 }
 
 bool QueryPlanSerializationSettings::hasSetting(std::string_view name)

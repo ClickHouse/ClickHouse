@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanEnvelope.h>
 #include <Processors/QueryPlan/Serialization.h>
 
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
@@ -163,11 +164,26 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
     }
 }
 
+/// The "needed to read" floor of a complete nested plan body: v4+ bodies declare it in their
+/// second head varint; a legacy body is readable exactly by readers of its leading version.
+static UInt64 nestedPlanBodyMinReader(const String & body)
+{
+    ReadBufferFromMemory in(body.data(), body.size());
+    UInt64 version = 0;
+    readVarUInt(version, in);
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+        return version;
+    UInt64 min_reader = 0;
+    readVarUInt(min_reader, in);
+    return min_reader;
+}
+
 void serializeEnvelopeSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
     PlanSkeleton & skeleton,
-    std::vector<String> & payloads)
+    std::vector<String> & payloads,
+    UInt64 & min_reader_plan_version)
 {
     auto ordered_sets = registry.entriesSortedByHash();
     skeleton.sets.reserve(ordered_sets.size());
@@ -213,6 +229,7 @@ void serializeEnvelopeSets(
                         "Invalid number of rows in column of Set. Expected {} got {}",
                         num_rows, columns[col]->size());
 
+                min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*types[col]));
                 encodeDataType(types[col], body);
                 auto serialization = types[col]->getDefaultSerialization();
                 NativeWriter::writeData(*serialization, columns[col], body, {}, 0, 0, 0);
@@ -236,6 +253,8 @@ void serializeEnvelopeSets(
         }
 
         body.finalize();
+        if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
+            min_reader_plan_version = std::max(min_reader_plan_version, nestedPlanBodyMinReader(body.str()));
         entry.payload_size = body.str().size();
         skeleton.sets.push_back(entry);
         payloads.push_back(body.str());

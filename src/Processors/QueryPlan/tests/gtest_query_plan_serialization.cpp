@@ -59,6 +59,12 @@ void registerStepsOnce()
         if (!QueryPlanStepRegistry::instance().hasStep("Expression"))
             QueryPlanStepRegistry::registerPlanSteps();
         QueryPlanStepRegistry::instance().registerStep("TestSource", TestSourceStep::deserialize);
+
+        /// A step whose payload format v2 is must-understand: requires plan version 5.
+        QueryPlanStepRegistry::StepSerializationInfo info;
+        info.max_step_format_version = 2;
+        info.min_plan_version_for_step_version[2] = 5;
+        QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
     });
 }
 
@@ -224,6 +230,7 @@ PlanSkeleton makeTestSkeleton()
     root.child_count = 1;
     root.step_name = "Expression";
     root.step_format_version = 1;
+    root.min_reader_plan_version = 4;
     root.has_output_header = true;
     root.header = makeTestHeader();
     skeleton.nodes.push_back(std::move(root));
@@ -232,6 +239,7 @@ PlanSkeleton makeTestSkeleton()
     leaf.child_count = 0;
     leaf.step_name = "TestSource";
     leaf.step_format_version = 1;
+    leaf.min_reader_plan_version = 4;
     leaf.has_output_header = true;
     leaf.header = makeTestHeader();
     leaf.payload_size = 0;
@@ -288,7 +296,7 @@ TEST(QueryPlanSkeleton, ValidationCollectsAllIssues)
     skeleton.nodes[1].header = nullptr;
     skeleton.nodes[0].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
 
-    auto result = validateQueryPlanSkeleton(skeleton, /*plan_version=*/4);
+    auto result = validateQueryPlanSkeleton(skeleton, /*plan_version=*/4, /*head_min_reader_plan_version=*/4);
     ASSERT_FALSE(result.ok());
     /// All three problems reported at once, not just the first.
     EXPECT_EQ(result.issues.size(), 3u) << result.describe();
@@ -304,34 +312,73 @@ TEST(QueryPlanSkeleton, ValidationAcceptsIgnorableUnknownSetting)
     skeleton.nodes[0].settings.push_back(
         {.name = "future_setting", .flags = PlanSkeleton::SettingEntry::FLAG_IGNORABLE, .value = ""});
 
-    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 4).ok());
+    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 4, 4).ok());
 }
 
 TEST(QueryPlanSkeleton, ValidationChecksStepVersionAgainstRegistryInfo)
 {
     registerStepsOnce();
 
-    static std::once_flag flag;
-    std::call_once(flag, []
-    {
-        QueryPlanStepRegistry::StepSerializationInfo info;
-        info.max_step_format_version = 2;
-        info.min_plan_version_for_step_version[2] = 5;
-        QueryPlanStepRegistry::instance().registerStep(
-            "TestGatedStep", TestSourceStep::deserialize, std::move(info));
-    });
-
     auto skeleton = makeTestSkeleton();
     skeleton.nodes[1].step_name = "TestGatedStep";
     skeleton.nodes[1].step_format_version = 2;
+    skeleton.nodes[1].min_reader_plan_version = 5;
 
     /// Format version 2 of this step requires plan version 5.
-    EXPECT_FALSE(validateQueryPlanSkeleton(skeleton, 4).ok());
-    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 5).ok());
+    EXPECT_FALSE(validateQueryPlanSkeleton(skeleton, 4, 5).ok());
+    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 5, 5).ok());
 
     /// A version above the known maximum is an ignorable extension when no mapping forbids it.
     skeleton.nodes[1].step_format_version = 3;
-    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 5).ok());
+    EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 5, 5).ok());
+}
+
+TEST(QueryPlanSkeleton, ValidationCrossChecksDeclaredReaderVersions)
+{
+    registerStepsOnce();
+
+    /// A writer that undercounted the "needed to read" version is reported: the gated step's
+    /// registry info requires 5 while the node declares only the base version.
+    auto skeleton = makeTestSkeleton();
+    skeleton.nodes[1].step_name = "TestGatedStep";
+    skeleton.nodes[1].step_format_version = 2;
+    auto result = validateQueryPlanSkeleton(skeleton, 5, 5);
+    ASSERT_FALSE(result.ok());
+    EXPECT_NE(result.describe().find("registry info requires 5"), std::string::npos);
+
+    /// A node requiring more than the plan's declared head value is reported too.
+    skeleton = makeTestSkeleton();
+    skeleton.nodes[1].min_reader_plan_version = 5;
+    result = validateQueryPlanSkeleton(skeleton, 5, 4);
+    ASSERT_FALSE(result.ok());
+    EXPECT_NE(result.describe().find("above the plan's declared"), std::string::npos);
+}
+
+TEST(QueryPlanSerialization, NewerCompatibleStreamIsAccepted)
+{
+    registerStepsOnce();
+    auto plan = makeSourcePlan();
+    auto reference_explain = debugExplainPlan(plan);
+
+    std::string bytes = serializePlan(plan);
+    /// Head layout: [plan_version][min_reader_plan_version][envelope_size]... - both versions are
+    /// single-byte varints here.
+    ASSERT_GE(bytes.size(), 2u);
+    ASSERT_EQ(static_cast<UInt8>(bytes[0]), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    ASSERT_EQ(static_cast<UInt8>(bytes[1]), DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON);
+
+    /// A stream from a "newer" writer whose content requires nothing new must be accepted.
+    std::string from_the_future = bytes;
+    from_the_future[0] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+    auto restored = deserializePlan(from_the_future);
+    EXPECT_EQ(debugExplainPlan(restored), reference_explain);
+
+    /// A stream whose content requires a newer reader is rejected at the head.
+    std::string too_new = bytes;
+    too_new[0] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+    too_new[1] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+    ReadBufferFromString in(too_new);
+    EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, 0), Exception);
 }
 
 TEST(QueryPlanSkeleton, ValidationChecksTreeStructureAndSetOrder)
@@ -340,7 +387,7 @@ TEST(QueryPlanSkeleton, ValidationChecksTreeStructureAndSetOrder)
     auto skeleton = makeTestSkeleton();
 
     skeleton.nodes[0].child_count = 2;  /// Declares two children, only one node follows.
-    EXPECT_FALSE(validateQueryPlanSkeleton(skeleton, 4).ok());
+    EXPECT_FALSE(validateQueryPlanSkeleton(skeleton, 4, 4).ok());
     skeleton.nodes[0].child_count = 1;
 
     PlanSkeleton::SetEntry set1;
@@ -353,7 +400,7 @@ TEST(QueryPlanSkeleton, ValidationChecksTreeStructureAndSetOrder)
     set2.kind = 200;  /// Unknown kind.
     skeleton.sets = {set1, set2};  /// Also not sorted by hash.
 
-    auto result = validateQueryPlanSkeleton(skeleton, 4);
+    auto result = validateQueryPlanSkeleton(skeleton, 4, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
@@ -406,7 +453,7 @@ TEST(QueryPlanSkeleton, ExtensionBytesAreSkippedForFutureLayouts)
 
     /// A reader that does not understand the extra bytes still reconstructs the shape.
     EXPECT_EQ(restored.nodes[0].extension_bytes, "future skeleton fields");
-    EXPECT_TRUE(validateQueryPlanSkeleton(restored, 4).ok());
+    EXPECT_TRUE(validateQueryPlanSkeleton(restored, 4, 4).ok());
     EXPECT_FALSE(formatQueryPlanSkeleton(restored).empty());
 }
 
