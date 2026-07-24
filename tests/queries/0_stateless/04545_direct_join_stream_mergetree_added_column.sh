@@ -46,24 +46,42 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 --join_algorithm=direct -q "
 query="SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r STREAM ON l.id = r.id"
 for _ in {1..25}; do
     timeout 1 $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 --query_id="djs_${CLICKHOUSE_DATABASE}_$RANDOM" -q "$query" >/dev/null 2>&1
-    # If the server died the next query fails; surface it instead of the expected "alive". Bounded so a
-    # wedged (dying, mid-sanitizer-report) server cannot block the loop here.
-    timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1 || { echo "server died"; break; }
+    # Stop early if the server went down (the pre-fix binary aborts under MSan); the post-loop liveness
+    # check turns that into a fast, clean failure. Bounded so a wedged (dying, mid-sanitizer-report)
+    # server cannot block the loop here.
+    timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1 || break
 done
 
-# Stop any streaming query that outlived its client so it does not hold the table locks (which would
-# hang the DROP below and leave the end-of-run hung check with a lingering query). Every cleanup step
-# is hard-bounded and best-effort so a wedged or dead server (e.g. the pre-fix binary under Bugfix
-# validation) makes the test fail fast instead of hanging the job to the run timeout; on a healthy
-# server SYNC still confirms the queries are gone before the DROPs and the bounds are never hit.
-timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%' SYNC FORMAT Null" 2>/dev/null || true
-for _ in {1..60}; do
-    running=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%'" 2>/dev/null) || break
-    [ "${running:-1}" = "0" ] && break
-    sleep 0.5
-done
+# Cleanup strictness is gated on server liveness, mirroring `clickhouse-test`'s own `_cleanup_database`
+# ("best-effort only when the server is actually dead"): on a live server the KILL/drain/DROP steps are
+# strict (a failure surfaces instead of being swallowed), so a leaked STREAM query or held table lock
+# fails the test; only a confirmed-dead server downgrades to skip-and-fail-fast. Every step is still
+# time-bounded, so even a wedged live server fails in seconds instead of hanging the job to its timeout
+# (the pre-fix binary under Bugfix validation dies here and takes the dead branch).
+if ! timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1; then
+    # Server is dead (pre-fix binary aborted under MSan): the missing "alive" already fails the test,
+    # and skipping cleanup avoids blocking on the unresponsive server.
+    echo "server died"
+else
+    # Server is alive: cleanup must genuinely complete. Stop any streaming query that outlived its
+    # client (else it holds the table locks and hangs the DROP / lingers into the end-of-run hung
+    # check), confirm the process list drains, then drop. If any step cannot complete within its bound
+    # we do NOT print "alive"; the resulting diff mismatch fails the test and surfaces the leak.
+    cleanup_ok=1
+    timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%' SYNC FORMAT Null" >/dev/null 2>&1 || cleanup_ok=0
+    drained=0
+    for _ in {1..60}; do
+        running=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'djs_${CLICKHOUSE_DATABASE}_%'" 2>/dev/null)
+        [ "$running" = "0" ] && { drained=1; break; }
+        sleep 0.5
+    done
+    [ "$drained" = "1" ] || cleanup_ok=0
+    timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_djs_left" >/dev/null 2>&1 || cleanup_ok=0
+    timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_djs_right" >/dev/null 2>&1 || cleanup_ok=0
 
-echo "alive"
-
-timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_djs_left" 2>/dev/null || true
-timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_djs_right" 2>/dev/null || true
+    if [ "$cleanup_ok" = "1" ]; then
+        echo "alive"
+    else
+        echo "cleanup incomplete"
+    fi
+fi
