@@ -41,6 +41,10 @@ CREATE TABLE merge_multi AS dist ENGINE = Merge(currentDatabase(), '^dist');
 
 # max_threads = 1 is what makes narrowPipe collapse the two per-shard streams into one.
 run() { ${CLICKHOUSE_CLIENT} --max_threads 1 --query "$1"; }
+# Count the rows a bare query emits to the client. Wrapping in SELECT count() would let the
+# optimizer drop the inner ORDER BY (order is irrelevant to count), which hides the bug; the
+# ORDER BY only executes on the client-facing bare query, so we count its output rows.
+rowcount() { ${CLICKHOUSE_CLIENT} --max_threads 1 --query "$1" | wc -l | tr -d ' '; }
 
 echo 'analyzer, DESC'
 run "SELECT w FROM merge_t ORDER BY w DESC LIMIT 3 SETTINGS enable_analyzer = 1"
@@ -81,7 +85,35 @@ run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FRO
 echo 'no limit, two children, monotonic DESC, old analyzer'
 run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FROM merge_multi ORDER BY w DESC) SETTINGS enable_analyzer = 0, distributed_aggregation_memory_efficient = 0"
 
+# DISTINCT (issue #111211): the same narrowPipe concatenation makes the result MULTISET
+# wrong, not just the order. Both shards of test_cluster_two_shards_localhost read the same
+# table, so DISTINCT must dedup back to 21; without the fix the second shard's sorted run
+# survives adjacent-only dedup and the query returns 42. Count the bare query's output rows
+# (rowcount), not SELECT count() over it: count() lets the optimizer drop the inner ORDER BY,
+# hiding the bug.
+#   - distributed_aggregation_memory_efficient = 0 is required, else the older should_not_narrow
+#     guard already hides it at WithMergeableState.
+#   - optimize_distinct_in_order = 1 is required to keep the case discriminating: with it 0,
+#     DistinctStep hash-dedups the whole stream and returns 21 even when narrowing corrupts the
+#     order, so an unfixed build would still pass. The runner randomizes this setting.
 ${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE td (s String) ENGINE = MergeTree ORDER BY s;
+INSERT INTO td SELECT toString(number % 21) FROM numbers(100);
+CREATE TABLE dd AS td ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), td);
+CREATE TABLE md AS dd ENGINE = Merge(currentDatabase(), '^dd\$');
+"
+
+echo 'distinct, analyzer'
+rowcount "SELECT DISTINCT s FROM md ORDER BY s SETTINGS enable_analyzer = 1, distributed_aggregation_memory_efficient = 0, optimize_distinct_in_order = 1"
+echo 'distinct, old analyzer'
+rowcount "SELECT DISTINCT s FROM md ORDER BY s SETTINGS enable_analyzer = 0, distributed_aggregation_memory_efficient = 0, optimize_distinct_in_order = 1"
+echo 'distinct on, analyzer'
+rowcount "SELECT DISTINCT ON (s) s FROM md ORDER BY s SETTINGS enable_analyzer = 1, distributed_aggregation_memory_efficient = 0, optimize_distinct_in_order = 1"
+
+${CLICKHOUSE_CLIENT} --query "
+DROP TABLE md;
+DROP TABLE dd;
+DROP TABLE td;
 DROP TABLE merge_multi;
 DROP TABLE merge_t;
 DROP TABLE dist;

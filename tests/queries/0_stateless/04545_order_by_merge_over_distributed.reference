@@ -36,3 +36,9 @@ no limit, two children, monotonic DESC, analyzer
 1
 no limit, two children, monotonic DESC, old analyzer
 1
+distinct, analyzer
+21
+distinct, old analyzer
+21
+distinct on, analyzer
+21
