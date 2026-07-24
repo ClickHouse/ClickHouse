@@ -10,9 +10,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# SQLite is excluded because this serial loop over every I/O format already sits at the 600s per-test
+# timeout on debug builds, and one more format tips it over; the dedicated test
+# 04644_sqlite_insert_sparse covers the same sparse-insert round-trip for the SQLite format.
 formats=$($CLICKHOUSE_CLIENT --query "
     SELECT name FROM system.formats
-    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON')
+    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON', 'SQLite')
     ORDER BY name FORMAT TSV
 ")
 
