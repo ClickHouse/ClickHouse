@@ -403,13 +403,19 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
 /// DIFFERENT type than the projection output (a capacity-changing ALTER: an old JSON part merged with a
 /// newer JSON(val UInt32) one, or Dynamic parts of different max_types): the old part is reserialized under
 /// the current metadata during the rebuild, but its dynamic paths are named for its own type and so are
-/// invisible to the union over the same-type parts - the type-capacity fallback covers them safely. Also
-/// returns nullopt if any matching source part is a legacy wide part
-/// that records no substreams for the column (a pre-columns_substreams.txt upgrade path): its dynamic
-/// (JSON / Dynamic) substreams are invisible to the union by name, so trusting only the newer parts' recorded
-/// union would drop the legacy part's dynamic paths - exactly the mixed legacy/new undercount countOutputStreams
-/// has to recover explicitly for base parts. The type-capacity fallback the caller then takes cannot be
-/// exceeded by any rebuilt column, a safe over-estimate for that transient window.
+/// invisible to the union over the same-type parts - the type-capacity fallback covers them safely.
+///
+/// A matching source part that records no substreams for the column (a pre-columns_substreams.txt upgrade
+/// path) does not bail out to the capacity fallback when it is a WIDE part: its real per-column layout is
+/// recoverable from disk - the same recovery countOutputStreams performs for base parts - and the static
+/// type-capacity bound can be LOWER than that real layout (a wide composite variant the legacy part already
+/// materialized exceeds the fixed per-variant worst case, see STREAMS_PER_DYNAMIC_VARIANT), so dropping to
+/// capacity would under-reserve both the rebuilt temp-part writer and the read-back merge. The column's
+/// dynamic .bin files (its on-disk files minus its static skeleton) are unioned by name across such parts
+/// and added on top of the recorded union; when NO part records the column, the static skeleton the
+/// recovery subtracted is charged once via countColumnStreams instead, keeping the result a full footprint.
+/// Only a COMPACT part with no recorded substreams still returns nullopt: everything sits in one data.bin,
+/// so there is physically nothing to recover, and the type-capacity fallback is the only sound bound.
 ///
 /// The same bailout applies to a base column the merge materializes from its DEFAULT expression
 /// (default_filled_dynamic_columns, see estimateNeededMemoryForMerge): after ALTER ... ADD COLUMN d JSON(...)
@@ -418,12 +424,16 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
 /// SELECT d ... projection can write dynamic substreams that come only from the old, default-filled rows.
 /// The recorded union over the parts that do store d cannot see those, so it must not be treated as exact.
 std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
-    const NameAndTypePair & column, const MergeTreeDataPartsVector & source_parts, const NameSet & default_filled_dynamic_columns)
+    const NameAndTypePair & column,
+    const MergeTreeDataPartsVector & source_parts,
+    const NameSet & default_filled_dynamic_columns,
+    const MergeTreeSettings & settings)
 {
     if (default_filled_dynamic_columns.contains(column.name))
         return std::nullopt;
 
     std::unordered_set<std::string_view> union_substreams;
+    std::unordered_set<std::string> legacy_dynamic_files;
     bool recorded = false;
     for (const auto & part : source_parts)
     {
@@ -441,15 +451,35 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
             return std::nullopt;
         const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name);
         if (!substreams)
-            return std::nullopt;
+        {
+            /// A legacy wide part predating columns_substreams.txt: its real per-column stream layout is on
+            /// disk, and it can be wider than the static type capacity (a wide composite variant it already
+            /// materialized), so recover the column's dynamic files instead of bailing out to capacity. The
+            /// static skeleton is subtracted the same way countOutputStreams does, so the recorded union
+            /// (which contains the skeleton) never double-counts it; the no-records case adds it back below.
+            if (part->getType() != MergeTreeDataPartType::Wide)
+                return std::nullopt;
+            const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
+            const auto static_files = collectStaticStreamFileNames({*part_column}, stream_file_name_settings);
+            const auto escaped_column_name = escapeForFileName(column.name);
+            for (const auto & file_name : collectWidePartDataFileNames(*part))
+                if (!static_files.contains(file_name) && streamFileBelongsToColumn(file_name, escaped_column_name))
+                    legacy_dynamic_files.insert(file_name);
+            continue;
+        }
         recorded = true;
         for (const auto & substream : *substreams)
             union_substreams.insert(substream);
     }
 
-    if (!recorded)
+    if (!recorded && legacy_dynamic_files.empty())
         return std::nullopt;
-    return union_substreams.size();
+
+    /// The recorded union carries the column's static skeleton; the recovered legacy files deliberately do
+    /// not. When only legacy parts store the column, charge the skeleton once so the result stays a full
+    /// per-column footprint (the rebuilt column writes its static streams too, not just the dynamic ones).
+    const size_t recorded_or_skeleton_streams = recorded ? union_substreams.size() : countColumnStreams({column});
+    return recorded_or_skeleton_streams + legacy_dynamic_files.size();
 }
 
 /// Number of on-disk streams the temporary part of a REBUILT projection writes. A rebuild recalculates the
@@ -475,7 +505,7 @@ size_t countRebuiltProjectionStreams(
     size_t streams = 0;
     for (const auto & column : projection_columns)
     {
-        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts, default_filled_dynamic_columns))
+        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts, default_filled_dynamic_columns, settings))
             streams += *recorded;
         else
             streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings);
@@ -685,7 +715,12 @@ size_t countOutputStreams(
     /// per-column footprint: the output type's static skeleton plus its write-time dynamic capacity, or the
     /// streams the source parts demonstrably wrote (the recorded union already contains the source skeleton, so
     /// the skeleton must not be added on top of it - that would double-count every statically enumerable stream
-    /// and price a metadata-only scalar widen such as Enum value addition at two streams instead of one). The
+    /// and price a metadata-only scalar widen such as Enum value addition at two streams instead of one). When
+    /// NO source part records the column - only pre-columns_substreams.txt legacy parts store it - the visible
+    /// arm has no recorded union to carry the skeleton, and the file recovery above deliberately subtracted the
+    /// static skeleton names (they must not be double-counted where a recorded union exists); the column's
+    /// static skeleton is charged once here instead, so the visible arm stays a full footprint on the pure
+    /// legacy-wide upgrade path rather than just the dynamic remainder. The
     /// capacity arm covers what the sources cannot show (paths and variants the wider output type materializes
     /// beyond what the narrower source type could record, and the substreams a DEFAULT expression materializes
     /// for the rows of parts that predate an ADD COLUMN, which no source part records at all); the visible arm
@@ -697,7 +732,8 @@ size_t countOutputStreams(
     {
         if (!capacity_priced_columns.contains(column.name))
             continue;
-        size_t visible_streams = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(0);
+        size_t visible_streams
+            = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
         if (const auto it = capacity_priced_dynamic_files.find(column.name); it != capacity_priced_dynamic_files.end())
             visible_streams += it->second.size();
         streams += std::max(countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings), visible_streams);

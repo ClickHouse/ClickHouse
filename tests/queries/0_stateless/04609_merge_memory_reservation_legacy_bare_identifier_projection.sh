@@ -5,9 +5,10 @@
 # writes exactly that column's dynamic substreams. When a pre-columns_substreams.txt legacy wide part (whose
 # dynamic paths are invisible to the recorded per-name union) is merged with a newer part that records only its
 # own paths, pricing the projection from the newer part's recorded union alone would drop the legacy part's
-# dynamic paths and undersize the reservation. tryCountBareIdentifierProjectionSubstreams must therefore give up
-# the precise per-name union when any matching source part lacks recorded substreams and fall back to the type's
-# write-time capacity, which no rebuilt column can exceed.
+# dynamic paths and undersize the reservation. tryCountBareIdentifierProjectionSubstreams must therefore not
+# trust the recorded per-name union alone when a matching source part lacks recorded substreams: for a legacy
+# WIDE part it recovers the column's real dynamic .bin files from disk and adds them to the union (the same
+# recovery countOutputStreams performs for base parts), so the legacy part's paths are priced from ground truth.
 #
 # A pre-25.8 legacy wide part is simulated by deleting columns_substreams.txt from the first part on disk (via a
 # persistent clickhouse-local --path so the two runs share the data directory). Under a pathologically small
