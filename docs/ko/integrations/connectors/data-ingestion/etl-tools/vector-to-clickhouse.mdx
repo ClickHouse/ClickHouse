@@ -22,7 +22,7 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
 ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://clickhouse.com/blog/log-compression-170x))과
 대규모 데이터를 빠르게 집계할 수 있는 성능 덕분에 로그 데이터를 저장하고 분석하는 데 탁월합니다.
 
-이 가이드에서는 널리 사용되는 데이터 파이프라인 [Vector](https://vector.dev/docs/about/what-is-vector/)을 사용해 Nginx 로그 파일을 tail하고 ClickHouse로 전송하는 방법을 설명합니다.
+이 가이드에서는 널리 사용되는 데이터 파이프라인 [Vector](https://vector.dev/docs/introduction/)을 사용해 Nginx 로그 파일을 tail하고 ClickHouse로 전송하는 방법을 설명합니다.
 아래 단계는 어떤 유형의 로그 파일을 tail할 때도 거의 동일합니다.
 
 **사전 요구사항:**
@@ -31,9 +31,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
 * Vector가 설치되어 있습니다
 
 <Steps>
-  <Step>
-    ## 데이터베이스 및 테이블 생성
-
+  <Step title="데이터베이스 및 테이블 생성" id="1-create-a-database-and-table">
     로그 이벤트를 저장할 테이블을 정의합니다:
 
     1. 먼저 `nginxdb`라는 이름의 새 데이터베이스를 생성합니다:
@@ -57,13 +55,11 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     </Note>
   </Step>
 
-  <Step>
-    ## Nginx 구성
-
+  <Step title="Nginx 구성" id="2--configure-nginx">
     이 단계에서는 Nginx 로깅을 구성하는 방법을 설명합니다.
 
     1. 다음 `access_log` 속성은 로그를 **combined** 포맷으로 `/var/log/nginx/my_access.log`에 기록합니다.
-       이 값은 `nginx.conf` 파일의 `http` 섹션에 설정합니다.
+       이 값은 `nginx.conf` 파일의 `http` 섹션에 설정합니다:
 
     ```bash
     http {
@@ -79,7 +75,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     2. `nginx.conf`를 수정했다면 반드시 Nginx를 다시 시작하세요.
 
     3. 웹 서버의 페이지에 접속해 액세스 로그에 몇 개의 로그 이벤트를 생성하세요.
-       **combined** 포맷의 로그는 다음과 같습니다.
+       **combined** 포맷의 로그는 다음과 같습니다:
 
     ```bash
     192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
@@ -88,9 +84,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     ```
   </Step>
 
-  <Step>
-    ## Vector 구성
-
+  <Step title="Vector 구성" id="3-configure-vector">
     Vector는 로그, 메트릭, 트레이스(이하 **소스**)를 수집, 변환, 라우팅하여 다양한 공급업체(이하 **싱크**)로 전달하며, ClickHouse와도 별도 설정 없이 바로 호환됩니다.
     소스와 싱크는 **vector.toml**이라는 설정 파일에 정의됩니다.
 
@@ -122,9 +116,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="ClickHouse 로그를 테이블 형식으로 보기" />
   </Step>
 
-  <Step>
-    ## 로그 파싱
-
+  <Step title="로그 파싱" id="4-parse-the-logs">
     로그를 ClickHouse에 저장하는 것은 좋지만, 각 이벤트를 단일 문자열로 저장하면 데이터 분석에 한계가 있습니다.
     다음으로는 [materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)를 사용하여 로그 이벤트를 파싱하는 방법을 살펴보겠습니다.
 

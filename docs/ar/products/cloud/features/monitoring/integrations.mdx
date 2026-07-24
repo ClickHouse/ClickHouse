@@ -8,22 +8,75 @@ doc_type: 'guide'
 ---
 
 import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <div id="direct-datadog">
-  ## تكامل Datadog المباشر
+  ## تكامل Datadog
 </div>
 
-يوفّر Datadog إضافة ClickHouse Monitoring لوكيله، والتي تستعلم مباشرةً من جداول النظام. يوفّر هذا التكامل مراقبة شاملة لقاعدة البيانات مع وعيٍ بالعُنقود من خلال وظيفة `clusterAllReplicas`.
+لمراقبة نشر ClickHouse لديك في Datadog، يوفّر ClickHouse عدة تكاملات تناسب أوضاع النشر المختلفة. ولكل منها مزاياه وقيوده، وبعضها تطوره ClickHouse بينما يطوّر بعضها الآخر Datadog. تُسرد التكاملات بالترتيب الموصى به.
 
-<Warning>
-  **غير موصى به لـ ClickHouse Cloud**
+| التكامل                                                                                                       | الوثائق                                                                                        | النشر       | الإشارات                          |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | --------------------------------- |
+| [تكامل ClickHouse Cloud Datadog واجهة برمجة تطبيقات](#clickhouse-cloud-datadog-api-integration) *(موصى به)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | المقاييس                          |
+| [تكامل ClickHouse Cloud Prometheus](#clickhouse-cloud-prometheus-integration)                                 | [clickhouse.com/docs](/integrations/prometheus)                                                | Cloud       | المقاييس                          |
+| [تكامل ClickHouse Datadog Agent](#clickhouse-datadog-agent-integration)                                       | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | السجلات، المقاييس                 |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                             | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | السجلات، المقاييس، Query Insights |
 
-  لا يُنصح باستخدام تكامل وكيل Datadog المباشر الذي يستعلم من جداول النظام في عمليات النشر على ClickHouse Cloud، بسبب عدم توافقه مع سلوك الخمول المُحسَّن للتكلفة وقيود التشغيل في طبقة الوكيل السحابي.
-</Warning>
+<div id="clickhouse-cloud-datadog-api-integration">
+  ### تكامل Datadog واجهة برمجة تطبيقات مع ClickHouse Cloud
+</div>
 
-بدلاً من ذلك، استخدم [Agent](https://docs.datadoghq.com/agent/?tab=Linux) و[تكامل OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) في Datadog لجمع المقاييس من نقطة نهاية ClickHouse Cloud Prometheus. يراعي هذا النهج سلوك خمول الخدمة ويحافظ على الفصل التشغيلي بين المراقبة وأحمال العمل في بيئة الإنتاج. للحصول على إرشادات التهيئة، راجع [وثائق Datadog لتكاملَي Prometheus وOpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/).
+<PrivatePreviewBadge />
 
-للاطلاع على تفاصيل إعداد نقطة نهاية Prometheus، راجع [صفحة تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus#integrating-with-datadog).
+الطريقة الموصى بها لإتاحة المقاييس على مستوى الخدمة من ClickHouse Cloud في Datadog.
+
+يمكنك ربط حساب Datadog الخاص بك بـ ClickHouse Cloud من خلال مصافحة OAuth (**Connect Accounts** في بطاقة تكامل Datadog). بعد ذلك، يرسل ClickHouse Cloud المقاييس على مستوى الخدمة إلى Datadog، بدلًا من أن يجري Datadog استطلاعًا مباشرًا للخدمة.
+
+* **Cloud فقط** — غير مناسب لـ OSS ClickHouse
+* لا يتعامل Datadog مع المقاييس باعتبارها **مقاييس مخصصة**
+* لا **يمنع** الخدمة من الدخول في حالة الخمول
+* يتضمن مجموعة مُعدّة مسبقًا من لوحات المعلومات وأدوات المراقبة
+
+للاطلاع على خطوات الإعداد، راجع [دليل تكامل ClickHouse Cloud في Datadog](https://docs.datadoghq.com/integrations/clickhouse-cloud/).
+
+<div id="clickhouse-cloud-prometheus-integration">
+  ### تكامل Prometheus في ClickHouse Cloud
+</div>
+
+الطريقة الأكثر شيوعًا والأوسع استخدامًا لجمع بيانات القياس عن بُعد على مستوى الخدمة وعلى مستوى المؤسسة من ClickHouse Cloud.
+
+يمكنك تهيئة Datadog Agent باستخدام [تكامل OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) لاستطلاع واجهة برمجة تطبيقات ClickHouse Cloud دوريًا وجمع المقاييس. راجع [صفحة تكامل Prometheus](/integrations/prometheus#integrating-with-datadog) للاطلاع على تفاصيل التهيئة.
+
+* **Cloud فقط** — غير مناسب لـ ClickHouse مفتوح المصدر (OSS)
+* يتعامل Datadog مع المقاييس على أنها **مقاييس مخصصة**
+* **لا** يمنع الخدمة من الدخول في وضع الخمول
+
+<div id="clickhouse-datadog-agent-integration">
+  ### تكامل ClickHouse مع Datadog Agent
+</div>
+
+الطريقة الأكثر شيوعًا للحصول على البيانات من خدمات ClickHouse OSS إلى Datadog. كما يعمل أيضًا مع ClickHouse Cloud، مع بعض القيود.
+
+يستعلم Datadog Agent من مثيل ClickHouse بشكل دوري ويجمع المقاييس والسجلات. ويأتي هذا التكامل مع مجموعة من لوحات المعلومات المُعدّة مسبقًا.
+
+**ClickHouse OSS:** السجلات والمقاييس مدعومة بالكامل.
+
+**ClickHouse Cloud (دعم جزئي):**
+
+* المقاييس فقط — السجلات غير مدعومة
+* يتطلب `datadog-cluster-agent` بدلًا من `datadog-agent`
+* **سيمنع الخدمة من الدخول في وضع الخمول**
+
+<div id="clickhouse-datadog-dbm">
+  ### ClickHouse Datadog DBM
+</div>
+
+تطوّر Datadog ميزة Database Monitoring (DBM) لـ ClickHouse وتتولى صيانتها. وتعمل عبر تهيئة Datadog Agent لجمع بيانات جداول النظام من مثيل ClickHouse، مما يوفّر رؤى عن الأداء على مستوى الاستعلام، مشابهة لما توفّره ClickHouse Cloud Console بشكل أصيل. ولا يشارك ClickHouse في هذا التكامل — لذا وجّه أي مشاكل إلى Datadog وليس إلى ClickHouse.
+
+* المقاييس مجانية؛ وتدفع رسومًا إضافية مقابل السجلات واستيعاب بيانات جداول النظام
+* **OSS ClickHouse:** مدعوم بالكامل
+* **ClickHouse Cloud (دعم جزئي):** يتطلب `datadog-cluster-agent` بدلًا من `datadog-agent`؛ **وسيمنع الخدمة من الدخول في وضع الخمول**
 
 <CommunityMonitoring />
 
@@ -33,4 +86,4 @@ import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
 
 يمكن استخدام واجهة برمجة تطبيقات الفوترة والاستخدام للوصول برمجيًا إلى سجلات الفوترة والاستخدام الخاصة بمؤسستك على Cloud. ويُعد ذلك مفيدًا لإنشاء لوحات معلومات مخصصة لمراقبة التكاليف أو لدمج بيانات الفوترة في مسارات عمل إعداد التقارير المالية الحالية.
 
-للاطلاع على المرجع الكامل لواجهة برمجة التطبيقات، راجع [وثائق Billing API](/ar/api-reference/organization/get-list-of-available-organizations#tag/Billing).
+للاطلاع على المرجع الكامل لواجهة برمجة التطبيقات، راجع [وثائق Billing API](/ar/products/cloud/api-reference/billing/get-organization-usage-costs).
