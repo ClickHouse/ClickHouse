@@ -24,14 +24,14 @@ ClickHouse Cloud 可直接连接到开放表格式数据目录，让您无需复
 
 <Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="带有数据目录集成的 ClickHouse Cloud UI" />
 
-| 名称                   | 支持的开放表格式                           | 认证方式                         | 支持                                                                               | 版本     |
-| -------------------- | ---------------------------------- | ---------------------------- | -------------------------------------------------------------------------------- | ------ |
-| AWS Glue Catalog     | Iceberg                            | IAM/访问密钥                     | Cloud &amp; [Core](/zh/guides/use-cases/data-warehousing/glue-catalog)              | 25.10+ |
-| Lakekeeper           | Iceberg                            | OAuth 客户端凭证                  | [Core](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)                    | 25.10+ |
-| Microsoft OneLake    | Iceberg                            | Azure Active Directory (AAD) | Cloud &amp; [Core](/zh/guides/use-cases/data-warehousing/onelake-catalog)           | 25.12+ |
-| Nessie               | Iceberg                            | OAuth 客户端凭证                  | [Core](/zh/guides/use-cases/data-warehousing/nessie-catalog)                        | 25.10+ |
-| Polaris/Open Catalog | Iceberg                            | OAuth 客户端凭证                  | [Core](/zh/guides/use-cases/data-warehousing/polaris-catalog)                       | 26.1+  |
-| REST catalog         | Iceberg                            | OAuth 客户端凭证、Bearer 令牌        | Cloud &amp; [Core](/zh/guides/use-cases/data-warehousing/rest-catalog)              | 25.10+ |
-| Unity Catalog        | Iceberg (启用 UniForm 且由系统托管) 、Delta | OAuth 客户端凭证                  | Cloud (仅 Iceberg) &amp; [Core](/zh/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
+| 名称                   | 支持的开放表格式                    | 认证方式                         | 支持                                                                               | 版本     |
+| -------------------- | --------------------------- | ---------------------------- | -------------------------------------------------------------------------------- | ------ |
+| AWS Glue Catalog     | Iceberg                     | IAM/访问密钥                     | Cloud &amp; [Core](/zh/guides/use-cases/data-warehousing/glue-catalog)              | 25.10+ |
+| Lakekeeper           | Iceberg                     | OAuth 客户端凭证                  | [Core](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)                    | 25.10+ |
+| Microsoft OneLake    | Iceberg                     | Azure Active Directory (AAD) | Cloud &amp; [Core](/zh/guides/use-cases/data-warehousing/onelake-catalog)           | 25.12+ |
+| Nessie               | Iceberg                     | OAuth 客户端凭证                  | [Core](/zh/guides/use-cases/data-warehousing/nessie-catalog)                        | 25.10+ |
+| Polaris/Open Catalog | Iceberg                     | OAuth 客户端凭证                  | [Core](/zh/guides/use-cases/data-warehousing/polaris-catalog)                       | 26.1+  |
+| REST catalog         | Iceberg                     | OAuth 客户端凭证、Bearer 令牌        | Cloud &amp; [Core](/zh/guides/use-cases/data-warehousing/rest-catalog)              | 25.10+ |
+| Unity Catalog        | Iceberg 和 Delta (仅限外部存储位置)  | OAuth 客户端凭证                  | Cloud (仅 Iceberg) &amp; [Core](/zh/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
 
 我们计划支持更多目录，包括 Horizon 和 S3 Tables REST 端点。

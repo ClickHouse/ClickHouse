@@ -35,98 +35,90 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
   使用するデータセットがない場合は、サンプルの 1 つを追加できます。このガイドでは [UK Price Paid](/ja/get-started/sample-datasets/uk-price-paid) データセットを使用しているため、それを選ぶとよいでしょう。同じドキュメントカテゴリには、ほかにもいくつかサンプルがあります。
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続の詳細を確認する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Explo を ClickHouse に接続する" id="2--connect-explo-to-clickhouse">
+    1. Explo アカウントを作成します。
 
-<div id="2--connect-explo-to-clickhouse">
-  ## 2.  Explo を ClickHouse に接続する
-</div>
+    2. 左側のサイドバーにある Explo の **data** タブをクリックします。
 
-1. Explo アカウントにサインアップします。
+    <Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Data タブ" border />
 
-2. 左側のサイドバーにある Explo の **Data** タブをクリックします。
+    3. 右上にある **Connect Data Source** をクリックします。
 
-<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Data Tab" border />
+    <Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
 
-3. 右上の **Connect Data Source** をクリックします。
+    4. **Getting Started** ページで必要な情報を入力します
 
-<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+    <Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
 
-4. **Getting Started** ページで情報を入力します
+    5. **ClickHouse** を選択します
 
-<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+    <Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
 
-5. **ClickHouse** を選択します
+    6. **ClickHouse の認証情報** を入力します。
 
-<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="Clickhouse" border />
+    <Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Credentials" border />
 
-6. **ClickHouse の認証情報** を入力します。
+    7. **Security** を設定します
 
-<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Credentials" border />
+    <Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
 
-7. **Security** を設定します
+    8. ClickHouse 側で、**Explo の IP をホワイトリストに追加します**。
+       `54.211.43.19, 52.55.98.121, 3.214.169.94, 54.156.141.148`
+  </Step>
 
-<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+  <Step title="ダッシュボードを作成する" id="3-create-a-dashboard">
+    1. 左側のナビゲーションバーにある **Dashboard** タブに移動します。
 
-8. ClickHouse 側で、**Explo の IP アドレスを許可リストに追加** します。
-   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+    <Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Dashboard" border />
 
-<div id="3-create-a-dashboard">
-  ## 3. ダッシュボードを作成する
-</div>
+    2. 右上の **Create Dashboard** をクリックし、ダッシュボードに名前を付けます。これでダッシュボードの作成は完了です。
 
-1. 左側のナビゲーションバーにある **Dashboard** タブを開きます。
+    <Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Create Dashboard" border />
 
-<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="ダッシュボード" border />
+    3. 以下のような画面が表示されます。
 
-2. 右上の **Create Dashboard** をクリックし、ダッシュボード名を入力します。これでダッシュボードの作成は完了です。
+    <Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+  </Step>
 
-<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="ダッシュボードを作成" border />
+  <Step title="SQL クエリを実行する" id="4-run-a-sql-query">
+    1. 右側のサイドバーでスキーマ名の下に表示されているテーブル名を確認します。次に、以下のコマンドをデータセット エディタに入力します。
+       `SELECT * FROM YOUR_TABLE_NAME
+       LIMIT 100`
 
-3. 次のような画面が表示されます。
+    <Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
 
-<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+    2. **Run** をクリックし、**preview** タブに移動してデータを確認します。
 
-<div id="4-run-a-sql-query">
-  ## 4. SQLクエリを実行する
-</div>
+    <Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+  </Step>
 
-1. スキーマのタイトルの下にある右側のサイドバーでテーブル名を確認します。次に、dataset editor に以下のコマンドを入力してください。
-   `SELECT * FROM YOUR_TABLE_NAME
-   LIMIT 100`
+  <Step title="グラフを作成する" id="5-build-a-chart">
+    1. 左側から棒グラフのアイコンを画面上にドラッグします。
 
-<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+    <Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
 
-2. run をクリックし、preview タブに移動してデータを確認します。
+    2. データセット を選択します。すると、以下のような画面が表示されます。
 
-<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+    <Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
 
-<div id="5-build-a-chart">
-  ## 5. チャートを作成
-</div>
+    3. 次のように、X Axis に **county**、Y Axis Section に **Price** を入力します。
 
-1. 左側の棒グラフアイコンを画面にドラッグします。
+    <Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
 
-<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+    4. 次に、aggregation を **AVG** に変更します。
 
-2. データセットを選択します。すると、次のような画面が表示されます。
+    <Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
 
-<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+    5. これで、住宅の平均価格を county ごとに表示できます。
 
-3. 次のように、X Axis に **county**、Y Axis Section に **Price** を設定します。
-
-<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
-
-4. 次に、集計方法を **AVG** に変更します。
-
-<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
-
-5. これで、郡ごとの住宅の平均価格が表示されます。
-
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+    <Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 詳細情報
