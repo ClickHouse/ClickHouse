@@ -257,24 +257,29 @@ fn write_schema(schema: arrow_schema::Schema, out: *mut FFI_ArrowSchema) -> Resu
 
 fn validate_schema(schema: &Schema) -> Result<(), String> {
     for field in schema.fields() {
-        validate_field(field)?;
+        validate_field(field, field.name())?;
     }
     Ok(())
 }
 
-fn validate_field(field: &Field) -> Result<(), String> {
-    if field.metadata().contains_key("ARROW:extension:name") {
-        return Err(format!(
-            "Unsupported Lance column `{}`: Arrow extension types are not supported by the read-only MVP",
-            field.name()
-        ));
-    }
-    validate_data_type(field.name(), field.data_type())
+fn unsupported_column(column_path: &str, message: impl std::fmt::Display) -> String {
+    format!("Unsupported Lance column `{}`: {}", column_path, message)
 }
 
-fn validate_data_type(column_name: &str, data_type: &DataType) -> Result<(), String> {
+fn validate_field(field: &Field, column_path: &str) -> Result<(), String> {
+    if field.metadata().contains_key("ARROW:extension:name") {
+        return Err(unsupported_column(
+            column_path,
+            "Arrow extension types are not supported",
+        ));
+    }
+    validate_data_type(column_path, field.data_type())
+}
+
+fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), String> {
     match data_type {
-        DataType::Int8
+        DataType::Boolean
+        | DataType::Int8
         | DataType::Int16
         | DataType::Int32
         | DataType::Int64
@@ -282,32 +287,102 @@ fn validate_data_type(column_name: &str, data_type: &DataType) -> Result<(), Str
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64
+        | DataType::Float16
         | DataType::Float32
         | DataType::Float64
         | DataType::Utf8
         | DataType::LargeUtf8
+        | DataType::Binary
+        | DataType::LargeBinary
         | DataType::Date32
         | DataType::Timestamp(TimeUnit::Second, _)
         | DataType::Timestamp(TimeUnit::Millisecond, _)
         | DataType::Timestamp(TimeUnit::Microsecond, _)
-        | DataType::Timestamp(TimeUnit::Nanosecond, _) => Ok(()),
-        DataType::List(child) | DataType::LargeList(child) => match child.data_type() {
-            DataType::Float32 => Ok(()),
-            other => Err(format!(
-                "Unsupported Lance column `{}`: only Array(Float32) is supported for list columns, got {}",
-                column_name, other
-            )),
-        },
-        DataType::FixedSizeList(child, _) => match child.data_type() {
-            DataType::Float32 => Ok(()),
-            other => Err(format!(
-                "Unsupported Lance column `{}`: only Array(Float32) is supported for fixed-size list columns, got {}",
-                column_name, other
-            )),
-        },
-        other => Err(format!(
-            "Unsupported Lance column `{}`: Arrow type {} is not supported by the read-only MVP",
-            column_name, other
+        | DataType::Timestamp(TimeUnit::Nanosecond, _)
+        | DataType::Duration(TimeUnit::Second)
+        | DataType::Duration(TimeUnit::Millisecond)
+        | DataType::Duration(TimeUnit::Microsecond)
+        | DataType::Duration(TimeUnit::Nanosecond) => Ok(()),
+        DataType::Time32(TimeUnit::Second)
+        | DataType::Time32(TimeUnit::Millisecond)
+        | DataType::Time64(TimeUnit::Microsecond)
+        | DataType::Time64(TimeUnit::Nanosecond) => Ok(()),
+        DataType::FixedSizeBinary(width) if *width > 0 => Ok(()),
+        DataType::Decimal128(precision, scale) | DataType::Decimal256(precision, scale) => {
+            if *scale < 0 || *scale as u8 > *precision {
+                return Err(unsupported_column(
+                    column_path,
+                    format!(
+                        "decimal scale {} must be between 0 and precision {}",
+                        scale, precision
+                    ),
+                ));
+            }
+            Ok(())
+        }
+        DataType::List(child) | DataType::LargeList(child) | DataType::FixedSizeList(child, _) => {
+            validate_field(child, &format!("{}[]", column_path))
+        }
+        DataType::Struct(fields) => {
+            for field in fields {
+                validate_field(field, &format!("{}.{}", column_path, field.name()))?;
+            }
+            Ok(())
+        }
+        DataType::Map(entries, _) => {
+            if entries.metadata().contains_key("ARROW:extension:name") {
+                return Err(unsupported_column(
+                    column_path,
+                    "Arrow extension types are not supported",
+                ));
+            }
+
+            let DataType::Struct(fields) = entries.data_type() else {
+                return Err(unsupported_column(
+                    column_path,
+                    "map entries must use an Arrow struct",
+                ));
+            };
+            if fields.len() != 2 {
+                return Err(unsupported_column(
+                    column_path,
+                    format!(
+                        "map entries struct must have two fields, got {}",
+                        fields.len()
+                    ),
+                ));
+            }
+
+            let key = &fields[0];
+            let value = &fields[1];
+            if key.is_nullable() {
+                return Err(unsupported_column(
+                    &format!("{}.key", column_path),
+                    "map keys must not be nullable",
+                ));
+            }
+            validate_field(key, &format!("{}.key", column_path))?;
+            validate_field(value, &format!("{}.value", column_path))
+        }
+        DataType::Date64 => Err(unsupported_column(
+            column_path,
+            "Arrow Date64 does not have a lossless ClickHouse mapping",
+        )),
+        DataType::FixedSizeBinary(width) => Err(unsupported_column(
+            column_path,
+            format!("fixed-size binary width {} must be positive", width),
+        )),
+        DataType::Time32(unit) => Err(unsupported_column(
+            column_path,
+            format!("Arrow Time32 unit {:?} is not supported", unit),
+        )),
+        DataType::Time64(unit) => Err(unsupported_column(
+            column_path,
+            format!("Arrow Time64 unit {:?} is not supported", unit),
+        )),
+        other => Err(unsupported_column(
+            column_path,
+            format!("Arrow type {} is not supported", other),
         )),
     }
 }
@@ -1134,15 +1209,102 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_map_type_reports_clear_error() {
+    fn supported_nested_and_temporal_types_pass_validation() {
+        let schema = Schema::new(vec![
+            Field::new(
+                "m",
+                DataType::Map(
+                    Arc::new(Field::new(
+                        "entries",
+                        DataType::Struct(
+                            vec![
+                                Field::new("keys", DataType::Utf8, false),
+                                Field::new("values", DataType::Int32, true),
+                            ]
+                            .into(),
+                        ),
+                        false,
+                    )),
+                    true,
+                ),
+                true,
+            ),
+            Field::new(
+                "nested",
+                DataType::Struct(
+                    vec![
+                        Field::new(
+                            "values",
+                            DataType::List(Arc::new(Field::new(
+                                "item",
+                                DataType::Decimal128(18, 4),
+                                true,
+                            ))),
+                            true,
+                        ),
+                        Field::new(
+                            "event_time",
+                            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                            true,
+                        ),
+                        Field::new("duration", DataType::Duration(TimeUnit::Microsecond), false),
+                    ]
+                    .into(),
+                ),
+                true,
+            ),
+            Field::new(
+                "fixed",
+                DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), 3),
+                false,
+            ),
+        ]);
+
+        assert!(validate_schema(&schema).is_ok());
+    }
+
+    #[test]
+    fn nested_extension_type_reports_full_path() {
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "ARROW:extension:name".to_string(),
+            "example.extension".to_string(),
+        );
+        let extension_field = Field::new("value", DataType::Int32, true).with_metadata(metadata);
         let schema = Schema::new(vec![Field::new(
-            "m",
+            "items",
+            DataType::List(Arc::new(Field::new(
+                "item",
+                DataType::Struct(vec![extension_field].into()),
+                true,
+            ))),
+            true,
+        )]);
+
+        let error = validate_schema(&schema).unwrap_err();
+        assert!(error.contains("Unsupported Lance column `items[].value`"));
+        assert!(error.contains("extension types"));
+    }
+
+    #[test]
+    fn date64_reports_lossless_mapping_error() {
+        let schema = Schema::new(vec![Field::new("event_date", DataType::Date64, true)]);
+
+        let error = validate_schema(&schema).unwrap_err();
+        assert!(error.contains("Unsupported Lance column `event_date`"));
+        assert!(error.contains("lossless ClickHouse mapping"));
+    }
+
+    #[test]
+    fn nullable_map_key_reports_full_path() {
+        let schema = Schema::new(vec![Field::new(
+            "attributes",
             DataType::Map(
                 Arc::new(Field::new(
                     "entries",
                     DataType::Struct(
                         vec![
-                            Field::new("keys", DataType::Utf8, false),
+                            Field::new("keys", DataType::Utf8, true),
                             Field::new("values", DataType::Int32, true),
                         ]
                         .into(),
@@ -1155,8 +1317,8 @@ mod tests {
         )]);
 
         let error = validate_schema(&schema).unwrap_err();
-        assert!(error.contains("Unsupported Lance column `m`"));
-        assert!(error.contains("not supported by the read-only MVP"));
+        assert!(error.contains("Unsupported Lance column `attributes.key`"));
+        assert!(error.contains("map keys must not be nullable"));
     }
 
     #[test]
