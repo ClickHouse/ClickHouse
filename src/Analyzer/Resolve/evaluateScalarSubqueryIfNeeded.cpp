@@ -369,9 +369,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     auto * nearest_query_scope = scope.getNearestQueryScope();
 
-    /// Always convert to literals when there is no query context
+    /// Always convert to literals when there is no query context, or when resolving a
+    /// parameterized view argument (its value must fold to a literal to be matched against
+    /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
     if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
-        || !context->hasQueryContext() || !nearest_query_scope)
+        || !context->hasQueryContext() || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);

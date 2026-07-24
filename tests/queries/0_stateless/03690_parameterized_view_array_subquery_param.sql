@@ -1,0 +1,66 @@
+-- Parameterized view with a subquery-valued argument of a type that scalar subquery
+-- optimization keeps unfolded (`Array`, `Tuple`, `LowCardinality`, ...). Such a value used
+-- to stay a `__getScalar` reference instead of a literal, so it was not collected as a view
+-- parameter and the query failed with `UNKNOWN_QUERY_PARAMETER`. See issue #68041.
+SET enable_analyzer = 1;
+-- Pin the scalar subquery optimization on: with it disabled the value would fold to a literal
+-- through the pre-existing path, so the regression cases below must run with it enabled.
+SET enable_scalar_subquery_optimization = 1;
+
+DROP TABLE IF EXISTS pv_data;
+DROP TABLE IF EXISTS pv_ids;
+CREATE TABLE pv_data (AccountId Int32, v String) ENGINE = Memory;
+INSERT INTO pv_data VALUES (1, 'a') (2, 'b') (3, 'c') (5, 'e');
+CREATE TABLE pv_ids (AccountId Int32) ENGINE = Memory;
+INSERT INTO pv_ids VALUES (1) (2) (3);
+
+SELECT 'Array(Int32) param';
+DROP VIEW IF EXISTS pv_array;
+CREATE VIEW pv_array AS SELECT * FROM pv_data WHERE AccountId IN {AccountIds : Array(Int32)};
+-- literal and `array` function forms already worked; keep them as guards
+SELECT AccountId FROM pv_array(AccountIds = [1, 2, 3]) ORDER BY AccountId;
+SELECT AccountId FROM pv_array(AccountIds = array(1, 2, 3)) ORDER BY AccountId;
+-- subquery-valued form is the regression from #68041
+SELECT AccountId FROM pv_array(AccountIds = (SELECT groupArray(AccountId) FROM pv_ids)) ORDER BY AccountId;
+SELECT AccountId FROM pv_array(AccountIds = CAST((SELECT groupArray(AccountId) FROM pv_ids), 'Array(Int32)')) ORDER BY AccountId;
+-- empty subquery result: matches nothing
+SELECT count() FROM pv_array(AccountIds = (SELECT groupArray(AccountId) FROM pv_ids WHERE AccountId > 100));
+
+SELECT 'Array(String) param';
+DROP VIEW IF EXISTS pv_str;
+CREATE VIEW pv_str AS SELECT * FROM pv_data WHERE v IN {names : Array(String)};
+SELECT AccountId FROM pv_str(names = (SELECT groupArray(v) FROM pv_data WHERE AccountId <= 2)) ORDER BY AccountId;
+
+SELECT 'Tuple param';
+DROP TABLE IF EXISTS pv_tuple_data;
+CREATE TABLE pv_tuple_data (id Int32, pair Tuple(Int32, Int32)) ENGINE = Memory;
+INSERT INTO pv_tuple_data VALUES (1, (10, 20)) (2, (30, 40));
+DROP VIEW IF EXISTS pv_tuple;
+CREATE VIEW pv_tuple AS SELECT * FROM pv_tuple_data WHERE pair = {p : Tuple(Int32, Int32)};
+-- multi-column subquery packages the result as a top-level `Tuple` (a single-column
+-- `(SELECT (10, 20))` would be `Nullable(Tuple(...))`, which already folds without this fix)
+SELECT id FROM pv_tuple(p = (SELECT toInt32(10), toInt32(20))) ORDER BY id;
+
+SELECT 'LowCardinality(String) param';
+DROP TABLE IF EXISTS pv_lc_data;
+CREATE TABLE pv_lc_data (id Int32, name LowCardinality(String)) ENGINE = Memory;
+INSERT INTO pv_lc_data VALUES (1, 'x') (2, 'y') (3, 'z');
+DROP VIEW IF EXISTS pv_lc;
+-- scalar `LowCardinality(String)` param (top-level family `LowCardinality`, not `Array`)
+CREATE VIEW pv_lc AS SELECT * FROM pv_lc_data WHERE name = {nm : LowCardinality(String)};
+SELECT id FROM pv_lc(nm = (SELECT toLowCardinality('y'))) ORDER BY id;
+
+SELECT 'Array(LowCardinality(String)) param';
+DROP VIEW IF EXISTS pv_lc_arr;
+CREATE VIEW pv_lc_arr AS SELECT * FROM pv_lc_data WHERE name IN {names : Array(LowCardinality(String))};
+SELECT id FROM pv_lc_arr(names = (SELECT groupArray(name) FROM pv_lc_data WHERE id <= 2)) ORDER BY id;
+
+DROP VIEW pv_array;
+DROP VIEW pv_str;
+DROP VIEW pv_tuple;
+DROP VIEW pv_lc;
+DROP VIEW pv_lc_arr;
+DROP TABLE pv_data;
+DROP TABLE pv_ids;
+DROP TABLE pv_tuple_data;
+DROP TABLE pv_lc_data;
