@@ -84,7 +84,7 @@ pgbench -c 256 -j 16 -T 600 -M prepared -P 30
 
 * **802 % de TPS en plus** (9,0x plus rapide)
 
-**Analyse** : L&#39;écart de performances se creuse nettement pour les charges de travail à forte lecture, limitées par les E/S. **Postgres managed by ClickHouse a atteint 84,8K TPS**, tandis que RDS avec 16 000 IOPS provisionnées n&#39;a atteint que 9,4K TPS malgré des ressources de calcul équivalentes. La différence clé : le stockage NVMe de ClickHouse monte en charge avec une concurrence plus élevée, tandis que le stockage réseau reste limité par les plafonds d&#39;IOPS provisionnées. Même avec des IOPS provisionnées, RDS restait 9x plus lent que ClickHouse, ce qui montre à quel point l&#39;architecture de stockage est déterminante pour les charges de travail intensives en E/S.
+**Analyse** : L&#39;écart de performances se creuse nettement pour les charges de travail à forte lecture, limitées par les E/S. **Postgres managed by ClickHouse a atteint 84,8K TPS**, tandis que RDS avec 16 000 IOPS provisionnées n&#39;a atteint que 9,4K TPS malgré des ressources de calcul équivalentes. La différence clé : le stockage NVMe de ClickHouse monte en charge avec une concurrence plus élevée, tandis que le stockage en réseau reste limité par les plafonds d&#39;IOPS provisionnées. Même avec des IOPS provisionnées, RDS restait 9x plus lent que ClickHouse, ce qui montre à quel point l&#39;architecture de stockage est déterminante pour les charges de travail intensives en E/S.
 
 <div id="test1-setup">
   #### Configuration
@@ -122,7 +122,7 @@ pgbench -c 256 -j 16 -T 600 -M prepared -P 30 -S
 
 * **12,3 % de TPS en plus** par rapport à RDS PostgreSQL
 
-**Analyse** : Même dans des scénarios où le CPU est le facteur limitant et où les E/S disque sont minimes, **Postgres managed by ClickHouse est arrivé en tête avec 36,5K TPS**. Bien que les deux services aient atteint 100 % d&#39;utilisation du CPU, le stockage NVMe de ClickHouse a offert de meilleures performances grâce à un meilleur taux de réussite du cache. L&#39;avantage de 12 % sur RDS démontre l&#39;efficacité de l&#39;infrastructure sous-jacente, même lorsque les charges de travail sont principalement limitées par le CPU.
+**Analyse** : Même dans des scénarios où le CPU est le facteur limitant et où les E/S disque sont minimes, **Postgres managed by ClickHouse est arrivé en tête avec 36,5K TPS**. Bien que les deux services aient atteint 100 % d’utilisation du CPU, le stockage NVMe de ClickHouse a offert de meilleures performances grâce à un meilleur taux de réussite du cache. L’avantage de 12 % sur RDS démontre l’efficacité de l’infrastructure sous-jacente, même lorsque les charges de travail sont principalement limitées par le CPU.
 
 <div id="test1-setup">
   #### Configuration
@@ -216,7 +216,7 @@ Les données complètes du benchmark, les configurations et les métriques déta
   ## Ressources supplémentaires
 </div>
 
-* [PeerDB : comparaison des services Postgres managés](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
+* [PeerDB : comparaison des services managés Postgres](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
 * [Documentation de pgbench](https://www.postgresql.org/docs/current/pgbench.html)
-* [Présentation de Managed Postgres](/fr/products/managed-postgres/overview)
+* [Vue d’ensemble de Managed Postgres](/fr/products/managed-postgres/overview)
 * [Mise à l’échelle de votre instance Postgres](/fr/products/managed-postgres/scaling)

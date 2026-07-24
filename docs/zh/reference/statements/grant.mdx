@@ -191,6 +191,7 @@ ClickHouse 的特权层级如下所示：
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ ClickHouse 的特权层级如下所示：
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ ClickHouse 的特权层级如下所示：
 此层级的处理方式示例如下：
 
 * `ALTER` 特权包含所有其他 `ALTER*` 特权。
-* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT` 和 `ALTER DROP CONSTRAINT` 特权。
+* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT`、`ALTER DROP CONSTRAINT` 和 `ALTER MODIFY CONSTRAINT` 特权。
 
 特权可在不同级别应用。了解某个级别后，就能判断该特权可使用的语法。
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`。级别：`GROUP`。别名：`CONSTRAINT`
   * `ALTER ADD CONSTRAINT`。级别：`TABLE`。别名：`ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`。级别：`TABLE`。别名：`DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`。级别：`TABLE`。别名：`MODIFY CONSTRAINT`
   * `ALTER TTL`。级别：`TABLE`。别名：`ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`。级别：`TABLE`。别名：`MATERIALIZE TTL`
   * `ALTER SETTINGS`。级别：`TABLE`。别名：`ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 此层级按如下方式处理：
 
 * `ALTER` 特权包含所有其他 `ALTER*` 特权。
-* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT` 和 `ALTER DROP CONSTRAINT` 特权。
+* `ALTER CONSTRAINT` 包含 `ALTER ADD CONSTRAINT`、`ALTER DROP CONSTRAINT` 和 `ALTER MODIFY CONSTRAINT` 特权。
 
 **注意**
 
@@ -628,7 +631,7 @@ GRANT CLUSTER ON *.* TO <username>
     * `SYSTEM DROP UNCOMPRESSED CACHE`。级别：`GLOBAL`。别名：`SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`。级别：`GROUP`
     * `SYSTEM RELOAD CONFIG`。级别：`GLOBAL`。别名：`RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`。级别：`GLOBAL`。别名：`SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`。级别：`GLOBAL`。别名：`SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`。级别：`GLOBAL`。别名：`RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`。级别：`TABLE`。别名：`SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`。级别：`TABLE`。别名：`SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -643,6 +646,8 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM FLUSH`。级别：`GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`。级别：`TABLE`。别名：`FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`。级别：`GLOBAL`。别名：`FLUSH LOGS`
+
+`SYSTEM UNLOAD DICTIONARY` 和 `SYSTEM UNLOAD DICTIONARIES` 命令复用了 `SYSTEM RELOAD DICTIONARY` 特权，因此拥有 `SYSTEM RELOAD DICTIONARY` 的用户也可以卸载字典。
 
 `SYSTEM RELOAD DICTIONARY ON *.*` 特权会隐式授予 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 特权。
 
@@ -776,9 +781,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`。别名：`dictHas`、`dictGetHierarchy`、`dictIsIn`
+* `dictGet`。别名：`dictHas`、`dictGetHierarchy`、`dictGetRoot`、`dictGetChildren`、`dictGetDescendants`、`dictIsIn`
 
-允许用户执行 [dictGet](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet)、[dictHas](/zh/reference/functions/regular-functions/ext-dict-functions#dictHas)、[dictGetHierarchy](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 和 [dictIsIn](/zh/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 函数。
+允许用户执行 [dictGet](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet)、[dictHas](/zh/reference/functions/regular-functions/ext-dict-functions#dictHas)、[dictGetHierarchy](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)、[dictGetRoot](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetRoot)、[dictGetChildren](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetChildren)、[dictGetDescendants](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants) 和 [dictIsIn](/zh/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 函数。
 
 权限级别：`DICTIONARY`。
 
