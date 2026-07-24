@@ -1,5 +1,5 @@
 ---
-title: 非同期 INSERT
+title: 非同期挿入
 ---
 
 ClickHouse の非同期挿入は、クライアント側でのバッチ処理が現実的でない場合に有効な代替手段です。これは特にオブザーバビリティのワークロードで有用です。このようなワークロードでは、何百、何千ものエージェントが、ログ、メトリクス、トレースといったデータを、多くの場合小さなリアルタイムのペイロードで継続的に送信します。こうした環境でクライアント側にデータをバッファリングすると複雑さが増し、十分な大きさのバッチを送信できるようにするための集中管理キューが必要になります。
@@ -12,7 +12,9 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
 
 中核となる動作は [`async_insert`](/ja/reference/settings/session-settings#async_insert) 設定によって制御されます。
 
-<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="非同期 INSERT" />
+<Frame>
+  <img src="/images/bestpractices/async_inserts.webp" alt="非同期挿入" />
+</Frame>
 
 非同期挿入は HTTP と native TCP の両方のインターフェイスでサポートされています。
 
@@ -24,7 +26,7 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
 
 最初に到達したしきい値でフラッシュがトリガーされます。
 
-このバッチ処理はクライアントからは見えず、ClickHouse が複数のソースからの INSERT トラフィックを効率的にマージするのに役立ちます。ただし、フラッシュが発生するまでは、そのデータをクエリすることはできません。重要なのは、INSERT の shape と settings の組み合わせごとに複数のバッファが存在し、クラスターではノードごとにバッファが維持されることです。これにより、マルチテナント環境全体で細かな制御が可能になります。それ以外の INSERT の仕組みは、[synchronous inserts](/ja/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default) で説明されているものと同一です。
+このバッチ処理はクライアントからは見えず、ClickHouse が複数のソースからの INSERT トラフィックを効率的にマージするのに役立ちます。ただし、フラッシュが発生するまでは、そのデータをクエリすることはできません。重要なのは、INSERT の shape と settings の組み合わせごとに複数のバッファが存在し、クラスターではノードごとにバッファが維持されることです。これにより、マルチテナント環境全体で細かな制御が可能になります。それ以外の INSERT の仕組みは、[同期挿入](/ja/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default) で説明されているものと同一です。
 
 <div id="choosing-a-return-mode">
   ### 戻りモードの選択

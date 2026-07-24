@@ -8,11 +8,8 @@ doc_type: 'reference'
 
 import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="formats-for-input-and-output-data">
-  # تنسيقات بيانات الإدخال والإخراج
-</div>
-
-يدعم ClickHouse معظم تنسيقات البيانات النصية والثنائية المعروفة. ويتيح ذلك دمجه بسهولة في أي خط أنابيب بيانات تقريبًا للاستفادة من مزايا ClickHouse.
+يدعم ClickHouse معظم تنسيقات البيانات النصية والثنائية المعروفة. يتيح ذلك سهولة التكامل مع أي خط معالجة بيانات
+تقريبًا للاستفادة من مزايا ClickHouse.
 
 <div id="input-formats">
   ## تنسيقات الإدخال
@@ -54,99 +51,109 @@ import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBad
 
 التنسيقات المدعومة هي:
 
-| التنسيق                                                                                                          | الإدخال | الإخراج |
-| ---------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated)                                                     | ✔       | ✔       |
-| [TabSeparatedRaw](/ar/reference/formats/TabSeparated/TabSeparatedRaw)                                               | ✔       | ✔       |
-| [TabSeparatedWithNames](/ar/reference/formats/TabSeparated/TabSeparatedWithNames)                                   | ✔       | ✔       |
-| [TabSeparatedWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)                   | ✔       | ✔       |
-| [TabSeparatedRawWithNames](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNames)                             | ✔       | ✔       |
-| [TabSeparatedRawWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)             | ✔       | ✔       |
-| [Template](/ar/reference/formats/Template/Template)                                                                 | ✔       | ✔       |
-| [TemplateIgnoreSpaces](/ar/reference/formats/Template/TemplateIgnoreSpaces)                                         | ✔       | ✗       |
-| [CSV](/ar/reference/formats/CSV/CSV)                                                                                | ✔       | ✔       |
-| [CSVWithNames](/ar/reference/formats/CSV/CSVWithNames)                                                              | ✔       | ✔       |
-| [CSVWithNamesAndTypes](/ar/reference/formats/CSV/CSVWithNamesAndTypes)                                              | ✔       | ✔       |
-| [CustomSeparated](/ar/reference/formats/CustomSeparated/CustomSeparated)                                            | ✔       | ✔       |
-| [CustomSeparatedWithNames](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNames)                          | ✔       | ✔       |
-| [CustomSeparatedWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)          | ✔       | ✔       |
-| [SQLInsert](/ar/reference/formats/SQLInsert)                                                                        | ✗       | ✔       |
-| [Values](/ar/reference/formats/Values)                                                                              | ✔       | ✔       |
-| [Vertical](/ar/reference/formats/Vertical)                                                                          | ✗       | ✔       |
-| [JSON](/ar/reference/formats/JSON/JSON)                                                                             | ✔       | ✔       |
-| [JSONAsString](/ar/reference/formats/JSON/JSONAsString)                                                             | ✔       | ✗       |
-| [JSONAsObject](/ar/reference/formats/JSON/JSONAsObject)                                                             | ✔       | ✗       |
-| [JSONStrings](/ar/reference/formats/JSON/JSONStrings)                                                               | ✗       | ✔       |
-| [JSONColumns](/ar/reference/formats/JSON/JSONColumns)                                                               | ✔       | ✔       |
-| [JSONColumnsWithMetadata](/ar/reference/formats/JSON/JSONColumnsWithMetadata)                                       | ✔       | ✔       |
-| [JSONCompact](/ar/reference/formats/JSON/JSONCompact)                                                               | ✔       | ✔       |
-| [JSONCompactStrings](/ar/reference/formats/JSON/JSONCompactStrings)                                                 | ✗       | ✔       |
-| [JSONCompactColumns](/ar/reference/formats/JSON/JSONCompactColumns)                                                 | ✔       | ✔       |
-| [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)                                                               | ✔       | ✔       |
-| [PrettyJSONEachRow](/ar/reference/formats/JSON/PrettyJSONEachRow)                                                   | ✗       | ✔       |
-| [JSONEachRowWithProgress](/ar/reference/formats/JSON/JSONEachRowWithProgress)                                       | ✗       | ✔       |
-| [JSONStringsEachRow](/ar/reference/formats/JSON/JSONStringsEachRow)                                                 | ✔       | ✔       |
-| [JSONStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONStringsEachRowWithProgress)                         | ✗       | ✔       |
-| [JSONCompactEachRow](/ar/reference/formats/JSON/JSONCompactEachRow)                                                 | ✔       | ✔       |
-| [JSONCompactEachRowWithNames](/ar/reference/formats/JSON/JSONCompactEachRowWithNames)                               | ✔       | ✔       |
-| [JSONCompactEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)               | ✔       | ✔       |
-| [JSONCompactEachRowWithProgress](/ar/reference/formats/JSON/JSONCompactEachRowWithProgress)                         | ✗       | ✔       |
-| [JSONCompactStringsEachRow](/ar/reference/formats/JSON/JSONCompactStringsEachRow)                                   | ✔       | ✔       |
-| [JSONCompactStringsEachRowWithNames](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNames)                 | ✔       | ✔       |
-| [JSONCompactStringsEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes) | ✔       | ✔       |
-| [JSONCompactStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithProgress)           | ✗       | ✔       |
-| [JSONObjectEachRow](/ar/reference/formats/JSON/JSONObjectEachRow)                                                   | ✔       | ✔       |
-| [BSONEachRow](/ar/reference/formats/BSONEachRow)                                                                    | ✔       | ✔       |
-| [TSKV](/ar/reference/formats/TabSeparated/TSKV)                                                                     | ✔       | ✔       |
-| [Pretty](/ar/reference/formats/Pretty/Pretty)                                                                       | ✗       | ✔       |
-| [PrettyNoEscapes](/ar/reference/formats/Pretty/PrettyNoEscapes)                                                     | ✗       | ✔       |
-| [PrettyMonoBlock](/ar/reference/formats/Pretty/PrettyMonoBlock)                                                     | ✗       | ✔       |
-| [PrettyNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyNoEscapesMonoBlock)                                   | ✗       | ✔       |
-| [PrettyCompact](/ar/reference/formats/Pretty/PrettyCompact)                                                         | ✗       | ✔       |
-| [PrettyCompactNoEscapes](/ar/reference/formats/Pretty/PrettyCompactNoEscapes)                                       | ✗       | ✔       |
-| [PrettyCompactMonoBlock](/ar/reference/formats/Pretty/PrettyCompactMonoBlock)                                       | ✗       | ✔       |
-| [PrettyCompactNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyCompactNoEscapesMonoBlock)                     | ✗       | ✔       |
-| [PrettySpace](/ar/reference/formats/Pretty/PrettySpace)                                                             | ✗       | ✔       |
-| [PrettySpaceNoEscapes](/ar/reference/formats/Pretty/PrettySpaceNoEscapes)                                           | ✗       | ✔       |
-| [PrettySpaceMonoBlock](/ar/reference/formats/Pretty/PrettySpaceMonoBlock)                                           | ✗       | ✔       |
-| [PrettySpaceNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettySpaceNoEscapesMonoBlock)                         | ✗       | ✔       |
-| [Prometheus](/ar/reference/formats/Prometheus)                                                                      | ✗       | ✔       |
-| [Protobuf](/ar/reference/formats/Protobuf/Protobuf)                                                                 | ✔       | ✔       |
-| [ProtobufSingle](/ar/reference/formats/Protobuf/ProtobufSingle)                                                     | ✔       | ✔       |
-| [ProtobufList](/ar/reference/formats/Protobuf/ProtobufList)                                                         | ✔       | ✔       |
-| [Avro](/ar/reference/formats/Avro/Avro)                                                                             | ✔       | ✔       |
-| [AvroConfluent](/ar/reference/formats/Avro/AvroConfluent)                                                           | ✔       | ✔       |
-| [Parquet](/ar/reference/formats/Parquet/Parquet)                                                                    | ✔       | ✔       |
-| [ParquetMetadata](/ar/reference/formats/Parquet/ParquetMetadata)                                                    | ✔       | ✗       |
-| [Arrow](/ar/reference/formats/Arrow/Arrow)                                                                          | ✔       | ✔       |
-| [ArrowStream](/ar/reference/formats/Arrow/ArrowStream)                                                              | ✔       | ✔       |
-| [ORC](/ar/reference/formats/ORC)                                                                                    | ✔       | ✔       |
-| [One](/ar/reference/formats/One)                                                                                    | ✔       | ✗       |
-| [Npy](/ar/reference/formats/Npy)                                                                                    | ✔       | ✔       |
-| [RowBinary](/ar/reference/formats/RowBinary/RowBinary)                                                              | ✔       | ✔       |
-| [RowBinaryWithNames](/ar/reference/formats/RowBinary/RowBinaryWithNames)                                            | ✔       | ✔       |
-| [RowBinaryWithNamesAndTypes](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                            | ✔       | ✔       |
-| [RowBinaryWithDefaults](/ar/reference/formats/RowBinary/RowBinaryWithDefaults)                                      | ✔       | ✗       |
-| [RowBinaryWithNamesAndTypesAndDefaults](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypesAndDefaults)      | ✔       | ✗       |
-| [Native](/ar/reference/formats/Native)                                                                              | ✔       | ✔       |
-| [Buffers](/ar/reference/formats/Buffers)                                                                            | ✔       | ✔       |
-| [Null](/ar/reference/formats/Null)                                                                                  | ✗       | ✔       |
-| [Hash](/ar/reference/formats/Hash)                                                                                  | ✗       | ✔       |
-| [XML](/ar/reference/formats/XML)                                                                                    | ✗       | ✔       |
-| [CapnProto](/ar/reference/formats/CapnProto)                                                                        | ✔       | ✔       |
-| [LineAsString](/ar/reference/formats/LineAsString/LineAsString)                                                     | ✔       | ✔       |
-| [LineAsStringWithNames](/ar/reference/formats/LineAsString/LineAsStringWithNames)                                   | ✗       | ✔       |
-| [LineAsStringWithNamesAndTypes](/ar/reference/formats/LineAsString/LineAsStringWithNamesAndTypes)                   | ✗       | ✔       |
-| [Regexp](/ar/reference/formats/Regexp)                                                                              | ✔       | ✗       |
-| [RawBLOB](/ar/reference/formats/RawBLOB)                                                                            | ✔       | ✔       |
-| [MsgPack](/ar/reference/formats/MsgPack)                                                                            | ✔       | ✔       |
-| [MySQLDump](/ar/reference/formats/MySQLDump)                                                                        | ✔       | ✗       |
-| [GeoJSON](/ar/reference/formats/GeoJSON)                                                                            | ✔       | ✗       |
-| [DWARF](/ar/reference/formats/DWARF)                                                                                | ✔       | ✗       |
-| [Markdown](/ar/reference/formats/Markdown)                                                                          | ✗       | ✔       |
-| [Form](/ar/reference/formats/Form)                                                                                  | ✔       | ✗       |
+| التنسيق                                                                                                                         | الإدخال | الإخراج |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated)                                                                    | ✔       | ✔       |
+| [TabSeparatedRaw](/ar/reference/formats/TabSeparated/TabSeparatedRaw)                                                              | ✔       | ✔       |
+| [TabSeparatedWithNames](/ar/reference/formats/TabSeparated/TabSeparatedWithNames)                                                  | ✔       | ✔       |
+| [TabSeparatedWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)                                  | ✔       | ✔       |
+| [TabSeparatedRawWithNames](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNames)                                            | ✔       | ✔       |
+| [TabSeparatedRawWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)                            | ✔       | ✔       |
+| [Template](/ar/reference/formats/Template/Template)                                                                                | ✔       | ✔       |
+| [TemplateIgnoreSpaces](/ar/reference/formats/Template/TemplateIgnoreSpaces)                                                        | ✔       | ✗       |
+| [CSV](/ar/reference/formats/CSV/CSV)                                                                                               | ✔       | ✔       |
+| [CSVWithNames](/ar/reference/formats/CSV/CSVWithNames)                                                                             | ✔       | ✔       |
+| [CSVWithNamesAndTypes](/ar/reference/formats/CSV/CSVWithNamesAndTypes)                                                             | ✔       | ✔       |
+| [CustomSeparated](/ar/reference/formats/CustomSeparated/CustomSeparated)                                                           | ✔       | ✔       |
+| [CustomSeparatedIgnoreSpaces](/ar/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces)                                   | ✔       | ✗       |
+| [CustomSeparatedIgnoreSpacesWithNames](/ar/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpacesWithNames)                 | ✔       | ✗       |
+| [CustomSeparatedIgnoreSpacesWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpacesWithNamesAndTypes) | ✔       | ✗       |
+| [CustomSeparatedWithNames](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNames)                                         | ✔       | ✔       |
+| [CustomSeparatedWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)                         | ✔       | ✔       |
+| [HiveText](/ar/reference/formats/HiveText)                                                                                         | ✔       | ✗       |
+| [SQLInsert](/ar/reference/formats/SQLInsert)                                                                                       | ✗       | ✔       |
+| [Values](/ar/reference/formats/Values)                                                                                             | ✔       | ✔       |
+| [Vertical](/ar/reference/formats/Vertical)                                                                                         | ✗       | ✔       |
+| [JSON](/ar/reference/formats/JSON/JSON)                                                                                            | ✔       | ✔       |
+| [JSONAsString](/ar/reference/formats/JSON/JSONAsString)                                                                            | ✔       | ✗       |
+| [JSONAsObject](/ar/reference/formats/JSON/JSONAsObject)                                                                            | ✔       | ✗       |
+| [JSONStrings](/ar/reference/formats/JSON/JSONStrings)                                                                              | ✗       | ✔       |
+| [JSONColumns](/ar/reference/formats/JSON/JSONColumns)                                                                              | ✔       | ✔       |
+| [JSONColumnsWithMetadata](/ar/reference/formats/JSON/JSONColumnsWithMetadata)                                                      | ✔       | ✔       |
+| [JSONCompact](/ar/reference/formats/JSON/JSONCompact)                                                                              | ✔       | ✔       |
+| [JSONCompactStrings](/ar/reference/formats/JSON/JSONCompactStrings)                                                                | ✗       | ✔       |
+| [JSONCompactColumns](/ar/reference/formats/JSON/JSONCompactColumns)                                                                | ✔       | ✔       |
+| [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)                                                                              | ✔       | ✔       |
+| [JSONLines](/ar/reference/formats/JSON/JSONLines)                                                                                  | ✔       | ✔       |
+| [PrettyJSONEachRow](/ar/reference/formats/JSON/PrettyJSONEachRow)                                                                  | ✗       | ✔       |
+| [JSONEachRowWithProgress](/ar/reference/formats/JSON/JSONEachRowWithProgress)                                                      | ✗       | ✔       |
+| [JSONStringsEachRow](/ar/reference/formats/JSON/JSONStringsEachRow)                                                                | ✔       | ✔       |
+| [JSONStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONStringsEachRowWithProgress)                                        | ✗       | ✔       |
+| [JSONCompactEachRow](/ar/reference/formats/JSON/JSONCompactEachRow)                                                                | ✔       | ✔       |
+| [JSONCompactEachRowWithNames](/ar/reference/formats/JSON/JSONCompactEachRowWithNames)                                              | ✔       | ✔       |
+| [JSONCompactEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)                              | ✔       | ✔       |
+| [JSONCompactEachRowWithProgress](/ar/reference/formats/JSON/JSONCompactEachRowWithProgress)                                        | ✗       | ✔       |
+| [JSONCompactStringsEachRow](/ar/reference/formats/JSON/JSONCompactStringsEachRow)                                                  | ✔       | ✔       |
+| [JSONCompactStringsEachRowWithNames](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNames)                                | ✔       | ✔       |
+| [JSONCompactStringsEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)                | ✔       | ✔       |
+| [JSONCompactStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithProgress)                          | ✗       | ✔       |
+| [JSONObjectEachRow](/ar/reference/formats/JSON/JSONObjectEachRow)                                                                  | ✔       | ✔       |
+| [BSONEachRow](/ar/reference/formats/BSONEachRow)                                                                                   | ✔       | ✔       |
+| [TSKV](/ar/reference/formats/TabSeparated/TSKV)                                                                                    | ✔       | ✔       |
+| [Pretty](/ar/reference/formats/Pretty/Pretty)                                                                                      | ✗       | ✔       |
+| [PrettyNoEscapes](/ar/reference/formats/Pretty/PrettyNoEscapes)                                                                    | ✗       | ✔       |
+| [PrettyMonoBlock](/ar/reference/formats/Pretty/PrettyMonoBlock)                                                                    | ✗       | ✔       |
+| [PrettyNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyNoEscapesMonoBlock)                                                  | ✗       | ✔       |
+| [PrettyCompact](/ar/reference/formats/Pretty/PrettyCompact)                                                                        | ✗       | ✔       |
+| [PrettyCompactNoEscapes](/ar/reference/formats/Pretty/PrettyCompactNoEscapes)                                                      | ✗       | ✔       |
+| [PrettyCompactMonoBlock](/ar/reference/formats/Pretty/PrettyCompactMonoBlock)                                                      | ✗       | ✔       |
+| [PrettyCompactNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyCompactNoEscapesMonoBlock)                                    | ✗       | ✔       |
+| [PrettySpace](/ar/reference/formats/Pretty/PrettySpace)                                                                            | ✗       | ✔       |
+| [PrettySpaceNoEscapes](/ar/reference/formats/Pretty/PrettySpaceNoEscapes)                                                          | ✗       | ✔       |
+| [PrettySpaceMonoBlock](/ar/reference/formats/Pretty/PrettySpaceMonoBlock)                                                          | ✗       | ✔       |
+| [PrettySpaceNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettySpaceNoEscapesMonoBlock)                                        | ✗       | ✔       |
+| [Prometheus](/ar/reference/formats/Prometheus)                                                                                     | ✗       | ✔       |
+| [Protobuf](/ar/reference/formats/Protobuf/Protobuf)                                                                                | ✔       | ✔       |
+| [ProtobufSingle](/ar/reference/formats/Protobuf/ProtobufSingle)                                                                    | ✔       | ✔       |
+| [ProtobufList](/ar/reference/formats/Protobuf/ProtobufList)                                                                        | ✔       | ✔       |
+| [Avro](/ar/reference/formats/Avro/Avro)                                                                                            | ✔       | ✔       |
+| [AvroConfluent](/ar/reference/formats/Avro/AvroConfluent)                                                                          | ✔       | ✔       |
+| [Parquet](/ar/reference/formats/Parquet/Parquet)                                                                                   | ✔       | ✔       |
+| [ParquetMetadata](/ar/reference/formats/Parquet/ParquetMetadata)                                                                   | ✔       | ✗       |
+| [Arrow](/ar/reference/formats/Arrow/Arrow)                                                                                         | ✔       | ✔       |
+| [ArrowStream](/ar/reference/formats/Arrow/ArrowStream)                                                                             | ✔       | ✔       |
+| [ORC](/ar/reference/formats/ORC)                                                                                                   | ✔       | ✔       |
+| [One](/ar/reference/formats/One)                                                                                                   | ✔       | ✗       |
+| [Npy](/ar/reference/formats/Npy)                                                                                                   | ✔       | ✔       |
+| [RowBinary](/ar/reference/formats/RowBinary/RowBinary)                                                                             | ✔       | ✔       |
+| [RowBinaryWithNames](/ar/reference/formats/RowBinary/RowBinaryWithNames)                                                           | ✔       | ✔       |
+| [RowBinaryWithNamesAndTypes](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                                           | ✔       | ✔       |
+| [RowBinaryWithDefaults](/ar/reference/formats/RowBinary/RowBinaryWithDefaults)                                                     | ✔       | ✗       |
+| [RowBinaryWithNamesAndTypesAndDefaults](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypesAndDefaults)                     | ✔       | ✗       |
+| [Native](/ar/reference/formats/Native)                                                                                             | ✔       | ✔       |
+| [Buffers](/ar/reference/formats/Buffers)                                                                                           | ✔       | ✔       |
+| [Null](/ar/reference/formats/Null)                                                                                                 | ✗       | ✔       |
+| [Hash](/ar/reference/formats/Hash)                                                                                                 | ✗       | ✔       |
+| [XML](/ar/reference/formats/XML)                                                                                                   | ✗       | ✔       |
+| [CapnProto](/ar/reference/formats/CapnProto)                                                                                       | ✔       | ✔       |
+| [LineAsString](/ar/reference/formats/LineAsString/LineAsString)                                                                    | ✔       | ✔       |
+| [LineAsStringWithNames](/ar/reference/formats/LineAsString/LineAsStringWithNames)                                                  | ✗       | ✔       |
+| [LineAsStringWithNamesAndTypes](/ar/reference/formats/LineAsString/LineAsStringWithNamesAndTypes)                                  | ✗       | ✔       |
+| [Regexp](/ar/reference/formats/Regexp)                                                                                             | ✔       | ✗       |
+| [RawBLOB](/ar/reference/formats/RawBLOB)                                                                                           | ✔       | ✔       |
+| [MsgPack](/ar/reference/formats/MsgPack)                                                                                           | ✔       | ✔       |
+| [MySQLDump](/ar/reference/formats/MySQLDump)                                                                                       | ✔       | ✗       |
+| [MySQLWire](/ar/reference/formats/MySQLWire)                                                                                       | ✗       | ✔       |
+| [PostgreSQLWire](/ar/reference/formats/PostgreSQLWire)                                                                             | ✗       | ✔       |
+| [ODBCDriver2](/ar/reference/formats/ODBCDriver2)                                                                                   | ✗       | ✔       |
+| [GeoJSON](/ar/reference/formats/GeoJSON)                                                                                           | ✔       | ✔       |
+| [DWARF](/ar/reference/formats/DWARF)                                                                                               | ✔       | ✗       |
+| [Markdown](/ar/reference/formats/Markdown)                                                                                         | ✗       | ✔       |
+| [Form](/ar/reference/formats/Form)                                                                                                 | ✔       | ✗       |
 
 يمكنك التحكّم في بعض معلمات معالجة التنسيق باستخدام إعدادات ClickHouse. لمزيد من المعلومات، راجع قسم [الإعدادات](/ar/reference/settings/formats).
+
+إعدادات إضافية خاصة بتنسيق JSON موثّقة في صفحة [إعدادات تنسيق JSON](/ar/reference/formats/JSON/format-settings).
 
 <div id="formatschema">
   ## مخطط التنسيق
