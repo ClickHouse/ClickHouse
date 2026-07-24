@@ -19,44 +19,42 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
 
 Looker는 공식 ClickHouse 데이터 소스를 통해 ClickHouse Cloud 또는 온프레미스 배포 환경에 연결할 수 있습니다.
 
-<div id="1-gather-your-connection-details">
-  ## 1. 연결 정보를 확인합니다
-</div>
+<Steps>
+  <Step title="연결 세부 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ClickHouse 데이터 소스 생성" id="2-create-a-clickhouse-data-source">
+    Admin -&gt; Database -&gt; Connections로 이동한 다음, 오른쪽 상단의 &quot;Add Connection&quot; 버튼을 클릭합니다.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. ClickHouse 데이터 소스 생성
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Looker의 데이터베이스 관리 인터페이스에서 새 연결을 추가하는 모습" border />
 
-Admin -&gt; Database -&gt; Connections로 이동한 다음, 오른쪽 상단의 &quot;Add Connection&quot; 버튼을 클릭합니다.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Looker의 데이터베이스 관리 인터페이스에서 새 연결을 추가하는 모습" border />
+    데이터 소스 이름을 지정하고, 방언 드롭다운에서 `ClickHouse`를 선택합니다. 그런 다음 양식에 자격 증명을 입력합니다.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Looker 연결 양식에 ClickHouse 자격 증명을 입력하는 모습" border />
 
-데이터 소스 이름을 지정하고, 방언 드롭다운에서 `ClickHouse`를 선택합니다. 그런 다음 양식에 자격 증명을 입력합니다.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Looker 연결 양식에 ClickHouse 자격 증명을 입력하는 모습" border />
+    ClickHouse Cloud를 사용 중이거나 배포에 SSL이 필요한 경우, 추가 설정에서 SSL이 활성화되어 있는지 확인합니다.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Looker 설정에서 ClickHouse 연결에 SSL을 활성화하는 모습" border />
 
-ClickHouse Cloud를 사용 중이거나 배포에 SSL이 필요한 경우, 추가 설정에서 SSL이 활성화되어 있는지 확인합니다.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Looker 설정에서 ClickHouse 연결에 SSL을 활성화하는 모습" border />
+    먼저 연결을 테스트한 후, 완료되면 새 ClickHouse 데이터 소스에 연결합니다.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="ClickHouse 데이터 소스를 테스트하고 연결하는 모습" border />
 
-먼저 연결을 테스트한 후, 완료되면 새 ClickHouse 데이터 소스에 연결합니다.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="ClickHouse 데이터 소스를 테스트하고 연결하는 모습" border />
-
-<br />
-
-이제 ClickHouse 데이터 소스를 Looker 프로젝트에 연결할 수 있습니다.
+    이제 ClickHouse 데이터 소스를 Looker 프로젝트에 연결할 수 있습니다.
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. 알려진 제한 사항
+  ## 알려진 제한 사항
 </div>
 
 1. 다음 데이터 타입은 기본적으로 문자열로 처리됩니다:

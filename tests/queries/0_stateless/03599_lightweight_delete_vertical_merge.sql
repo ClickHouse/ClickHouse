@@ -12,6 +12,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,

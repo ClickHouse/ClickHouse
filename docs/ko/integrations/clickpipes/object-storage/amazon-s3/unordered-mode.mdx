@@ -23,10 +23,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 데이터를 적재하는 동안에는 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 부분 삽입이나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에도 견고하며, 임시 스테이징 테이블(staging table)을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입됩니다. 문제가 발생하면 스테이징 테이블을 TRUNCATE한 뒤 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동합니다.
 
 <Steps>
-  <Step>
-    ## Amazon SQS 큐 생성
-
+  <Step title="Amazon SQS 큐 생성" id="create-sqs-queue">
     **1.** AWS Console에서 **Simple Queue Service &gt; Create queue**로 이동합니다. 기본값을 사용하여 새 표준 큐를 생성합니다.
+
+    <Warning>
+      **ClickPipe마다 하나의 큐**
+
+      각 ClickPipe에는 전용 SQS 큐가 필요합니다. SQS는 각 메시지를 하나의 consumer에게만 전달합니다. 동일한 큐를 두 개 이상의 ClickPipe(또는 다른 애플리케이션)가 사용하면 각 이벤트는 그중 하나만 받게 되며, 이벤트를 받지 못한 파이프에서는 파일이 아무런 알림 없이 건너뛰어집니다. 이는 ClickPipes가 서로 다른 경로 패턴을 사용하는 경우에도 마찬가지입니다. 일치하지 않는 파일의 이벤트를 받은 파이프는 해당 이벤트를 버리고, 다른 어떤 파이프도 그 이벤트를 다시 볼 수 없습니다. 동일한 버킷에서 여러 ClickPipes로 수집하려면 ClickPipe마다 하나의 큐를 생성하고, EventBridge 규칙을 사용해 이벤트를 각 큐로 라우팅하십시오.
+    </Warning>
 
     <Tip>
       실패한 메시지를 더 쉽게 디버깅하고 재시도할 수 있도록 SQS 큐에 **데드 레터 큐(DLQ)** 를 구성할 것을 강력히 권장합니다. DLQ가 구성되어 있으면 실패한 메시지는 다시 큐에 들어가 재처리되며, 이 과정은 DLQ `maxReceiveCount` 매개변수에 설정된 횟수까지 반복됩니다.
@@ -58,7 +62,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
         필요하면 접두사 또는 접미사 기준으로 필터링할 수 있도록 패턴에 `object.key` 조건을 추가할 수 있습니다. 추가하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
 
-        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 **Use execution role (recommended)**은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
+        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 &#42;&#42;Use execution role (recommended)&#42;&#42;은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
 
         <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge 규칙 대상으로 SQS 큐 설정" size="lg" border />
 
@@ -119,7 +123,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
         }
         ```
 
-        **b.** S3 버킷 속성에서 `ObjectCreated` 이벤트에 대한 **Event notifications**를 활성화하고 대상을 SQS 큐로 설정합니다. 필요하면 알림을 트리거할 객체를 필터링하도록 접두사 또는 접미사를 지정할 수 있습니다. 지정하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
+        **b.** S3 버킷 속성에서 **Event notifications**를 활성화하고, 이벤트 유형으로 **All object create events** (`s3:ObjectCreated:*`)를 선택한 다음, 대상을 SQS 큐로 설정합니다. 개별 이벤트 유형은 선택하지 마십시오. 업로드 방식에 따라 서로 다른 `ObjectCreated` 이벤트가 발생할 수 있기 때문입니다(예를 들어 멀티파트 업로드는 `Put`이 아니라 `CompleteMultipartUpload`를 발생시킵니다). 선택되지 않은 이벤트 유형에 해당하는 파일은 큐로 전달되지 않습니다. 필요하면 알림을 트리거할 객체를 필터링하도록 접두사 또는 접미사를 지정할 수 있습니다. 지정하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
 
         <Note>
           S3는 동일한 버킷에서 같은 이벤트 유형에 대해 서로 겹치는 알림 규칙을 여러 개 허용하지 않습니다. 이 버킷에 이미 `ObjectCreated` 이벤트용 알림 규칙이 있다면 대신 EventBridge 방식을 사용하십시오.
@@ -128,9 +132,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     </Tabs>
   </Step>
 
-  <Step>
-    ## IAM role 설정
-
+  <Step title="IAM role 설정" id="configure-iam-role">
     **1.** ClickHouse Cloud 콘솔에서 **Settings &gt; Network security information**으로 이동한 다음, 서비스의 **IAM role ARN**을 복사합니다.
 
     **2.** AWS Console에서 **IAM &gt; Roles &gt; Create role**로 이동합니다. **Custom trust policy**를 선택한 뒤, 다음 내용을 붙여넣고 `<ch-cloud-arn>`을 이전 단계에서 복사한 IAM role ARN으로 바꿉니다:
@@ -191,14 +193,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## unordered mode로 ClickPipe 생성
-
+  <Step title="unordered mode로 ClickPipe 생성" id="create-clickpipe">
     **1.** ClickHouse Cloud 콘솔에서 **Data Sources &gt; Create ClickPipe**로 이동한 다음 **Amazon S3**를 선택합니다. S3 버킷에 연결하는 데 필요한 정보를 입력합니다. **Authentication method**에서 **IAM role**을 선택하고, 이전 단계에서 생성한 역할의 ARN을 입력합니다.
 
-    **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다.
+    **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다. 이 큐는 이 ClickPipe에서만 전용으로 사용해야 합니다. [Amazon SQS 큐 생성](#create-sqs-queue)을 참조하십시오.
 
-    **3.** **Parse information**에서 대상 테이블의 **정렬 키(Sorting key)**를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
+    **3.** **Parse information**에서 대상 테이블의 &#42;&#42;정렬 키(Sorting key)&#42;&#42;를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
 
     **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 로드한 다음, 큐에 새 `ObjectCreated:*` 이벤트가 도착하면 파일 처리를 시작합니다.
   </Step>

@@ -83,7 +83,13 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-Postgres サービス のライフサイクルを見ていきましょう。
+Postgres サービスのライフサイクルを見ていきましょう。
+
+<Warning>
+  **2026年7月31日以降の認証情報のマスキング**
+
+  **2026年7月31日**以降、APIはレスポンスで `password` および `connectionString` のプロパティを返さなくなります。これらが含まれるのは、[create](#create) レスポンスと、リクエストにパスワードが含まれていなかった場合の [password reset] レスポンスのみです。[create](#create) レスポンスから認証情報を取得しておくことを推奨します。Terraform でサービスを管理している場合は、2026年7月31日までにプロバイダを **v3.21.0 以降**にアップグレードしてください ([Terraform reference](/ja/products/managed-postgres/terraform) を参照) 。
+</Warning>
 
 <div id="create">
   ### 作成
@@ -108,12 +114,13 @@ create_data='{
 }'
 ```
 
-次に、このデータを使用して新しいインスタンスを作成します。なお、そのためにはContent-Typeヘッダーの内容が必要です:
+次に、このデータを使用して新しいインスタンスを作成します。なお、そのためにはContent-Typeヘッダーの内容が必要です。返される認証情報にアクセスできるよう、レスポンスを保存してください：
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 成功すると、新しいインスタンスが作成され、その情報
@@ -156,7 +163,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-出力は作成時に返されるJSONと似ていますが、`state` を確認して
+出力は作成時に返されるJSONと似ています (ただし、2026年7月31日以降は `password` と `connectionString` プロパティは含まれません) が、`state` を確認して
 ください。これが `running` に変わったら、サーバーの準備完了です。
 
 ```bash
@@ -169,15 +176,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-これで、`connectionString` プロパティを使って、たとえば
+これで、作成時のレスポンスから保存した `connectionString` プロパティを使って、たとえば
 [psql] 経由で接続できます：
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -438,25 +441,27 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
-[API keys]: /products/cloud/features/admin-features/api/openapi "API キーの管理"
+[API キー]: /products/cloud/features/admin-features/api/openapi "API キーの管理"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "ClickHouse Cloud 向け OpenAPI 仕様: Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "ClickHouse Cloud API リファレンス: Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "組織の Postgres サービスの一覧を取得"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "組織の Postgres サービスの一覧を取得"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "新しい Postgres サービスを作成"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "新しい Postgres サービスを作成"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs: psql — PostgreSQL 対話型ターミナル"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "PostgreSQL サービスを更新"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "PostgreSQL サービスを更新"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs: サーバー設定"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Postgres サービスの設定を更新"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Postgres サービスの設定を置き換え"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "PostgreSQL サービスを削除"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "PostgreSQL サービスを削除"
+
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres サービスの superuser パスワードをリセット"
 
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus エンドポイント"
 
@@ -468,6 +473,6 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "クエリインサイトの実行ごとのカウンター"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Postgres の低速クエリパターン一覧を取得"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリパターンを一覧表示"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "最近の実行履歴を含む Postgres の低速クエリパターンを取得"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "最近の実行結果を含む Postgres の低速クエリパターンを取得"
