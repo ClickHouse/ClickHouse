@@ -1,23 +1,41 @@
 ---
 slug: /guides/developer/overview
-sidebarTitle: 'Visão geral dos guias avançados'
-description: 'Visão geral dos guias avançados'
-title: 'Guias avançados'
-keywords: ['guias avançados do ClickHouse', 'guias para desenvolvedores', 'otimização de consultas', 'visões materializadas', 'desduplicação', 'séries temporais', 'execução de consultas']
-doc_type: 'guide'
+sidebarTitle: 'Visão geral'
+description: 'Visão geral dos guias do ClickHouse'
+title: 'Guias do ClickHouse'
+keywords: ['guias do ClickHouse', 'formatos de dados', 'modelagem de dados', 'combinadores de funções de agregação', 'upgrade', 'melhores práticas', 'implantação', 'escalabilidade']
+doc_type: 'landing-page'
+mode: wide
 ---
 
-Esta seção contém os seguintes guias avançados:
+Esta seção contém os seguintes guias:
 
-| Guia                                                                                                                                                 | Descrição                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Linguagens alternativas de consulta](/pt-BR/concepts/features/configuration/settings/alternative-query-languages)                                         | Um guia sobre dialetos alternativos compatíveis e como usá-los. Fornece exemplos de consultas em cada dialeto.                                                                                                                                                                                                                                                                 |
-| [Visões materializadas em cascata](/pt-BR/concepts/features/materialized-views/cascading-materialized-views)                                               | Um guia sobre como criar visões materializadas e encadeá-las em cascata, combinando várias tabelas de origem em uma única tabela de destino. Contém um exemplo de uso de visões materializadas em cascata para agregar dados por mês e por ano para um grupo de nomes de domínio.                                                                                              |
-| [Depuração de problemas de memória](/pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues)                                             | Um guia sobre como depurar problemas de memória no ClickHouse.                                                                                                                                                                                                                                                                                                                 |
-| [Desduplicação de inserts em tentativas repetidas](/pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries)                            | Um guia sobre como lidar com situações em que seja necessário repetir inserts que falharam.                                                                                                                                                                                                                                                                                    |
-| [Estratégias de desduplicação](/pt-BR/concepts/features/operations/insert/deduplication)                                                                   | Um guia que se aprofunda na desduplicação de dados, uma técnica para remover linhas duplicadas do seu banco de dados. Explica as diferenças em relação à desduplicação baseada em chave primária em sistemas OLTP, a abordagem do ClickHouse para desduplicação e como lidar com cenários de dados duplicados nas suas consultas do ClickHouse.                                |
-| [Preenchendo lacunas em dados de séries temporais](/pt-BR/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps)                       | Um guia que apresenta os recursos do ClickHouse para lidar com dados de séries temporais, incluindo técnicas para preencher lacunas nos dados e criar uma representação mais completa e contínua dessas informações.                                                                                                                                                           |
-| [Gerenciar dados com TTL (time-to-live)](/pt-BR/concepts/features/operations/delete/ttl)                                                                   | Um guia que discute como usar a cláusula `WITH FILL` para preencher lacunas em dados de séries temporais. Ele aborda como preencher lacunas com valores 0, como especificar um ponto de início para esse preenchimento, como preencher lacunas até um ponto final específico e como interpolar valores para cálculos cumulativos.                                              |
-| [Procedimentos armazenados e parâmetros de consulta](/pt-BR/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements)                    | Um guia que explica que o ClickHouse não oferece suporte a procedimentos armazenados tradicionais e apresenta alternativas recomendadas, incluindo Funções Definidas pelo Usuário (UDFs), visões parametrizadas, visões materializadas e orquestração externa. Também aborda parâmetros de consulta para consultas parametrizadas seguras (semelhantes a prepared statements). |
-| [Entendendo a execução de consultas com o Analisador](/pt-BR/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) | Um guia que desmistifica a execução de consultas no ClickHouse ao apresentar a ferramenta analyzer. Ele explica como o analyzer divide uma consulta em uma série de etapas, permitindo visualizar e solucionar problemas em todo o processo de execução para obter o melhor desempenho.                                                                                        |
-| [Usando JOINs no ClickHouse](/pt-BR/concepts/features/operations/select/joining-tables)                                                                    | Um guia que simplifica a junção de tabelas no ClickHouse. Ele aborda diferentes tipos de join (`INNER`, `LEFT`, `RIGHT` etc.), explora práticas recomendadas para junções eficientes (como colocar tabelas menores à direita) e apresenta os algoritmos internos de join do ClickHouse para ajudar você a otimizar suas consultas para relacionamentos de dados complexos.     |
+<CardGroup cols={2}>
+  <Card title="Formatos de dados" icon="file-lines" href="/pt-BR/guides/clickhouse/data-formats/intro">
+    Exemplos de importação e exportação em vários formatos de dados, incluindo CSV e TSV, Parquet, JSON, formatos binários, SQL dumps e templates com expressões regulares.
+  </Card>
+
+  <Card title="Modelagem de dados" icon="diagram-project" href="/pt-BR/guides/clickhouse/data-modelling/index">
+    Guias sobre modelagem de dados no ClickHouse, incluindo design de esquema, índices primários esparsos, desnormalização, backfill de dados e compressão de dados.
+  </Card>
+
+  <Card title="Desempenho e monitoramento" icon="gauge-high" href="/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization">
+    Guias para otimizar o desempenho de consultas, entender o analisador e a seleção dinâmica de colunas.
+  </Card>
+
+  <Card title="Exemplos de combinadores de agregação" icon="calculator" href="/pt-BR/guides/clickhouse/examples/aggregate-function-combinators/anyIf">
+    Exemplos de uso de combinadores de funções de agregação, como `-If`, `-Map`, `-SimpleState`, `-State`, `-Merge`, `-Resample`, `-Array` e `-ForEach`.
+  </Card>
+
+  <Card title="Upgrade do ClickHouse autogerenciado" icon="circle-arrow-up" href="/pt-BR/guides/oss/update">
+    Um guia sobre como fazer upgrade de uma instalação autogerenciada do ClickHouse, incluindo caminhos de upgrade e considerações sobre compatibilidade de versões.
+  </Card>
+
+  <Card title="Melhores práticas do OSS" icon="list-check" href="/pt-BR/guides/oss/best-practices/sizing-and-hardware-recommendations">
+    Recomendações de dimensionamento, hardware e uso para o ClickHouse de código aberto.
+  </Card>
+
+  <Card title="Implantação e escalabilidade" icon="server" href="/pt-BR/guides/oss/deployment-and-scaling/index">
+    Guias de implantação com exemplos de implantação do ClickHouse para escalabilidade e/ou tolerância a falhas, incluindo configuração e monitoramento do ClickHouse Keeper.
+  </Card>
+</CardGroup>

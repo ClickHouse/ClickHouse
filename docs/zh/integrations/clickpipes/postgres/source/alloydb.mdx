@@ -99,7 +99,7 @@ SHOW  wal_level;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制流。
+`clickpipes` publication 定义了其变更事件将流式传输到 ClickPipes 的那组表。除非你打算复制每一张表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="configure-network-access">
   ## 配置网络访问
@@ -117,7 +117,7 @@ SHOW  wal_level;
 
     2. 向下滚动到 **Instances in your cluster**，然后点击 **Edit primary**。
 
-    3. 勾选 **Enable Public IP** 复选框，以允许通过公共互联网连接到该实例。在 **Authorized external networks** 下，输入你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+    3. 勾选 **Enable Public IP** 复选框，以允许通过公网连接到该实例。在 **Authorized external networks** 下，输入你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="配置公共访问和 IP 允许列表的网络设置" size="lg" border />
 

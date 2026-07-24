@@ -1758,6 +1758,19 @@ Counters::Snapshot::Snapshot()
     : counters_holder(new Count[num_counters] {})
 {}
 
+Counters::Snapshot::Snapshot(const Snapshot & other)
+    : counters_holder(new Count[num_counters] {})
+{
+    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
+}
+
+Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
+{
+    Snapshot tmp(other);
+    counters_holder = std::move(tmp.counters_holder);
+    return *this;
+}
+
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;

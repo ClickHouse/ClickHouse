@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
@@ -1679,6 +1680,17 @@ KeyCondition::KeyCondition(
     rpn = std::move(builder).extractRPN();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+}
+
+KeyCondition::KeyCondition(
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context,
+    const KeyDescription & key_description,
+    bool single_point_,
+    bool skip_analysis_)
+    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
+{
+    key_order = KeyOrder(key_description.reverse_flags);
 }
 
 KeyCondition::KeyCondition(
@@ -4633,6 +4645,35 @@ KeyCondition::Description KeyCondition::getDescription() const
   * This is important because it is easy for us to check the feasibility of the condition over the hyperrectangle,
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
   *  over at least one hyperrectangle from which this range consists.
+  *
+  * A key column may be sorted in reverse (`ORDER BY (x, y DESC)`, see KeyOrder). The boundary
+  * tuples are still the physical values at the marks, and the decomposition produces the same three
+  * groups of rows; what changes is the y-interval covering the first and the last group. To see how,
+  * revisit why the ascending decomposition above is correct:
+  *
+  * - The rows with x == x1 lie between the left boundary (x1, y1) and the end of the x1 group. Within
+  *   the group they are ordered by y, so their y values start at y1 and move in y's sort direction:
+  *   upward for ascending y, giving [x1] × [y1 .. +inf), but downward for descending y, giving
+  *   [x1] × (-inf .. y1].
+  * - Symmetrically, the rows with x == x2 lie before the right boundary (x2, y2), so their y values
+  *   approach y2 from the opposite side: [x2] × (-inf .. y2] for ascending y, but [x2] × [y2 .. +inf)
+  *   for descending y.
+  * - The middle rectangle is unchanged: it covers rows whose x lies strictly between x1 and x2 with
+  *   any y, and whether a value lies strictly between two others does not depend on sort direction.
+  *
+  * So for descending y, the same range [ x1 y1 .. x2 y2 ] given x1 != x2 is the union of:
+  * [x1]       × (-inf .. y1]
+  * (x1 .. x2) × (-inf .. +inf)
+  * [x2]       × [y2 .. +inf)
+  *
+  * The same rule covers a descending column in any position. At the first column where the boundaries
+  * differ, the two boundary values delimit that column's interval, and on a descending column the left
+  * boundary holds the larger value, so the operands swap: with x descending, the middle rectangle is
+  * (x2 .. x1); and when the boundaries agree on x and differ first at a descending last column y, the
+  * interval is the closed [y2 .. y1]. This is why every Range built from boundary values below picks
+  * its operands and its bounded side through KeyOrder (see values_between, values_after_left_boundary
+  * and values_before_right_boundary): a boundary value stays attached to its physical boundary, and
+  * the column's direction decides which side of the value interval it bounds.
   */
 
 /** For the range between tuples, determined by left_keys, left_bounded, right_keys, right_bounded,
@@ -4648,6 +4689,7 @@ static BoolMask forAnyHyperrectangle(
     bool right_bounded,
     Hyperrectangle & hyperrectangle, /// This argument is modified in-place for the callback
     const DataTypes & data_types,
+    const KeyOrder & key_order,
     size_t prefix_size,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
@@ -4656,6 +4698,24 @@ static BoolMask forAnyHyperrectangle(
     auto universe = [&](size_t i) -> Range
     {
         return key_bounds ? (*key_bounds)[i] : Range::createWholeUniverseTypeAware(data_types[i]);
+    };
+
+    auto values_between = [&](size_t col, bool included) -> Range
+    {
+        return key_order.isReversed(col) ? Range(right_keys[col], included, left_keys[col], included)
+                                         : Range(left_keys[col], included, right_keys[col], included);
+    };
+
+    auto values_after_left_boundary = [&](size_t col, bool included) -> Range
+    {
+        return key_order.isReversed(col) ? Range::createRightBounded(left_keys[col], included, universe(col))
+                                         : Range::createLeftBounded(left_keys[col], included, universe(col));
+    };
+
+    auto values_before_right_boundary = [&](size_t col, bool included) -> Range
+    {
+        return key_order.isReversed(col) ? Range::createLeftBounded(right_keys[col], included, universe(col))
+                                         : Range::createRightBounded(right_keys[col], included, universe(col));
     };
 
     if (!left_bounded && !right_bounded)
@@ -4683,11 +4743,11 @@ static BoolMask forAnyHyperrectangle(
     if (prefix_size + 1 == key_size)
     {
         if (left_bounded && right_bounded)
-            hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
+            hyperrectangle[prefix_size] = values_between(prefix_size, true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, universe(prefix_size));
+            hyperrectangle[prefix_size] = values_after_left_boundary(prefix_size, true);
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, universe(prefix_size));
+            hyperrectangle[prefix_size] = values_before_right_boundary(prefix_size, true);
 
         return callback(hyperrectangle);
     }
@@ -4695,11 +4755,11 @@ static BoolMask forAnyHyperrectangle(
     /// (x1 .. x2) × (-inf .. +inf)
 
     if (left_bounded && right_bounded)
-        hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
+        hyperrectangle[prefix_size] = values_between(prefix_size, false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, universe(prefix_size));
+        hyperrectangle[prefix_size] = values_after_left_boundary(prefix_size, false);
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, universe(prefix_size));
+        hyperrectangle[prefix_size] = values_before_right_boundary(prefix_size, false);
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         hyperrectangle[i] = universe(i);
@@ -4719,7 +4779,8 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, key_order,
+                prefix_size + 1, initial_mask, key_bounds, callback));
 
         if (result.isComplete())
             return result;
@@ -4733,7 +4794,8 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, key_order,
+                prefix_size + 1, initial_mask, key_bounds, callback));
     }
 
     return result;
@@ -4773,6 +4835,7 @@ static BoolMask forAnySparseHyperrectangle(
     bool right_bounded,
     Hyperrectangle & sparse_hyperrectangle,
     const DataTypes & sparse_data_types,
+    const KeyOrder & key_order,
     size_t prefix_size,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
@@ -4788,6 +4851,26 @@ static BoolMask forAnySparseHyperrectangle(
     auto universe = [&](size_t sparse_pos, size_t key_index) -> Range
     {
         return key_bounds ? (*key_bounds)[key_index] : Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+    };
+
+    auto values_between = [&](size_t key_index, size_t sparse_pos, bool included) -> Range
+    {
+        return key_order.isReversed(key_index) ? Range(sparse_right_keys[sparse_pos], included, sparse_left_keys[sparse_pos], included)
+                                               : Range(sparse_left_keys[sparse_pos], included, sparse_right_keys[sparse_pos], included);
+    };
+
+    auto values_after_left_boundary = [&](size_t key_index, size_t sparse_pos, bool included) -> Range
+    {
+        return key_order.isReversed(key_index)
+            ? Range::createRightBounded(sparse_left_keys[sparse_pos], included, universe(sparse_pos, key_index))
+            : Range::createLeftBounded(sparse_left_keys[sparse_pos], included, universe(sparse_pos, key_index));
+    };
+
+    auto values_before_right_boundary = [&](size_t key_index, size_t sparse_pos, bool included) -> Range
+    {
+        return key_order.isReversed(key_index)
+            ? Range::createLeftBounded(sparse_right_keys[sparse_pos], included, universe(sparse_pos, key_index))
+            : Range::createRightBounded(sparse_right_keys[sparse_pos], included, universe(sparse_pos, key_index));
     };
 
 #ifndef NDEBUG
@@ -4837,17 +4920,15 @@ static BoolMask forAnySparseHyperrectangle(
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
             if (left_bounded && right_bounded)
             {
-                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], true, sparse_right_keys[sparse_pos], true);
+                sparse_hyperrectangle[sparse_pos] = values_between(prefix_size, sparse_pos, true);
             }
             else if (left_bounded)
             {
-                sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                    sparse_left_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
+                sparse_hyperrectangle[sparse_pos] = values_after_left_boundary(prefix_size, sparse_pos, true);
             }
             else if (right_bounded)
             {
-                sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                    sparse_right_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
+                sparse_hyperrectangle[sparse_pos] = values_before_right_boundary(prefix_size, sparse_pos, true);
             }
         }
 
@@ -4861,17 +4942,15 @@ static BoolMask forAnySparseHyperrectangle(
         const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
         if (left_bounded && right_bounded)
         {
-            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], false, sparse_right_keys[sparse_pos], false);
+            sparse_hyperrectangle[sparse_pos] = values_between(prefix_size, sparse_pos, false);
         }
         else if (left_bounded)
         {
-            sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                sparse_left_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
+            sparse_hyperrectangle[sparse_pos] = values_after_left_boundary(prefix_size, sparse_pos, false);
         }
         else if (right_bounded)
         {
-            sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                sparse_right_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
+            sparse_hyperrectangle[sparse_pos] = values_before_right_boundary(prefix_size, sparse_pos, false);
         }
     }
 
@@ -4917,6 +4996,7 @@ static BoolMask forAnySparseHyperrectangle(
                 false,
                 sparse_hyperrectangle,
                 sparse_data_types,
+                key_order,
                 prefix_size + 1,
                 initial_mask,
                 key_bounds,
@@ -4948,6 +5028,7 @@ static BoolMask forAnySparseHyperrectangle(
                 true,
                 sparse_hyperrectangle,
                 sparse_data_types,
+                key_order,
                 prefix_size + 1,
                 initial_mask,
                 key_bounds,
@@ -4965,12 +5046,14 @@ BoolMask KeyCondition::checkInRange(
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds) const
 {
+    chassert(key_order.compareTuples(left_keys, right_keys, used_key_size) <= 0);
+
     Hyperrectangle key_ranges;
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
         key_ranges.push_back(Range::createWholeUniverseTypeAware(data_types[i]));
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, key_order, 0, initial_mask, key_bounds,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
@@ -5039,6 +5122,7 @@ BoolMask KeyCondition::checkInRange(
         /*right_bounded*/ true,
         sparse_key_ranges,
         sparse_data_types,
+        key_order,
         /*prefix_size*/ 0,
         initial_mask,
         key_bounds,
@@ -6980,6 +7064,9 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
             auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore);
+
+            /// The split conditions keep the original key column positions, so the key order carries over.
+            condition->key_order = key_order;
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }
