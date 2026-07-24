@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -523,6 +524,13 @@ public:
     /// `max_bytes_in_join` trigger is aggregated across slots via `setLogicalJoinTotalBytesCounter`.
     void setSharedMemoryUsageBaseline(std::atomic<Int64> * baseline) { shared_memory_usage_before_adding_blocks = baseline; }
 
+    /// "Not yet published" marker for the shared baseline above, the initial value of the atomic
+    /// handed to setSharedMemoryUsageBaseline. Must be a value getCurrentQueryMemoryUsage can never
+    /// return: 0 is a legitimate baseline at query start, and using it as the marker would let a
+    /// later slot overwrite a published 0 with its own higher snapshot, silently re-raising the
+    /// compression trigger's reference point.
+    static constexpr Int64 SHARED_MEMORY_USAGE_BASELINE_UNSET = std::numeric_limits<Int64>::min();
+
     /// When this HashJoin (or the `ConcurrentHashJoin` it is a slot of) is wrapped by a
     /// `SpillingHashJoin` and `enable_join_in_memory_compression` is on, holds the wrapper's
     /// effective spill threshold (`max_bytes_before_external_join`, with the ratio setting already
@@ -697,7 +705,11 @@ private:
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
-    Int64 memory_usage_before_adding_blocks = 0;
+    /// Query memory usage snapshotted before the first stored block, the reference point for the
+    /// `max_memory_usage` shrink/compression trigger. An optional rather than a zero-marked value:
+    /// getCurrentQueryMemoryUsage can legitimately return 0 at join start, and treating that as
+    /// "not yet snapshotted" would leave the trigger disarmed (or re-snapshot it later, higher).
+    std::optional<Int64> memory_usage_before_adding_blocks;
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;

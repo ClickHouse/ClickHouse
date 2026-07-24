@@ -768,7 +768,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
       * In that case memory consumed by stored blocks will be underestimated.
       */
-    if (!memory_usage_before_adding_blocks)
+    if (!memory_usage_before_adding_blocks.has_value())
     {
         Int64 current_query_memory = getCurrentQueryMemoryUsage();
         /// For a `parallel_hash` slot with `enable_join_in_memory_compression`, all slots share one
@@ -777,7 +777,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         /// earliest baseline; the others read it back. See setSharedMemoryUsageBaseline.
         if (shared_memory_usage_before_adding_blocks)
         {
-            Int64 expected = 0;
+            Int64 expected = SHARED_MEMORY_USAGE_BASELINE_UNSET;
             shared_memory_usage_before_adding_blocks->compare_exchange_strong(expected, current_query_memory, std::memory_order_relaxed);
             memory_usage_before_adding_blocks = shared_memory_usage_before_adding_blocks->load(std::memory_order_relaxed);
         }
@@ -1049,8 +1049,10 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         return;
 
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
-    Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
-    Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
+    /// The baseline is only unset when no block was stored yet (e.g. a force_optimize call on an
+    /// empty join); a zero delta keeps the memory-growth triggers below disarmed for that case.
+    Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks.value_or(current_memory_usage);
+    Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks.has_value() ? table_join->getMaxMemoryUsage() : 0;
 
     /// With `enable_join_in_memory_compression`, react to overall memory pressure even without an
     /// explicit `max_memory_usage` / `max_bytes_in_join`, the same way external aggregation and sorting
@@ -1059,7 +1061,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     /// limits is set, which is rarely the case in practice, so it would stay dormant exactly when a large
     /// build side is about to exhaust memory. The available value already excludes what this join has
     /// added so far, so add the delta back to approximate the budget as of when it started adding blocks.
-    if (memory_usage_before_adding_blocks && table_join->enableJoinInMemoryCompression())
+    if (memory_usage_before_adding_blocks.has_value() && table_join->enableJoinInMemoryCompression())
     {
         if (auto available_system_memory = getMostStrictAvailableSystemMemory())
         {
