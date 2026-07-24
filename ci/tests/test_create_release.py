@@ -5,8 +5,10 @@ These tests pin the contract that the conversion of the legacy hand-written
 ``.github/workflows/create_release.yml`` into a Praktika-generated workflow
 must keep:
 
-  * every ``create_release.py`` CLI flag that ``release_job.py`` invokes is a
-    real argparse option (catches the orchestrator drifting from the tool),
+  * every symbol ``release_job.py`` imports from ``create_release.py`` (it now
+    drives the release in-process instead of shelling out to
+    ``create_release.py --<flag>``) is a real top-level definition in the tool
+    (catches the orchestrator drifting from the tool),
   * every workflow-dispatch input that ``release_job.py`` reads is declared by
     the workflow definition,
   * ``release_job.py`` points at the moved ``ci/jobs/scripts/create_release.py``
@@ -60,30 +62,34 @@ def _head_sha(repo):
     ).stdout.strip()
 
 
-def _argparse_long_flags(path):
-    """Every ``--long-option`` registered via ``add_argument`` in ``path``."""
-    flags = set()
-    for node in ast.walk(ast.parse(_read(path))):
+def _create_release_defined_names(path):
+    """Top-level class/function names defined in ``path``."""
+    names = set()
+    for node in ast.parse(_read(path)).body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(node.name)
+    return names
+
+
+def _create_release_symbols_imported_by_job():
+    """Names ``release_job.py`` imports from ``ci.jobs.scripts.create_release``.
+
+    The orchestrator now drives the release in-process — it imports the tool's
+    classes and calls their methods (mirroring ``merge_created_prs``) instead of
+    shelling out to ``create_release.py --<flag>`` — so the contract to guard is
+    that every imported symbol is a real definition in the tool. The imports are
+    inside closures (lazy, to keep boto3 off the praktika config-time path), but
+    ``ast.walk`` finds those ``ImportFrom`` nodes regardless of nesting.
+    """
+    names = set()
+    for node in ast.walk(ast.parse(_read(RELEASE_JOB))):
         if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "add_argument"
+            isinstance(node, ast.ImportFrom)
+            and node.module == "ci.jobs.scripts.create_release"
         ):
-            for arg in node.args:
-                if (
-                    isinstance(arg, ast.Constant)
-                    and isinstance(arg.value, str)
-                    and arg.value.startswith("--")
-                ):
-                    flags.add(arg.value)
-    return flags
-
-
-def _create_release_subcommands_used():
-    """The ``--flag`` that immediately follows each ``create_release.py`` call."""
-    return set(
-        re.findall(r"create_release\.py\s+(--[a-z0-9-]+)", _read(RELEASE_JOB))
-    )
+            for alias in node.names:
+                names.add(alias.name)
+    return names
 
 
 def _workflow_input_names():
@@ -106,13 +112,13 @@ def _workflow_inputs_read_by_job():
     )
 
 
-def test_release_job_only_uses_existing_create_release_flags():
-    defined = _argparse_long_flags(CREATE_RELEASE)
-    used = _create_release_subcommands_used()
-    assert used, "release_job.py should invoke create_release.py with flags"
+def test_release_job_only_imports_existing_create_release_symbols():
+    defined = _create_release_defined_names(CREATE_RELEASE)
+    used = _create_release_symbols_imported_by_job()
+    assert used, "release_job.py should import symbols from create_release.py"
     missing = used - defined
     assert not missing, (
-        f"release_job.py invokes create_release.py flags that do not exist: "
+        f"release_job.py imports create_release symbols that do not exist: "
         f"{sorted(missing)} (defined: {sorted(defined)})"
     )
 
@@ -130,10 +136,13 @@ def test_workflow_declares_every_input_the_job_reads():
 
 def test_release_job_points_at_moved_paths():
     text = _read(RELEASE_JOB)
-    assert "./ci/jobs/scripts/create_release.py" in text
+    # create_release is now driven in-process (imported as a module), while
+    # artifactory is still invoked as a CLI by path; both must resolve to the
+    # moved ci/jobs/scripts locations.
+    assert "ci.jobs.scripts.create_release" in text
     assert "./ci/jobs/scripts/artifactory.py" in text
     # Both files were moved out of tests/ci (and are scripts, not jobs); the
-    # orchestrator must not call the old locations.
+    # orchestrator must not reference the old locations.
     assert "tests/ci/create_release.py" not in text
     assert "./ci/jobs/create_release.py" not in text
     assert "./ci/jobs/artifactory.py" not in text
@@ -153,10 +162,10 @@ def test_enqueue_is_last_and_patch_bump_is_deferred():
     master bump PR the enqueue later merges).
     """
     text = _read(RELEASE_JOB)
-    # Match the actual create_release.py invocations, not prose in comments.
+    # Match the two bump step invocations (in-process closure calls), not the
+    # single closure definition nor prose in comments.
     bump_positions = [
-        m.start()
-        for m in re.finditer(r"create_release\.py --create-bump-version-pr", text)
+        m.start() for m in re.finditer(r"command=create_bump_version_pr\b", text)
     ]
     # The enqueue step is an in-process function call (merge_created_prs), anchored
     # by its unique step name rather than a CLI string.
