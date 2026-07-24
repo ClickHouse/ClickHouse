@@ -20,105 +20,101 @@ import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintaine
 
 <Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="Conectar a ClickHouse" />
 
-<div id="install-marimo-sql">
-  ## 1. Instala marimo con soporte para SQL
-</div>
+<Steps>
+  <Step title="Instala marimo con soporte SQL" id="install-marimo-sql">
+    ```shell
+    pip install "marimo[sql]" clickhouse_connect
+    marimo edit clickhouse_demo.py
+    ```
 
-```shell
-pip install "marimo[sql]" clickhouse_connect
-marimo edit clickhouse_demo.py
-```
+    Esto debería abrir un navegador web en localhost.
+  </Step>
 
-Esto debería abrir un navegador web en localhost.
+  <Step title="Conectarse a ClickHouse." id="connect-to-clickhouse">
+    Ve al panel de orígenes de datos en el lado izquierdo del editor de marimo y haz clic en &#39;Add database&#39;.
 
-<div id="connect-to-clickhouse">
-  ## 2. Conectarse a ClickHouse.
-</div>
+    <Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Agregar una nueva base de datos" />
 
-Ve al panel de orígenes de datos en el lado izquierdo del editor de marimo y haz clic en &#39;Add database&#39;.
+    Se te pedirá que completes los datos de la base de datos.
 
-<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Agregar una nueva base de datos" />
+    <Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Completa los datos de la base de datos" />
 
-Se te pedirá que completes los datos de la base de datos.
+    A continuación tendrás una celda que puedes ejecutar para establecer una conexión.
 
-<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Completa los datos de la base de datos" />
+    <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Ejecuta la celda para conectarte a ClickHouse" />
+  </Step>
 
-A continuación, tendrás una celda que puedes ejecutar para establecer una conexión.
+  <Step title="Ejecuta SQL" id="run-sql">
+    Una vez que hayas configurado una conexión, puedes crear una nueva celda SQL y elegir el motor de ClickHouse.
 
-<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Ejecuta la celda para conectarte a ClickHouse" />
+    <Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Elegir motor SQL" />
 
-<div id="run-sql">
-  ## 3. Ejecuta SQL
-</div>
+    Para esta guía, usaremos el conjunto de datos New York Taxi.
 
-Una vez que hayas configurado una conexión, puedes crear una nueva celda SQL y elegir el motor de ClickHouse.
+    ```sql
+    CREATE TABLE trips (
+        trip_id             UInt32,
+        pickup_datetime     DateTime,
+        dropoff_datetime    DateTime,
+        pickup_longitude    Nullable(Float64),
+        pickup_latitude     Nullable(Float64),
+        dropoff_longitude   Nullable(Float64),
+        dropoff_latitude    Nullable(Float64),
+        passenger_count     UInt8,
+        trip_distance       Float32,
+        fare_amount         Float32,
+        extra               Float32,
+        tip_amount          Float32,
+        tolls_amount        Float32,
+        total_amount        Float32,
+        payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+        pickup_ntaname      LowCardinality(String),
+        dropoff_ntaname     LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    PRIMARY KEY (pickup_datetime, dropoff_datetime);
+    ```
 
-<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Elegir motor SQL" />
+    ```sql
+    INSERT INTO trips
+    SELECT
+        trip_id,
+        pickup_datetime,
+        dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        passenger_count,
+        trip_distance,
+        fare_amount,
+        extra,
+        tip_amount,
+        tolls_amount,
+        total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+        'TabSeparatedWithNames'
+    );
+    ```
 
-Para esta guía, usaremos el conjunto de datos New York Taxi.
+    ```sql
+    SELECT * FROM trips LIMIT 1000;
+    ```
 
-```sql
-CREATE TABLE trips (
-    trip_id             UInt32,
-    pickup_datetime     DateTime,
-    dropoff_datetime    DateTime,
-    pickup_longitude    Nullable(Float64),
-    pickup_latitude     Nullable(Float64),
-    dropoff_longitude   Nullable(Float64),
-    dropoff_latitude    Nullable(Float64),
-    passenger_count     UInt8,
-    trip_distance       Float32,
-    fare_amount         Float32,
-    extra               Float32,
-    tip_amount          Float32,
-    tolls_amount        Float32,
-    total_amount        Float32,
-    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
-    pickup_ntaname      LowCardinality(String),
-    dropoff_ntaname     LowCardinality(String)
-)
-ENGINE = MergeTree
-PRIMARY KEY (pickup_datetime, dropoff_datetime);
-```
+    <Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Resultados en un DataFrame" />
 
-```sql
-INSERT INTO trips
-SELECT
-    trip_id,
-    pickup_datetime,
-    dropoff_datetime,
-    pickup_longitude,
-    pickup_latitude,
-    dropoff_longitude,
-    dropoff_latitude,
-    passenger_count,
-    trip_distance,
-    fare_amount,
-    extra,
-    tip_amount,
-    tolls_amount,
-    total_amount,
-    payment_type,
-    pickup_ntaname,
-    dropoff_ntaname
-FROM gcs(
-    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
-    'TabSeparatedWithNames'
-);
-```
+    Ahora puedes ver los resultados en un DataFrame. Quiero visualizar los trayectos más caros desde un punto de recogida determinado. marimo ofrece varios componentes de la UI para ayudarte. Usaré un menú desplegable para seleccionar la ubicación y altair para crear gráficos.
 
-```sql
-SELECT * FROM trips LIMIT 1000;
-```
+    <Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Combinación de menú desplegable, tabla y gráfico" />
 
-<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Resultados en un DataFrame" />
+    El modelo de ejecución reactivo de marimo también se aplica a las consultas SQL, por lo que los cambios en tu SQL desencadenarán automáticamente los cálculos posteriores de las celdas dependientes (o, de forma opcional, marcarán las celdas como desactualizadas si los cálculos son costosos). Por eso, el gráfico y la tabla cambian cuando se actualiza la consulta.
 
-Ahora puedes ver los resultados en un DataFrame. Quiero visualizar los trayectos más caros desde un punto de recogida determinado. marimo ofrece varios componentes de la UI para ayudarte. Usaré un menú desplegable para seleccionar la ubicación y altair para crear gráficos.
+    También puedes cambiar a App View para tener una interfaz más limpia con la que explorar tus datos.
 
-<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Combinación de menú desplegable, tabla y gráfico" />
-
-El modelo de ejecución reactivo de marimo también se aplica a las consultas SQL, por lo que los cambios en tu SQL desencadenarán automáticamente los cálculos posteriores de las celdas dependientes (o, de forma opcional, marcarán las celdas como desactualizadas si los cálculos son costosos). Por eso, el gráfico y la tabla cambian cuando se actualiza la consulta.
-
-También puedes cambiar a App View para tener una interfaz más limpia con la que explorar tus datos.
-
-<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Ejecutar vista de aplicación" />
+    <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Ejecutar vista de aplicación" />
+  </Step>
+</Steps>

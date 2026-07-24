@@ -12,10 +12,6 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
 
 <PrivatePreviewBadge />
 
-<Note>
-  تتوفر ميزة التزويد عبر SCIM ضمن المعاينة الخاصة.
-</Note>
-
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
 يدعم ClickHouse Cloud بروتوكول SCIM 2.0 ‏(System for Cross-domain Identity Management) لأتمتة إدارة دورة حياة المستخدمين والمجموعات. وبمجرد الاتصال بموفر الهوية لديك، يُنشأ تلقائيًا كل مستخدم تعيّنه لتطبيق ClickHouse Cloud داخل مؤسستك بالدور الصحيح، كما تنتقل تحديثات الملف الشخصي تلقائيًا، وتؤدي إزالة مستخدم من موفر الهوية (IdP) إلى سحب إمكانية وصوله — من دون دعوات يدوية أو حسابات مهجورة.
@@ -48,9 +44,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
 </div>
 
 <Steps>
-  <Step>
-    ### تمكين SCIM
-
+  <Step title="تمكين SCIM" id="enable-scim-provisioning">
     سجّل الدخول إلى **ClickHouse Cloud Console** بصفة مسؤول المؤسسة، ثم افتح **Organization settings → SAML and SCIM settings → SCIM Configuration**.
 
     ![الانتقال إلى علامة تبويب تكوين SCIM في إعدادات المؤسسة](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -68,9 +62,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     انسخه — فستحتاج إلى لصقه في Okta لاحقًا.
   </Step>
 
-  <Step>
-    ### إنشاء رمز وصول لـ SCIM
-
+  <Step title="إنشاء رمز وصول لـ SCIM" id="generate-scim-token">
     انتقل إلى قسم `Create an API key` واختر تاريخ انتهاء الصلاحية.
 
     <Tip>
@@ -84,9 +76,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     ![إنشاء مفتاح API جديد لـ SCIM](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### تحديد تعيين الأدوار
-
+  <Step title="تحديد تعيين الأدوار" id="define-role-mapping">
     من لوحة **SCIM Configuration**، انقر على **Map roles in &quot;Users and roles&quot;** (أو انتقل مباشرة عبر **Users and roles → Roles**).
 
     ترتبط مجموعات SCIM بأدوار ClickHouse Cloud حسب الاسم، مع بعض القواعد التي ينبغي مراعاتها:
@@ -103,9 +93,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
 </div>
 
 <Steps>
-  <Step>
-    ### افتح تطبيق ClickHouse Cloud في Okta
-
+  <Step title="افتح تطبيق ClickHouse Cloud في Okta" id="open-clickhouse-cloud-app">
     في **Okta Admin Console**، انتقل إلى **Applications → Applications** وابحث عن التطبيق الذي أنشأته عند إعداد SAML SSO لـ ClickHouse Cloud. ثم افتحه.
 
     إذا لم تكن قد أنشأت تطبيق SAML بعد، فاتبع أولاً [دليل إعداد SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup) — إذ يتم إعداد SCIM provisioning على التطبيق نفسه.
@@ -119,9 +107,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     ![تظهر الآن علامة التبويب Provisioning في التطبيق](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### صِل Okta بنقطة نهاية SCIM
-
+  <Step title="صِل Okta بنقطة نهاية SCIM" id="connect-okta-scim">
     افتح علامة التبويب **Provisioning** الخاصة بالتطبيق وانقر على `Edit`. املأ النموذج:
 
     * **SCIM connector base URL** — عنوان URL الأساسي لموصل SCIM الذي ذكرناه سابقًا.
@@ -147,9 +133,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     انقر على `Save`.
   </Step>
 
-  <Step>
-    ### تكوين سلوك التوفير
-
+  <Step title="تكوين سلوك التوفير" id="configure-provisioning-behavior">
     وأنت لا تزال في تبويب **Provisioning**، انقر `To App` في الشريط الجانبي الأيسر. انقر `Edit` ثم فعِّل ما يلي:
 
     | الإعداد                | الإجراء | ما الذي يفعله                                                                |
@@ -166,9 +150,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     ![احفظ إعدادات التوفير وارجع إلى تبويب Sign On](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### تعيين سمات المستخدم
-
+  <Step title="تعيين سمات المستخدم" id="map-user-attributes">
     يجب أن يتوافق Okta وClickHouse Cloud في كيفية مطابقة حقول المستخدم. في علامة التبويب **Provisioning**، انقر على `To App` وراجع **Attribute Mappings** الخاصة بتطبيقك. تكون الإعدادات الافتراضية في تطبيق Okta SAML مناسبةً عادةً — تأكد من مطابقتها للجدول أدناه:
 
     | سمة Okta          | سمة ClickHouse Cloud ‏(SCIM) | مطلوب                                               |
@@ -189,9 +171,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     </Warning>
   </Step>
 
-  <Step>
-    ### دفع المجموعات وتعيين المستخدمين
-
+  <Step title="دفع المجموعات وتعيين المستخدمين" id="push-groups-and-assign-users">
     هنا تُطبَّق الأدوار تلقائيًا.
 
     **أنشئ مجموعات في Okta.** لكل تعيين أدوار أعددته سابقًا، أنشئ أو حدِّد مجموعة في Okta تحمل **اسم العرض نفسه تمامًا**. على سبيل المثال، إذا كان التعيين لديك يقول `ClickHouse-Admins → Admin`، فأنشئ مجموعة باسم `ClickHouse-Admins` في Okta.
@@ -225,19 +205,19 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
   ## اختبر التكامل
 </div>
 
-بعد إعداد التزويد، ارجع إلى **Settings → Users and roles** في وحدة تحكم ClickHouse Cloud للتأكد من ظهور المستخدمين الذين تمت مزامنتهم بالأدوار المتوقعة.
+بعد إعداد التزويد، ارجع إلى **Settings → Users and roles** في ClickHouse Cloud Console للتأكد من ظهور المستخدمين الذين تمت مزامنتهم بالأدوار المتوقعة.
 
 ![التحقق من مزامنة المستخدمين في Users and roles](/images/cloud/security/scim-okta/scim-okta-18.webp)
 
-اتّبع خطة الاختبار القصيرة هذه باستخدام مستخدم اختبار واحد أو اثنين **قبل** إسناد فريقك بالكامل. يجب أن تنجح كل خطوة خلال بضع ثوانٍ؛ وإذا لم تنجح، فتحقّق من قائمة انتظار المهام في Okta وقسم [استكشاف الأخطاء وإصلاحها](#troubleshooting).
+اتّبع خطة الاختبار القصيرة هذه باستخدام مستخدم اختبار واحد أو اثنين **قبل** إسناد فريقك بالكامل. يجب أن تنجح كل خطوة خلال بضع ثوانٍ؛ وإذا لم تنجح، فتحقّق من قائمة انتظار Tasks في Okta وقسم [استكشاف الأخطاء وإصلاحها](#troubleshooting).
 
-| # | الإجراء في Okta                                                 | النتيجة المتوقعة في ClickHouse Cloud                                 |
-| - | --------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 1 | أضف مستخدم اختبار إلى مجموعة Okta ‏`ClickHouse-Admins`          | يظهر المستخدم في **Settings → Members** مع الدور **Admin**           |
-| 2 | يسجّل مستخدم الاختبار الدخول إلى ClickHouse Cloud عبر SSO       | يصل إلى لوحة المعلومات بصلاحية المسؤول                               |
-| 3 | حدّث الاسم الأول للمستخدم في Okta                               | يظهر الاسم المحدّث في **Members** خلال ثوانٍ                         |
-| 4 | انقل المستخدم من `ClickHouse-Admins` إلى `ClickHouse-Read-only` | يتغيّر دوره إلى **Read-only**                                        |
-| 5 | ألغِ إسناد المستخدم من التطبيق (أو عطّله في Okta)               | يُزال المستخدم من مؤسسة؛ وتفشل أي محاولات لاحقة لتسجيل الدخول |
+| # | الإجراء في Okta                                                 | النتيجة المتوقعة في ClickHouse Cloud                            |
+| - | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| 1 | أضف مستخدم اختبار إلى مجموعة Okta ‏`ClickHouse-Admins`          | يظهر المستخدم في **Settings → Members** مع الدور **Admin**      |
+| 2 | يسجّل مستخدم الاختبار الدخول إلى ClickHouse Cloud عبر SSO       | يصل إلى لوحة المعلومات بصلاحية المسؤول                          |
+| 3 | حدّث الاسم الأول للمستخدم في Okta                               | يظهر الاسم المحدّث في **Members** خلال ثوانٍ                    |
+| 4 | انقل المستخدم من `ClickHouse-Admins` إلى `ClickHouse-Read-only` | يتغيّر دوره إلى **Read-only**                                   |
+| 5 | ألغِ إسناد المستخدم من التطبيق (أو عطّله في Okta)               | يُزال المستخدم من المؤسسة؛ وتفشل أي محاولات لاحقة لتسجيل الدخول |
 
 إذا فشلت أي خطوة، فأصلح المشكلة الأساسية قبل المتابعة — إذ غالبًا ما تتفاقم الأعراض.
 
@@ -251,88 +231,107 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
   ## أفضل الممارسات لبيئة الإنتاج
 </div>
 
-**بدّل الرموز بانتظام.** اضبط تذكيرًا في التقويم لتبديل رمز SCIM. يُوصى بذلك كل 12 شهرًا، أو فورًا إذا غادر الشركة أي مسؤول كان يعرف الرمز. يتيح ClickHouse Cloud وجود رمزين نشطين لكل مؤسسة تحديدًا حتى تتمكن من التبديل من دون تعطيل التزويد.
+<div id="rotate-tokens">
+  ### بدّل الرموز بانتظام
+</div>
 
-**استخدم المجموعات، لا التعيينات المباشرة.** ينجح إسناد المستخدمين إلى التطبيق مباشرةً، لكنه يصبح سريعًا صعب المراجعة والتدقيق. أما إدارة الإسناد عبر مجموعات Okta فتعني أن مراجعات الوصول وتغييرات الأدوار تتم في مكان واحد.
+اضبط تذكيرًا في التقويم لتبديل رمز SCIM. يُوصى بذلك كل 12 شهرًا، أو فورًا إذا غادر الشركة أي مسؤول كان يعرف الرمز. يتيح ClickHouse Cloud وجود رمزين نشطين لكل مؤسسة تحديدًا حتى تتمكن من التبديل من دون تعطيل التزويد.
 
-**راجع سجل التدقيق.** يُسجَّل كل إجراء في SCIM — إنشاء مستخدم، أو إلغاء تنشيط مستخدم، أو تحديث ملف شخصي — في سجل التدقيق في ClickHouse Cloud. راجع [تسجيل التدقيق](/ar/products/cloud/reference/security/audit-logging). افحص السجل دوريًا، خاصةً بعد دفعات تزويد كبيرة.
+<div id="use-groups">
+  ### استخدم المجموعات، لا التعيينات المباشرة
+</div>
 
-**عيّن دورًا افتراضيًا مناسبًا.** إذا أُسنِد مستخدم Okta إلى التطبيق لكنه ليس ضمن أي مجموعة مُرسلة، فسيُنشأ باستخدام **الدور الافتراضي**. اختر أكثر الأدوار تقييدًا مع بقائه يتيح للمستخدم إنجاز *شيء ما*، بحيث تفشل أخطاء الإعداد بطريقة آمنة.
+ينجح إسناد المستخدمين إلى التطبيق مباشرةً، لكنه يصبح سريعًا صعب المراجعة والتدقيق. أما إدارة الإسناد عبر مجموعات Okta فتعني أن مراجعات الوصول وتغييرات الأدوار تتم في مكان واحد.
 
-**تجنّب استخدام SCIM والدعوات اليدوية في الوقت نفسه.** بمجرد تفعيل SCIM، أدر العضوية عبر Okta — ولا ترسل أيضًا دعوات يدوية للمستخدمين أنفسهم. يؤدّي الجمع بين المسارين إلى إرباك بشأن المصدر المعتمد، وقد ينتج عنه إدخالات مكررة.
+<div id="review-audit-log">
+  ### راجع سجل التدقيق
+</div>
 
-**راقب مهام التزويد الفاشلة.** يعيد Okta محاولة استدعاءات التزويد الفاشلة، لكنه ينقلها في النهاية إلى قائمة انتظار **Tasks**. أضف قائمة الانتظار هذه إلى dashboards التي يراقبها فريق تقنية المعلومات لديك بالفعل، أو استخدم webhook أو التنبيهات عبر البريد الإلكتروني في Okta للإشارة إلى حالات الفشل المستمرة.
+يُسجَّل كل إجراء في SCIM — إنشاء مستخدم، أو إلغاء تنشيط مستخدم، أو تحديث ملف شخصي — في سجل التدقيق في ClickHouse Cloud. راجع [تسجيل التدقيق](/ar/products/cloud/reference/security/audit-logging). افحص السجل دوريًا، خاصةً بعد دفعات تزويد كبيرة.
+
+<div id="default-role">
+  ### عيّن دورًا افتراضيًا مناسبًا
+</div>
+
+إذا أُسنِد مستخدم Okta إلى التطبيق لكنه ليس ضمن أي مجموعة مُرسلة، فسيُنشأ باستخدام **الدور الافتراضي**. اختر أكثر الأدوار تقييدًا مع بقائه يتيح للمستخدم إنجاز *شيء ما*، بحيث تفشل أخطاء الإعداد بطريقة آمنة.
+
+<div id="avoid-manual-invites">
+  ### تجنّب استخدام SCIM والدعوات اليدوية في الوقت نفسه
+</div>
+
+بمجرد تفعيل SCIM، أدر العضوية عبر Okta — ولا ترسل أيضًا دعوات يدوية للمستخدمين أنفسهم. يؤدّي الجمع بين المسارين إلى إرباك بشأن المصدر المعتمد، وقد ينتج عنه إدخالات مكررة.
+
+<div id="monitor-failed-tasks">
+  ### راقب مهام التزويد الفاشلة
+</div>
+
+يعيد Okta محاولة استدعاءات التزويد الفاشلة، لكنه ينقلها في النهاية إلى قائمة انتظار **Tasks**. أضف قائمة الانتظار هذه إلى dashboards التي يراقبها فريق تقنية المعلومات لديك بالفعل، أو استخدم webhook أو التنبيهات عبر البريد الإلكتروني في Okta للإشارة إلى حالات الفشل المستمرة.
 
 <div id="troubleshooting">
   ## استكشاف الأخطاء وإصلاحها
 </div>
 
-<div id="test-credentials-fails">
-  ### يفشل &quot;اختبار تكوين الموصل&quot; في Okta
-</div>
+<AccordionGroup>
+  <Accordion title="فشل &#x22;Test connector configuration&#x22; في Okta">
+    * تأكد من أن SCIM **مفعّل** في ClickHouse Cloud Console.
+    * تأكد من أن **base URL** في Okta يطابق تمامًا عنوان URL لنقطة نهاية SCIM المعروض في Cloud Console — ويجب أن يكون معرّف organization صحيحًا.
+    * تأكد من لصق **مفتاح الرمز وsecret الخاص به** من دون أي مسافات بيضاء في البداية أو النهاية.
+    * إذا كنت قد بدّلت الرموز، فتأكد من أنك تستخدم المفتاح وsecret **الجديدين**، وليس الزوج السابق.
+  </Accordion>
 
-* تأكد من أن SCIM **مفعّل** في ClickHouse Cloud Console.
-* تأكد من أن **عنوان URL الأساسي** في Okta يطابق تمامًا عنوان URL لنقطة نهاية SCIM المعروض في ClickHouse Cloud Console — ويجب أن يكون معرّف المؤسسة صحيحًا.
-* تأكد من لصق **مفتاح الرمز والسر** من دون أي مسافات بيضاء في البداية أو النهاية.
-* إذا كنت قد دوّرت الرموز، فتأكد من أنك تستخدم **المفتاح والسر** **الجديدين**، وليس الزوج السابق.
+  <Accordion title="يتم إنشاء المستخدمين ولكن ليست لديهم أي أذونات">
+    * تحقّق من أنك أضفت صفًا ضمن **Map roles in &quot;Users and roles&quot;** للدور المتوقع.
+    * تحقّق من أن اسم مجموعة Okta يطابق **تمامًا** اسم مجموعة SCIM في التعيين، بما في ذلك الأحرف الكبيرة والشرطات.
+    * إذا كان تصميمك يتعمّد تزويد بعض المستخدمين من دون مجموعة، فتأكد من تعيين **الدور الافتراضي**.
+  </Accordion>
 
-<div id="users-no-permissions">
-  ### يتم إنشاء المستخدمين لكن ليست لديهم أي أذونات
-</div>
+  <Accordion title="مستخدم مكرر في قائمة الأعضاء">
+    يحدث هذا عادةً بسبب اختلاف حالة الأحرف في عنوان البريد الإلكتروني بين Okta ودعوة يدوية سابقة. احذف الإدخال المكرر من قائمة Members، ثم أزل تعيين المستخدم وأعد تعيينه في Okta ليُعاد تزويده من جديد.
+  </Accordion>
 
-* تحقّق من أنك أضفت صفًا ضمن **تعيين الأدوار في &quot;Users and roles&quot;** للدور المتوقع.
-* تحقّق من أن اسم مجموعة Okta يطابق **تمامًا** اسم مجموعة SCIM في التعيين، بما في ذلك الأحرف الكبيرة والواصلات.
-* إذا كان تصميمك يقضي عمدًا بتهيئة بعض المستخدمين من دون مجموعة، فتأكّد من تعيين **الدور الافتراضي**.
+  <Accordion title="فشل Group push مع ظهور &#x22;displayName not recognised&#x22;">
+    اسم المجموعة في Okta لا يطابق تعيينًا مُعدًا في ClickHouse Cloud. إمّا أن تعيد تسمية مجموعة Okta أو تضيف تعيينًا ضمن **Map roles in &quot;Users and roles&quot;** من لوحة SCIM Configuration (أو عبر **Users and roles → Roles**).
+  </Accordion>
 
-<div id="duplicate-user">
-  ### مستخدم مكرر في قائمة الأعضاء
-</div>
+  <Accordion title="المستخدمون الذين تم إلغاء تنشيطهم ما زالوا يظهرون كأعضاء">
+    قد يستغرق Okta ما يصل إلى دقيقة لنشر إلغاء التنشيط. إذا ظل المستخدم يظهر كعضو بعد عدة دقائق، فتحقّق من **Provisioning → View Logs** في Okta بحثًا عن خطأ في مهمة إلغاء التنشيط.
+  </Accordion>
 
-يحدث هذا عادةً بسبب عدم تطابق حالة الأحرف في عنوان البريد الإلكتروني بين Okta ودعوة يدوية سابقة. أزل النسخة المكررة من قائمة Members، ثم ألغِ إسناد المستخدم وأعِد إسناده في Okta لإعادة تهيئته من جديد.
+  <Accordion title="لقد بدّلت SCIM رمز والآن يفشل Okta">
+    تحقّق من أنك حدّثت credentials في **تطبيق SCIM نفسه** داخل Okta. بعد التحديث، انقر على `Test Connector Configuration` للتأكد. وبمجرد أن تعود عملية التزويد إلى الحالة السليمة، ألغِ الرمز القديم في ClickHouse Cloud Console.
+  </Accordion>
 
-<div id="group-display-name">
-  ### يفشل دفع المجموعات مع ظهور &quot;displayName not recognised&quot;
-</div>
-
-اسم المجموعة في Okta لا يطابق تعيينًا مُكوَّنًا في ClickHouse Cloud. إما إعادة تسمية مجموعة Okta أو إضافة تعيين ضمن **تعيين الأدوار في &quot;Users and roles&quot;** من لوحة SCIM Configuration (أو عبر **Users and roles → Roles**).
-
-<div id="deactivated-users-remaining">
-  ### لا يزال المستخدمون الذين تم تعطيلهم يظهرون كأعضاء
-</div>
-
-قد يستغرق Okta ما يصل إلى دقيقة لتطبيق التعطيل. إذا ظل المستخدم عضوًا بعد عدة دقائق، فتحقّق من **Provisioning → View Logs** في Okta بحثًا عن خطأ في مهمة التعطيل.
-
-<div id="token-rotation-issue">
-  ### بدّلتُ رمز SCIM والآن يفشل Okta
-</div>
-
-تحقق من أنك حدّثت بيانات الاعتماد في **تطبيق SCIM نفسه** في Okta. بعد التحديث، انقر على `Test Connector Configuration` للتأكد. وبمجرد أن تعود عملية التزويد إلى الحالة الخضراء، أبطِل الرمز القديم في ClickHouse Cloud Console.
-
-<div id="lost-token">
-  ### لقد فقدت رمز SCIM
-</div>
-
-لا يمكن استعادة الرموز. في **Organization settings → SAML and SCIM settings → SCIM Configuration** ضمن ClickHouse Cloud Console، أبطِل الرمز المفقود وأنشئ رمزًا جديدًا، ثم حدِّث بيانات الاعتماد في Okta.
+  <Accordion title="لقد فقدت SCIM رمز">
+    لا يمكن استعادة الرموز. في **Organization settings → SAML and SCIM settings → SCIM Configuration** داخل ClickHouse Cloud Console، ألغِ الرمز المفقود وأنشئ واحدًا جديدًا، ثم حدّث credentials في Okta.
+  </Accordion>
+</AccordionGroup>
 
 <div id="faq">
   ## الأسئلة الشائعة
 </div>
 
-**هل أحتاج إلى SAML SSO قبل أن أتمكن من استخدام SCIM؟**
-نعم. ينشئ SCIM حسابات المستخدمين، لكن ClickHouse Cloud يتحقق من هوياتهم عبر SAML. أعدّ [SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup) أولًا.
+<AccordionGroup>
+  <Accordion title="هل أحتاج إلى SAML SSO قبل أن أتمكن من استخدام SCIM؟">
+    نعم. ينشئ SCIM حسابات المستخدمين، لكن ClickHouse Cloud يتحقق من هوياتهم عبر SAML. أعدّ [SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup) أولًا.
+  </Accordion>
 
-**هل يعمل SCIM مع Microsoft Entra ID أو OneLogin أو موفري IdP الآخرين المتوافقين مع SCIM 2.0؟**
-رسميًا، لا — إذ إن Okta هو موفر IdP الوحيد الذي اختبرناه وندعمه حاليًا. تتوافق نقطة النهاية مع SCIM 2.0 ‏(RFC 7644)، لكن authentication فيها يقتصر على Basic Auth، لذلك فإن أي موفر IdP لا يدعم المصادقة عبر Basic Auth لن يعمل. وقد تعمل عمليًا موفرو IdP الأخرى المتوافقة مع SCIM 2.0 والقادرة على استخدام Basic Auth، لكننا لا نقدم أي ضمانات.
+  <Accordion title="هل يعمل SCIM مع Microsoft Entra ID أو OneLogin أو موفري IdP الآخرين المتوافقين مع SCIM 2.0؟">
+    رسميًا، لا — إذ إن Okta هو موفر IdP الوحيد الذي اختبرناه وندعمه حاليًا. تتوافق نقطة النهاية مع SCIM 2.0 ‏(RFC 7644)، لكن authentication فيها يقتصر على Basic Auth، لذلك فإن أي موفر IdP لا يدعم المصادقة عبر Basic Auth لن يعمل. وقد تعمل عمليًا موفرو IdP الأخرى المتوافقة مع SCIM 2.0 والقادرة على استخدام Basic Auth، لكننا لا نقدم أي ضمانات.
+  </Accordion>
 
-**ما مدى سرعة ظهور التغييرات في Okta داخل ClickHouse Cloud؟**
-تنتشر معظم العمليات خلال بضع ثوانٍ. وقد تستغرق التغييرات المجمّعة (عملية group push كبيرة) وقتًا أطول حسب الحجم، لكن Okta يعيد المحاولة تلقائيًا عند حدوث أخطاء عابرة.
+  <Accordion title="ما مدى سرعة ظهور التغييرات في Okta داخل ClickHouse Cloud؟">
+    تنتشر معظم العمليات خلال بضع ثوانٍ. وقد تستغرق التغييرات المجمّعة (عملية group push كبيرة) وقتًا أطول حسب الحجم، لكن Okta يعيد المحاولة تلقائيًا عند حدوث أخطاء عابرة.
+  </Accordion>
 
-**هل يمكنني تزويد عدة مؤسسات في ClickHouse Cloud من مستأجر Okta واحد؟**
-نعم — ثبّت التطبيق مرة واحدة لكل مؤسسة، مع endpoint URL لـ SCIM ورمز خاصين بها. وأرسِل مجموعات Okta نفسها إلى كل تطبيق حسب الحاجة.
+  <Accordion title="هل يمكنني تزويد عدة مؤسسات في ClickHouse Cloud من مستأجر Okta واحد؟">
+    نعم — ثبّت التطبيق مرة واحدة لكل مؤسسة، مع endpoint URL لـ SCIM ورمز خاصين بها. وأرسِل مجموعات Okta نفسها إلى كل تطبيق حسب الحاجة.
+  </Accordion>
 
-**أين أحصل على المساعدة إذا واجهت مشكلة؟**
-افتح تذكرة دعم من ClickHouse Cloud Console ‏(**Help → Contact support**) وضمّن ما يلي:
+  <Accordion title="أين أحصل على المساعدة إذا واجهت مشكلة؟">
+    افتح تذكرة دعم من ClickHouse Cloud Console ‏(**Help → Contact support**) وضمّن ما يلي:
 
-* معرّف المؤسسة الخاص بك،
-* معرّف تطبيق Okta الخاص بك، و
-* لقطة شاشة للمهمة أو الاختبار الذي فشل من سجلات Okta.
+    * معرّف المؤسسة الخاص بك،
+    * معرّف تطبيق Okta الخاص بك، و
+    * لقطة شاشة للمهمة أو الاختبار الذي فشل من سجلات Okta.
+  </Accordion>
+</AccordionGroup>
