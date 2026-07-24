@@ -7,6 +7,12 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <config.h>
+
+#if USE_PARQUET
+#include <Common/tests/gtest_global_register.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 
 using namespace DB;
 
@@ -489,3 +495,62 @@ TEST(ClusterFunctionReadTaskResponse, RoundTripsIcebergDeletesOnSupportedProtoco
     ASSERT_EQ(deserialized.iceberg_info->position_deletes_objects.size(), 1u);
     EXPECT_EQ(deserialized.iceberg_info->position_deletes_objects[0].file_path, "/path/pos.parquet");
 }
+
+#if USE_PARQUET
+
+TEST(ClusterFunctionReadTaskResponse, RejectsFileBucketInfoOnProtocolBeforeFileBuckets)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.file_bucket_info = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{0, 1});
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    try
+    {
+        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PROTOCOL);
+        EXPECT_NE(e.message().find("file_bucket_info"), std::string::npos);
+    }
+}
+
+TEST(ClusterFunctionReadTaskResponse, AllowsMissingFileBucketInfoOnProtocolBeforeFileBuckets)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA);
+    out.finalize();
+    EXPECT_FALSE(serialized.empty());
+}
+
+TEST(ClusterFunctionReadTaskResponse, RoundTripsFileBucketInfoOnSupportedProtocol)
+{
+    tryRegisterFormats();
+
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.file_bucket_info = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{2, 5});
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+    out.finalize();
+
+    ReadBufferFromString in(serialized);
+    ClusterFunctionReadTaskResponse deserialized;
+    deserialized.deserialize(in);
+
+    ASSERT_TRUE(deserialized.file_bucket_info);
+    auto * parquet_buckets = dynamic_cast<ParquetFileBucketInfo *>(deserialized.file_bucket_info.get());
+    ASSERT_TRUE(parquet_buckets);
+    EXPECT_EQ(parquet_buckets->row_group_ids, (std::vector<size_t>{2, 5}));
+}
+
+#endif
