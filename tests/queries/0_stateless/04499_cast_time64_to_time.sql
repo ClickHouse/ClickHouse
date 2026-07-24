@@ -31,5 +31,5 @@ SELECT CAST('01:02:03' AS Time) IN (CAST('01:02:03.0' AS Time64(1)));
 -- Out-of-range constant Time64 into a Time column must honor date_time_overflow_behavior = 'throw'.
 DROP TABLE IF EXISTS t_04499_time2;
 CREATE TABLE t_04499_time2 (c1 Time) ENGINE = Memory;
-INSERT INTO t_04499_time2 SETTINGS date_time_overflow_behavior = 'throw' VALUES (CAST(toDecimal64(3600001, 0) AS Time64(0))); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_04499_time2 SETTINGS date_time_overflow_behavior = 'throw' VALUES (CAST(toDecimal64(3600001, 0) AS Time64(0))); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 DROP TABLE t_04499_time2;
