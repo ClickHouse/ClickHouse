@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+extern const MergeTreeSettingsBool allow_experimental_adaptive_codec_selection;
+}
+
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
@@ -18,6 +23,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
+    bool is_explicit_recompression,
     PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
@@ -44,6 +50,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         save_primary_index_in_memory,
         /*blocks_are_granules_size=*/ false);
 
+    /// This stream is used only by merge and mutation, never inserts
+    writer_settings.apply_adaptive_codec
+        = (*storage_settings)[MergeTreeSetting::allow_experimental_adaptive_codec_selection] && !is_explicit_recompression;
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
 
     writer = createMergeTreeDataPartWriter(
