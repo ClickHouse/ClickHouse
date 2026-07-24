@@ -1,7 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Block.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -209,16 +210,25 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
     frame.begin_preceding = bool(flags & 2);
     frame.end_preceding = bool(flags & 4);
 
+    /// The plan may be client-supplied (TCPHandler::receiveQueryPlan), so reject out-of-range enum
+    /// values instead of casting an arbitrary byte into the enum (which downstream switches would not
+    /// handle).
     UInt8 type = 0;
     readIntBinary(type, in);
+    if (type > static_cast<UInt8>(WindowFrame::FrameType::RANGE))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid window frame type {}", static_cast<UInt16>(type));
     frame.type = static_cast<WindowFrame::FrameType>(type);
 
     UInt8 begin_type = 0;
     readIntBinary(begin_type, in);
+    if (begin_type > static_cast<UInt8>(WindowFrame::BoundaryType::Offset))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid window frame begin boundary type {}", static_cast<UInt16>(begin_type));
     frame.begin_type = static_cast<WindowFrame::BoundaryType>(begin_type);
 
     UInt8 end_type = 0;
     readIntBinary(end_type, in);
+    if (end_type > static_cast<UInt8>(WindowFrame::BoundaryType::Offset))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep: invalid window frame end boundary type {}", static_cast<UInt16>(end_type));
     frame.end_type = static_cast<WindowFrame::BoundaryType>(end_type);
 
     frame.begin_offset = readFieldBinary(in);
@@ -234,11 +244,9 @@ static void serializeWindowFunctions(const std::vector<WindowFunctionDescription
     {
         writeStringBinary(func.column_name, out);
 
-        const auto & argument_types = func.aggregate_function->getArgumentTypes();
-        writeVarUInt(argument_types.size(), out);
-        for (const auto & type : argument_types)
-            encodeDataType(type, out);
-
+        /// Argument types are not serialized: they are derived from the input columns on deserialize
+        /// (see `deserializeWindowFunctions`), which both avoids trusting client-supplied types and
+        /// rebuilds the aggregate exactly as the planner does.
         writeVarUInt(func.argument_names.size(), out);
         for (const auto & argument_name : func.argument_names)
             writeStringBinary(argument_name, out);
@@ -256,7 +264,8 @@ static void serializeWindowFunctions(const std::vector<WindowFunctionDescription
     }
 }
 
-static std::vector<WindowFunctionDescription> deserializeWindowFunctions(ReadBuffer & in)
+static std::vector<WindowFunctionDescription>
+deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
@@ -266,17 +275,27 @@ static std::vector<WindowFunctionDescription> deserializeWindowFunctions(ReadBuf
     {
         readStringBinary(func.column_name, in);
 
-        UInt64 num_argument_types = 0;
-        readVarUInt(num_argument_types, in);
-        func.argument_types.reserve(num_argument_types);
-        for (size_t i = 0; i < num_argument_types; ++i)
-            func.argument_types.emplace_back(decodeDataType(in));
-
         UInt64 num_argument_names = 0;
         readVarUInt(num_argument_names, in);
         func.argument_names.resize(num_argument_names);
         for (auto & argument_name : func.argument_names)
             readStringBinary(argument_name, in);
+
+        /// The plan may come from an untrusted client (TCPHandler::receiveQueryPlan). Derive the argument
+        /// types from the actual input columns rather than trusting the wire: WindowTransform sizes its
+        /// argument workspace from argument_names and the aggregate reads those columns by position and
+        /// casts them to its argument types, so types that disagree with the real columns would cause an
+        /// out-of-bounds read or an invalid cast. Deriving from the header also rebuilds the aggregate
+        /// exactly as the planner did, which uses the argument column types.
+        func.argument_types.resize(func.argument_names.size());
+        for (size_t i = 0; i < func.argument_names.size(); ++i)
+        {
+            if (!input_header.has(func.argument_names[i]))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "WindowStep: argument column '{}' is not present in the input header", func.argument_names[i]);
+
+            func.argument_types[i] = input_header.getByName(func.argument_names[i]).type;
+        }
 
         String function_name;
         readStringBinary(function_name, in);
@@ -342,7 +361,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         window_description.order_by.begin(),
         window_description.order_by.end());
 
-    window_description.window_functions = deserializeWindowFunctions(ctx.in);
+    window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
 
     return std::make_unique<WindowStep>(
         ctx.input_headers.front(),
