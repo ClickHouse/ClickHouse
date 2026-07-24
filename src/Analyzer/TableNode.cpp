@@ -236,7 +236,7 @@ ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 boost::intrusive_ptr<ASTTableIdentifier> TableNode::toASTIdentifier() const
 {
     if (!temporary_table_name.empty())
-        return make_intrusive<ASTTableIdentifier>(temporary_table_name);
+        return make_intrusive<ASTTableIdentifier>(IdentifierName({IdentifierPart{temporary_table_name, temporary_table_name_quote}}));
 
     // In case of cross-replication we don't know what database is used for the table.
     // `storage_id.hasDatabase()` can return false only on the initiator node.
