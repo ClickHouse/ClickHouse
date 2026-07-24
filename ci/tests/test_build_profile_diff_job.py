@@ -150,6 +150,20 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
 INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
     ({_PR}, 'prsha-lost-stripped', '2026-07-02 00:00:00', 'arm_release', 'I6', '{_MAIN}', 1500),
     (0, 'basesha-no-stripped', '2026-06-30 00:00:00', 'arm_release', 'I7', '{_MAIN}', 1400);
+
+-- A PR run that adds one large object file (bar.cpp.o, 512 KiB, absent from
+-- the warmup baseline) and no longer builds the baseline's foo.cpp.o: both
+-- one-sided rows are above OBJECT_SIG_BYTES and must drive the verdict.
+INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
+    ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{_MAIN}', 1500),
+    ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{_STRIPPED}', 1500),
+    ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{job.BUILD_DIR}/src/CMakeFiles/dbms.dir/bar.cpp.o', 524288);
+
+-- A PR run whose keeper link trace is intact but entirely below the 50 ms
+-- reporting cutoff: it must read as present, not as a lost upload.
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    ({_PR}, 'prsha-tiny-keeper', '2026-07-02 00:00:00', 'arm_release', 'I9', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
+    ({_PR}, 'prsha-tiny-keeper', '2026-07-02 00:00:00', 'arm_release', 'I9', '{_KEEPER}', 'OptFunction', 'keeper_fn', 40000);
 """
 
 
@@ -396,6 +410,47 @@ def test_opt_functions_missing_pr_side_binary_is_flagged():
     assert "uploaded none" in section.body
     assert section.significant
     assert "missing PR-side link trace" in section.summary
+
+
+def test_objects_added_and_removed_are_significant():
+    """A one-sided object row above the significance bar drives the verdict.
+
+    OBJECT_FILTER keeps only compile-stage .o files and both sides compile the
+    full object set with the same flags, so an object present on one side only
+    is a real addition or removal. Gating significance on ``pr_size and
+    base_size`` let a PR add or drop a multi-MiB object while the top-level
+    comment still said "No significant changes".
+    """
+    db = FixtureDb()
+    pr_side = job.Side(job.PR_DAYS, _PR, "prsha-new-object", "2026-07-02 00:00:00", "I8")
+    warmup_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA, check_name=job.WARMUP_CHECK_NAME)
+    section = job.compare_objects(db, pr_side, warmup_side)
+    # bar.cpp.o (512 KiB) is added, foo.cpp.o (256 KiB) is removed: both
+    # one-sided and both above OBJECT_SIG_BYTES.
+    assert "bar.cpp.o" in section.body
+    assert "new" in section.body
+    assert "foo.cpp.o" in section.body
+    assert "removed" in section.body
+    assert section.significant
+
+
+def test_opt_functions_trace_below_report_cutoff_is_not_a_lost_upload():
+    """An intact link trace entirely below 50 ms is present, not missing.
+
+    Per-binary presence used to be derived from rows already filtered by the
+    ``dur >= 50000`` reporting cutoff, so a binary whose complete OptFunction
+    trace stays below 50 ms on the PR side (realistic for
+    ``clickhouse-keeper``) was indistinguishable from a lost upload and the
+    section reported "uploaded none". Presence must come from unfiltered
+    OptFunction rows; the cutoff only bounds the diff aggregation.
+    """
+    db = FixtureDb()
+    pr_side = job.Side(job.PR_DAYS, _PR, "prsha-tiny-keeper", "2026-07-02 00:00:00", "I9")
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
+    section = job.compare_opt_functions(db, pr_side, base_side)
+    assert "uploaded none" not in section.body
+    assert not section.significant
+    assert not section.summary
 
 
 def test_compile_times_key_baselines_by_file_and_library():

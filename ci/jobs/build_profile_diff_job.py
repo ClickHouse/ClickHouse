@@ -615,12 +615,13 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
     for row in rows:
         pr_size, base_size = int(row["pr_size"]), int(row["base_size"])
         delta = int(row["delta"])
-        # Only a size change of a file present on both sides drives the
-        # verdict: the PR side links and the warmup baseline does not, so a
-        # one-sided file can be a link-stage artifact rather than a PR change
-        # (genuinely new expensive TUs are flagged by the compile-time
-        # section instead).
-        if pr_size and base_size and abs(delta) >= OBJECT_SIG_BYTES:
+        # OBJECT_FILTER keeps only real compile-stage .o files (link-stage
+        # artifacts do not end in .o, and scratch/incremental dirs are
+        # excluded), and both sides compile the full set of objects with the
+        # same flags - so a one-sided row is a genuinely added or removed
+        # object file. Its whole size is the delta, and it drives the verdict
+        # exactly like a size change of a file present on both sides.
+        if abs(delta) >= OBJECT_SIG_BYTES:
             section.significant = True
         base_text = format_bytes(base_size) if base_size else "new"
         pr_text = format_bytes(pr_size) if pr_size else "removed"
@@ -656,11 +657,16 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
     trace_where = "name = 'OptFunction' AND dur >= 50000"
+    # Per-binary trace presence must be judged on unfiltered OptFunction rows:
+    # a binary whose complete link trace stays below the 50 ms reporting
+    # cutoff on one side (realistic for clickhouse-keeper) is an intact
+    # upload, not a lost one. The count-only aggregation is cheap; the cutoff
+    # applies only to the expensive diff aggregations below.
     sides = db.query(
         f"""SELECT file,
             countIf(side = 'pr') AS pr_count,
             countIf(side = 'base') AS base_count
-        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND {trace_where}")}
+        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND name = 'OptFunction'")}
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
