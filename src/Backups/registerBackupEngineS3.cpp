@@ -135,10 +135,15 @@ namespace
         if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3)
             return false;
 
-        destination.args.resize(3);
-        destination.args[1] = source.args[1];
-        destination.args[2] = source.args[2];
-        return !expected_credentials || destination.isEquivalentTo(*expected_credentials, context);
+        BackupInfo new_destination = destination;
+        new_destination.args.resize(3);
+        new_destination.args[1] = source.args[1];
+        new_destination.args[2] = source.args[2];
+        if (expected_credentials && !new_destination.isEquivalentTo(*expected_credentials, context))
+            return false;
+
+        destination = std::move(new_destination);
+        return true;
     }
 }
 

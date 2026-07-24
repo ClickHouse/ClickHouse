@@ -267,6 +267,25 @@ TEST(BackupInfo, CopyCredentialsSupportsS3)
 }
 
 
+TEST(BackupInfo, CopyCredentialsDoesNotModifyDestinationOnFailure)
+{
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto destination = BackupInfo::fromString("S3('https://s3.example.com/base')");
+    const auto expected = BackupInfo::fromString("S3('https://s3.example.com/base', 'OTHERKEY', 'OTHERSECRET')");
+    const String original_destination = destination.toString();
+
+    EXPECT_FALSE(BackupFactory::instance().copyCredentials(source, destination, getContext().context, &expected));
+    EXPECT_EQ(destination.toString(), original_destination);
+
+    const auto malformed_expected
+        = BackupInfo::fromString("S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET', equals())");
+    expectExceptionCode(
+        [&] { (void)BackupFactory::instance().copyCredentials(source, destination, getContext().context, &malformed_expected); },
+        ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(destination.toString(), original_destination);
+}
+
+
 TEST(BackupInfo, CopyCredentialsRequiresContext)
 {
     auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
