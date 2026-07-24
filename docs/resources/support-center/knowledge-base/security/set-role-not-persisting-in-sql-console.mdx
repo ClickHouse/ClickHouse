@@ -65,7 +65,8 @@ When that role exists, ClickHouse Cloud assigns it to the matching SQL Console u
 
 Run the following statements as a user with administrative privileges on the service, such as a SQL Console user with the `sql_console_admin` role or another user with the `ACCESS MANAGEMENT` privilege.
 
-### 1. Create the custom role {#create-the-custom-role}
+<Steps>
+<Step title="Create the custom role" id="create-the-custom-role">
 
 The following example creates a custom `sql_console_developer` role and grants it permissions on `my_database`:
 
@@ -79,7 +80,8 @@ TO sql_console_developer;
 
 `sql_console_developer` is an example role, not a built-in ClickHouse Cloud role. You can instead use an existing custom role with the permissions that the user requires.
 
-### 2. Create the per-user SQL Console role {#create-the-per-user-sql-console-role}
+</Step>
+<Step title="Create the per-user SQL Console role" id="create-the-per-user-sql-console-role">
 
 Create a role whose name contains the user's exact email address:
 
@@ -89,7 +91,8 @@ CREATE ROLE IF NOT EXISTS `sql-console-role:user@example.com`;
 
 The backticks are required because the role name contains special characters.
 
-### 3. Grant the custom role {#grant-the-custom-role}
+</Step>
+<Step title="Grant the custom role" id="grant-the-custom-role">
 
 Grant the desired role to the per-user SQL Console role:
 
@@ -105,7 +108,8 @@ GRANT sql_console_developer, sql_console_read_only
 TO `sql-console-role:user@example.com`;
 ```
 
-### 4. Start a new SQL Console session {#start-a-new-sql-console-session}
+</Step>
+<Step title="Start a new SQL Console session" id="start-a-new-sql-console-session">
 
 Ask the user to sign out and sign back in to the SQL Console, or refresh the browser tab. In the new session, ClickHouse Cloud applies `sql-console-role:user@example.com` to `sql-console:user@example.com`; no `SET ROLE` statement is required.
 
@@ -120,6 +124,9 @@ SELECT
 ```
 
 The results should include the permissions granted through `sql-console-role:user@example.com`.
+
+</Step>
+</Steps>
 
 ## Avoid modifying managed roles {#avoid-modifying-managed-roles}
 
