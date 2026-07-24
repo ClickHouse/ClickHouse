@@ -229,8 +229,8 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
 }
 
 /// A corrupt SIZES stream (a per-row length with bit 63 set) must fail with TOO_LARGE_STRING_SIZE at
-/// deserialization instead of reaching data.resize() and aborting in the allocator under debug/sanitizer
-/// builds (the observed CI crash).
+/// deserialization instead of reaching data.resize() and aborting in the allocator (LOGICAL_ERROR) under
+/// debug/sanitizer builds.
 TEST(StringSerialization, WithSizeStreamCorruptSizeStreamThrows)
 {
     MainThreadStatus::getInstance();
