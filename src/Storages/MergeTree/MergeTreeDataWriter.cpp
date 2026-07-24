@@ -29,6 +29,8 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/intExp.h>
 #include <Common/logger_useful.h>
@@ -842,7 +844,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     }
 
-    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
+    /// The `SingleDiskVolume` is stored on the part and lives for its whole lifetime, so build it in
+    /// the dedicated arena (`build()` below self-scopes; the tail metadata is re-homed further down).
+    VolumePtr data_part_volume;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        data_part_volume = createVolumeFromReservation(reservation, volume);
+    }
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
@@ -923,6 +931,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
+
+    /// partition / ttl_infos / minmax (and patch source parts) are built above outside any
+    /// dedicated-arena scope, so they were allocated in the default arenas. Re-home them into the
+    /// dedicated arena, matching the merge / mutation / load paths.
+    new_data_part->moveMetadataToDedicatedArena();
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
