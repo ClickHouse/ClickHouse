@@ -122,8 +122,14 @@ SQLiteStatementReader::SQLiteStatementReader(
             /// read through the text path instead of being rejected. A wide-integer value that fit into a
             /// SQLite INTEGER cell still renders as its decimal text, so the text path round-trips both
             /// storage classes.
+            ///
+            /// `LowCardinality(...)` wrappers are not unwrapped by `ExternalResultDescription` either, so an
+            /// explicitly declared `LowCardinality` column also goes through the text path: its default
+            /// serialization deserializes the rendered text straight into the `LowCardinality` column, and a
+            /// numeric value stored as INTEGER or REAL renders as its decimal text, so this reads every
+            /// storage class the sink produces.
             WhichDataType which(removeLowCardinalityAndNullable(column.type));
-            if (which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+            if (column.type->lowCardinality() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
             {
                 sample_block.insert(column.cloneEmpty());
                 columns_info.push_back(createColumnReadInfoForText(column));
