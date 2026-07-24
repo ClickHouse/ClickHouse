@@ -13,6 +13,8 @@ Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The o
 
 Parts that do not record their substreams in `columns_substreams.txt` are not listed.
 
+If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
+
 ## Syntax {#syntax}
 
 ```sql
