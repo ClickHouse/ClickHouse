@@ -779,8 +779,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
+            /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
+            /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
+            /// target metadata), so a default over a virtual column is inert there and must not be rejected.
+            const bool check_defaults_over_virtual_columns
+                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, /*check_defaults_over_virtual_columns=*/!create.is_ordinary_view);
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
 
         if (create.columns_list->indices)

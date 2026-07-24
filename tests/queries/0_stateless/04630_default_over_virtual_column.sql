@@ -81,6 +81,37 @@ CREATE VIEW v_dv (x String DEFAULT _table) AS SELECT 'ok' AS x;
 SELECT x FROM v_dv;
 DROP VIEW v_dv;
 
+-- An external-target (TO) materialized view forwards inserts to the target using the target metadata
+-- and never evaluates its own column defaults, so a default over a virtual column is inert and must
+-- still be accepted (both DEFAULT and MATERIALIZED). The target column has a sentinel default: an
+-- insert through the view must fill it from the target default, proving the view default is never
+-- evaluated (otherwise the insert would fail on the missing _table column).
+DROP TABLE IF EXISTS src_dv;
+DROP TABLE IF EXISTS tgt_dv;
+DROP TABLE IF EXISTS mv_dv;
+CREATE TABLE src_dv (a UInt16) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tgt_dv (x String DEFAULT 'from_target', a UInt16) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW mv_dv TO tgt_dv (x String DEFAULT _table, a UInt16) AS SELECT a FROM src_dv;
+INSERT INTO src_dv VALUES (1);
+SELECT x, a FROM tgt_dv ORDER BY a;
+DROP TABLE mv_dv;
+CREATE MATERIALIZED VIEW mv_dv TO tgt_dv (x String MATERIALIZED _table, a UInt16) AS SELECT a FROM src_dv;
+INSERT INTO src_dv VALUES (2);
+SELECT x, a FROM tgt_dv ORDER BY a;
+-- A column-modifying ALTER of an external-target view is unsupported by the storage; the virtual-column
+-- check must not fire first and mask that with UNKNOWN_IDENTIFIER, so it must still return NOT_IMPLEMENTED.
+ALTER TABLE mv_dv MODIFY COLUMN x String DEFAULT _table; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE mv_dv;
+DROP TABLE src_dv;
+DROP TABLE tgt_dv;
+
+-- An inner-table materialized view creates an inner table that DOES apply the view's column defaults on
+-- insert, so a DEFAULT/MATERIALIZED over a virtual column is genuinely harmful there and must be rejected.
+DROP TABLE IF EXISTS src_dv;
+CREATE TABLE src_dv (a UInt16) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW mv_dv (x String MATERIALIZED _table, a UInt16) ENGINE = MergeTree ORDER BY tuple() AS SELECT a FROM src_dv; -- { serverError UNKNOWN_IDENTIFIER }
+DROP TABLE src_dv;
+
 -- A table created by an affected version may already have a default over a virtual column. Loading it
 -- (full ATTACH) and an unrelated ALTER on it must still work; the stricter check applies only to new
 -- and modified columns, not to the whole existing schema.
