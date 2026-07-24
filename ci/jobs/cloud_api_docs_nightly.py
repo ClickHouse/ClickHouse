@@ -9,6 +9,8 @@ Fail-closed: the PR is only touched when regeneration succeeded and produced a
 real diff; a failed regeneration never pushes a branch or opens a PR.
 """
 
+import os
+import re
 import shlex
 
 from praktika.result import Result
@@ -16,6 +18,7 @@ from praktika.utils import Shell
 
 GENERATOR = "./ci/jobs/scripts/docs/generate_cloud_api_reference.py"
 BOT_BRANCH = "robot/cloud-api-docs"
+REPOSITORY = "ClickHouse/ClickHouse"
 # Paths the generator owns; everything staged into the bot PR lives here.
 DOCS_PATHS = (
     "docs/products/cloud/api-reference docs/_specs/cloud-openapi.json "
@@ -45,6 +48,8 @@ of the changes that goes into CHANGELOG.md):
 Sync the ClickHouse Cloud API reference documentation from the OpenAPI spec.
 """
 
+TOKENIZED_GITHUB_URL = re.compile(r"(https://x-access-token:)[^@\s]+(@github\.com/)")
+
 
 def regenerate():
     return Shell.check(f"python3 {GENERATOR} --write", verbose=True)
@@ -55,15 +60,47 @@ def has_changes():
 
 
 def open_or_refresh_pr():
-    push = [
+    repository = os.getenv("GITHUB_REPOSITORY", "")
+    if repository != REPOSITORY:
+        print(
+            "ERROR: the Cloud API docs workflow must run only in "
+            f"{REPOSITORY}, got {repository or '(unset)'}"
+        )
+        return False
+
+    prepare = [
         'git config user.name "robot-clickhouse"',
         'git config user.email "robot-clickhouse@users.noreply.github.com"',
         f"git checkout -B {BOT_BRANCH}",
         f"git add -A {DOCS_PATHS}",
         f"git commit -m {shlex.quote(PR_TITLE)}",
-        f"git push -f origin {BOT_BRANCH}",
     ]
-    if not Shell.check(" && ".join(push), verbose=True):
+    if not Shell.check(" && ".join(prepare), verbose=True):
+        return False
+
+    # actions/checkout persists the workflow GITHUB_TOKEN as an HTTP extraheader,
+    # so a plain `git push origin` ignores the GitHub App token authenticated by
+    # enable_gh_auth and pushes as github-actions[bot]. Clear that extraheader and
+    # use the App token explicitly. Keep the command out of logs because its URL
+    # contains the expanded token.
+    repo_url = (
+        "https://x-access-token:${token}@github.com/"
+        + shlex.quote(REPOSITORY)
+        + ".git"
+    )
+    refspec = shlex.quote(f"{BOT_BRANCH}:refs/heads/{BOT_BRANCH}")
+    push = (
+        'token="$(gh auth token)" && '
+        "git -c http.https://github.com/.extraheader= push -f "
+        f"{repo_url} {refspec}"
+    )
+    return_code, stdout, stderr = Shell.get_res_stdout_stderr(push, verbose=False)
+    if return_code != 0:
+        output = "\n".join(part for part in (stdout, stderr) if part)
+        output = TOKENIZED_GITHUB_URL.sub(r"\1***\2", output)
+        print("ERROR: failed to push the Cloud API docs bot branch")
+        if output:
+            print(output)
         return False
 
     # A force-push already refreshed any open PR, so a PR is created only when
@@ -73,13 +110,14 @@ def open_or_refresh_pr():
     # while the drift never reaches reviewers.
     existing = Shell.get_output(
         f"gh pr list --head {BOT_BRANCH} --base master --state open "
-        "--json number --jq '.[].number'"
+        f"--repo {shlex.quote(REPOSITORY)} --json number --jq '.[].number'"
     ).strip()
     if existing:
         print(f"PR #{existing} already open; branch refreshed")
         return True
     return Shell.check(
         f"gh pr create --base master --head {BOT_BRANCH} "
+        f"--repo {shlex.quote(REPOSITORY)} "
         f"--title {shlex.quote(PR_TITLE)} --body {shlex.quote(PR_BODY)}",
         verbose=True,
     )

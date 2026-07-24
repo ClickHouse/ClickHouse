@@ -27,6 +27,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+SETTINGS
+    [ postgresql_connection_pool_size=16, ]
+    [ postgresql_connection_pool_wait_timeout=5000, ]
+    [ postgresql_connection_pool_retries=2, ]
+    [ postgresql_connection_pool_auto_close_connection=false, ]
+    [ postgresql_connection_attempt_timeout=2 ]
+;
 ```
 
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
@@ -64,6 +71,53 @@ The table structure can differ from the original PostgreSQL table structure:
 Some parameters can be overridden by key value arguments:
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+## Settings {#settings}
+
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/sql-reference/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
+
+Connection pool size (if all connections are in use, the query waits until some connection is freed). Must be non-zero.
+
+Default value: `16`.
+
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
+
+Connection pool push/pop timeout in milliseconds on an empty pool. `0` means it blocks on an empty pool.
+
+Default value: `5000`.
+
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
+
+Connection pool push/pop retries number.
+
+Default value: `2`.
+
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
+
+Close the connection before returning it to the pool.
+
+Default value: `false`.
+
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
+
+Connection timeout in seconds of a single attempt to connect to the PostgreSQL end-point. The value is passed as a `connect_timeout` parameter of the connection URL.
+
+Default value: `2`.
+
+Example:
+
+```sql
+CREATE TABLE pg_table
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
 ## Implementation details {#implementation-details}
