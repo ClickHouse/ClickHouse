@@ -21,47 +21,43 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
   ## 启动或下载 DbVisualizer
 </div>
 
-可在 https://www.dbvis.com/download/ 下载 DbVisualizer
+DbVisualizer 可从 https://www.dbvis.com/download/ 下载
 
-<div id="1-gather-your-connection-details">
-  ## 1. 获取连接信息
-</div>
+<Steps>
+  <Step title="收集连接详细信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="内置 JDBC 驱动管理" id="2-built-in-jdbc-driver-management">
+    DbVisualizer 内置了最新的 ClickHouse JDBC 驱动。它还提供完整的 JDBC 驱动管理功能，既支持最新发行版，也支持历史版本的驱动。
 
-<div id="2-built-in-jdbc-driver-management">
-  ## 2. 内置 JDBC 驱动管理
-</div>
+    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="显示 ClickHouse JDBC 驱动配置的 DbVisualizer 驱动管理器界面" />
+  </Step>
 
-DbVisualizer 内置了适用于 ClickHouse 的最新 JDBC 驱动。它还提供了完整的 JDBC 驱动管理功能，可直接指向这些驱动的最新发行版和历史版本。
+  <Step title="连接到 ClickHouse" id="3-connect-to-clickhouse">
+    要使用 DbVisualizer 连接数据库，必须先创建并设置一个数据库连接。
 
-<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="显示 ClickHouse JDBC 驱动配置的 DbVisualizer 驱动管理界面" />
+    1. 在 **Database-&gt;Create Database Connection** 中创建新连接，并从弹出菜单中为你的数据库选择一个驱动程序。
 
-<div id="3-connect-to-clickhouse">
-  ## 3. 连接到 ClickHouse
-</div>
+    2. 系统会打开新连接的 **Object View** 选项卡。
 
-要使用 DbVisualizer 连接数据库，必须先创建并设置一个数据库连接。
+    3. 在 **Name** 字段中输入连接名称，并可选择在 **Notes** 字段中输入连接说明。
 
-1. 在 **Database-&gt;Create Database Connection** 中创建新连接，并从弹出菜单中为你的数据库选择一个驱动程序。
+    4. 将 **Database Type** 保持为 **Auto Detect**。
 
-2. 系统会打开新连接的 **Object View** 选项卡。
+    5. 如果 **Driver Type** 中所选的驱动程序带有绿色对勾标记，则表示已可直接使用。如果没有绿色对勾，你可能需要在 **Driver Manager** 中配置该驱动程序。
 
-3. 在 **Name** 字段中输入连接名称，并可选择在 **Notes** 字段中输入连接说明。
+    6. 在其余字段中输入数据库服务器的相关信息。
 
-4. 将 **Database Type** 保持为 **Auto Detect**。
+    7. 点击 **Ping Server** 按钮，验证是否可以与指定的地址和端口建立网络连接。
 
-5. 如果 **Driver Type** 中所选的驱动程序带有绿色对勾标记，则表示已可直接使用。如果没有绿色对勾，你可能需要在 **Driver Manager** 中配置该驱动程序。
+    8. 如果 Ping Server 的结果显示可以访问服务器，点击 **Connect** 以连接到数据库服务器。
 
-6. 在其余字段中输入数据库服务器的相关信息。
-
-7. 点击 **Ping Server** 按钮，验证是否可以与指定的地址和端口建立网络连接。
-
-8. 如果 Ping Server 的结果显示可以访问服务器，点击 **Connect** 以连接到数据库服务器。
-
-<Tip>
-如果你在连接数据库时遇到问题，可参阅 [修复连接问题](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) 获取一些提示。
-</Tip>
+    <Tip>
+      如果你在连接数据库时遇到问题，可参阅 [修复连接问题](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) 获取一些提示。
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 了解更多

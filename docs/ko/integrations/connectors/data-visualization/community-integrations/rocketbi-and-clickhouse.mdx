@@ -68,15 +68,15 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
   #### 메트릭 컨트롤 만들기
 </div>
 
-Tab 필터에서 사용할 메트릭 필드를 선택합니다. 집계 설정이 체크된 상태인지 확인하십시오.
+Tab 필터에서 사용할 메트릭 필드를 선택합니다. 집계 설정이 체크된 상태로 유지되는지 확인하십시오.
 
 <Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="선택한 필드와 집계 설정이 표시된 Rocket BI 메트릭 컨트롤 구성 패널" border />
 
 <br />
 
-필터 이름을 변경한 다음 컨트롤을 대시보드에 저장합니다
+필터 이름을 변경하고 컨트롤을 대시보드에 저장합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="필터 이름을 변경하고 대시보드에 저장할 준비가 된 메트릭 컨트롤" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="필터 이름을 변경해 대시보드에 저장할 준비가 된 메트릭 컨트롤" border />
 
 <div id="create-a-date-type-control">
   #### 날짜 유형 컨트롤 만들기
@@ -103,50 +103,50 @@ Date 필드를 Main Date 컬럼으로 선택하세요:
 </div>
 
 <div id="pie-chart-sales-metrics-by-regions">
-  #### 원형 차트: 지역별 매출 메트릭
+  #### 파이 차트: 지역별 판매 메트릭
 </div>
 
 Adding new chart를 선택한 다음 Pie Chart를 선택합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="원형 차트 옵션이 강조 표시된 차트 유형 선택 패널" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="파이 차트 옵션이 강조 표시된 차트 유형 선택 패널" border />
 
 <br />
 
 먼저 Dataset에서 &quot;Region&quot; 컬럼을 Legend Field로 드래그 앤 드롭합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="Region 컬럼이 범례 필드에 추가되는 드래그 앤 드롭 인터페이스" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="Region 컬럼을 범례 필드에 추가하는 드래그 앤 드롭 인터페이스" border />
 
 <br />
 
-그런 다음 Chart Control 탭으로 이동합니다
+그런 다음 Chart Control 탭으로 전환합니다
 
 <Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="시각화 구성 옵션을 보여주는 Chart Control 탭 인터페이스" border />
 
 <br />
 
-Metrics Control을 Value Field로 드래그 앤 드롭합니다
+메트릭 컨트롤을 Value Field로 드래그 앤 드롭합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="원형 차트의 값 필드에 Metrics Control이 추가되는 모습" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="파이 차트의 값 필드에 추가되는 메트릭 컨트롤" border />
 
 <br />
 
-(Metrics Control은 정렬 기준으로도 사용할 수 있습니다)
+(메트릭 컨트롤을 정렬에 사용할 수도 있습니다)
 
 추가 사용자 지정을 위해 Chart Setting으로 이동합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="원형 차트의 사용자 지정 옵션을 보여주는 차트 설정 패널" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="파이 차트의 사용자 지정 옵션을 보여주는 차트 설정 패널" border />
 
 <br />
 
-예를 들어 Data label을 Percentage로 변경합니다
+예를 들어, Data label을 Percentage로 변경합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="원형 차트에 백분율이 표시되도록 Data label 설정을 변경하는 모습" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="파이 차트에 백분율이 표시되도록 변경되는 데이터 레이블 설정" border />
 
 <br />
 
 차트를 저장한 다음 대시보드에 추가합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="다른 컨트롤과 함께 새로 추가된 원형 차트를 보여주는 대시보드 보기" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="새로 추가된 파이 차트와 다른 컨트롤이 표시된 대시보드 보기" border />
 
 <div id="use-date-control-in-a-time-series-chart">
   #### 시계열 차트에서 날짜 컨트롤 사용하기
@@ -158,7 +158,7 @@ Metrics Control을 Value Field로 드래그 앤 드롭합니다
 
 <br />
 
-Chart Control에서 Y축은 Metrics Control로, X축은 Date Range로 설정합니다
+Chart Control에서 Y축은 메트릭 컨트롤로, X축은 Date Range로 설정합니다
 
 <Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="Y축에 메트릭, X축에 날짜 범위가 설정된 Chart Control 구성" border />
 
@@ -172,7 +172,7 @@ Breakdown에 Region 컬럼을 추가합니다
 
 KPI로 Number Chart를 추가해 대시보드를 더 돋보이게 합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="KPI Number Chart, 원형 차트, 시계열 시각화가 포함된 완성된 대시보드" border />
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="KPI Number Chart, 파이 차트, 시계열 시각화가 포함된 완성된 대시보드" border />
 
 <br />
 

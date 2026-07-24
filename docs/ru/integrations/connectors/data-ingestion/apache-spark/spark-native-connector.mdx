@@ -106,17 +106,7 @@ Hive Metastore или AWS Glue.
     </dependency>
     ```
 
-    Добавьте следующий репозиторий, если хотите использовать версию SNAPSHOT.
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    Чтобы использовать версию SNAPSHOT, следуйте [инструкциям Sonatype по использованию SNAPSHOT-релизов](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) для Maven.
   </Tab>
 
   <Tab title="Gradle">
@@ -127,13 +117,7 @@ Hive Metastore или AWS Glue.
     }
     ```
 
-    Добавьте следующий репозиторий, если хотите использовать версию SNAPSHOT:
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    Чтобы использовать версию SNAPSHOT, следуйте [инструкциям Sonatype по использованию SNAPSHOT-релизов](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) для Gradle.
   </Tab>
 
   <Tab title="SBT">
@@ -174,8 +158,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 Все доступные выпущенные JAR-файлы можно найти
-в [репозитории Maven Central](https://repo1.maven.org/maven2/com/clickhouse/spark/),
-а все JAR-файлы ежедневных SNAPSHOT-сборок — в [репозитории Sonatype OSS Snapshots](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+в [репозитории Maven Central](https://repo1.maven.org/maven2/com/clickhouse/spark/).
+JAR-файлы ежедневных SNAPSHOT-сборок доступны через указанный выше репозиторий снимков Sonatype.
 
 <Warning>
   Крайне важно включить [JAR-файл clickhouse-jdbc](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
