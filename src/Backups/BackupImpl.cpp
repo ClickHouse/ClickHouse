@@ -726,7 +726,19 @@ void BackupImpl::readBackupMetadata()
             info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
         }
 
-        file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
+        const auto size_and_checksum = std::pair{info.size, info.checksum};
+
+        /// Update counters before `info` is moved below.
+        ++num_files;
+        total_size += info.size;
+        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
+        if (has_entry)
+        {
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
+
+        file_names.emplace(info.file_name, size_and_checksum);
         if (!info.object_key.empty())
         {
             if (original_endpoint.empty() || original_namespace.empty())
@@ -736,19 +748,11 @@ void BackupImpl::readBackupMetadata()
                 lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
 
             file_object_keys.emplace(info.file_name, info.object_key);
-            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+            /// The key is copied from `info.object_key` before `info` is moved into the value.
+            lightweight_snapshot_file_infos.try_emplace(info.object_key, std::move(info));
         }
         else if (info.size)
-            file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
-
-        ++num_files;
-        total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
-        if (has_entry)
-        {
-            ++num_entries;
-            size_of_entries += info.size - info.base_size;
-        }
+            file_infos.try_emplace(size_and_checksum, std::move(info));
     };
 
     Poco::XML::SAXParser xml_parser;
