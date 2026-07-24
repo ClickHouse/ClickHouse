@@ -824,6 +824,19 @@ server setting `mutation_workload` is used instead.
 **See Also**
 - [Workload Scheduling](/operations/workload-scheduling.md)
 )", 0) \
+    DECLARE(Bool, persist_mutation_author, false, R"(
+Record the user who initiated each mutation in the mutation entry (the on-disk
+entry for `MergeTree`, the ClickHouse Keeper entry for `ReplicatedMergeTree`)
+and show it in the `author` column of the `system.mutations` table.
+
+When disabled, the serialized mutation entry stays byte-for-byte identical to
+the format used by servers that do not know about the `author` field, so
+mixed-version clusters and downgrades are unaffected. When enabled, the entry
+is written with `format version: 2` carrying the `author` field; servers that
+do not support this format cannot read such entries and fail with an explicit
+`UNKNOWN_FORMAT_VERSION` error, so enable it only after the whole cluster has
+been upgraded.
+)", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time

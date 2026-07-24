@@ -126,6 +126,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
+    extern const MergeTreeSettingsBool persist_mutation_author;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
@@ -901,7 +902,10 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
+    /// An empty author keeps the mutation entry format byte-for-byte identical
+    /// to the one used by servers that do not know about the `author` field.
     String author;
+    if ((*getSettings())[MergeTreeSetting::persist_mutation_author])
     {
         const auto & client_info = query_context->getClientInfo();
         author = !client_info.initial_user.empty()

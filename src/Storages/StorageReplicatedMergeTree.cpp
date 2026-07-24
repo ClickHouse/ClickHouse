@@ -235,6 +235,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 min_relative_delay_to_measure;
     extern const MergeTreeSettingsUInt64 parts_to_delay_insert;
+    extern const MergeTreeSettingsBool persist_mutation_author;
     extern const MergeTreeSettingsBool remote_fs_zero_copy_path_compatible_mode;
     extern const MergeTreeSettingsString remote_fs_zero_copy_zookeeper_path;
     extern const MergeTreeSettingsBool replicated_can_become_leader;
@@ -8429,6 +8430,9 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// An empty author keeps the mutation entry format byte-for-byte identical
+    /// to the one used by servers that do not know about the `author` field.
+    if ((*getSettings())[MergeTreeSetting::persist_mutation_author])
     {
         const auto & client_info = query_context->getClientInfo();
         mutation_entry.author = !client_info.initial_user.empty()

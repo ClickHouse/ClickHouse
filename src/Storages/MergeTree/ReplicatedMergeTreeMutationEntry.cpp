@@ -14,13 +14,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 }
 
-/// Format version 2 appended the "author" field. Entries of both versions are readable;
-/// new entries are always written with the latest format version.
-static constexpr UInt64 REPLICATED_MUTATION_ENTRY_FORMAT_VERSION = 2;
+/// Format version 2 appended the "author" field. Entries of both versions are readable.
+/// Version 2 is written only when the author is set (see the `persist_mutation_author`
+/// setting): entries without an author stay byte-for-byte identical to version 1, so
+/// they remain readable by servers that do not know about the "author" field.
+static constexpr UInt64 REPLICATED_MUTATION_ENTRY_FORMAT_VERSION_LATEST = 2;
 
 void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
-    out << "format version: " << REPLICATED_MUTATION_ENTRY_FORMAT_VERSION << "\n"
+    out << "format version: " << (author.empty() ? 1 : 2) << "\n"
         << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << "\n"
         << "block numbers count: " << block_numbers.size() << "\n";
@@ -37,16 +39,17 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     out << "\n";
 
     out << "alter version: ";
-    out << alter_version << "\n";
+    out << alter_version;
 
-    out << "author: " << escape << author;
+    if (!author.empty())
+        out << "\nauthor: " << escape << author;
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 {
     UInt64 format_version = 0;
     in >> "format version: " >> format_version >> "\n";
-    if (format_version < 1 || format_version > REPLICATED_MUTATION_ENTRY_FORMAT_VERSION)
+    if (format_version < 1 || format_version > REPLICATED_MUTATION_ENTRY_FORMAT_VERSION_LATEST)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown replicated mutation entry format version: {}", format_version);
 
     LocalDateTime create_time_dt;

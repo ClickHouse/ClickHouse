@@ -13,3 +13,4 @@ default	test_mutations_author_regular	test_mutations_author_user
 default	test_mutations_author_regular	test_mutations\\author_special
 default	test_mutations_author_replicated	default
 default	test_mutations_author_replicated	test_mutations\\author_special
+default	test_mutations_author_disabled	1	

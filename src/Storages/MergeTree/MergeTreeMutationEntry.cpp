@@ -20,9 +20,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 }
 
-/// Format version 2 appended the "author" field. Entries of both versions are readable;
-/// new entries are always written with the latest format version.
-static constexpr UInt64 MUTATION_ENTRY_FORMAT_VERSION = 2;
+/// Format version 2 appended the "author" field. Entries of both versions are readable.
+/// Version 2 is written only when the author is set (see the `persist_mutation_author`
+/// setting): entries without an author stay byte-for-byte identical to version 1, so
+/// they remain readable by servers that do not know about the "author" field.
+static constexpr UInt64 MUTATION_ENTRY_FORMAT_VERSION_LATEST = 2;
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
 {
@@ -67,7 +69,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: " << MUTATION_ENTRY_FORMAT_VERSION << "\n"
+        *out << "format version: " << (author.empty() ? 1 : 2) << "\n"
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
@@ -83,7 +85,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             *out << "\n";
         }
 
-        *out << "author: " << escape << author << "\n";
+        if (!author.empty())
+            *out << "author: " << escape << author << "\n";
 
         out->finalize();
         out->sync();
@@ -138,7 +141,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
     UInt64 format_version = 0;
     *buf >> "format version: " >> format_version >> "\n";
-    if (format_version < 1 || format_version > MUTATION_ENTRY_FORMAT_VERSION)
+    if (format_version < 1 || format_version > MUTATION_ENTRY_FORMAT_VERSION_LATEST)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown mutation entry format version: {}", format_version);
 
     LocalDateTime create_time_dt;

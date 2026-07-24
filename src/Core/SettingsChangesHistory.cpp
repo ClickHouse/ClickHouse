@@ -1319,6 +1319,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
+        {
+            {"persist_mutation_author", false, false, "New setting. When enabled, mutation entries record the user who initiated the mutation, shown in the author column of system.mutations."},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
