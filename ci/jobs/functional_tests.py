@@ -1,7 +1,9 @@
 import argparse
+import gzip
 import json
 import os
 import random
+import re
 import subprocess
 import zlib
 from pathlib import Path
@@ -15,6 +17,7 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
@@ -183,31 +186,101 @@ def list_selected_tests(runner_options):
         return [line.strip() for line in f if line.strip()]
 
 
-def distribute_tests_into_batch(all_tests, batch_num, batch_total):
-    """Pick this job's share of `all_tests` and write it to a file.
+# The nightly `collect_test_duration_statistics` job (see
+# ci/jobs/collect_test_duration_statistics.py) publishes median per-test
+# durations for every CI job to this public URL, as a gzipped JSON mapping of
+# job name (batch suffix stripped) -> [{test_name: median_ms}, ...]. Fetched
+# over plain HTTP so it also works locally without AWS credentials.
+TEST_DURATION_STATISTICS_URL = (
+    f"https://{Settings.S3_BUCKET_TO_HTTP_ENDPOINT[Settings.S3_REPORT_BUCKET]}"
+    "/statistics/test_statistics.json.gz"
+)
+
+
+def load_test_durations(job_name):
+    """Return {test_identity: median_duration_ms} for `job_name`.
+
+    Downloads the nightly per-test duration statistics and returns the entry for
+    this job (with the trailing ", N/M" batch suffix stripped, matching how the
+    statistics are keyed). Returns an empty dict when the statistics are
+    unavailable or have no data for this job; the distribution then degrades to
+    balancing by test count rather than failing - stale/missing timing data must
+    not block the run.
+    """
+    # Strip the ", N/M" batch suffix so it matches the merged key in the file.
+    merged_job_name = re.sub(r",\s*\d+/\d+\)", ")", job_name)
+    archive = f"{temp_dir}/test_statistics.json.gz"
+    if Shell.run(f"curl -sSfL -o {archive} {TEST_DURATION_STATISTICS_URL}", verbose=True) != 0:
+        print(
+            "WARNING: could not download test duration statistics from "
+            f"{TEST_DURATION_STATISTICS_URL}; distributing by test count"
+        )
+        return {}
+    try:
+        with gzip.open(archive, "rt", encoding="utf-8") as f:
+            statistics = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"WARNING: could not parse test duration statistics: {e}")
+        return {}
+    rows = statistics.get(merged_job_name)
+    if not rows:
+        print(
+            f"WARNING: no test duration statistics for job '{merged_job_name}'; "
+            "distributing by test count"
+        )
+        return {}
+    durations = {}
+    for row in rows:
+        for name, ms in row.items():
+            durations[test_identity(name)] = int(ms)
+    print(f"Loaded durations for {len(durations)} test(s) of job '{merged_job_name}'")
+    return durations
+
+
+def distribute_tests_into_batch(all_tests, batch_num, batch_total, durations):
+    """Split `all_tests` into `batch_total` groups balanced by duration and write
+    this job's group (`batch_num`) to a file.
 
     Batching is done here (in the job), not by `clickhouse-test`'s
-    `--run-by-hash-*`, so the job controls the distribution and can evolve it
-    later (e.g. balance by historical duration). Tests are assigned round-robin
-    over a sorted, deterministic order: batch `k` gets tests at indices
-    `k, k + batch_total, k + 2*batch_total, ...`. This spreads them evenly and
-    deterministically and, because the list is sorted first, keeps consecutive
-    (numerically adjacent) tests in different batches. Returns the path to the
-    written test-list file, or `None` when there is nothing to distribute (the
-    caller then fails the job explicitly).
+    `--run-by-hash-*`, so the job controls the distribution. Tests are assigned
+    with the greedy longest-processing-time (LPT) heuristic: process tests from
+    longest to shortest and add each to the currently least-loaded batch. This
+    keeps the batches' total durations close so all parallel jobs finish at about
+    the same time. Tests with no recorded duration use the median of the known
+    ones (or 1 when none are known), so an empty statistics file degrades
+    gracefully to balancing by test count. Deterministic: ties are broken by test
+    name, so every job computes the same split. The group is written longest-test
+    first, and `clickhouse-test --test-list-file` preserves that order. Returns
+    the path to this job's test-list file, or `None` when the group is empty.
     """
     if not all_tests or not batch_num or not batch_total:
         return None
-    batch_tests = sorted(all_tests)[batch_num - 1 :: batch_total]
+    known = sorted(durations.values())
+    default_ms = known[len(known) // 2] if known else 1
+
+    def weight(test):
+        return durations.get(test, default_ms)
+
+    ordered = sorted(all_tests, key=lambda t: (-weight(t), t))
+    batches = [[] for _ in range(batch_total)]
+    loads = [0] * batch_total
+    for test in ordered:
+        target = min(range(batch_total), key=lambda b: (loads[b], b))
+        batches[target].append(test)
+        loads[target] += weight(test)
+
+    batch_tests = batches[batch_num - 1]
     print(
-        f"Distributed {len(all_tests)} test(s) into batch {batch_num}/{batch_total}: "
-        f"{len(batch_tests)} test(s) for this job"
+        f"Distributed {len(all_tests)} test(s) into {batch_total} batch(es) by "
+        f"duration; batch {batch_num} has {len(batch_tests)} test(s), estimated "
+        f"{loads[batch_num - 1] / 1000:.0f}s (per-batch estimate: "
+        f"{[round(load / 1000) for load in loads]}s)"
     )
     if not batch_tests:
         return None
     test_list_file = f"{temp_dir}/test_list_batch_{batch_num}_{batch_total}.txt"
     with open(test_list_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(sorted(batch_tests)) + "\n")
+        f.write("\n".join(batch_tests) + "\n")
     return test_list_file
 
 
@@ -1026,10 +1099,11 @@ def main():
             # instead of relying on `clickhouse-test --run-by-hash-*`. Ask
             # `clickhouse-test` for the exact set it would select (so tags,
             # --no-long, and parallel/sequential flavor filtering all apply),
-            # split it, and pass this job's share via `--test-list-file`. Fail
-            # explicitly if listing/distribution does not yield tests: silently
-            # falling back to hash batching would hide a broken listing behind a
-            # run that no longer matches the intended distribution.
+            # balance it across batches by median per-test duration, and pass this
+            # job's share via `--test-list-file`. Fail explicitly if
+            # listing/distribution does not yield tests: silently falling back to
+            # hash batching would hide a broken listing behind a run that no
+            # longer matches the intended distribution.
             batch_test_list_file = None
             if batch_num and total_batches and not tests and not is_bugfix_validation:
                 all_tests = list_selected_tests(runner_options)
@@ -1040,8 +1114,9 @@ def main():
                         "distribution: 'clickhouse-test --list-tests' returned "
                         "no tests",
                     ).complete_job()
+                durations = load_test_durations(info.job_name)
                 batch_test_list_file = distribute_tests_into_batch(
-                    all_tests, batch_num, total_batches
+                    all_tests, batch_num, total_batches, durations
                 )
                 if not batch_test_list_file:
                     Result.create_from(
