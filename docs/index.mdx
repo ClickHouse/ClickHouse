@@ -245,15 +245,6 @@ export const AskAILink = ({ children }) => {
     );
 };
 
-export const mcpJsonConfig = `{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
-    }
-  }
-}`;
-
 export const PageWrapper = ({ children }) => {
     const [visible, setVisible] = useState(false);
     useEffect(() => {
@@ -537,7 +528,7 @@ export const PageWrapper = ({ children }) => {
                     </Tab>
                     <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>claude_desktop_config.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                     <Tab title="Codex" icon="/images/logo-codex.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
@@ -545,11 +536,11 @@ export const PageWrapper = ({ children }) => {
                     </Tab>
                     <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>.cursor/mcp.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                     <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                 </Tabs>
             </div>
