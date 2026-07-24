@@ -361,9 +361,12 @@ struct ToDate32TransformFromSecondsOrDays
                 /// Casting a huge floating-point value directly to Int64 is undefined behaviour and yields
                 /// different results across architectures (e.g. INT64_MIN on x86 vs saturation on AArch64),
                 /// which would then map far outside the Date32 range. Cap it in the floating-point domain first.
+                /// Note: pass DateLUTImpl::Time, not time_t - on Darwin time_t is a different type (long vs
+                /// long long), so the out-of-LUT-range escape path in toDayNum would not be taken and
+                /// timestamps beyond 2299 would saturate to the LUT end instead of 9999-12-31.
                 if constexpr (is_floating_point<FromType>)
-                    return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
+                    return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
+                return time_zone.toDayNum(std::min(static_cast<DateLUTImpl::Time>(from), static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP)));
             }
 
         return static_cast<Int32>(from);
