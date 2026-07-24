@@ -1197,10 +1197,8 @@ selectDispatchBlock(
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
-
-            default:
-                UNREACHABLE();
         }
+        UNREACHABLE();
     };
 
     /// CHJ supports only one join clause for now
