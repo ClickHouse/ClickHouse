@@ -35,15 +35,11 @@ Chargez les données extraites ou traitées dans ClickHouse pour des pipelines d
 </div>
 
 <Steps>
-  <Step>
-    ### Rassemblez vos informations de connexion ClickHouse
-
+  <Step title="Rassemblez vos informations de connexion ClickHouse" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ### Prérequis Apify
-
+  <Step title="Prérequis Apify" id="2-apify-prerequisites">
     Vous aurez également besoin de :
 
     * Un [compte Apify](https://console.apify.com/sign-up) (offre gratuite disponible).
@@ -51,9 +47,7 @@ Chargez les données extraites ou traitées dans ClickHouse pour des pipelines d
     * Node.js 18+ installé localement (pour les exemples JavaScript).
   </Step>
 
-  <Step>
-    ### Installer les dépendances
-
+  <Step title="Installer les dépendances" id="3-install-dependencies">
     Installez le client JavaScript Apify et le client JavaScript ClickHouse :
 
     ```bash
@@ -65,9 +59,7 @@ Chargez les données extraites ou traitées dans ClickHouse pour des pipelines d
     </Note>
   </Step>
 
-  <Step>
-    ### Créer une table cible dans ClickHouse
-
+  <Step title="Créer une table cible dans ClickHouse" id="4-create-a-target-table">
     Créez une table pour stocker les données extraites. Le schéma dépend de l’Actor que vous utilisez. Cet exemple utilise [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) pour un Actor de scraping de produits :
 
     ```sql
@@ -84,9 +76,7 @@ Chargez les données extraites ou traitées dans ClickHouse pour des pipelines d
     ```
   </Step>
 
-  <Step>
-    ### Récupérer le dataset Apify et le charger dans ClickHouse
-
+  <Step title="Récupérer le dataset Apify et le charger dans ClickHouse" id="5-fetch-and-load">
     Le script suivant récupère les résultats d’une exécution d’Actor Apify et les insère dans ClickHouse :
 
     ```javascript
@@ -124,15 +114,13 @@ Chargez les données extraites ou traitées dans ClickHouse pour des pipelines d
     </Tip>
   </Step>
 
-  <Step>
-    ### Automatiser avec des webhooks
-
+  <Step title="Automatiser avec des webhooks" id="6-automate-with-webhooks">
     Au lieu d’exécuter le script manuellement, automatisez le pipeline afin que les données soient chargées dans ClickHouse à chaque fin d’exécution d’un Actor :
 
     1. Dans la [Console Apify](https://console.apify.com/), accédez à votre Actor et ouvrez l’onglet **Integrations**.
     2. Ajoutez un nouveau webhook avec :
        * **Event type:** `ACTOR.RUN.SUCCEEDED`
-       * **Action:** une requête HTTP POST vers votre endpoint de chargement, ou le déclenchement d’un autre Actor chargé de l’insertion dans ClickHouse.
+       * **Action:** une requête HTTP POST vers votre point de terminaison de chargement, ou le déclenchement d’un autre Actor chargé de l’insertion dans ClickHouse.
     3. Le payload du webhook inclut `defaultDatasetId`, que vous pouvez utiliser pour récupérer les résultats de l’exécution.
 
     Consultez la [documentation des webhooks Apify](https://docs.apify.com/platform/integrations/webhooks) pour plus de détails sur le payload et les options de configuration.
@@ -163,7 +151,7 @@ Faites correspondre le schéma de votre table ClickHouse aux champs de sortie de
   ### Performances
 </div>
 
-Pour des insertions à haut débit depuis le client JavaScript, consultez les [conseils d&#39;optimisation des performances](/fr/integrations/language-clients/js#tips-for-performance-optimizations). Regroupez les lignes dans des insertions de plus grande taille plutôt que d&#39;insérer une ligne à la fois, et envisagez les [insertions asynchrones](/fr/concepts/features/operations/insert/asyncinserts) lorsque le batching côté client n&#39;est pas pratique.
+Pour des insertions à haut débit depuis le client JavaScript, consultez les [conseils d&#39;optimisation des performances](/fr/integrations/language-clients/js/index#tips-for-performance-optimizations). Regroupez les lignes dans des insertions de plus grande taille plutôt que d&#39;insérer une ligne à la fois, et envisagez les [insertions asynchrones](/fr/concepts/features/operations/insert/asyncinserts) lorsque le batching côté client n&#39;est pas pratique.
 
 <div id="security">
   ### Sécurité
@@ -177,8 +165,8 @@ Les exemples de cette page utilisent l’utilisateur et la base de données `def
 
 * [Documentation de la plateforme Apify](https://docs.apify.com)
 * [Référence de l’API Apify](https://docs.apify.com/api/v2)
-* [Client JavaScript d’Apify](https://docs.apify.com/api/client/js)
+* [client JavaScript Apify](https://docs.apify.com/api/client/js)
 * [Client Python d’Apify](https://docs.apify.com/api/client/python)
 * [Apify Store (Actors prêts à l’emploi)](https://apify.com/store)
 * [Vue d’ensemble des intégrations Apify](https://docs.apify.com/platform/integrations)
-* [Client JavaScript ClickHouse](/fr/integrations/language-clients/js)
+* [Client JavaScript ClickHouse](/fr/integrations/language-clients/js/index)

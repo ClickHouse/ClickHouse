@@ -105,7 +105,7 @@ mas isso exige etapas adicionais.
    CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
 ```
 
-A `publicação` `clickpipes` conterá o conjunto de eventos de alteração gerados pelas tabelas especificadas e, posteriormente, será usada na ingestão do fluxo de replicação.
+A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 <Info>
   Alguns serviços gerenciados não concedem aos usuários administradores as permissões necessárias para criar uma publicação para um schema inteiro. Se esse for o caso, abra um ticket de suporte com seu provedor. Como alternativa, você pode pular esta etapa (e as próximas) e, em vez disso, fazer uma carga única dos seus dados.

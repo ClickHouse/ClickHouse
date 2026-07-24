@@ -42,7 +42,7 @@ ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Data
    ```
 
 2. 将 JAR 上传到 Databricks 工作区：
-   * 前往 **Workspace** → 导航到所需文件夹
+   * 前往 **Workspace** → 导航到目标文件夹
    * 点击 **Upload** → 选择 JAR 文件
    * JAR 将存储在你的工作区中
 
@@ -53,9 +53,9 @@ ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Data
    * 选择 **DBFS** 或 **Workspace** → 导航到已上传的 JAR 文件
    * 点击 **Install**
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="Databricks Libraries 选项卡" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks Libraries 选项卡" />
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="从工作区卷安装库" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="从工作区卷安装库" />
 
 4. 重启集群以加载该库
 
@@ -90,7 +90,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="Databricks Maven 库配置" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven 库配置" />
 
 3. 点击 **Install**，然后重启集群以加载该库
 
@@ -334,6 +334,6 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
   ## 相关文档
 </div>
 
-* [Spark Native Connector 指南](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - 完整的连接器文档
-* [TableProvider API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - 基于格式的访问详情
-* [Catalog API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - 基于 目录 的访问详情
+* [Spark 原生连接器指南](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - 完整连接器文档
+* [TableProvider API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - 基于格式的访问说明
+* [Catalog API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - 基于 catalog 的访问说明
