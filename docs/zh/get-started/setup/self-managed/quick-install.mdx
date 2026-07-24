@@ -11,9 +11,7 @@ doc_type: 'guide'
 如果你不需要在生产环境中安装 ClickHouse，可以使用 curl 运行安装脚本。该脚本会自动为你的操作系统选择合适的可执行文件。
 
 <Steps>
-  <Step>
-    ## 使用 curl 安装 ClickHouse
-
+  <Step title="使用 curl 安装 ClickHouse" id="install-clickhouse-using-curl">
     运行以下命令，下载适用于你的操作系统的单个可执行文件。
 
     ```bash
@@ -36,9 +34,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## 启动 clickhouse-local
-
+  <Step title="启动 clickhouse-local" id="start-clickhouse-local">
     `clickhouse-local` 允许你使用 ClickHouse 强大的 SQL 语法处理本地和远程文件，
     且无需任何配置。表数据存储在临时位置，这意味着在 `clickhouse-local`
     重启后，之前创建的表将不再可用。
@@ -50,20 +46,16 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 启动 clickhouse-server
-
+  <Step title="启动 clickhouse-server" id="start-clickhouse-server">
     如果你希望持久化数据，就需要运行 `clickhouse-server`。你可以
-    使用以下命令启动 ClickHouse 服务器：
+    使用以下命令启动 ClickHouse server：
 
     ```bash
     ./clickhouse server
     ```
   </Step>
 
-  <Step>
-    ## 启动 clickhouse-client
-
+  <Step title="启动 clickhouse-client" id="start-clickhouse-client">
     在服务器启动后，打开一个新的终端窗口并运行以下命令，
     启动 `clickhouse-client`：
 
@@ -82,7 +74,7 @@ doc_type: 'guide'
     local-host :)
     ```
 
-    表数据存储在当前目录中，并且在 ClickHouse 服务器重启后
+    表数据存储在当前目录中，并且在 ClickHouse server 重启后
     仍然可用。如有需要，你可以将
     `-C config.xml` 作为附加命令行参数传递给 `./clickhouse server`，
     并在配置文件中提供更多配置。所有可用的配置项都记录在[这里](/zh/reference/settings/server-settings/settings)以及

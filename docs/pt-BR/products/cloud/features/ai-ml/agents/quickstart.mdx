@@ -26,17 +26,13 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
 </div>
 
 <Steps>
-  <Step>
-    ### Inicie o ClickHouse Agents
-
+  <Step title="Inicie o ClickHouse Agents" id="launch-agents">
     No seu serviço Cloud, clique em **ClickHouse agents** na barra lateral esquerda para abrir a central dos agentes. Clique em **Launch ClickHouse agents** para abrir o Agent Builder.
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Navegação do serviço Cloud com ClickHouse agents (Beta) selecionado, mostrando a central dos agentes com o botão Launch ClickHouse agents" size="lg" />
   </Step>
 
-  <Step>
-    ### Crie o agente
-
+  <Step title="Crie o agente" id="create-the-agent">
     No Agent Builder, clique em **Create New Agent** na parte superior do painel esquerdo. Preencha os campos principais:
 
     * **Name** - um identificador curto para o seu agente.
@@ -48,9 +44,7 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Painel do Agent Builder mostrando o menu suspenso Create New Agent, os campos do formulário (Name, Description, Category, Instructions, Model) e a seção Capabilities" size="lg" />
   </Step>
 
-  <Step>
-    ### Adicione recursos e ferramentas
-
+  <Step title="Adicione recursos e ferramentas" id="attach-tools">
     Os recursos e as ferramentas do agente ficam em dois lugares.
 
     **Capabilities** no painel principal — recursos nativos como [Run Code](/pt-BR/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Web Search](/pt-BR/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/pt-BR/products/cloud/features/ai-ml/agents/builder/mcp-servers) e [Skills](/pt-BR/products/cloud/features/ai-ml/agents/builder/skills). Ative os que o agente precisar.
@@ -70,9 +64,7 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
     Você pode alterar os recursos e as ferramentas adicionados a qualquer momento.
   </Step>
 
-  <Step>
-    ### Execute uma consulta
-
+  <Step title="Execute uma consulta" id="run-a-query">
     Salve o agente, abra uma nova conversa e selecione seu agente no seletor de agentes. Digite uma pergunta — por exemplo, *&quot;Quais são minhas 10 principais tabelas por contagem de linhas nesta semana?&quot;* — e o agente planeja, chama ferramentas conforme necessário e retorna uma resposta.
 
     <Image img="/images/cloud/agent-builder/chat-query.webp" alt="Conversa no chat mostrando a pergunta 'What are my top 10 tables by row count this week?' e a resposta do agente — uma tabela em Markdown classificando as 10 principais tabelas entre os serviços por contagem de linhas, com Key Observations abaixo" size="lg" />
@@ -80,8 +72,8 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
 </Steps>
 
 <div id="next-steps">
-  ## Próximas etapas
+  ## Próximos passos
 </div>
 
-* [Compartilhe o agente](/pt-BR/products/cloud/features/ai-ml/agents/sharing-and-access) com sua equipe.
+* [Compartilhe o agente](/pt-BR/products/cloud/features/ai-ml/agents/sharing-and-access) com a equipe.
 * Publique no [marketplace](/pt-BR/products/cloud/features/ai-ml/agents/marketplace) quando o agente estiver estável.

@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+أُضيف في: v26.7.0
+
+يقسّم النص إلى n-grams باستخدام أسلوب tokenization نفسه المستخدم في قاموس Naive Bayes (تخطيط [`NAIVE_BAYES`](/ar/reference/statements/create/dictionary/layouts/naive-bayes)): وضع `byte` أو `codepoint` أو `token`، مع حشو اختياري للحدود. استخدمه لإنشاء بيانات التدريب المجمّعة مسبقًا `(ngram, class_id, count)` التي يستهلكها هذا النوع من القواميس، بحيث تتطابق n-grams الخاصة بالتدريب تمامًا مع ما ينتجه [`naiveBayesClassifier`](/ar/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) وقت تنفيذ الاستعلام.
+
+**البنية**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**المعاملات**
+
+* `text` — النص المراد تقسيمه إلى مقاطع n-gram. [`String`](/ar/reference/data-types/string)
+* `n` — حجم n-gram، من 1 إلى 1024. [`const UInt`](/ar/reference/data-types/int-uint)
+* `mode` — وضع تقسيم النص إلى رموز: &#39;byte&#39; أو &#39;codepoint&#39; أو &#39;token&#39;. [`const String`](/ar/reference/data-types/string)
+* `start_token` — اختياري. رمز حدّي يُضاف إلى بداية الإدخال (n-1) مرة؛ يكون رقمًا مع &#39;byte&#39;/&#39;codepoint&#39;، أو قيمة حرفية مع &#39;token&#39;. وتعني القيمة الفارغة عدم وجود حشو. [`const String`](/ar/reference/data-types/string)
+* `end_token` — اختياري. رمز حدّي يُضاف إلى نهاية الإدخال (n-1) مرة. [`const String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+مقاطع n-gram للنص المُدخل. [`Array(String)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**ثنائيات الرموز**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**ثنائيات التوكنات مع الحشو عند الحدود**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**ثنائيات البايت مع حشو الحدود (تُعرض النتيجة بالنظام الست عشري)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**ثنائيات نقاط الترميز مع الحشو عند الحدود (النتيجة معروضة بالنظام الست عشري)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>
@@ -275,7 +343,7 @@ SELECT reverseBySeparator('abcde', '')
 
 أُضيف في: v1.1.0
 
-يُقسِّم سلسلة نصية باستخدام السلسلة الثابتة المحددة `separator`، والتي يجب أن تتكوّن من محرف واحد تمامًا، إلى مصفوفة من السلاسل الفرعية.
+يُقسِّم سلسلة نصية مفصولة بالسلسلة الثابتة المحددة `separator`، والتي يجب أن تتكوّن من محرف واحد تمامًا، إلى مصفوفة من السلاسل الفرعية.
 قد تُحدَّد سلاسل فرعية فارغة إذا ظهر الفاصل في بداية السلسلة أو نهايتها، أو إذا وُجدت عدة فواصل متتالية.
 
 <Note>

@@ -1,10 +1,10 @@
 ---
 sidebarTitle: 'Embeddable'
 slug: /integrations/embeddable
-keywords: ['ClickHouse', 'Embeddable', 'ربط', 'تكامل', 'UI']
-description: 'Embeddable هي مجموعة أدوات للمطورين لبناء تجارب تحليلات سريعة وتفاعلية وقابلة للتخصيص بالكامل مباشرةً داخل تطبيقك.'
+keywords: ['clickhouse', 'Embeddable', 'ربط', 'تكامل', 'UI']
+description: 'Embeddable هي مجموعة أدوات للمطورين لإنشاء تجارب تحليلات سريعة وتفاعلية ومخصصة بالكامل مباشرةً داخل تطبيقك.'
 title: 'ربط Embeddable بـ ClickHouse'
-doc_type: 'دليل'
+doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_visualization'
@@ -15,65 +15,63 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-في [Embeddable](https://embeddable.com/) يمكنك تعريف [نماذج البيانات](https://docs.embeddable.com/data-modeling/introduction) و[المكوّنات](https://docs.embeddable.com/development/introduction) برمجيًا (مع تخزينها في مستودع الشيفرة الخاص بك)، ثم استخدام **SDK** الخاص بنا لإتاحتها لفريقك داخل **منشئ** Embeddable القوي **من دون كتابة تعليمات برمجية.**
+في [Embeddable](https://embeddable.com/) يمكنك تعريف [نماذج البيانات](https://docs.embeddable.com/data-modeling/introduction) و[المكوّنات](https://docs.embeddable.com/development/introduction) في الشيفرة (المخزّنة في مستودع الشيفرة الخاص بك) واستخدام **SDK** لدينا لإتاحتها لفريقك في **أداة الإنشاء دون شيفرة** القوية من Embeddable.
 
-والنتيجة هي قدرتك على تقديم تحليلات سريعة وتفاعلية موجّهة للعملاء مباشرةً داخل منتجك؛ يصمّمها فريق المنتج لديك؛ ويبنيها فريق الهندسة لديك؛ وتتولى صيانتها الفرق المعنية بالعملاء والبيانات لديك. تمامًا كما ينبغي.
+والنتيجة النهائية هي القدرة على تقديم تحليلات سريعة وتفاعلية موجّهة للعملاء مباشرةً داخل منتجك؛ يصمّمها فريق المنتج لديك؛ ويبنيها فريق الهندسة لديك؛ وتتولّى صيانتها الفرق المواجهة للعملاء وفرق البيانات لديك. تمامًا كما ينبغي أن تكون.
 
-ويعني الأمان المدمج على مستوى الصفوف أن كل مستخدم لا يرى إلا البيانات المصرّح له برؤيتها. كما أن وجود مستويين من التخزين المؤقت القابل للتهيئة بالكامل يتيح لك تقديم تحليلات سريعة وآنية وعلى نطاق واسع.
+يعني الأمان المضمّن على مستوى الصفوف أن كل مستخدم لا يرى إلا البيانات المسموح له برؤيتها بالضبط. كما أن وجود مستويين من التخزين المؤقت القابل للتهيئة بالكامل يعني أنه يمكنك تقديم تحليلات سريعة وفي الوقت الفعلي وعلى نطاق واسع.
 
-<div id="1-gather-your-connection-details">
-  ## 1. اجمع تفاصيل الاتصال لديك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="إنشاء نوع اتصال لـ ClickHouse" id="2-create-a-clickhouse-connection-type">
+    يمكنك إضافة اتصال لقاعدة بيانات باستخدام Embeddable API. يُستخدم هذا اتصال للاتصال بخدمة ClickHouse الخاصة بك. يمكنك إضافة اتصال باستخدام استدعاء API التالي:
 
-<div id="2-create-a-clickhouse-connection-type">
-  ## 2. إنشاء نوع اتصال لـ ClickHouse
-</div>
+    ```javascript title="Query"
+    // for security reasons, this must *never* be called from your client-side
+    fetch('https://api.embeddable.com/api/v1/connections', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${apiKey}` /* keep your API Key secure */,
+      },
+      body: JSON.stringify({
+        name: 'my-clickhouse-db',
+        type: 'clickhouse',
+        credentials: {
+          host: 'my.clickhouse.host',
+          user: 'clickhouse_user',
+          port: 8443,
+          password: '*****',
+        },
+      }),
+    });
+    ```
 
-يمكنك إضافة اتصال لقاعدة بيانات باستخدام Embeddable API. يُستخدم هذا اتصال للاتصال بخدمة ClickHouse الخاصة بك. يمكنك إضافة اتصال باستخدام استدعاء API التالي:
+    ```text title="Response"
+    Status 201 { errorMessage: null }
+    ```
 
-```javascript title="Query"
-// for security reasons, this must *never* be called from your client-side
-fetch('https://api.embeddable.com/api/v1/connections', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    Authorization: `Bearer ${apiKey}` /* keep your API Key secure */,
-  },
-  body: JSON.stringify({
-    name: 'my-clickhouse-db',
-    type: 'clickhouse',
-    credentials: {
-      host: 'my.clickhouse.host',
-      user: 'clickhouse_user',
-      port: 8443,
-      password: '*****',
-    },
-  }),
-});
-```
+    يمثّل ما سبق إجراء `CREATE`، ولكن جميع عمليات `CRUD` متاحة.
 
-```text title="Response"
-Status 201 { errorMessage: null }
-```
+    يمكن العثور على `apiKey` بالنقر على &quot;**Publish**&quot; في إحدى لوحات معلومات Embeddable.
 
-يمثّل ما سبق إجراء `CREATE`، ولكن جميع عمليات `CRUD` متاحة.
+    يشير `name` إلى اسم فريد لتحديد هذا الاتصال.
 
-يمكن العثور على `apiKey` بالنقر على &quot;**Publish**&quot; في إحدى لوحات معلومات Embeddable.
+    * بشكل افتراضي، ستبحث نماذج البيانات لديك عن اتصال باسم &quot;default&quot;، ولكن يمكنك تزويد نماذجك بأسماء `data_source` مختلفة لدعم ربط نماذج بيانات مختلفة باتصالات مختلفة (ما عليك سوى تحديد اسم data&#95;source في النموذج)
 
-يشير `name` إلى اسم فريد لتحديد هذا الاتصال.
+    يحدّد `type` لـ Embeddable برنامج التشغيل الذي يجب استخدامه.
 
-* بشكل افتراضي، ستبحث نماذج البيانات لديك عن اتصال باسم &quot;default&quot;، ولكن يمكنك تزويد نماذجك بأسماء `data_source` مختلفة لدعم ربط نماذج بيانات مختلفة باتصالات مختلفة (ما عليك سوى تحديد اسم data&#95;source في النموذج)
+    * هنا ستحتاج إلى استخدام `clickhouse`، ولكن يمكنك ربط عدة مصادر بيانات مختلفة بمساحة عمل Embeddable واحدة، لذا قد تستخدم مصادر أخرى مثل: `postgres` و`bigquery` و`mongodb` وما إلى ذلك.
 
-يحدّد `type` لـ Embeddable برنامج التشغيل الذي يجب استخدامه.
+    `credentials` هو كائن JavaScript يحتوي على بيانات الاعتماد المطلوبة التي يتوقعها برنامج التشغيل.
 
-* هنا ستحتاج إلى استخدام `clickhouse`، ولكن يمكنك ربط عدة مصادر بيانات مختلفة بمساحة عمل Embeddable واحدة، لذا قد تستخدم مصادر أخرى مثل: `postgres` و`bigquery` و`mongodb` وما إلى ذلك.
+    * تُشفَّر هذه البيانات بأمان، ولا تُستخدم إلا لاسترداد البيانات التي وصفتها بدقة في نماذج البيانات الخاصة بك.
+      وتوصي Embeddable بشدة بإنشاء مستخدم قاعدة بيانات للقراءة فقط لكل اتصال (إذ لن تقوم Embeddable إلا بالقراءة من قاعدة البيانات لديك، ولن تكتب فيها).
 
-`credentials` هو كائن JavaScript يحتوي على بيانات الاعتماد المطلوبة التي يتوقعها برنامج التشغيل.
-
-* تُشفَّر هذه البيانات بأمان، ولا تُستخدم إلا لاسترداد البيانات التي وصفتها بدقة في نماذج البيانات الخاصة بك.
-  وتوصي Embeddable بشدة بإنشاء مستخدم قاعدة بيانات للقراءة فقط لكل اتصال (إذ لن تقوم Embeddable إلا بالقراءة من قاعدة البيانات لديك، ولن تكتب فيها).
-
-لدعم الاتصال بقواعد بيانات مختلفة لبيئات الإنتاج وqa والاختبار وما إلى ذلك (أو لدعم قواعد بيانات مختلفة لعملاء مختلفين)، يمكنك إسناد كل اتصال إلى بيئة (راجع [Environments API](https://docs.embeddable.com/data/environments)).
+    لدعم الاتصال بقواعد بيانات مختلفة لبيئات الإنتاج وqa والاختبار وما إلى ذلك (أو لدعم قواعد بيانات مختلفة لعملاء مختلفين)، يمكنك إسناد كل اتصال إلى بيئة (راجع [Environments API](https://docs.embeddable.com/data/environments)).
+  </Step>
+</Steps>

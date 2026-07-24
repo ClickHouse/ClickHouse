@@ -82,9 +82,7 @@ Déployer OpenTelemetry sur de nombreux services prend souvent du temps et n’o
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### Déployer Odigos avec Helm
-
+  <Step title="Déployer Odigos avec Helm" id="deploy-odigos">
     Odigos Enterprise nécessite un jeton de licence pour un déploiement sur site. Exportez-le dans votre shell :
 
     ```bash
@@ -114,9 +112,7 @@ Déployer OpenTelemetry sur de nombreux services prend souvent du temps et n’o
     ```
   </Step>
 
-  <Step>
-    #### Ajouter des sources dans l’UI d’Odigos
-
+  <Step title="Ajouter des sources dans l’UI d’Odigos" id="add-sources">
     1. Effectuez un transfert de port vers le service UI d’Odigos :
 
     ```bash
@@ -129,9 +125,7 @@ Déployer OpenTelemetry sur de nombreux services prend souvent du temps et n’o
     5. Vérifiez que les charges de travail ont bien été instrumentées dans la colonne Sources.
   </Step>
 
-  <Step>
-    #### Ajouter ClickStack comme destination dans l’UI Odigos
-
+  <Step title="Ajouter ClickStack comme destination dans l’UI Odigos" id="add-destination-ui">
     Pour envoyer de la télémétrie vers ClickStack, ajoutez une destination **OTLP HTTP** dans Odigos. La configuration exacte dépend du mode de déploiement de ClickStack. Avec Open Source ClickStack, le OpenTelemetry Collector est inclus et la clé d’ingestion est générée automatiquement dans l’HyperDX UI. Avec Managed ClickStack, vous exécutez votre propre collector ClickStack autonome et choisissez vous-même le jeton d’authentification au démarrage du conteneur.
 
     <Tip>
@@ -193,9 +187,7 @@ Déployer OpenTelemetry sur de nombreux services prend souvent du temps et n’o
     </Tabs>
   </Step>
 
-  <Step>
-    #### Vérifier la télémétrie dans ClickStack
-
+  <Step title="Vérifier la télémétrie dans ClickStack" id="verify-telemetry">
     1. Ouvrez l&#39;interface ClickStack (HyperDX) :
        * **Open source ClickStack** : par exemple, `http://<host>:8080` sur l&#39;image tout-en-un.
        * **Managed ClickStack** : ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud), puis cliquez sur **Launch ClickStack**. Consultez [Accéder à l&#39;interface ClickStack](/fr/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) pour plus de détails.
