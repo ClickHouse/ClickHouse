@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Conecta tu catálogo Iceberg'
 title: 'Cómo conectar tu catálogo Iceberg en ClickHouse Cloud'
-useCases: ['Data warehousing']
+useCases: ['Almacén de datos']
 products: ['Cloud']
 skillLevel: 'Principiante'
 description: 'Aprende a conectar ClickHouse Cloud a tu catálogo de datos y a consultar tablas Iceberg.'
@@ -16,7 +16,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">Data warehousing</Badge>
+  <Badge size="lg" color="blue">almacén de datos</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -51,14 +51,12 @@ En esta guía de inicio rápido, harás lo siguiente:
 Al final, tendrás ClickHouse Cloud conectado a tu catálogo Iceberg y podrás ejecutar consultas SQL sobre tablas Iceberg sin copiar los datos.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Crear una conexión a DataLakeCatalog
-
-    En este paso, te conectarás a tu Data Lake Catalog en ClickHouse Cloud.
+  <Step title="Crear una conexión a DataLakeCatalog" id="create-a-datalakecatalog-connection">
+    En este paso, te conectarás a tu Catálogo del lago de datos en ClickHouse Cloud.
 
     1. Abre tu servicio de ClickHouse Cloud.
 
-    2. Ve a **Data Sources → Connect to your Data Lake Catalog**.
+    2. Ve a **Data Sources â Connect to your Catálogo del lago de datos**.
 
     3. Selecciona tu catálogo de datos en el menú desplegable.
 
@@ -77,9 +75,7 @@ Al final, tendrás ClickHouse Cloud conectado a tu catálogo Iceberg y podrás e
     5. Guarda el catálogo. Ahora deberías ver el catálogo de datos cargado en la página Data Sources, junto con el número de tablas disponibles en la base de datos.
   </Step>
 
-  <Step>
-    ### Consultar una tabla Iceberg
-
+  <Step title="Consultar una tabla Iceberg" id="query-iceberg-table">
     En este paso, consultarás una tabla Iceberg desde tu catálogo de datos.
 
     1. Ya sea haciendo clic en `Show Tables` o en `SQL Console`, llegarás a la consola SQL
@@ -94,7 +90,9 @@ Al final, tendrás ClickHouse Cloud conectado a tu catálogo Iceberg y podrás e
   </Step>
 </Steps>
 
-## Próximos pasos
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
 Ahora que te has conectado a tu lago de datos, puedes probar a escribir una tabla Iceberg en ClickHouse.
 
