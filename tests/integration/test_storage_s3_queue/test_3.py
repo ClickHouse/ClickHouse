@@ -898,6 +898,98 @@ def test_system_queue_metadata_ordered_partitioned_buckets(started_cluster):
     node.query(f"DROP TABLE {table_name} SYNC")
 
 
+def test_system_queue_metadata_ordered_skips_empty_bucket_roots(started_cluster):
+    # All `buckets/<n>/processed` roots are created at table startup, but a
+    # bucket that never processed a file keeps an empty pointer. With far more
+    # buckets than files, most roots stay empty, so this deterministically
+    # exercises the reader's skip of empty pointers: `processed_path` must expose
+    # only the buckets that actually processed a file, never the empty ones.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_empty_buckets_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    partition_regex = r"(?P<hostname>[^_]+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)"
+    buckets = 8
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_buckets": buckets,
+            "s3queue_processing_threads_num": buckets,
+        },
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component="hostname",
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    # Far fewer files than buckets guarantees several empty bucket roots.
+    hostnames = ["server-1", "server-2"]
+    for hostname in hostnames:
+        put_s3_file_content(
+            started_cluster,
+            f"{files_path}/{hostname}_20251217T100000.000000Z_0001.csv",
+            b"1,1,1\n",
+        )
+
+    for _ in range(60):
+        if len(hostnames) == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    pairs = (
+        node.query(
+            f"""
+            SELECT e.1, e.2
+            FROM (
+                SELECT arrayJoin(processed_path) AS e
+                FROM system.s3_queue_metadata
+                WHERE zookeeper_path ilike '%{keeper_path}%'
+            )
+            ORDER BY 1
+            """
+        )
+        .strip()
+        .split("\n")
+    )
+    assert pairs and pairs != [""], "processed_path must not be empty"
+
+    root_buckets = set()
+    child_buckets = set()
+    partitions_seen = set()
+    for pair in pairs:
+        key, _, value = pair.partition("\t")
+        parts = key.split("/")
+        assert parts[0] == "buckets" and parts[2] == "processed", key
+        # Only processed buckets are returned, so every value is a real path.
+        assert files_path in value, (key, value)
+        if len(parts) == 3:
+            root_buckets.add(parts[1])
+        else:
+            assert len(parts) == 4, key
+            child_buckets.add(parts[1])
+            partitions_seen.add(parts[3])
+
+    # Empty bucket roots must be skipped: the returned roots are exactly the
+    # buckets that processed a file, and there are fewer of them than buckets.
+    assert root_buckets == child_buckets, (root_buckets, child_buckets)
+    assert len(root_buckets) < buckets, root_buckets
+    assert partitions_seen == set(hostnames), (partitions_seen, hostnames)
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
 def test_system_queue_metadata_ordered_partitioned_last_processed(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"test_system_queue_metadata_part_last_{generate_random_string()}"
@@ -1081,5 +1173,75 @@ def test_system_queue_metadata_reads_only_selected_columns(started_cluster):
     # A map column must list the folder's children (and read their data).
     ops = keeper_ops("processed_nodes")
     assert ops["list"] >= 1, ops
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_filter_pushdown(started_cluster):
+    # `zookeeper_path` filtering is pushed down before any keeper reads, so a
+    # targeted query never probes (and cannot fail on) unrelated queues. A query
+    # whose filter matches no registered path must therefore do no folder reads
+    # at all - without pushdown it would still list every registered queue.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_pushdown_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 5
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+    for _ in range(60):
+        if files_to_generate == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # The exact factory key for this table, to filter on directly.
+    zk_path = node.query(
+        f"""
+        SELECT zookeeper_path
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_path}%'
+        """
+    ).strip()
+    assert zk_path
+
+    def list_ops(where):
+        query_id = f"{table_name}_{generate_random_string()}"
+        node.query(
+            f"SELECT processed_nodes FROM system.s3_queue_metadata WHERE {where}",
+            query_id=query_id,
+        )
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                f"""
+                SELECT ProfileEvents['ZooKeeperList']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1
+                """
+            ).strip()
+        )
+
+    # A matching filter still lists the table's folder.
+    assert list_ops(f"zookeeper_path = '{zk_path}'") >= 1
+    # A filter that matches no registered path is pushed down before the keeper
+    # reads, so nothing is probed.
+    assert list_ops("zookeeper_path = '/no/such/queue/path'") == 0
 
     node.query(f"DROP TABLE {table_name} SYNC")
