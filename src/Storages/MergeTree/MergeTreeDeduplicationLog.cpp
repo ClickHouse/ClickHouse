@@ -837,6 +837,18 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
         "will be deduplicated wrongly against stale history.",
         marker_path);
 
+    /// A writer, if any, appends to one of the files about to be discarded; drop it
+    /// so the neutralization below does not race a live buffer (the caller's rotation
+    /// opens a fresh one). Nothing of value is lost: every record it wrote is part of
+    /// the suspect history being discarded. Null in the load path, but the re-enable
+    /// path (setDeduplicationWindowSize) can get here with a writer left over from an
+    /// earlier enabled phase of the same process.
+    if (current_writer)
+    {
+        current_writer->cancel();
+        current_writer.reset();
+    }
+
     for (auto it = existing_logs.begin(); it != existing_logs.end();)
     {
         if (!neutralizeOrphanLog(it->second.path))
@@ -857,6 +869,13 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
         else
             it = existing_logs.erase(it);
     }
+
+    /// Some registered files may be gone now, so re-point `current_log_number` at the
+    /// newest survivor (or reset it when none survived). The load path assigns it right
+    /// after this call anyway, but the re-enable path relies on this: its subsequent
+    /// rotation indexes `existing_logs` by `current_log_number`, which may have just
+    /// been erased.
+    current_log_number = existing_logs.empty() ? 0 : existing_logs.rbegin()->first;
 
     if (!clearCompactionMarker())
         throw Exception(
@@ -1236,12 +1255,28 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     if (stopped)
         return;
 
+    const bool was_disabled = deduplication_window == 0;
+
     deduplication_window = deduplication_window_;
     rotate_interval = deduplication_window * 2;
 
     /// If settings was set for the first time with ALTER MODIFY SETTING query
     if (deduplication_window != 0 && !disk->existsDirectory(logs_dir))
         disk->createDirectories(logs_dir);
+
+    /// While deduplication was disabled, the unfinished-compaction marker of a failed
+    /// compaction was deliberately left alone: load skips both the history replay and
+    /// the marker with a window of zero, keeping the marker for the next load with
+    /// deduplication enabled to act on. But re-enabling deduplication here would start
+    /// appending new records to exactly the stale files the marker fences off, and the
+    /// next restart would then discard those new records - covering committed inserts -
+    /// together with the stale ones. So act on the marker now, the same way a load with
+    /// deduplication enabled would have: discard the suspect history (and clear the
+    /// marker) before writing anything new. Only the disabled-to-enabled transition
+    /// needs this; while deduplication stays enabled a failed compaction's recovery is
+    /// handled precisely, per stale file, by prepareToWrite.
+    if (was_disabled && deduplication_window != 0)
+        discardHistoryAfterUnfinishedCompaction();
 
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();

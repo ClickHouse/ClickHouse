@@ -342,6 +342,13 @@ private:
     /// (remove, or overwrite with an empty file), clear the marker, and start with an
     /// empty history; throws if a file or the marker can neither be removed nor
     /// emptied, failing the load closed rather than replaying suspect history.
+    /// Also called from setDeduplicationWindowSize when deduplication is re-enabled
+    /// after having been disabled: a load with a window of zero skips this on purpose
+    /// (nothing is replayed or written then), so the fenced-off files are still on disk,
+    /// and appending new records to them would make the next restart discard the new
+    /// records together with the stale ones. Discards a live `current_writer` along
+    /// with the file it appends to and re-points `current_log_number` at the newest
+    /// surviving file, so the caller can rotate to a fresh one.
     void discardHistoryAfterUnfinishedCompaction();
 
     /// Bring the log back to a writable, consistent state before an operation writes

@@ -2169,3 +2169,98 @@ TEST(MergeTreeDeduplicationLog, StaleFilesAfterSwitchedCompactionDiscardHistoryO
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: the restart barrier of the unfinished-compaction marker must also
+/// hold when the server restarts with deduplication disabled and it is re-enabled
+/// later with `ALTER TABLE ... MODIFY SETTING non_replicated_deduplication_window`.
+/// A load with a window of zero deliberately leaves the marker alone (nothing is
+/// replayed or written then), but re-enabling deduplication used to just reopen the
+/// newest fenced-off file for appending: new committed records landed on top of the
+/// stale history, and the next restart - acting on the still-active marker - threw
+/// them away together with the stale ones, wrongly accepting (and duplicating) a
+/// retry of an insert committed after the re-enable. Re-enabling must act on the
+/// marker exactly like a load with deduplication enabled: discard the suspect
+/// history and clear the marker before writing anything new.
+TEST(MergeTreeDeduplicationLog, ReenablingDeduplicationAfterUnfinishedCompactionDiscardsStaleHistory)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_marker_reenable/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+    auto marker_is_active = [&]() -> bool
+    {
+        return std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) != 0;
+    };
+
+    {
+        /// Accumulate the unreclaimable rollback garbage that makes the next restart
+        /// want to compact, exactly as in the compaction tests above.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart on a disk whose compaction fails after writing the marker and the
+        /// snapshot, with the whole failure cleanup failing too: the process restarts
+        /// with the stale files and the active marker still on disk.
+        auto disk = std::make_shared<DiskFailingCompactionCleanupCompletely>("faulty-cleanup", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        EXPECT_ANY_THROW(log.addPart({"block9"}, part("all_9_9_0")));
+        log.shutdown();
+    }
+
+    {
+        /// Restart with deduplication disabled: the load leaves the fenced-off history
+        /// and the marker untouched. Re-enabling deduplication must process the marker
+        /// before appending anything - discarding the stale history and clearing the
+        /// marker - so the records committed from here on survive the next restart.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 0, format_version, disk);
+        log.load();
+        EXPECT_TRUE(marker_is_active());
+
+        log.setDeduplicationWindowSize(1);
+        EXPECT_FALSE(marker_is_active());
+
+        /// The stale history is gone, so the new insert is accepted and committed on a
+        /// clean history.
+        EXPECT_TRUE(log.addPart({"block9"}, part("all_10_10_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        /// The next restart must reconstruct the state committed after the re-enable.
+        /// Without acting on the marker at re-enable time, the marker would still be
+        /// active here, this load would discard the history - including the committed
+        /// "block9" - and its retry would wrongly be accepted, duplicating the data.
+        auto disk = std::make_shared<DiskLocal>("healthy2", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        EXPECT_FALSE(log.addPart({"block9"}, part("all_11_11_0")).empty());
+
+        /// The stale history stayed discarded: a block id only present in the
+        /// fenced-off files is retryable.
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_12_12_0")).empty());
+
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
