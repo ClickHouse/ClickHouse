@@ -70,7 +70,7 @@ void silkFiberResumeHook(silk::Fiber * fiber) noexcept
             CurrentThread::attachToGroupIfDetached(header->thread_group);
         }
     }
-    catch (...) /// Ok
+    catch (...) /// Ok NOLINT(bugprone-empty-catch)
     {
         /// Attribution is best-effort on the fiber-switch path: never let it take
         /// down the scheduler thread (the hook is noexcept, and even logging can
@@ -86,7 +86,7 @@ void silkFiberSuspendHook(silk::Fiber * fiber) noexcept
         if (header->thread_group)
             CurrentThread::detachFromGroupIfNotDetached();
     }
-    catch (...) /// Ok
+    catch (...) /// Ok NOLINT(bugprone-empty-catch)
     {
         /// Same as the resume hook: best-effort attribution on a noexcept
         /// fiber-switch path - never let it take down the scheduler thread.
