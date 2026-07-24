@@ -116,6 +116,135 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
+<div id="geotoutm">
+  ## geoToUTM
+</div>
+
+Преобразует географические координаты WGS84 `(longitude, latitude)` в координаты [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
+
+UTM — это набор из 60 поперечных проекций Меркатора, каждая из которых охватывает зону по долготе шириной 6° и отображает географические координаты на плоскую сетку в метрах. Зона автоматически выбирается по долготе с учетом стандартных исключений для Норвегии и Шпицбергена, если явно не указана `zone`. UTM определена только для широт в диапазоне `[-80°, 84°]`; для полярных областей используется отдельная система UPS.
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**Аргументы**
+
+* `longitude` — Долгота в градусах. Диапазон: `[-180°, 180°]`. [`Float32`](/ru/reference/data-types/float)/[`Float64`](/ru/reference/data-types/float).
+* `latitude` — Широта в градусах. Диапазон: `[-80°, 84°]`. [`Float32`](/ru/reference/data-types/float)/[`Float64`](/ru/reference/data-types/float).
+* `zone` — Необязательно. Принудительно использовать эту зону UTM для проекции вместо автоматического выбора. Диапазон: `[1, 60]`. [`(U)Int*`](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+Именованный кортеж `(easting, northing, zone, band)`: `easting` и `northing` в метрах ([`Float64`](/ru/reference/data-types/float)), номер зоны UTM `zone` ([`UInt8`](/ru/reference/data-types/int-uint)) и буква широтной полосы MGRS `band` ([`FixedString(1)`](/ru/reference/data-types/fixedstring)). Значение `band` `'N'` или любая следующая буква обозначает северное полушарие.
+
+Генерирует исключение, если широта выходит за пределы `[-80°, 84°]` или долгота выходит за пределы `[-180°, 180°]`.
+
+**Пример**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+<div id="utmtogeo">
+  ## UTMToGeo
+</div>
+
+Преобразует координаты [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) обратно в географические координаты WGS84 `(longitude, latitude)`. Это функция, обратная [`geoToUTM`](#geotoutm).
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**Аргументы**
+
+* `easting` — восточное смещение в метрах (включая ложное восточное смещение 500000 м). [`(U)Int*`](/ru/reference/data-types/int-uint)/[`Float*`](/ru/reference/data-types/float).
+* `northing` — северное смещение в метрах (включая ложное северное смещение 10000000 м для южного полушария). [`(U)Int*`](/ru/reference/data-types/int-uint)/[`Float*`](/ru/reference/data-types/float).
+* `zone` — номер зоны UTM. Диапазон: `[1, 60]`. [`(U)Int*`](/ru/reference/data-types/int-uint).
+* `is_north` — полушарие: `1` для северного полушария, `0` для южного. [`(U)Int*`](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+Именованный кортеж `(longitude, latitude)` в градусах. [`Tuple(Float64, Float64)`](/ru/reference/data-types/tuple).
+
+**Пример**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+<div id="geotomgrs">
+  ## geoToMGRS
+</div>
+
+Кодирует географические координаты WGS84 `(longitude, latitude)` в строку в формате [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
+
+Строка имеет вид `<zone><band><100km square><easting><northing>`, например `31UDQ4825111935`. Аргумент `precision` задаёт количество цифр для каждой из координат easting и northing: `5` (по умолчанию) для 1 м, `4` для 10 м, `3` для 100 м, `2` для 1 км, `1` для 10 км и `0` — только для квадрата сетки 100 км. Система MGRS определена только для широт в диапазоне `[-80°, 84°]`.
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**Аргументы**
+
+* `longitude` — Долгота в градусах. Диапазон: `[-180°, 180°]`. [`Float32`](/ru/reference/data-types/float)/[`Float64`](/ru/reference/data-types/float).
+* `latitude` — Широта в градусах. Диапазон: `[-80°, 84°]`. [`Float32`](/ru/reference/data-types/float)/[`Float64`](/ru/reference/data-types/float).
+* `precision` — Необязательно. Количество цифр для значений восточного и северного смещения. По умолчанию: `5`. Диапазон: `[0, 5]`. [`(U)Int*`](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+Строка координат MGRS. [`String`](/ru/reference/data-types/string).
+
+**Пример**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+<div id="mgrstogeo">
+  ## MGRSToGeo
+</div>
+
+Декодирует строку [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) в географические координаты WGS84 `(долгота, широта)`. Это обратная операция по отношению к [`geoToMGRS`](#geotomgrs).
+
+Возвращаемая точка — центр соответствующего квадрата сетки, поэтому точность результата соответствует точности, закодированной в строке. Пробельные символы во входных данных игнорируются, а регистр букв не учитывается.
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**Аргументы**
+
+* `mgrs` — строка координат MGRS для декодирования. [`String`](/ru/reference/data-types/string)/[`FixedString`](/ru/reference/data-types/fixedstring).
+
+**Возвращаемое значение**
+
+Именованный кортеж `(longitude, latitude)` в градусах. [`Tuple(Float64, Float64)`](/ru/reference/data-types/tuple).
+
+**Пример**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
 <div id="pointinellipses">
   ## pointInEllipses
 </div>
@@ -163,10 +292,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Входные значения**
 
-* `(x, y)` — Координаты точки на плоскости. Тип данных — [Tuple](/ru/reference/data-types/tuple) — кортеж из двух чисел.
-* `[(a, b), (c, d) ...]` — Вершины полигона. Тип данных — [Array](/ru/reference/data-types/array). Каждая вершина задаётся парой координат `(a, b)`. Вершины следует указывать по часовой стрелке или против часовой стрелки. Минимальное число вершин — 3. Полигон должен быть константой.
+* `(x, y)` — Координаты точки на плоскости. Тип данных — [Tuple](/ru/reference/data-types/tuple) — кортеж из двух чисел или [Point](/ru/reference/data-types/geo#point).
+* `[(a, b), (c, d) ...]` — Вершины полигона. Тип данных — [Array](/ru/reference/data-types/array) или [Ring](/ru/reference/data-types/geo#ring). Каждая вершина задаётся парой координат `(a, b)`. Вершины следует указывать по часовой стрелке или против часовой стрелки. Минимальное число вершин — 3.
 * Функция поддерживает полигоны с отверстиями (вырезанными областями). Тип данных — [Polygon](/ru/reference/data-types/geo#polygon). Либо передайте весь `Polygon` как второй аргумент, либо сначала передайте внешний Ring, а затем каждое отверстие как отдельный дополнительный аргумент.
 * Функция также поддерживает `MultiPolygon`. Тип данных — [MultiPolygon](/ru/reference/data-types/geo#multipolygon). Либо передайте весь `MultiPolygon` как второй аргумент, либо перечислите каждый входящий в него полигон как отдельный аргумент.
+* Аргумент полигона также может быть столбцом [Geometry](/ru/reference/data-types/geo#geometry), содержащим значения полигональных типов (`Ring`, `Polygon` или `MultiPolygon`).
+
+Полигональные типы ([Ring](/ru/reference/data-types/geo#ring), [Polygon](/ru/reference/data-types/geo#polygon), [MultiPolygon](/ru/reference/data-types/geo#multipolygon) и [Geometry](/ru/reference/data-types/geo#geometry)) можно передавать либо как константы, либо как обычные (неконстантные) столбцы таблицы. Когда полигон передаётся через несколько отдельных аргументов (внешний Ring, за которым следуют отверстия, или несколько полигонов в составе мультиполигона), все эти аргументы должны быть константами.
 
 **Возвращаемые значения**
 
@@ -183,6 +315,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+Полигон также можно задавать с помощью именованных геометрических типов данных, в том числе в виде столбца таблицы:
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **Примечание**
