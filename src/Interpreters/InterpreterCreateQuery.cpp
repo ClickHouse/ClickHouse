@@ -2285,6 +2285,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
+            /// After the exchange the temporary name holds the replaced table, which may be of a different
+            /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
+            if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
+                ast_drop->is_dictionary = replaced->isDictionary();
+
             /// Target table was replaced with new one, drop old table
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
