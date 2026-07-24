@@ -99,6 +99,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_durable_rollback[];
     extern const char merge_tree_leader_election_stale_epoch_before_commit[];
     extern const char merge_tree_leader_election_stale_lease_cleanup[];
+    extern const char merge_tree_leader_election_stale_lease_before_clear_empty[];
 }
 
 namespace Setting
@@ -3221,21 +3222,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         }
     }
 
-    /// If the lease went stale after the empty parts were committed, the destructive cleanup
-    /// below must not run: `clearOldPartsFromFilesystem` fails closed by itself, but
-    /// `clearEmptyParts` would still drop the just-created covering empty parts while the covered
-    /// parts remain on disk, letting the old data reappear on a later refresh. The committed empty
-    /// parts already make the `TRUNCATE` effective; cleanup is left to the current leader.
-    if (!canRunDestructiveCleanup())
-    {
-        LOG_INFO(log, "Skipping synchronous cleanup after TRUNCATE: the leadership lease is stale (leader_election)");
-        return;
-    }
-
-    /// Old parts are needed to be destroyed before clearing them from filesystem.
-    clearOldMutations(true);
-    clearOldPartsFromFilesystem();
-    clearEmptyParts();
+    clearDataAfterPartitionDDL("TRUNCATE", /*with_mutations=*/ true);
 }
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
@@ -3281,13 +3268,22 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (!part)
                 throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
+            std::vector<DetachedCloneToRollback> detached_clones;
             if (detach)
             {
+                /// The detached copy below is an irreversible shared-storage side effect made
+                /// BEFORE the admission-epoch fence inside `renameAndCommitEmptyParts`, so
+                /// re-check the fence first: a stale leader must be rejected before writing to
+                /// `detached/`, not only at the empty-part publish.
+                assertWritableLeaderAtEpoch(admission_epoch);
+
                 auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
                 String part_dir = part->getDataPartStorage().getPartDirectory();
                 LOG_INFO(log, "Detaching {}", part_dir);
                 auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
-                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                auto cloned_storage = part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                if (cloned_storage && (*getSettings())[MergeTreeSetting::leader_election])
+                    detached_clones.emplace_back(getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()), cloned_storage->getPartDirectory());
             }
 
             {
@@ -3298,7 +3294,17 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
 
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+                try
+                {
+                    renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+                }
+                catch (...)
+                {
+                    /// A rejected `DETACH` must not leave persistent detached copies behind on
+                    /// shared storage: a later `ATTACH` could re-import data from a DDL that failed.
+                    removeDetachedClonesOfRejectedDetach(detached_clones);
+                    throw;
+                }
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3310,15 +3316,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
     }
 
-    /// See the comment in `truncate` — a stale lease must skip the destructive cleanup.
-    if (!canRunDestructiveCleanup())
-    {
-        LOG_INFO(log, "Skipping synchronous cleanup after DROP/DETACH PART: the leadership lease is stale (leader_election)");
-        return;
-    }
-
-    clearOldPartsFromFilesystem();
-    clearEmptyParts();
+    clearDataAfterPartitionDDL("DROP/DETACH PART", /*with_mutations=*/ false);
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
@@ -3408,15 +3406,23 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
 
+            std::vector<DetachedCloneToRollback> detached_clones;
             if (detach)
             {
+                /// See the comment in `dropPart` — re-check the fence before the first detached
+                /// copy is written, and remember the copies to remove them if the publish below
+                /// is rejected.
+                assertWritableLeaderAtEpoch(admission_epoch);
+
                 for (const auto & part : parts)
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
                     String part_dir = part->getDataPartStorage().getPartDirectory();
                     LOG_INFO(log, "Detaching {}", part_dir);
                     auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
-                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                    auto cloned_storage = part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                    if (cloned_storage && (*getSettings())[MergeTreeSetting::leader_election])
+                        detached_clones.emplace_back(getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()), cloned_storage->getPartDirectory());
                 }
             }
 
@@ -3429,7 +3435,17 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+            try
+            {
+                renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+            }
+            catch (...)
+            {
+                /// A rejected `DETACH` must not leave persistent detached copies behind on
+                /// shared storage: a later `ATTACH` could re-import data from a DDL that failed.
+                removeDetachedClonesOfRejectedDetach(detached_clones);
+                throw;
+            }
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3440,15 +3456,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         }
     }
 
-    /// See the comment in `truncate` — a stale lease must skip the destructive cleanup.
-    if (!canRunDestructiveCleanup())
-    {
-        LOG_INFO(log, "Skipping synchronous cleanup after DROP/DETACH PARTITION: the leadership lease is stale (leader_election)");
-        return;
-    }
-
-    clearOldPartsFromFilesystem();
-    clearEmptyParts();
+    clearDataAfterPartitionDDL("DROP/DETACH PARTITION", /*with_mutations=*/ false);
 }
 
 void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
@@ -4341,6 +4349,51 @@ bool StorageMergeTree::canRunDestructiveCleanup() const
 UInt64 StorageMergeTree::currentLeadershipEpoch() const
 {
     return leader_election_ptr ? leader_election_ptr->leadershipEpoch() : 0;
+}
+
+void StorageMergeTree::clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations)
+{
+    /// See the comment in the header: under `leader_election` the lease freshness is re-checked
+    /// before EACH destructive helper, because it may go stale between them; a stale lease must
+    /// leave the cleanup to the current leader rather than touch the just-committed empty parts.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_INFO(log, "Skipping synchronous cleanup after {}: the leadership lease is stale (leader_election)", ddl_kind);
+        return;
+    }
+
+    /// Old parts are needed to be destroyed before clearing them from filesystem.
+    if (with_mutations)
+        clearOldMutations(true);
+    clearOldPartsFromFilesystem();
+
+    /// Test hook: deterministically simulate a lease that went stale inside the helpers above,
+    /// after the first freshness check passed.
+    bool lease_went_stale = !canRunDestructiveCleanup();
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_clear_empty, { lease_went_stale = true; });
+    if (lease_went_stale)
+    {
+        LOG_INFO(log, "Skipping the rest of the synchronous cleanup after {}: the leadership lease went stale (leader_election)", ddl_kind);
+        return;
+    }
+
+    clearEmptyParts();
+}
+
+void StorageMergeTree::removeDetachedClonesOfRejectedDetach(const std::vector<DetachedCloneToRollback> & clones)
+{
+    for (const auto & [disk, dir_name] : clones)
+    {
+        try
+        {
+            LOG_INFO(log, "Removing detached copy {} left behind by a DETACH rejected before its commit (leader_election)", dir_name);
+            removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / dir_name / "", dir_name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Cannot remove detached copy {} of a rejected DETACH", dir_name));
+        }
+    }
 }
 
 void StorageMergeTree::throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const

@@ -256,6 +256,27 @@ private:
     /// after failover. Fail closed at admission instead.
     void throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const;
 
+    /// Synchronous destructive cleanup run at the end of `truncate` / `dropPart` / `dropPartition`.
+    /// Under `leader_election` the lease freshness is re-checked before EACH destructive helper,
+    /// not just once: the lease may go stale inside `clearOldMutations` / `clearOldPartsFromFilesystem`
+    /// (which fails closed by itself, rolling the covered parts back to `Outdated`), and running
+    /// `clearEmptyParts` after that would still outdate the just-committed covering empty parts.
+    /// If this node later reacquired the lease (or crashed mid-cleanup), the covering empty parts
+    /// could be deleted from shared storage while the covered parts remain, letting the dropped
+    /// data reappear and effectively undo the DDL. The committed empty parts already make the DDL
+    /// effective, so on a stale lease the cleanup is simply left to the current leader.
+    void clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations);
+
+    /// A detached copy created by `DETACH PART` / `DETACH PARTITION` before the admission-epoch
+    /// fence rejected the publish: disk and directory name under `detached/`.
+    using DetachedCloneToRollback = std::pair<DiskPtr, String>;
+
+    /// Best-effort removal of the detached copies created by a `DETACH` whose empty-part publish
+    /// was rejected by `assertWritableLeaderAtEpoch`. Without this, a stale leader's rejected
+    /// `DETACH` would leave persistent detached copies behind on shared storage, and a later
+    /// `ATTACH PARTITION` could re-import data from a DDL that supposedly failed.
+    void removeDetachedClonesOfRejectedDetach(const std::vector<DetachedCloneToRollback> & clones);
+
     /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
     /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove
     /// parts, persist removal TIDs). During construction and while a follower the lease is not

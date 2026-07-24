@@ -1275,3 +1275,139 @@ def test_transactional_partition_ddl_rejected_under_leader_election(started_clus
                 node1.query(f"DROP TABLE IF EXISTS {t} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_DDL_CLEANUP_MID = "12345678-abcd-abcd-abcd-12345678ab11"
+
+
+def test_cleanup_stops_when_lease_goes_stale_mid_sequence(started_cluster):
+    """
+    Regression for the second freshness check inside the post-DDL cleanup: the lease may still be
+    fresh when the cleanup sequence starts but go stale inside `clearOldMutations` /
+    `clearOldPartsFromFilesystem`. `clearEmptyParts` must then be skipped — else the stale node
+    would outdate the just-committed covering empty parts while the covered parts remain on disk,
+    letting the dropped data reappear later (e.g. if this node reacquires the lease and deletes
+    the empty parts, or crashes mid-cleanup).
+
+    The `merge_tree_leader_election_stale_lease_before_clear_empty` failpoint simulates exactly
+    that: the first check passes, the helpers run, and staleness is detected only before
+    `clearEmptyParts`. The DDL itself succeeds, and the covering empty parts must stay active.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_before_clear_empty"
+    table = "test_ddl_cleanup_mid_sequence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DDL_CLEANUP_MID}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 1,
+                     cleanup_delay_period = 60, cleanup_delay_period_random_add = 0
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            # The DDL succeeds: the first freshness check passes and the empty parts commit.
+            node1.query(f"TRUNCATE TABLE {table}")
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+
+            # But `clearEmptyParts` must have been skipped: the covering empty parts stay active
+            # instead of being outdated by a node whose lease went stale mid-cleanup.
+            active_empty = int(
+                node1.query(
+                    f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                    f" AND table = '{table}' AND active AND rows = 0"
+                ).strip()
+            )
+            assert active_empty > 0, (
+                "The covering empty parts were dropped despite the lease going stale mid-cleanup"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The table stays truncated after the lease is fresh again.
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_DETACH_FENCE = "12345678-abcd-abcd-abcd-12345678ab12"
+
+
+def test_detach_rejected_before_writing_detached_copy(started_cluster):
+    """
+    Regression for the epoch fence on `DETACH PART` / `DETACH PARTITION`: the detached copy is an
+    irreversible shared-storage side effect written BEFORE the empty-part publish, so a stale
+    leader must be rejected before `makeCloneInDetached` runs. Otherwise a rejected `DETACH`
+    would leave a persistent detached copy behind, and a later `ATTACH PARTITION` could re-import
+    data from a DDL that supposedly failed.
+
+    The `merge_tree_leader_election_stale_epoch_before_commit` failpoint presents a stale
+    admission epoch, so the `DETACH` must fail with no detached copy created.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    table = "test_detach_epoch_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DETACH_FENCE}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+                "DETACH PARTITION was rejected but the parts were still hidden"
+            )
+            detached = int(
+                node1.query(
+                    f"SELECT count() FROM system.detached_parts"
+                    f" WHERE database = currentDatabase() AND table = '{table}'"
+                ).strip()
+            )
+            assert detached == 0, (
+                "The rejected DETACH left a detached copy behind on shared storage"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared the same DETACH succeeds and creates the detached copy.
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        detached = int(
+            node1.query(
+                f"SELECT count() FROM system.detached_parts"
+                f" WHERE database = currentDatabase() AND table = '{table}'"
+            ).strip()
+        )
+        assert detached > 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

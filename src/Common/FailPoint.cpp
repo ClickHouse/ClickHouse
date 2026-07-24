@@ -67,6 +67,7 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     REGULAR(merge_tree_leader_election_stale_epoch_before_commit) \
     REGULAR(merge_tree_leader_election_stale_lease_cleanup) \
+    REGULAR(merge_tree_leader_election_stale_lease_before_clear_empty) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \
