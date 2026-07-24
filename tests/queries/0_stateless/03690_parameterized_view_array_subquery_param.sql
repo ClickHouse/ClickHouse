@@ -44,16 +44,44 @@ SELECT id FROM pv_tuple(p = (SELECT toInt32(10), toInt32(20))) ORDER BY id;
 SELECT 'LowCardinality(String) param';
 DROP TABLE IF EXISTS pv_lc_data;
 CREATE TABLE pv_lc_data (id Int32, name LowCardinality(String)) ENGINE = Memory;
-INSERT INTO pv_lc_data VALUES (1, 'x') (2, 'y') (3, 'z');
+INSERT INTO pv_lc_data VALUES (1, 'x') (2, 'y') (3, 'z') (4, 'a\tb');
 DROP VIEW IF EXISTS pv_lc;
 -- scalar `LowCardinality(String)` param (top-level family `LowCardinality`, not `Array`)
 CREATE VIEW pv_lc AS SELECT * FROM pv_lc_data WHERE name = {nm : LowCardinality(String)};
 SELECT id FROM pv_lc(nm = (SELECT toLowCardinality('y'))) ORDER BY id;
+-- string value with a tab must be text-escaped, otherwise it is parsed as an incomplete value
+SELECT id FROM pv_lc(nm = (SELECT toLowCardinality('a\tb'))) ORDER BY id;
 
 SELECT 'Array(LowCardinality(String)) param';
 DROP VIEW IF EXISTS pv_lc_arr;
 CREATE VIEW pv_lc_arr AS SELECT * FROM pv_lc_data WHERE name IN {names : Array(LowCardinality(String))};
 SELECT id FROM pv_lc_arr(names = (SELECT groupArray(name) FROM pv_lc_data WHERE id <= 2)) ORDER BY id;
+
+-- `CAST` wrapping a subquery must also be substituted (during execution and in `EXPLAIN SYNTAX`)
+SELECT 'CAST(subquery) param';
+SELECT AccountId FROM pv_array(AccountIds = CAST((SELECT groupArray(AccountId) FROM pv_ids), 'Array(Int32)')) ORDER BY AccountId;
+
+-- A subquery whose own predicate references the parameter name must not overwrite the parameter
+-- value (the collector must not descend into the value expression).
+SELECT 'subquery predicate references param name';
+DROP TABLE IF EXISTS pv_self;
+CREATE TABLE pv_self (AccountIds Int32) ENGINE = Memory;
+INSERT INTO pv_self VALUES (1) (2) (9);
+SELECT AccountId FROM pv_array(AccountIds = (SELECT groupArray(AccountIds) FROM pv_self WHERE AccountIds = 9)) ORDER BY AccountId;
+
+-- `EXPLAIN SYNTAX` expands parameterized views through a separate AST path
+-- (`analyzeFunctionParamValues`) that also dropped the subquery-valued parameter and threw
+-- `UNKNOWN_QUERY_PARAMETER`. These assertions run through that AST path (the queries above run
+-- through the analyzer's own path), and check the exact substituted value is present (not just
+-- any substitution), so the test also catches a wrong value being substituted. See issue #68041.
+SELECT 'EXPLAIN SYNTAX subquery param';
+SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_array(AccountIds = (SELECT groupArray(AccountId) FROM pv_ids))) WHERE explain LIKE '%[1, 2, 3]%';
+-- `CAST` wrapping a subquery must also be substituted on the AST path
+SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_array(AccountIds = CAST((SELECT groupArray(AccountId) FROM pv_ids), 'Array(Int32)'))) WHERE explain LIKE '%[1, 2, 3]%';
+-- a string value with a tab must be text-escaped by the AST path (otherwise it renders unescaped)
+SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_lc(nm = (SELECT toLowCardinality('a\tb')))) WHERE explain LIKE '%a\\tb%';
+-- an inner predicate referencing the parameter name must not overwrite the collected value on the AST path
+SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_array(AccountIds = (SELECT groupArray(AccountIds) FROM pv_self WHERE AccountIds = 9))) WHERE explain LIKE '%[9]%';
 
 DROP VIEW pv_array;
 DROP VIEW pv_str;
@@ -64,3 +92,4 @@ DROP TABLE pv_data;
 DROP TABLE pv_ids;
 DROP TABLE pv_tuple_data;
 DROP TABLE pv_lc_data;
+DROP TABLE pv_self;

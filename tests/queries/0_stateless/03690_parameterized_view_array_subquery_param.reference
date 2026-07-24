@@ -19,6 +19,17 @@ Tuple param
 1
 LowCardinality(String) param
 2
+4
 Array(LowCardinality(String)) param
 1
 2
+CAST(subquery) param
+1
+2
+3
+subquery predicate references param name
+EXPLAIN SYNTAX subquery param
+1
+1
+1
+1
