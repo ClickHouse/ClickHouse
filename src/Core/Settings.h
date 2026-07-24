@@ -155,6 +155,14 @@ struct Settings
     void set(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
+    /// Whether any setting currently holds a value that was set by the `compatibility` setting.
+    bool hasSettingsChangedByCompatibility() const;
+
+    /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
+    /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
+    /// `compatibility` itself instead of being forced to the sender's derived values.
+    void resetSettingsChangedByCompatibility();
+
     VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString() const;
 
