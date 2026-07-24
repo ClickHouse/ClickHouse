@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
@@ -17,7 +17,7 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> は、ストリーミング CDC (変更データキャプチャ) とストリーム処理に特化したリアルタイムデータインテグレーションプラットフォームです。Apache Kafka、Apache Flink、Debezium を活用した高スループットかつスケーラブルなスタック上に構築されており、SaaS または BYOC (Bring Your Own Cloud) 形態の完全マネージド型サービスとして提供されています。
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> は、ストリーミング CDC (変更データキャプチャ) とストリーム処理に特化したリアルタイムデータインテグレーションプラットフォームです。Apache Kafka、Apache Flink、Debezium を活用した高スループットかつスケーラブルなスタック上に構築されており、SaaS または BYOC (Bring Your Own Cloud) 形態の完全マネージド型サービスとして提供されています。
 
 Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a href="https://streamkap.com/connectors" target="_blank">そのほか多数</a>のソースデータベースで発生するあらゆる insert、update、delete を、ミリ秒単位のレイテンシで直接 ClickHouse にストリーミングできます。
 
@@ -49,52 +49,46 @@ Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a hr
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap アカウント</a>。
-* ClickHouse クラスターの接続情報: Hostname、Port、Username、Password。
-* CDC を有効にしたソースデータベース (例: PostgreSQL、SQL Server) 。詳しい設定手順については、Streamkap のドキュメントを参照してください。
+* ClickHouse クラスターの接続情報: ホスト名、Port、Username、Password。
+* CDC (変更データキャプチャ) を有効にするよう設定されたソースデータベース (例: PostgreSQL、SQL Server) 。詳細なセットアップガイドは Streamkap のドキュメントで確認できます。
 
-<div id="configure-clickhouse-source">
-  ### ステップ 1: Streamkap でログソースを設定する
-</div>
+<Steps>
+  <Step title="Streamkap でソースを設定する" id="configure-clickhouse-source">
+    1. Streamkap アカウントにログインします。
+    2. サイドバーで **Connectors** に移動し、**Sources** タブを選択します。
+    3. **+ Add** をクリックし、ソースデータベースの種類 (例: SQL Server RDS) を選択します。
+    4. endpoint、port、database name、ユーザー認証情報などの接続情報を入力します。
+    5. コネクタを保存します。
+  </Step>
 
-1. Streamkap アカウントにログインします。
-2. サイドバーで **Connectors** に移動し、**Sources** タブを選択します。
-3. **+ Add** をクリックし、ログソースデータベースの種類 (例: SQL Server RDS) を選択します。
-4. エンドポイント、ポート、データベース名、ユーザーの認証情報などの接続情報を入力します。
-5. コネクタを保存します。
+  <Step title="ClickHouse の宛先を設定する" id="configure-clickhouse-dest">
+    1. **Connectors** セクションで、**Destinations** タブを選択します。
+    2. **+ Add** をクリックし、一覧から **ClickHouse** を選択します。
+    3. ClickHouse サービスの接続情報を入力します。
+       * **ホスト名:** ClickHouse インスタンスのホスト名 (例: `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port:** 通常は `8443` のセキュアな HTTPS ポート
+       * **Username and Password:** ClickHouse ユーザーの認証情報
+       * **Database:** ClickHouse の対象データベース名
+    4. 宛先を保存します。
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### ステップ 2: ClickHouse の宛先を設定する
-</div>
+  <Step title="パイプラインを作成して実行する" id="run-pipeline">
+    1. サイドバーの **Pipelines** に移動し、**+ Create** をクリックします。
+    2. 先ほど設定した ログソース と 宛先 を選択します。
+    3. ストリーミングするスキーマとテーブルを選択します。
+    4. パイプラインに名前を付けて **Save** をクリックします。
 
-1. **Connectors** セクションで、**Destinations** タブを選択します。
-2. **+ Add** をクリックし、一覧から **ClickHouse** を選択します。
-3. ClickHouse サービスの接続情報を入力します。
-   * **Hostname:** ClickHouse インスタンスのホスト名 (例: `abc123.us-west-2.aws.clickhouse.cloud`) 
-   * **Port:** 通常は `8443` のセキュアな HTTPS ポート
-   * **Username and Password:** ClickHouse ユーザーの認証情報
-   * **Database:** ClickHouse の対象データベース名
-4. 宛先を保存します。
+    作成すると、パイプラインはアクティブになります。Streamkap はまず既存データのスナップショットを取得し、その後、新しい変更が発生するとストリーミングを開始します。
+  </Step>
 
-<div id="run-pipeline">
-  ### ステップ 3: パイプラインを作成して実行する
-</div>
+  <Step title="ClickHouse でデータを確認する" id="verify-data-clickhoouse">
+    ClickHouse クラスターに接続し、クエリを実行してターゲットテーブルにデータが取り込まれていることを確認します。
 
-1. サイドバーの **Pipelines** に移動し、**+ Create** をクリックします。
-2. 先ほど設定したログソースと宛先を選択します。
-3. ストリーミングするスキーマとテーブルを選択します。
-4. パイプライン名を入力し、**Save** をクリックします。
-
-作成すると、パイプラインは有効になります。Streamkap はまず既存データのスナップショットを取得し、その後、新しい変更が発生するたびにストリーミングを開始します。
-
-<div id="verify-data-clickhoouse">
-  ### ステップ 4: ClickHouse でデータを確認する
-</div>
-
-ClickHouse クラスターに接続し、クエリを実行してターゲットテーブルにデータが到着していることを確認します。
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## ClickHouseでの仕組み

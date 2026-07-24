@@ -161,6 +161,13 @@ public:
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
+    /// Re-home the small, part-lifetime metadata that build paths may populate outside the
+    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
+    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
+    /// `setMinMaxIndex` / the population sites.
+    void moveMetadataToDedicatedArena();
+
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
     void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
@@ -552,6 +559,12 @@ public:
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
+
+    /// UNIQUE KEY — real filesystem path of the part's dense-index backing
+    /// file, or `std::nullopt` if absent (legacy part, not-yet-written, or
+    /// non-UK table). Treat as an opaque "is there an on-disk dense index
+    /// for this part?" probe; the backend code owns the format.
+    std::optional<String> getDenseIndexBackingPath() const;
 
     /// UNIQUE KEY — cache-key identity for this part. Prefers the part's
     /// UUID when set (stable across ATTACH / rename); falls back to

@@ -17,7 +17,7 @@ Vector هو خط أنابيب بيانات محايد تجاه المورّد، 
 
 يركّز دليل [البدء](/ar/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse) الخاص باستخدام Vector مع ClickHouse على حالة استخدام السجلات وقراءة الأحداث من ملف. نستخدم [مجموعة بيانات GitHub النموذجية](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson) حيث تُحفَظ الأحداث في topic على Kafka.
 
-يستخدم Vector [المصادر](https://vector.dev/docs/about/concepts/#sources) لجلب البيانات وفق نموذج push أو pull. وفي المقابل، توفّر [المصبات](https://vector.dev/docs/about/concepts/#sinks) وجهةً للأحداث. لذلك نستخدم مصدر Kafka ومصب ClickHouse. لاحظ أنه رغم دعم Kafka باعتباره Sink، فلا يتوفر مصدر لـ ClickHouse. لذلك لا يُعد Vector مناسبًا إذا كنت تريد نقل البيانات من ClickHouse إلى Kafka.
+يستخدم Vector [المصادر](https://vector.dev/docs/introduction/concepts/#sources) لجلب البيانات وفق نموذج push أو pull. وفي المقابل، توفّر [المصبات](https://vector.dev/docs/introduction/concepts/#sinks) وجهةً للأحداث. لذلك نستخدم مصدر Kafka ومصب ClickHouse. لاحظ أنه رغم دعم Kafka باعتباره مصبًا، فلا يتوفر مصدر لـ ClickHouse. لذلك لا يُعد Vector مناسبًا إذا كنت تريد نقل البيانات من ClickHouse إلى Kafka.
 
 يدعم Vector أيضًا [تحويل](https://vector.dev/docs/reference/configuration/transforms/) البيانات. وهذا خارج نطاق هذا الدليل. ويمكن الرجوع إلى وثائق Vector إذا احتجت إلى ذلك لمجموعة بياناتك.
 
