@@ -798,14 +798,18 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             except Exception as ex:
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
-    def prepare_logs(self, info, all=False):
+    def prepare_logs(self, info, all=False, dump_system_tables=False):
         res = []
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
+            # System tables are dumped on any failing run (`all`), and also when
+            # explicitly requested (e.g. the query-metrics collection job, which
+            # wants them attached even on a passing run).
+            if all or dump_system_tables:
+                res += self.dump_system_tables()
             if all:
                 res += self.debug_artifacts
-                res += self.dump_system_tables()
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()

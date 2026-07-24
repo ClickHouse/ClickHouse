@@ -328,6 +328,7 @@ def main():
     is_excluded_from_llvm = False
     is_per_test_coverage = False
     is_distributed_plan = False
+    is_collect_metrics = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -343,6 +344,8 @@ def main():
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             pass
         elif to == "per_test_coverage":
+            pass
+        elif to == "collect metrics":
             pass
         else:
             assert False, f"Unknown option [{to}]"
@@ -385,6 +388,8 @@ def main():
             is_parallel_replicas = True
         if "distributed plan" in to:
             is_distributed_plan = True
+        if "collect metrics" in to:
+            is_collect_metrics = True
 
     # If this PR only touches test files (no production/config code changed),
     # this job only needs to run if one of the changed tests would even be
@@ -1361,7 +1366,14 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
+            # `collect metrics` jobs dump the system.*_log tables and attach them
+            # to the result even on a passing run (the whole point of the job);
+            # on failure `all=True` already dumps them, so only force it here.
+            CH.prepare_logs(
+                all=test_result and not test_result.is_ok(),
+                dump_system_tables=is_collect_metrics,
+                info=info,
+            )
 
         results.append(
             Result.from_commands_run(

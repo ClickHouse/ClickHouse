@@ -50,9 +50,77 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci --timestamp
 
-  collect_job_duration_statistics:
+  dockers_build_amd:
+    runs-on: [self-hosted, style-checker]
+    needs: [config_workflow]
+    name: "Dockers Build (amd)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyStatistics" --ci --timestamp
+
+  dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
+    name: "Dockers Build (arm)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyStatistics" --ci --timestamp
+
+  collect_job_duration_statistics:
+    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Collect Job Duration Statistics"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -86,7 +154,7 @@ jobs:
 
   collect_test_duration_statistics:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Collect Test Duration Statistics"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -117,3 +185,105 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Test Duration Statistics' --workflow "NightlyStatistics" --ci --timestamp
+
+  build_arm_binary:
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    name: "Build (arm_binary)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_binary)' --workflow "NightlyStatistics" --ci --timestamp
+
+  collect_query_metrics_arm_binary_parallel_collect_metrics:
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm]
+    name: "Collect Query Metrics (arm_binary, parallel, collect metrics)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Query Metrics (arm_binary, parallel, collect metrics)' --workflow "NightlyStatistics" --ci --timestamp
+
+  collect_query_metrics_arm_binary_sequential_collect_metrics:
+    runs-on: [self-hosted, arm-small]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm]
+    name: "Collect Query Metrics (arm_binary, sequential, collect metrics)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Query Metrics (arm_binary, sequential, collect metrics)' --workflow "NightlyStatistics" --ci --timestamp

@@ -426,6 +426,7 @@ class JobNames:
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
     CI_TESTS = "CI Tests"
+    COLLECT_QUERY_METRICS = "Collect Query Metrics"
 
 
 class ToolSet:
