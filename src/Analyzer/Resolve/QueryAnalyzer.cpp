@@ -930,7 +930,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * requires the table expression alias just like a sibling-column collision does. With
       * `prefer_column_name_to_alias = 1` the shadowing goes the other way -- the bare identifier binds to
       * the join-tree column and the scope alias does not make it unreachable -- so in that mode a scope
-      * alias collision does not require the table expression alias.
+      * alias collision does not require the table expression alias. A self alias (`SELECT x AS x`) is not
+      * a collision in either mode: it resolves back to the joined column itself, see
+      * `scope_alias_shadows_column` below.
       *
       * An enclosing `ARRAY JOIN` introduces the same kind of shadowing binders. In `SELECT a FROM numbers(1),
       * (SELECT 2 AS a) ARRAY JOIN [30] AS a` the bare `a` binds to the `ARRAY JOIN` alias, so the subquery
@@ -987,6 +989,21 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     /// so the alias does not shadow the column and does not force the table expression alias.
     const bool check_scope_aliases = !scope.context->getSettingsRef()[Setting::prefer_column_name_to_alias];
 
+    /// A self alias -- an expression alias whose body is the bare identifier of the same name, e.g. the
+    /// projection `x AS x` -- does not shadow a joined column: an alias is skipped while its own body is
+    /// resolved (see `tryResolveIdentifierFromAliases`), so the body binds to the join-tree column and every
+    /// bare reference to the name reaches that column through the alias. No table expression alias is needed
+    /// to qualify it, hence a self alias does not count as a collision.
+    auto scope_alias_shadows_column = [&](const String & column_name)
+    {
+        auto it = scope.aliases.alias_name_to_expression_node.find(column_name);
+        if (it == scope.aliases.alias_name_to_expression_node.end())
+            return false;
+        if (const auto * identifier_node = it->second->as<IdentifierNode>())
+            return identifier_node->getIdentifier().getFullName() != column_name;
+        return true;
+    };
+
     /// If the columns of any table expression cannot be determined, keep the strict behavior and require an alias.
     if (columns_are_known)
     {
@@ -997,7 +1014,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
             if (column_name.find('.') != std::string::npos)
                 continue;
             if (sibling_columns.contains(column_name)
-                || (check_scope_aliases && scope.aliases.alias_name_to_expression_node.contains(column_name))
+                || (check_scope_aliases && scope_alias_shadows_column(column_name))
                 || collides_with_enclosing_array_join_alias(column_name))
             {
                 has_name_collision = true;

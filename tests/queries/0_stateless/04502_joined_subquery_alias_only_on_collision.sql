@@ -141,6 +141,16 @@ SELECT arr1 FROM arr_t, (SELECT 1 AS other) ARRAY JOIN COLUMNS('^arr') SETTINGS 
 SELECT count() FROM merge(currentDatabase(), '^mt_alias$') AS m NATURAL JOIN (SELECT 2 AS z) AS rhs;
 SELECT count() FROM (SELECT 2 AS z) AS lhs NATURAL JOIN merge(currentDatabase(), '^mt_alias$') AS m;
 
+-- A self alias -- an expression alias whose body is the bare identifier of the same name (`x AS x`) --
+-- does not shadow the joined column: an alias is skipped while its own body is resolved, so the bare
+-- identifier still binds to the join-tree column and reaches it through the alias. No subquery alias
+-- is needed.
+SELECT x AS x FROM numbers(1), (SELECT 2 AS x);
+
+-- An identifier alias with a different body still shadows: bare `x` binds to the alias (i.e. to
+-- `number`), so the subquery output `x` is unreachable without an alias, which is therefore required.
+SELECT number AS x FROM numbers(1), (SELECT 2 AS x); -- { serverError ALIAS_REQUIRED }
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
