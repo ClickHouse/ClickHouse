@@ -1,13 +1,19 @@
-INNER JOIN ON false -> whole join is an empty source
+INNER JOIN ON false -> both inputs become empty sources
 1
 LEFT JOIN ON false -> right (null) side is an empty source
 1
 RIGHT JOIN ON false -> left (null) side is an empty source
 1
+FULL JOIN ON false -> both sides preserved, NOT short-circuited
+0
 Constant-false from predicate folding (a.t = \'A\' AND a.t = \'B\')
 1
 A true ON condition is NOT short-circuited
 0
+10
+10
+read_rows < 1000 (a full right scan would be > 1000000)	1
+read_rows < 1000 (a full right scan would be > 1000000)	1
 Results are unchanged (each pair prints one line = optimized result)
 LEFT	0	0
 LEFT	1	0
@@ -49,3 +55,4 @@ LEFT with empty right input	1	0
 LEFT with empty right input	2	0
 LEFT with empty right input	3	0
 LEFT with empty right input	4	0
+StorageJoin ON 0 still validates

@@ -1,31 +1,40 @@
--- Tests the query-plan pass that short-circuits a JOIN with a constant-false ON condition
--- (or an already-empty input). Issue #110225: the non-contributing side must not be read.
+-- Tests the query-plan pass that short-circuits the read of a JOIN input side that can never
+-- contribute a row (a constant-false ON condition, or an already-empty input). Issue #110225:
+-- the non-contributing side must not be read. The JoinStep is kept in place, so join validation
+-- still runs and results are unchanged.
 
 SET enable_analyzer = 1;
+SET query_plan_short_circuit_constant_false_join = 1;
 
--- Plan checks: assert the optimization fires (ReadNothing replaces the non-contributing side or
--- the whole join). Use the robust `SELECT ... FROM (EXPLAIN ...) WHERE explain ILIKE ...` form.
+-- Plan checks: assert the optimization fires. A non-contributing side becomes a `ReadNothing`
+-- source while the `Join` step is retained. Use the robust `SELECT ... FROM (EXPLAIN ...)` form.
 
-SELECT 'INNER JOIN ON false -> whole join is an empty source';
-SELECT count() > 0 FROM (
+SELECT 'INNER JOIN ON false -> both inputs become empty sources';
+SELECT count() = 2 FROM (
     EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
     INNER JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
 ) WHERE explain ILIKE '%ReadNothing%';
 
 SELECT 'LEFT JOIN ON false -> right (null) side is an empty source';
-SELECT count() > 0 FROM (
+SELECT count() = 1 FROM (
     EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
     LEFT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
 ) WHERE explain ILIKE '%ReadNothing%';
 
 SELECT 'RIGHT JOIN ON false -> left (null) side is an empty source';
-SELECT count() > 0 FROM (
+SELECT count() = 1 FROM (
     EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
     RIGHT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
 ) WHERE explain ILIKE '%ReadNothing%';
 
+SELECT 'FULL JOIN ON false -> both sides preserved, NOT short-circuited';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
+    FULL JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
+) WHERE explain ILIKE '%ReadNothing%';
+
 SELECT 'Constant-false from predicate folding (a.t = ''A'' AND a.t = ''B'')';
-SELECT count() > 0 FROM (
+SELECT count() = 1 FROM (
     EXPLAIN SELECT * FROM (SELECT number AS x, toString(number) AS t FROM numbers(10)) a
     LEFT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND a.t = 'A' AND a.t = 'B'
 ) WHERE explain ILIKE '%ReadNothing%';
@@ -36,7 +45,31 @@ SELECT count() FROM (
     LEFT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y
 ) WHERE explain ILIKE '%ReadNothing%';
 
+-- Read-rows check: the non-contributing side must not be scanned. The runtime join can only
+-- cancel the probe side after the build side is filled, so a big build (right) side of a LEFT
+-- join was fully read before this optimization; here it is read as zero rows.
+
+CREATE TABLE l (x UInt64) ENGINE = MergeTree ORDER BY x AS SELECT number FROM numbers(10);
+CREATE TABLE r (y UInt64) ENGINE = MergeTree ORDER BY y AS SELECT number FROM numbers(1000000);
+
+SELECT count() FROM l a LEFT JOIN r b ON a.x = b.y AND 1 = 2
+    SETTINGS log_comment = '04512_left_read_rows';
+SELECT count() FROM l a LEFT ANTI JOIN r b ON a.x = b.y AND 1 = 2
+    SETTINGS log_comment = '04512_left_anti_read_rows';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'read_rows < 1000 (a full right scan would be > 1000000)', read_rows < 1000
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND log_comment IN ('04512_left_read_rows', '04512_left_anti_read_rows')
+    AND type = 'QueryFinish'
+ORDER BY log_comment;
+
 -- Result checks: short-circuit must not change results (compare against the pass disabled).
+-- Pin join_use_nulls for the exact-output rows below (CI randomizes it, and it changes the
+-- null-side value from 0 to NULL); the two rows that exercise join_use_nulls = 1 set it locally.
+SET join_use_nulls = 0;
 
 SELECT 'Results are unchanged (each pair prints one line = optimized result)';
 SELECT 'INNER', a.x, b.y FROM (SELECT number AS x FROM numbers(5)) a
@@ -66,3 +99,11 @@ SELECT a.x, b.y FROM (SELECT number AS x FROM numbers(5) WHERE 1 = 2) a
     INNER JOIN (SELECT number AS y FROM numbers(3)) b ON a.x = b.y ORDER BY a.x, b.y;
 SELECT 'LEFT with empty right input', a.x, b.y FROM (SELECT number AS x FROM numbers(5)) a
     LEFT JOIN (SELECT number AS y FROM numbers(3) WHERE 1 = 2) b ON a.x = b.y ORDER BY a.x, b.y;
+
+-- Validation is preserved: because the JoinStep is kept (not replaced by an empty source), an
+-- invalid constant-false join over a Join-engine table still throws instead of being silently
+-- short-circuited to empty (rework of the pre-validation approach; guards 02498 behavior).
+CREATE TABLE mt (key1 UInt64, key2 UInt64, key3 UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE sj (key2 UInt64, key1 UInt64, key3 UInt64, attr UInt64) ENGINE = Join(ALL, INNER, key3, key2, key1);
+SELECT 'StorageJoin ON 0 still validates';
+SELECT * FROM mt ALL INNER JOIN sj ON 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,INVALID_JOIN_ON_EXPRESSION }

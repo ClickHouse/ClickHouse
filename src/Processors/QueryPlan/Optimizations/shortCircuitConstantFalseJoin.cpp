@@ -15,8 +15,8 @@ namespace DB::QueryPlanOptimizations
 ///
 /// Only a `ReadNothingStep` is treated as empty. A constant-false `FilterStep` is intentionally
 /// NOT considered empty: an aggregation with `WITH TOTALS`/`WITH ROLLUP`/`WITH CUBE` below the
-/// filter still emits the totals row, which bypasses the filter, so replacing the filtered
-/// subtree with an empty source would drop that row (see 03788).
+/// filter still emits the totals row, which bypasses the filter, so treating the filtered
+/// subtree as empty would drop that row (see 03788).
 static bool producesNoRows(const QueryPlan::Node * node)
 {
     return node && typeid_cast<const ReadNothingStep *>(node->step.get()) != nullptr;
@@ -27,10 +27,6 @@ static bool producesNoRows(const QueryPlan::Node * node)
 /// makes the whole condition false (e.g. `a.x = b.y AND a.t = 'A' AND a.t = 'B'`).
 static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
 {
-    /// Correlated expressions are resolved later during decorrelation; do not touch them.
-    if (join.hasCorrelatedExpressions())
-        return false;
-
     for (const auto & conjunct : join.getJoinOperator().expression)
     {
         if (getFilterResult(conjunct.resolveAliases().getColumn()) == FilterResult::FALSE)
@@ -39,25 +35,39 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
     return false;
 }
 
-/// Short-circuit a JOIN whose result (or one of whose inputs) is provably empty.
+/// Short-circuit the read of an input side that can never contribute a row to the join result.
 ///
-/// A constant-false ON condition, or an already-empty input, means one side can never
-/// contribute a matching row. Instead of reading the non-contributing side in full:
-///   - INNER/CROSS/SEMI: the whole result is empty, so replace the JoinStep with an empty source.
-///   - LEFT/RIGHT (incl. ANTI): the null-side input contributes only NULLs, so replace that
-///     input's subtree with an empty source (the join then synthesizes the NULLs).
-///   - FULL: only collapse to empty when both inputs are already empty (no side can be dropped).
+/// When no pair of rows can ever match (a constant-false ON condition, or an already-empty input),
+/// a side that is not "preserved" (whose unmatched rows are dropped) contributes nothing and does
+/// not need to be read at all. Such an input is replaced with an empty `ReadNothingStep` of the
+/// same header, so the non-contributing table is never scanned. For example:
+///   - `INNER/CROSS/SEMI` on a false condition: neither side is preserved, so both inputs are emptied
+///     and the (empty) result is produced without reading either table.
+///   - `LEFT ALL/ANY/ANTI` on a false condition: the left side is preserved, so only the right input
+///     is emptied; the join then emits every left row with NULL/default right columns as before.
+///   - `FULL`: both sides are preserved, so neither input can be dropped.
+///
+/// The `JoinStepLogical` is deliberately kept in place (never replaced by an empty source): the
+/// logical-to-physical conversion still runs and performs join validation (StorageJoin key checks,
+/// ASOF/`INVALID_JOIN_ON_EXPRESSION`, etc.), so an invalid join keeps throwing exactly as before.
+/// This runs before `splitFilter`/`pushDownFilter` lower the constant-false condition onto an input,
+/// so the condition is still visible on the `JoinStepLogical` here.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     auto * join = typeid_cast<JoinStepLogical *>(parent_node->step.get());
     if (!join || parent_node->children.size() != 2)
         return 0;
 
+    /// Correlated expressions are resolved later during decorrelation, which relies on the join
+    /// structure; do not rewrite its inputs.
+    if (join->hasCorrelatedExpressions())
+        return 0;
+
     const auto & join_operator = join->getJoinOperator();
     const auto kind = join_operator.kind;
     const auto strictness = join_operator.strictness;
 
-    /// Paste join is positional and has no ON condition / empty-propagation semantics here.
+    /// Paste join is positional (no ON condition, no empty-propagation semantics here).
     if (isPaste(kind))
         return 0;
 
@@ -65,86 +75,45 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
     if (strictness == JoinStrictness::Asof)
         return 0;
 
-    auto * left_node = parent_node->children.front();
-    auto * right_node = parent_node->children.back();
-
-    const bool left_no_rows = producesNoRows(left_node);
-    const bool right_no_rows = producesNoRows(right_node);
-    /// The ON condition itself folds to a constant false (e.g. it survived as `1 = 0` rather than
-    /// being pushed onto an input as a filter). No pair of rows can ever match.
-    const bool no_match_possible = onConditionIsAlwaysFalse(*join);
-
-    if (!no_match_possible && !left_no_rows && !right_no_rows)
+    /// A match is impossible when the ON condition folds to a constant false, or when an input is
+    /// already empty. Only then can a non-preserved side be safely dropped: its rows appear in the
+    /// result exclusively through matches, and there are none.
+    const bool match_impossible
+        = onConditionIsAlwaysFalse(*join) || producesNoRows(parent_node->children.front()) || producesNoRows(parent_node->children.back());
+    if (!match_impossible)
         return 0;
 
+    /// A side is "preserved" when its unmatched rows are still emitted (NULL/default-extended):
+    /// the left side of LEFT/FULL and the right side of RIGHT/FULL, except for SEMI which keeps
+    /// only matched rows. A preserved side must be read; a non-preserved side can be emptied.
     const bool is_semi = strictness == JoinStrictness::Semi;
+    const bool left_preserved = isLeftOrFull(kind) && !is_semi;
+    const bool right_preserved = isRightOrFull(kind) && !is_semi;
 
-    auto replace_with_empty_source = [&]() -> size_t
+    /// Replace one input's subtree with an empty source of the same header. Idempotent (a no-op when
+    /// the side is already empty). A `JoinStepLogicalLookup` input drives physical join building and
+    /// carries StorageJoin/dictionary validation, so it is never detached: correctness is kept and
+    /// only the optimization is skipped for that side (such build sides are in-memory and cheap).
+    auto empty_side = [&](size_t side) -> size_t
     {
-        parent_node->step = std::make_unique<ReadNothingStep>(join->getOutputHeader());
-        parent_node->children.clear();
-        return 1;
-    };
-
-    /// Replace one input's subtree with an empty source. The `side` input header is preserved,
-    /// so the join sees the same schema and just reads zero rows from that side. Returns 0
-    /// (no change) when the side is already an empty source, to keep the pass idempotent.
-    auto replace_input_with_empty = [&](size_t side) -> size_t
-    {
-        auto * side_node = side == 0 ? left_node : right_node;
+        auto * side_node = parent_node->children[side];
         if (typeid_cast<const ReadNothingStep *>(side_node->step.get()))
             return 0;
-        /// A prepared-storage lookup side drives physical join building; do not detach it.
         if (typeid_cast<const JoinStepLogicalLookup *>(side_node->step.get()))
             return 0;
 
         auto & empty_node = nodes.emplace_back();
         empty_node.step = std::make_unique<ReadNothingStep>(join->getInputHeaders()[side]);
         parent_node->children[side] = &empty_node;
-        return 3;
+        return 1;
     };
 
-    switch (kind)
-    {
-        case JoinKind::Inner:
-        case JoinKind::Cross:
-        case JoinKind::Comma:
-            /// Both sides must contribute a matching pair; if that is impossible, the result is empty.
-            return replace_with_empty_source();
-
-        case JoinKind::Left:
-        {
-            /// Left rows are preserved: no left rows means an empty result.
-            if (left_no_rows)
-                return replace_with_empty_source();
-            /// LEFT SEMI keeps a left row only if it matches; if a match is impossible, result is empty.
-            if (is_semi)
-                return replace_with_empty_source();
-            /// LEFT ALL/ANY/ANTI: the right side contributes only NULLs, so read nothing from it.
-            return replace_input_with_empty(/*side=*/1);
-        }
-
-        case JoinKind::Right:
-        {
-            if (right_no_rows)
-                return replace_with_empty_source();
-            if (is_semi)
-                return replace_with_empty_source();
-            /// RIGHT ALL/ANY/ANTI: the left side contributes only NULLs, so read nothing from it.
-            return replace_input_with_empty(/*side=*/0);
-        }
-
-        case JoinKind::Full:
-            /// Both sides are preserved and neither can be dropped; collapse only when both are empty.
-            if (left_no_rows && right_no_rows)
-                return replace_with_empty_source();
-            return 0;
-
-        case JoinKind::Paste:
-            return 0;
-    }
-
-    return 0;
+    size_t changed = 0;
+    if (!left_preserved)
+        changed += empty_side(/*side=*/0);
+    if (!right_preserved)
+        changed += empty_side(/*side=*/1);
+    return changed;
 }
 
 }
