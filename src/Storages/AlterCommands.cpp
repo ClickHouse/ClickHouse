@@ -1681,6 +1681,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
+    /// must not reference virtual columns.
+    NameSet insert_time_default_columns;
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -2047,6 +2050,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
+
+                if (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized)
+                    insert_time_default_columns.insert(final_column_name);
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2063,6 +2069,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
+
+                if (column_in_table.default_desc.kind == ColumnDefaultKind::Default || column_in_table.default_desc.kind == ColumnDefaultKind::Materialized)
+                    insert_time_default_columns.insert(final_column_name);
             }
         }
     }
@@ -2073,7 +2082,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
