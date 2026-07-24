@@ -215,43 +215,45 @@ ReaderExecutor::~ReaderExecutor()
 
     if (reader_executor_log)
     {
-        ReaderExecutorLogElement elem;
-        elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        elem.query_id = creator_query_id;
-        elem.source_file_path = log_file_path;
-        /// Logical (user-visible) bytes — `totalSize()` subtracts
-        /// `data_start_offset` for encrypted reads so the value lines up
-        /// with the per-tier byte counters. `nullopt` when the underlying
-        /// object had `StoredObject::UnknownSize`.
-        elem.total_size = offset_map.hasUnknownSize()
-            ? std::optional<UInt64>{}
-            : std::optional<UInt64>{totalSize()};
-        elem.bytes_from_page_cache = stats.get(Stats::BytesFromPageCache);
-        elem.bytes_from_filesystem_cache = stats.get(Stats::BytesFromFilesystemCache);
-        elem.bytes_from_source = stats.get(Stats::BytesFromSource);
-        elem.bytes_pushed_to_cache_sync = stats.get(Stats::BytesPushedToCacheSync);
-        elem.cache_get_requests = stats.get(Stats::CacheGetRequests);
-        elem.cache_populate_requests = stats.get(Stats::CachePopulateRequests);
-        elem.source_requests = stats.get(Stats::SourceRequests);
-        elem.incomplete_connections = stats.get(Stats::IncompleteConnections);
-        elem.cache_get_us = stats.get(Stats::CacheGetMicroseconds);
-        elem.cache_populate_us = stats.get(Stats::CachePopulateMicroseconds);
-        elem.source_read_us = stats.get(Stats::SourceReadMicroseconds);
-        elem.decrypt_us = stats.get(Stats::DecryptMicroseconds);
-        elem.prefetch_wait_us = stats.get(Stats::PrefetchWaitMicroseconds);
-        elem.prefetch_hits = stats.get(Stats::PrefetchHits);
-        elem.prefetch_cancelled = stats.get(Stats::PrefetchCancelled);
-        elem.prefetch_pool_full = stats.get(Stats::PrefetchPoolFull);
-        elem.prefetch_discarded_running = stats.get(Stats::PrefetchDiscardedRunning);
-        elem.prefetch_issued_source_bytes = stats.get(Stats::PrefetchIssuedSourceBytes);
-        elem.prefetch_wasted_source_bytes = stats.get(Stats::PrefetchWastedSourceBytes);
-
-        /// `SystemLogQueue::push_back` allocates and can throw; this is a `noexcept`
+        /// `SystemLogQueue` allocates and can throw; this is a `noexcept`
         /// destructor (often unwinding from another exception), so suppress and log
         /// rather than `std::terminate`. The log row is best-effort observability.
+        /// The fields are filled inside the callback so the string copies are charged
+        /// to the global memory tracker, per the `add` contract.
         try
         {
-            reader_executor_log->add(std::move(elem));
+            reader_executor_log->add([&](ReaderExecutorLogElement & elem)
+            {
+                elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                elem.query_id = creator_query_id;
+                elem.source_file_path = log_file_path;
+                /// Logical (user-visible) bytes — `totalSize()` subtracts
+                /// `data_start_offset` for encrypted reads so the value lines up
+                /// with the per-tier byte counters. `nullopt` when the underlying
+                /// object had `StoredObject::UnknownSize`.
+                elem.total_size = offset_map.hasUnknownSize()
+                    ? std::optional<UInt64>{}
+                    : std::optional<UInt64>{totalSize()};
+                elem.bytes_from_page_cache = stats.get(Stats::BytesFromPageCache);
+                elem.bytes_from_filesystem_cache = stats.get(Stats::BytesFromFilesystemCache);
+                elem.bytes_from_source = stats.get(Stats::BytesFromSource);
+                elem.bytes_pushed_to_cache_sync = stats.get(Stats::BytesPushedToCacheSync);
+                elem.cache_get_requests = stats.get(Stats::CacheGetRequests);
+                elem.cache_populate_requests = stats.get(Stats::CachePopulateRequests);
+                elem.source_requests = stats.get(Stats::SourceRequests);
+                elem.incomplete_connections = stats.get(Stats::IncompleteConnections);
+                elem.cache_get_us = stats.get(Stats::CacheGetMicroseconds);
+                elem.cache_populate_us = stats.get(Stats::CachePopulateMicroseconds);
+                elem.source_read_us = stats.get(Stats::SourceReadMicroseconds);
+                elem.decrypt_us = stats.get(Stats::DecryptMicroseconds);
+                elem.prefetch_wait_us = stats.get(Stats::PrefetchWaitMicroseconds);
+                elem.prefetch_hits = stats.get(Stats::PrefetchHits);
+                elem.prefetch_cancelled = stats.get(Stats::PrefetchCancelled);
+                elem.prefetch_pool_full = stats.get(Stats::PrefetchPoolFull);
+                elem.prefetch_discarded_running = stats.get(Stats::PrefetchDiscardedRunning);
+                elem.prefetch_issued_source_bytes = stats.get(Stats::PrefetchIssuedSourceBytes);
+                elem.prefetch_wasted_source_bytes = stats.get(Stats::PrefetchWastedSourceBytes);
+            });
         }
         catch (...)
         {
