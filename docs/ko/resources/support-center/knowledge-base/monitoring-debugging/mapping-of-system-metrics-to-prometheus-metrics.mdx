@@ -1,0 +1,72 @@
+---
+title: "`system.dashboards`에서 사용되는 메트릭과 `system.custom_metrics`의 Prometheus 메트릭 간의 매핑"
+description: "`system.dashboards`에서 사용되는 메트릭과 `system.custom_metrics`의 Prometheus 메트릭 간의 매핑"
+date: 2024-07-23
+tags: ['시스템 테이블']
+keywords: ['메트릭', 'system.dashboards', 'system.custom_metrics']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="mapping-of-metrics-used-in-systemdashboards-to-prometheus-metrics-in-systemcustom_metrics">
+  ## `system.dashboards`에서 사용되는 메트릭과 `system.custom_metrics`의 Prometheus 메트릭 간 매핑
+</div>
+
+아래 표는 `system.dashboards`에서 사용되는 메트릭과 `system.custom_metrics`의 Prometheus 메트릭 간 매핑을 보여줍니다.
+이 표는 `system.dashboards`에서 확인할 수 있는 것과 동일한 메트릭을 모니터링하려는 고객에게 유용합니다. 
+
+<div id="mapping-table-for-metrics-in-systemdashboards-to-prometheus-metrics-in-systemcustom_metrics">
+  ### system.dashboards의 메트릭과 system.custom_metrics의 Prometheus 메트릭 간 매핑 표
+</div>
+
+| 대시보드     | 제목                      | Prometheus 메트릭 이름 (system.custom&#95;metrics)                                                                                                                                                                         |
+| -------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 개요       | 초당 쿼리                   | ClickHouseProfileEvents&#95;Query                                                                                                                                                                                     |
+| 개요       | CPU 사용량(코어)             | ClickHouseProfileEvents&#95;OSCPUVirtualTimeMicroseconds                                                                                                                                                              |
+| 개요       | 실행 중인 쿼리                | ClickHouseMetrics&#95;Query                                                                                                                                                                                           |
+| 개요       | 진행 중인 머지                | ClickHouseMetrics&#95;Merge                                                                                                                                                                                           |
+| 개요       | 초당 조회 바이트               | ClickHouseProfileEvents&#95;SelectedBytes                                                                                                                                                                             |
+| 개요       | IO 대기                   | ClickHouseProfileEvents&#95;OSIOWaitMicroseconds                                                                                                                                                                      |
+| 개요       | CPU 대기                  | ClickHouseProfileEvents&#95;OSCPUWaitMicroseconds                                                                                                                                                                     |
+| 개요       | OS CPU 사용량(사용자 공간)      | ClickHouseAsyncMetrics&#95;OSUserTimeNormalized                                                                                                                                                                       |
+| 개요       | OS CPU 사용량(커널)          | ClickHouseAsyncMetrics&#95;OSSystemTimeNormalized                                                                                                                                                                     |
+| 개요       | 디스크 읽기                  | ClickHouseProfileEvents&#95;OSReadBytes                                                                                                                                                                               |
+| 개요       | 파일 시스템 읽기               | ClickHouseProfileEvents&#95;OSReadChars                                                                                                                                                                               |
+| 개요       | 메모리(추적)                 | ClickHouseMetrics&#95;MemoryTracking                                                                                                                                                                                  |
+| 개요       | 부하 평균(15분)              | ClickHouseAsyncMetrics&#95;LoadAverage15                                                                                                                                                                              |
+| 개요       | 초당 조회 행 수               | ClickHouseProfileEvents&#95;SelectedRows                                                                                                                                                                              |
+| 개요       | 초당 삽입 행 수               | ClickHouseProfileEvents&#95;InsertedRows                                                                                                                                                                              |
+| 개요       | 전체 MergeTree 파트 수       | ClickHouseAsyncMetrics&#95;TotalPartsOfMergeTreeTables                                                                                                                                                                |
+| 개요       | 파티션당 최대 파트 수            | ClickHouseAsyncMetrics&#95;MaxPartCountForPartition                                                                                                                                                                   |
+| Cloud 개요 | 초당 쿼리                   | ClickHouseProfileEvents&#95;Query                                                                                                                                                                                     |
+| Cloud 개요 | CPU 사용량(코어)             | ClickHouseProfileEvents&#95;OSCPUVirtualTimeMicroseconds                                                                                                                                                              |
+| Cloud 개요 | 실행 중인 쿼리                | ClickHouseMetrics&#95;Query                                                                                                                                                                                           |
+| Cloud 개요 | 진행 중인 머지                | ClickHouseMetrics&#95;Merge                                                                                                                                                                                           |
+| Cloud 개요 | 초당 조회 바이트               | ClickHouseProfileEvents&#95;SelectedBytes                                                                                                                                                                             |
+| Cloud 개요 | IO 대기(로컬 파일 시스템)        | ClickHouseProfileEvents&#95;OSIOWaitMicroseconds                                                                                                                                                                      |
+| Cloud 개요 | S3 읽기 대기                | ClickHouseProfileEvents&#95;ReadBufferFromS3Microseconds                                                                                                                                                              |
+| Cloud 개요 | S3 읽기 오류/초              | ProfileEvent&#95;ReadBufferFromS3RequestsErrors                                                                                                                                                                       |
+| Cloud 개요 | CPU 대기                  | ClickHouseProfileEvents&#95;OSCPUWaitMicroseconds                                                                                                                                                                     |
+| Cloud 개요 | OS CPU 사용량(사용자 공간, 정규화) | ClickHouseAsyncMetrics&#95;OSUserTimeNormalized                                                                                                                                                                       |
+| Cloud 개요 | OS CPU 사용량(커널, 정규화)     | ClickHouseAsyncMetrics&#95;OSSystemTimeNormalized                                                                                                                                                                     |
+| Cloud 개요 | 디스크 읽기(바이트/초)           | ClickHouseProfileEvents&#95;OSReadBytes                                                                                                                                                                               |
+| Cloud 개요 | 파일 시스템 읽기(바이트/초)        | ClickHouseProfileEvents&#95;OSReadChars                                                                                                                                                                               |
+| Cloud 개요 | 메모리(추적, 바이트)            | ClickHouseMetrics&#95;MemoryTracking                                                                                                                                                                                  |
+| Cloud 개요 | 부하 평균(15분)              | ClickHouseAsyncMetrics&#95;LoadAverage15                                                                                                                                                                              |
+| Cloud 개요 | 조회 행 수/초                | ClickHouseProfileEvents&#95;SelectedRows                                                                                                                                                                              |
+| Cloud 개요 | 삽입 행 수/초                | ClickHouseProfileEvents&#95;InsertedRows                                                                                                                                                                              |
+| Cloud 개요 | 전체 MergeTree 파트 수       | ClickHouseAsyncMetrics&#95;TotalPartsOfMergeTreeTables                                                                                                                                                                |
+| Cloud 개요 | 파티션당 최대 파트 수            | ClickHouseAsyncMetrics&#95;MaxPartCountForPartition                                                                                                                                                                   |
+| Cloud 개요 | S3 읽기(바이트/초)            | ClickHouseProfileEvents&#95;ReadBufferFromS3Bytes                                                                                                                                                                     |
+| Cloud 개요 | 파일 시스템 캐시 크기            | ClickHouseMetrics&#95;FilesystemCacheSize                                                                                                                                                                             |
+| Cloud 개요 | Disk S3 쓰기 요청/초         | ClickHouseProfileEvents&#95;DiskS3PutObject + ClickHouseProfileEvents&#95;DiskS3UploadPart + ClickHouseProfileEvents&#95;DiskS3CreateMultipartUpload + ClickHouseProfileEvents&#95;DiskS3CompleteMultipartUpload      |
+| Cloud 개요 | Disk S3 읽기 요청/초         | ClickHouseProfileEvents&#95;DiskS3GetObject + ClickHouseProfileEvents&#95;DiskS3HeadObject + ClickHouseProfileEvents&#95;DiskS3ListObjects                                                                            |
+| Cloud 개요 | 파일 시스템 캐시 적중률           | ClickHouseProfileEvents&#95;CachedReadBufferReadFromCacheBytes / (ClickHouseProfileEvents&#95;CachedReadBufferReadFromCacheBytes + ClickHouseProfileEvents&#95;CachedReadBufferReadFromSourceBytes)                   |
+| Cloud 개요 | 페이지 캐시 적중률              | greatest(0, (sum(ClickHouseProfileEvents&#95;OSReadChars) - sum(ClickHouseProfileEvents&#95;OSReadBytes)) /  (sum(ClickHouseProfileEvents&#95;OSReadChars) + sum(ClickHouseProfileEvents&#95;ReadBufferFromS3Bytes))) |
+| Cloud 개요 | 네트워크 수신 바이트/초           | ClickHouseProfileEvents&#95;NetworkReceiveBytes                                                                                                                                                                       |
+| Cloud 개요 | 네트워크 송신 바이트/초           | ClickHouseProfileEvents&#95;NetworkSendBytes                                                                                                                                                                          |
+
+관련 링크:
+https://clickhouse.com/docs/integrations/prometheus

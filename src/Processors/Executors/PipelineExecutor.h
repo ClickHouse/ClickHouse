@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
@@ -25,6 +26,8 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
+class StepWallClockRegistry;
+struct WorkloadResources;
 
 /// Executes query pipeline.
 class PipelineExecutor
@@ -39,7 +42,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -113,13 +116,14 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
+    /// EXPLAIN ANALYZE
+    const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
 
-    /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
@@ -134,8 +138,8 @@ private:
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
-    void executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag = nullptr);
-    void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
+    void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
+    void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
     void cancel(ExecutionStatus reason);
 

@@ -1,0 +1,34 @@
+---
+date: 2023-06-07
+title: Por que o ClickHouse Keeper é recomendado em vez do ZooKeeper?
+description: O ClickHouse Keeper melhora o ZooKeeper com recursos como menor uso de espaço em disco, recuperação mais rápida e menor consumo de memória, oferecendo melhor desempenho para clusters do ClickHouse.
+tags: ['Conceitos Fundamentais de Dados']
+keywords: ['ClickHouse Keeper', 'ZooKeeper']
+---
+
+***
+
+<div id="question">
+  ## Pergunta
+</div>
+
+O ClickHouse Keeper fornece o sistema de coordenação para a replicação de dados e a execução de comandos de DDL distribuído. O ClickHouse Keeper é compatível com o ZooKeeper, mas pode não estar claro por que usar o ClickHouse Keeper em vez do ZooKeeper. Este artigo apresenta alguns dos benefícios do Keeper.
+
+<div id="answer">
+  ## Resposta
+</div>
+
+[ClickHouse Cloud](https://console.clickhouse.cloud/) usa `clickhouse-keeper` em larga escala para milhares de serviços em um ambiente multitenant. Projetamos e desenvolvemos o Keeper para eliminar nossa dependência da implementação do ZooKeeper baseada em Java. O ClickHouse Keeper resolve várias desvantagens bem conhecidas do ZooKeeper e traz melhorias adicionais, incluindo:
+
+* Snapshots e logs consomem muito menos espaço em disco graças a uma compressão mais eficiente
+* Não há limite para o tamanho padrão dos pacotes e dos dados dos nós (no ZooKeeper, é 1 MB)
+* Não há problema de overflow de `zxid` (no ZooKeeper, isso força uma reinicialização a cada 2B transações)
+* Recuperação mais rápida após partições de rede devido ao uso de um protocolo de consenso distribuído melhor
+* Usa menos memória para o mesmo volume de dados
+* É mais fácil de configurar e não exige especificar o tamanho do heap da JVM nem uma implementação personalizada de garbage collection
+* Alguns comandos personalizados no protocolo permitem operações mais rápidas em tabelas `ReplicatedMergeTree`
+* Maior cobertura nos testes do Jepsen
+
+Além disso, o Suporte da ClickHouse observou uma queda significativa nos problemas de cluster em ambientes que usam `clickhouse-keeper` em vez de ZooKeeper.
+
+Confira a [página de documentação do Keeper](/pt-BR/guides/oss/deployment-and-scaling/keeper/index) para mais detalhes sobre como configurar e executar o ClickHouse Keeper.

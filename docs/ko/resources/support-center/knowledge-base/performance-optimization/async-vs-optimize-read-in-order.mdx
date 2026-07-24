@@ -1,0 +1,203 @@
+---
+title: 동기식 데이터 읽기
+description: "새로운 설정 `allow_asynchronous_read_from_io_pool_for_merge_tree`를 사용하면 읽기 스레드(스트림) 수를 나머지 쿼리 실행 파이프라인의 스레드 수보다 더 많게 할 수 있습니다."
+date: 2023-03-01
+tags: ['설정', '성능 및 최적화']
+keywords: ['동기식', '비동기', '데이터 읽기']
+---
+
+새로운 설정 `allow_asynchronous_read_from_io_pool_for_merge_tree`를 사용하면 읽기 스레드(스트림) 수를 나머지 쿼리 실행 파이프라인의 스레드 수보다 더 많게 할 수 있습니다.
+
+일반적으로 [max&#95;threads](/ko/reference/settings/session-settings#max_threads) 설정은 병렬 읽기 스레드와 병렬 쿼리 처리 스레드 수를 [제어합니다](https://clickhouse.com/company/events/query-performance-introspection):
+
+<Image img={sync_read} size="md" alt="동기식 데이터 읽기 다이어그램" />
+
+데이터는 디스크에서 컬럼을 하나씩 「순서대로」 읽습니다.
+
+<div id="asynchronous-data-reading">
+  ### 비동기 데이터 읽기
+</div>
+
+새로운 설정 [allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree](https://github.com/ClickHouse/ClickHouse/pull/43260)를 사용하면 읽기 스레드(스트림) 수를 나머지 쿼리 실행 파이프라인의 스레드 수보다 더 크게 설정할 수 있습니다. 이를 통해 **CPU가 낮은 ClickHouse Cloud 서비스에서 콜드 쿼리 속도를 높이고**, **I/O 바운드 쿼리의 성능을 향상**할 수 있습니다.
+이 설정을 활성화하면 읽기 스레드 수는 [max&#95;streams&#95;for&#95;merge&#95;tree&#95;reading](https://github.com/ClickHouse/ClickHouse/pull/43260) 설정으로 제어됩니다:
+
+<Image img={async_read} size="md" alt="비동기 데이터 읽기 다이어그램" />
+
+데이터는 서로 다른 컬럼에서 비동기적으로 병렬 읽기됩니다.
+
+읽기 스레드(스트림) 수와 나머지 쿼리 실행 파이프라인의 스레드 수 사이의 비율을 구성하는 [max&#95;streams&#95;to&#95;max&#95;threads&#95;ratio](https://github.com/ClickHouse/ClickHouse/pull/43260) 설정도 있습니다. 하지만 벤치마크에서는 `max_streams_for_merge_tree_reading` 설정만큼 효과적이지 않았습니다.
+
+<div id="what-about-optimize_read_in_order">
+  ### optimize_read_in_order는 어떻습니까?
+</div>
+
+[optimize&#95;read&#95;in&#95;order 최적화](/ko/reference/statements/select/order-by#optimization-of-data-reading)를 사용하면 쿼리의 정렬 순서가 디스크에 저장된 데이터의 물리적 순서를 반영할 때 ClickHouse는 메모리에서 데이터를 다시 정렬하는 과정을 [건너뛸](https://clickhouse.com/blog/clickhouse-faster-queries-with-projections-and-primary-indexes) 수 있습니다. **하지만 이를 위해서는 데이터를 순서대로 읽어야 합니다(비동기 읽기와 반대)**:
+
+<Image img={optimize_read} size="md" alt="순서대로 읽기 최적화 다이어그램" />
+
+<div id="optimize_read_in_order-has-precedence-over-asynchronous-reading">
+  ### optimize_read_in_order가 비동기 읽기보다 우선 적용됩니다
+</div>
+
+ClickHouse가 `optimize_read_in_order 최적화`를 적용할 수 있다고 판단하면 `allow_asynchronous_read_from_io_pool_for_merge_tree` 설정은 무시되거나 비활성화됩니다.
+
+<div id="example-demonstrating-all-of-the-above">
+  ### 위의 모든 내용을 보여주는 예시
+</div>
+
+* [UK Property Price Paid 테이블](/ko/get-started/sample-datasets/uk-price-paid)을 생성하고 로드하세요
+
+* max&#95;threads의 설정값을 확인하세요 (기본값은 쿼리를 실행하는 노드에서 ClickHouse가 인식하는 CPU 코어 수입니다
+
+```
+SELECT getSetting('max_threads');
+
+┌─getSetting('max_threads')─┐
+│                        10 │
+└───────────────────────────┘
+```
+
+* 데이터 읽기와 처리 모두에 기본 스레드 수가 적용된 쿼리 파이프라인 확인
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid;
+
+┌─explain──────────────────────┐
+│ (Expression)                 │
+│ ExpressionTransform × 10     │
+│   (ReadFromMergeTree)        │
+│   MergeTreeThread × 10 0 → 1 │
+└──────────────────────────────┘
+```
+
+* 비동기 읽기 스레드 60개와 나머지 쿼리 실행 파이프라인에 대한 기본 스레드 수를 사용하는 쿼리 파이프라인을 확인합니다
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60;
+
+┌─explain────────────────────────┐
+│ (Expression)                   │
+│ ExpressionTransform × 10       │
+│   (ReadFromMergeTree)          │
+│   Resize 60 → 10               │
+│     MergeTreeThread × 60 0 → 1 │
+└────────────────────────────────┘
+```
+
+* 데이터 읽기와 처리 모두에 20개의 스레드를 사용하는 쿼리 파이프라인 확인
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    max_threads = 20;
+
+┌─explain──────────────────────┐
+│ (Expression)                 │
+│ ExpressionTransform × 20     │
+│   (ReadFromMergeTree)        │
+│   MergeTreeThread × 20 0 → 1 │
+└──────────────────────────────┘
+```
+
+* 비동기 읽기 스레드 60개와 나머지 쿼리 실행 파이프라인용 스레드 20개로 구성된 쿼리 파이프라인을 확인하세요
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60;
+
+┌─explain────────────────────────┐
+│ (Expression)                   │
+│ ExpressionTransform × 20       │
+│   (ReadFromMergeTree)          │
+│   Resize 60 → 20               │
+│     MergeTreeThread × 60 0 → 1 │
+└────────────────────────────────┘
+```
+
+* `optimize_read_in_order 최적화`를 적용할 수 있는 경우, 비동기 읽기 스레드 60개와 나머지 쿼리 실행 파이프라인용 스레드 20개를 사용하는 쿼리 파이프라인 확인
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY postcode1, postcode2
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree= 1,
+    max_streams_for_merge_tree_reading= 60;
+
+┌─explain───────────────────────────┐
+│ (Expression)                      │
+│ ExpressionTransform               │
+│   (Sorting)                       │
+│   MergingSortedTransform 20 → 1   │
+│     (Expression)                  │
+│     ExpressionTransform × 20      │
+│       (ReadFromMergeTree)         │
+│       MergeTreeInOrder × 20 0 → 1 │
+└───────────────────────────────────┘
+
+-- allow_asynchronous_read_from_io_pool_for_merge_tree를 비활성화한 것과 동일합니다
+
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY postcode1, postcode2
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 0,
+    max_streams_for_merge_tree_reading = 0;
+
+┌─explain───────────────────────────┐
+│ (Expression)                      │
+│ ExpressionTransform               │
+│   (Sorting)                       │
+│   MergingSortedTransform 20 → 1   │
+│     (Expression)                  │
+│     ExpressionTransform × 20      │
+│       (ReadFromMergeTree)         │
+│       MergeTreeInOrder × 20 0 → 1 │
+└───────────────────────────────────┘
+
+-- optimize_read_in_order를 비활성화하면 allow_asynchronous_read_from_io_pool_for_merge_tree를 강제 적용할 수 있습니다
+
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY
+    postcode1 ASC,
+    postcode2 ASC
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60,
+    optimize_read_in_order = 0;
+
+┌─explain──────────────────────────────┐
+│ (Expression)                         │
+│ ExpressionTransform                  │
+│   (Sorting)                          │
+│   MergingSortedTransform 20 → 1      │
+│     MergeSortingTransform × 20       │
+│       (Expression)                   │
+│       ExpressionTransform × 20       │
+│         (ReadFromMergeTree)          │
+│         Resize 60 → 20               │
+│           MergeTreeThread × 60 0 → 1 │
+└──────────────────────────────────────┘
+
+```

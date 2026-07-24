@@ -1,0 +1,348 @@
+---
+description: 'ClickHouse 지속적 통합 시스템 개요'
+sidebarTitle: '지속적 통합 (CI)'
+slug: /development/continuous-integration
+title: '지속적 통합 (CI)'
+doc_type: 'reference'
+---
+
+풀 리퀘스트를 제출하면 ClickHouse [지속적 통합(CI) 시스템](/ko/resources/develop-contribute/contribute/tests#test-automation)이 코드에 대해 몇 가지 자동화된 검사를 실행합니다.
+이 과정은 리포지토리 메인테이너(ClickHouse 팀 구성원)가 코드를 검토한 뒤 풀 리퀘스트에 `can be tested` 레이블을 추가하면 진행됩니다.
+검사 결과는 [GitHub checks documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks)에 설명된 대로 GitHub 풀 리퀘스트 페이지에 표시됩니다.
+검사가 실패하면 수정이 필요할 수 있습니다.
+이 페이지에서는 마주칠 수 있는 검사를 개괄적으로 설명하고, 이를 해결하기 위해 수행할 수 있는 작업을 안내합니다.
+
+검사 실패가 변경 사항과 관련이 없어 보인다면, 일시적인 실패이거나 인프라 문제일 수 있습니다.
+풀 리퀘스트에 빈 커밋을 푸시하여 CI 검사를 다시 시작하십시오:
+
+```shell
+git commit --allow-empty
+git push
+```
+
+어떻게 해야 할지 잘 모르겠다면 메인테이너에게 도움을 요청하십시오.
+
+<div id="merge-with-master">
+  ## master와 머지
+</div>
+
+PR을 master에 머지할 수 있는지 확인합니다.
+머지할 수 없으면 `Cannot fetch mergecommit` 메시지와 함께 실패합니다.
+이 검사를 통과하려면 [GitHub 문서](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github)에 설명된 대로 충돌을 해결하거나, git을 사용해 `master` 브랜치를 pull request 브랜치에 머지하십시오.
+
+<div id="docs-check">
+  ## 문서 검사
+</div>
+
+ClickHouse 문서 웹사이트 빌드를 시도합니다.
+문서를 변경한 경우 실패할 수 있습니다.
+가장 가능성이 높은 원인은 문서 내 일부 교차 링크가 잘못되었기 때문입니다.
+검사 보고서로 이동하여 `ERROR` 및 `WARNING` 메시지를 확인하십시오.
+
+<div id="description-check">
+  ## 설명 검사
+</div>
+
+풀 리퀘스트 설명이 템플릿 [PULL&#95;REQUEST&#95;TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md)을 준수하는지 확인하십시오.
+변경 사항에 대한 changelog 카테고리(예: Bug Fix)를 지정하고, [CHANGELOG.md](/ko/resources/changelogs/oss/2026)에 변경 내용을 설명하는 사용자가 이해할 수 있는 메시지를 작성해야 합니다.
+
+<div id="docker-image">
+  ## Docker 이미지
+</div>
+
+ClickHouse 서버와 Keeper Docker 이미지를 빌드하여 정상적으로 빌드되는지 확인합니다.
+
+<div id="official-docker-library-tests">
+  ### 공식 Docker 라이브러리 테스트
+</div>
+
+[공식 Docker 라이브러리](https://github.com/docker-library/official-images/tree/master/test#alternate-config-files)의 테스트를 실행해 `clickhouse/clickhouse-server` Docker 이미지가 올바르게 동작하는지 확인합니다.
+
+새 테스트를 추가하려면 디렉터리 `ci/jobs/scripts/docker_server/tests/$test_name`를 만들고 그 안에 `run.sh` 스크립트를 생성하십시오.
+
+테스트에 대한 추가 정보는 [CI jobs scripts 문서](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server)에서 확인할 수 있습니다.
+
+<div id="marker-check">
+  ## Marker 검사
+</div>
+
+이 검사는 CI 시스템이 풀 리퀘스트 처리를 시작했음을 나타냅니다.
+상태가 &#39;pending&#39;이면 아직 모든 검사가 시작되지 않았다는 의미입니다.
+모든 검사가 시작되면 상태가 &#39;success&#39;로 변경됩니다.
+
+<div id="style-check">
+  ## Style Check
+</div>
+
+코드베이스에서 다양한 스타일 검사를 수행합니다. 아래의 각 하위 검사는 [`ci/jobs/check_style.py`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/check_style.py)의 `testname`에 해당하며, `--test <name>` 옵션으로 개별 실행할 수 있습니다(아래 참조).
+
+<div id="cpp">
+  ##### cpp
+</div>
+
+[`check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh)를 통해 정규식 기반 C++ 스타일 검사를 수행합니다. 검사에 실패하면 [코드 스타일 가이드](/ko/resources/develop-contribute/contribute/style)에 따라 문제를 수정하세요.
+
+<div id="whitespace-check">
+  ##### whitespace_check
+</div>
+
+컬럼 정렬을 위한 경우를 제외하고, C++에서 쉼표 뒤의 이중 공백을 표시합니다.
+
+<div id="catch-all">
+  ##### catch_all
+</div>
+
+알 수 없는 예외를 삼키는 것은 안전하지 않으므로, 소멸자, `main`, 퍼저 진입 지점을 제외한 곳에서는 `catch (...)`를 금지합니다.
+
+<div id="yamllint">
+  ##### yamllint
+</div>
+
+`.yamllint`를 사용해 `.github/` 아래의 YAML 워크플로 파일을 린트합니다.
+
+<div id="xmllint">
+  ##### xmllint
+</div>
+
+`tests/` 및 `programs/` 디렉터리 아래의 XML 파일을 검증합니다.
+
+<div id="functional-tests-check">
+  ##### functional_tests_check
+</div>
+
+상태 비저장 기능 테스트를 검사합니다. `event_date`로 필터링하는 쿼리는 `today()` 대신 `>= yesterday()`를 사용해야 하며(자정 무렵의 불안정한 동작을 방지하기 위해), 테스트 파일 이름에는 `fail`이 포함되면 안 됩니다.
+
+<div id="test-numbers-check">
+  ##### test_numbers_check
+</div>
+
+상태 비저장 기능 테스트 번호(`tests/queries/0_stateless/<NNNNN>_*`)에서 큰 번호 간격을 표시합니다.
+
+<div id="symlinks">
+  ##### 심볼릭 링크
+</div>
+
+리포지토리에서 끊어진 심볼릭 링크를 감지합니다.
+
+<div id="various">
+  ##### 기타
+</div>
+
+[`various_checks.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/various_checks.sh)를 통한 기타 리포지토리 검사: `system.query_log` / `system.parts` / 기타에 대한 쿼리는 반드시 `currentDatabase`로 필터링해야 하며, `Replicated*MergeTree` ZooKeeper 경로에는 테스트별 접두사가 포함되어야 하고, 통합 테스트 디렉터리에는 `__init__.py`가 있어야 하며, UTF BOM이 없어야 하고, 소스/데이터 파일에는 실행 비트가 설정되어 있지 않아야 하며, 서드파티 docker-compose 이미지에는 `:latest` 태그를 사용해서는 안 되는 등 다양한 항목을 검사합니다.
+
+<div id="running-style-check-locally">
+  ### 로컬에서 Style Check 작업 실행하기
+</div>
+
+전체 *Style Check* 작업은 다음과 같이 Docker 컨테이너에서 로컬로 실행할 수 있습니다:
+
+```sh
+python -m ci.praktika run "Style check"
+```
+
+특정 체크를 실행하려면(예: *cpp* 체크):
+
+```sh
+python -m ci.praktika run "Style check" --test cpp
+```
+
+이 명령은 `clickhouse/style-test` Docker 이미지를 가져와 컨테이너화된 환경에서 작업을 실행합니다.
+Python 3와 Docker 외에는 별도의 종속성이 필요하지 않습니다.
+
+<div id="running-stateless-tests">
+  ## stateless tests 실행하기
+</div>
+
+기본 설정으로 로컬에 설치한 ClickHouse는 일부 테스트 케이스에서는 동작할 수 있지만, 모든 테스트 쿼리를 올바르게 실행할 수는 없습니다. CI에서는 각 작업마다 특정 ClickHouse 구성(예: S3 storage, 병렬 레플리카)을 설치하므로 이를 수동으로 재현하기가 번거로울 수 있습니다. 이런 번거로움을 피하려면 CI와 동일한 오케스트레이션을 사용해 로컬에서 모든 CI 작업을 재현할 수 있으며, 수동 구성은 필요하지 않습니다.
+
+<div id="ci-prerequisites">
+  #### 사전 요구 사항
+</div>
+
+* Python 3 (표준 라이브러리만)
+* Docker
+
+필요한 경우 Ubuntu에 Docker를 설치한 후 다시 로그인하십시오:
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+<div id="run-ci-job-locally">
+  #### CI 작업을 로컬에서 실행하기
+</div>
+
+CI 보고서에서 원하는 `job` 이름을 선택한 다음 로컬에서 실행하십시오:
+
+```bash
+python -m ci.praktika run "<JOB_NAME>"
+```
+
+* 항상 CI 보고서에 표시된 작업 이름을 그대로 정확히 따옴표로 묶어 사용하십시오(공백과 쉼표가 포함될 수 있음). 예: `"Stateless tests (amd_debug, parallel)"`. 이렇게 하면 CI와 동일한 ClickHouse 구성이 설정되고 동일한 테스트가 실행됩니다.
+* 작업 이름에 포함된 아키텍처와 빌드 유형(예: `amd_debug`)은 CI 전용 레이블입니다. 로컬에서 실행할 때는 영향을 주지 않습니다. 즉, 현재 실행 중인 아키텍처와 제공한 바이너리가 무엇이든 작업은 그것을 사용합니다. 작업 이름은 ClickHouse 구성과 테스트 세트만 결정합니다(`--test`로 재정의하지 않는 한).
+* CI에서는 리소스를 더 효율적으로 활용하기 위해 기능 테스트를 여러 배치로 나누어 실행합니다. 예를 들어 `"Stateless tests (amd_debug, parallel)"`와 `"Stateless tests (amd_debug, sequential)"`를 함께 실행하면 전체 범위를 포괄합니다. 병렬 실행이 안전한 테스트는 동시에 실행되고, 나머지는 순차적으로 실행됩니다. 이렇게 분할하면 가능한 범위에서 병렬성을 극대화하여 전체 CI 시간을 줄일 수 있습니다. 로컬에서 전체 테스트 범위를 재현하려면 두 배치를 모두 실행하십시오.
+* 제한된 범위의 기능 테스트를 실행해 ClickHouse의 기본 기능을 검증하는 `"Fast test"` CI 작업도 있습니다. 이 작업은 모든 선택적 모듈이 포함되지 않은 빌드를 사용하며, 회귀를 가장 빠르게 찾아내는 방법입니다. 로컬에서도 같은 방식으로 실행할 수 있습니다. ClickHouse 바이너리를 기본 검색 경로 중 하나(`./ci/tmp/clickhouse`, `./build/programs/clickhouse`, 또는 `./clickhouse`)에 두십시오. 그렇지 않으면 작업이 먼저 ClickHouse를 빌드하려고 시도합니다:
+  ```bash
+  python -m ci.praktika run "Fast test"
+  ```
+
+<div id="run-specific-tests-within-ci-job">
+  #### CI 작업 내에서 특정 테스트 실행
+</div>
+
+`--test`를 사용하면 CI에서 사용하는 것과 동일한 ClickHouse 구성을 준비한 뒤, 선택한 테스트만 실행합니다:
+
+```bash
+python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+  --test 00001_select1
+```
+
+* 여러 테스트 이름을 지정할 수 있습니다:
+  ```bash
+  python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+    --test 00001_select1 00002_log_and_exception_messages_formatting
+  ```
+* 팁: ClickHouse 구성은 아무 것이나 상관없고 특정 테스트만 실행하면 되는 경우, 전체 작업 이름 대신 별칭 `functional`을 사용하세요:
+  ```bash
+  python -m ci.praktika run functional --test 00001_select1
+  ```
+
+<div id="additional-customization-options">
+  #### 추가 사용자 설정 옵션
+</div>
+
+* `--path PATH` — ClickHouse 실행 파일의 사용자 지정 경로입니다. 기본적으로 러너는 `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse` 순서대로 검색합니다.
+* `--count N` — 각 테스트를 N번 반복합니다.
+* `--workers N` — 머신 용량을 기준으로 자동 계산되는 병렬 워커 수를 재정의합니다.
+
+<div id="build-check">
+  ## 빌드 검사
+</div>
+
+후속 단계에서 사용할 수 있도록 다양한 구성으로 ClickHouse를 빌드합니다.
+
+<div id="running-builds-locally">
+  ### 로컬에서 빌드 실행하기
+</div>
+
+다음을 사용하면 CI와 유사한 환경에서 로컬로 빌드를 실행할 수 있습니다.
+
+```bash
+python -m ci.praktika run "<BUILD_JOB_NAME>"
+```
+
+Python 3와 Docker 외에는 추가 의존성이 필요하지 않습니다.
+
+<div id="available-build-jobs">
+  #### 사용 가능한 빌드 작업
+</div>
+
+빌드 작업 이름은 CI Report에 표시되는 이름과 정확히 동일합니다.
+
+**AMD64 빌드:**
+
+* `Build (amd_debug)` - 심볼이 포함된 디버그 빌드
+* `Build (amd_release)` - 최적화된 릴리스 빌드
+* `Build (amd_asan)` - Address Sanitizer 빌드
+* `Build (amd_tsan)` - Thread Sanitizer 빌드
+* `Build (amd_msan)` - Memory Sanitizer 빌드
+* `Build (amd_ubsan)` - Undefined Behavior Sanitizer 빌드
+* `Build (amd_binary)` - Thin LTO 없이 빠르게 생성하는 릴리스 빌드
+* `Build (amd_compat)` - 구형 시스템용 호환성 빌드
+* `Build (amd_musl)` - musl libc를 사용한 빌드
+* `Build (amd_darwin)` - macOS 빌드
+* `Build (amd_freebsd)` - FreeBSD 빌드
+
+**ARM64 빌드:**
+
+* `Build (arm_release)` - ARM64용 최적화 릴리스 빌드
+* `Build (arm_asan)` - ARM64 Address Sanitizer 빌드
+* `Build (arm_coverage)` - 커버리지 계측이 포함된 ARM64 빌드
+* `Build (arm_binary)` - Thin LTO 없이 빠르게 생성하는 ARM64 릴리스 빌드
+* `Build (arm_darwin)` - macOS ARM64 빌드
+* `Build (arm_v80compat)` - ARMv8.0 호환성 빌드
+
+**기타 아키텍처:**
+
+* `Build (ppc64le)` - PowerPC 64비트 리틀 엔디안
+* `Build (riscv64)` - RISC-V 64비트
+* `Build (s390x)` - IBM System/390 64비트
+* `Build (loongarch64)` - LoongArch 64비트
+
+작업이 성공하면 빌드 결과는 `<repo_root>/ci/tmp/build` 디렉터리에서 확인할 수 있습니다.
+
+**참고:** &quot;기타 아키텍처&quot; 범주에 속하지 않는 빌드에는 교차 컴파일이 사용되므로, `BUILD_JOB_NAME`에서 요청한 빌드를 생성하려면 로컬 머신의 아키텍처가 빌드 유형과 일치해야 합니다.
+
+<div id="example-run-local">
+  #### 예시
+</div>
+
+로컬 디버그 빌드를 실행하려면 다음을 수행하십시오.
+
+```bash
+python -m ci.praktika run "Build (amd_debug)"
+```
+
+위 방법이 맞지 않는다면, 빌드 로그의 cmake 옵션을 사용하고 [일반 빌드 프로세스](/ko/resources/develop-contribute/build/build)를 따르십시오.
+
+<div id="functional-stateless-tests">
+  ## 상태 비저장 기능 테스트
+</div>
+
+Release, Debug, sanitizer 사용 등 다양한 구성으로 빌드된 ClickHouse 바이너리에 대해 [상태 비저장 기능 테스트](/ko/resources/develop-contribute/contribute/tests#functional-tests)를 실행합니다.
+어떤 테스트가 실패하는지 보고서에서 확인한 다음, [여기](/ko/resources/develop-contribute/contribute/tests#functional-tests)에 설명된 대로 로컬에서 실패를 재현하십시오.
+재현할 때는 올바른 빌드 구성을 사용해야 합니다. 예를 들어 테스트가 AddressSanitizer에서는 실패하지만 Debug에서는 통과할 수 있습니다.
+[CI 빌드 검사 페이지](/ko/get-started/setup/self-managed/advanced)에서 바이너리를 다운로드하거나 로컬에서 빌드하십시오.
+
+<div id="integration-tests">
+  ## 통합 테스트
+</div>
+
+[통합 테스트](/ko/resources/develop-contribute/contribute/tests#integration-tests)를 실행합니다.
+
+<div id="bugfix-validate-check">
+  ## 버그 수정 검증 검사
+</div>
+
+새 테스트(기능 또는 통합)가 있거나, master 브랜치에서 빌드한 바이너리에서 실패하는 변경된 테스트가 있는지 확인합니다.
+이 검사는 풀 리퀘스트에 &quot;pr-bugfix&quot; 레이블이 있을 때 실행됩니다.
+
+<div id="stress-test">
+  ## 스트레스 테스트
+</div>
+
+여러 클라이언트에서 상태 비저장 기능 테스트를 동시에 실행하여 동시성 관련 오류를 감지합니다. 실패하면:
+
+* 먼저 다른 테스트 실패를 모두 해결하십시오;
+  * 보고서에서 서버 로그를 찾아 오류의 가능한 원인을 확인하십시오.
+
+<div id="compatibility-check">
+  ## 호환성 검사
+</div>
+
+오래된 libc 버전의 배포판에서도 `clickhouse` 실행 파일이 실행되는지 확인합니다.
+실패하면 메인테이너에게 도움을 요청하십시오.
+
+<div id="ast-fuzzer">
+  ## AST fuzzer
+</div>
+
+무작위로 생성된 쿼리를 실행해 프로그램 오류를 찾아냅니다.
+실패하면 메인테이너에게 도움을 요청하십시오.
+
+<div id="performance-tests">
+  ## 성능 테스트
+</div>
+
+쿼리 성능의 변화를 측정합니다.
+자동으로 실행되는 검사 중 가장 오래 걸리며, 완료까지 6시간이 채 걸리지 않습니다.
+성능 테스트 보고서에 대한 자세한 설명은 [여기](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report)에 있습니다.

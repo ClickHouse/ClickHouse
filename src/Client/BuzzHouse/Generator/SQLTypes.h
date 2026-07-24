@@ -276,9 +276,9 @@ class EnumType : public SQLType
 public:
     const uint32_t size;
     const std::vector<EnumValue> values;
-    EnumType(const uint32_t s, const std::vector<EnumValue> v)
+    EnumType(const uint32_t s, std::vector<EnumValue> v)
         : size(s)
-        , values(v)
+        , values(std::move(v))
     {
     }
 
@@ -563,10 +563,13 @@ class QBitType : public SQLType
 public:
     std::unique_ptr<SQLType> subtype;
     const uint32_t dimension;
+    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided.
+    const uint32_t stride;
 
-    QBitType(std::unique_ptr<SQLType> s, const uint32_t d)
+    QBitType(std::unique_ptr<SQLType> s, const uint32_t d, const uint32_t st)
         : subtype(std::move(s))
         , dimension(d)
+        , stride(st)
     {
     }
 
@@ -712,5 +715,6 @@ String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
+EnumType * getColumnEnumType(SQLType * tp);
 
 }

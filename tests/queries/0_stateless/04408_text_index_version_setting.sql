@@ -1,7 +1,8 @@
 -- Tags: no-parallel-replicas
 
 -- Tests the `text_index_version` MergeTree setting that selects the on-disk text index format
--- version ('initial' or 'with_codec'), used to preserve forward compatibility during upgrades.
+-- version ('initial', 'with_codec' or 'with_positions'), used to preserve forward compatibility
+-- during upgrades.
 
 SET enable_analyzer = 1;
 
@@ -58,6 +59,28 @@ INSERT INTO tab_with_codec SELECT number, 'foo bar' FROM numbers(512);
 SELECT count() FROM tab_with_codec WHERE hasToken(str, 'foo');
 SELECT count() FROM tab_with_codec WHERE hasToken(str, 'bar');
 
+SELECT '-- with_positions version: phrase search round-trip';
+DROP TABLE IF EXISTS tab_with_positions;
+CREATE TABLE tab_with_positions
+(
+    id UInt32,
+    str String,
+    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)
+)
+ENGINE = MergeTree() ORDER BY id
+SETTINGS index_granularity = 1, text_index_version = 'with_positions', allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab_with_positions SELECT number, 'foo bar baz' FROM numbers(512);
+SELECT count() FROM tab_with_positions WHERE hasPhrase(str, 'foo bar');
+SELECT count() FROM tab_with_positions WHERE hasPhrase(str, 'bar baz');
+SELECT count() FROM tab_with_positions WHERE hasPhrase(str, 'baz bar');
+
+SELECT '-- with_positions version: merge keeps the format readable';
+INSERT INTO tab_with_positions SELECT number, 'foo baz bar' FROM numbers(512);
+OPTIMIZE TABLE tab_with_positions FINAL;
+SELECT count() FROM tab_with_positions WHERE hasPhrase(str, 'foo bar');
+SELECT count() FROM tab_with_positions WHERE hasPhrase(str, 'baz bar');
+
 SELECT '-- initial version is incompatible with a posting list codec';
 DROP TABLE IF EXISTS tab_conflict;
 -- The conflict is rejected up front while validating the table settings on CREATE.
@@ -82,6 +105,37 @@ ENGINE = MergeTree() ORDER BY id
 SETTINGS index_granularity = 1, text_index_posting_list_codec = 'bitpacking';
 ALTER TABLE tab_alter MODIFY SETTING text_index_version = 'initial'; -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- phrase search index requires the with_positions version';
+DROP TABLE IF EXISTS tab_positions_pinned;
+CREATE TABLE tab_positions_pinned
+(
+    id UInt32,
+    str String,
+    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)
+)
+ENGINE = MergeTree() ORDER BY id
+SETTINGS text_index_version = 'with_codec', allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- adding a phrase search index on a table pinned to an older version is also rejected';
+DROP TABLE IF EXISTS tab_add_index;
+CREATE TABLE tab_add_index
+(
+    id UInt32,
+    str String
+)
+ENGINE = MergeTree() ORDER BY id
+SETTINGS text_index_version = 'with_codec', allow_experimental_text_index_phrase_search = 1;
+ALTER TABLE tab_add_index ADD INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- pinning the version on an existing phrase search table keeps writes working';
+-- The pin is not visible to the per-index validation on MODIFY SETTING; parts of an index
+-- with phrase search support are written in the 'with_positions' format regardless of it.
+ALTER TABLE tab_with_positions MODIFY SETTING text_index_version = 'with_codec';
+INSERT INTO tab_with_positions SELECT number, 'foo bar qux' FROM numbers(512);
+SELECT count() FROM tab_with_positions WHERE hasPhrase(str, 'bar qux');
+
 DROP TABLE tab_initial;
 DROP TABLE tab_with_codec;
+DROP TABLE tab_with_positions;
 DROP TABLE tab_alter;
+DROP TABLE tab_add_index;

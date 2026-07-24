@@ -1,0 +1,11 @@
+<test>
+    <query>SELECT DISTINCT leftPad(toString(number), 2000, 'x') FROM numbers_mt(1000000) FORMAT Null</query>
+    <query>SELECT DISTINCT leftPad(toString(number), 1000, 'x') FROM numbers_mt(2000000) FORMAT Null</query>
+    <query>SELECT DISTINCT leftPad(toString(number), 500, 'x') FROM numbers_mt(4000000) FORMAT Null</query>
+    <query>SELECT DISTINCT leftPad(toString(number), 2000, 'x') as col FROM numbers_mt(1000000) ORDER BY col FORMAT Null</query>
+    <query>SELECT DISTINCT leftPad(toString(number), 1000, 'x') as col FROM numbers_mt(2000000) ORDER BY col FORMAT Null</query>
+    <query>SELECT DISTINCT leftPad(toString(number), 500, 'x') as col FROM numbers_mt(4000000) ORDER BY col FORMAT Null</query>
+    <query>SELECT DISTINCT toFixedString(leftPad(toString(number), 128, '0'), 128) FROM numbers_mt(8000000) FORMAT Null</query>
+    <query>SELECT DISTINCT arrayWithConstant(30, number) FROM numbers_mt(3000000) FORMAT Null</query>
+    <query>SELECT DISTINCT number FROM numbers_mt(40000000) FORMAT Null</query>
+</test>

@@ -1,0 +1,711 @@
+---
+title: '기타 JSON 접근 방식'
+slug: /integrations/data-formats/json/other-approaches
+description: 'JSON 모델링을 위한 기타 접근 방식'
+keywords: ['json', '포맷']
+doc_type: '참고'
+---
+
+**다음은 ClickHouse에서 JSON을 모델링하는 다른 방법입니다. 내용의 완전성을 위해 문서화했으며, JSON 타입이 도입되기 전에 사용되던 방식이므로 일반적으로는 권장되지 않으며 대부분의 사용 사례에도 적합하지 않습니다.**
+
+<Info>
+  **객체 수준 접근 방식을 적용하세요**
+
+  같은 스키마 안에서도 객체마다 서로 다른 기법을 적용할 수 있습니다. 예를 들어, 일부 객체는 `String` 타입이 가장 적합하고 다른 객체는 `Map` 타입이 더 적합할 수 있습니다. `String` 타입을 사용하면 추가로 스키마를 결정할 필요가 없다는 점에 유의하십시오. 반면 아래에서 보듯이 `Map` 키 안에 하위 객체를 중첩할 수도 있으며, 여기에 JSON을 나타내는 `String`을 포함할 수도 있습니다:
+</Info>
+
+<div id="using-string">
+  ## String 타입 사용하기
+</div>
+
+객체가 매우 동적이고, 예측 가능한 구조가 없으며, 임의로 중첩된 객체를 포함한다면 String 타입을 사용해야 합니다. 값은 아래에서 보이듯 JSON 함수를 사용해 쿼리 시점에 추출할 수 있습니다.
+
+위에서 설명한 구조화된 접근 방식으로 데이터를 처리하는 방법은 동적 JSON을 다루는 사용자에게는 대개 적합하지 않습니다. 동적 JSON은 변경될 수 있거나 스키마(schema)가 충분히 파악되지 않은 경우가 많기 때문입니다. 완전한 유연성이 필요하다면 JSON을 `String`로 그대로 저장한 뒤, 필요에 따라 함수를 사용해 필드를 추출하면 됩니다. 이는 JSON을 구조화된 객체로 처리하는 방식의 정반대에 있는 극단적인 접근입니다. 하지만 이러한 유연성에는 비용이 따르며, 특히 쿼리 구문이 더 복잡해지고 성능이 저하된다는 단점이 있습니다.
+
+앞서 언급했듯이, [원래의 person 객체](/ko/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)에서는 `tags` 컬럼의 구조를 보장할 수 없습니다. 원래 행을 삽입하고(지금은 무시하는 `company.labels` 포함), `Tags` 컬럼을 `String`으로 선언합니다:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+```
+
+```response
+Ok.
+1 row in set. Elapsed: 0.002 sec.
+```
+
+`tags` 컬럼을 선택하면 JSON이 문자열로 삽입되었음을 확인할 수 있습니다:
+
+```sql
+SELECT tags
+FROM people
+```
+
+```response
+┌─tags───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}} │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+이 JSON에서 값을 추출하는 데 [`JSONExtract`](/ko/reference/functions/regular-functions/json-functions#jsonextract-functions) 함수를 사용할 수 있습니다. 아래의 간단한 예시를 살펴보겠습니다:
+
+```sql
+SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
+```
+
+```response
+┌─holidays──────────────────────────────────────┐
+│ [{"year":2024,"location":"Azores, Portugal"}] │
+└───────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+함수에는 추출할 JSON의 경로와 `String` 컬럼 `tags`에 대한 참조가 모두 필요하다는 점에 유의하십시오. 중첩 경로를 추출하려면 함수도 중첩해야 합니다. 예를 들어 `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')`는 `tags.car.year` 컬럼을 추출합니다. 중첩 경로 추출은 [`JSON_QUERY`](/ko/reference/functions/regular-functions/json-functions#JSON_QUERY) 및 [`JSON_VALUE`](/ko/reference/functions/regular-functions/json-functions#JSON_VALUE) 함수를 사용하면 더 간단해집니다.
+
+전체 본문을 `String`으로 간주하는 `arxiv` 데이터셋의 극단적인 사례를 살펴보겠습니다.
+
+```sql
+CREATE TABLE arxiv (
+  body String
+)
+ENGINE = MergeTree ORDER BY ()
+```
+
+이 스키마에 데이터를 삽입하려면 `JSONAsString` 포맷을 사용해야 합니다:
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+```
+
+```response
+0 rows in set. Elapsed: 25.186 sec. Processed 2.52 million rows, 1.38 GB (99.89 thousand rows/s., 54.79 MB/s.)
+```
+
+연도별로 발표된 논문 수를 집계하려고 한다고 가정해 보겠습니다. 스키마의 [구조화된 버전](/ko/guides/clickhouse/data-formats/json/inference#creating-tables)과 비교해, 문자열만 사용하는 다음 쿼리를 살펴보십시오:
+
+```sql
+-- 구조화된 스키마 사용
+SELECT
+    toYear(parseDateTimeBestEffort(versions.created[1])) AS published_year,
+    count() AS c
+FROM arxiv_v2
+GROUP BY published_year
+ORDER BY c ASC
+LIMIT 10
+```
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.264 sec. Processed 2.31 million rows, 153.57 MB (8.75 million rows/s., 582.58 MB/s.)
+```
+
+```sql
+-- 비구조화 String 사용
+
+SELECT
+    toYear(parseDateTimeBestEffort(JSON_VALUE(body, '$.versions[0].created'))) AS published_year,
+    count() AS c
+FROM arxiv
+GROUP BY published_year
+ORDER BY published_year ASC
+LIMIT 10
+```
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 1.281 sec. Processed 2.49 million rows, 4.22 GB (1.94 million rows/s., 3.29 GB/s.)
+Peak memory usage: 205.98 MiB.
+```
+
+여기서는 JSON을 method로 필터링하기 위해 XPath 표현식을 사용한다는 점에 유의하십시오. 즉, `JSON_VALUE(body, '$.versions[0].created')`입니다.
+
+String 함수는 인덱스를 사용하는 명시적 형 변환보다 현저히 느립니다(&gt; 10배). 위 쿼리는 항상 전체 테이블을 스캔하고 모든 행을 처리해야 합니다. 이와 같은 작은 데이터셋에서는 이러한 쿼리도 여전히 빠르지만, 더 큰 데이터셋에서는 성능이 저하됩니다.
+
+이 접근 방식은 유연한 대신 성능과 구문 측면에서 분명한 대가가 따르므로, 스키마에서 매우 동적인 객체에만 사용해야 합니다.
+
+<div id="simple-json-functions">
+  ### 단순 JSON 함수
+</div>
+
+위 예시에서는 JSON* 함수 계열을 사용합니다. 이 함수들은 [simdjson](https://github.com/simdjson/simdjson) 기반의 전체 JSON 파서를 사용하며, 엄격하게 파싱하고 서로 다른 수준에 중첩된 동일한 field를 구분합니다. 또한 문법적으로는 올바르지만 형식이 잘 정돈되지 않은 JSON(예: key 사이에 공백이 2칸 있는 경우)도 처리할 수 있습니다.
+
+더 빠르고 더 엄격한 함수 집합도 사용할 수 있습니다. 이러한 `simpleJSON*` 함수는 주로 JSON의 구조와 포맷에 대해 엄격한 가정을 적용하여 더 나은 성능을 제공할 수 있습니다. 구체적으로는 다음과 같습니다.
+
+* field 이름은 상수여야 합니다
+* field 이름의 인코딩은 일관되어야 합니다. 예: `simpleJSONHas('{"abc":"def"}', 'abc') = 1`, 하지만 `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+* field 이름은 모든 중첩 구조 전체에서 고유해야 합니다. 중첩 수준은 구분하지 않으며, 일치는 구분 없이 처리됩니다. 일치하는 field가 여러 개이면 첫 번째 항목이 사용됩니다.
+* 문자열 리터럴 밖에는 특수 문자가 있으면 안 됩니다. 여기에는 공백도 포함됩니다. 다음 예시는 올바르지 않으므로 파싱되지 않습니다.
+
+  ```json
+  {"@timestamp": 893964617, "clientip": "40.135.0.0", "request": {"method": "GET",
+  "path": "/images/hm_bg.jpg", "version": "HTTP/1.0"}, "status": 200, "size": 24736}
+  ```
+
+반면 다음은 올바르게 파싱됩니다:
+
+````json
+{"@timestamp":893964617,"clientip":"40.135.0.0","request":{"method":"GET",
+    "path":"/images/hm_bg.jpg","version":"HTTP/1.0"},"status":200,"size":24736}
+
+성능이 중요하고 JSON이 위의 요구 사항을 충족하는 특정 상황에서는 이러한 함수들이 적합할 수 있습니다. 앞서 사용한 쿼리를 `simpleJSON*` 함수로 재작성한 예시는 다음과 같습니다:
+
+```sql
+SELECT
+    toYear(parseDateTimeBestEffort(simpleJSONExtractString(simpleJSONExtractRaw(body, 'versions'), 'created'))) AS published_year,
+    count() AS c
+FROM arxiv
+GROUP BY published_year
+ORDER BY published_year ASC
+LIMIT 10
+````
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.964 sec. Processed 2.48 million rows, 4.21 GB (2.58 million rows/s., 4.36 GB/s.)
+Peak memory usage: 211.49 MiB.
+```
+
+위의 쿼리는 게시 날짜에는 첫 번째 값만 필요하다는 점을 활용해 `simpleJSONExtractString`으로 `created` 키를 추출합니다. 이 경우 성능상 이점을 고려하면 `simpleJSON*` 함수의 제한 사항은 감수할 만합니다.
+
+## 맵(Map) 타입 사용하기
+
+객체를 주로 하나의 타입으로 된 임의의 키를 저장하는 데 사용한다면 `Map` 타입을 고려하십시오. 이상적으로는 고유 키 수가 수백 개를 넘지 않는 것이 좋습니다. `Map` 타입은 하위 객체가 있는 객체에도 사용할 수 있으며, 이 경우 하위 객체들의 타입이 일관되어야 합니다. 일반적으로는 레이블과 태그에 `Map` 타입을 사용하는 것을 권장합니다. 예를 들어 로그 데이터의 Kubernetes 파드 레이블이 이에 해당합니다.
+
+`Map`은 중첩 구조를 표현하는 간단한 방법이지만, 몇 가지 중요한 제약이 있습니다:
+
+* 필드는 모두 동일한 타입이어야 합니다.
+* 필드는 컬럼으로 존재하지 않으므로 서브컬럼에 접근하려면 별도의 맵 구문이 필요합니다. 객체 전체 *자체가* 하나의 컬럼입니다.
+* 서브컬럼에 접근하면 전체 `Map` 값, 즉 모든 형제 요소와 그 값까지 함께 로드됩니다. 맵이 큰 경우 이는 상당한 성능 저하로 이어질 수 있습니다.
+
+<Info>
+  **String 키**
+
+  객체를 `Map`으로 모델링할 때는 JSON 키 이름을 저장하기 위해 `String` 키를 사용합니다. 따라서 맵은 항상 `Map(String, T)` 형태이며, 여기서 `T`는 데이터에 따라 달라집니다.
+</Info>
+
+#### 기본형 값
+
+`Map`의 가장 단순한 활용 방식은 객체의 값이 모두 동일한 기본형 유형인 경우입니다. 대부분은 값 `T`로 String 타입을 사용합니다.
+
+`company.labels` 객체가 동적이라고 판단된 [앞서의 person JSON](/ko/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)을 살펴보겠습니다. 여기서 중요한 점은 이 객체에 String 타입의 key-value 쌍만 추가된다고 예상한다는 것입니다. 따라서 이를 `Map(String, String)`으로 선언할 수 있습니다:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels Map(String,String)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+원본 전체 JSON 객체를 삽입할 수 있습니다:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+request 객체의 이러한 필드를 쿼리하려면, 예를 들어 다음과 같은 맵 구문을 사용해야 합니다:
+
+```sql
+SELECT company.labels FROM people
+```
+
+```response
+┌─company.labels───────────────────────────────┐
+│ {'type':'database systems','founded':'2021'} │
+└──────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT company.labels['type'] AS type FROM people
+```
+
+```response
+┌─type─────────────┐
+│ database systems │
+└──────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+이를 쿼리하는 데 사용할 수 있는 전체 `Map` 함수 세트가 제공되며, [여기](/ko/reference/functions/regular-functions/tuple-map-functions)에 설명되어 있습니다. 데이터 유형이 일관되지 않은 경우 [필요한 타입 강제 변환](/ko/reference/functions/regular-functions/type-conversion-functions)을 수행하는 함수도 제공됩니다.
+
+#### 객체 값
+
+하위 객체를 가진 객체에도 `Map` 타입을 사용할 수 있습니다. 단, 하위 객체의 타입은 일관되어야 합니다.
+
+예를 들어, `persons` 객체의 `tags` 키에 일관된 구조가 필요하다고 가정해 보겠습니다. 즉, 각 `tag`의 하위 객체는 `name` 및 `time` 컬럼을 가져야 합니다. 이러한 JSON 문서의 단순화된 예시는 다음과 같습니다.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "tags": {
+    "hobby": {
+      "name": "Diving",
+      "time": "2024-07-11 14:18:01"
+    },
+    "car": {
+      "name": "Tesla",
+      "time": "2024-07-11 15:18:23"
+    }
+  }
+}
+```
+
+이는 아래와 같이 `Map(String, Tuple(name String, time DateTime))`으로 표현할 수 있습니다:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `tags` Map(String, Tuple(name String, time DateTime))
+)
+ENGINE = MergeTree
+ORDER BY username
+
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","tags":{"hobby":{"name":"Diving","time":"2024-07-11 14:18:01"},"car":{"name":"Tesla","time":"2024-07-11 15:18:23"}}}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT tags['hobby'] AS hobby
+FROM people
+FORMAT JSONEachRow
+
+{"hobby":{"name":"Diving","time":"2024-07-11 14:18:01"}}
+```
+
+```response
+1 row in set. Elapsed: 0.001 sec.
+```
+
+이 경우 맵을 사용하는 일은 일반적으로 드물며, 동적인 키 이름에 하위 객체가 없도록 데이터를 재모델링해야 함을 시사합니다. 예를 들어, 위 내용은 `Array(Tuple(key String, name String, time DateTime))`를 사용할 수 있도록 다음과 같이 재모델링할 수 있습니다.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "tags": [
+    {
+      "key": "hobby",
+      "name": "Diving",
+      "time": "2024-07-11 14:18:01"
+    },
+    {
+      "key": "car",
+      "name": "Tesla",
+      "time": "2024-07-11 15:18:23"
+    }
+  ]
+}
+```
+
+## Nested 타입 사용
+
+[Nested 타입](/ko/reference/data-types/nested-data-structures/index)은 거의 변경되지 않는 정적 객체를 모델링하는 데 사용할 수 있으며, `Tuple` 및 `Array(Tuple)`의 대안이 될 수 있습니다. 일반적으로 이 타입은 동작 방식이 종종 혼란스러울 수 있으므로 JSON에는 사용하지 않는 것을 권장합니다. `Nested`의 주요 장점은 서브컬럼을 정렬 키에 사용할 수 있다는 점입니다.
+
+아래에서는 정적 객체를 모델링할 때 Nested 타입을 사용하는 예시를 제공합니다. 다음과 같은 간단한 JSON 로그 항목을 살펴보겠습니다:
+
+```json
+{
+  "timestamp": 897819077,
+  "clientip": "45.212.12.0",
+  "request": {
+    "method": "GET",
+    "path": "/french/images/hm_nav_bar.gif",
+    "version": "HTTP/1.0"
+  },
+  "status": 200,
+  "size": 3305
+}
+```
+
+`request` 키는 `Nested`로 선언할 수 있습니다. `Tuple`과 마찬가지로 하위 컬럼을 명시해야 합니다.
+
+```sql
+-- default
+SET flatten_nested=1
+CREATE table http
+(
+   timestamp Int32,
+   clientip     IPv4,
+   request Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+   status       UInt16,
+   size         UInt32,
+) ENGINE = MergeTree() ORDER BY (status, timestamp);
+```
+
+### flatten_nested
+
+설정 `flatten_nested`는 Nested의 동작 방식을 제어합니다.
+
+#### flatten_nested=1
+
+`1` 값(기본값)에서는 임의 깊이의 중첩을 지원하지 않습니다. 이 값을 사용할 때는 중첩 데이터 구조를 길이가 같은 여러 개의 [배열](/ko/reference/data-types/array) 컬럼으로 생각하는 것이 가장 이해하기 쉽습니다. 이 경우 `method`, `path`, `version` 필드는 사실상 각각 별도의 `Array(Type)` 컬럼이며, 한 가지 중요한 제약이 있습니다. **`method`, `path`, `version` 필드의 길이는 반드시 같아야 합니다.** 이는 `SHOW CREATE TABLE`을 사용하면 확인할 수 있습니다:
+
+```sql
+SHOW CREATE TABLE http
+
+CREATE TABLE http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request.method` Array(LowCardinality(String)),
+    `request.path` Array(String),
+    `request.version` Array(LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+```
+
+아래에서는 이 테이블에 데이터를 삽입합니다:
+
+```sql
+SET input_format_import_nested_json = 1;
+INSERT INTO http
+FORMAT JSONEachRow
+{"timestamp":897819077,"clientip":"45.212.12.0","request":[{"method":"GET","path":"/french/images/hm_nav_bar.gif","version":"HTTP/1.0"}],"status":200,"size":3305}
+```
+
+여기서 알아두어야 할 몇 가지 중요한 사항은 다음과 같습니다:
+
+* JSON을 중첩 구조로 삽입하려면 `input_format_import_nested_json` 설정을 사용해야 합니다. 이 설정을 사용하지 않으면 JSON을 평탄화해야 합니다. 즉,
+
+  ```sql
+  INSERT INTO http FORMAT JSONEachRow
+  {"timestamp":897819077,"clientip":"45.212.12.0","request":{"method":["GET"],"path":["/french/images/hm_nav_bar.gif"],"version":["HTTP/1.0"]},"status":200,"size":3305}
+  ```
+* 중첩 필드 `method`, `path`, `version`은 JSON 배열 형태로 전달해야 합니다. 즉,
+
+  ```json
+  {
+    "@timestamp": 897819077,
+    "clientip": "45.212.12.0",
+    "request": {
+      "method": [
+        "GET"
+      ],
+      "path": [
+        "/french/images/hm_nav_bar.gif"
+      ],
+      "version": [
+        "HTTP/1.0"
+      ]
+    },
+    "status": 200,
+    "size": 3305
+  }
+  ```
+
+컬럼은 점 표기법으로 쿼리할 수 있습니다:
+
+```sql
+SELECT clientip, status, size, `request.method` FROM http WHERE has(request.method, 'GET');
+```
+
+```response
+┌─clientip────┬─status─┬─size─┬─request.method─┐
+│ 45.212.12.0 │    200 │ 3305 │ ['GET']        │
+└─────────────┴────────┴──────┴────────────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+서브컬럼에 `Array`를 사용하면 [배열 함수](/ko/reference/functions/regular-functions/array-functions)를 폭넓게 활용할 수 있으며, 여기에는 [`ARRAY JOIN`](/ko/reference/statements/select/array-join) 절도 포함됩니다 - 컬럼에 여러 값이 있는 경우 특히 유용합니다.
+
+#### flatten_nested=0
+
+이 설정을 사용하면 중첩을 임의의 깊이까지 허용할 수 있으며, 중첩된 컬럼은 `Tuple`의 단일 배열로 유지됩니다. 즉, 사실상 `Array(Tuple)`와 동일해집니다.
+
+**이는 `Nested`와 함께 JSON을 사용할 때 권장되는 방식이며, 대체로 가장 간단한 방법이기도 합니다. 아래에서 보듯이 모든 객체가 리스트이기만 하면 됩니다.**
+
+아래에서는 테이블을 다시 생성하고 행 하나를 다시 삽입합니다:
+
+```sql
+CREATE TABLE http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request` Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+
+SHOW CREATE TABLE http
+
+-- Nested 유형이 유지됩니다.
+CREATE TABLE default.http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request` Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+
+INSERT INTO http
+FORMAT JSONEachRow
+{"timestamp":897819077,"clientip":"45.212.12.0","request":[{"method":"GET","path":"/french/images/hm_nav_bar.gif","version":"HTTP/1.0"}],"status":200,"size":3305}
+```
+
+여기서 유의해야 할 중요한 사항이 몇 가지 있습니다:
+
+* `input_format_import_nested_json`은 삽입할 때 필요하지 않습니다.
+* `Nested` 유형은 `SHOW CREATE TABLE`에서도 유지됩니다. 실제로 이 컬럼의 내부 표현은 `Array(Tuple(Nested(method LowCardinality(String), path String, version LowCardinality(String))))`입니다.
+* 따라서 `request`는 배열 형태로 삽입해야 합니다. 즉,
+
+  ```json
+  {
+    "timestamp": 897819077,
+    "clientip": "45.212.12.0",
+    "request": [
+      {
+        "method": "GET",
+        "path": "/french/images/hm_nav_bar.gif",
+        "version": "HTTP/1.0"
+      }
+    ],
+    "status": 200,
+    "size": 3305
+  }
+  ```
+
+컬럼은 다시 점 표기법(dot notation)으로 쿼리할 수 있습니다:
+
+```sql
+SELECT clientip, status, size, `request.method` FROM http WHERE has(request.method, 'GET');
+```
+
+```response
+┌─clientip────┬─status─┬─size─┬─request.method─┐
+│ 45.212.12.0 │    200 │ 3305 │ ['GET']        │
+└─────────────┴────────┴──────┴────────────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+### 예시
+
+위 데이터의 더 큰 예시는 `s3://datasets-documentation/http/`에 있는 S3 공개 버킷에서 확인할 수 있습니다.
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+    "@timestamp": "893964617",
+    "clientip": "40.135.0.0",
+    "request": {
+        "method": "GET",
+        "path": "\/images\/hm_bg.jpg",
+        "version": "HTTP\/1.0"
+    },
+    "status": "200",
+    "size": "24736"
+}
+```
+
+```response
+1 행 in set. Elapsed: 0.312 sec.
+```
+
+JSON의 제약 조건과 입력 형식을 고려하여, 다음 쿼리를 사용해 이 샘플 데이터셋을 삽입합니다. 여기서는 `flatten_nested=0`으로 설정합니다.
+
+다음 문은 1,000만 개의 행을 삽입하므로 실행에 몇 분 정도 걸릴 수 있습니다. 필요하면 `LIMIT`를 적용하십시오:
+
+```sql
+INSERT INTO http
+SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+'JSONEachRow');
+```
+
+이 데이터를 쿼리하려면 요청 필드를 배열로 취급해 접근해야 합니다. 아래에서는 고정된 시간 범위의 오류와 HTTP 메서드를 요약합니다.
+
+```sql
+SELECT status, request.method[1] AS method, count() AS c
+FROM http
+WHERE status >= 400
+  AND toDateTime(timestamp) BETWEEN '1998-01-01 00:00:00' AND '1998-06-01 00:00:00'
+GROUP BY method, status
+ORDER BY c DESC LIMIT 5;
+```
+
+```response
+┌─status─┬─method─┬─────c─┐
+│    404 │ GET    │ 11267 │
+│    404 │ HEAD   │   276 │
+│    500 │ GET    │   160 │
+│    500 │ POST   │   115 │
+│    400 │ GET    │    81 │
+└────────┴────────┴───────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+### 쌍별 배열 사용
+
+쌍별 배열은 JSON을 String으로 표현할 때의 유연성과, 더 구조화된 접근 방식이 제공하는 성능 사이에서 균형을 이룹니다. 이 스키마는 새로운 필드를 루트에 추가할 수 있어 유연합니다. 하지만 이 방식은 훨씬 더 복잡한 쿼리 구문이 필요하며, 중첩 구조와는 호환되지 않습니다.
+
+예시로, 다음 테이블을 살펴보겠습니다:
+
+```sql
+CREATE TABLE http_with_arrays (
+   keys Array(String),
+   values Array(String)
+)
+ENGINE = MergeTree  ORDER BY tuple();
+```
+
+이 테이블에 삽입하려면 JSON을 키와 값의 목록 형태로 구성해야 합니다. 다음 쿼리는 이를 위해 `JSONExtractKeysAndValues`를 사용하는 예를 보여줍니다.
+
+```sql
+SELECT
+    arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
+    arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+keys:   ['@timestamp','clientip','request','status','size']
+values: ['893964617','40.135.0.0','{"method":"GET","path":"/images/hm_bg.jpg","version":"HTTP/1.0"}','200','24736']
+
+1 row in set. Elapsed: 0.416 sec.
+```
+
+request 컬럼이 문자열로 표현된 중첩 구조로 그대로 유지된다는 점에 유의하십시오. 루트에는 새로운 키를 얼마든지 삽입할 수 있습니다. JSON 자체에도 임의의 차이가 있을 수 있습니다. 로컬 테이블에 삽입하려면 다음을 실행하십시오.
+
+```sql
+INSERT INTO http_with_arrays
+SELECT
+    arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
+    arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+```
+
+```response
+0 rows in set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
+```
+
+이 구조를 쿼리하려면 필요한 key의 인덱스를 찾기 위해 [`indexOf`](/ko/reference/functions/regular-functions/array-functions#indexOf) 함수를 사용해야 합니다(이 인덱스는 값의 순서와 일치해야 합니다). 이를 통해 values 배열 컬럼, 즉 `values[indexOf(keys, 'status')]`에 접근할 수 있습니다. 또한 request 컬럼에는 여전히 JSON 파싱 메서드가 필요하며, 여기서는 `simpleJSONExtractString`을 사용합니다.
+
+```sql
+SELECT toUInt16(values[indexOf(keys, 'status')])                           AS status,
+       simpleJSONExtractString(values[indexOf(keys, 'request')], 'method') AS method,
+       count()                                                             AS c
+FROM http_with_arrays
+WHERE status >= 400
+  AND toDateTime(values[indexOf(keys, '@timestamp')]) BETWEEN '1998-01-01 00:00:00' AND '1998-06-01 00:00:00'
+GROUP BY method, status ORDER BY c DESC LIMIT 5;
+```
+
+```response
+┌─status─┬─method─┬─────c─┐
+│    404 │ GET    │ 11267 │
+│    404 │ HEAD   │   276 │
+│    500 │ GET    │   160 │
+│    500 │ POST   │   115 │
+│    400 │ GET    │    81 │
+└────────┴────────┴───────┘
+
+5 rows in set. Elapsed: 0.383 sec. Processed 8.22 million rows, 1.97 GB (21.45 million rows/s., 5.15 GB/s.)
+Peak memory usage: 51.35 MiB.
+```

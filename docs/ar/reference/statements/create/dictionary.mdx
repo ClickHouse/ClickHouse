@@ -1,0 +1,103 @@
+---
+description: 'توثيق لإنشاء القواميس وتهيئتها'
+sidebarTitle: 'نظرة عامة'
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/ar/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+
+القاموس هو ربط (`key -> attributes`) مناسب لأنواع مختلفة من القوائم المرجعية.
+يدعم ClickHouse دوالًا خاصة للتعامل مع القواميس يمكن استخدامها في الاستعلامات. ويُعد استخدام القواميس مع الدوال أسهل وأكثر كفاءة من استخدام `JOIN` مع الجداول المرجعية.
+
+يمكن إنشاء القواميس بطريقتين:
+
+* [باستخدام استعلام DDL](#creating-a-dictionary-with-a-ddl-query) (موصى به)
+* [باستخدام ملف تهيئة](#creating-a-dictionary-with-a-configuration-file)
+
+<div id="creating-a-dictionary-with-a-ddl-query">
+  ## إنشاء قاموس باستخدام استعلام DDL
+</div>
+
+<CloudSupportedBadge />
+
+يمكن إنشاء القواميس باستخدام استعلامات DDL.
+وهذه هي الطريقة الموصى بها، لأنه عند إنشاء القواميس عبر DDL:
+
+* لا تُضاف أي إدخالات إضافية إلى ملفات تهيئة الخادم.
+* يمكن استخدام القواميس ككيانات أساسية مثل الجداول أو طرق العرض.
+* يمكن قراءة البيانات مباشرةً باستخدام صيغة `SELECT` المألوفة بدلًا من دوال الجداول الخاصة بالقواميس. لاحظ أنه عند الوصول إلى قاموس مباشرةً عبر تعليمة `SELECT`، فإن القاموس المخزَّن مؤقتًا لن يُرجع إلا البيانات المخزَّنة مؤقتًا، بينما يُرجع القاموس غير المخزَّن مؤقتًا جميع البيانات التي يخزّنها.
+* يمكن إعادة تسمية القواميس بسهولة.
+
+<div id="syntax">
+  ### الصيغة
+</div>
+
+```sql
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+(
+    key1  type1  [DEFAULT | EXPRESSION expr1] [IS_OBJECT_ID],
+    key2  type2  [DEFAULT | EXPRESSION expr2],
+    attr1 type2  [DEFAULT | EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
+    attr2 type2  [DEFAULT | EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME({MIN min_val MAX max_val | max_val})
+SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+COMMENT 'Comment'
+```
+
+| البند                                                                | الوصف                                                                                                                                  |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [السمات](/ar/reference/statements/create/dictionary/attributes)         | تُحدَّد سمات القاموس بطريقة مماثلة لأعمدة الجدول. والخاصية الوحيدة المطلوبة هي النوع، أما سائر الخصائص فيمكن أن تكون لها قيم افتراضية. |
+| PRIMARY KEY                                                          | يحدّد عمود/أعمدة المفتاح لعمليات البحث في القاموس. ووفقًا للبنية، يمكن تحديد سمة واحدة أو أكثر كمفاتيح.                                |
+| [`SOURCE`](/ar/reference/statements/create/dictionary/sources/overview) | يحدّد مصدر البيانات للقاموس (مثل جدول ClickHouse أو HTTP أو PostgreSQL).                                                               |
+| [`LAYOUT`](/ar/reference/statements/create/dictionary/layouts/overview) | يتحكم في كيفية تخزين القاموس في الذاكرة (مثل `FLAT` و`HASHED` و`CACHE`).                                                               |
+| [`LIFETIME`](/ar/reference/statements/create/dictionary/lifetime)       | يضبط الفاصل الزمني لتحديث القاموس.                                                                                                     |
+| [`ON CLUSTER`](/ar/reference/statements/distributed-ddl)                | ينشئ القاموس على عنقود. اختياري.                                                                                                       |
+| `SETTINGS`                                                           | إعدادات إضافية للقاموس. اختياري.                                                                                                       |
+| `COMMENT`                                                            | يضيف تعليقًا نصيًا إلى القاموس. اختياري.                                                                                               |
+
+<div id="creating-a-dictionary-with-a-configuration-file">
+  ## إنشاء قاموس باستخدام ملف تهيئة
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  لا ينطبق إنشاء قاموس باستخدام ملف تهيئة على ClickHouse Cloud. يُرجى استخدام DDL (انظر أعلاه)، وإنشاء القاموس بصفتك المستخدم `default`.
+</Note>
+
+يكون ملف تهيئة القاموس بالتنسيق التالي:
+
+```xml
+<clickhouse>
+    <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
+
+    <!--Optional element. File name with substitutions-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    <dictionary>
+        <!-- Dictionary configuration. -->
+        <!-- There can be any number of dictionary sections in a configuration file. -->
+    </dictionary>
+
+</clickhouse>
+```
+
+يمكنك إعداد أي عدد من القواميس في الملف نفسه.
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* [البُنى](/ar/reference/statements/create/dictionary/layouts/overview) — كيفية تخزين القواميس في الذاكرة
+* [المصادر](/ar/reference/statements/create/dictionary/sources/overview) — الاتصال بمصادر البيانات
+* [العمر الافتراضي](/ar/reference/statements/create/dictionary/lifetime) — تهيئة التحديث التلقائي
+* [السمات](/ar/reference/statements/create/dictionary/attributes) — تهيئة المفتاح والسمات
+* [القواميس المضمّنة](/ar/reference/statements/create/dictionary/embedded) — قواميس geobase المضمّنة
+* [system.dictionaries](/ar/reference/system-tables/dictionaries) — جدول نظام يتضمن معلومات عن القواميس

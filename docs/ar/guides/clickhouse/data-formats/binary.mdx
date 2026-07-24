@@ -1,0 +1,269 @@
+---
+sidebarTitle: 'الثنائية وNative'
+slug: /integrations/data-formats/binary-native
+title: 'استخدام التنسيقات Native والثنائية في ClickHouse'
+description: 'صفحة توضّح كيفية استخدام التنسيقات Native والثنائية في ClickHouse'
+keywords: ['التنسيقات الثنائية', 'تنسيق Native', 'rowbinary', 'rawblob', 'messagepack', 'protobuf', 'capn proto', 'تنسيقات البيانات', 'الأداء', 'الضغط']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+يدعم ClickHouse عدة تنسيقات ثنائية، ما يوفّر أداءً أفضل وكفاءة أعلى في استهلاك المساحة. كما أن التنسيقات الثنائية آمنة أيضًا من حيث ترميز المحارف، لأن البيانات تُحفَظ في هيئة ثنائية.
+
+سنستخدم جدول some&#95;data [table](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/some_data.sql) وملف [data](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/some_data.tsv) للتوضيح، ويمكنك إعادة تطبيق ذلك على مثيل ClickHouse لديك.
+
+<div id="exporting-in-a-native-clickhouse-format">
+  ## التصدير بتنسيق Native الخاص بـ ClickHouse
+</div>
+
+أكثر تنسيقات البيانات كفاءةً لتصدير البيانات واستيرادها بين عُقد ClickHouse هو تنسيق [Native](/ar/reference/formats/Native). ويُجرى التصدير باستخدام العبارة `INTO OUTFILE`:
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.clickhouse' FORMAT Native
+```
+
+سيؤدي هذا إلى إنشاء ملف [data.clickhouse](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.clickhouse) بتنسيق Native.
+
+<div id="importing-from-a-native-format">
+  ### الاستيراد من تنسيق Native
+</div>
+
+لاستيراد البيانات، يمكن استخدام [file()](/ar/reference/functions/table-functions/file) مع الملفات الأصغر أو لأغراض الاستكشاف:
+
+```sql
+DESCRIBE file('data.clickhouse', Native);
+```
+
+```response
+┌─name──┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ String │              │                    │         │                  │                │
+│ month │ Date   │              │                    │         │                  │                │
+│ hits  │ UInt32 │              │                    │         │                  │                │
+└───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<Tip>
+  عند استخدام الدالة `file()` مع ClickHouse Cloud، ستحتاج إلى تشغيل الأوامر في `clickhouse client` على الجهاز الموجود عليه الملف. ويمكنك أيضًا استخدام [`clickhouse-local`](/ar/concepts/features/tools-and-utilities/clickhouse-local) لاستكشاف الملفات محليًا.
+</Tip>
+
+في بيئة production، نستخدم `FROM INFILE` لاستيراد البيانات:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.clickhouse'
+FORMAT Native
+```
+
+<div id="native-format-compression">
+  ### ضغط تنسيق Native
+</div>
+
+يمكننا أيضًا تفعيل الضغط عند تصدير البيانات إلى تنسيق Native (وكذلك معظم التنسيقات الأخرى) باستخدام بند `COMPRESSION`:
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.clickhouse'
+COMPRESSION 'lz4'
+FORMAT Native
+```
+
+استخدمنا ضغط LZ4 للتصدير. وسنحتاج إلى تحديد ذلك عند استيراد البيانات:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.clickhouse'
+COMPRESSION 'lz4'
+FORMAT Native
+```
+
+<div id="exporting-to-rowbinary">
+  ## التصدير إلى RowBinary
+</div>
+
+من بين التنسيقات الثنائية المدعومة أيضًا [RowBinary](/ar/reference/formats/RowBinary/RowBinary)، والذي يتيح استيراد البيانات وتصديرها في صورة صفوف ممثلة ثنائيًا:
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.binary' FORMAT RowBinary
+```
+
+سيؤدي ذلك إلى إنشاء ملف [data.binary](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.binary) بتنسيق ثنائي للصفوف.
+
+<div id="exploring-rowbinary-files">
+  ### استكشاف ملفات RowBinary
+</div>
+
+لا يدعم هذا التنسيق استنتاج المخطط تلقائيًا، لذا يجب تحديد المخطط صراحةً للاستكشاف قبل التحميل:
+
+```sql
+SELECT *
+FROM file('data.binary', RowBinary, 'path String, month Date, hits UInt32')
+LIMIT 5
+```
+
+```response
+┌─path───────────────────────────┬──────month─┬─hits─┐
+│ Bangor_City_Forest             │ 2015-07-01 │   34 │
+│ Alireza_Afzal                  │ 2017-02-01 │   24 │
+│ Akhaura-Laksam-Chittagong_Line │ 2015-09-01 │   30 │
+│ 1973_National_500              │ 2017-10-01 │   80 │
+│ Attachment                     │ 2017-09-01 │ 1356 │
+└────────────────────────────────┴────────────┴──────┘
+```
+
+يمكنك استخدام [RowBinaryWithNames](/ar/reference/formats/RowBinary/RowBinaryWithNames)، إذ يضيف أيضًا صف عنوان يتضمن قائمة بأسماء الأعمدة. كما يضيف [RowBinaryWithNamesAndTypes](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) صف عنوان إضافيًا يتضمن أنواع الأعمدة.
+
+<div id="importing-from-rowbinary-files">
+  ### الاستيراد من ملفات RowBinary
+</div>
+
+لتحميل البيانات من ملف RowBinary، يمكن استخدام بند `FROM INFILE`:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.binary'
+FORMAT RowBinary
+```
+
+<div id="importing-single-binary-value-using-rawblob">
+  ## استيراد قيمة ثنائية واحدة باستخدام RawBLOB
+</div>
+
+لنفترض أننا نريد قراءة ملف ثنائي بالكامل وحفظه في حقل ضمن جدول.
+وهذه هي الحالة التي يمكن فيها استخدام [تنسيق RawBLOB](/ar/reference/formats/RawBLOB). ولا يمكن استخدام هذا التنسيق مباشرةً إلا مع جدول ذي عمود واحد فقط:
+
+```sql
+CREATE TABLE images(data String) ENGINE = Memory
+```
+
+لنحفظ ملف صورة في الجدول `images`:
+
+```bash
+cat image.jpg | clickhouse-client -q "INSERT INTO images FORMAT RawBLOB"
+```
+
+يمكننا التحقق من طول حقل `data`، إذ سيكون مساويًا لحجم الملف الأصلي:
+
+```sql
+SELECT length(data) FROM images
+```
+
+```response
+┌─length(data)─┐
+│         6121 │
+└──────────────┘
+```
+
+<div id="exporting-rawblob-data">
+  ### تصدير بيانات RawBLOB
+</div>
+
+يمكن أيضًا استخدام هذا التنسيق لتصدير البيانات باستخدام عبارة `INTO OUTFILE`:
+
+```sql
+SELECT * FROM images LIMIT 1
+INTO OUTFILE 'out.jpg'
+FORMAT RawBLOB
+```
+
+لاحظ أننا اضطررنا إلى استخدام `LIMIT 1`، لأن تصدير أكثر من قيمة واحدة سيؤدي إلى إنشاء ملف تالف.
+
+<div id="messagepack">
+  ## MessagePack
+</div>
+
+يدعم ClickHouse الاستيراد من [MessagePack](https://msgpack.org/) والتصدير إليه باستخدام [MsgPack](/ar/reference/formats/MsgPack). للتصدير بتنسيق MessagePack:
+
+```sql
+SELECT *
+FROM some_data
+INTO OUTFILE 'data.msgpk'
+FORMAT MsgPack
+```
+
+لاستيراد البيانات من [ملف بتنسيق MessagePack](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.msgpk):
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.msgpk'
+FORMAT MsgPack
+```
+
+<div id="protocol-buffers">
+  ## Protocol Buffers
+</div>
+
+<CloudNotSupportedBadge />
+
+للعمل مع [Protocol Buffers](/ar/reference/formats/Protobuf/Protobuf)، نحتاج أولًا إلى تعريف [ملف المخطط](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/schema.proto):
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string path = 1;
+  date month = 2;
+  uint32 hits = 3;
+};
+```
+
+يُضبط مسار ملف المخطط هذا (`schema.proto` في حالتنا) عبر خيار الإعداد `format_schema` الخاص بتنسيق [Protobuf](/ar/reference/formats/Protobuf/Protobuf):
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'proto.bin'
+FORMAT Protobuf
+SETTINGS format_schema = 'schema:MessageType'
+```
+
+يحفظ هذا البيانات في ملف [proto.bin](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/proto.bin). ويدعم ClickHouse أيضًا استيراد بيانات Protobuf، بالإضافة إلى الرسائل المتداخلة. يُستحسن استخدام [ProtobufSingle](/ar/reference/formats/Protobuf/ProtobufSingle) للعمل مع رسالة Protocol Buffer واحدة (لن تُضمَّن محددات الطول في هذه الحالة).
+
+<div id="capn-proto">
+  ## Cap&#39;n Proto
+</div>
+
+<CloudNotSupportedBadge />
+
+من تنسيقات التسلسل الثنائي الشائعة الأخرى التي يدعمها ClickHouse تنسيق [Cap&#39;n Proto](https://capnproto.org/). وكما هو الحال مع تنسيق `Protobuf`، علينا تعريف ملف المخطط ([`schema.capnp`](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/schema.capnp)) في مثالنا:
+
+```response
+@0xec8ff1a10aa10dbe;
+
+struct PathStats {
+  path @0 :Text;
+  month @1 :UInt32;
+  hits @2 :UInt32;
+}
+```
+
+يمكننا الآن الاستيراد والتصدير باستخدام تنسيق [CapnProto](/ar/reference/formats/CapnProto) والمخطط التالي:
+
+```sql
+SELECT
+    path,
+    CAST(month, 'UInt32') AS month,
+    hits
+FROM some_data
+INTO OUTFILE 'capnp.bin'
+FORMAT CapnProto
+SETTINGS format_schema = 'schema:PathStats'
+```
+
+لاحظ أننا اضطررنا إلى تحويل نوع العمود `Date` إلى `UInt32` من أجل [مطابقة الأنواع المقابلة](/ar/reference/formats/CapnProto#data_types-matching-capnproto).
+
+<div id="other-formats">
+  ## تنسيقات أخرى
+</div>
+
+يدعم ClickHouse العديد من التنسيقات، النصية والثنائية، لتلبية مختلف السيناريوهات والمنصات. اطّلع على المزيد من التنسيقات وطرق العمل معها في المقالات التالية:
+
+* [تنسيقات CSV وTSV](/ar/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/ar/guides/clickhouse/data-formats/parquet)
+* [تنسيقات JSON](/ar/guides/clickhouse/data-formats/json/intro)
+* [Regex وTemplate](/ar/guides/clickhouse/data-formats/templates-regex)
+* **تنسيقات Native والثنائية**
+* [تنسيقات SQL](/ar/guides/clickhouse/data-formats/sql)
+
+واطّلع أيضًا على [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) — وهي أداة محمولة متكاملة الميزات للعمل على الملفات المحلية/البعيدة دون تشغيل ClickHouse server.

@@ -367,16 +367,12 @@ def test_insert_several_blocks(parser):
             expected_second_src = 10 if args.deduplicate_src_table else 20
             expected_second_dst = 5 if args.deduplicate_dst_table else 10
         else:
-            if args.use_insert_token:
-                expected_first_src = 10
-                expected_first_dst = 10
-                expected_second_src = 10 if args.deduplicate_src_table else 20
-                expected_second_dst = 10 if args.deduplicate_dst_table else 20
-            else:
-                expected_first_src = 1 if args.deduplicate_src_table else 10
-                expected_first_dst = 1 if args.deduplicate_dst_table else 10
-                expected_second_src = 1 if args.deduplicate_src_table else 20
-                expected_second_dst = 1 if args.deduplicate_dst_table else 20
+            # new_unified_hash: identical blocks within one insert are kept (distinct source
+            # numbers), so these counts no longer depend on insert_deduplication_token.
+            expected_first_src = 10
+            expected_first_dst = 10
+            expected_second_src = 10 if args.deduplicate_src_table else 20
+            expected_second_dst = 10 if args.deduplicate_dst_table else 20
 
         # Use the computed values in assertions
         assert_first_insert_statements = f"""
@@ -519,16 +515,12 @@ def test_mv_generates_several_blocks(parser):
             expected_second_src = 5 if args.deduplicate_src_table else 10
             expected_second_dst = 9 if args.deduplicate_dst_table else 18
         else:
-            if args.use_insert_token:
-                expected_first_src = 5
-                expected_first_dst = 10
-                expected_second_src = 5 if args.deduplicate_src_table else 10
-                expected_second_dst = 10 if args.deduplicate_dst_table else 20
-            else:
-                expected_first_src = 1 if args.deduplicate_src_table else 5
-                expected_first_dst = 2 if args.deduplicate_dst_table else 10
-                expected_second_src = 1 if args.deduplicate_src_table else 10
-                expected_second_dst = 2 if args.deduplicate_dst_table else 20
+            # new_unified_hash: identical blocks within one insert are kept (distinct source
+            # numbers), so these counts no longer depend on insert_deduplication_token.
+            expected_first_src = 5
+            expected_first_dst = 10
+            expected_second_src = 5 if args.deduplicate_src_table else 10
+            expected_second_dst = 10 if args.deduplicate_dst_table else 20
 
         # Always create assert statements using the computed values
         assert_first_insert_statements = f"""
@@ -686,16 +678,12 @@ def test_several_mv_into_one_table(parser):
             expected_second_src = 8 if args.deduplicate_src_table else 16
             expected_second_dst = 6 if args.deduplicate_dst_table else 12
         else:
-            if args.use_insert_token:
-                expected_first_src = 8
-                expected_first_dst = 16
-                expected_second_src = 8 if args.deduplicate_src_table else 16
-                expected_second_dst = 16 if args.deduplicate_dst_table else 32
-            else:
-                expected_first_src = 1 if args.deduplicate_src_table else 8
-                expected_first_dst = 2 if args.deduplicate_dst_table else 16
-                expected_second_src = 1 if args.deduplicate_src_table else 16
-                expected_second_dst = 2 if args.deduplicate_dst_table else 32
+            # new_unified_hash: identical blocks within one insert are kept (distinct source
+            # numbers), so these counts no longer depend on insert_deduplication_token.
+            expected_first_src = 8
+            expected_first_dst = 16
+            expected_second_src = 8 if args.deduplicate_src_table else 16
+            expected_second_dst = 16 if args.deduplicate_dst_table else 32
 
         # Use the computed values in assertions
         assert_first_insert_statements = f"""

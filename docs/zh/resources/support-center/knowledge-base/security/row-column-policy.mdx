@@ -1,0 +1,21 @@
+---
+date: 2023-08-13
+title: "ClickHouse 是否支持行级和列级安全？"
+description: "了解 ClickHouse 和 ClickHouse Cloud 中的行级和列级访问限制，以及如何通过策略实现基于角色的访问控制（RBAC）。"
+tags: ['安全与身份验证']
+keywords: ['行级', '列级', '安全']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
+  ## ClickHouse 和 ClickHouse Cloud 都支持行级和列级访问限制
+</div>
+
+ClickHouse 和 ClickHouse Cloud 都支持针对只读用户的行级和列级访问限制，这是实现基于角色的访问控制 (RBAC) 模型所必需的。
+
+可以使用 [行策略](/zh/concepts/features/security/access-rights#row-policy-management) 来指定只读用户查询表时会返回哪些行。ClickHouse Cloud 默认启用 SQL-driven 工作流。要使用此工作流，请先 [CREATE](/zh/reference/statements/create/user) 一个用户，再通过 [GRANT](/zh/reference/statements/grant) 向该用户授予表权限，然后设置适当的 [ROW POLICY](/zh/concepts/features/security/access-rights#row-policy-management)。当用户执行 `SELECT * FROM table` 时，只会显示策略允许访问的行。
+
+列级限制也可以直接通过 [GRANT 语句](/zh/reference/statements/grant) 指定，从而为用户和角色启用表级访问。用户在查询中*只能*包含其有权访问的列。如果用户从某个表中选择了受限列，但并不具备对所指定全部列的访问权限，例如执行查询 `SELECT * FROM table`，则会返回错误，提示该用户权限不足。

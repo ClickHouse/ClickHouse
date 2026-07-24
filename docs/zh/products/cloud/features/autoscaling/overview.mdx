@@ -1,0 +1,51 @@
+---
+sidebarTitle: '概述'
+slug: /manage/scaling
+description: 'ClickHouse Cloud 自动扩缩容概述'
+keywords: ['自动扩缩容', '自动伸缩', '扩缩容', '水平扩缩容', '垂直扩缩容', '突发']
+title: '自动扩缩容'
+doc_type: 'guide'
+---
+
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+扩缩容是指调整可用资源以满足客户端需求的能力。Scale 和 Enterprise (采用标准 1:4 profile) 层级的服务可通过编程方式调用 API，或在 UI 中更改设置来调整系统资源，从而实现水平扩缩容。这些服务还支持**垂直自动扩缩容**，以满足应用需求。
+
+<ScalePlanFeatureBadge feature="垂直自动扩缩容" />
+
+<Note>
+  Scale 和 Enterprise 层级既支持单副本服务，也支持多副本服务；而基础版层级仅支持单副本服务。单副本服务的设计目标是保持固定规模，因此不支持垂直或水平扩缩容。您可以升级到 Scale 或 Enterprise 层级，以对服务进行扩缩容。
+</Note>
+
+<div id="how-scaling-works-in-clickhouse-cloud">
+  ## ClickHouse Cloud 中扩缩容的工作方式
+</div>
+
+目前，ClickHouse Cloud 为 Scale 层级服务提供垂直自动扩缩容和手动水平扩缩容。
+
+对于 Enterprise 层级服务，扩缩容规则如下：
+
+* **水平扩缩容**：Enterprise 层级的所有标准和自定义 profile 均支持手动水平扩缩容。
+* **垂直扩缩容**：
+  * 标准 profile (1:4) 支持垂直自动扩缩容。
+  * 自定义 profile (`highMemory` 和 `highCPU`) 不支持垂直自动扩缩容或手动垂直扩缩容。不过，可通过联系支持团队来对这些服务执行垂直扩缩容。
+
+<Note>
+  ClickHouse Cloud 中的扩缩容采用我们称为 [&quot;Make Before Break&quot; (MBB)](/zh/products/cloud/features/autoscaling/make-before-break) 的方式。
+  该方式会先添加一个或多个新规格的副本，再移除旧副本，从而避免在扩缩容过程中出现容量损失。
+  通过消除移除现有副本与添加新副本之间的空窗期，MBB 使扩缩容过程更平滑、干扰更小。
+  这种方式在扩容场景下尤其有利：当资源利用率较高而触发对额外容量的需求时，过早移除副本只会进一步加剧资源压力。
+  作为这种方式的一部分，我们最多会等待一小时，让旧副本上正在运行的查询完成后再将其移除。
+  这样既能兼顾现有查询顺利完成，也能避免旧副本保留过久。
+</Note>
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+* [垂直自动扩缩容](/zh/products/cloud/features/autoscaling/vertical) — 根据使用情况自动调整 CPU 和内存资源
+* [水平扩缩容](/zh/products/cloud/features/autoscaling/horizontal) — 通过 API 或 UI 手动调整副本数量
+* [Make Before Break (MBB)](/zh/products/cloud/features/autoscaling/make-before-break) — 了解 ClickHouse Cloud 如何执行无缝扩缩容
+* [自动闲置](/zh/products/cloud/features/autoscaling/idling) — 通过自动暂停服务节省成本
+* [扩缩容建议](/zh/products/cloud/features/autoscaling/scaling-recommendations) — 了解扩缩容建议
+* [定时扩缩容](/zh/products/cloud/features/autoscaling/scheduled-scaling) — 了解定时扩缩容功能：可精确定义服务何时扩容或缩容，而不受实时指标影响

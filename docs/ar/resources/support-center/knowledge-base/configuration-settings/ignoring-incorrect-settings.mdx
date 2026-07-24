@@ -1,0 +1,27 @@
+---
+title: كيفية تجاهل الإعدادات غير الصحيحة في ClickHouse
+description: تعرّف على كيفية استخدام الخيار `skip_check_for_incorrect_settings` للسماح لـ ClickHouse ببدء التشغيل حتى عند تحديد إعدادات على مستوى المستخدم بشكل غير صحيح.
+date: 2023-03-01
+tags: ['الإعدادات']
+keywords: ['تجاهل الإعدادات غير الصحيحة']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## تجاهل الإعدادات غير الصحيحة في ClickHouse
+</div>
+
+عند تحديد إعداد على مستوى المستخدم في موضع غير صحيح، فلن يبدأ الخادم وستُرسَل رسالة استثناء إلى السجل. ومع ذلك، يمكنك جعل ClickHouse يتجاهل الإعداد غير الصحيح باستخدام الإعداد `skip_check_for_incorrect_settings`.
+
+أضِف ما يلي إلى `config.xml`:
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  يجب تحديد الإعدادات على مستوى المستخدم في `users.xml` داخل قسم `<profile>` لملف تعريف المستخدم المحدد، (أو في `<default>` للإعدادات الافتراضية.
+</Note>

@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Configurar agendamentos de backup'
+slug: /cloud/manage/backups/configurable-backups
+description: 'Guia sobre como configurar backups'
+title: 'Configurar agendamentos de backup'
+keywords: ['backups', 'backups na Cloud', 'restauração']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="Backups configuráveis" linking_verb_are="True" />
+
+Para configurar o agendamento de backup de um serviço, vá até a guia **Settings** no Console e clique em **Change backup configuration**.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurar definições de backup" border />
+
+Isso abre uma guia à direita, na qual você pode escolher os valores de retenção, frequência e horário de início. Será necessário salvar as configurações escolhidas para que entrem em vigor.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Selecionar retenção e frequência de backup" border />
+
+<Note>
+  Horário de início e frequência são mutuamente excludentes. O horário de início prevalece.
+</Note>
+
+<Note>
+  Alterar o agendamento de backup pode gerar cobranças mensais mais altas de armazenamento, já que alguns backups podem não estar cobertos pelos backups padrão do serviço. Consulte [&quot;Entendendo o custo do backup&quot;](/pt-BR/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

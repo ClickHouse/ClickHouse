@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Conseils de connexion'
+slug: /integrations/tableau/connection-tips
+keywords: ['clickhouse', 'tableau', 'online', 'mysql', 'connecter', 'intégrer', 'UI']
+description: 'Conseils de connexion pour Tableau lors de l’utilisation du connecteur officiel de ClickHouse.'
+title: 'Conseils de connexion'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="initial-sql-tab">
+  ## Onglet SQL initial
+</div>
+
+Si la case à cocher *Définir l’ID de session* est activée dans l’onglet Avancé (par défaut), vous pouvez définir des [paramètres de session](/fr/reference/settings/session-settings) à l’aide de
+
+```text
+SET my_setting=value;
+```
+
+<div id="advanced-tab">
+  ## Onglet Avancé
+</div>
+
+Dans 99 % des cas, vous n&#39;avez pas besoin de l&#39;onglet Avancé. Pour le 1 % restant, vous pouvez utiliser les paramètres suivants :
+
+* **Paramètres de connexion personnalisés**. Par défaut, `socket_timeout` est déjà défini. Il peut être nécessaire de modifier ce paramètre si certaines extractions prennent très longtemps à se mettre à jour. La valeur de ce paramètre est exprimée en millisecondes. Vous trouverez les autres paramètres [ici](https://github.com/ClickHouse/clickhouse-jdbc/blob/master/clickhouse-client/src/main/java/com/clickhouse/client/config/ClickHouseClientOption.java) ; ajoutez-les dans ce champ en les séparant par des virgules
+
+* **JDBC Driver custom&#95;http&#95;params**. Ce champ vous permet d&#39;ajouter certains paramètres à la chaîne de connexion ClickHouse en transmettant des valeurs au [`custom_http_params` du driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration). Par exemple, c&#39;est ainsi que `session_id` est défini lorsque la case à cocher *Définir l’ID de session* est activée
+
+* **JDBC Driver `typeMappings`**. Ce champ vous permet de [transmettre une liste de correspondances entre les types de données ClickHouse et les types de données Java utilisés par le JDBC driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration). Grâce à ce paramètre, le connector affiche automatiquement les grands entiers sous forme de chaînes. Vous pouvez modifier ce comportement en transmettant votre propre jeu de correspondances *(je ne sais pas pourquoi)* en utilisant
+  ```text
+  UInt256=java.lang.Double,Int256=java.lang.Double
+  ```
+  Pour en savoir plus sur les correspondances, consultez la section correspondante
+
+* **JDBC Driver URL Parameters**. Vous pouvez transmettre dans ce champ les autres [paramètres du driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration), par exemple `jdbcCompliance`. Attention : les valeurs des paramètres doivent être transmises au format URL Encoded. Si `custom_http_params` ou `typeMappings` sont transmis à la fois dans ce champ et dans les champs précédents de l&#39;onglet Avancé, les valeurs des deux champs précédents de l&#39;onglet Avancé sont prioritaires
+
+* **Case à cocher Définir l’ID de session**. Elle est nécessaire pour définir des paramètres au niveau de la session dans l&#39;onglet Onglet SQL initial et génère un `session_id` avec un timestamp et un nombre pseudo-aléatoire au format `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
+
+<div id="limited-support-for-uint64-int128-uint256-data-types">
+  ## Prise en charge limitée des types de données UInt64, Int128 et (U)Int256
+</div>
+
+Par défaut, le driver affiche les champs de types *UInt64, Int128, (U)Int256* sous forme de chaînes de caractères, **mais il se contente de les afficher, sans les convertir**. Cela signifie que lorsque vous essayez d&#39;écrire le champ calculé suivant, vous obtenez une erreur
+
+```text
+LEFT([myUInt256], 2) // Error!
+```
+
+Pour traiter de grands champs de type Integer comme des chaînes de caractères, il faut encapsuler explicitement le champ dans la fonction STR()
+
+```text
+LEFT(STR([myUInt256]), 2) // Works well!
+```
+
+Cependant, comme ces champs servent le plus souvent à déterminer le nombre de valeurs uniques *(d’identifiants comme Watch ID et Visit ID dans Yandex.Metrica)* ou comme *dimension* pour préciser le niveau de détail de la visualisation, cela fonctionne bien.
+
+```text
+COUNTD([myUInt256]) // Works well too!
+```
+
+Lorsqu’on utilise l’aperçu des données (Voir les données) d’une table comportant des champs UInt64, aucune erreur n’apparaît désormais.

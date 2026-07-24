@@ -3624,7 +3624,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     WriteBufferFromOwnString out;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexVersion::WithCodec,
-        sparse_index, IPostingListCodec::Type::Bitpacking, out);
+        sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3632,8 +3632,8 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexVersion::WithCodec);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 42u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "alpha");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 42u);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
@@ -3656,8 +3656,8 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexVersion::Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "beta");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 7u);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
@@ -3673,15 +3673,23 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     WriteBufferFromOwnString out_initial;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexVersion::Initial,
-        sparse_index, IPostingListCodec::Type::None, out_initial);
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, out_initial);
 
     WriteBufferFromOwnString out_with_codec;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexVersion::WithCodec,
-        sparse_index, IPostingListCodec::Type::None, out_with_codec);
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, out_with_codec);
 
     /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
     EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
+
+    WriteBufferFromOwnString out_with_positions;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexVersion::WithPositions,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ true, out_with_positions);
+
+    /// The `WithPositions` header adds the single-byte positions flag on top of the codec type.
+    EXPECT_EQ(out_with_codec.str().size() + 1, out_with_positions.str().size());
 
     ReadBufferFromString in(out_initial.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3689,8 +3697,14 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexVersion::Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "gamma");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 13u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "gamma");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 13u);
+
+    ReadBufferFromString in_with_positions(out_with_positions.str());
+    auto with_positions_data = TextIndexSerialization::deserializeHeader(in_with_positions);
+
+    EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexVersion::WithPositions);
+    EXPECT_TRUE(with_positions_data.has_positions);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionWithCodecThrows)
@@ -3707,7 +3721,7 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionWithCodecThrows)
     EXPECT_THROW(
         TextIndexSerialization::serializeHeader(
             MergeTreeTextIndexVersion::Initial,
-            sparse_index, IPostingListCodec::Type::Bitpacking, out),
+            sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, out),
         Exception);
 }
 

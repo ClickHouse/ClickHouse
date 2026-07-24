@@ -1,0 +1,35 @@
+---
+title: Выполнение операторов SYSTEM на всех узлах в ClickHouse Cloud
+description: Узнайте, как с помощью предложения `ON CLUSTER` и `clusterAllReplicas` выполнять операторы SYSTEM и запросы на всех узлах сервиса ClickHouse Cloud.
+date: 2023-03-01
+tags: ['Развертывания и масштабирование']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Чтобы выполнить один и тот же запрос на всех узлах сервиса ClickHouse Cloud, можно использовать [clusterAllReplicas](/ru/reference/functions/table-functions/cluster).
+
+Например, чтобы получить данные из (локальной для узла) системной таблицы на всех узлах, можно использовать:
+
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+Аналогично, вы можете выполнить тот же [оператор SYSTEM](/ru/reference/statements/system) на всех узлах с помощью одного оператора, используя [предложение ON CLUSTER](/ru/reference/statements/distributed-ddl):
+
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+Например, чтобы [сбросить файловый кэш](/ru/reference/statements/system#drop-filesystem-cache) на всех узлах, можно использовать:
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

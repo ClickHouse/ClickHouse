@@ -1,0 +1,144 @@
+---
+slug: /cloud/managed-postgres/scaling
+sidebarTitle: 'Scaling'
+title: 'Scaling'
+description: 'Scale your Postgres managed by ClickHouse instance vertically with flexible VM types and independent resource scaling'
+keywords: ['postgres scaling', 'vertical scaling', 'vm types', 'nvme scaling', 'instance types', 'performance scaling']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
+
+Managed Postgres provides flexible scaling options to match your workload requirements. With 50+ NVMe-backed instance types to choose from, you can independently scale CPU, memory, and storage to optimize performance and cost for your specific use case.
+
+## Instance types and flexibility {#instance-types}
+
+Managed Postgres offers a wide range of instance types, each optimized for different workload characteristics:
+
+- **50+ instance types** available across compute, memory, and storage-optimized configurations
+- **NVMe-backed storage** on all instance types for consistent, high-performance disk I/O
+- **Independent resource scaling**: Choose the right balance of CPU, memory, and storage based on your workload
+
+<Image img="/images/managed-postgres/instance-types.webp" alt="Instance types" size="md" border/>
+
+### Choosing the right instance type {#choosing-instance}
+
+Different workloads benefit from different resource configurations:
+
+| Workload Type                                     | CPU    | Memory | Storage | Recommended Instance                        |
+|---------------------------------------------------|--------|--------|---------|---------------------------------------------|
+| **Compute optimized**                             | High   | Medium | Medium  | Compute-optimized (high vCPU count)         |
+| **Memory optimized** (large working set)          | Medium | High   | Medium  | Memory-optimized (high memory-to-CPU ratio) |
+| **Storage optimized** (large datasets, heavy I/O) | Medium | Medium | High    | Storage-optimized (high NVMe capacity)      |
+
+<Tip>
+For safety reasons, you may not be able to switch to instance types whose storage is close to your current used storage capacity. Always opt for instance types with headroom over your current used capacity to avoid any issues.
+</Tip>
+
+## How scaling works {#how-scaling-works}
+
+When you change instance types, Managed Postgres performs a vertical scaling operation that provisions new infrastructure and migrates your database with minimal downtime.
+
+<Image img="/images/managed-postgres/scaling-settings.webp" alt="Scaling Settings" size="md" border/>
+
+### Scaling process {#scaling-process}
+
+The scaling workflow brings up a new standby from backups and performs a controlled failover:
+
+1. **Standby provisioning**: A new standby instance is created with the target instance type (CPU, memory, and storage configuration)
+
+2. **Restore from S3 backups**: The standby is initialized by restoring from the most recent backup stored in S3
+
+3. **Parallel WAL replay**: The standby applies all Write-Ahead Log (WAL) changes since the backup using parallel restore mechanisms powered by [WAL-G](https://github.com/wal-g/wal-g)
+   - WAL-G enables fast, parallelized restore operations
+   - The creator of WAL-G is on the Ubicloud team with whom we have partnered, ensuring deep expertise and optimization
+
+4. **Replication catch-up**: The standby catches up with the primary by streaming and applying ongoing WAL changes
+
+5. **Failover**: Once the standby is fully synchronized, a controlled failover promotes the standby to the new primary
+   - **This is the only step that causes downtime** (~30 seconds)
+   - All active connections are interrupted during failover
+   - Clients must reconnect after failover completes
+
+6. **Old instance decommission**: The original instance is decommissioned after the failover completes
+
+### Scaling duration {#scaling-duration}
+
+The total time required for scaling depends primarily on the size of your database and the amount of WAL data that needs to be replayed from backups:
+
+- **Backup restore**: Time to restore the most recent full backup from S3 to the new instance
+- **WAL replay**: Time to replay incremental WAL changes since the last full backup
+- **Parallel restore**: WAL-G's parallel restore mechanisms significantly speed up the process
+
+The restore time can range from a few minutes to a few hours, but the maintenance/downtime is very low (only ~30 seconds).
+
+<Warning>
+**Minimal downtime**
+
+Your application will experience approximately 30 seconds of downtime during the failover, regardless of how long the overall scaling process takes. All the restore and catch-up work happens in the background on the standby instance.
+</Warning>
+
+### Parallel restore with WAL-G {#parallel-restore}
+
+Managed Postgres uses [WAL-G](https://github.com/wal-g/wal-g) to accelerate backup restoration during scaling operations. Notably, the creator of WAL-G is part of the Ubicloud team who we have partnered with, bringing deep expertise to the restoration process.
+
+WAL-G provides:
+
+- **Parallel download and decompression**: Multiple backup segments are fetched from S3 and decompressed simultaneously
+- **Efficient WAL replay**: Incremental WAL changes are applied in parallel where possible
+- **Optimized streaming**: Direct streaming from S3 storage without intermediate copies
+- **Fast restoration**: While the total time depends on data size, the parallelized approach makes the process quite fast
+
+These optimizations significantly reduce the time required to bring up the new standby instance. Most importantly, the restore happens entirely in the background—your application only experiences downtime during the brief ~30-second failover window.
+
+### Initiating a scaling operation {#initiating-scaling}
+
+To scale your Managed Postgres instance:
+
+1. Navigate to the **Settings** tab of your instance
+2. In the **Scaling** section, scroll to **Service size**
+3. Select the target instance type
+4. Review the changes and click "Apply changes"
+
+## Scaling strategies {#scaling-strategies}
+
+### Vertical scaling {#vertical-scaling}
+
+Vertical scaling (changing instance types) is the primary method for adjusting resources in Managed Postgres. This approach provides:
+
+- **Granular control**: Choose from 50+ instance types to fine-tune CPU, memory, and storage
+- **Workload optimization**: Select configurations optimized for your specific workload (compute, memory, or storage-intensive)
+- **Cost efficiency**: Pay only for the resources you need without over-provisioning
+
+### Read replicas for horizontal scaling {#read-replicas}
+
+For read-heavy workloads, consider using [read replicas](/products/managed-postgres/read-replicas) to scale read capacity horizontally:
+
+- Offload read queries to dedicated read replica instances
+- Each read replica is a fully independent Postgres instance with its own compute and memory
+- Read replicas stream WAL changes from object storage for efficient replication
+
+This approach is ideal for applications with high read-to-write ratios, such as reporting dashboards, analytics queries, or read-intensive API endpoints.
+
+### CDC scaling for ClickHouse integration {#cdc-scaling}
+
+If you're replicating data to ClickHouse using [ClickPipes](/products/managed-postgres/clickhouse-integration), you can independently scale the CDC (Change Data Capture) pipeline:
+
+- Scale CDC workers from 1 to 24 CPU cores
+- Memory automatically scales at 4x the CPU core count
+- Adjust scaling via the [ClickPipes OpenAPI](/integrations/clickpipes/postgres/scaling)
+
+This allows you to optimize the replication throughput separately from your Postgres instance resources.
+
+## Autoscaling {#autoscaling}
+
+At 90% disk usage your instance type will be adjusted to a larger instance type.
+
+## Additional resources {#resources}
+
+- [Settings and configuration](/products/managed-postgres/settings)
+- [Read replicas](/products/managed-postgres/read-replicas)
+- [High availability](/products/managed-postgres/high-availability)

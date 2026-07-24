@@ -1,0 +1,25 @@
+dotProduct: strided (first 8 dims) vs non-strided baseline, optimization on
+1	168
+2	308
+1	168
+2	308
+scalarProductTransposed alias: strided (first 8 dims)
+1	168
+2	308
+Same with the partial-reads optimization disabled (user-form fallback)
+1	168
+2	308
+Full-dimension strided search (3-arg form reads all stride groups)
+1	1360
+2	680
+Reduced precision on first 8 dims
+1	98
+2	224
+Nullable precision / dims propagate to a Nullable result
+Nullable(Float64)
+Nullable(Float64)
+Partial-read I/O contract: distinct vec.N streams referenced in the plan
+p=8 dims=2048 (expect 16)	16
+p=16 dims=4096 (expect 64)	64
+optimization off (expect 0)	0
+Validation errors

@@ -1,0 +1,77 @@
+---
+description: 'توثيق APPLY PATCHES للتحديثات خفيفة الوزن'
+sidebarTitle: 'APPLY PATCHES'
+slug: /sql-reference/statements/alter/apply-patches
+title: 'APPLY PATCHES للتحديثات خفيفة الوزن'
+doc_type: 'مرجع'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+```
+
+يبدأ هذا الأمر يدويًا التجسيد المادي لأجزاء التصحيح التي تُنشئها عبارات [lightweight `UPDATE`](/ar/reference/statements/update). وهو يفرض تطبيق التصحيحات المعلّقة على أجزاء البيانات عبر إعادة كتابة الأعمدة المتأثرة فقط.
+
+<Note>
+  * لا يعمل إلا مع الجداول من عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك الجداول [المكرّرة](/ar/reference/engines/table-engines/mergetree-family/replication)).
+  * هذه عملية mutation وتُنفَّذ بشكل غير متزامن في الخلفية.
+</Note>
+
+<div id="when-to-use">
+  ## متى تستخدم APPLY PATCHES
+</div>
+
+<Tip>
+  بشكل عام، لا ينبغي أن تحتاج إلى استخدام `APPLY PATCHES`
+</Tip>
+
+تُطبَّق أجزاء التصحيح عادةً تلقائيًا أثناء عمليات الدمج عند تفعيل الإعداد [`apply_patches_on_merge`](/ar/reference/settings/merge-tree-settings#apply_patches_on_merge) (وهو الإعداد الافتراضي). ومع ذلك، قد تحتاج إلى تشغيل تطبيق التصحيحات يدويًا في الحالات التالية:
+
+* لتقليل العبء الإضافي الناتج عن تطبيق التصحيحات أثناء استعلامات `SELECT`
+* لدمج عدة أجزاء تصحيح قبل أن تتراكم
+* لإعداد البيانات للنسخ الاحتياطي أو التصدير بعد تجسيد التصحيحات مسبقًا
+* عندما يكون `apply_patches_on_merge` معطّلًا وتريد التحكم في توقيت تطبيق التصحيحات
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+طبِّق جميع التصحيحات المعلّقة لجدول:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES;
+```
+
+طبّق التصحيحات على تجزئة محددة فقط:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES IN PARTITION '2024-01';
+```
+
+ادمجه مع العمليات الأخرى:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES, UPDATE column = value WHERE condition;
+```
+
+<div id="monitor">
+  ## مراقبة تطبيق التصحيح
+</div>
+
+يمكنك مراقبة تقدّم تطبيق التصحيح باستخدام جدول [`system.mutations`](/ar/reference/system-tables/mutations):
+
+```sql
+SELECT * FROM system.mutations
+WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`UPDATE` الخفيف](/ar/reference/statements/update) - إنشاء أجزاء التصحيح باستخدام عمليات `UPDATE` الخفيفة
+* [إعداد `apply_patches_on_merge`](/ar/reference/settings/merge-tree-settings#apply_patches_on_merge) - التحكّم في تطبيق التصحيحات تلقائيًا أثناء عمليات الدمج

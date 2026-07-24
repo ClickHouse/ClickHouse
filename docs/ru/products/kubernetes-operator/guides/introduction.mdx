@@ -1,0 +1,232 @@
+---
+position: 1
+slug: /clickhouse-operator/guides/introduction
+title: Введение в ClickHouse Operator
+keywords: ['kubernetes']
+description: 'В этом документе представлен обзор ключевых понятий и сценариев использования ClickHouse Operator.'
+doc_type: 'guide'
+---
+
+В этом документе представлен обзор ключевых понятий и сценариев использования ClickHouse Operator.
+
+<div id="what-is-the-clickhouse-operator">
+  ## Что такое ClickHouse Operator
+</div>
+
+ClickHouse Operator — это оператор Kubernetes, который автоматизирует развертывание и управление кластерами ClickHouse в Kubernetes. Он построен на основе паттерна operator и расширяет API Kubernetes пользовательскими ресурсами, представляющими кластеры ClickHouse и их зависимости.
+
+Оператор выполняет следующие задачи:
+
+* Управление жизненным циклом кластера (создание, обновление, масштабирование, удаление)
+* Координация кластера ClickHouse Keeper
+* Автоматическая генерация конфигурации
+* Синхронизация схемы базы данных
+* Поэтапные обновления и обновления версий
+* Подготовка хранилища
+
+<div id="custom-resources">
+  ## Пользовательские ресурсы
+</div>
+
+Оператор включает два основных CRD (определения пользовательских ресурсов):
+
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
+
+Описывает кластер баз данных ClickHouse с настраиваемыми репликами и сегментами.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample-cluster
+spec:
+  replicas: 3
+  shards: 2
+  keeperClusterRef:
+    name: sample-keeper
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
+
+Представляет кластер ClickHouse Keeper для распределённой координации (заменяет ZooKeeper).
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample-keeper
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="coordination">
+  ## Координация
+</div>
+
+<div id="clickhouse-keeper-is-required">
+  ### ClickHouse Keeper обязателен
+</div>
+
+Для каждого ClickHouseCluster требуется кластер ClickHouse Keeper для распределенной координации.
+В спецификации ClickHouseCluster на кластер Keeper нужно сослаться с помощью `keeperClusterRef`. По умолчанию оператор ищет его в пространстве имен ClickHouseCluster, но при необходимости можно также задать `keeperClusterRef.namespace`, чтобы указать на KeeperCluster в другом отслеживаемом пространстве имен.
+
+<div id="one-to-one-keeper-relationship">
+  ### Связь Keeper «один к одному»
+</div>
+
+У каждого ClickHouseCluster должен быть собственный выделенный KeeperCluster. Нельзя использовать один KeeperCluster для нескольких ClickHouseClusters.
+
+**Почему?** Оператор автоматически создает уникальный ключ аутентификации для каждого ClickHouseCluster, чтобы он мог подключаться к своему Keeper. Этот ключ хранится в Secret и не может использоваться совместно.
+
+**Последствия**:
+
+* Несколько ClickHouseClusters не могут ссылаться на один и тот же KeeperCluster
+* При повторном создании ClickHouseCluster необходимо также повторно создать его KeeperCluster
+
+<Note>
+  Persistent Volumes не удаляются автоматически при удалении ресурсов ClickHouseCluster или KeeperCluster.
+</Note>
+
+При повторном создании кластера:
+
+1. Удалите ресурс ClickHouseCluster
+2. Удалите ресурс KeeperCluster
+3. Дождитесь завершения работы всех подов
+4. При необходимости удалите PersistentVolumeClaims, если хотите начать с чистого листа
+5. Повторно создайте KeeperCluster и ClickHouseCluster вместе
+
+Чтобы избежать ошибок аутентификации, либо удалите Persistent Volumes вручную, либо заново создайте оба кластера с новым хранилищем.
+
+<div id="schema-replication">
+  ## Репликация схемы
+</div>
+
+ClickHouse Operator автоматически реплицирует определения базы данных между всеми репликами кластера.
+
+<div id="what-gets-replicated">
+  ### Что реплицируется
+</div>
+
+Оператор синхронизирует:
+
+* определения баз данных [Replicated](/ru/reference/engines/database-engines/replicated)
+* движки баз данных для интеграции (PostgreSQL, MySQL и т. д.)
+
+Оператор **не** синхронизирует:
+
+* базы данных без репликации (Atomic, Ordinary и т. д.)
+* локальные таблицы в базах данных без репликации
+* данные таблиц (это обрабатывается репликацией ClickHouse)
+
+<div id="recommended-use-replicated-database-engine">
+  ### Рекомендуется: используйте движок базы данных Replicated
+</div>
+
+<Tip>
+  **Рекомендация**
+
+  Всегда используйте движок базы данных [Replicated](/ru/reference/engines/database-engines/replicated) для production-развертываний.
+</Tip>
+
+Преимущества:
+
+* Автоматическая репликация схемы между всеми узлами
+* Упрощенное управление таблицами
+* Оператор может синхронизироваться с новыми репликами
+* Согласованная схема во всем кластере
+
+Создавайте базы данных с использованием распределенного DDL:
+
+```sql
+CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
+```
+
+<div id="avoid-non-replicated-engines">
+  ### Избегайте нереплицируемых движков
+</div>
+
+Нереплицируемые движки баз данных (Atomic, Lazy, SQLite, Ordinary) требуют ручного управления схемой:
+
+* Таблицы необходимо создавать отдельно на каждой реплике
+* Между узлами возможны расхождения схемы
+* Оператор не может автоматически синхронизировать новые реплики
+
+<div id="disable-schema-replication">
+  ### Отключение репликации схемы
+</div>
+
+Чтобы отключить автоматическую репликацию схемы, установите для `spec.settings.enableDatabaseSync` значение `false` в ресурсе ClickHouseCluster.
+
+<div id="storage-management">
+  ## Управление хранилищем
+</div>
+
+Оператор управляет хранилищем с помощью объектов Kubernetes PersistentVolumeClaim (PVC).
+
+<div id="data-volume-configuration">
+  ### Настройка тома данных
+</div>
+
+Укажите требования к хранилищу в `dataVolumeClaimSpec`:
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 500Gi
+```
+
+<div id="storage-lifecycle">
+  ### Жизненный цикл хранилища
+</div>
+
+* **Создание**: PVC создаются автоматически вместе с кластером
+* **Расширение**: Поддерживается, если StorageClass допускает расширение томов
+* **Сохранение**: PVC **не** удаляются автоматически при удалении кластера
+* **Повторное использование**: Существующие PVC можно повторно использовать, если кластер создаётся заново с тем же именем
+
+Чтобы полностью удалить хранилище:
+
+```bash
+# Delete cluster
+kubectl delete clickhousecluster my-cluster
+
+# Wait for pods to terminate
+kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhouse
+
+# Delete PVCs
+kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
+```
+
+<div id="default-configuration-highlights">
+  ## Основные особенности конфигурации по умолчанию
+</div>
+
+* **Предварительно настроенный кластер:** кластер с именем `default`, включающий все узлы ClickHouse.
+* **Макросы по умолчанию:** некоторые полезные макросы уже определены:
+  * `{cluster}`: имя кластера (`default`)
+  * `{shard}`: номер сегмента
+  * `{replica}`: номер реплики
+* **Реплицируемое хранилище для сущностей RBAC**
+* **Реплицируемое хранилище для пользовательских функций (UDF)**
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+* [Руководство по настройке](/ru/products/kubernetes-operator/guides/configuration) - Подробное описание параметров настройки
+* [Справочник по API](/ru/products/kubernetes-operator/reference/api-reference) - Полная документация по API

@@ -119,7 +119,6 @@ def create_and_populate(node, table, posting_list_codec):
 # pre-WithCodec granules silently fall back to eager mode, while the new-format
 # part inserted after the upgrade actually uses the cursor-based reader.
 LAZY_APPLY_SETTINGS = {
-    "allow_experimental_text_index_lazy_apply": 1,
     "text_index_posting_list_apply_mode": "lazy",
 }
 
@@ -317,8 +316,9 @@ def test_change_codec_after_upgrade(started_cluster):
         # New binary reads the old-format parts unchanged.
         assert run_search_queries(node, table) == expected_results()
 
-        # Switch the default codec. `text_index_version` stays 'with_codec' (the
-        # new-server default), so new parts persist the codec type in the header.
+        # Switch the default codec. An index without phrase search support is
+        # written in the 'with_codec' format even under the 'with_positions'
+        # default, so new parts persist the codec type in the header.
         node.query(
             f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'bitpacking'"
         )

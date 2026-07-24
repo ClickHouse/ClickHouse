@@ -235,7 +235,7 @@ void KeeperOverDispatcher::list(
     if (with_stat || with_data)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "with_stat and with_data are not implemented");
 
-    const auto request = std::make_shared<ZooKeeperFilteredListRequest>();
+    const auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path;
     request->list_request_type = list_request_type;
 
