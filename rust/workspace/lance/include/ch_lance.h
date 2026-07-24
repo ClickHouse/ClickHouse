@@ -38,8 +38,7 @@ typedef struct ch_lance_dataset_options
 
 typedef struct ch_lance_snapshot_info
 {
-    uint64_t snapshot_id;
-    uint64_t schema_id;
+    uint64_t version;
 } ch_lance_snapshot_info;
 
 typedef struct ch_lance_string_list
@@ -50,7 +49,7 @@ typedef struct ch_lance_string_list
 
 typedef struct ch_lance_scan_options
 {
-    uint64_t snapshot_id;
+    uint64_t version;
     ch_lance_string_list projection;
     const char * predicate;
     bool need_only_count;
@@ -61,9 +60,10 @@ ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * option
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 
 bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
-bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t snapshot_id, struct ArrowSchema * schema, ch_lance_error * error);
-bool ch_lance_total_rows(ch_lance_dataset * dataset, uint64_t snapshot_id, uint64_t * rows, bool * has_value, ch_lance_error * error);
-bool ch_lance_count_rows(ch_lance_dataset * dataset, uint64_t snapshot_id, const char * predicate, uint64_t * rows, bool * has_value, ch_lance_error * error);
+bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t version, struct ArrowSchema * schema, ch_lance_error * error);
+bool ch_lance_total_rows(ch_lance_dataset * dataset, uint64_t version, uint64_t * rows, bool * has_value, ch_lance_error * error);
+bool ch_lance_count_rows(
+    ch_lance_dataset * dataset, uint64_t version, const char * predicate, uint64_t * rows, bool * has_value, ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);

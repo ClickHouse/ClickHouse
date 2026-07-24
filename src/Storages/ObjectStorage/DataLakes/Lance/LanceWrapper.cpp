@@ -36,10 +36,11 @@ String takeError(ch_lance_error & error)
     return message;
 }
 
-[[noreturn]] void throwLanceError(ch_lance_error & error)
+[[noreturn]] void throwLanceError(ch_lance_error & error, const String & operation = {})
 {
-    const auto message = takeError(error);
-    if (message.starts_with("Unsupported Lance column"))
+    const auto lance_message = takeError(error);
+    const auto message = operation.empty() ? lance_message : fmt::format("{}: {}", operation, lance_message);
+    if (lance_message.starts_with("Unsupported Lance column"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
 
     throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "{}", message);
@@ -141,15 +142,15 @@ SnapshotInfo Dataset::currentSnapshot() const
     ch_lance_error error{};
     if (!ch_lance_current_snapshot(dataset, &snapshot, &error))
         throwLanceError(error);
-    return SnapshotInfo{snapshot.snapshot_id, snapshot.schema_id};
+    return SnapshotInfo{snapshot.version};
 }
 
 NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const
 {
     ArrowSchema schema{};
     ch_lance_error error{};
-    if (!ch_lance_export_schema(dataset, snapshot.snapshot_id, &schema, &error))
-        throwLanceError(error);
+    if (!ch_lance_export_schema(dataset, snapshot.version, &schema, &error))
+        throwLanceError(error, fmt::format("Cannot export schema for `Lance` dataset version {}", snapshot.version));
 
     auto arrow_schema = arrow::ImportSchema(&schema);
     if (!arrow_schema.ok())
@@ -174,8 +175,8 @@ std::optional<size_t> Dataset::totalRows(const TableStateSnapshot & snapshot) co
     uint64_t rows = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_total_rows(dataset, snapshot.snapshot_id, &rows, &has_value, &error))
-        throwLanceError(error);
+    if (!ch_lance_total_rows(dataset, snapshot.version, &rows, &has_value, &error))
+        throwLanceError(error, fmt::format("Cannot count rows in `Lance` dataset version {}", snapshot.version));
     if (!has_value)
         return std::nullopt;
     return rows;
@@ -186,8 +187,8 @@ std::optional<size_t> Dataset::countRows(const TableStateSnapshot & snapshot, co
     uint64_t rows = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_count_rows(dataset, snapshot.snapshot_id, predicate ? predicate->c_str() : nullptr, &rows, &has_value, &error))
-        throwLanceError(error);
+    if (!ch_lance_count_rows(dataset, snapshot.version, predicate ? predicate->c_str() : nullptr, &rows, &has_value, &error))
+        throwLanceError(error, fmt::format("Cannot count filtered rows in `Lance` dataset version {}", snapshot.version));
     if (!has_value)
         return std::nullopt;
     return rows;
@@ -217,9 +218,8 @@ Scan Dataset::planScan(const ScanDescription & scan_description) const
         .values = projection.empty() ? nullptr : projection.data(),
         .size = projection.size(),
     };
-    ch_lance_scan_options options
-    {
-        .snapshot_id = scan_description.snapshot.snapshot_id,
+    ch_lance_scan_options options{
+        .version = scan_description.snapshot.version,
         .projection = projection_list,
         .predicate = scan_description.predicate ? scan_description.predicate->c_str() : nullptr,
         .need_only_count = scan_description.need_only_count,
@@ -229,7 +229,7 @@ Scan Dataset::planScan(const ScanDescription & scan_description) const
     ch_lance_error error{};
     auto * scan = ch_lance_plan_scan(dataset, &options, &error);
     if (!scan)
-        throwLanceError(error);
+        throwLanceError(error, fmt::format("Cannot plan scan for `Lance` dataset version {}", scan_description.snapshot.version));
     return Scan(scan);
 }
 

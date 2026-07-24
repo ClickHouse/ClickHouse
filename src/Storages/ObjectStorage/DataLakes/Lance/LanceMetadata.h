@@ -69,9 +69,6 @@ public:
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count) const override;
 
-    std::optional<size_t> totalRows(ContextPtr) const override;
-    std::optional<size_t> totalBytes(ContextPtr) const override;
-
 private:
     Lance::DatasetOptions getDatasetOptions() const;
 

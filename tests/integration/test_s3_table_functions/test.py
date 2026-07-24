@@ -1,3 +1,5 @@
+import concurrent.futures
+import io
 import json
 import logging
 import os
@@ -61,6 +63,16 @@ def upload_lance_dataset_to_minio(started_cluster, remote_prefix, dataset_name="
                 object_name=remote_path,
                 file_path=local_file,
             )
+
+
+def set_lance_latest_version(started_cluster, remote_prefix, version):
+    payload = json.dumps({"version": version}, separators=(",", ":")).encode()
+    started_cluster.minio_client.put_object(
+        bucket_name=started_cluster.minio_bucket,
+        object_name=f"{remote_prefix}/_versions/latest_version_hint.json",
+        data=io.BytesIO(payload),
+        length=len(payload),
+    )
 
 
 def skip_if_lance_s3_unavailable(instance=node):
@@ -253,6 +265,57 @@ def test_lance_s3_table_engine(started_cluster):
     )
 
     node.query("DROP TABLE lance_s3_basic")
+
+
+def test_lance_s3_query_pins_dataset_version(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/versions.lance"
+    upload_lance_dataset_to_minio(
+        started_cluster,
+        remote_prefix,
+        dataset_name="versions.lance",
+    )
+    set_lance_latest_version(started_cluster, remote_prefix, 1)
+
+    failpoint = "lance_metadata_iterate_pause"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    def run_query(query_id):
+        return node.query(
+            """
+            SELECT
+                count(),
+                sum(id),
+                uniqExact(_data_lake_snapshot_version),
+                min(_data_lake_snapshot_version)
+            FROM lanceS3(nc_s3, filename = 'lance/versions.lance')
+            """,
+            query_id=query_id,
+            timeout=60,
+        )
+
+    query_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    wait_future = query_executor.submit(
+        lambda: node.query(
+            f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE",
+            timeout=30,
+        )
+    )
+    query_future = query_executor.submit(run_query, "lance_snapshot_consistency_pinned")
+
+    try:
+        wait_future.result(timeout=30)
+        set_lance_latest_version(started_cluster, remote_prefix, 2)
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        assert query_future.result(timeout=60) == "3\t6\t1\t1\n"
+        assert run_query("lance_snapshot_consistency_latest") == "4\t10\t1\t2\n"
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            query_executor.shutdown(wait=True)
 
 
 def test_lance_s3_pushdown_queries(started_cluster):

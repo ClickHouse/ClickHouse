@@ -4,8 +4,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -20,10 +18,13 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/StorageSnapshot.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 #if USE_AWS_S3
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
@@ -54,6 +55,11 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char lance_metadata_iterate_pause[];
 }
 }
 
@@ -107,7 +113,7 @@ public:
 
     size_t estimatedKeysCount() override { return is_finished ? 0 : 1; }
 
-    std::optional<UInt64> getSnapshotVersion() const override { return snapshot.snapshot_id; }
+    std::optional<UInt64> getSnapshotVersion() const override { return snapshot.version; }
 
 private:
     String dataset_path;
@@ -493,22 +499,28 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto dataset = Lance::Dataset::open(getDatasetOptions());
     const auto snapshot = dataset.currentSnapshot();
-    return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.snapshot_id, snapshot.schema_id}, local_context);
+    return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.version}, local_context);
 }
 
 std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(ContextPtr) const
 {
     const auto snapshot = Lance::Dataset::open(getDatasetOptions()).currentSnapshot();
-    return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.snapshot_id, snapshot.schema_id}};
+    if (snapshot.version == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
+    return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
 }
 
 std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFromState(
     const DataLakeTableStateSnapshot & state, ContextPtr local_context) const
 {
-    chassert(std::holds_alternative<Lance::TableStateSnapshot>(state));
+    const auto * lance_state = std::get_if<Lance::TableStateSnapshot>(&state);
+    if (!lance_state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table state snapshot type while building `Lance` metadata");
+    if (lance_state->version == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build `Lance` metadata from zero dataset version");
+
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    const auto & lance_state = std::get<Lance::TableStateSnapshot>(state);
-    result->setColumns(ColumnsDescription{Lance::Dataset::open(getDatasetOptions()).tableSchema(lance_state, local_context)});
+    result->setColumns(ColumnsDescription{Lance::Dataset::open(getDatasetOptions()).tableSchema(*lance_state, local_context)});
     result->setDataLakeTableState(state);
     return result;
 }
@@ -549,6 +561,8 @@ ObjectIterator LanceMetadata::iterate(
     StorageMetadataPtr storage_metadata,
     ContextPtr) const
 {
+    FailPointInjection::pauseFailPoint(FailPoints::lance_metadata_iterate_pause);
+
     if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No table state snapshot found while iterating Lance dataset");
 
@@ -557,6 +571,8 @@ ObjectIterator LanceMetadata::iterate(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table state snapshot type while iterating Lance dataset");
 
     const auto snapshot = std::get<Lance::TableStateSnapshot>(state);
+    if (snapshot.version == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate `Lance` dataset at zero dataset version");
     return std::make_shared<LanceDatasetIterator>(getDatasetOptions().uri, snapshot, std::move(callback));
 }
 
@@ -597,18 +613,6 @@ std::optional<Pipe> LanceMetadata::read(
         std::move(scan),
         format_settings ? *format_settings : getFormatSettings(local_context));
     return Pipe(source);
-}
-
-std::optional<size_t> LanceMetadata::totalRows(ContextPtr) const
-{
-    auto dataset = Lance::Dataset::open(getDatasetOptions());
-    const auto snapshot = dataset.currentSnapshot();
-    return dataset.totalRows(Lance::TableStateSnapshot{snapshot.snapshot_id, snapshot.schema_id});
-}
-
-std::optional<size_t> LanceMetadata::totalBytes(ContextPtr) const
-{
-    return Lance::Dataset::open(getDatasetOptions()).totalBytes();
 }
 
 Lance::DatasetOptions LanceMetadata::getDatasetOptions() const

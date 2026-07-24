@@ -45,8 +45,7 @@ struct DatasetOptions
 
 struct SnapshotInfo
 {
-    UInt64 snapshot_id = 0;
-    UInt64 schema_id = 0;
+    UInt64 version = 0;
 };
 
 struct ScanDescription;
