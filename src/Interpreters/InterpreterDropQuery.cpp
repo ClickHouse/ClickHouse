@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
@@ -297,7 +298,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
                 bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                try
+                {
+                    DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                }
+                catch (...)
+                {
+                    /// removeDependencies re-checks dependents and can throw after flushAndShutdown already ran;
+                    /// for a dictionary that shutdown deregistered it from the loader, so restore it to keep DETACH atomic.
+                    if (auto * dictionary = dynamic_cast<StorageDictionary *>(table.get()))
+                        dictionary->restoreDictionaryConfigurationInRepository();
+                    throw;
+                }
                 NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);

@@ -92,6 +92,10 @@ public:
     void shutdown(bool is_drop) override;
     void startup() override;
 
+    /// Re-register the loader config repository that shutdown() removed, so an aborted
+    /// DETACH ... PERMANENTLY leaves the dictionary loadable again (startup() alone does not re-add it).
+    void restoreDictionaryConfigurationInRepository();
+
     void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
