@@ -210,6 +210,13 @@ def main():
         assert '"label":"page_cache_*"' in explorer
         assert '"label":"page_*"' not in explorer
         assert 'aria-expanded={isOpen}' in explorer
+        assert "const [allGroupKeys] = useState" in explorer
+        assert "return shouldCollapse ? new Set() : new Set(allGroupKeys);" in explorer
+        assert 'aria-pressed={allGroupsExpanded}' in explorer
+        assert 'aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}' in explorer
+        assert '<path d="m6 9 6 6 6-6" />' in explorer
+        assert '<path d="m15 18-6-6 6-6" />' in explorer
+        assert 'className="flex min-w-full items-center justify-between gap-4"' in explorer
         assert 'className="relative w-full"' in explorer
         assert "border-gray-500 bg-gray-50" in explorer
         assert "placeholder:text-gray-600" in explorer

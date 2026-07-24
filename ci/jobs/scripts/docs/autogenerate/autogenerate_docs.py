@@ -1066,6 +1066,13 @@ def _settings_explorer_component(pages, family=None):
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => (__SESSION_SETTINGS_ENTRIES__));
+  const [allGroupKeys] = useState(() => {
+    const collectGroupKeys = (items, path = []) => items.flatMap((entry) => {
+      const key = [...path, entry.label].join("/");
+      return [key, ...collectGroupKeys(entry.children, [...path, entry.label])];
+    });
+    return collectGroupKeys(entries);
+  });
   const [expandedGroups, setExpandedGroups] = useState(() => new Set());
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -1131,6 +1138,8 @@ def _settings_explorer_component(pages, family=None):
     (total, entry) => total + entry.count,
     0,
   );
+  const allGroupsExpanded = allGroupKeys.length > 0
+    && allGroupKeys.every((key) => expandedGroups.has(key));
 
   const toggleGroup = (key) => {
     setExpandedGroups((current) => {
@@ -1138,6 +1147,13 @@ def _settings_explorer_component(pages, family=None):
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
+    });
+  };
+
+  const toggleAllGroups = () => {
+    setExpandedGroups((current) => {
+      const shouldCollapse = allGroupKeys.every((key) => current.has(key));
+      return shouldCollapse ? new Set() : new Set(allGroupKeys);
     });
   };
 
@@ -1251,7 +1267,32 @@ def _settings_explorer_component(pages, family=None):
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
-        <div className="min-w-max font-semibold">__EXPLORER_ROOT__</div>
+        <div className="flex min-w-full items-center justify-between gap-4">
+          <div className="min-w-max font-semibold">__EXPLORER_ROOT__</div>
+          <button
+            type="button"
+            aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}
+            aria-pressed={allGroupsExpanded}
+            disabled={isSearching}
+            onClick={toggleAllGroups}
+            className="shrink-0 rounded p-1 text-gray-500 hover:text-gray-900 focus:outline-0 focus-visible:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-[#fdff75] dark:focus-visible:text-[#fdff75]"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              {allGroupsExpanded
+                ? <path d="m6 9 6 6 6-6" />
+                : <path d="m15 18-6-6 6-6" />}
+            </svg>
+          </button>
+        </div>
         {filteredEntries.length > 0 ? filteredEntries.map((entry, index) => renderGroup(
           entry,
           [],
