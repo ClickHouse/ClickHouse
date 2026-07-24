@@ -134,6 +134,10 @@ You can configure the Advanced settings if needed. A brief description of each s
    If you're defining an ordering key in ClickHouse differently than from the primary key in Postgres, don't forget to read all the [considerations](/integrations/clickpipes/postgres/ordering-keys) around it
 </Warning>
 
+8. Additionally, you can provide a custom `PARTITION BY <expr>` expression to control destination [ClickHouse table partitioning](/partitions).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border/>
+
 ### Review permissions and start the ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 8. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
