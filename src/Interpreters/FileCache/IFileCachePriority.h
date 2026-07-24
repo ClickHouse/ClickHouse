@@ -40,42 +40,22 @@ struct FileCacheUsageCounters
 {
     std::atomic<size_t> size = 0;
     std::atomic<size_t> elements = 0;
-    std::atomic<size_t> entry_references = 0;
     std::atomic<bool> valid = true;
 
     void add(size_t size_delta, size_t elements_delta) noexcept;
     void sub(size_t size_delta, size_t elements_delta) noexcept;
 };
-
-class FileCacheUsageCountersHandle
-{
-public:
-    FileCacheUsageCountersHandle() = default;
-    FileCacheUsageCountersHandle(const FileCacheUsageCountersHandle & other) noexcept;
-    FileCacheUsageCountersHandle(FileCacheUsageCountersHandle && other) noexcept;
-    FileCacheUsageCountersHandle & operator=(const FileCacheUsageCountersHandle &) = delete;
-    FileCacheUsageCountersHandle & operator=(FileCacheUsageCountersHandle &&) = delete;
-    ~FileCacheUsageCountersHandle();
-
-    explicit operator bool() const { return counters != nullptr; }
-    FileCacheUsageCounters * operator->() const { return counters; }
-
-private:
-    friend class FileCacheUsageTracker;
-    explicit FileCacheUsageCountersHandle(FileCacheUsageCounters * counters_) noexcept;
-
-    FileCacheUsageCounters * counters = nullptr;
-};
+using FileCacheUsageCountersPtr = std::shared_ptr<FileCacheUsageCounters>;
 
 class FileCacheUsageTracker
 {
 public:
-    FileCacheUsageCountersHandle getOrCreate(const String & user_id);
+    FileCacheUsageCountersPtr getOrCreate(const String & user_id);
     std::unordered_map<String, FileCacheUsageStat> snapshot();
 
 private:
     std::mutex mutex;
-    std::unordered_map<String, std::unique_ptr<FileCacheUsageCounters>> usage_by_user;
+    std::unordered_map<String, FileCacheUsageCountersPtr> usage_by_user;
 };
 using FileCacheUsageTrackerPtr = std::shared_ptr<FileCacheUsageTracker>;
 
@@ -118,8 +98,7 @@ public:
         const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        /// Retains the corresponding counters while this entry can update them.
-        const FileCacheUsageCountersHandle usage_counters;
+        const FileCacheUsageCountersPtr usage_counters;
 
         std::string toString(const std::string & prefix = "") const;
 
@@ -155,7 +134,7 @@ public:
             size_t offset_,
             size_t size_,
             KeyMetadataPtr key_metadata_,
-            FileCacheUsageCountersHandle usage_counters_ = {},
+            FileCacheUsageCountersPtr usage_counters_ = {},
             State initial_state = State::Active);
         Entry(const Entry & other);
 
@@ -542,7 +521,7 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    FileCacheUsageCountersHandle getOrCreateUsageCounters(const UserID & user_id) const
+    FileCacheUsageCountersPtr getOrCreateUsageCounters(const UserID & user_id) const
     {
         if (queue_type != QueueType::Main || !usage_tracker)
             return {};

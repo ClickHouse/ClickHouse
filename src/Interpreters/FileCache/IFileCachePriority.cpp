@@ -46,38 +46,13 @@ void FileCacheUsageCounters::sub(size_t size_delta, size_t elements_delta) noexc
         valid.store(false, std::memory_order_relaxed);
 }
 
-FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(FileCacheUsageCounters * counters_) noexcept
-    : counters(counters_)
-{
-    counters->entry_references.fetch_add(1, std::memory_order_relaxed);
-}
-
-FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(const FileCacheUsageCountersHandle & other) noexcept
-    : counters(other.counters)
-{
-    if (counters)
-        counters->entry_references.fetch_add(1, std::memory_order_relaxed);
-}
-
-FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(FileCacheUsageCountersHandle && other) noexcept
-    : counters(other.counters)
-{
-    other.counters = nullptr;
-}
-
-FileCacheUsageCountersHandle::~FileCacheUsageCountersHandle()
-{
-    if (counters)
-        counters->entry_references.fetch_sub(1, std::memory_order_release);
-}
-
-FileCacheUsageCountersHandle FileCacheUsageTracker::getOrCreate(const String & user_id)
+FileCacheUsageCountersPtr FileCacheUsageTracker::getOrCreate(const String & user_id)
 {
     std::lock_guard lock(mutex);
     auto [it, inserted] = usage_by_user.try_emplace(user_id);
     if (inserted)
-        it->second = std::make_unique<FileCacheUsageCounters>();
-    return FileCacheUsageCountersHandle(it->second.get());
+        it->second = std::make_shared<FileCacheUsageCounters>();
+    return it->second;
 }
 
 std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
@@ -91,10 +66,9 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
         if (!usage->valid.load(std::memory_order_relaxed))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
 
-        const size_t entry_references = usage->entry_references.load(std::memory_order_acquire);
         const size_t size = usage->size.load(std::memory_order_relaxed);
         const size_t elements = usage->elements.load(std::memory_order_relaxed);
-        if (entry_references == 0)
+        if (usage.use_count() == 1)
         {
             if (size != 0 || elements != 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
@@ -119,7 +93,7 @@ IFileCachePriority::Entry::Entry(
     size_t offset_,
     size_t size_,
     KeyMetadataPtr key_metadata_,
-    FileCacheUsageCountersHandle usage_counters_,
+    FileCacheUsageCountersPtr usage_counters_,
     State initial_state)
     : key(key_)
     , offset(offset_)
