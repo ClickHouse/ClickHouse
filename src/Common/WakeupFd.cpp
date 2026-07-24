@@ -7,6 +7,11 @@
 
 #include <cerrno>
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
 namespace DB
 {
 
@@ -14,16 +19,70 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    extern const int CANNOT_FSTAT;
+    extern const int LOGICAL_ERROR;
+#endif
 }
 
 WakeupFd::WakeupFd()
 {
     /// PipeFDs constructor already opens the pipe with CLOEXEC; flip both ends to non-blocking.
     pipe.setNonBlockingReadWrite();
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    for (int which : {0, 1})
+    {
+        struct stat st;
+        if (0 != fstat(pipe.fds_rw[which], &st))
+            throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot fstat wakeup pipe");
+        ends[which] = {static_cast<UInt64>(st.st_dev), static_cast<UInt64>(st.st_ino)};
+    }
+#endif
 }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+void WakeupFd::validate(int which) const
+{
+    const char * side = which == 0 ? "read" : "write";
+    int fd = pipe.fds_rw[which];
+
+    int flags = fcntl(fd, F_GETFL);
+    if (flags == -1)
+        throw ErrnoException(
+            ErrorCodes::LOGICAL_ERROR, "Wakeup pipe {} end (fd {}) is invalid; the fd was probably closed by unrelated code", side, fd);
+    if (!(flags & O_NONBLOCK))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Wakeup pipe {} end (fd {}) lost O_NONBLOCK (flags {:#x}); the fd was probably tampered with by unrelated code",
+            side,
+            fd,
+            flags);
+
+    struct stat st;
+    if (0 != fstat(fd, &st))
+        throw ErrnoException(ErrorCodes::LOGICAL_ERROR, "Cannot fstat wakeup pipe {} end (fd {})", side, fd);
+    if (!S_ISFIFO(st.st_mode) || static_cast<UInt64>(st.st_dev) != ends[which].dev || static_cast<UInt64>(st.st_ino) != ends[which].ino)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Wakeup pipe {} end (fd {}) refers to another file (mode {:#o}, dev:ino {}:{}, expected {}:{}); "
+            "the fd was probably closed and recycled by unrelated code",
+            side,
+            fd,
+            st.st_mode,
+            static_cast<UInt64>(st.st_dev),
+            static_cast<UInt64>(st.st_ino),
+            ends[which].dev,
+            ends[which].ino);
+}
+#endif
 
 void WakeupFd::notify() const
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    validate(1);
+#endif
+
     const char byte = '\0';
     while (true)
     {
@@ -40,6 +99,10 @@ void WakeupFd::notify() const
 
 void WakeupFd::drain() const
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    validate(0);
+#endif
+
     char buf[PIPE_BUF];
     while (true)
     {

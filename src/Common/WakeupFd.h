@@ -2,6 +2,9 @@
 
 #include <Common/PipeFDs.h>
 
+#include <base/defines.h>
+#include <base/types.h>
+
 namespace DB
 {
 
@@ -29,6 +32,22 @@ public:
 
 private:
     PipeFDs pipe;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Throws LOGICAL_ERROR (which aborts in these builds) if the fd no longer matches the pipe end
+    /// created by the constructor.
+    void validate(int which) const;
+
+    /// dev:ino of each pipe end at construction. If unrelated code closes our fd number (a stale-fd
+    /// double close), the number gets silently recycled and a blocking read()/write() on it wedges
+    /// the caller forever (seen as an hour-long streaming-source hang in stress tests).
+    struct EndIdentity
+    {
+        UInt64 dev = 0;
+        UInt64 ino = 0;
+    };
+    EndIdentity ends[2];
+#endif
 };
 
 }
