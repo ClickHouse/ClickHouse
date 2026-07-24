@@ -1,0 +1,218 @@
+---
+title: 向表中添加一列
+description: 本指南将介绍如何向现有表添加列。
+date: 2024-12-18
+tags: ['数据建模']
+keywords: ['添加列']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="adding-a-column-to-a-table">
+  ## 向表中添加一列
+</div>
+
+我们将使用 clickhouse-local：
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+假设我们有如下表：
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+添加一条记录：
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+现在查询 `events` 表：
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+<div id="adding-a-new-column">
+  ## 添加新列
+</div>
+
+现在假设我们要新增一个名为 `favoriteNumber` 的列，类型为 `Float64`。
+我们可以使用 [`ALTER TABLE...ADD COLUMN`](/zh/reference/statements/alter/column#add-column) 子句来实现：
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+如果查询 `events` 表，将看到以下输出：
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+`Alexey` 这一行的默认值为 7，因为添加这一行时，该列还不存在。
+接下来，再添加一列：
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+如果查询 `events` 表，将看到如下输出：
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+<div id="modifying-a-columns-default-value">
+  ## 修改列的默认值
+</div>
+
+如果我们使用 [`ALTER TABLE...MODIFY COLUMN`](/zh/reference/statements/alter/column#modify-column) 子句将 `favoriteNumber` 列改为另一种类型，就会出现一些有意思的情况：
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+如果再次查询 `events`，会看到以下输出：
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tyler` 的值仍为 `7`，这是创建该行时的默认值。
+`Alexey` 则会使用新的默认值 `99`，因为创建该行时，`favoriteNumber` 列还不存在。
+
+如果我们希望 `Alexey` 这一行立即使用当前默认值，就需要调用 [`OPTIMIZE TABLE` ](/zh/reference/statements/optimize)，强制将当前默认值写入磁盘：
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+完成后，假设我们再次修改默认值：
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+然后再插入一行：
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+最后，再查询一次 `events`：
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tanya` 使用的是新的默认值 `21`，而 `Alexey` 使用的是旧的默认值 `99`。
+
+<div id="controlling-column-position-in-table">
+  ## 控制表中列的位置
+</div>
+
+添加新列时，默认会将其追加到表末尾。
+不过，我们可以使用 `FIRST` 和 `AFTER` 子句来控制列的位置。
+
+例如，如果想在 `name` 列之后添加一个名为 `favoriteColor` 的列，可以这样做：
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+查询 `events`：
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+如果我们想添加一个列 `favoriteDatabase`，并让它显示在列表第一位，可以这样做：
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+再来看看表定义：
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```

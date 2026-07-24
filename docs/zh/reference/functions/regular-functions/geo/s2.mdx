@@ -1,0 +1,354 @@
+---
+slug: /sql-reference/functions/geo/s2
+sidebarTitle: 'S2 几何'
+title: '用于处理 S2 索引的函数'
+description: '用于处理 S2 索引的函数文档'
+doc_type: 'reference'
+---
+
+<div id="s2index">
+  ## S2Index
+</div>
+
+[S2](https://s2geometry.io/) 是一种地理索引系统，其中所有地理数据都表示在球体上 (类似地球仪) 。
+
+在 S2 库中，点以 S2 Index 的形式表示——它是一个特定的数字，在内部对单位球面上的某个点进行编码，而不是使用传统的 (纬度、经度) 坐标对。要获取以 (纬度、经度) 格式指定的点的 S2 点索引，请使用 [geoToS2](#geotos2) 函数。此外，你也可以使用 [s2ToGeo](#s2togeo) 函数来获取与指定 S2 点索引 对应的地理坐标。
+
+<div id="geotos2">
+  ## geoToS2
+</div>
+
+返回与所提供坐标 `(longitude, latitude)` 相对应的 [S2](#s2index) 点索引。
+
+**语法**
+
+```sql
+geoToS2(lon, lat)
+```
+
+**参数**
+
+* `lon` — 经度。[Float64](/zh/reference/data-types/float)。
+* `lat` — 纬度。[Float64](/zh/reference/data-types/float)。
+
+**返回值**
+
+* S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT geoToS2(37.79506683, 55.71290588) AS s2Index;
+```
+
+```text title="Response"
+┌─────────────s2Index─┐
+│ 4704772434919038107 │
+└─────────────────────┘
+```
+
+<div id="s2togeo">
+  ## s2ToGeo
+</div>
+
+返回与给定的 [S2](#s2index) 点索引对应的地理坐标 `(longitude, latitude)`。
+
+**语法**
+
+```sql
+s2ToGeo(s2index)
+```
+
+**参数**
+
+* `s2index` — S2 Index。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 一个由两个值组成的 [tuple](/zh/reference/data-types/tuple)：
+  * `lon`。[Float64](/zh/reference/data-types/float)。
+  * `lat`。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT s2ToGeo(4704772434919038107) AS s2Coodrinates;
+```
+
+```text title="Response"
+┌─s2Coodrinates────────────────────────┐
+│ (37.79506681471008,55.7129059052841) │
+└──────────────────────────────────────┘
+```
+
+<div id="s2getneighbors">
+  ## s2GetNeighbors
+</div>
+
+返回与给定 [S2](#s2index) 相邻的 S2 索引。S2 系统中的每个单元都是由四条测地线围成的四边形，因此每个单元都有 4 个相邻单元。
+
+**语法**
+
+```sql
+s2GetNeighbors(s2index)
+```
+
+**参数**
+
+* `s2index` — S2 索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 包含 4 个相邻索引的数组：`array[s2index1, s2index3, s2index2, s2index4]`。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT s2GetNeighbors(5074766849661468672) AS s2Neighbors;
+```
+
+```text title="Response"
+┌─s2Neighbors───────────────────────────────────────────────────────────────────────┐
+│ [5074766987100422144,5074766712222515200,5074767536856236032,5074767261978329088] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="s2cellsintersect">
+  ## s2CellsIntersect
+</div>
+
+判断给定的两个 [S2](#s2index) 单元是否相交。
+
+**语法**
+
+```sql
+s2CellsIntersect(s2index1, s2index2)
+```
+
+**参数**
+
+* `siIndex1`, `s2index2` — S2 Index。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `1` — 如果这些单元相交，则返回 `1`。[UInt8](/zh/reference/data-types/int-uint)。
+* `0` — 如果这些单元不相交，则返回 `0`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560) AS intersect;
+```
+
+```text title="Response"
+┌─intersect─┐
+│         1 │
+└───────────┘
+```
+
+<div id="s2capcontains">
+  ## s2CapContains
+</div>
+
+判断球冠是否包含某个 S2 点。球冠表示被平面截取出的球面区域。它由球面上的一个点和一个以度为单位的半径定义。
+
+**语法**
+
+```sql
+s2CapContains(center, degrees, point)
+```
+
+**参数**
+
+* `center` — 对应于该球冠的 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+* `degrees` — 球冠的半径 (以度为单位) 。[Float64](/zh/reference/data-types/float)。
+* `point` — S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `1` — 如果该球冠包含该 S2 点索引。[UInt8](/zh/reference/data-types/int-uint)。
+* `0` — 如果该球冠不包含该 S2 点索引。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819) AS capContains;
+```
+
+```text title="Response"
+┌─capContains─┐
+│           1 │
+└─────────────┘
+```
+
+<div id="s2capunion">
+  ## s2CapUnion
+</div>
+
+确定可包含给定两个输入球冠的最小球冠。球冠表示被平面切出的球体一部分。它由球面上的一个点和以度为单位的半径定义。
+
+**语法**
+
+```sql
+s2CapUnion(center1, radius1, center2, radius2)
+```
+
+**参数**
+
+* `center1`, `center2` — 与两个输入球冠对应的 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+* `radius1`, `radius2` — 两个输入球冠的半径 (以度为单位) 。[Float64](/zh/reference/data-types/float)。
+
+**返回值**
+
+* `center` — 对应于包含这两个输入球冠的最小球冠中心的 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+* `radius` — 包含这两个输入球冠的最小球冠的半径。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT s2CapUnion(3814912406305146967, 1.0, 1157347770437378819, 1.0) AS capUnion;
+```
+
+```text title="Response"
+┌─capUnion───────────────────────────────┐
+│ (4534655147792050737,60.2088283994957) │
+└────────────────────────────────────────┘
+```
+
+<div id="s2rectadd">
+  ## s2RectAdd
+</div>
+
+增大边界矩形的范围，使其包含给定的 S2 点。在 S2 系统中，矩形由一种名为 `S2LatLngRect` 的 S2Region 类型来表示，它表示纬经度空间中的一个矩形。
+
+**语法**
+
+```sql
+s2RectAdd(s2pointLow, s2pointHigh, s2Point)
+```
+
+**参数**
+
+* `s2PointLow` — 与该矩形对应的较低 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)
+* `s2PointHigh` — 与该矩形对应的较高 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)
+* `s2Point` — 目标 S2 点索引，边界矩形应扩展以将其包含在内。[UInt64](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+* `s2PointLow` — 与扩展后矩形对应的较低 S2 单元 ID。[UInt64](/zh/reference/data-types/int-uint)
+* `s2PointHigh` — 与扩展后矩形对应的较高 S2 单元 ID。[UInt64](/zh/reference/data-types/float)
+
+**示例**
+
+```sql title="Query"
+SELECT s2RectAdd(5178914411069187297, 5177056748191934217, 5179056748191934217) AS rectAdd;
+```
+
+```text title="Response"
+┌─rectAdd───────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectcontains">
+  ## s2RectContains
+</div>
+
+判断给定矩形是否包含某个 S2 点。在 S2 系统中，矩形由一种称为 `S2LatLngRect` 的 S2Region 类型表示，用于表示纬度-经度空间中的矩形。
+
+**语法**
+
+```sql
+s2RectContains(s2PointLow, s2PointHi, s2Point)
+```
+
+**参数**
+
+* `s2PointLow` — 与该矩形对应的较小 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+* `s2PointHigh` — 与该矩形对应的较大 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+* `s2Point` — 目标 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `1` — 如果该矩形包含给定的 S2 点。
+* `0` — 如果该矩形不包含给定的 S2 点。
+
+**示例**
+
+```sql title="Query"
+SELECT s2RectContains(5179062030687166815, 5177056748191934217, 5177914411069187297) AS rectContains;
+```
+
+```text title="Response"
+┌─rectContains─┐
+│            0 │
+└──────────────┘
+```
+
+<div id="s2rectunion">
+  ## s2RectUnion
+</div>
+
+返回同时包含此矩形与给定矩形并集的最小矩形。在 S2 系统中，矩形由一种名为 `S2LatLngRect` 的 S2Region 类型表示，用于表示经纬度空间中的矩形。
+
+**语法**
+
+```sql
+s2RectUnion(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**参数**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — 对应第一个矩形的低位和高位 S2 点索引值。[UInt64](/zh/reference/data-types/int-uint)
+* `s2Rect2PointLow`, `s2Rect2PointHi` — 对应第二个矩形的低位和高位 S2 点索引值。[UInt64](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+* `s2UnionRect2PointLow` — 对应并集矩形的低位 S2 单元 ID。[UInt64](/zh/reference/data-types/int-uint)
+* `s2UnionRect2PointHi` — 对应并集矩形的高位 S2 单元 ID。[UInt64](/zh/reference/data-types/int-uint)
+
+**示例**
+
+```sql title="Query"
+SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectUnion;
+```
+
+```text title="Response"
+┌─rectUnion─────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectintersection">
+  ## s2RectIntersection
+</div>
+
+返回同时包含当前矩形与给定矩形交集的最小矩形。在 S2 系统中，矩形由一种称为 `S2LatLngRect` 的 S2Region 类型表示，它表示纬度-经度空间中的矩形。
+
+**语法**
+
+```sql
+s2RectIntersection(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**参数**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — 分别对应第一个矩形的低位和高位 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+* `s2Rect2PointLow`, `s2Rect2PointHi` — 分别对应第二个矩形的低位和高位 S2 点索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `s2UnionRect2PointLow` — 与包含给定矩形交集的矩形对应的低位 S2 单元 ID。[UInt64](/zh/reference/data-types/int-uint)。
+* `s2UnionRect2PointHi` — 与包含给定矩形交集的矩形对应的高位 S2 单元 ID。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectIntersection;
+```
+
+```text title="Response"
+┌─rectIntersection──────────────────────────┐
+│ (5178914411069187297,5177056748191934217) │
+└───────────────────────────────────────────┘
+```

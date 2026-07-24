@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources
+title: 'مصادر القواميس'
+sidebarTitle: 'نظرة عامة'
+doc_type: 'مرجع'
+description: 'تكوين أنواع مصادر القواميس'
+---
+
+import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="dictionary-sources">
+  ## الصياغة
+</div>
+
+<CloudDetails />
+
+يمكن ربط القاموس بـ ClickHouse من مصادر مختلفة عديدة.
+يُحدَّد المصدر في قسم `source` في ملف التكوين، وباستخدام العبارة `SOURCE` في تعليمة DDL.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (...)
+    ...
+    SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- تكوين المصدر
+    ...
+    ```
+  </Tab>
+
+  <Tab title="ملف التكوين">
+    ```xml
+    <clickhouse>
+      <dictionary>
+        ...
+        <source>
+          <source_type>
+            <!-- تكوين المصدر -->
+          </source_type>
+        </source>
+        ...
+      </dictionary>
+      ...
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="supported-dictionary-sources">
+  ## مصادر القواميس المدعومة
+</div>
+
+أنواع المصدر التالية (`SOURCE_TYPE`/`source_type`) متاحة:
+
+* [ملف محلي](/ar/reference/statements/create/dictionary/sources/local-file)
+* [ملف تنفيذي](/ar/reference/statements/create/dictionary/sources/executable-file)
+* [مجموعة البرامج التنفيذية](/ar/reference/statements/create/dictionary/sources/executable-pool)
+* [HTTP(S)](/ar/reference/statements/create/dictionary/sources/http)
+* أنظمة إدارة قواعد البيانات
+  * [ODBC](/ar/reference/statements/create/dictionary/sources/odbc)
+  * [MySQL](/ar/reference/statements/create/dictionary/sources/mysql)
+  * [ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse)
+  * [MongoDB](/ar/reference/statements/create/dictionary/sources/mongodb)
+  * [Redis](/ar/reference/statements/create/dictionary/sources/redis)
+  * [Cassandra](/ar/reference/statements/create/dictionary/sources/cassandra)
+  * [PostgreSQL](/ar/reference/statements/create/dictionary/sources/postgresql)
+  * [YTsaurus](/ar/reference/statements/create/dictionary/sources/ytsaurus)
+* [YAMLRegExpTree](/ar/reference/statements/create/dictionary/sources/yamlregexptree)
+* [Null](/ar/reference/statements/create/dictionary/sources/null)
+
+بالنسبة إلى أنواع المصدر [الملف المحلي](/ar/reference/statements/create/dictionary/sources/local-file)، [الملف التنفيذي](/ar/reference/statements/create/dictionary/sources/executable-file)، [HTTP(s)](/ar/reference/statements/create/dictionary/sources/http)، [ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse)
+تتوفر إعدادات اختيارية:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql highlight={2}
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    SETTINGS(format_csv_allow_single_quotes = 0)
+    ```
+  </Tab>
+
+  <Tab title="ملف التكوين">
+    ```xml highlight={7}
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+      <settings>
+          <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+      </settings>
+    </source>
+    ```
+  </Tab>
+</Tabs>

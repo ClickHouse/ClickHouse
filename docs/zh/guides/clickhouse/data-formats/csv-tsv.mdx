@@ -1,0 +1,421 @@
+---
+sidebarTitle: 'CSV 和 TSV'
+slug: /integrations/data-formats/csv-tsv
+title: '在 ClickHouse 中处理 CSV 和 TSV 数据'
+description: '介绍如何在 ClickHouse 中处理 CSV 和 TSV 数据'
+keywords: ['CSV 格式', 'TSV 格式', '逗号分隔值', '制表符分隔值', '数据导入']
+doc_type: 'guide'
+---
+
+ClickHouse 支持从 CSV 导入数据，也支持将数据导出为 CSV。由于 CSV 文件的格式细节可能各不相同，包括表头、自定义分隔符和转义符等，ClickHouse 提供了相应的格式与设置，以便高效应对各种情况。
+
+<div id="importing-data-from-a-csv-file">
+  ## 从 CSV 文件导入数据
+</div>
+
+在导入数据之前，先创建一个具有相应结构的表：
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `month` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple(month, path)
+```
+
+要将 [CSV 文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.csv) 中的数据导入 `sometable` 表，可以直接通过管道将该文件传给 clickhouse-client：
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT CSV" < data_small.csv
+```
+
+请注意，我们使用 [FORMAT CSV](/zh/reference/formats/CSV/CSV) 告诉 ClickHouse 当前正在摄取 CSV 格式的数据。或者，也可以使用 [FROM INFILE](/zh/reference/statements/insert-into#inserting-data-from-a-file) 子句从本地文件加载数据：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data_small.csv'
+FORMAT CSV
+```
+
+这里我们使用 `FORMAT CSV` 子句，让 ClickHouse 能识别文件格式。我们也可以使用 [url()](/zh/reference/functions/table-functions/url) 函数直接从 URL 加载数据，或者使用 [s3()](/zh/reference/functions/table-functions/s3) 函数从 S3 文件加载数据。
+
+<Tip>
+  对于 `file()` 和 `INFILE`/`OUTFILE`，可以省略显式的格式设置。
+  在这种情况下，ClickHouse 会根据文件扩展名自动识别格式。
+</Tip>
+
+<div id="csv-files-with-headers">
+  ### 带表头的 CSV 文件
+</div>
+
+假设我们的 [CSV 文件带有表头](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small_headers.csv)：
+
+```bash
+head data-small-headers.csv
+```
+
+```response
+"path","month","hits"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+```
+
+要从该文件导入数据，可以使用 [CSVWithNames](/zh/reference/formats/CSV/CSVWithNames) 格式：
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_headers.csv
+```
+
+在这种情况下，ClickHouse 在从文件导入数据时会跳过第一行。
+
+<Tip>
+  从 [version](https://github.com/ClickHouse/ClickHouse/releases) 23.1 开始，使用 `CSV` 格式时，ClickHouse 会自动检测 CSV 文件中的表头，因此无需使用 `CSVWithNames` 或 `CSVWithNamesAndTypes`。
+</Tip>
+
+<div id="csv-files-with-custom-delimiters">
+  ### 使用自定义分隔符的 CSV 文件
+</div>
+
+如果 CSV 文件使用的分隔符不是逗号，可以使用 [format&#95;csv&#95;delimiter](/zh/reference/settings/formats#format_csv_delimiter) 选项来设置对应的分隔符：
+
+```sql
+SET format_csv_delimiter = ';'
+```
+
+现在，从 CSV 文件导入时，将使用 `;` 作为分隔符，而不是逗号。
+
+<div id="skipping-lines-in-a-csv-file">
+  ### 跳过 CSV 文件中的行
+</div>
+
+有时，在从 CSV 文件导入数据时，我们可能需要跳过前几行。这可以通过使用 [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/zh/reference/settings/formats#input_format_csv_skip_first_lines) 选项来实现：
+
+```sql
+SET input_format_csv_skip_first_lines = 10
+```
+
+在这种情况下，我们将跳过 CSV 文件的前十行：
+
+```sql
+SELECT count(*) FROM file('data-small.csv', CSV)
+```
+
+```response
+┌─count()─┐
+│     990 │
+└─────────┘
+```
+
+该[file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.csv)有 1k 行，但由于我们要求跳过前 10 行，因此 ClickHouse 只加载了 990 行。
+
+<Tip>
+  使用 `file()` 函数时，如果使用的是 ClickHouse Cloud，则需要在文件所在的机器上通过 `clickhouse client` 运行这些命令。另一种方式是使用 [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local) 在本地查看文件。
+</Tip>
+
+<div id="treating-null-values-in-csv-files">
+  ### 在 CSV 文件中处理 NULL 值
+</div>
+
+NULL 值的编码方式可能因生成该文件的应用程序不同而有所差异。默认情况下，ClickHouse 在 CSV 中使用 `\N` 表示 NULL 值。不过，我们可以通过 [format&#95;csv&#95;null&#95;representation](/zh/reference/settings/formats#format_tsv_null_representation) 选项来修改这一表示方式。
+
+假设我们有以下 CSV 文件：
+
+```bash
+> cat nulls.csv
+Donald,90
+Joe,Nothing
+Nothing,70
+```
+
+如果从该文件加载数据，ClickHouse 会将 `Nothing` 视为 String (这是正确的) ：
+
+```sql
+SELECT * FROM file('nulls.csv')
+```
+
+```response
+┌─c1──────┬─c2──────┐
+│ Donald  │ 90      │
+│ Joe     │ Nothing │
+│ Nothing │ 70      │
+└─────────┴─────────┘
+```
+
+如果希望 ClickHouse 将 `Nothing` 视为 `NULL`，可以通过以下选项进行设置：
+
+```sql
+SET format_csv_null_representation = 'Nothing'
+```
+
+现在，`NULL` 已出现在我们预期的位置：
+
+```sql
+SELECT * FROM file('nulls.csv')
+```
+
+```response
+┌─c1─────┬─c2───┐
+│ Donald │ 90   │
+│ Joe    │ ᴺᵁᴸᴸ │
+│ ᴺᵁᴸᴸ   │ 70   │
+└────────┴──────┘
+```
+
+<div id="tsv-tab-separated-files">
+  ## TSV (制表符分隔) 文件
+</div>
+
+制表符分隔格式广泛用作数据交换格式。要将 [TSV 文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.tsv) 中的数据加载到 ClickHouse，请使用 [TabSeparated](/zh/reference/formats/TabSeparated/TabSeparated) 格式：
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
+```
+
+此外，还有一种 [TabSeparatedWithNames](/zh/reference/formats/TabSeparated/TabSeparatedWithNames) 格式，可用于处理带表头的 TSV 文件。此外，与 CSV 类似，我们也可以使用 [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/zh/reference/settings/formats#input_format_tsv_skip_first_lines) 选项跳过前 X 行。
+
+<div id="raw-tsv">
+  ### 原始 TSV
+</div>
+
+有时，TSV 文件保存时不会对制表符和换行符进行转义。我们应使用 [TabSeparatedRaw](/zh/reference/formats/TabSeparated/TabSeparatedRaw) 来处理这类文件。
+
+<div id="exporting-to-csv">
+  ## 导出为 CSV
+</div>
+
+前面示例中的任何格式也都可以用于导出数据。要将表中的数据 (或查询结果) 导出为 CSV 格式，我们使用相同的 `FORMAT` 子句：
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSV
+```
+
+```response
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+要为 CSV 文件添加表头，可使用 [CSVWithNames](/zh/reference/formats/CSV/CSVWithNames) 格式：
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSVWithNames
+```
+
+```response
+"path","month","hits"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+<div id="saving-exported-data-to-a-csv-file">
+  ### 将导出数据保存为 CSV 文件
+</div>
+
+要将导出数据保存到文件中，可以使用 [INTO...OUTFILE](/zh/reference/statements/select/into-outfile) 子句：
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'out.csv'
+FORMAT CSVWithNames
+```
+
+```response
+36838935 rows in set. Elapsed: 1.304 sec. Processed 36.84 million rows, 1.42 GB (28.24 million rows/s., 1.09 GB/s.)
+```
+
+请注意，ClickHouse 仅用 **~1** 秒就将 3600 万行数据保存到 CSV 文件中。
+
+<div id="exporting-csv-with-custom-delimiters">
+  ### 使用自定义分隔符导出 CSV
+</div>
+
+如果要使用逗号以外的分隔符，可以通过 [format&#95;csv&#95;delimiter](/zh/reference/settings/formats#format_csv_delimiter) 设置选项来指定：
+
+```sql
+SET format_csv_delimiter = '|'
+```
+
+现在，ClickHouse 将使用 `|` 作为 CSV 格式的分隔符：
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSV
+```
+
+```response
+"Akiba_Hebrew_Academy"|"2017-08-01"|241
+"Aegithina_tiphia"|"2018-02-01"|34
+"1971-72_Utah_Stars_season"|"2016-10-01"|1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8"|"2015-12-01"|73
+"2016_Greater_Western_Sydney_Giants_season"|"2017-05-01"|86
+```
+
+<div id="exporting-csv-for-windows">
+  ### 为 Windows 导出 CSV
+</div>
+
+如果希望 CSV 文件在 Windows 环境中正常使用，建议启用 [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/zh/reference/settings/formats#output_format_csv_crlf_end_of_line) 选项。这样会使用 `\r\n` 作为换行符，而不是 `\n`：
+
+```sql
+SET output_format_csv_crlf_end_of_line = 1;
+```
+
+<div id="schema-inference-for-csv-files">
+  ## CSV 文件的 schema 推断
+</div>
+
+在很多情况下，我们会处理结构未知的 CSV 文件，因此需要先确定各列应使用哪些类型。默认情况下，ClickHouse 会根据对给定 CSV 文件的分析尝试推断数据格式。这称为 &quot;Schema Inference&quot;。可以结合 [file()](/zh/reference/functions/table-functions/file) 函数，使用 `DESCRIBE` 语句查看检测到的数据类型：
+
+```sql
+DESCRIBE file('data-small.csv', CSV)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(Date)   │              │                    │         │                  │                │
+│ c3   │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+这里，ClickHouse 可以高效地自动推断 CSV 文件的列类型。如果不想让 ClickHouse 自动推断，可以通过以下选项将其禁用：
+
+```sql
+SET input_format_csv_use_best_effort_in_schema_inference = 0
+```
+
+在这种情况下，所有列类型都会被视为 `String`。
+
+<div id="exporting-and-importing-csv-with-explicit-column-types">
+  ### 使用显式列类型导出和导入 CSV
+</div>
+
+ClickHouse 还支持在使用 [CSVWithNamesAndTypes](/zh/reference/formats/CSV/CSVWithNamesAndTypes) (以及其他 *WithNames 格式家族) 导出数据时，显式指定列类型：
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSVWithNamesAndTypes
+```
+
+```response
+"path","month","hits"
+"String","Date","UInt32"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+这种格式会包含两行表头——一行是列名，另一行是列类型。这样 ClickHouse (以及其他应用) 在从[此类文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv)加载数据时，就能识别列类型：
+
+```sql
+DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
+```
+
+```response
+┌─name──┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ String │              │                    │         │                  │                │
+│ month │ Date   │              │                    │         │                  │                │
+│ hits  │ UInt32 │              │                    │         │                  │                │
+└───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+现在 ClickHouse 不再靠猜测，而是根据 (第二行) 表头来识别列类型。
+
+<div id="custom-delimiters-separators-and-escaping-rules">
+  ## 自定义分隔符、分隔符和转义规则
+</div>
+
+在较复杂的场景中，文本数据虽然可以采用高度自定义的格式，但仍然具有一定的结构。对于这类情况，ClickHouse 提供了专门的 [CustomSeparated](/zh/reference/formats/CustomSeparated/CustomSeparated) 格式，支持自定义转义规则、分隔符、行分隔符以及起始/结束符号。
+
+假设文件中有以下数据：
+
+```text
+row('Akiba_Hebrew_Academy';'2017-08-01';241),row('Aegithina_tiphia';'2018-02-01';34),...
+```
+
+可以看到，每一行都包裹在 `row()` 中，行与行之间用 `,` 分隔，而各个值则用 `;` 分隔。在这种情况下，我们可以使用以下设置从该文件中读取数据：
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+现在我们可以从这个自定义格式的[file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small_custom.txt)中加载数据：
+
+```sql
+SELECT *
+FROM file('data_small_custom.txt', CustomSeparated)
+LIMIT 3
+```
+
+```response
+┌─c1────────────────────────┬─────────c2─┬──c3─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │ 241 │
+│ Aegithina_tiphia          │ 2018-02-01 │  34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │   1 │
+└───────────────────────────┴────────────┴─────┘
+```
+
+我们还可以使用 [CustomSeparatedWithNames](/zh/reference/formats/CustomSeparated/CustomSeparatedWithNames) 来正确导出和导入表头。要处理更复杂的情况，还可以了解 [regex 和 Template](/zh/guides/clickhouse/data-formats/templates-regex) 格式。
+
+<div id="working-with-large-csv-files">
+  ## 处理大型 CSV 文件
+</div>
+
+CSV 文件可能很大，而 ClickHouse 能高效处理各种大小的文件。大型文件通常是压缩格式，ClickHouse 原生支持这一点，因此处理前无需先解压。我们可以在插入时使用 `COMPRESSION` 子句：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data_csv.csv.gz'
+COMPRESSION 'gzip' FORMAT CSV
+```
+
+如果省略 `COMPRESSION` 子句，ClickHouse 仍会根据文件扩展名尝试推断压缩方式。也可以用同样的方法将文件直接导出为压缩格式：
+
+```sql
+SELECT *
+FROM for_csv
+INTO OUTFILE 'data_csv.csv.gz'
+COMPRESSION 'gzip' FORMAT CSV
+```
+
+这将创建一个压缩的 `data_csv.csv.gz` 文件。
+
+<div id="other-formats">
+  ## 其他格式
+</div>
+
+ClickHouse 支持多种格式，包括文本格式和二进制格式，以适配各种场景和平台。你可以在以下文章中了解更多格式及其使用方式：
+
+* **CSV 和 TSV 格式**
+* [Parquet](/zh/guides/clickhouse/data-formats/parquet)
+* [JSON 格式](/zh/guides/clickhouse/data-formats/json/intro)
+* [Regex 和 Template](/zh/guides/clickhouse/data-formats/templates-regex)
+* [原生格式和二进制格式](/zh/guides/clickhouse/data-formats/binary)
+* [SQL 格式](/zh/guides/clickhouse/data-formats/sql)
+
+另请参阅 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)——这是一款便携且功能完备的工具，无需 ClickHouse server 即可处理本地和远程文件。

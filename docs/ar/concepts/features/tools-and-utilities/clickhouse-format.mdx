@@ -1,0 +1,105 @@
+---
+description: 'دليل لاستخدام أداة التنسيق للعمل مع تنسيقات بيانات ClickHouse'
+slug: /operations/utilities/clickhouse-format
+title: 'clickhouse-format'
+doc_type: 'reference'
+---
+
+يتيح تنسيق استعلامات الإدخال.
+
+الخيارات:
+
+* `--help` or`-h` — يعرض رسالة المساعدة.
+* `--query` — ينسّق الاستعلامات مهما كان طولها أو تعقيدها.
+* `--hilite` or `--highlight` — يضيف تمييزًا نحويًا باستخدام تسلسلات هروب ANSI الخاصة بالطرفية.
+* `--oneline` — ينسّق الاستعلام في سطر واحد.
+* `--max_line_length` — ينسّق الاستعلامات في سطر واحد إذا كان طولها أقل من القيمة المحددة.
+* `--comments` — يُبقي التعليقات في المخرجات.
+* `--quiet` or `-q` — يتحقق فقط من البنية النحوية، من دون أي مخرجات عند النجاح.
+* `--multiquery` or `-n` — يسمح بوجود عدة استعلامات في الملف نفسه.
+* `--obfuscate` — يُجري التعمية بدلًا من التنسيق.
+* `--seed <string>` — سلسلة seed عشوائية تحدد نتيجة التعمية.
+* `--backslash` — يضيف الشرطة المائلة العكسية `\` في نهاية كل سطر من الاستعلام المنسّق. قد يكون ذلك مفيدًا عند نسخ استعلام من الويب أو من أي مكان آخر على عدة أسطر، ثم الرغبة في تنفيذه في سطر الأوامر.
+* `--semicolons_inline` — في وضع multiquery، يكتب الفواصل المنقوطة في السطر الأخير من الاستعلام بدلًا من وضعها في سطر جديد.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+1. تنسيق استعلام:
+
+```bash title="Query"
+$ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
+```
+
+```bash title="Response"
+SELECT number
+FROM numbers(10)
+WHERE number % 2
+ORDER BY number DESC
+```
+
+2. التمييز والسطر الواحد:
+
+```bash title="Query"
+$ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
+```
+
+```sql title="Response"
+SELECT sum(number) FROM numbers(5)
+```
+
+3. الاستعلامات المتعددة:
+
+```bash title="Query"
+$ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(number) FROM numbers(5);"
+```
+
+```sql title="Response"
+SELECT min(number)
+FROM numbers(5)
+;
+
+SELECT max(number)
+FROM numbers(5)
+;
+
+```
+
+4. التمويه:
+
+```bash title="Query"
+$ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+```
+
+```sql title="Response"
+SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
+```
+
+نفس الاستعلام وسلسلة seed أخرى:
+
+```bash title="Query"
+$ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+```
+
+```sql title="Response"
+SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
+```
+
+5. إضافة الشرطة المائلة العكسية:
+
+```bash title="Query"
+$ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+```
+
+```sql title="Response"
+SELECT * \
+FROM  \
+( \
+    SELECT 1 AS x \
+    UNION ALL \
+    SELECT 1 \
+    UNION DISTINCT \
+    SELECT 3 \
+)
+```

@@ -1,0 +1,27 @@
+---
+title: Confirmar na UI
+---
+
+Abra seu serviço no [ClickHouse Cloud console](https://console.clickhouse.cloud), selecione **ClickStack** no menu à esquerda e depois **Start Ingestion**.
+
+<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Iniciar o ClickStack" border />
+
+A próxima etapa pode ser ignorada, pois você já configurou seu collector. Clique em **Launch ClickStack** para continuar.
+
+O ClickStack será aberto em uma nova aba e você deverá ser direcionado automaticamente para a página **Getting Started**. Caso isso não aconteça, selecione **Getting Started** no menu à esquerda e, em seguida, clique em **Start Ingestion** e depois em **Next**.
+
+<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="Start Ingestion do ClickStack" border />
+
+Você chegará à página **Getting Started**. Se for solicitado que você inicie a ingestão, avance pelas telas de onboarding que orientam você a iniciar um collector Docker. Como você já concluiu essa etapa, pode simplesmente clicar para avançar. O ClickStack detectará automaticamente seus dados de telemetria e tabelas e, depois disso, você poderá selecionar **Start Exploring** para começar a usar a plataforma.
+
+<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="Start Exploring do ClickStack" border />
+
+Altere a fonte para `Logs` e defina o intervalo de tempo como **Last 15 minutes**. Os logs sintéticos do `telemetrygen` devem aparecer em alguns segundos.
+
+<Image img="/images/use-cases/observability/clickstack-search.webp" size="lg" alt="Busca do ClickStack com logs aparecendo" />
+
+Se nada aparecer:
+
+* Confirme se o valor do cabeçalho de autenticação passado para `telemetrygen` corresponde ao que seu collector espera.
+* Acompanhe os logs do seu collector e procure por erros de exportação.
+* Verifique se o endpoint do ClickHouse configurado no collector inclui tanto o protocolo quanto a porta (`https://...:8443`).

@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Lightdash'
+slug: /integrations/lightdash
+keywords: ['ClickHouse', 'Lightdash', '数据可视化', 'BI', '语义层', 'dbt', '自助式分析', '连接']
+description: 'Lightdash 是一款构建于 dbt 之上的现代开源 BI 工具，可帮助团队通过语义层探索和可视化 ClickHouse 中的数据。了解如何将 Lightdash 连接到 ClickHouse，借助 dbt 实现快速且受治理的分析。'
+title: 'Lightdash'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 的开放性与 ClickHouse 的高性能结合在一起。将 ClickHouse 连接到 Lightdash 后，团队即可基于其 dbt 语义层获得**AI 驱动的自助式分析体验**，确保每个问题都能通过经过治理且一致的指标得到解答。
+
+开发者喜爱 Lightdash，因为它具备开放架构、可进行版本控制的 YAML 模型，以及可直接融入其工作流的集成——从 GitHub 到 IDE。
+
+此次合作汇聚了 **ClickHouse 的速度** 与 **Lightdash 的开发者体验**，让借助 AI 进行探索、可视化和自动化洞察变得前所未有地轻松。
+
+<div id="build-an-interactive-dashboard">
+  ## 使用 Lightdash 和 ClickHouse 构建交互式仪表盘
+</div>
+
+在本指南中，你将了解 **Lightdash** 如何连接到 **ClickHouse**，以探索 dbt **模型**并构建交互式仪表盘。
+下方示例展示了一个基于 ClickHouse 数据构建的完整仪表盘。
+
+<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Lightdash 仪表盘示例" border />
+
+<Steps>
+  <Step>
+    ### 收集连接信息
+
+    设置 Lightdash 与 ClickHouse 的连接时，您需要准备以下信息：
+
+    * **Host:** 您的 ClickHouse database 运行所在的地址
+    * **User:** 您的 ClickHouse database 用户名
+    * **Password:** 您的 ClickHouse database 密码
+    * **DB name:** 您的 ClickHouse database 名称
+    * **Schema:** dbt 用于编译和运行项目的默认 schema (可在您的 `profiles.yml` 中找到)
+    * **Port:** ClickHouse HTTPS interface 端口 (默认：`8443`)
+    * **Secure:** 启用此选项以使用 HTTPS/SSL 建立安全连接
+    * **Retries:** Lightdash 重试失败的 ClickHouse queries 的次数 (默认：`3`)
+    * **Start of week:** 选择报表周的起始日；默认使用您的仓库设置
+
+    <ConnectionDetails />
+
+    ***
+  </Step>
+
+  <Step>
+    ### 为 ClickHouse 配置 dbt profile
+
+    在 Lightdash 中，connection 基于你现有的 **dbt 项目**。
+    要连接到 ClickHouse，请确保本地的 `~/.dbt/profiles.yml` 文件中包含有效的 ClickHouse 目标配置。
+
+    例如：
+
+    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="lightdash-clickhouse 项目的 profiles.yml 配置示例" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### 创建连接到 ClickHouse 的 Lightdash 项目
+
+    为 ClickHouse 配置好 dbt profile 后，你还需要将 **dbt 项目** 连接到 Lightdash。
+
+    由于这一流程对所有仓库都相同，这里不再赘述——你可以按照 Lightdash 官方指南导入 dbt 项目：
+
+    [导入 dbt 项目 → Lightdash 文档](https://docs.lightdash.com/get-started/setup-lightdash/connect-project#2-import-a-dbt-project?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    连接 dbt 项目后，Lightdash 会自动从 `profiles.yml` 文件中识别你的 ClickHouse 配置。连接测试成功后，你就可以开始浏览 dbt 模型，并构建由 ClickHouse 提供支持的仪表盘。
+
+    ***
+  </Step>
+
+  <Step>
+    ### 在 Lightdash 中探索 ClickHouse 数据
+
+    连接后，Lightdash 会自动同步你的 dbt 模型，并提供：
+
+    * YAML 中定义的 **维度** 和 **measures**
+    * **语义层逻辑**，例如指标、JOIN 和 explores
+    * 由 ClickHouse **实时**查询驱动的 **仪表盘**
+
+    现在，你可以构建仪表盘、共享洞察，甚至使用 **Ask AI** 直接基于 ClickHouse 生成可视化——无需手动编写 SQL。
+
+    ***
+  </Step>
+
+  <Step>
+    ### 在 Lightdash 中定义指标和维度
+
+    在 Lightdash 中，所有**指标**和**维度**都直接定义在 dbt 模型的 `.yml` 文件中。这样可以让你的业务逻辑纳入版本控制、保持一致，并且完全透明。
+
+    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt=".yml 文件中定义指标的示例" border />
+
+    <br />
+
+    在 YAML 中定义这些内容，可确保团队在各个仪表盘和分析中使用相同的定义。例如，你可以直接在 dbt 模型旁定义可复用的指标，如 `total_order_count`、`total_revenue` 或 `avg_order_value`，而无需在 UI 中重复定义。
+
+    如需进一步了解如何定义这些内容，请参阅以下 Lightdash 指南：
+
+    * [如何创建指标](https://docs.lightdash.com/guides/how-to-create-metrics?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+    * [如何创建维度](https://docs.lightdash.com/guides/how-to-create-dimensions?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### 从表中查询数据
+
+    当你的 dbt 项目连接到 Lightdash 并完成同步后，就可以直接从 **表** (或“explores”) 开始探索数据。
+    每个表都对应一个 dbt 模型，并包含你在 YAML 中定义的指标和维度。
+
+    **Explore** 页面由五个主要区域组成：
+
+    1. **Dimensions and Metrics** — 所选表中的所有可用字段
+    2. **Filters** — 限制查询返回的数据
+    3. **Chart** — 以图表形式展示查询结果
+    4. **Results** — 查看从 ClickHouse 数据库返回的原始数据
+    5. **SQL** — 查看结果背后生成的 SQL 查询
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="显示维度、过滤器、图表、结果和 SQL 的 Lightdash Explore 视图" border />
+
+    在这里，你可以通过交互方式构建和调整查询——拖放字段、添加过滤器，并在表格、柱状图或时间序列等可视化类型之间切换。
+
+    若要进一步了解 explores 以及如何基于表进行查询，请参阅：
+    [表和 Explore 页面的简介 → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/using-explores#an-intro-to-tables-and-the-explore-page?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### 构建仪表盘
+
+    在探索数据并保存可视化内容后，您可以将它们组合成**仪表盘**，与团队共享。
+
+    Lightdash 中的仪表盘支持完整的交互功能——您可以应用过滤器、添加选项卡，并查看由实时 ClickHouse 查询驱动的图表。
+
+    您还可以**直接在仪表盘中**创建新图表，这有助于让项目保持整洁有序。以这种方式创建的图表**仅限该仪表盘使用**——无法在项目中的其他位置复用。
+
+    要创建仅限仪表盘使用的图表：
+
+    1. 点击 **Add tile**
+    2. 选择 **New chart**
+    3. 在图表构建器中创建可视化
+    4. 保存后，它将显示在仪表盘底部
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="在 Lightdash 仪表盘中创建和组织图表" border />
+
+    在此了解有关创建和组织仪表盘的更多信息：
+    [构建仪表盘 → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### Ask AI：由 dbt 驱动的自助分析
+
+    Lightdash 中的 **AI 智能体**让数据探索真正实现自助化。
+    你无需编写查询，只要用自然语言提出问题——例如 *“我们的月度收入增长是多少？”*——AI 智能体就会自动生成合适的可视化，并引用你在 dbt 中定义的指标和模型，以确保结果准确且一致。
+
+    它基于你在 dbt 中使用的同一语义层，这意味着每个答案都受到治理、可解释且响应迅速——而这一切都由 ClickHouse 提供支持。
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="Lightdash Ask AI 界面，显示由 dbt 指标驱动的自然语言查询" border />
+
+    <Tip>
+      在此了解更多有关 AI 智能体的信息：[AI 智能体 → Lightdash 文档](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+要进一步了解如何将 dbt 项目连接到 Lightdash，请访问 [Lightdash 文档 → ClickHouse 设置](https://docs.lightdash.com/get-started/setup-lightdash/connect-project#clickhouse?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)。

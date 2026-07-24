@@ -1,0 +1,108 @@
+---
+slug: /cloud/managed-postgres/connection
+sidebarTitle: 'الاتصال'
+title: 'الاتصال بـ Managed Postgres'
+description: 'سلاسل الاتصال، وتجميع الاتصالات باستخدام PgBouncer، وتهيئة TLS لـ ClickHouse Managed Postgres'
+keywords: ['اتصال بـ Postgres', 'سلسلة الاتصال', 'pgbouncer', 'tls', 'ssl']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
+
+<Tip>
+  **SQL Console**
+
+  تشرح هذه الصفحة كيفية ربط أنظمة production الخاصة بك بـ Postgres. إذا كنت تريد طريقة سريعة لتنفيذ query، فيمكنك الاتصال من خلال [SQL Console](/ar/integrations/connectors/sql-clients/sql-console)، تمامًا كما تفعل مع مثيلات ClickHouse.
+</Tip>
+
+<div id="accessing-connection-details">
+  ## الوصول إلى تفاصيل الاتصال
+</div>
+
+لتوصيل تطبيقاتك بـ Managed Postgres، انتقل إلى عرض **Connect** في الشريط الجانبي الأيسر للمثيل.
+
+<Image img="/images/managed-postgres/connect-button.webp" alt="انقر على Connect في الشريط الجانبي الأيسر لعرض تفاصيل الاتصال" size="md" border />
+
+يؤدي النقر على **Connect** إلى فتح نافذة منبثقة تعرض بيانات اعتماد الاتصال وسلاسل الاتصال لديك بعدة تنسيقات.
+
+<Image img="/images/managed-postgres/connect-modal.webp" alt="نافذة الاتصال المنبثقة تعرض بيانات الاعتماد وتنسيقات سلاسل الاتصال" size="md" border />
+
+تعرض نافذة الاتصال المنبثقة المعلومات التالية:
+
+* **اسم المستخدم**: مستخدم قاعدة البيانات (الافتراضي: `postgres`)
+* **كلمة المرور**: كلمة مرور قاعدة البيانات (تكون مخفية افتراضيًا، انقر على أيقونة العين لإظهارها)
+* **الخادم**: اسم المضيف لمثيل Managed Postgres
+* **المنفذ**: منفذ PostgreSQL (الافتراضي: `5432`)
+
+يوفّر Managed Postgres صلاحيات superuser على قاعدة البيانات. استخدم بيانات الاعتماد هذه للاتصال بصفة superuser، ما يتيح لك إنشاء مستخدمين إضافيين وإدارة كائنات قاعدة البيانات.
+
+<div id="connection-string">
+  ## تنسيقات سلسلة الاتصال
+</div>
+
+توفّر علامات التبويب **الاتصال عبر** سلسلة اتصالك بعدة تنسيقات لتناسب متطلبات تطبيقك:
+
+| Format   | Description                                                                                |
+| -------- | ------------------------------------------------------------------------------------------ |
+| **url**  | عنوان URL قياسي للاتصال بالتنسيق `postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DATABASE>` |
+| **psql** | أمر جاهز للاستخدام للاتصال عبر أداة سطر الأوامر psql                                       |
+| **env**  | متغيرات بيئة للعملاء المعتمدين على libpq                                                   |
+| **yaml** | تهيئة منسّقة بصيغة YAML                                                                    |
+| **jdbc** | سلسلة اتصال JDBC لتطبيقات Java                                                             |
+
+لدواعٍ أمنية، تكون كلمة المرور في سلاسل الاتصال مخفية افتراضيًا. انقر على أيقونة النسخ بجوار أي حقل أو سلسلة اتصال لنسخها مباشرةً إلى الحافظة.
+
+<div id="pgbouncer">
+  ## تجميع الاتصالات عبر PgBouncer
+</div>
+
+يتضمن Managed Postgres مثيل [PgBouncer](https://www.pgbouncer.org/) مضمّنًا لتجميع الاتصالات على جانب الخادم. يساعد PgBouncer في تحسين إدارة الاتصالات والأداء واستغلال الموارد، خاصةً للتطبيقات التي:
+
+* تفتح عددًا كبيرًا من الاتصالات المتزامنة
+* تنشئ الاتصالات وتغلقها بشكل متكرر
+* تستخدم بيئات حوسبة بدون خوادم أو مؤقتة
+
+لاستخدام تجميع الاتصالات، انقر على مفتاح التبديل **via PgBouncer** أعلى نافذة الاتصال المنبثقة. سيتم تحديث تفاصيل الاتصال لتوجيه اتصالاتك عبر مكوّن تجميع الاتصالات بدلًا من توجيهها مباشرةً إلى PostgreSQL.
+
+<Tip>
+  **متى تستخدم PgBouncer**
+
+  استخدم PgBouncer عندما يفتح تطبيقك عددًا كبيرًا من الاتصالات قصيرة العمر. أما إذا كانت الاتصالات طويلة الأمد أو كان تطبيقك يستخدم ميزات في PostgreSQL غير متوافقة مع تجميع الاتصالات (مثل العبارات المُحضّرة عبر المعاملات)، فاتصل مباشرةً.
+
+  نقل البيانات إلى ClickHouse باستخدام ClickPipes غير مدعوم عبر PgBouncer.
+</Tip>
+
+<div id="tls">
+  ## تهيئة TLS
+</div>
+
+جميع مثيلات Managed Postgres مؤمّنة باستخدام TLS. وأدنى إصدار مدعوم هو **TLS 1.3**.
+
+<div id="quick-connection">
+  ### اتصال سريع (مشفّر باستخدام TLS)
+</div>
+
+تستخدم الاتصالات، افتراضيًا، تشفير TLS من دون التحقق من الشهادة:
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
+```
+
+<div id="verified-tls">
+  ### اتصال TLS مع التحقق (موصى به لبيئات الإنتاج)
+</div>
+
+بالنسبة إلى أحمال العمل في بيئات الإنتاج، نوصي بالاتصال عبر TLS مع التحقق لضمان أنك تتواصل مع الخادم الصحيح. للقيام بذلك، نزّل حزمة شهادة CA من علامة التبويب **Settings** وأضِفها إلى الشهادات الموثوق بها لدى عميل قاعدة البيانات لديك.
+
+<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="نزّل شهادة CA من علامة التبويب Settings" size="md" border />
+
+شهادة CA فريدة لمثيل Managed Postgres الخاص بك، ولن تعمل مع مثيلات أخرى.
+
+للاتصال عبر TLS مع التحقق، أضِف `sslmode=verify-full` ومسار الشهادة التي نزّلتها:
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'
+```

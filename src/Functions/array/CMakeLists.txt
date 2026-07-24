@@ -39,9 +39,12 @@ endif()
 # generating `vfmadd*` from `a*b + c` patterns in their hot inner loops. The per-file `COMPILE_FLAGS` are
 # appended after `CMAKE_CXX_FLAGS`, so this override wins over the global `-ffp-contract=off`.
 set_source_files_properties(arrayDotProduct.cpp PROPERTIES COMPILE_FLAGS "-ffp-contract=fast")
-# Append so the conditional `-march=x86-64-v2` set above for arrayDistance.cpp is preserved
+# Append so the conditional `-march=x86-64-v2` set above for arrayDistance.cpp / arrayNorm.cpp is preserved
 # (`set_source_files_properties` has no APPEND form; use `set_property ... APPEND_STRING`).
 set_property(SOURCE arrayDistance.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -ffp-contract=fast")
+# `arrayNorm.cpp` carries an `x86_64_v4` (AVX-512) specialisation that fuses `a*b + c` into FMA on the
+# `L2`/`L2Squared` paths; re-enable contraction here too (the default reduction stays at `v2`/128-bit).
+set_property(SOURCE arrayNorm.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -ffp-contract=fast")
 
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_array PRIVATE "-g1")

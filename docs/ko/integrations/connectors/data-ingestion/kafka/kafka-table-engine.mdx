@@ -1,0 +1,545 @@
+---
+sidebarTitle: 'Kafka 테이블 엔진'
+slug: /integrations/kafka/kafka-table-engine
+description: 'Kafka 테이블 엔진 사용하기'
+title: 'Kafka 테이블 엔진 사용하기'
+doc_type: 'guide'
+keywords: ['Kafka', '테이블 엔진', '스트리밍', '실시간', '메시지 큐']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Kafka 테이블 엔진은 Apache Kafka 및 기타 Kafka API 호환 브로커(예: Redpanda, Amazon MSK)에서 데이터를 [**읽고**](#kafka-to-clickhouse) 해당 브로커에 데이터를 [**쓸 때**](#clickhouse-to-kafka) 사용할 수 있습니다.
+
+<div id="kafka-to-clickhouse">
+  ### Kafka에서 ClickHouse로
+</div>
+
+<Note>
+  ClickHouse Cloud를 사용하는 경우에는 대신 [ClickPipes](/ko/integrations/clickpipes/home) 사용을 권장합니다. ClickPipes는 프라이빗 네트워크 연결을 네이티브로 지원하고, 수집 및 클러스터 리소스를 서로 독립적으로 스케일링할 수 있으며, Kafka 데이터를 ClickHouse로 스트리밍할 때 포괄적인 모니터링 기능을 제공합니다.
+</Note>
+
+Kafka 테이블 엔진을 사용하려면 [ClickHouse materialized view](/ko/concepts/features/materialized-views/cascading-materialized-views)를 전반적으로 이해하고 있어야 합니다.
+
+<div id="overview">
+  #### 개요
+</div>
+
+먼저 가장 일반적인 사용 사례인 Kafka에서 ClickHouse로 데이터를 삽입할 때 Kafka 테이블 엔진을 사용하는 방식에 초점을 맞춥니다.
+
+Kafka 테이블 엔진을 사용하면 ClickHouse가 Kafka 토픽에서 직접 읽을 수 있습니다. 토픽의 메시지를 확인하는 용도로는 유용하지만, 이 엔진은 설계상 일회성 조회만 허용합니다. 즉, 테이블에 대해 쿼리가 실행되면 큐에서 데이터를 소비하고 컨슈머 오프셋을 증가시킨 뒤 호출자에게 결과를 반환합니다. 따라서 이러한 오프셋을 재설정하지 않으면 사실상 데이터를 다시 읽을 수 없습니다.
+
+테이블 엔진에서 읽은 데이터를 영속적으로 저장하려면, 그 데이터를 캡처해 다른 테이블에 삽입할 수단이 필요합니다. 트리거 기반 materialized view는 이 기능을 네이티브하게 제공합니다. materialized view는 테이블 엔진에 대한 읽기를 시작하고, 문서 배치를 전달받습니다. TO 절은 데이터의 대상을 결정하며, 일반적으로 [MergeTree 계열](/ko/reference/engines/table-engines/mergetree-family/index)의 테이블이 사용됩니다. 이 과정은 아래와 같이 시각화할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Kafka 테이블 엔진 아키텍처 다이어그램" style={{width: '80%'}} />
+
+<div id="steps">
+  #### 절차
+</div>
+
+<div id="1-prepare">
+  ##### 1. 준비
+</div>
+
+대상 토픽에 이미 데이터가 채워져 있다면, 아래 내용을 데이터셋에 맞게 조정해 사용할 수 있습니다. 또는 샘플 GitHub 데이터셋이 [여기](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson)에 제공됩니다. 아래 예시에서는 이 데이터셋을 사용하며, 간결하게 설명하기 위해 전체 데이터셋([여기](https://ghe.clickhouse.tech/))과 비교해 축소된 스키마와 일부 행만 포함합니다(구체적으로는 [ClickHouse 리포지토리](https://github.com/ClickHouse/ClickHouse)와 관련된 GitHub 이벤트로 제한합니다). 그래도 [데이터셋과 함께 제공된](https://ghe.clickhouse.tech/) 대부분의 쿼리를 실행하기에는 충분합니다.
+
+<div id="2-configure-clickhouse">
+  ##### 2. ClickHouse 구성
+</div>
+
+이 단계는 보안 Kafka에 연결하는 경우 필요합니다. 이러한 설정은 SQL DDL 명령으로 전달할 수 없으므로 ClickHouse의 config.xml에서 구성해야 합니다. 여기서는 SASL로 보호되는 인스턴스에 연결한다고 가정합니다. 이 방법은 Confluent Cloud를 사용할 때 가장 간단합니다.
+
+```xml
+<clickhouse>
+   <kafka>
+       <sasl_username>username</sasl_username>
+       <sasl_password>password</sasl_password>
+       <security_protocol>sasl_ssl</security_protocol>
+       <sasl_mechanisms>PLAIN</sasl_mechanisms>
+   </kafka>
+</clickhouse>
+```
+
+위의 스니펫을 `conf.d/` 디렉터리 아래의 새 파일에 넣거나 기존 설정 파일에 병합할 수 있습니다. 구성 가능한 설정은 [여기](/ko/reference/engines/table-engines/integrations/kafka#configuration)를 참조하십시오.
+
+이 튜토리얼에서 사용할 `KafkaEngine`이라는 데이터베이스도 생성하겠습니다:
+
+```sql
+CREATE DATABASE KafkaEngine;
+```
+
+데이터베이스를 생성한 후에는 해당 데이터베이스로 전환해야 합니다:
+
+```sql
+USE KafkaEngine;
+```
+
+<div id="3-create-the-destination-table">
+  ##### 3. 대상 테이블 생성
+</div>
+
+대상 테이블을 준비합니다. 아래 예시에서는 간결함을 위해 축약된 GitHub 스키마를 사용합니다. 이 예시에서는 MergeTree 테이블 엔진을 사용하지만, [MergeTree 엔진 계열](/ko/reference/engines/table-engines/mergetree-family/index)의 다른 엔진에도 쉽게 적용할 수 있습니다.
+
+```sql
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+```
+
+<div id="4-create-and-populate-the-topic">
+  ##### 4. 토픽 생성 및 데이터 입력
+</div>
+
+다음으로 토픽을 생성하겠습니다. 이를 위해 사용할 수 있는 도구는 여러 가지가 있습니다. 로컬 머신이나 Docker 컨테이너 내부에서 Kafka를 실행 중이라면 [RPK](https://docs.redpanda.com/current/get-started/rpk-install/)가 적합합니다. 다음 명령을 실행하면 5개 파티션이 있는 `github` 토픽을 생성할 수 있습니다:
+
+```bash
+rpk topic create -p 5 github --brokers <host>:<port>
+```
+
+Kafka를 Confluent Cloud에서 실행하는 경우 [Confluent CLI](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records)를 사용하는 것이 더 적합할 수 있습니다:
+
+```bash
+confluent kafka topic create --if-not-exists github
+```
+
+이제 이 토픽(topic)에 데이터를 넣어야 하며, 이는 [kcat](https://github.com/edenhill/kcat)을 사용해 수행합니다. 로컬에서 인증이 비활성화된 상태로 Kafka를 실행 중이라면 다음과 유사한 명령을 실행할 수 있습니다:
+
+```bash
+cat github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+```
+
+또는 Kafka 클러스터가 인증에 SASL을 사용하는 경우 다음을 사용합니다:
+
+```bash
+cat github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username>  \
+  -X sasl.password=<password> \
+```
+
+이 데이터셋에는 200,000개의 행이 포함되어 있으므로 몇 초면 수집됩니다. 더 큰 데이터셋으로 작업하려면 [ClickHouse/kafka-samples](https://github.com/ClickHouse/kafka-samples) GitHub 리포지토리의 [대용량 데이터셋 섹션](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets)을 확인하세요.
+
+<div id="5-create-the-kafka-table-engine">
+  ##### 5. Kafka 테이블 엔진 생성
+</div>
+
+아래 예시는 MergeTree 테이블과 동일한 스키마를 가진 테이블 엔진을 생성합니다. 이는 반드시 필요한 것은 아니며, 대상 테이블에 alias 또는 ephemeral 컬럼을 둘 수도 있습니다. 다만 설정은 중요합니다. 특히 Kafka 토픽에서 JSON을 가져오기 위한 데이터 타입으로 `JSONEachRow`를 사용한다는 점에 유의하십시오. `github`와 `clickhouse` 값은 각각 토픽 이름과 컨슈머 그룹 이름을 나타냅니다. 실제로 토픽은 값 목록으로 지정할 수도 있습니다.
+
+```sql
+CREATE TABLE github_queue
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+)
+   ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
+            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+```
+
+아래에서 엔진 설정과 성능 튜닝을 다룹니다. 이 시점에서는 테이블 `github_queue`에 간단한 SELECT를 수행하면 몇 개의 행을 읽을 수 있어야 합니다. 이 작업은 consumer 오프셋을 앞으로 이동시키므로 [reset](#common-operations)하지 않으면 이 행들을 다시 읽을 수 없다는 점에 유의하십시오. LIMIT와 필수 매개변수 `stream_like_engine_allow_direct_select`에도 유의하십시오.
+
+<div id="6-create-the-materialized-view">
+  ##### 6. materialized view 생성
+</div>
+
+materialized view는 앞서 생성한 두 테이블을 연결해 Kafka 테이블 엔진에서 데이터를 읽어 대상 MergeTree 테이블에 삽입합니다. 이 과정에서 다양한 데이터 변환을 수행할 수 있습니다. 여기서는 간단한 읽기와 삽입만 수행합니다. *를 사용하면 컬럼 이름이 동일하다고 가정합니다(대소문자 구분).
+
+```sql
+CREATE MATERIALIZED VIEW github_mv TO github AS
+SELECT *
+FROM github_queue;
+```
+
+생성되면 materialized view가 Kafka engine에 연결되어 읽기를 시작하고, 행을 대상 테이블에 삽입합니다. 이 프로세스는 계속해서 이후 Kafka에 삽입되는 메시지를 소비하며 무기한 실행됩니다. 필요에 따라 삽입 스크립트를 다시 실행해 Kafka에 추가 메시지를 삽입할 수 있습니다.
+
+<div id="7-confirm-rows-have-been-inserted">
+  ##### 7. 행이 삽입되었는지 확인합니다
+</div>
+
+대상 테이블에 데이터가 있는지 확인합니다:
+
+```sql
+SELECT count() FROM github;
+```
+
+200,000개 행이 표시됩니다:
+
+```response
+┌─count()─┐
+│  200000 │
+└─────────┘
+```
+
+<div id="common-operations">
+  #### 일반적인 작업
+</div>
+
+<div id="stopping--restarting-message-consumption">
+  ##### 메시지 소비 중지 및 재시작
+</div>
+
+메시지 소비를 중지하려면 Kafka 엔진 테이블을 분리(detach)할 수 있습니다:
+
+```sql
+DETACH TABLE github_queue;
+```
+
+이 작업은 컨슈머 그룹의 오프셋에 영향을 주지 않습니다. 메시지 활용을 다시 시작하고 이전 오프셋부터 이어서 처리하려면 테이블을 다시 ATTACH하십시오.
+
+```sql
+ATTACH TABLE github_queue;
+```
+
+<div id="adding-kafka-metadata">
+  ##### Kafka 메타데이터 추가
+</div>
+
+원본 Kafka 메시지가 ClickHouse에 수집된 후에도 해당 메타데이터를 계속 추적해 두면 유용할 수 있습니다. 예를 들어, 특정 토픽이나 파티션을 얼마나 소비했는지 파악해야 할 수 있습니다. 이를 위해 Kafka 테이블 엔진은 여러 [가상 컬럼](/ko/reference/engines/table-engines/index#table_engines-virtual_columns)을 제공합니다. 스키마와 materialized view의 SELECT 문을 수정하면 이러한 값을 대상 테이블의 컬럼으로 영구적으로 저장할 수 있습니다.
+
+먼저 대상 테이블에 컬럼을 추가하기 전에 위에서 설명한 중지 작업을 수행합니다.
+
+```sql
+DETACH TABLE github_queue;
+```
+
+아래에서는 행이 발생한 원본 토픽과 파티션을 식별할 수 있도록 정보 컬럼을 추가합니다.
+
+```sql
+ALTER TABLE github
+   ADD COLUMN topic String,
+   ADD COLUMN partition UInt64;
+```
+
+다음으로, 필요한 대로 가상 컬럼(virtual columns)이 매핑되어 있는지 확인해야 합니다.
+가상 컬럼은 `_` 접두사로 시작합니다.
+가상 컬럼의 전체 목록은 [여기](/ko/reference/engines/table-engines/integrations/kafka#virtual-columns)에서 확인할 수 있습니다.
+
+테이블에 가상 컬럼을 반영하도록 업데이트하려면 materialized view를 삭제하고, Kafka 엔진 테이블을 다시 ATTACH한 다음, materialized view를 다시 생성해야 합니다.
+
+```sql
+DROP VIEW github_mv;
+```
+
+```sql
+ATTACH TABLE github_queue;
+```
+
+```sql
+CREATE MATERIALIZED VIEW github_mv TO github AS
+SELECT *, _topic AS topic, _partition as partition
+FROM github_queue;
+```
+
+새로 읽어온 행에는 해당 메타데이터가 있어야 합니다.
+
+```sql
+SELECT actor_login, event_type, created_at, topic, partition
+FROM github
+LIMIT 10;
+```
+
+결과는 다음과 같이 표시됩니다:
+
+| actor&#95;login | event&#95;type     | created&#95;at      | topic  | partition |
+| :-------------- | :----------------- | :------------------ | :----- | :-------- |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:22:00 | github | 0         |
+| queeup          | CommitCommentEvent | 2011-02-12 02:23:23 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:23:24 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:24:50 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:25:20 | github | 0         |
+| dapi            | CommitCommentEvent | 2011-02-12 06:18:36 | github | 0         |
+| sourcerebels    | CommitCommentEvent | 2011-02-12 06:34:10 | github | 0         |
+| jamierumbelow   | CommitCommentEvent | 2011-02-12 12:21:40 | github | 0         |
+| jpn             | CommitCommentEvent | 2011-02-12 12:24:31 | github | 0         |
+| Oxonium         | CommitCommentEvent | 2011-02-12 12:31:28 | github | 0         |
+
+<div id="modify-kafka-engine-settings">
+  ##### Kafka 엔진 설정 수정
+</div>
+
+Kafka 엔진 테이블을 삭제한 후 새 설정으로 다시 생성하는 것을 권장합니다. 이 과정에서 materialized view는 수정할 필요가 없습니다. Kafka 엔진 테이블을 다시 생성하면 메시지 소비가 재개됩니다.
+
+<div id="debugging-issues">
+  ##### 문제 디버깅
+</div>
+
+인증 문제와 같은 오류는 Kafka 엔진 DDL에 대한 응답에 표시되지 않습니다. 문제를 진단하려면 기본 ClickHouse 로그 파일인 clickhouse-server.err.log를 사용하는 것이 좋습니다. 또한 기반 Kafka 클라이언트 라이브러리 [librdkafka](https://github.com/edenhill/librdkafka)에 대한 추가 추적 로깅은 구성을 통해 활성화할 수 있습니다.
+
+```xml
+<kafka>
+   <debug>all</debug>
+</kafka>
+```
+
+<div id="handling-malformed-messages">
+  ##### 잘못된 형식의 메시지 처리
+</div>
+
+Kafka는 흔히 데이터의 &quot;잡동사니 저장소&quot;처럼 사용됩니다. 그 결과 하나의 토픽에 서로 다른 메시지 포맷과 일관되지 않은 필드 이름이 뒤섞여 들어가는 경우가 있습니다. 이런 방식은 피하고, Kafka에 삽입하기 전에 메시지가 올바른 형식과 일관성을 갖추도록 Kafka Streams나 ksqlDB 같은 Kafka 기능을 활용하십시오. 이러한 방법을 사용할 수 없다면, ClickHouse에서 도움이 될 수 있는 몇 가지 기능이 있습니다.
+
+* 메시지 필드를 문자열로 취급하십시오. 필요한 경우 materialized view 구문에서 함수를 사용해 정제와 CAST를 수행할 수 있습니다. 이는 운영 환경용 해결책으로 보기는 어렵지만, 일회성 수집에는 도움이 될 수 있습니다.
+* 토픽에서 JSON을 읽고 JSONEachRow 포맷을 사용하는 경우 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats#input_format_skip_unknown_fields) 설정을 사용하십시오. 데이터를 쓸 때 ClickHouse는 기본적으로 입력 데이터에 대상 테이블(target table)에 없는 컬럼이 포함되어 있으면 예외를 발생시킵니다. 하지만 이 옵션을 활성화하면 이러한 초과 컬럼은 무시됩니다. 다시 말해, 이 역시 운영 환경 수준의 해결책은 아니며 다른 사용자를 혼란스럽게 할 수 있습니다.
+* `kafka_skip_broken_messages` 설정도 고려하십시오. 이 설정을 사용하려면 잘못된 형식의 메시지에 대해 block당 허용 수준을 지정해야 하며, 이는 `kafka_max_block_size`를 기준으로 판단됩니다. 이 허용치를 초과하면(절대 메시지 수 기준) 일반적인 예외 동작으로 돌아가며, 다른 메시지는 건너뛰게 됩니다.
+
+<div id="delivery-semantics-and-challenges-with-duplicates">
+  ##### 전달 시맨틱과 중복 문제
+</div>
+
+Kafka 테이블 엔진은 at-least-once 시맨틱을 따릅니다. 중복은 몇 가지 알려진 드문 상황에서 발생할 수 있습니다. 예를 들어, 메시지를 Kafka에서 읽어 ClickHouse에 성공적으로 삽입한 뒤 새 OFFSET을 커밋하기 전에 Kafka와의 connection이 끊어질 수 있습니다. 이런 경우 해당 block을 다시 처리해야 합니다. 이때 분산 테이블 또는 ReplicatedMergeTree를 대상 table로 사용하면 [중복 제거](/ko/reference/engines/table-engines/mergetree-family/replication)를 적용할 수 있습니다. 이렇게 하면 중복 행이 발생할 가능성은 줄어들지만, block이 동일하다는 전제에 의존합니다. Kafka 리밸런싱과 같은 이벤트는 이 전제를 깨뜨릴 수 있으므로, 드문 경우 중복이 발생할 수 있습니다.
+
+<div id="quorum-based-inserts">
+  ##### 쿼럼 기반 삽입
+</div>
+
+ClickHouse에서 더 높은 전달 보장이 필요한 경우 [쿼럼 기반 삽입](/ko/reference/settings/session-settings#insert_quorum)을 사용해야 할 수 있습니다. 이는 materialized view나 대상 테이블에는 설정할 수 없습니다. 하지만 예를 들어 사용자 프로필에는 설정할 수 있습니다.
+
+```xml
+<profiles>
+  <default>
+    <insert_quorum>2</insert_quorum>
+  </default>
+</profiles>
+```
+
+<div id="clickhouse-to-kafka">
+  ### ClickHouse에서 Kafka로
+</div>
+
+드문 사용 사례이기는 하지만 ClickHouse 데이터는 Kafka에 저장할 수도 있습니다. 예를 들어 Kafka 테이블 엔진에 행을 수동으로 삽입해 보겠습니다. 이 데이터는 동일한 Kafka 엔진이 읽고, 해당 materialized view가 이를 MergeTree 테이블에 저장합니다. 마지막으로 기존 소스 테이블에서 테이블을 읽기 위해 Kafka로 삽입할 때 materialized view를 적용하는 방법을 보여드립니다.
+
+<div id="steps-1">
+  #### 단계
+</div>
+
+초기 목표는 다음 그림으로 설명하는 것이 가장 적절합니다:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="삽입이 포함된 Kafka 테이블 엔진 다이어그램" />
+
+[Kafka to ClickHouse](#kafka-to-clickhouse) 단계에서 테이블과 뷰를 생성했으며, 토픽이 완전히 소비된 상태라고 가정합니다.
+
+<div id="1-inserting-rows-directly">
+  ##### 1. 행을 직접 삽입
+</div>
+
+먼저 대상 테이블의 행 수를 확인합니다.
+
+```sql
+SELECT count() FROM github;
+```
+
+200,000개의 행이 있어야 합니다:
+
+```response
+┌─count()─┐
+│  200000 │
+└─────────┘
+```
+
+이제 GitHub 대상 테이블의 행을 Kafka 테이블 엔진 github&#95;queue에 다시 삽입합니다. 이때 JSONEachRow 포맷을 사용하고, select는 100개로 LIMIT한다는 점에 유의하십시오.
+
+```sql
+INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
+```
+
+GitHub에서 행 수를 다시 세어 100개 증가했는지 확인합니다. 위 다이어그램에 표시된 것처럼, 행은 Kafka 테이블 엔진을 통해 Kafka에 삽입된 후 동일한 엔진으로 다시 읽혀 materialized view에 의해 GitHub 대상 테이블에 삽입되었습니다!
+
+```sql
+SELECT count() FROM github;
+```
+
+100개의 행이 더 표시됩니다:
+
+```response
+┌─count()─┐
+│  200100 │
+└─────────┘
+```
+
+<div id="2-using-materialized-views">
+  ##### 2. materialized views 사용
+</div>
+
+테이블에 문서가 삽입될 때 materialized views를 활용해 메시지를 Kafka 엔진(및 토픽)으로 보낼 수 있습니다. GitHub 테이블에 행이 삽입되면 materialized view가 트리거되어, 해당 행이 다시 Kafka 엔진을 통해 새 토픽에 삽입됩니다. 이 역시 그림으로 보면 가장 쉽게 이해할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="materialized view를 사용하는 Kafka 테이블 엔진 다이어그램" />
+
+새 Kafka 토픽 `github_out` 또는 이에 상응하는 토픽을 생성하십시오. Kafka 테이블 엔진 `github_out_queue`가 이 토픽을 가리키도록 하십시오.
+
+```sql
+CREATE TABLE github_out_queue
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+)
+   ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
+            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+```
+
+이제 새 materialized view `github_out_mv`를 생성해 GitHub 테이블을 가리키도록 하고, 트리거될 때 위의 engine에 행이 삽입되도록 합니다. 그러면 GitHub 테이블에 추가된 내용이 새 Kafka 토픽으로 전송됩니다.
+
+```sql
+CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
+SELECT file_time, event_type, actor_login, repo_name,
+       created_at, updated_at, action, comment_id, path,
+       ref, ref_type, creator_user_login, number, title,
+       labels, state, assignee, assignees, closed_at, merged_at,
+       merge_commit_sha, requested_reviewers, merged_by,
+       review_comments, member_login
+FROM github
+FORMAT JsonEachRow;
+```
+
+[Kafka to ClickHouse](#kafka-to-clickhouse)의 일부로 생성된 원본 github 토픽에 삽입하면, 문서가 마치 마법처럼 &quot;github&#95;clickhouse&quot; 토픽에 나타납니다. 네이티브 Kafka 도구를 사용해 이를 확인하십시오. 예를 들어, 아래에서는 Confluent Cloud에서 호스팅되는 토픽에 대해 [kcat](https://github.com/edenhill/kcat)을 사용해 github 토픽에 100개의 행을 삽입합니다:
+
+```sql
+head -n 10 github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username> \
+  -X sasl.password=<password>
+```
+
+`github_out` 토픽을 읽어 보면 메시지가 정상적으로 전달되었는지 확인할 수 있습니다.
+
+```sql
+kcat -C \
+  -b <host>:<port> \
+  -t github_out \
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username> \
+  -X sasl.password=<password> \
+  -e -q |
+wc -l
+```
+
+다소 복잡한 예시이지만, 이는 Kafka 엔진과 함께 사용할 때 materialized view가 얼마나 강력한지 보여줍니다.
+
+<div id="clusters-and-performance">
+  ### 클러스터와 성능
+</div>
+
+<div id="working-with-clickhouse-clusters">
+  #### ClickHouse 클러스터 사용하기
+</div>
+
+Kafka 컨슈머 그룹을 통해 여러 ClickHouse 인스턴스가 동일한 토픽을 읽도록 구성할 수 있습니다. 각 consumer는 토픽 파티션에 1:1로 매핑되어 할당됩니다. Kafka 테이블 엔진을 사용해 ClickHouse 수집을 스케일링할 때는 클러스터 내 전체 consumer 수가 토픽의 파티션 수를 초과할 수 없다는 점을 고려해야 합니다. 따라서 토픽의 파티셔닝이 사전에 적절히 구성되어 있어야 합니다.
+
+여러 ClickHouse 인스턴스가 동일한 컨슈머 그룹 id를 사용해 하나의 토픽을 읽도록 구성할 수 있으며, 이는 Kafka 테이블 엔진 생성 시 지정합니다. 따라서 각 인스턴스는 하나 이상의 파티션에서 읽어 로컬 대상 테이블에 세그먼트를 삽입합니다. 이어서 대상 테이블은 데이터 중복을 처리하도록 ReplicatedMergeTree를 사용하도록 구성할 수 있습니다. 이 방식은 Kafka 파티션이 충분하다면 ClickHouse 클러스터에 맞춰 Kafka 읽기를 스케일링할 수 있게 해줍니다.
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="ClickHouse 클러스터를 사용하는 Kafka 테이블 엔진 다이어그램" />
+
+<div id="tuning-performance">
+  #### 성능 튜닝
+</div>
+
+Kafka Engine 테이블의 처리량 성능을 높이려면 다음 사항을 고려하십시오.
+
+* 성능은 메시지 크기, 포맷, 대상 테이블 유형에 따라 달라집니다. 단일 테이블 엔진에서 초당 10만 행은 달성 가능한 수준으로 볼 수 있습니다. 기본적으로 메시지는 블록 단위로 읽으며, 이는 `kafka_max_block_size` 매개변수로 제어됩니다. 이 값의 기본값은 [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size)이며, 기본 설정은 1,048,576입니다. 메시지가 극히 크지 않다면 이 값은 거의 항상 늘리는 편이 좋습니다. 500k~1M 범위의 값도 흔히 사용됩니다. 처리량에 미치는 영향을 테스트하고 평가하십시오.
+* 테이블 엔진의 컨슈머 수는 `kafka_num_consumers`로 늘릴 수 있습니다. 그러나 기본적으로 `kafka_thread_per_consumer`를 기본값 1에서 변경하지 않으면 삽입은 단일 스레드에서 직렬화됩니다. 플러시가 병렬로 수행되도록 하려면 이 값을 1로 설정하십시오. 또한 컨슈머가 N개인 Kafka 엔진 테이블(`kafka_thread_per_consumer=1`)을 생성하는 것은, 각각 materialized view가 있고 `kafka_thread_per_consumer=0`인 Kafka 엔진 N개를 생성하는 것과 논리적으로 동일합니다.
+* 컨슈머 수를 늘리는 데에는 비용이 따릅니다. 각 컨슈머는 자체 버퍼와 스레드를 유지하므로 서버 오버헤드가 증가합니다. 따라서 가능하면 먼저 클러스터 전반으로 선형 확장하고, 컨슈머로 인한 오버헤드를 함께 고려하십시오.
+* Kafka 메시지 처리량의 변동이 크고 지연이 허용된다면, 더 큰 블록이 플러시되도록 `stream_flush_interval_ms`를 늘리는 것을 고려하십시오.
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)는 백그라운드 작업을 수행하는 스레드 수를 설정합니다. 이 스레드들은 Kafka streaming에 사용됩니다. 이 설정은 ClickHouse 서버 시작 시 적용되며 사용자 세션에서는 변경할 수 없고, 기본값은 16입니다. 로그에서 timeout이 보인다면 이 값을 늘리는 것이 적절할 수 있습니다.
+* Kafka와 통신할 때는 `librdkafka` 라이브러리를 사용하며, 이 라이브러리도 자체적으로 스레드를 생성합니다. 따라서 Kafka 테이블이나 컨슈머 수가 많아지면 context switch도 크게 늘어날 수 있습니다. 가능하다면 이 부하를 클러스터 전체에 분산하고 대상 테이블만 복제하거나, 여러 토픽을 읽는 하나의 테이블 엔진을 사용하는 것도 고려하십시오. 값 목록이 지원됩니다. 하나의 테이블에서 여러 materialized view가 읽을 수 있으며, 각각 특정 토픽의 데이터만 필터링할 수 있습니다.
+
+모든 설정 변경 사항은 반드시 테스트해야 합니다. 적절히 확장되었는지 확인하려면 Kafka consumer lag를 모니터링하는 것을 권장합니다.
+
+<div id="additional-settings">
+  #### 추가 설정
+</div>
+
+위에서 설명한 설정 외에 다음 항목도 참고할 수 있습니다:
+
+* [Kafka&#95;max&#95;wait&#95;ms](/ko/reference/settings/session-settings#kafka_max_wait_ms) - 재시도하기 전에 Kafka에서 메시지를 읽기 위해 대기하는 시간을 밀리초 단위로 지정합니다. 사용자 프로필 수준에서 설정하며 기본값은 5000입니다.
+
+기본 librdkafka의 [모든 설정 ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)도 ClickHouse 설정 파일의 *kafka* 요소 안에 지정할 수 있습니다. 설정 이름은 마침표를 밑줄로 바꾼 XML 요소여야 합니다. 예:
+
+```xml
+<clickhouse>
+   <kafka>
+       <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+   </kafka>
+</clickhouse>
+```
+
+이 설정은 전문가용이므로 자세한 내용은 Kafka 문서를 참조하는 것이 좋습니다.

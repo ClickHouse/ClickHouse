@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'Backups'
+slug: /cloud/features/backups
+title: 'Backups'
+keywords: ['backups', 'backups na nuvem', 'restauração']
+description: 'Apresenta uma visão geral dos recursos de backup no ClickHouse Cloud'
+doc_type: 'referência'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Os backups do banco de dados funcionam como uma proteção, garantindo que, se os dados forem perdidos por algum motivo imprevisto, o serviço possa ser restaurado para um estado anterior com base no último backup bem-sucedido.
+Isso minimiza o tempo de indisponibilidade e evita a perda permanente de dados críticos para o negócio.
+
+<div id="backups">
+  ## Backups
+</div>
+
+<div id="how-backups-work-in-clickhouse-cloud">
+  ### Como os backups funcionam no ClickHouse Cloud
+</div>
+
+Os backups do ClickHouse Cloud são uma combinação de backups &quot;completos&quot; e &quot;incrementais&quot; que formam uma cadeia de backups. A cadeia começa com um backup completo, e os backups incrementais são feitos ao longo dos períodos programados seguintes para criar uma sequência de backups. Quando uma cadeia de backups atinge determinado tamanho, uma nova cadeia é iniciada. Toda essa cadeia de backups pode então ser usada para restaurar dados em um novo serviço, se necessário. Quando todos os backups incluídos em uma determinada cadeia ultrapassam o período de retenção definido para o serviço (mais sobre retenção abaixo), a cadeia é descartada.
+
+Na captura de tela abaixo, os quadrados com linha contínua mostram os backups completos, e os quadrados com linha pontilhada mostram os backups incrementais. O retângulo de linha contínua ao redor dos quadrados indica o período de retenção e os backups visíveis ao usuário final, que podem ser usados para restauração. No cenário abaixo, os backups são feitos a cada 24 horas e ficam retidos por 2 dias.
+
+No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2, um backup incremental é feito, e tanto os backups completos quanto os incrementais ficam disponíveis para restauração. Até o Dia 7, temos um backup completo e seis backups incrementais na cadeia, com os dois backups incrementais mais recentes visíveis para o usuário. No Dia 8, fazemos um novo backup completo e, no Dia 9, assim que temos dois backups na nova cadeia, a cadeia anterior é descartada.
+
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemplo de cadeia de backups no ClickHouse Cloud" />
+
+<div id="default-backup-policy">
+  ### Política de backup padrão
+</div>
+
+Os backups são contabilizados e cobrados separadamente do armazenamento nos níveis Basic, Scale e Enterprise.
+Por padrão, todos os serviços terão um backup diário, com a possibilidade de configurar mais, a partir do nível Scale, na aba Settings do console do Cloud.
+Cada backup será mantido por pelo menos 24 horas.
+
+Consulte [&quot;Revisar e restaurar backups&quot;](/pt-BR/products/cloud/guides/backups/review-and-restore-backups) para mais detalhes.
+
+<div id="configurable-backups">
+  ## Backups configuráveis
+</div>
+
+<ScalePlanFeatureBadge feature="Backups configuráveis" linking_verb_are="True" />
+
+O ClickHouse Cloud permite configurar o agendamento dos seus backups para serviços dos tiers **Scale** e **Enterprise**. Os backups podem ser configurados nas dimensões a seguir, de acordo com as necessidades do seu negócio.
+
+* **Retenção**: O período, em dias, durante o qual cada backup será mantido. A retenção pode ser definida de no mínimo 1 dia até no máximo 30 dias, com vários valores intermediários à escolha.
+* **Frequência**: A frequência permite definir o intervalo de tempo entre backups consecutivos. Por exemplo, uma frequência de &quot;a cada 12 horas&quot; significa que os backups terão um intervalo de 12 horas entre si. A frequência pode variar de &quot;a cada 6 horas&quot; a &quot;a cada 48 horas&quot;, com os seguintes incrementos em horas: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
+* **Horário de início**: O horário em que você deseja que os backups sejam agendados todos os dias. Especificar um horário de início implica que a &quot;Frequência&quot; do backup será, por padrão, de uma vez a cada 24 horas. O ClickHouse Cloud iniciará o backup dentro de uma hora do horário de início especificado.
+
+<Note>
+  O agendamento personalizado substituirá a política de backup padrão do ClickHouse Cloud para o serviço em questão.
+
+  Em alguns casos raros, o agendador de backups não respeitará o **Horário de início** especificado para os backups. Especificamente, isso acontece se houver um backup bem-sucedido disparado a menos de 24 horas do horário do backup atualmente agendado. Isso pode ocorrer devido a um mecanismo de nova tentativa que temos em vigor para os backups. Nesses casos, o agendador ignorará o backup do dia atual e tentará executá-lo novamente no dia seguinte, no horário agendado.
+</Note>
+
+Consulte [&quot;Configurar agendamentos de backup&quot;](/pt-BR/products/cloud/guides/backups/configurable-backups) para ver as etapas de configuração dos seus backups.
+
+<div id="byob">
+  ## Backups com seu próprio bucket (BYOB)
+</div>
+
+O ClickHouse Cloud permite exportar backups para o armazenamento na conta do seu provedor de serviços em nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
+Se você configurar os backups para o seu próprio bucket, o ClickHouse Cloud continuará fazendo backups diários no bucket dele.
+Isso garante que tenhamos pelo menos uma cópia dos dados para restaurar caso os backups no seu bucket sejam corrompidos.
+Para saber como funcionam os backups do ClickHouse Cloud, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups).
+
+Neste guia, mostramos como exportar backups para o armazenamento de objetos da AWS, GCP e Azure, bem como restaurar esses backups da sua conta em um novo serviço do ClickHouse Cloud.
+Também compartilhamos comandos de backup / restore que permitem exportar backups para o seu bucket e restaurá-los.
+
+<Info>
+  **Backups entre regiões**
+
+  Qualquer uso em que os backups sejam exportados para uma
+  região diferente dentro do mesmo provedor de Cloud gerará cobranças de [transferência de dados](/pt-BR/products/cloud/reference/billing/network-data-transfer).
+
+  No momento, não oferecemos suporte a backup / restore para serviços que usam [Transparent Data Encryption (TDE)](/pt-BR/products/cloud/guides/security/cmek#transparent-data-encryption-tde) nem para serviços regulados.
+</Info>
+
+Consulte [&quot;Exportar backups para sua própria conta Cloud&quot;](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para ver exemplos de como fazer backups completos e backups incrementais no armazenamento de objetos da AWS, GCP e Azure, bem como como restaurá-los.
+
+<div id="backup-options">
+  ### Opções de backup
+</div>
+
+Para exportar backups para sua própria conta na nuvem, você tem duas opções:
+
+<Steps>
+  <Step>
+    ##### Pela UI do Cloud Console
+
+    Os backups externos podem ser [configurados na UI](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+    Por padrão, os backups serão realizados diariamente (conforme especificado na [política de backup padrão](/pt-BR/products/cloud/features/backups/overview#default-backup-policy)).
+    No entanto, também oferecemos backups [configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups) para sua própria conta na nuvem, o que permite definir um agendamento personalizado.
+    É importante observar que todos os backups no seu bucket são backups completos, independentes de quaisquer backups anteriores ou futuros.
+  </Step>
+
+  <Step>
+    ##### Usando comandos SQL
+
+    Você pode usar [comandos SQL](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands) para exportar backups para seu bucket.
+  </Step>
+</Steps>
+
+<Warning>
+  O ClickHouse Cloud não gerenciará o ciclo de vida dos backups em buckets de clientes.
+  Os clientes são responsáveis por garantir que os backups em seus buckets sejam gerenciados adequadamente para atender aos requisitos de compliance, além de controlar os custos.
+  Se os backups estiverem corrompidos, não poderão ser restaurados.
+</Warning>

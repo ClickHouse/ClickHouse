@@ -1,7 +1,6 @@
 import json
 import random
 import re
-import string
 import threading
 import time
 from multiprocessing.dummy import Pool
@@ -678,9 +677,16 @@ def test_jbod_overflow(start_cluster, name, engine):
             )
         )
 
-        used_disks = get_used_disks_for_table(node1, name)
+        # The last (10MB) part cannot fit on the nearly-full jbod1 and must go to `external`.
+        # Find it by the highest block number instead of relying on `get_used_disks_for_table`,
+        # which orders by `modification_time`: all inserts happen within the same second, so the
+        # last jbod1 part and the external part tie and order arbitrarily, making this flaky.
+        overflow_part_disk = node1.query(
+            "SELECT disk_name FROM system.parts WHERE table == '{}' AND active = 1 "
+            "ORDER BY max_block_number DESC LIMIT 1".format(name)
+        ).strip()
 
-        assert used_disks[-1] == "external"
+        assert overflow_part_disk == "external"
 
         node1.query(f"SYSTEM START MERGES {name}")
         node1.query(f"SYSTEM START MOVES {name}")
@@ -1175,7 +1181,7 @@ def produce_alter_move(node, name):
                 name, mt=move_type, mp=move_part, md=move_disk, mv=move_volume
             )
         )
-    except QueryRuntimeException as ex:
+    except QueryRuntimeException:
         pass
 
 
@@ -1678,7 +1684,6 @@ def test_kill_while_insert(start_cluster):
         )
 
         data = []
-        dates = []
         for i in range(10):
             data.append(get_random_string(1024 * 1024))  # 1MB value
         node1.query(

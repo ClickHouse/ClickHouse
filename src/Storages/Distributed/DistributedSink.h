@@ -124,6 +124,9 @@ private:
         size_t replica_index = 0;
         bool is_local_job = false;
 
+        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
+        bool skip = false;
+
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;

@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Metabase'
+slug: /integrations/metabase
+keywords: ['Metabase']
+description: "Metabase est un outil d'interface utilisateur open source facile à utiliser pour interroger vos données."
+title: 'Connecter Metabase à ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+  - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Metabase est un outil open source doté d’une interface utilisateur simple d’utilisation pour interroger vos données. Metabase est une application Java que vous pouvez exécuter simplement en <a href="https://www.metabase.com/start/oss/jar" target="_blank">téléchargeant le fichier JAR</a> puis en le lançant avec `java -jar metabase.jar`. Metabase se connecte à ClickHouse à l’aide d’un pilote JDBC que vous téléchargez et placez dans le dossier `plugins` :
+
+<div id="goal">
+  ## Objectif
+</div>
+
+Dans ce guide, vous allez poser quelques questions sur vos données ClickHouse avec Metabase et visualiser les réponses. L’une des réponses ressemblera à ceci :
+
+<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualisation Metabase sous forme de diagramme circulaire affichant des données de ClickHouse" border />
+
+<p />
+
+<Tip>
+  **Ajoutez des données**
+
+  Si vous n’avez pas de jeu de données sur lequel travailler, vous pouvez en ajouter un à partir des exemples. Ce guide utilise le jeu de données [UK Price Paid](/fr/get-started/sample-datasets/uk-price-paid), vous pouvez donc choisir celui-ci. Plusieurs autres sont disponibles dans la même catégorie de documentation.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. Rassemblez vos informations de connexion
+</div>
+
+<ConnectionDetails />
+
+<div id="2--download-the-clickhouse-plugin-for-metabase">
+  ## 2.  Télécharger le plugin ClickHouse pour Metabase
+</div>
+
+1. Si vous n&#39;avez pas de dossier `plugins`, créez-en un dans le même répertoire que `metabase.jar`.
+
+2. Le plugin est un fichier JAR nommé `clickhouse.metabase-driver.jar`. Téléchargez la dernière version du fichier JAR à l&#39;adresse <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
+
+3. Enregistrez `clickhouse.metabase-driver.jar` dans votre dossier `plugins`.
+
+4. Démarrez (ou redémarrez) Metabase pour que le pilote soit correctement chargé.
+
+5. Accédez à Metabase à l&#39;adresse <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>. Au premier démarrage, un écran de bienvenue s&#39;affiche et vous devrez répondre à une série de questions. Si vous êtes invité à sélectionner une base de données, choisissez &quot;**I&#39;ll add my data later**&quot; :
+
+<div id="3--connect-metabase-to-clickhouse">
+  ## 3.  Connecter Metabase à ClickHouse
+</div>
+
+1. Cliquez sur l’icône en forme d’engrenage en haut à droite, puis sélectionnez **Paramètres d’administration** pour accéder à votre <a href="http://localhost:3000/admin/settings/setup" target="_blank">page d’administration Metabase</a>.
+
+2. Cliquez sur **Ajouter une base de données**. Vous pouvez également cliquer sur l’onglet **Bases de données**, puis sélectionner le bouton **Ajouter une base de données**.
+
+3. Si l’installation de votre pilote a fonctionné, **ClickHouse** apparaîtra dans le menu déroulant **Type de base de données** :
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Sélection de base de données Metabase montrant ClickHouse comme option" border />
+
+4. Donnez à votre base de données un **Nom d’affichage**. Il s’agit d’un paramètre Metabase : vous pouvez donc utiliser le nom de votre choix.
+
+5. Saisissez les informations de connexion de votre base de données ClickHouse. Activez une connexion sécurisée si votre serveur ClickHouse est configuré pour utiliser SSL. Par exemple :
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Formulaire des informations de connexion Metabase pour la base de données ClickHouse" border />
+
+6. Cliquez sur le bouton **Enregistrer** et Metabase analysera votre base de données à la recherche de tables.
+
+<div id="4-run-a-sql-query">
+  ## 4. Exécuter une requête SQL
+</div>
+
+1. Quittez les **paramètres d’administration** en cliquant sur le bouton **Exit admin** dans l’angle supérieur droit.
+
+2. Dans l’angle supérieur droit, cliquez sur le menu **+ New** et notez que vous pouvez poser des questions, exécuter des requêtes SQL et créer un tableau de bord :
+
+   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Menu + New de Metabase affichant les options permettant de créer des questions, des requêtes SQL et des tableaux de bord" border />
+
+3. Par exemple, voici une requête SQL exécutée sur une table appelée `uk_price_paid`, qui renvoie le prix moyen payé par année de 1995 à 2022 :
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="Éditeur SQL de Metabase affichant une requête sur les données UK price paid" border />
+
+<div id="5-ask-a-question">
+  ## 5. Poser une question
+</div>
+
+1. Cliquez sur **+ New** et sélectionnez **Question**. Notez que vous pouvez créer une question en partant d’une base de données et d’une table. Par exemple, la question suivante porte sur une table nommée `uk_price_paid` dans la base de données `default`. Voici une question simple qui calcule le prix moyen par ville, dans le comté du Grand Manchester :
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Interface de création de questions Metabase avec des données de prix au Royaume-Uni" border />
+
+2. Cliquez sur le bouton **Visualize** pour afficher les résultats sous forme de tableau.
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Visualisation Metabase affichant les résultats tabulaires des prix moyens par ville" border />
+
+3. Sous les résultats, cliquez sur le bouton **Visualization** pour choisir un graphique en barres (ou toute autre option disponible) :
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualisation Metabase en diagramme circulaire des prix moyens par ville dans le Grand Manchester" border />
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+Pour en savoir plus sur Metabase et sur la création de tableaux de bord, <a href="https://www.metabase.com/docs/latest/" target="_blank">consultez la documentation de Metabase</a>.

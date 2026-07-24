@@ -1,0 +1,122 @@
+---
+title: '인프라 구성'
+slug: /cloud/reference/byoc/configurations
+sidebarTitle: '인프라 구성'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'infrastructure', 'configuration']
+description: '로드 밸런서, 노드 그룹 및 기타 BYOC 인프라 구성 요소를 구성합니다'
+doc_type: 'reference'
+---
+
+이 페이지에서는 BYOC 배포에서 사용할 수 있는 다양한 인프라 구성 옵션을 설명합니다. 이러한 구성을 통해 요구 사항에 맞게 네트워킹, 보안, 컴퓨트 리소스를 맞춤 설정할 수 있습니다.
+
+<div id="load-balancers">
+  ## 로드 밸런서
+</div>
+
+BYOC 배포에서는 **Network Load Balancers (NLBs)**를 사용해 ClickHouse 서비스로 전달되는 트래픽을 관리하고 라우팅합니다. 네트워킹 모델에 따라 *공용* 또는 *프라이빗* 로드 밸런서 엔드포인트를 선택할 수 있습니다.
+
+| 로드 밸런서 유형    | ClickHouse 관리형 전용 VPC | 고객 관리형 VPC |
+| ------------ | :-------------------: | :--------: |
+| **공용 NLB**   |         기본 활성화        |   기본 비활성화  |
+| **프라이빗 NLB** |        기본 비활성화        |   기본 활성화   |
+
+**공용 로드 밸런서:**
+
+* ClickHouse 서비스에 대한 공용(인터넷 연결) 액세스를 제공합니다.
+* 일반적으로 ClickHouse 관리형 전용 VPC를 사용하는 경우 기본적으로 활성화됩니다.
+* 보안 강화를 위해 고객 관리형 VPC를 사용하는 경우 기본적으로 비활성화됩니다.
+
+**프라이빗 로드 밸런서:**
+
+* 프라이빗(내부) 액세스를 제공하며, 연결된 네트워크 내부에서만 접근할 수 있습니다.
+* 일반적으로 고객 관리형 VPC를 사용하는 경우 기본적으로 활성화됩니다.
+* ClickHouse 관리형 전용 VPC를 사용하는 경우 기본적으로 비활성화됩니다.
+
+요구 사항에 따라 어떤 엔드포인트를 활성화할지 조정하려면 **ClickHouse Cloud Support**와 협의할 수 있습니다.
+
+<div id="private-load-balancer-security-group">
+  ### AWS용 프라이빗 로드 밸런서 보안 그룹
+</div>
+
+BYOC 배포에서 프라이빗 로드 밸런서를 사용하는 경우, 의도한 프라이빗 네트워크(예: 피어링된 VPC)에서의 액세스를 허용할 수 있도록 적절한 보안 그룹 규칙이 설정되어 있어야 합니다. 기본적으로 보안 그룹은 VPC 내부 트래픽만 허용합니다.
+
+프라이빗 로드 밸런서의 보안 그룹을 설정하려면 다음을 수행하세요.
+
+**ClickHouse 지원팀에 문의하여** 특정 소스 네트워크의 트래픽을 허용하는 인바운드 보안 그룹 규칙 변경을 요청하십시오.
+
+* **VPC Peering**: 피어링된 VPC의 CIDR 범위에서 들어오는 트래픽을 허용하는 규칙을 요청하십시오.
+* **PrivateLink**: 트래픽은 로드 밸런서의 보안 그룹으로 제어되지 않으므로 보안 그룹 변경이 필요하지 않습니다.
+* **기타 네트워크 구성**: 지원팀이 적절히 지원할 수 있도록 해당 환경을 구체적으로 알려주십시오.
+
+<Note>
+  프라이빗 로드 밸런서 보안 그룹에 대한 모든 변경은 반드시 ClickHouse 지원팀이 수행해야 합니다. 이렇게 하면 구성 일관성을 유지하고 ClickHouse Cloud 관리 환경 내 충돌을 방지할 수 있습니다.
+</Note>
+
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink 또는 Private Service Connect
+</div>
+
+최대한의 네트워크 격리와 보안을 위해 BYOC 배포에서는 **AWS PrivateLink** 또는 **GCP Private Service Connect**를 사용할 수 있습니다. 이러한 옵션을 사용하면 VPC peering 없이, 엔드포인트를 퍼블릭 인터넷에 노출하지 않고도 애플리케이션을 ClickHouse Cloud 서비스에 비공개로 연결할 수 있습니다.
+
+단계별 설정 방법은 [Private Networking 설정 가이드](/ko/products/bring-your-own-cloud/onboarding/network)를 참조하십시오.
+
+<div id="k8s-api-private-connection">
+  ## Kubernetes API 비공개 연결
+</div>
+
+기본적으로 BYOC 클러스터의 Kubernetes API 서버 엔드포인트는 공용 인터넷에서 접근할 수 있지만, IP 필터링을 통해 ClickHouse NAT Gateway IP에서만 접근이 허용됩니다. 보안을 더욱 강화하려면 Kubernetes API 서버가 Tailscale을 사용하는 비공개 네트워크 연결을 통해서만 접근 가능하도록 제한할 수 있습니다.
+
+<Note>
+  비공개 연결에 Tailscale만 전적으로 의존하는 경우, Tailscale 에이전트를 사용할 수 없게 되면 ClickHouse 지원팀이 해당 환경에 접근하지 못할 위험이 있습니다. 이로 인해 문제 해결이나 지원 응답 시간이 지연될 수 있습니다.
+</Note>
+
+비공개 API 엔드포인트 구성을 요청하려면 **ClickHouse 지원팀에 문의하십시오**.
+
+<div id="node-groups">
+  ## 노드 그룹
+</div>
+
+Kubernetes 노드 그룹은 BYOC 배포에서 ClickHouse 서비스를 실행하는 데 필요한 리소스를 제공하는 컴퓨트 인스턴스들의 집합입니다. ClickHouse Cloud는 이러한 노드 그룹을 관리하며, 구성과 스케일링도 자동으로 처리합니다.
+
+<div id="default-configuration">
+  ### 기본 구성
+</div>
+
+BYOC 클러스터는 두 가지 주요 노드 그룹 유형으로 프로비저닝됩니다.
+
+* **시스템 노드 그룹**
+  ClickHouse Operator, Istio(서비스 메시용), 모니터링 구성 요소(Prometheus, Grafana, AlertManager), 클러스터 오토스케일러, 기타 핵심 서비스 등 필수 시스템 워크로드를 호스팅합니다. 이러한 노드는 일반적으로 표준 x86 인스턴스 유형을 사용합니다.
+
+* **워크로드 노드 그룹**
+  서버와 Keeper 서비스를 포함한 ClickHouse 데이터 워크로드 전용입니다. 기본적으로 워크로드 노드는 ARM 기반 인스턴스에서 실행되며, 성능과 비용 간의 효율적인 균형을 제공합니다. 하지만 필요에 따라 다른 CPU/메모리 프로필로 구성하거나 x86 아키텍처로 전환할 수도 있습니다.
+
+<div id="customizing-node-groups">
+  ### 노드 그룹 사용자 지정
+</div>
+
+특수한 리소스 또는 아키텍처가 필요하다면 다음과 같은 사용자 지정을 지원합니다. 자세한 논의와 적용은 ClickHouse 지원팀에 문의하십시오.
+
+* **인스턴스 유형 선택**
+  성능, 컴플라이언스, 높은 메모리/CPU 사양 등의 요구 사항을 충족하거나 예약된 리소스를 활용할 수 있도록 특정 인스턴스 유형을 선택할 수 있습니다.
+* **CPU/메모리 비율**
+  필요에 따라 워크로드 노드 그룹의 컴퓨트 프로필을 조정할 수 있습니다.
+* **아키텍처**
+  필요한 경우 워크로드 노드 그룹의 아키텍처를 ARM에서 x86으로 전환할 수 있습니다.
+
+> **참고:** Spot(선점형) 인스턴스는 지원되지 않으며, 모든 BYOC 노드 그룹은 기본적으로 온디맨드 인스턴스에서 실행됩니다.
+
+<Note>
+  모든 노드 그룹 사용자 지정 및 구성 변경은 반드시 ClickHouse 지원팀과 협의하여 진행해야 합니다. 이를 통해 호환성, 안정성 및 최적의 성능을 보장할 수 있습니다.
+</Note>
+
+<div id="auto-scaling">
+  ### 자동 스케일링
+</div>
+
+클러스터 노드 그룹은 다음 기준에 따라 클러스터 오토스케일러를 통해 자동으로 스케일링됩니다.
+
+* 파드 리소스 요청 및 제한
+* 클러스터 전체 용량 및 활용률
+* ClickHouse 서비스의 스케일링 요구 사항
+
+수동 개입은 필요하지 않습니다. ClickHouse Cloud가 배포에 필요한 리소스와 스케일링을 지속적으로 관리합니다.

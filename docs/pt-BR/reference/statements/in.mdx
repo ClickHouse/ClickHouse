@@ -1,0 +1,313 @@
+---
+description: 'Documentação para os operadores IN, excluindo os operadores NOT IN, GLOBAL IN e GLOBAL
+  NOT IN, que são tratados separadamente'
+slug: /sql-reference/operators/in
+title: 'Operadores IN'
+doc_type: 'reference'
+---
+
+Os operadores `IN`, `NOT IN`, `GLOBAL IN` e `GLOBAL NOT IN` são tratados separadamente, pois sua funcionalidade é bastante abrangente.
+
+O lado esquerdo do operador é uma única coluna ou uma tupla.
+
+Exemplos:
+
+```sql
+SELECT UserID IN (123, 456) FROM ...
+SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
+```
+
+Se o lado esquerdo for uma única coluna presente no índice e o lado direito for um conjunto de constantes, o sistema utilizará o índice para processar a consulta.
+
+Não liste muitos valores explicitamente (ou seja, milhões). Se um conjunto de dados for grande, coloque-o em uma tabela temporária (por exemplo, consulte a seção [Dados externos para processamento de consultas](/pt-BR/reference/engines/table-engines/special/external-data)) e utilize uma subconsulta.
+
+O lado direito do operador pode ser um conjunto de expressões constantes, um conjunto de tuplas com expressões constantes (como mostrado nos exemplos acima), ou o nome de uma tabela de banco de dados ou subconsulta `SELECT` entre parênteses.
+
+Por compatibilidade histórica, quando o lado direito é uma única expressão `tuple`, ela pode ser interpretada como um conjunto de valores ou como um único valor de tupla, dependendo do lado esquerdo do operador `IN`. Se o lado esquerdo for um valor escalar, o ClickHouse trata os elementos dessa única expressão `tuple` no lado direito como valores `IN` separados:
+
+```sql title="Query"
+SELECT
+    1 IN (tuple(1, 2)) AS one_in_tuple,
+    2 IN (tuple(1, 2)) AS two_in_tuple,
+    3 IN (tuple(1, 2)) AS three_in_tuple;
+```
+
+```text title="Response"
+┌─one_in_tuple─┬─two_in_tuple─┬─three_in_tuple─┐
+│            1 │            1 │              0 │
+└──────────────┴──────────────┴────────────────┘
+```
+
+Isso se comporta como `SELECT 1 IN (1, 2)`. Se o lado esquerdo também for uma tupla, o lado direito é interpretado como um conjunto de valores de tupla:
+
+```sql title="Query"
+SELECT tuple(1, 2) IN (tuple(1, 2)) AS tuple_in_tuple;
+```
+
+```text title="Response"
+┌─tuple_in_tuple─┐
+│              1 │
+└────────────────┘
+```
+
+Esse tratamento especial se aplica somente quando o lado direito é uma única expressão `tuple`. Um lado esquerdo escalar não pode ser comparado a um lado direito que contém múltiplos valores de tuple:
+
+```sql title="Query"
+SELECT 1 IN (tuple(1, 2), tuple(3, 4));
+```
+
+```text title="Response"
+Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Second argument type Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8)). (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+O ClickHouse permite que os tipos sejam diferentes nas partes esquerda e direita da subconsulta `IN`.
+Nesse caso, ele converte o valor do lado direito para o tipo do lado esquerdo, como
+se a função [accurateCastOrNull](/pt-BR/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) fosse aplicada ao lado direito.
+
+Isso significa que o tipo de dado se torna [Nullable](/pt-BR/reference/data-types/nullable) e, se a conversão
+não puder ser realizada, retorna [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT '1' IN (SELECT 1);
+```
+
+```text title="Response"
+┌─in('1', _subquery49)─┐
+│                    1 │
+└──────────────────────┘
+```
+
+Se o lado direito do operador for o nome de uma tabela (por exemplo, `UserID IN users`), isso é equivalente à subconsulta `UserID IN (SELECT * FROM users)`. Utilize esse recurso ao trabalhar com dados externos enviados junto com a consulta. Por exemplo, a consulta pode ser enviada junto com um conjunto de IDs de usuário carregados na tabela temporária &#39;users&#39;, que deve ser filtrada.
+
+Se o lado direito do operador for um nome de tabela que utiliza o engine Set (um conjunto de dados preparado que fica sempre em RAM), o conjunto de dados não será recriado a cada consulta.
+
+A subconsulta pode especificar mais de uma coluna para filtrar tuplas.
+
+Exemplo:
+
+```sql title="Query"
+SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
+```
+
+As colunas à esquerda e à direita do operador `IN` devem ter o mesmo tipo.
+
+O operador `IN` e a subconsulta podem aparecer em qualquer parte da consulta, inclusive em funções de agregação e funções lambda.
+Exemplo:
+
+```sql title="Query"
+SELECT
+    EventDate,
+    avg(UserID IN
+    (
+        SELECT UserID
+        FROM test.hits
+        WHERE EventDate = toDate('2014-03-17')
+    )) AS ratio
+FROM test.hits
+GROUP BY EventDate
+ORDER BY EventDate ASC
+```
+
+```text title="Response"
+┌──EventDate─┬────ratio─┐
+│ 2014-03-17 │        1 │
+│ 2014-03-18 │ 0.807696 │
+│ 2014-03-19 │ 0.755406 │
+│ 2014-03-20 │ 0.723218 │
+│ 2014-03-21 │ 0.697021 │
+│ 2014-03-22 │ 0.647851 │
+│ 2014-03-23 │ 0.648416 │
+└────────────┴──────────┘
+```
+
+Para cada dia após 17 de março, calcule a porcentagem de visualizações de página feitas por usuários que visitaram o site em 17 de março.
+Uma subconsulta na cláusula `IN` é sempre executada apenas uma vez, em um único servidor. Não há subconsultas dependentes.
+
+<div id="null-processing">
+  ## Processamento de NULL
+</div>
+
+Durante o processamento da requisição, o operador `IN` considera que o resultado de uma operação com [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default) é sempre igual a `0`, independentemente de `NULL` estar à direita ou à esquerda do operador. Os valores `NULL` não são incluídos em nenhum conjunto de dados, não correspondem entre si e não podem ser comparados se [transform&#95;null&#95;in = 0](/pt-BR/reference/settings/session-settings#transform_null_in).
+
+Aqui está um exemplo com a tabela `t_null`:
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    3 │
+└───┴──────┘
+```
+
+Ao executar a consulta `SELECT x FROM t_null WHERE y IN (NULL,3)`, você obtém o seguinte resultado:
+
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+Você pode ver que a linha em que `y = NULL` é excluída dos resultados da consulta. Isso acontece porque o ClickHouse não consegue determinar se `NULL` está incluído no conjunto `(NULL,3)`, retorna `0` como resultado da operação, e o `SELECT` exclui essa linha da saída final.
+
+```sql
+SELECT y IN (NULL, 3)
+FROM t_null
+```
+
+```text
+┌─in(y, tuple(NULL, 3))─┐
+│                     0 │
+│                     1 │
+└───────────────────────┘
+```
+
+<div id="distributed-subqueries">
+  ## Subconsultas Distribuídas
+</div>
+
+Existem duas opções para operadores `IN` com subconsultas (semelhante aos operadores `JOIN`): o `IN` / `JOIN` normal e o `GLOBAL IN` / `GLOBAL JOIN`. Elas diferem na forma como são executadas no processamento distribuído de consultas.
+
+<Note>
+  Lembre-se de que os algoritmos descritos abaixo podem funcionar de forma diferente, dependendo da configuração `distributed_product_mode` em [configurações](/pt-BR/reference/settings/session-settings).
+</Note>
+
+Ao usar o `IN` regular, a consulta é enviada para servidores remotos, e cada um deles executa as subconsultas na cláusula `IN` ou `JOIN`.
+
+Ao usar `GLOBAL IN` / `GLOBAL JOIN`, primeiro todas as subconsultas são executadas para `GLOBAL IN` / `GLOBAL JOIN`, e os resultados são coletados em tabelas temporárias. Em seguida, as tabelas temporárias são enviadas para cada servidor remoto, onde as consultas são executadas com esses dados temporários.
+
+Para `GLOBAL ... JOIN`, qual lado da junção é calculado como subconsulta depende do tipo de junção: para junções `LEFT` e `INNER`, a tabela da direita é calculada; para junções `RIGHT`, a tabela da esquerda é calculada, pois a tabela da direita é o lado preservado e deve ser lida a partir dos shards.
+
+Para uma consulta não distribuída, use o `IN` / `JOIN` comum.
+
+Tenha cuidado ao usar subconsultas nas cláusulas `IN` / `JOIN` para processamento distribuído de consultas.
+
+Vejamos alguns exemplos. Suponha que cada servidor no cluster tenha uma **local&#95;table** normal. Cada servidor também tem uma tabela **distributed&#95;table** com o tipo **Distributed**, que abrange todos os servidores no cluster.
+
+Para uma consulta à **distributed&#95;table**, a consulta será enviada a todos os servidores remotos e executada neles usando a **local&#95;table**.
+
+Por exemplo, a consulta
+
+```sql
+SELECT uniq(UserID) FROM distributed_table
+```
+
+será enviado a todos os servidores remotos como
+
+```sql
+SELECT uniq(UserID) FROM local_table
+```
+
+e executada em cada um deles em paralelo, até atingir o estágio em que os resultados intermediários podem ser combinados. Em seguida, os resultados intermediários serão retornados ao servidor solicitante e consolidados nele, e o resultado final será enviado ao cliente.
+
+Agora vamos examinar uma consulta com `IN`:
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+* Cálculo da interseção entre os públicos de dois sites.
+
+Esta consulta será enviada a todos os servidores remotos como
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+Em outras palavras, o conjunto de dados na cláusula `IN` será coletado em cada servidor de forma independente, considerando apenas os dados armazenados localmente em cada um dos servidores.
+
+Isso funcionará corretamente e de forma otimizada se você estiver preparado para esse cenário e tiver distribuído os dados entre os servidores do cluster de modo que os dados de um único UserID residam inteiramente em um único servidor. Nesse caso, todos os dados necessários estarão disponíveis localmente em cada servidor. Caso contrário, o resultado será impreciso. Chamamos essa variação da consulta de &quot;local IN&quot;.
+
+Para corrigir o funcionamento da consulta quando os dados estão distribuídos aleatoriamente entre os servidores do cluster, você pode especificar **distributed&#95;table** dentro de uma subconsulta. A consulta ficaria assim:
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+Esta consulta será enviada a todos os servidores remotos como
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+A subconsulta começará a ser executada em cada servidor remoto. Como a subconsulta utiliza uma tabela distribuída, a subconsulta presente em cada servidor remoto será reenviada para todos os servidores remotos da seguinte forma:
+
+```sql
+SELECT UserID FROM local_table WHERE CounterID = 34
+```
+
+Por exemplo, se você tiver um cluster de 100 servidores, a execução da consulta completa exigirá 10.000 requisições elementares, o que geralmente é considerado inaceitável.
+
+Nesses casos, você deve sempre usar `GLOBAL IN` em vez de `IN`. Veja como isso funciona para a consulta:
+
+```sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+O servidor solicitante executará a subconsulta:
+
+```sql
+SELECT UserID FROM distributed_table WHERE CounterID = 34
+```
+
+e o resultado será armazenado em uma tabela temporária na RAM. Em seguida, a solicitação será enviada para cada servidor remoto como:
+
+```sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
+```
+
+A tabela temporária `_data1` será enviada para cada servidor remoto junto com a consulta (o nome da tabela temporária é definido pela implementação).
+
+Isso é mais eficiente do que usar o `IN` normal. No entanto, tenha em mente os seguintes pontos:
+
+1. Ao criar uma tabela temporária, os dados não são deduplicados. Para reduzir o volume de dados transmitidos pela rede, especifique DISTINCT na subconsulta. (Você não precisa fazer isso com um `IN` normal.)
+2. A tabela temporária será enviada para todos os servidores remotos. A transmissão não leva em conta a topologia da rede. Por exemplo, se 10 servidores remotos estiverem em um datacenter muito distante em relação ao servidor que fez a solicitação, os dados serão enviados 10 vezes pelo canal até o datacenter remoto. Tente evitar grandes conjuntos de dados ao usar `GLOBAL IN`.
+3. Ao transmitir dados para servidores remotos, as limitações de largura de banda da rede não são configuráveis. Você pode sobrecarregar a rede.
+4. Tente distribuir os dados entre os servidores para não precisar usar `GLOBAL IN` regularmente.
+5. Se você precisar usar `GLOBAL IN` com frequência, planeje a localização do cluster ClickHouse para que um único grupo de réplicas não fique distribuído por mais de um data center e haja uma rede rápida entre eles, de modo que uma consulta possa ser processada inteiramente dentro de um único data center.
+
+Também faz sentido especificar uma tabela local na cláusula `GLOBAL IN`, caso essa tabela local esteja disponível apenas no servidor que fez a solicitação e você queira usar os dados dela em servidores remotos.
+
+<div id="distributed-subqueries-and-max_rows_in_set">
+  ### Subconsultas distribuídas e max_rows_in_set
+</div>
+
+Você pode usar [`max_rows_in_set`](/pt-BR/reference/settings/session-settings#max_rows_in_set) e [`max_bytes_in_set`](/pt-BR/reference/settings/session-settings#max_bytes_in_set) para controlar o volume de dados transferidos durante consultas distribuídas.
+
+Isso é especialmente importante se a consulta `GLOBAL IN` retornar uma grande quantidade de dados. Considere o SQL a seguir:
+
+```sql
+SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
+```
+
+Se `some_predicate` não for seletivo o suficiente, ele retornará uma grande quantidade de dados e causará problemas de desempenho. Nesses casos, é recomendável limitar a transferência de dados pela rede. Observe também que [`set_overflow_mode`](/pt-BR/reference/settings/session-settings#set_overflow_mode) está definido como `throw` (por padrão), o que significa que uma exceção será gerada quando esses limites forem atingidos.
+
+<div id="distributed-subqueries-and-max_parallel_replicas">
+  ### Subconsultas distribuídas e max_parallel_replicas
+</div>
+
+Quando [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) é maior que 1, as consultas distribuídas passam por transformações adicionais.
+
+Por exemplo, o seguinte:
+
+```sql
+SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS max_parallel_replicas=3
+```
+
+é transformado, em cada servidor, em:
+
+```sql
+SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
+```
+
+em que `M` está entre `1` e `3`, dependendo da réplica em que a consulta local está sendo executada.
+
+Essas configurações afetam todas as tabelas da família MergeTree na consulta e têm o mesmo efeito que aplicar `SAMPLE 1/3 OFFSET (M-1)/3` a cada tabela.
+
+Portanto, adicionar a configuração [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) só produzirá resultados corretos se ambas as tabelas tiverem o mesmo esquema de replicação e usarem amostragem por UserID ou por uma subchave dele. Em particular, se `local_table_2` não tiver uma chave de amostragem, serão gerados resultados incorretos. A mesma regra se aplica a `JOIN`.
+
+Uma alternativa, caso `local_table_2` não atenda aos requisitos, é usar `GLOBAL IN` ou `GLOBAL JOIN`.
+
+Se uma tabela não tiver uma chave de amostragem, podem ser usadas opções mais flexíveis para [parallel&#95;replicas&#95;custom&#95;key](/pt-BR/reference/settings/session-settings#parallel_replicas_custom_key), que podem resultar em um comportamento diferente e mais otimizado.

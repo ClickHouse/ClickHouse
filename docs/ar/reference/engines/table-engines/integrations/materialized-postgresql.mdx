@@ -1,0 +1,85 @@
+---
+description: 'ينشئ جدول ClickHouse باستخدام تفريغ بيانات أولي لجدول PostgreSQL ويبدأ عملية النسخ المتماثل.'
+sidebarTitle: 'MaterializedPostgreSQL'
+slug: /engines/table-engines/integrations/materialized-postgresql
+title: 'محرك الجدول MaterializedPostgreSQL'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Note>
+  يُنصح مستخدمو ClickHouse Cloud باستخدام [ClickPipes](/ar/integrations/clickpipes/home) لنسخ البيانات من PostgreSQL إلى ClickHouse. يوفّر هذا دعمًا أصيلاً وعالي الأداء لتقنية Change Data Capture (CDC) في PostgreSQL.
+</Note>
+
+ينشئ جدولًا في ClickHouse من خلال تفريغٍ أولي لبيانات جدول PostgreSQL، ثم يبدأ عملية النسخ المتماثل. أي إنه ينفّذ مهمةً في الخلفية لتطبيق التغييرات الجديدة فور حدوثها على جدول PostgreSQL في قاعدة بيانات PostgreSQL البعيدة.
+
+<Note>
+  محرك الجدول هذا تجريبي. لاستخدامه، اضبط `allow_experimental_materialized_postgresql_table` على 1 في ملفات الإعدادات لديك أو باستخدام الأمر `SET`:
+
+  ```sql
+  SET allow_experimental_materialized_postgresql_table=1
+  ```
+</Note>
+
+إذا كانت هناك حاجة إلى أكثر من جدول واحد، فمن المستحسن بشدة استخدام محرك قاعدة البيانات [MaterializedPostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql) بدلًا من محرك الجدول، واستخدام الإعداد `materialized_postgresql_tables_list` الذي يحدّد الجداول المطلوب نسخها متماثلًا (وسيصبح من الممكن أيضًا إضافة `schema` قاعدة البيانات). وسيكون ذلك أفضل بكثير من حيث استهلاك CPU، وتقليل عدد الاتصالات، وتقليل عدد replication slots داخل قاعدة بيانات PostgreSQL البعيدة.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
+PRIMARY KEY key;
+```
+
+**معلمات المحرّك**
+
+* `host:port` — عنوان خادم PostgreSQL.
+* `database` — اسم قاعدة البيانات البعيدة.
+* `table` — اسم الجدول البعيد.
+* `user` — اسم مستخدم PostgreSQL.
+* `password` — كلمة مرور المستخدم.
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+1. يجب أن تكون قيمة الإعداد [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) هي `logical`، كما يجب أن تكون قيمة المعامل `max_replication_slots` `2` على الأقل في ملف إعدادات PostgreSQL.
+
+2. يجب أن يحتوي الجدول ذو محرك `MaterializedPostgreSQL` على مفتاح أساسي يطابق فهرس هوية النسخة المتماثلة (replica identity) لجدول PostgreSQL (افتراضيًا: المفتاح الأساسي) (راجع [التفاصيل حول فهرس هوية النسخة المتماثلة](/ar/reference/engines/database-engines/materialized-postgresql#requirements)).
+
+3. يُسمح فقط بقاعدة بيانات [Atomic](https://en.wikipedia.org/wiki/Atomicity_\(database_systems\)).
+
+4. لا يعمل محرك الجدول `MaterializedPostgreSQL` إلا مع إصدارات PostgreSQL &gt;= 11، لأن التنفيذ يتطلب دالة PostgreSQL ‏[pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html).
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_version` — عدّاد المعاملات. النوع: [UInt64](/ar/reference/data-types/int-uint).
+
+* `_sign` — علامة الحذف. النوع: [Int8](/ar/reference/data-types/int-uint). القيم الممكنة:
+  * `1` — الصف غير محذوف،
+  * `-1` — الصف محذوف.
+
+لا حاجة إلى إضافة هذه الأعمدة عند إنشاء جدول. وهي متاحة دائمًا في استعلام `SELECT`.
+تعادل قيمة العمود `_version` موضع `LSN` في `WAL`، لذلك يمكن استخدامه للتحقق من مدى حداثة النسخ المتماثل.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
+PRIMARY KEY key;
+
+SELECT key, value, _version FROM postgresql_db.postgresql_replica;
+```
+
+<Note>
+  لا يدعم النسخ المتماثل لقيم [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html). وستُستخدم القيمة الافتراضية لنوع البيانات.
+</Note>

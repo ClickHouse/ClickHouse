@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/dashboard-templates
+title: 'Modèles de tableaux de bord'
+sidebarTitle: 'Modèles de tableaux de bord'
+description: 'Importation de modèles de tableaux de bord préconfigurés dans ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'modèles', 'importation', 'observability']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickStack comprend une bibliothèque de modèles de tableau de bord prêts à l’emploi qui vous offrent une visibilité immédiate sur les métriques courantes de l’infrastructure et des applications.
+
+<div id="browsing-templates">
+  ## Parcourir les modèles disponibles
+</div>
+
+Pour parcourir la bibliothèque de modèles intégrés, accédez à **Tableaux de bord**, puis cliquez sur **Parcourir les modèles de tableaux de bord**.
+
+<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="Bouton Parcourir les modèles de tableaux de bord" size="lg" />
+
+Cela ouvre la galerie de modèles, dans laquelle ils sont classés par catégorie. Cliquez sur **Importer** pour démarrer le processus d&#39;importation de ce modèle.
+
+<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Galerie de modèles de tableaux de bord" size="lg" />
+
+<div id="importing-a-template">
+  ## Importer un modèle
+</div>
+
+Pour importer un modèle, vous devez définir une source de données pour chaque visualisation du tableau de bord. Sélectionnez une source de données dans la liste déroulante pour chaque visualisation, puis cliquez sur `Finish Import`.
+
+<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="Importation d’un modèle de tableau de bord" size="lg" />
+
+<div id="pre-built-templates">
+  ## Modèles préconfigurés
+</div>
+
+<div id="otel-runtime-metrics">
+  ### Métriques runtime OTel
+</div>
+
+Les modèles intégrés OTel Runtime Metrics sont conçus pour les applications instrumentées avec les [métriques runtime OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+
+| Modèle                      | Description                                                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **.NET Runtime Metrics**    | Collections du GC, taille du tas, utilisation du pool de threads et nombre d’assemblys pour les applications .NET            |
+| **Go Runtime Metrics**      | Nombre de goroutines, temps de pause du GC, utilisation du tas et statistiques mémoire pour les applications Go              |
+| **JVM Runtime Metrics**     | Mémoire du tas et hors tas, durée du GC, nombre de threads et chargement des classes pour les applications basées sur la JVM |
+| **Node.js Runtime Metrics** | Latence de la boucle d’événements, utilisation du tas, utilisation du CPU et mémoire V8 pour les applications Node.js        |
+
+Remarques :
+
+* Chaque modèle est configuré avec un [filtre personnalisé](/fr/clickstack/features/dashboards/overview#custom-filters) pour les services dont l’attribut de ressource [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) correspond au runtime du tableau de bord.
+  * Les environnements avec des schémas de tables de métriques ClickHouse personnalisés peuvent devoir ajuster ce filtre pour interroger les bonnes colonnes Service Name et Resource Attributes.
+  * Pour les environnements à fort volume, les temps de chargement des filtres peuvent être réduits en [matérialisant](/fr/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) la colonne `ResourceAttributes['telemetry.sdk.language']`.
+* Les modèles référencent les conventions sémantiques OTel les plus récentes au moment de leur publication et sont mis à jour périodiquement à mesure que la spécification OTel évolue. Pour les services instrumentés avec d’anciens SDK OTel, les visualisations peuvent devoir être [modifiées](/fr/clickstack/features/dashboards/overview#dashboards-editing-visualizations) pour pointer vers d’anciens noms de métriques.

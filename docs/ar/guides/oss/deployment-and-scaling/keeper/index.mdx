@@ -1,0 +1,1509 @@
+---
+slug: /guides/sre/keeper/clickhouse-keeper
+
+sidebarTitle: 'إعداد ClickHouse Keeper'
+keywords: ['Keeper', 'ZooKeeper', 'clickhouse-keeper']
+description: 'يحل ClickHouse Keeper، أو clickhouse-keeper، محل ZooKeeper ويوفّر النسخ المتماثل والتنسيق.'
+title: 'ClickHouse Keeper'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+يوفّر ClickHouse Keeper نظام التنسيق اللازم للنسخ المتماثل للبيانات وتنفيذ استعلامات [replication](/ar/reference/engines/table-engines/mergetree-family/replication) و[distributed DDL](/ar/reference/statements/distributed-ddl). كما أن ClickHouse Keeper متوافق مع ZooKeeper.
+
+<div id="implementation-details">
+  ### تفاصيل التنفيذ
+</div>
+
+يُعد ZooKeeper من أوائل أنظمة التنسيق المفتوحة المصدر المعروفة على نطاق واسع. وهو مكتوب بلغة Java ويعتمد نموذج بيانات بسيطًا وقويًا. ولا توفّر خوارزمية التنسيق في ZooKeeper، وهي ZooKeeper Atomic Broadcast ‏(ZAB)، ضمانات الاتساق الخطي لعمليات القراءة، لأن كل عقدة في ZooKeeper تخدم عمليات القراءة محليًا. وعلى عكس ZooKeeper، فإن ClickHouse Keeper مكتوب بلغة C++ ويستخدم [تنفيذًا](https://github.com/eBay/NuRaft) لخوارزمية [RAFT](https://raft.github.io/). وتتيح هذه الخوارزمية الاتساق الخطي لعمليات القراءة والكتابة، كما تتوفر لها عدة تطبيقات مفتوحة المصدر بلغات مختلفة.
+
+يوفّر ClickHouse Keeper افتراضيًا الضمانات نفسها التي يوفّرها ZooKeeper: كتابات متسقة خطيًا وقراءات غير متسقة خطيًا. كما أنه يوفّر بروتوكول عميل-خادم متوافقًا، لذا يمكن استخدام أي عميل ZooKeeper قياسي للتفاعل مع ClickHouse Keeper. وتستخدم اللقطات والسجلات تنسيقًا غير متوافق مع ZooKeeper، لكن أداة `clickhouse-keeper-converter` تتيح تحويل بيانات ZooKeeper إلى لقطات ClickHouse Keeper. كذلك فإن بروتوكول الاتصال بين الخوادم في ClickHouse Keeper غير متوافق مع ZooKeeper، لذلك يستحيل وجود عنقود مختلط من ZooKeeper / ClickHouse Keeper.
+
+يدعم ClickHouse Keeper قوائم التحكم في الوصول (ACLs) بالطريقة نفسها التي يدعمها [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl). ويدعم ClickHouse Keeper المجموعة نفسها من الأذونات، كما يوفّر آليات built-in المطابقة نفسها: `world` و`auth` و`digest`. وتستخدم آلية المصادقة `digest` الزوج `username:password`، وتُرمَّز كلمة المرور بترميز Base64.
+
+<Note>
+  عمليات التكامل الخارجية غير مدعومة.
+</Note>
+
+<div id="configuration">
+  ### التهيئة
+</div>
+
+يمكن استخدام ClickHouse Keeper كبديل مستقل لـ ZooKeeper أو كجزء داخلي من ClickHouse server. وفي كلتا الحالتين، تكون التهيئة في ملف `.xml` متطابقة تقريبًا.
+
+<div id="keeper-configuration-settings">
+  #### إعدادات تهيئة Keeper
+</div>
+
+وسم التهيئة الرئيسي لـ ClickHouse Keeper هو `<keeper_server>`، ويتضمن المعلمات التالية:
+
+| Parameter                           | Description                                                                                                                                                                                                                    | Default                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `tcp_port`                          | المنفذ الذي يتصل من خلاله العميل.                                                                                                                                                                                              | `2181`                                                                                                       |
+| `tcp_port_secure`                   | منفذ آمن لاتصال SSL بين العميل وkeeper-server.                                                                                                                                                                                 | -                                                                                                            |
+| `server_id`                         | معرّف server فريد؛ ويجب أن يكون لكل مشارك في ClickHouse Keeper عنقود رقم فريد (1، 2، 3...).                                                                                                                                  | -                                                                                                            |
+| `log_storage_path`                  | path إلى logs الخاصة بـ coordination. وكما هو الحال في ZooKeeper، من الأفضل تخزين السجلات على عقد غير مثقلة بالعمل.                                                                                                            | -                                                                                                            |
+| `snapshot_storage_path`             | path إلى لقطات الخاصة بـ coordination.                                                                                                                                                                                         | -                                                                                                            |
+| `enable_reconfiguration`            | تمكين reconfiguration الديناميكية للـ عنقود عبر [`reconfig`](#reconfiguration).                                                                                                                                               | `False`                                                                                                      |
+| `max_memory_usage_soft_limit`       | soft limit بالبايت للحد الأقصى من memory usage في Keeper.                                                                                                                                                                      | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                               |
+| `max_memory_usage_soft_limit_ratio` | إذا لم يتم تعيين `max_memory_usage_soft_limit` أو تم تعيينه إلى الصفر، تُستخدم هذه القيمة لتحديد soft limit الافتراضي.                                                                                                         | `0.9`                                                                                                        |
+| `cgroups_memory_observer_wait_time` | إذا لم يتم تعيين `max_memory_usage_soft_limit` أو تم تعيينه إلى `0`، نستخدم هذا interval لمراقبة حجم الذاكرة الفعلية. وعند تغيّر حجم الذاكرة، نعيد حساب soft limit لذاكرة Keeper باستخدام `max_memory_usage_soft_limit_ratio`. | `15`                                                                                                         |
+| `http_control`                      | تهيئة واجهة [HTTP control](#http-control).                                                                                                                                                                                     | -                                                                                                            |
+| `digest_enabled`                    | تمكين التحقق من اتساق البيانات في الوقت الفعلي                                                                                                                                                                                 | `True`                                                                                                       |
+| `create_snapshot_on_exit`           | إنشاء لقطة عند إيقاف التشغيل                                                                                                                                                                                                   | -                                                                                                            |
+| `hostname_checks_enabled`           | تمكين عمليات التحقق من صحة hostname لتهيئة عنقود (على سبيل المثال، عند استخدام localhost مع endpoints بعيدة)                                                                                                                  | `True`                                                                                                       |
+| `four_letter_word_white_list`       | white list لأوامر 4lw.                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
+| `enable_ipv6`                       | تمكين IPv6                                                                                                                                                                                                                     | `True`                                                                                                       |
+
+تُورَّث المعلمات الشائعة الأخرى من config الخاص بـ ClickHouse server (`listen_host` و`logger` وما إلى ذلك).
+
+<div id="internal-coordination-settings">
+  #### إعدادات التنسيق الداخلية
+</div>
+
+توجد إعدادات التنسيق الداخلية في القسم `<keeper_server>.<coordination_settings>`، وتتضمن المعلمات التالية:
+
+| Parameter                          | Description                                                                                                                                                                                                 | Default          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`             | مهلة عملية واحدة للعميل (مللي ثانية)                                                                                                                                                                        | `10000`          |
+| `min_session_timeout_ms`           | الحد الأدنى لمهلة جلسة العميل (مللي ثانية)                                                                                                                                                                  | `10000`          |
+| `session_timeout_ms`               | الحد الأقصى لمهلة جلسة العميل (مللي ثانية)                                                                                                                                                                  | `100000`         |
+| `dead_session_check_period_ms`     | مدى تكرار تحقّق ClickHouse Keeper من الجلسات المنتهية وإزالتها (مللي ثانية)                                                                                                                                 | `500`            |
+| `heart_beat_interval_ms`           | مدى تكرار إرسال قائد ClickHouse Keeper إشارات نبض إلى العُقد التابعة (مللي ثانية)                                                                                                                           | `500`            |
+| `election_timeout_lower_bound_ms`  | إذا لم تستقبل العقدة التابعة إشارة نبض من القائد خلال هذه الفترة، فيمكنها بدء انتخاب القائد. يجب أن تكون هذه القيمة أقل من أو مساوية لـ `election_timeout_upper_bound_ms`. ومن الأفضل ألّا تكونا متساويتين. | `1000`           |
+| `election_timeout_upper_bound_ms`  | إذا لم تستقبل العقدة التابعة إشارة نبض من القائد خلال هذه الفترة، فيجب عليها بدء انتخاب القائد.                                                                                                             | `2000`           |
+| `rotate_log_storage_interval`      | عدد سجلات Log التي تُخزَّن في ملف واحد.                                                                                                                                                                     | `100000`         |
+| `reserved_log_items`               | عدد سجلات التنسيق التي تُحفَظ قبل إجراء compaction.                                                                                                                                                         | `100000`         |
+| `snapshot_distance`                | مدى تكرار إنشاء ClickHouse Keeper لقطات جديدة (بحسب عدد السجلات في الـ logs).                                                                                                                               | `100000`         |
+| `snapshots_to_keep`                | عدد اللقطات المطلوب الاحتفاظ بها.                                                                                                                                                                            | `3`              |
+| `stale_log_gap`                    | العتبة التي عندها يعتبر القائد العقدة التابعة stale ويرسل إليها لقطة بدلًا من logs.                                                                                                                         | `10000`          |
+| `fresh_log_gap`                    | الفجوة التي عندها تُعدّ العقدة محدَّثة.                                                                                                                                                                     | `200`            |
+| `max_requests_batch_size`          | الحد الأقصى لحجم Batch محسوبًا بعدد الطلبات قبل إرسالها إلى RAFT.                                                                                                                                           | `100`            |
+| `force_sync`                       | استدعاء `fsync` عند كل عملية كتابة في سجل التنسيق.                                                                                                                                                          | `true`           |
+| `quorum_reads`                     | تنفيذ طلبات القراءة كطلبات كتابة عبر توافق RAFT بالكامل وبسرعة مماثلة.                                                                                                                                      | `false`          |
+| `raft_logs_level`                  | مستوى Logging النصي الخاص بالتنسيق (مثل trace وdebug وغير ذلك).                                                                                                                                             | `system default` |
+| `auto_forwarding`                  | السماح بإعادة توجيه طلبات الكتابة من العُقد التابعة إلى القائد.                                                                                                                                             | `true`           |
+| `shutdown_timeout`                 | انتظار اكتمال الاتصالات الداخلية ثم إيقاف التشغيل (مللي ثانية).                                                                                                                                             | `5000`           |
+| `startup_timeout`                  | إذا لم يتصل server ببقية المشاركين في النصاب خلال المهلة المحددة، فسينهي عمله (مللي ثانية).                                                                                                                 | `30000`          |
+| `async_replication`                | تمكين replication غير المتزامن. تُحفَظ جميع ضمانات الكتابة والقراءة مع تحقيق أداء أفضل. هذا الإعداد معطّل افتراضيًا حتى لا يخلّ بالتوافق مع الإصدارات السابقة                                               | `false`          |
+| `latest_logs_cache_size_threshold` | الحد الأقصى للحجم الإجمالي لذاكرة التخزين المؤقت داخل الذاكرة لأحدث log entries                                                                                                                             | `1GiB`           |
+| `commit_logs_cache_size_threshold` | الحد الأقصى للحجم الإجمالي لذاكرة التخزين المؤقت داخل الذاكرة لإدخالات السجل المطلوبة لاحقًا لعملية commit                                                                                                  | `500MiB`         |
+| `disk_move_retries_wait_ms`        | مدة الانتظار بين retries بعد حدوث فشل أثناء نقل ملف بين disks                                                                                                                                               | `1000`           |
+| `disk_move_retries_during_init`    | عدد retries بعد حدوث فشل أثناء نقل ملف بين disks خلال التهيئة                                                                                                                                               | `100`            |
+| `experimental_use_rocksdb`         | استخدام rocksdb كتخزين خلفي                                                                                                                                                                                 | `0`              |
+
+يوجد إعداد النصاب في القسم `<keeper_server>.<raft_configuration>`، ويتضمن وصف الخوادم.
+
+المعلمة الوحيدة للنصاب بالكامل هي `secure`، وهي تُمكّن الاتصال المشفّر للتواصل بين المشاركين في النصاب. ويمكن ضبط هذه المعلمة على `true` إذا كان اتصال SSL مطلوبًا للتواصل الداخلي بين العُقد، أو تركها غير محددة بخلاف ذلك.
+
+المعلمات الرئيسية لكل `<server>` هي:
+
+* `id` — معرّف الخادم ضمن نصاب.
+* `hostname` — اسم المضيف الذي يوجد عليه هذا الخادم.
+* `port` — المنفذ الذي يستمع عليه هذا الخادم للاتصالات.
+* `can_become_leader` — اضبطه على `false` لتهيئة الخادم كـ `learner`. وإذا لم يُذكر، تكون القيمة `true`.
+
+<Note>
+  عند حدوث تغيير في طوبولوجيا عنقود ClickHouse Keeper لديك (مثل استبدال خادم)، احرص على إبقاء التعيين بين `server_id` و`hostname` متسقًا، وتجنّب تبديل `server_id` الحالي بين الخوادم أو إعادة استخدامه لخوادم مختلفة (على سبيل المثال، قد يحدث ذلك إذا كنت تعتمد على نصوص برمجية للأتمتة لنشر ClickHouse Keeper)
+
+  إذا كان مضيف مثيل Keeper قد يتغير، فنوصي بتعريف اسم مضيف واستخدامه بدلًا من عناوين IP المباشرة. ويُعد تغيير اسم المضيف بمثابة إزالة الخادم ثم إضافته مرة أخرى، وهو ما قد يتعذر في بعض الحالات (مثل عدم توفر عدد كافٍ من مثيلات Keeper لتحقيق نصاب).
+</Note>
+
+<Note>
+  تكون `async_replication` معطلة افتراضيًا لتجنب كسر التوافق مع الإصدارات السابقة. إذا كانت جميع مثيلات Keeper في عنقودك تعمل بإصدار يدعم `async_replication` ‏(v23.9+)، فنوصي بتمكينها لأنها قد تحسن الأداء من دون أي سلبيات.
+</Note>
+
+يمكن العثور على أمثلة لإعدادات نصاب بثلاث عقد في [اختبارات التكامل](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) التي تحمل البادئة `test_keeper_`. وفيما يلي مثال على إعداد الخادم رقم 1:
+
+```xml
+<keeper_server>
+    <tcp_port>2181</tcp_port>
+    <server_id>1</server_id>
+    <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+    <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+    <coordination_settings>
+        <operation_timeout_ms>10000</operation_timeout_ms>
+        <session_timeout_ms>30000</session_timeout_ms>
+        <raft_logs_level>trace</raft_logs_level>
+    </coordination_settings>
+
+    <raft_configuration>
+        <server>
+            <id>1</id>
+            <hostname>zoo1</hostname>
+            <port>9234</port>
+        </server>
+        <server>
+            <id>2</id>
+            <hostname>zoo2</hostname>
+            <port>9234</port>
+        </server>
+        <server>
+            <id>3</id>
+            <hostname>zoo3</hostname>
+            <port>9234</port>
+        </server>
+    </raft_configuration>
+</keeper_server>
+```
+
+<div id="how-to-run">
+  ### كيفية التشغيل
+</div>
+
+يأتي ClickHouse Keeper مضمّنًا في حزمة ClickHouse server؛ ما عليك سوى إضافة إعدادات `<keeper_server>` إلى `/etc/your_path_to_config/clickhouse-server/config.xml` وتشغيل ClickHouse server كالمعتاد. وإذا أردت تشغيل standalone ClickHouse Keeper، فيمكنك تشغيله بطريقة مماثلة باستخدام:
+
+```bash
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
+```
+
+إذا لم يكن لديك الرابط الرمزي (`clickhouse-keeper`)، يمكنك إنشاؤه أو تحديد `keeper` كوسيطة لـ `clickhouse`:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
+```
+
+<div id="four-letter-word-commands">
+  ### أوامر الكلمات ذات الأحرف الأربعة
+</div>
+
+يوفّر ClickHouse Keeper أيضًا أوامر 4lw، وهي تكاد تكون مماثلة للأوامر الموجودة في ZooKeeper. يتكوّن كل أمر من أربعة أحرف، مثل `mntr` و`stat` وما إلى ذلك. وهناك بعض الأوامر اللافتة الأخرى: يوفّر `stat` معلومات عامة عن الخادم والعملاء المتصلين، ويقدّم `srvr` تفاصيل موسّعة عن الخادم، ويقدّم `cons` تفاصيل موسّعة عن الاتصالات.
+
+تتضمن أوامر 4lw إعداد قائمة بيضاء باسم `four_letter_word_white_list`، وتكون قيمته الافتراضية `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`.
+
+يمكنك إرسال هذه الأوامر إلى ClickHouse Keeper عبر telnet أو nc، من خلال منفذ العميل.
+
+```bash
+echo mntr | nc localhost 9181
+```
+
+فيما يلي أوامر 4lw بالتفصيل:
+
+* `ruok`: يختبر ما إذا كان الخادم قيد التشغيل وفي حالة سليمة. سيردّ الخادم بـ `imok` إذا كان قيد التشغيل. وإلا فلن يردّ إطلاقًا. ولا تعني استجابة `imok` بالضرورة أن الخادم قد انضم إلى النصاب، وإنما تعني فقط أن عملية الخادم نشطة ومرتبطة بمنفذ العميل المحدد. استخدم &quot;stat&quot; للحصول على تفاصيل عن الحالة فيما يتعلق بالنصاب ومعلومات اتصال العميل.
+
+```response
+imok
+```
+
+* `mntr`: يعرض قائمة بالمتغيرات التي يمكن استخدامها لمراقبة حالة العنقود.
+
+```response
+zk_version      v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     68
+zk_packets_sent 68
+zk_num_alive_connections        1
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  4
+zk_watch_count  1
+zk_ephemerals_count     0
+zk_approximate_data_size        723
+zk_open_file_descriptor_count   310
+zk_max_file_descriptor_count    10240
+zk_followers    0
+zk_synced_followers     0
+```
+
+* `srvr`: يعرض التفاصيل الكاملة للخادم.
+
+```response
+ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+Latency min/avg/max: 0/0/0
+Received: 2
+Sent : 2
+Connections: 1
+Outstanding: 0
+Zxid: 34
+Mode: leader
+Node count: 4
+```
+
+* `stat`: يعرض تفاصيل موجزة عن الخادم والعملاء المتصلين.
+
+```response
+ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+Clients:
+ 192.168.1.1:52852(recved=0,sent=0)
+ 192.168.1.1:52042(recved=24,sent=48)
+Latency min/avg/max: 0/0/0
+Received: 4
+Sent : 4
+Connections: 1
+Outstanding: 0
+Zxid: 36
+Mode: leader
+Node count: 4
+```
+
+* `srst`: إعادة تعيين إحصاءات الخادم. يؤثر هذا الأمر في نتيجة `srvr` و`mntr` و`stat`.
+
+```response
+Server stats reset.
+```
+
+* `conf`: اطبع تفاصيل إعدادات الخدمة.
+
+```response
+server_id=1
+tcp_port=2181
+four_letter_word_white_list=*
+log_storage_path=./coordination/logs
+snapshot_storage_path=./coordination/snapshots
+max_requests_batch_size=100
+session_timeout_ms=30000
+operation_timeout_ms=10000
+dead_session_check_period_ms=500
+heart_beat_interval_ms=500
+election_timeout_lower_bound_ms=1000
+election_timeout_upper_bound_ms=2000
+reserved_log_items=1000000000000000
+snapshot_distance=10000
+auto_forwarding=true
+shutdown_timeout=5000
+startup_timeout=240000
+raft_logs_level=information
+snapshots_to_keep=3
+rotate_log_storage_interval=100000
+stale_log_gap=10000
+fresh_log_gap=200
+max_requests_batch_size=100
+quorum_reads=false
+force_sync=false
+compress_logs=true
+compress_snapshots_with_zstd_format=true
+configuration_change_tries_count=20
+```
+
+* `cons`: يعرض تفاصيل الاتصال/الجلسة الكاملة لجميع العملاء المتصلين بهذا الخادم. ويتضمن معلومات عن عدد الحزم المستلمة/المرسلة، ومعرّف الجلسة، وزمن استجابة العمليات، وآخر عملية نُفِّذت، إلخ...
+
+```response
+ 192.168.1.1:52163(recved=0,sent=0,sid=0xffffffffffffffff,lop=NA,est=1636454787393,to=30000,lzxid=0xffffffffffffffff,lresp=0,llat=0,minlat=0,avglat=0,maxlat=0)
+ 192.168.1.1:52042(recved=9,sent=18,sid=0x0000000000000001,lop=List,est=1636454739887,to=30000,lcxid=0x0000000000000005,lzxid=0x0000000000000005,lresp=1636454739892,llat=0,minlat=0,avglat=0,maxlat=0)
+```
+
+* `crst`: إعادة ضبط إحصاءات الاتصال/الجلسة لجميع الاتصالات.
+
+```response
+Connection stats reset.
+```
+
+* `envi`: اطبع تفاصيل بيئة التشغيل
+
+```response
+Environment:
+clickhouse.keeper.version=v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+host.name=ZBMAC-C02D4054M.local
+os.name=Darwin
+os.arch=x86_64
+os.version=19.6.0
+cpu.count=12
+user.name=root
+user.home=/Users/JackyWoo/
+user.dir=/Users/JackyWoo/project/jd/clickhouse/cmake-build-debug/programs/
+user.tmp=/var/folders/b4/smbq5mfj7578f2jzwn602tt40000gn/T/
+```
+
+* `dirs`: يعرض الحجم الإجمالي لملفات اللقطات وملفات السجل، بالبايت
+
+```response
+snapshot_dir_size: 0
+log_dir_size: 3875
+```
+
+* `isro`: يختبر ما إذا كان الخادم يعمل بوضع القراءة فقط. يستجيب الخادم بـ `ro` إذا كان في وضع القراءة فقط، أو بـ `rw` إذا لم يكن كذلك.
+
+```response
+rw
+```
+
+* `wchs`: يعرض معلومات موجزة عن المراقِبات على الخادم.
+
+```response
+1 connections watching 1 paths
+Total watches:1
+```
+
+* `wchc`: يسرد معلومات تفصيلية عن الـ watches على الخادم بحسب الجلسة. ويُخرج هذا قائمة بالجلسات (الاتصالات) مع الـ watches (المسارات) المرتبطة بها. لاحظ أنه، وفقًا لعدد الـ watches، قد تكون هذه العملية مكلفة (وقد تؤثر في أداء الخادم)، لذا استخدمها بحذر.
+
+```response
+0x0000000000000001
+    /clickhouse/task_queue/ddl
+```
+
+* `wchp`: يسرد معلومات تفصيلية عن عمليات watch على الخادم بحسب المسار. ويعرض هذا الأمر قائمة بالمسارات (znodes) والجلسات المرتبطة بها. لاحظ أنه، وبحسب عدد عمليات watch، قد تكون هذه العملية مكلفة (أي قد تؤثر في أداء الخادم)، لذا استخدمها بحذر.
+
+```response
+/clickhouse/task_queue/ddl
+    0x0000000000000001
+```
+
+* `dump`: يعرض الجلسات المعلّقة والعُقد المؤقتة. لا يعمل هذا إلا على العقدة القائدة.
+
+```response
+Sessions dump (2):
+0x0000000000000001
+0x0000000000000002
+Sessions with Ephemerals (1):
+0x0000000000000001
+ /clickhouse/task_queue/ddl
+```
+
+* `csnp`: جدولة مهمة لإنشاء لقطة. يُرجِع آخر فهرس سجل مُلتزَم للّقطة المُجدولة عند النجاح، أو `Failed to schedule snapshot creation task.` عند الفشل. ويمكن أن يساعدك الأمر `lgif` في تحديد ما إذا كانت اللقطة قد اكتملت.
+
+```response
+100
+```
+
+* `lgif`: معلومات سجل Keeper. `first_log_idx` : أول فهرس سجل لديّ في مخزن السجل؛ `first_log_term` : أول مُدة سجل لديّ؛ `last_log_idx` : آخر فهرس سجل لديّ في مخزن السجل؛ `last_log_term` : آخر مُدة سجل لديّ؛ `last_committed_log_idx` : آخر فهرس سجل مُعتمَد لديّ في آلة الحالات؛ `leader_committed_log_idx` : فهرس السجل المُعتمَد لدى القائد من وجهة نظري؛ `target_committed_log_idx` : فهرس السجل المستهدف الذي ينبغي اعتماده؛ `last_snapshot_idx` : أكبر فهرس سجل مُعتمَد في آخر لقطة.
+
+```response
+first_log_idx   1
+first_log_term  1
+last_log_idx    101
+last_log_term   1
+last_committed_log_idx  100
+leader_committed_log_idx    101
+target_committed_log_idx    101
+last_snapshot_idx   50
+```
+
+* `rqld`: طلب لتولي دور القائد الجديد. يعيد `Sent leadership request to leader.` إذا تم إرسال الطلب، أو `Failed to send leadership request to leader.` إذا تعذر إرسال الطلب. وإذا كانت العقدة هي القائد بالفعل، فستكون النتيجة مماثلة لحالة إرسال الطلب.
+
+```response
+Sent leadership request to leader.
+```
+
+* `ftfl`: يسرد جميع علامات الميزات وما إذا كانت مفعّلة في مثيل Keeper.
+
+```response
+filtered_list   1
+multi_read  1
+check_not_exists    0
+```
+
+* `ydld`: طلب للتنازل عن القيادة والتحول إلى تابع. إذا كان الخادم الذي يستقبل الطلب هو القائد، فسيُوقف عمليات الكتابة مؤقتًا أولًا، ثم ينتظر حتى يُكمل القائد البديل (لا يمكن أبدًا أن يكون القائد الحالي هو القائد البديل) اللحاق بآخر سجل، ثم يتنحى. سيُختار القائد البديل تلقائيًا. يُرجع `Sent yield leadership request to leader.` إذا تم إرسال الطلب أو `Failed to send yield leadership request to leader.` إذا تعذر إرسال الطلب. وإذا كانت العقدة تابعًا بالفعل، فستكون النتيجة مماثلة لما يحدث عند إرسال الطلب.
+
+```response
+Sent yield leadership request to leader.
+```
+
+* `pfev`: يعرض قيم جميع الأحداث المجمَّعة. ولكل حدث، يعرض اسم الحدث وقيمته ووصفه.
+
+```response
+FileOpen        62      Number of files opened.
+Seek    4       Number of times the 'lseek' function was called.
+ReadBufferFromFileDescriptorRead        126     Number of reads (read/pread) from a file descriptor. Does not include sockets.
+ReadBufferFromFileDescriptorReadFailed  0       Number of times the read (read/pread) from a file descriptor have failed.
+ReadBufferFromFileDescriptorReadBytes   178846  Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.
+WriteBufferFromFileDescriptorWrite      7       Number of writes (write/pwrite) to a file descriptor. Does not include sockets.
+WriteBufferFromFileDescriptorWriteFailed        0       Number of times the write (write/pwrite) to a file descriptor have failed.
+WriteBufferFromFileDescriptorWriteBytes 153     Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.
+FileSync        2       Number of times the F_FULLFSYNC/fsync/fdatasync function was called for files.
+DirectorySync   0       Number of times the F_FULLFSYNC/fsync/fdatasync function was called for directories.
+FileSyncElapsedMicroseconds     12756   Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for files.
+DirectorySyncElapsedMicroseconds        0       Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for directories.
+ReadCompressedBytes     0       Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).
+CompressedReadBufferBlocks      0       Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).
+CompressedReadBufferBytes       0       Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).
+AIOWrite        0       Number of writes with Linux or FreeBSD AIO interface
+AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interface
+...
+```
+
+<div id="http-control">
+  ### HTTP control
+</div>
+
+يوفّر ClickHouse Keeper واجهة HTTP للتحقق مما إذا كانت النسخة المتماثلة جاهزة لاستقبال حركة المرور. ويمكن استخدام ذلك في البيئات السحابية، مثل [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
+
+مثال على تهيئة تفعّل نقطة النهاية `/ready`:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <http_control>
+            <port>9182</port>
+            <readiness>
+                <endpoint>/ready</endpoint>
+            </readiness>
+        </http_control>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="feature-flags">
+  ### علامات الميزات
+</div>
+
+يتوافق Keeper توافقًا كاملًا مع ZooKeeper وعملائه، لكنه يقدّم أيضًا بعض الميزات وأنواع الطلبات الفريدة التي يمكن لعميل ClickHouse استخدامها.
+ولأن هذه الميزات قد تؤدي إلى تغييرات غير متوافقة مع الإصدارات السابقة، فإن معظمها يكون معطّلًا افتراضيًا، ويمكن تمكينها باستخدام إعداد `keeper_server.feature_flags`.
+كما يمكن تعطيل جميع الميزات صراحةً.
+إذا كنت تريد تمكين ميزة جديدة في عنقود Keeper لديك، فنوصيك أولًا بتحديث جميع مثيلات Keeper في العنقود إلى إصدار يدعم هذه الميزة، ثم تمكين الميزة نفسها.
+
+مثال على إعداد لعلامة ميزة يعطّل `multi_read` ويمكّن `check_not_exists`:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <feature_flags>
+            <multi_read>0</multi_read>
+            <check_not_exists>1</check_not_exists>
+        </feature_flags>
+    </keeper_server>
+</clickhouse>
+```
+
+الميزات التالية متاحة:
+
+| Feature                | Description                                                                                                                  | Default |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `multi_read`           | دعم طلبات قراءة متعددة                                                                                                       | `1`     |
+| `filtered_list`        | دعم طلب سرد يرشّح النتائج حسب نوع العقدة (مؤقتة أو دائمة)                                                                    | `1`     |
+| `check_not_exists`     | دعم طلب `CheckNotExists`، الذي يتحقق من أن العقدة غير موجودة                                                                 | `1`     |
+| `create_if_not_exists` | دعم طلب `CreateIfNotExists`، الذي يحاول إنشاء عقدة إذا لم تكن موجودة. وإذا كانت موجودة، فلن تُطبَّق أي تغييرات وسيُعاد `ZOK` | `1`     |
+| `remove_recursive`     | دعم طلب `RemoveRecursive`، الذي يزيل العقدة مع الشجرة الفرعية التابعة لها                                                    | `1`     |
+
+<Note>
+  بعض علامات الميزات تكون مفعّلة افتراضيًا بدءًا من الإصدار 25.7.
+  والطريقة الموصى بها لترقية Keeper إلى 25.7+ هي الترقية أولًا إلى الإصدار 24.9+.
+</Note>
+
+<div id="migration-from-zookeeper">
+  ### الترحيل من ZooKeeper
+</div>
+
+لا يمكن إجراء ترحيل سلس من ZooKeeper إلى ClickHouse Keeper. يجب عليك إيقاف عنقود ZooKeeper، وتحويل البيانات، ثم تشغيل ClickHouse Keeper. تحوّل أداة `clickhouse-keeper-converter` السجلات ولقطات الخاصة بـ ZooKeeper إلى لقطة لـ ClickHouse Keeper. وتتطلب ZooKeeper 3.4 أو إصدارًا أحدث.
+
+<div id="pre-migration-preparation">
+  #### التحضير قبل الترحيل
+</div>
+
+يتطلّب الترحيل إيقاف استيعاب البيانات. حدّد فترة صيانة قبل البدء.
+
+قبل إيقاف ZooKeeper، أوقِف مهام ClickHouse الخلفية التي تعدّل البيانات الوصفية الخاصة بالتنسيق. على سبيل المثال:
+
+```sql
+SYSTEM STOP MERGES;
+```
+
+سجّل مقاييس المقارنة قبل الترحيل حتى تتمكن من التحقق من الاتساق لاحقًا.
+
+<div id="migration-steps">
+  #### خطوات الترحيل
+</div>
+
+1. أوقف استيعاب البيانات إلى جميع عقد ClickHouse.
+
+2. أوقف جميع المهام التي تعمل في الخلفية على جميع عقد ClickHouse (راجع [أعلاه](#pre-migration-preparation)).
+
+3. أوقف جميع عقد ZooKeeper.
+
+4. اختياري، لكنه مُوصى به: حدِّد العقدة القائدة في ZooKeeper، ثم شغّلها وأوقفها مرة أخرى. يُجبر ذلك ZooKeeper على كتابة لقطة متسقة على القرص قبل التحويل.
+
+5. شغّل `clickhouse-keeper-converter` على العقدة القائدة. إذا كان لديك الملف التنفيذي الكامل لـ ClickHouse مثبّتًا، فاستخدم الأمر الفرعي `keeper-converter` بدلًا من ذلك (`clickhouse keeper-converter`). إذا لم يكن أيٌّ منهما متاحًا، [نزّل الملف التنفيذي](/getting-started/quick-start/oss#install-clickhouse).
+
+```bash
+clickhouse-keeper-converter \
+  --zookeeper-logs-dir /var/lib/zookeeper/version-2 \
+  --zookeeper-snapshots-dir /var/lib/zookeeper/version-2 \
+  --output-dir /path/to/clickhouse/keeper/snapshots
+```
+
+6. انسخ اللقطة إلى جميع عُقد ClickHouse Keeper. يجب أن تكون اللقطة موجودة على كل عقدة قبل بدء أي عقدة — فإذا بدأت عقدة من دون لقطة، فقد تنتخب نفسها قائدًا بحالة فارغة.
+
+7. حدّث إعدادات ClickHouse لديك لتشير إلى عنقود Keeper الجديد.
+
+8. ابدأ ClickHouse Keeper على جميع العقد، ثم أعد تشغيل ClickHouse.
+
+9. قارِن المقاييس بخط الأساس قبل الترحيل للتحقق من الاتساق.
+
+10. استأنف المهام التي تعمل في الخلفية، وأعد تشغيل استيعاب البيانات.
+
+<div id="consolidating-multiple-zookeeper-clusters">
+  #### دمج عدة عناقيد ZooKeeper
+</div>
+
+إذا كنت تشغّل عدة عناقيد ZooKeeper — على سبيل المثال، مجموعة واحدة لكل مجموعة shard — فيمكنك دمجها في عنقود ClickHouse Keeper واحد. لا تدعم أداة `clickhouse-keeper-converter` الرسمية سوى التحويلات من واحد إلى واحد (عنقود ZooKeeper واحد إلى لقطة Keeper واحدة)، لذلك يتطلب الدمج تعديل الشيفرة المصدرية للمحوّل لدمج عدة لقطات:
+
+1. شغّل `clickhouse-keeper-converter` بشكل منفصل على كل عنقود ZooKeeper، واكتب كل ناتج في دليل منفصل.
+2. ألغِ تسلسل ملفات اللقطات بالتتابع. وعند الدمج، أعد حساب قيم `numChildren` لتجنّب تعارض معرّفات العقد بين مساحات الأسماء القادمة من عناقيد المصدر المختلفة.
+3. اكتب الناتج المدمج في دليل لقطات ClickHouse Keeper الهدف.
+
+<div id="handling-encryption-and-acls">
+  #### التعامل مع التشفير وقوائم ACL
+</div>
+
+يدعم ClickHouse Keeper مخططات ACL نفسها التي يدعمها ZooKeeper (`world`, `auth`, `digest`). وتعتمد طريقة التعامل مع قوائم ACL أثناء التحويل على إعداد ZooKeeper لديك:
+
+* **مشفَّر بالكامل أو غير مشفَّر بالكامل**: حوِّل مباشرةً. يحافظ المحوِّل على معلومات ACL الحالية.
+* **مشفَّر جزئيًا**: قبل التحويل، امنح حساب مسؤول فائق الصلاحيات وامسح قوائم ACL باستخدام `setAcl -R` على المسارات المتأثرة. حوِّل، ثم أعد تمكين التشفير في ClickHouse Keeper إذا لزم الأمر.
+
+<div id="verifying-the-migration">
+  #### التحقق من الترحيل
+</div>
+
+بعد تشغيل ClickHouse Keeper وإعادة تشغيل ClickHouse، قارن المقاييس الرئيسية لديك بخط الأساس السابق للترحيل للتأكد من نجاح الترحيل.
+
+عند دمج عدة عناقيد ZooKeeper، ميّز بين:
+
+* **المسارات المشتركة**: المسارات الموجودة في عدة عناقيد مصدر وتحمل البيانات نفسها — يجب إزالة التكرار منها في المخرجات المدمجة.
+* **المسارات المتمايزة**: المسارات التي لا توجد إلا ضمن عناقيد محددة (على سبيل المثال، تحت `/clickhouse/tables` لكل مجموعة shard) — يجب الحفاظ عليها من المصدر الصحيح.
+
+تجنّب استعراض أشجار ZooKeeper الكبيرة مباشرةً لأغراض المقارنة. وبدلاً من ذلك، اطبع جميع المسارات المحوّلة إلى ملف أثناء التحويل.
+
+<div id="post-migration-tuning">
+  #### الضبط بعد الترحيل
+</div>
+
+بعد الترحيل، فكّر في ضبط هذه الإعدادات للمجموعات العنقودية الأكبر أو لتحقيق إنتاجية أعلى:
+
+| الإعداد                               | الافتراضي | الموصى به | ملاحظات                                                                                               |
+| ------------------------------------- | --------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| `max_requests_batch_size`             | `100`     | `10000`   | زِد هذه القيمة للمجموعات العنقودية ذات الأعداد الكبيرة من الأجزاء أو التي تضم عددًا كبيرًا من الشظايا |
+| `force_sync`                          | `true`    | `false`   | تُحسّن عمليات كتابة السجلات غير المتزامنة الإنتاجية                                                   |
+| `compress_logs`                       | `false`   | `true`    | يضغط ملفات سجلات Raft لتقليل عمليات الإدخال/الإخراج على القرص                                         |
+| `compress_snapshots_with_zstd_format` | `true`    | —         | مفعّل بالفعل افتراضيًا؛ ويضغط اللقطات باستخدام zstd                                                   |
+
+تُضبط هذه الإعدادات ضمن `coordination_settings` في [تهيئة Keeper](#internal-coordination-settings).
+
+<div id="recovering-after-losing-quorum">
+  ### الاستعادة بعد فقدان النصاب
+</div>
+
+نظرًا لأن ClickHouse Keeper يستخدم Raft، فإنه يستطيع تحمّل عدد معيّن من تعطل العُقد بحسب حجم العنقود.
+فعلى سبيل المثال، في عنقود مكوّن من 3 عُقد، سيواصل العمل بشكل صحيح إذا تعطلت عقدة واحدة فقط.
+
+يمكن إعادة ضبط إعدادات العنقود ديناميكيًا، لكن هناك بعض القيود. تعتمد إعادة التهيئة أيضًا على Raft،
+لذا فإن إضافة عقدة إلى العنقود أو إزالتها منه تتطلب توفر نصاب. وإذا فقدت عددًا كبيرًا جدًا من العُقد في عنقودك في الوقت نفسه، من دون أي إمكانية
+لإعادة تشغيلها، فسيتوقف Raft عن العمل ولن يسمح لك بإعادة تهيئة عنقودك بالطريقة المعتادة.
+
+ومع ذلك، يوفّر ClickHouse Keeper وضع استعادة يتيح لك فرض إعادة تهيئة عنقودك باستخدام عقدة واحدة فقط.
+ولا ينبغي اللجوء إلى ذلك إلا كحل أخير إذا تعذّر عليك إعادة تشغيل العُقد، أو تشغيل مثيل جديد على نقطة النهاية نفسها.
+
+أمور مهمة يجب الانتباه إليها قبل المتابعة:
+
+* تأكد من أن العُقد المتعطلة لا يمكنها الاتصال بالعنقود مرة أخرى.
+* لا تبدأ تشغيل أي من العُقد الجديدة حتى يُذكر ذلك صراحةً في الخطوات.
+
+بعد التأكد من صحة ما سبق، عليك القيام بما يلي:
+
+1. اختر عقدة Keeper واحدة لتكون القائد الجديد. انتبه إلى أن بيانات هذه العقدة ستُستخدم للعنقود بأكمله، لذلك نوصي باستخدام عقدة تحتوي على أحدث حالة ممكنة.
+2. قبل القيام بأي شيء آخر، أنشئ نسخة احتياطية من المجلدين `log_storage_path` و`snapshot_storage_path` في العقدة التي اخترتها.
+3. أعد تهيئة العنقود على جميع العُقد التي تريد استخدامها.
+4. أرسل الأمر المكوّن من أربعة أحرف `rcvr` إلى العقدة التي اخترتها، مما سينقل العقدة إلى وضع الاستعادة، أو أوقف مثيل Keeper على العقدة المختارة ثم أعد تشغيله باستخدام الوسيط `--force-recovery`.
+5. شغّل مثيلات Keeper على العُقد الجديدة واحدًا تلو الآخر، مع التأكد من أن `mntr` يعيد `follower` في `zk_server_state` قبل تشغيل العقدة التالية.
+6. أثناء وضع الاستعادة، سترجع عقدة القائد رسالة خطأ للأمر `mntr` إلى أن تحقق النصاب مع العُقد الجديدة، كما سترفض أي طلبات من العميل ومن الـ التوابع.
+7. بعد تحقيق النصاب، ستعود عقدة القائد إلى وضع التشغيل العادي، وتبدأ في قبول جميع الطلبات باستخدام Raft — ويمكنك التحقق من ذلك عبر `mntr`، إذ ينبغي أن يعيد `leader` في `zk_server_state`.
+
+<div id="using-disks-with-keeper">
+  ## استخدام الأقراص مع Keeper
+</div>
+
+يدعم Keeper مجموعة فرعية من [الأقراص الخارجية](/ar/concepts/features/configuration/server-config/storing-data) لتخزين اللقطات وملفات السجل وملف الحالة.
+
+أنواع الأقراص المدعومة هي:
+
+* s3&#95;plain
+* s3
+* local
+
+فيما يلي مثال على تعريفات الأقراص الواردة داخل ملف إعداد.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <log_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/logs/</path>
+            </log_local>
+            <log_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/logs/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </log_s3_plain>
+            <snapshot_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/snapshots/</path>
+            </snapshot_local>
+            <snapshot_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/snapshots/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </snapshot_s3_plain>
+            <state_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/state/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </state_s3_plain>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+لاستخدام قرص للسجلات، يجب ضبط الإعداد `keeper_server.log_storage_disk` على اسم القرص.
+لاستخدام قرص للقطات، يجب ضبط الإعداد `keeper_server.snapshot_storage_disk` على اسم القرص.
+بالإضافة إلى ذلك، يمكن استخدام `keeper_server.latest_log_storage_disk` لأحدث السجلات و`keeper_server.latest_snapshot_storage_disk` لأحدث اللقطات.
+في هذه الحالة، سينقل Keeper الملفات تلقائيًا إلى الأقراص الصحيحة عند إنشاء سجلات أو لقطات جديدة.
+لاستخدام قرص لملف الحالة، يجب ضبط الإعداد `keeper_server.state_storage_disk` على اسم القرص.
+
+يُعد نقل الملفات بين الأقراص آمنًا، ولا توجد أي مخاطر لفقدان البيانات إذا توقف Keeper في منتصف عملية النقل.
+وإلى أن يُنقل الملف بالكامل إلى القرص الجديد، فلن يُحذف من القرص القديم.
+
+لا يمكن لـ Keeper عند ضبط `keeper_server.coordination_settings.force_sync` على `true` (والقيمة الافتراضية هي `true`) تلبية بعض الضمانات لجميع أنواع الأقراص.
+في الوقت الحالي، لا تدعم المزامنة الدائمة إلا الأقراص من النوع `local`.
+إذا استُخدم `force_sync`، فيجب أن يكون `log_storage_disk` قرصًا من النوع `local` إذا لم يُستخدم `latest_log_storage_disk`.
+أما إذا استُخدم `latest_log_storage_disk`، فيجب أن يكون دائمًا قرصًا من النوع `local`.
+إذا كان `force_sync` معطّلًا، فيمكن استخدام الأقراص من جميع الأنواع في أي إعداد.
+
+يمكن أن يبدو إعداد تخزين محتمل لمثيل Keeper كما يلي:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <log_storage_disk>log_s3_plain</log_storage_disk>
+        <latest_log_storage_disk>log_local</latest_log_storage_disk>
+
+        <snapshot_storage_disk>snapshot_s3_plain</snapshot_storage_disk>
+        <latest_snapshot_storage_disk>snapshot_local</latest_snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>
+```
+
+سيخزّن هذا المثيل جميع السجلات ما عدا أحدث السجلات على القرص `log_s3_plain`، بينما سيُحفَظ أحدث سجل على القرص `log_local`.
+وينطبق المنطق نفسه على اللقطات؛ إذ ستُخزَّن جميع اللقطات ما عدا أحدث اللقطات على `snapshot_s3_plain`، بينما سيُحفَظ أحدث لقطة على القرص `snapshot_local`.
+
+<div id="changing-disk-setup">
+  ### تغيير إعداد الأقراص
+</div>
+
+<Warning>
+  قبل تطبيق إعداد أقراص جديد، خذ نسخة احتياطية يدويًا من جميع سجلات Keeper ولقطاته.
+</Warning>
+
+إذا كان قد جرى تعريف إعداد أقراص متدرّج (باستخدام أقراص منفصلة لأحدث الملفات)، فسيحاول Keeper نقل الملفات تلقائيًا إلى الأقراص الصحيحة عند بدء التشغيل.
+وينطبق الضمان نفسه كما في السابق؛ فإلى أن يُنقَل الملف بالكامل إلى القرص الجديد، لن يُحذَف من القرص القديم، لذا يمكن إجراء
+عمليات إعادة تشغيل متعددة بأمان.
+
+إذا كان من الضروري نقل الملفات إلى قرص جديد بالكامل (أو الانتقال من إعداد ذي قرصين إلى إعداد ذي قرص واحد)، فيمكن استخدام تعريفات متعددة لـ `keeper_server.old_snapshot_storage_disk` و `keeper_server.old_log_storage_disk`.
+
+يوضح التكوين التالي كيف يمكننا الانتقال من إعداد القرصين السابق إلى إعداد جديد بالكامل ذي قرص واحد:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <old_log_storage_disk>log_local</old_log_storage_disk>
+        <old_log_storage_disk>log_s3_plain</old_log_storage_disk>
+        <log_storage_disk>log_local2</log_storage_disk>
+
+        <old_snapshot_storage_disk>snapshot_s3_plain</old_snapshot_storage_disk>
+        <old_snapshot_storage_disk>snapshot_local</old_snapshot_storage_disk>
+        <snapshot_storage_disk>snapshot_local2</snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>
+```
+
+عند بدء التشغيل، ستُنقل جميع ملفات السجل من `log_local` و`log_s3_plain` إلى القرص `log_local2`.
+كما ستُنقل جميع ملفات اللقطات من `snapshot_local` و`snapshot_s3_plain` إلى القرص `snapshot_local2`.
+
+<div id="configuring-logs-cache">
+  ## تهيئة ذاكرة التخزين المؤقت للسجلات
+</div>
+
+لتقليل كمية البيانات المقروءة من القرص، يخزّن Keeper إدخالات السجل مؤقتًا في الذاكرة.
+إذا كانت الطلبات كبيرة، فستستهلك إدخالات السجل قدرًا كبيرًا جدًا من الذاكرة، لذلك يُوضَع حدّ لكمية السجلات المخزنة مؤقتًا.
+يُتحكَّم في هذا الحد باستخدام هذين الإعدادين:
+
+* `latest_logs_cache_size_threshold` - الحجم الإجمالي لأحدث السجلات المخزنة في ذاكرة التخزين المؤقت
+* `commit_logs_cache_size_threshold` - الحجم الإجمالي للسجلات اللاحقة التي يجب تنفيذ commit لها بعد ذلك
+
+إذا كانت القيم الافتراضية كبيرة جدًا، فيمكنك تقليل استخدام الذاكرة عبر تقليل هذين الإعدادين.
+
+<Note>
+  يمكنك استخدام الأمر `pfev` للتحقق من كمية السجلات المقروءة من كل ذاكرة تخزين مؤقت ومن ملف.
+  يمكنك أيضًا استخدام المقاييس من نقطة نهاية Prometheus لتتبّع الحجم الحالي لكِلَا المخزنين المؤقتين.
+</Note>
+
+<div id="prometheus">
+  ## Prometheus
+</div>
+
+يمكن لـ Keeper كشف بيانات المقاييس ليتمكّن [Prometheus](https://prometheus.io) من سحبها.
+
+الإعدادات:
+
+* `endpoint` – نقطة نهاية HTTP لسحب المقاييس بواسطة خادم Prometheus. ابدأ من &#39;/&#39;.
+* `port` – المنفذ الخاص بـ `endpoint`.
+* `metrics` – خيار يحدد كشف المقاييس من جدول [system.metrics](/ar/reference/system-tables/metrics).
+* `events` – خيار يحدد كشف المقاييس من جدول [system.events](/ar/reference/system-tables/events).
+* `asynchronous_metrics` – خيار يحدد كشف قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
+
+**مثال**
+
+```xml highlight={5-11}
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+</clickhouse>
+```
+
+تحقّق (استبدل `127.0.0.1` بعنوان IP أو اسم المضيف لخادم ClickHouse لديك):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+راجع أيضًا [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus) في ClickHouse Cloud.
+
+<div id="clickhouse-keeper-user-guide">
+  ## دليل المستخدم لـ ClickHouse Keeper
+</div>
+
+يوفّر هذا الدليل إعدادات بسيطة ومختصرة لتهيئة ClickHouse Keeper، مع مثال يوضّح كيفية اختبار العمليات الموزعة. يُنفَّذ هذا المثال باستخدام 3 عقد على Linux.
+
+<div id="1-configure-nodes-with-keeper-settings">
+  ### 1. تهيئة العقد باستخدام إعدادات Keeper
+</div>
+
+1. ثبّت 3 مثيلات ClickHouse على 3 مضيفات (`chnode1`, `chnode2`, `chnode3`). (راجع [Quick Start](/ar/get-started/setup/install) للحصول على تفاصيل حول تثبيت ClickHouse.)
+
+2. على كل عقدة، أضِف السطر التالي للسماح بالاتصال الخارجي عبر واجهة الشبكة.
+   ```xml
+   <listen_host>0.0.0.0</listen_host>
+   ```
+
+3. أضف إعداد ClickHouse Keeper التالي إلى الخوادم الثلاثة، مع تحديث إعداد `<server_id>` لكل خادم؛ ففي `chnode1` تكون القيمة `1`، وفي `chnode2` تكون `2`، وهكذا.
+
+   ```xml
+   <keeper_server>
+       <tcp_port>9181</tcp_port>
+       <server_id>1</server_id>
+       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+       <coordination_settings>
+           <operation_timeout_ms>10000</operation_timeout_ms>
+           <session_timeout_ms>30000</session_timeout_ms>
+           <raft_logs_level>warning</raft_logs_level>
+       </coordination_settings>
+
+       <raft_configuration>
+           <server>
+               <id>1</id>
+               <hostname>chnode1.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>2</id>
+               <hostname>chnode2.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>3</id>
+               <hostname>chnode3.domain.com</hostname>
+               <port>9234</port>
+           </server>
+       </raft_configuration>
+   </keeper_server>
+   ```
+
+   فيما يلي الإعدادات الأساسية المستخدمة أعلاه:
+
+   | المعلمة                   | الوصف                                                            | مثال                                                 |
+   | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+   | tcp&#95;port              | المنفذ الذي سيستخدمه عملاء Keeper                                | 9181، وهو المكافئ الافتراضي لـ 2181 كما في ZooKeeper |
+   | server&#95;id             | المعرّف الخاص بكل خادم ClickHouse Keeper والمستخدم في تهيئة raft | 1                                                    |
+   | coordination&#95;settings | قسم خاص بمعلمات مثل المهل الزمنية                                | timeouts: 10000, log level: trace                    |
+   | server                    | تعريف الخادم المشارك                                             | قائمة بتعريف كل خادم                                 |
+   | raft&#95;configuration    | إعدادات كل خادم في عنقود Keeper                                  | الخادم والإعدادات الخاصة بكل خادم                    |
+   | id                        | المعرّف الرقمي للخادم في خدمات Keeper                            | 1                                                    |
+   | hostname                  | اسم المضيف أو عنوان IP أو FQDN لكل خادم في عنقود Keeper          | `chnode1.domain.com`                                 |
+   | port                      | المنفذ الذي يستمع عليه لاتصالات Keeper بين الخوادم               | 9234                                                 |
+
+4. فعِّل مكوّن Zookeeper. سيستخدم محرّك ClickHouse Keeper:
+
+   ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode2.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode3.domain.com</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+   ```
+
+   فيما يلي الإعدادات الأساسية المستخدمة أعلاه:
+
+   | المعلمة | الوصف                                                                            | مثال                        |
+   | ------- | -------------------------------------------------------------------------------- | --------------------------- |
+   | node    | قائمة بالعُقد الخاصة باتصالات ClickHouse Keeper                                  | إدخال في الإعدادات لكل خادم |
+   | host    | اسم المضيف أو عنوان IP أو الاسم المؤهل بالكامل (FQDN) لكل عقدة ClickHouse Keeper | `chnode1.domain.com`        |
+   | port    | منفذ العميل لـ ClickHouse Keeper                                                 | 9181                        |
+
+5. أعد تشغيل ClickHouse وتأكد من أن كل مثيل من Keeper يعمل. نفّذ الأمر التالي على كل خادم. يُرجع الأمر `ruok` القيمة `imok` إذا كان Keeper يعمل وبحالة سليمة:
+   ```bash
+   # echo ruok | nc localhost 9181; echo
+   imok
+   ```
+
+6. تحتوي قاعدة البيانات `system` على جدول باسم `zookeeper` يتضمن تفاصيل مثيلات ClickHouse Keeper لديك. لنعرض هذا الجدول:
+
+   ```sql
+   SELECT *
+   FROM system.zookeeper
+   WHERE path IN ('/', '/clickhouse')
+   ```
+
+   يظهر الجدول كما يلي:
+
+   ```response
+   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+   ```
+
+<div id="2--configure-a-cluster-in-clickhouse">
+  ### 2.  تكوين عنقود في ClickHouse
+</div>
+
+1. لنُعِدّ عنقود بسيطًا يتكوّن من shardين وبـ نسخة متماثلة واحدة فقط على عقدتين. ستُستخدم العقدة الثالثة لتحقيق quorum المطلوب في ClickHouse Keeper. حدِّث الإعدادات على `chnode1` و`chnode2`. يعرّف الـ عنقود التالي shard واحدة على كل عقدة، ليصبح المجموع shardين من دون replication. في هذا المثال، سيكون بعض البيانات على إحدى العقد وبعضها على العقدة الأخرى:
+
+   ```xml
+       <remote_servers>
+           <cluster_2S_1R>
+               <shard>
+                   <replica>
+                       <host>chnode1.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+               <shard>
+                   <replica>
+                       <host>chnode2.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+           </cluster_2S_1R>
+       </remote_servers>
+   ```
+
+   | المعلَمة | الوصف                                                                                           | مثال                                 |
+   | -------- | ----------------------------------------------------------------------------------------------- | ------------------------------------ |
+   | shard    | قائمة الـ نسخ المتماثلة في تعريف الـ عنقود                                                      | قائمة الـ نسخ المتماثلة لكل shard    |
+   | replica  | قائمة الإعدادات لكل نسخة متماثلة                                                                | إدخالات الإعدادات لكل نسخة متماثلة   |
+   | host     | اسم المضيف أو عنوان IP أو الاسم المؤهل بالكامل (FQDN) للخادم الذي سيستضيف نسخة متماثلة shard | `chnode1.domain.com`                 |
+   | port     | المنفذ المستخدم للتواصل عبر native TCP protocol                                                 | 9000                                 |
+   | user     | اسم المستخدم الذي سيُستخدم للمصادقة على مثيلات الـ عنقود                                        | default                              |
+   | password | كلمة مرور المستخدم المعرّف للسماح بالاتصال بمثيلات الـ عنقود                                    | `ClickHouse123!`                     |
+
+2. أعد تشغيل ClickHouse وتحقّق من إنشاء الـ عنقود:
+
+   ```sql
+   SHOW clusters;
+   ```
+
+   يجب أن ترى الـ عنقود الخاص بك:
+
+   ```response
+   ┌─cluster───────┐
+   │ cluster_2S_1R │
+   └───────────────┘
+   ```
+
+<div id="3-create-and-test-distributed-table">
+  ### 3. إنشاء جدول `Distributed` واختباره
+</div>
+
+1. أنشئ قاعدة بيانات جديدة على الـ عنقود الجديد باستخدام عميل ClickHouse على `chnode1`. تؤدي عبارة `ON CLUSTER` إلى إنشاء قاعدة البيانات تلقائيًا على كلتا العقدتين.
+   ```sql
+   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+   ```
+
+2. أنشئ جدولًا جديدًا في قاعدة البيانات `db1`. ومرة أخرى، ينشئ `ON CLUSTER` الجدول على كلتا العقدتين.
+   ```sql
+   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+   (
+       `id` UInt64,
+       `column1` String
+   )
+   ENGINE = MergeTree
+   ORDER BY column1
+   ```
+
+3. على العقدة `chnode1`، أضف صفّين:
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (1, 'abc'),
+       (2, 'def')
+   ```
+
+4. أضف صفّين على العقدة `chnode2`:
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (3, 'ghi'),
+       (4, 'jkl')
+   ```
+
+5. لاحظ أن تشغيل تعليمة `SELECT` على كل عقدة لا يعرض إلا البيانات الموجودة على تلك العقدة. على سبيل المثال، على `chnode1`:
+
+   ```sql
+   SELECT *
+   FROM db1.table1
+   ```
+
+   ```response
+   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+
+   2 rows in set. Elapsed: 0.006 sec.
+   ```
+
+   على `chnode2`:
+
+6. ```sql
+   SELECT *
+   FROM db1.table1
+   ```
+
+   ```response
+   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+   ```
+
+7. يمكنك إنشاء جدول `Distributed` لتمثيل البيانات على الشاردين. الجداول التي تستخدم محرك الجداول `Distributed` لا تخزّن أي بيانات خاصة بها، لكنها تتيح معالجة الاستعلامات الموزعة عبر عدة خوادم. تصل عمليات القراءة إلى جميع الشاردات، ويمكن توزيع عمليات الكتابة عبرها. شغّل الاستعلام التالي على `chnode1`:
+   ```sql
+   CREATE TABLE db1.dist_table (
+       id UInt64,
+       column1 String
+   )
+   ENGINE = Distributed(cluster_2S_1R,db1,table1)
+   ```
+
+8. لاحظ أن الاستعلام عن `dist_table` يعرض الصفوف الأربعة كلها من الشاردين:
+
+   ```sql
+   SELECT *
+   FROM db1.dist_table
+   ```
+
+   ```response
+   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+
+   4 rows in set. Elapsed: 0.018 sec.
+   ```
+
+<div id="summary">
+  ### الملخص
+</div>
+
+يشرح هذا الدليل كيفية إعداد عنقود باستخدام ClickHouse Keeper. وباستخدام ClickHouse Keeper، يمكنك تهيئة العناقيد وتعريف الجداول الموزعة التي يمكن نسخها متماثلًا عبر الشوارد.
+
+<div id="configuring-clickhouse-keeper-with-unique-paths">
+  ## تهيئة ClickHouse Keeper بمسارات فريدة
+</div>
+
+<SelfManaged />
+
+<div id="description">
+  ### الوصف
+</div>
+
+تشرح هذه المقالة كيفية استخدام إعداد الماكرو المضمّن `{uuid}`
+لإنشاء إدخالات فريدة في ClickHouse Keeper أو ZooKeeper. وتفيد
+المسارات الفريدة عند إنشاء الجداول وحذفها بشكل متكرر، لأن
+ذلك يجنّبك الاضطرار إلى الانتظار عدة دقائق حتى يزيل جمع المهملات في Keeper
+إدخالات المسارات، إذ يُستخدم `uuid` جديد في ذلك المسار
+في كل مرة يُنشأ فيها مسار؛ ولا يُعاد استخدام المسارات مطلقًا.
+
+<div id="example-environment">
+  ### بيئة مثال
+</div>
+
+عنقود مكوّن من ثلاث عقد سيُهيَّأ بحيث يعمل ClickHouse Keeper
+على العقد الثلاث جميعها، ويعمل ClickHouse على عقدتين منها. يوفّر هذا
+لـ ClickHouse Keeper ثلاث عقد (بما في ذلك عقدة فكّ التعادل)، و
+شارد واحدًا لـ ClickHouse مكوّنًا من نسختين متماثلتين.
+
+| node                    | الوصف                                 |
+| ----------------------- | ------------------------------------- |
+| `chnode1.marsnet.local` | عقدة بيانات - عنقود `cluster_1S_2R`   |
+| `chnode2.marsnet.local` | عقدة بيانات - عنقود `cluster_1S_2R`   |
+| `chnode3.marsnet.local` | عقدة فكّ التعادل لـ ClickHouse Keeper |
+
+مثال على إعداد العنقود:
+
+```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+```
+
+<div id="procedures-to-set-up-tables-to-use-uuid">
+  ### إجراءات إعداد الجداول لاستخدام `{uuid}`
+</div>
+
+1. اضبط وحدات الماكرو على كل خادم
+   مثال على الخادم 1:
+
+```xml
+    <macros>
+        <shard>1</shard>
+        <replica>replica_1</replica>
+    </macros>
+```
+
+<Note>
+  لاحظ أننا نعرّف ماكرو لكلٍّ من `shard` و`replica`، لكن `{uuid}` غير معرّف هنا — فهو مدمج مسبقًا، ولا حاجة إلى تعريفه.
+</Note>
+
+2. أنشئ قاعدة بيانات
+
+```sql
+CREATE DATABASE db_uuid
+      ON CLUSTER 'cluster_1S_2R'
+      ENGINE Atomic;
+```
+
+```response
+CREATE DATABASE db_uuid ON CLUSTER cluster_1S_2R
+ENGINE = Atomic
+
+Query id: 07fb7e65-beb4-4c30-b3ef-bd303e5c42b5
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+3. أنشئ جدولًا في العنقود باستخدام وحدات الماكرو و`{uuid}`
+
+```sql
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}' )
+   ORDER BY (id);
+```
+
+```response
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}')
+ORDER BY id
+
+Query id: 8f542664-4548-4a02-bd2a-6f2c973d0dc4
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+4. أنشئ جدولًا موزعًا
+
+```sql
+CREATE TABLE db_uuid.dist_uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = Distributed('cluster_1S_2R', 'db_uuid', 'uuid_table1' );
+```
+
+```response
+CREATE TABLE db_uuid.dist_uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = Distributed('cluster_1S_2R', 'db_uuid', 'uuid_table1')
+
+Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+<div id="testing">
+  ### الاختبار
+</div>
+
+1. أدرِج البيانات في العقدة الأولى (مثل `chnode1`)
+
+```sql
+INSERT INTO db_uuid.uuid_table1
+   ( id, column1)
+   VALUES
+   ( 1, 'abc');
+```
+
+```response
+INSERT INTO db_uuid.uuid_table1 (id, column1) FORMAT Values
+
+Query id: 0f178db7-50a6-48e2-9a1b-52ed14e6e0f9
+
+Ok.
+
+1 row in set. Elapsed: 0.033 sec.
+```
+
+2. أدرِج البيانات في العقدة الثانية (على سبيل المثال، `chnode2`)
+
+```sql
+INSERT INTO db_uuid.uuid_table1
+   ( id, column1)
+   VALUES
+   ( 2, 'def');
+```
+
+```response
+INSERT INTO db_uuid.uuid_table1 (id, column1) FORMAT Values
+
+Query id: edc6f999-3e7d-40a0-8a29-3137e97e3607
+
+Ok.
+
+1 row in set. Elapsed: 0.529 sec.
+```
+
+3. اعرض السجلات باستخدام جدول موزّع
+
+```sql
+SELECT * FROM db_uuid.dist_uuid_table1;
+```
+
+```response
+SELECT *
+FROM db_uuid.dist_uuid_table1
+
+Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+<div id="alternatives">
+  ### بدائل
+</div>
+
+يمكن تحديد مسار النسخ المتماثل الافتراضي مسبقًا باستخدام وحدات الماكرو و`{uuid}` أيضًا
+
+1. عيّن الإعداد الافتراضي للجداول على كل عقدة
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/db_uuid/{uuid}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+```
+
+<Tip>
+  يمكنك أيضًا تعريف الماكرو `{database}` على كل عقدة إذا كانت العُقد تُستخدم لقواعد بيانات محددة.
+</Tip>
+
+2. أنشئ جدولًا بدون معلمات صريحة:
+
+```sql
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = ReplicatedMergeTree
+   ORDER BY (id);
+```
+
+```response
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree
+ORDER BY id
+
+Query id: ab68cda9-ae41-4d6d-8d3b-20d8255774ee
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+2 rows in set. Elapsed: 1.175 sec.
+```
+
+3. تحقّق من أنه استخدم الإعدادات نفسها المستخدمة في التهيئة الافتراضية
+
+```sql
+SHOW CREATE TABLE db_uuid.uuid_table1;
+```
+
+```response
+SHOW CREATE TABLE db_uuid.uuid_table1
+
+CREATE TABLE db_uuid.uuid_table1
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}')
+ORDER BY id
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+<div id="troubleshooting">
+  ### استكشاف الأخطاء وإصلاحها
+</div>
+
+مثال لأمر يعرض معلومات الجدول ومعرّف UUID الخاص به:
+
+```sql
+SELECT * FROM system.tables
+WHERE database = 'db_uuid' AND name = 'uuid_table1';
+```
+
+مثال على أمر للحصول على معلومات عن الجدول في ZooKeeper باستخدام معرّف UUID الخاص بالجدول أعلاه
+
+```sql
+SELECT * FROM system.zookeeper
+WHERE path = '/clickhouse/tables/1/db_uuid/9e8a3cc2-0dec-4438-81a7-c3e63ce2a1cf/replicas';
+```
+
+<Note>
+  يجب أن تكون قاعدة البيانات من نوع `Atomic`، وإذا كنت تُجري الترقية من إصدار سابق، فمن
+  المرجّح أن تكون قاعدة البيانات `default` من نوع `Ordinary`.
+</Note>
+
+للتحقّق:
+
+على سبيل المثال،
+
+```sql
+SELECT name, engine FROM system.databases WHERE name = 'db_uuid';
+```
+
+```response
+SELECT
+    name,
+    engine
+FROM system.databases
+WHERE name = 'db_uuid'
+
+Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
+
+┌─name────┬─engine─┐
+│ db_uuid │ Atomic │
+└─────────┴────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+<div id="reconfiguration">
+  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper
+</div>
+
+<SelfManaged />
+
+<div id="description">
+  ### الوصف
+</div>
+
+يدعم ClickHouse Keeper جزئيًا أمر ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
+لإعادة تهيئة العنقود ديناميكيًا إذا كان `keeper_server.enable_reconfiguration` مفعّلًا.
+
+<Note>
+  إذا كان هذا الإعداد معطّلًا، يمكنك إعادة تهيئة العنقود عبر تعديل قسم `raft_configuration`
+  الخاص بالنسخة المتماثلة يدويًا. احرص على تعديل الملفات على جميع النسخ المتماثلة، لأن القائد وحده هو الذي سيطبّق التغييرات.
+  وكبديل لذلك، يمكنك إرسال استعلام `reconfig` عبر أي عميل متوافق مع ZooKeeper.
+</Note>
+
+تحتوي العقدة الافتراضية `/keeper/config` على آخر تهيئة معتمدة للعنقود بالتنسيق التالي:
+
+```text
+server.id = server_host:server_port[;server_type][;server_priority]
+server.id2 = ...
+...
+```
+
+* يُفصل كل إدخال خادم بسطر جديد.
+* تكون قيمة `server_type` إما `participant` أو `learner` ([learner](https://github.com/eBay/NuRaft/blob/master/docs/readonly_member.md) لا يشارك في انتخابات القائد).
+* `server_priority` هو عدد صحيح غير سالب يحدد [العُقد التي ينبغي إعطاؤها أولوية في انتخابات القائد](https://github.com/eBay/NuRaft/blob/master/docs/leader_election_priority.md).
+  وتعني الأولوية 0 أن الخادم لن يكون القائد مطلقًا.
+
+مثال:
+
+```sql
+:) get /keeper/config
+server.1=zoo1:9234;participant;1
+server.2=zoo2:9234;participant;1
+server.3=zoo3:9234;participant;1
+```
+
+يمكنك استخدام الأمر `reconfig` لإضافة خوادم جديدة، وإزالة الخوادم الموجودة، وتغيير أولويات الخوادم الحالية،
+وفيما يلي أمثلة (باستخدام `clickhouse-keeper-client`):
+
+```bash
+# Add two new servers
+reconfig add "server.5=localhost:123,server.6=localhost:234;learner"
+# Remove two other servers
+reconfig remove "3,4"
+# Change existing server priority to 8
+reconfig add "server.5=localhost:5123;participant;8"
+```
+
+وفيما يلي أمثلة على `kazoo`:
+
+```python
+# Add two new servers, remove two other servers
+reconfig(joining="server.5=localhost:123,server.6=localhost:234;learner", leaving="3,4")
+
+# Change existing server priority to 8
+reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
+```
+
+يجب أن تكون الخوادم في `joining` بتنسيق الخادم الموضّح أعلاه. ويجب فصل مُدخلات الخوادم بفواصل.
+عند إضافة خوادم جديدة، يمكنك إغفال `server_priority` (القيمة الافتراضية هي 1) و`server_type` (القيمة الافتراضية
+هي `participant`).
+
+إذا كنت تريد تغيير أولوية خادم موجود، فأضِفه إلى `joining` مع الأولوية المستهدفة.
+يجب أن يتطابق مضيف الخادم والمنفذ والنوع مع تهيئة الخادم الحالية.
+
+تُضاف الخوادم وتُزال وفقًا لترتيب ظهورها في `joining` و`leaving`.
+تُعالَج جميع التحديثات الواردة من `joining` قبل التحديثات الواردة من `leaving`.
+
+هناك بعض الملاحظات المهمة المتعلقة بتنفيذ إعادة تهيئة Keeper:
+
+* لا تُدعَم إلا إعادة التهيئة التدريجية. وتُرفض الطلبات التي تحتوي على `new_members` غير فارغ.
+
+  يعتمد تنفيذ ClickHouse Keeper على واجهة برمجة تطبيقات NuRaft لتغيير العضوية ديناميكيًا. ويوفّر NuRaft طريقة
+  لإضافة خادم واحد أو إزالة خادم واحد في كل مرة. وهذا يعني أن كل تغيير في التهيئة
+  (كل جزء من `joining`، وكل جزء من `leaving`) يجب البتّ فيه على حدة. لذلك لا تتوفر
+  إعادة تهيئة مجمّعة، لأن ذلك قد يكون مضللًا للمستخدمين النهائيين.
+
+  كما أن تغيير نوع الخادم (participant/learner) غير ممكن لأنه غير مدعوم من NuRaft، والطريقة
+  الوحيدة لذلك هي إزالة الخادم ثم إضافته من جديد، وهو ما سيكون مضللًا أيضًا.
+
+* لا يمكنك استخدام القيمة المُعادة `znodestat`.
+
+* لا يُستخدم الحقل `from_version`. وتُرفض جميع الطلبات التي تم تعيين `from_version` فيها.
+  ويرجع ذلك إلى أن `/keeper/config` عقدة افتراضية، ما يعني أنها لا تُخزَّن في
+  التخزين الدائم، بل تُولَّد آنيًا باستخدام تهيئة العقدة المحددة لكل طلب.
+  وقد اتُّخذ هذا القرار لتجنّب تكرار البيانات لأن NuRaft يخزّن هذه التهيئة بالفعل.
+
+* بخلاف ZooKeeper، لا توجد طريقة لانتظار إعادة تهيئة العنقود عبر إرسال أمر `sync`.
+  سيُطبَّق الضبط الجديد *في نهاية المطاف* ولكن من دون أي ضمانات زمنية.
+
+* قد يفشل الأمر `reconfig` لأسباب مختلفة. يمكنك التحقق من حالة العنقود ومعرفة ما إذا كان التحديث
+  قد طُبِّق.
+
+<div id="converting-a-single-node-keeper-into-a-cluster">
+  ## تحويل Keeper أحادي العقدة إلى عنقود
+</div>
+
+أحيانًا تكون هناك حاجة إلى توسيع عقدة Keeper تجريبية لتصبح عنقودًا. فيما يلي مخطط يوضح كيفية القيام بذلك خطوة بخطوة لعنقود من 3 عقد:
+
+* **مهم**: يجب إضافة العقد الجديدة على دفعات أصغر من النصاب الحالي، وإلا فستنتخب قائدًا من بينها. في هذا المثال، تُضاف العقد واحدة تلو الأخرى.
+* يجب أن تكون قيمة parameter الإعداد `keeper_server.enable_reconfiguration` مفعّلة على عقدة Keeper الحالية.
+* ابدأ عقدة ثانية باستخدام الإعداد الكامل الجديد لعنقود Keeper.
+* بعد تشغيلها، أضِفها إلى العقدة 1 باستخدام [`reconfig`](#reconfiguration).
+* الآن، ابدأ عقدة ثالثة وأضِفها باستخدام [`reconfig`](#reconfiguration).
+* حدِّث إعداد `clickhouse-server` بإضافة عقدة Keeper الجديدة إليه، ثم أعد تشغيله لتطبيق التغييرات.
+* حدِّث إعداد raft للعقدة 1، وأعد تشغيلها اختياريًا.
+
+ولفهم العملية عمليًا بشكل أفضل، إليك [sandbox repository](https://github.com/ClickHouse/keeper-extend-cluster).
+
+<div id="unsupported-features">
+  ## الميزات غير المدعومة
+</div>
+
+مع أن ClickHouse Keeper يهدف إلى تحقيق توافق كامل مع ZooKeeper، فلا تزال هناك بعض الميزات غير المُنفَّذة حتى الآن (مع استمرار العمل على تطويرها):
+
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\)) لا يدعم إرجاع الكائن `Stat`
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\)) لا يدعم [TTL](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/CreateMode.html#PERSISTENT_WITH_TTL)
+* [`addWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#addWatch\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.AddWatchMode\)) لا يعمل مع watches من النوع [`PERSISTENT`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/AddWatchMode.html#PERSISTENT)
+* [`removeWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeWatches\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.Watcher.WatcherType,boolean\)) و[`removeAllWatches`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeAllWatches\(java.lang.String,org.apache.zookeeper.Watcher.WatcherType,boolean\)) غير مدعومين
+* `setWatches` غير مدعوم
+* لا يدعم إنشاء znodes من النوع [`CONTAINER`](https://zookeeper.apache.org/doc/r3.5.1-alpha/api/org/apache/zookeeper/CreateMode.html)
+* [`SASL authentication`](https://cwiki.apache.org/confluence/display/ZOOKEEPER/Zookeeper+and+SASL) غير مدعوم

@@ -1,0 +1,163 @@
+---
+description: '该引擎允许将 ClickHouse 与 Redis 集成。'
+sidebarTitle: 'Redis'
+slug: /engines/table-engines/integrations/redis
+title: 'Redis 表引擎'
+doc_type: 'guide'
+---
+
+该引擎支持将 ClickHouse 与 [Redis](https://redis.io/) 集成。由于 Redis 采用键值 (KV) 模型，我们强烈建议仅进行点查询，例如 `where k=xx` 或 `where k in (xx, xx)`。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Redis({host:port[, db_index[, password[, pool_size]]] | named_collection[, option=value [,..]] })
+PRIMARY KEY(primary_key_name);
+```
+
+**引擎参数**
+
+* `host:port` — Redis 服务器地址，可以忽略端口，此时将使用默认 Redis 端口 6379。
+* `db_index` — Redis 数据库索引，范围为 0 到 15，默认为 0。
+* `password` — 用户密码，默认为空字符串。
+* `pool_size` — Redis 最大连接池大小，默认为 16。
+* `primary_key_name` - 列列表中的任意列名。
+
+<Info>
+  **序列化**
+
+  `PRIMARY KEY` 仅支持一列。主键会以二进制形式序列化为 Redis key。
+  除主键外的列会按对应顺序以二进制形式序列化为 Redis 值。
+</Info>
+
+参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。在这种情况下，`host` 和 `port` 应分别指定。生产环境中建议采用这种方式。目前，通过命名集合传递给 Redis 的所有参数都必须提供。
+
+<Info>
+  **过滤**
+
+  带有 `key equals` 或 `in filtering` 的查询会被优化为从 Redis 执行多键查找。如果查询未按键过滤，则会发生全表扫描，这是一项开销很大的操作。
+</Info>
+
+<div id="usage-example">
+  ## 使用示例
+</div>
+
+在 ClickHouse 中使用普通参数创建一个使用 `Redis` 引擎的表：
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
+```
+
+或者使用[命名集合](/zh/concepts/features/configuration/server-config/named-collections)：
+
+```xml
+<named_collections>
+    <redis_creds>
+        <host>localhost</host>
+        <port>6379</port>
+        <password>****</password>
+        <pool_size>16</pool_size>
+        <db_index>0</db_index>
+    </redis_creds>
+</named_collections>
+```
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis(redis_creds) PRIMARY KEY(key);
+```
+
+插入：
+
+```sql title="Query"
+INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+```
+
+```sql title="Query"
+SELECT COUNT(*) FROM redis_table;
+```
+
+```text title="Response"
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE key='1';
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 1   │  1 │ 1  │  1 │
+└─────┴────┴────┴────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE v1=2;
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 2   │  2 │ 2  │  2 │
+└─────┴────┴────┴────┘
+```
+
+更新：
+
+请注意，主键不能更新。
+
+```sql title="Query"
+ALTER TABLE redis_table UPDATE v1=2 WHERE key='1';
+```
+
+删除：
+
+```sql title="Query"
+ALTER TABLE redis_table DELETE WHERE key='1';
+```
+
+TRUNCATE：
+
+异步 flush Redis 数据库。`Truncate` 也支持 SYNC 模式。
+
+```sql title="Query"
+TRUNCATE TABLE redis_table SYNC;
+```
+
+Join：
+
+与其他表进行联接。
+
+```sql title="Query"
+SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
+```
+
+<div id="limitations">
+  ## 限制
+</div>
+
+Redis 引擎 也支持扫描查询，例如 `where k > xx`，但它也有一些限制：
+
+1. 在极少数发生 rehash 的情况下，扫描查询可能会产生一些重复的键。详见 [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269)。
+2. 在扫描过程中，键可能会被创建和删除，因此结果数据集无法反映某个有效的时间点。

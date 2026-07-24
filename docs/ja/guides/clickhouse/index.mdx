@@ -1,0 +1,23 @@
+---
+slug: /guides/developer/overview
+sidebarTitle: '高度なガイドの概要'
+description: '高度なガイドの概要'
+title: '高度なガイド'
+keywords: ['ClickHouse 高度なガイド', '開発者ガイド', 'クエリ最適化', 'materialized view', '重複排除', '時系列', 'クエリ実行']
+doc_type: 'guide'
+---
+
+このセクションには、以下の高度なガイドがあります。
+
+| Guide                                                                                                                                            | Description                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Alternative Query Languages](/ja/concepts/features/configuration/settings/alternative-query-languages)                                             | サポートされている代替 dialect と、その使用方法を解説するガイドです。各 dialect でのクエリ例も掲載しています。                                                                                                                                       |
+| [Cascading Materialized Views](/ja/concepts/features/materialized-views/cascading-materialized-views)                                               | materialized view の作成方法、それらを連鎖させる方法、さらに複数のソーステーブルを 1 つの宛先テーブルにまとめる方法を解説するガイドです。ドメイン名のグループごとに、連鎖する materialized view を使って月単位および年単位でデータを集計する例も含まれています。                                                   |
+| [Debugging memory issues](/ja/concepts/features/performance/troubleshoot/debugging-memory-issues)                                                   | ClickHouse でメモリ関連の問題をデバッグする方法を解説するガイドです。                                                                                                                                                               |
+| [Deduplicating Inserts on Retries](/ja/concepts/features/operations/insert/deduplicating-inserts-on-retries)                                        | 失敗した insert を再試行する可能性がある場合の対処方法を解説するガイドです。                                                                                                                                                             |
+| [Deduplication strategies](/ja/concepts/features/operations/insert/deduplication)                                                                   | データの重複排除、つまりデータベース内の重複行を取り除く手法を詳しく解説するガイドです。OLTP システムにおける主キー ベースの重複排除との違い、ClickHouse における重複排除の考え方、さらに ClickHouse クエリ内で重複データのケースをどのように扱うかを説明します。                                                        |
+| [Filling gaps in time-series data](/ja/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps)                                   | ClickHouse の時系列データ処理機能について理解を深めるためのガイドで、データ内のギャップを補完して、時系列情報をより完全かつ連続的に表現するための手法を紹介します。                                                                                                                |
+| [Manage Data with TTL (Time-to-live)](/ja/concepts/features/operations/delete/ttl)                                                                  | 時系列データのギャップを補完するために `WITH FILL` 句を使用する方法を解説するガイドです。0 でギャップを補完する方法、補完の開始点を指定する方法、特定の終了点まで補完する方法、さらに累積計算のために値を補間する方法を扱います。                                                                               |
+| [Stored procedures &amp; query parameters](/ja/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements)                          | ClickHouse は従来のストアドプロシージャをサポートしていないことを説明し、User-Defined Functions (UDF)、パラメーター化ビュー、materialized view、外部オーケストレーションといった推奨される代替手段を紹介するガイドです。また、安全なパラメーター化クエリ (プリペアドステートメントに類似) で使用するクエリパラメータについても解説します。    |
+| [Understanding query execution with the Analyzer](/ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) | アナライザツールを導入し、ClickHouse のクエリ実行の仕組みをわかりやすく解説するガイドです。アナライザがクエリを一連のステップに分解する仕組みを説明し、最適なパフォーマンスを得るために実行プロセス全体を可視化してトラブルシュートできるようにします。                                                                      |
+| [Using JOINs in ClickHouse](/ja/concepts/features/operations/select/joining-tables)                                                                 | ClickHouse でのテーブル結合をわかりやすく解説するガイドです。さまざまな join の種類 (`INNER`、`LEFT`、`RIGHT` など) を扱い、効率的な joins のベストプラクティス (小さいテーブルを右側に配置するなど) を紹介するとともに、複雑なデータの関係に対してクエリを最適化できるよう、ClickHouse 内部の JOIN アルゴリズムについても解説します。 |

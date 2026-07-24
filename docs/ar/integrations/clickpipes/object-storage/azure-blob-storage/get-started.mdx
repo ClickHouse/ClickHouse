@@ -1,0 +1,101 @@
+---
+sidebarTitle: 'ابدأ'
+description: 'دليل إرشادي خطوة بخطوة لإنشاء أول ClickPipe لـ Azure Blob Storage ‏(ABS).'
+slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
+title: 'أنشئ أول ClickPipe لـ Azure Blob Storage'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+**المتطلبات الأساسية**
+
+لمتابعة هذا الدليل، ستحتاج إلى:
+
+* حساب Azure Blob Storage
+* [سلسلة اتصال Azure](/ar/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
+* اسم الحاوية
+* خدمة ClickHouse Cloud قيد التشغيل
+
+<Steps>
+  <Step>
+    ## انتقل إلى مصادر البيانات
+
+    من الصفحة الرئيسية لخدمتك، انقر على **مصادر البيانات** في القائمة الجانبية اليسرى.
+    وسّع القائمة المنسدلة **ClickPipes** ثم انقر على **Create ClickPipe**
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="الانتقال إلى مصادر البيانات" size="md" />
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="إنشاء ClickPipe" size="md" />
+  </Step>
+
+  <Step>
+    ## اختر مصدر البيانات
+
+    اختر **Azure Blob Storage** كنوع البيانات
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="اختر Azure Blob Storage" size="md" />
+  </Step>
+
+  <Step>
+    ## أعدّ اتصال ClickPipe
+
+    1. امنح ClickPipe اسماً وصفياً
+    2. اختر **Connection String** من القائمة المنسدلة الخاصة بطريقة المصادقة
+    3. الصق سلسلة اتصال Azure في حقل **Connection string**
+    4. أدخل اسم الحاوية
+    5. أدخل مسار ملف Azure Blob Storage، مع استخدام أحرف البدل إذا أردت إدخال ملفات متعددة
+
+    ويمكنك اختيارياً تمكين الإدخال المستمر. راجع [&quot;الإدخال المستمر&quot;](/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion) لمزيد من التفاصيل.
+
+    أخيراً، انقر على **Incoming data**
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="تفاصيل الإعداد" size="md" />
+  </Step>
+
+  <Step>
+    ## اختر تنسيق البيانات
+
+    1. اختر نوع الملف
+    2. ضغط الملف (`detect automatically`, `none`, `gzip`, `brotli`, `xz` أو `zstd`)
+    3. أكمل أي إعدادات إضافية خاصة بالتنسيق، مثل الفاصل المستخدم في التنسيقات المفصولة بفواصل
+    4. انقر على **Parse information**
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="اختر تنسيق البيانات" size="md" />
+  </Step>
+
+  <Step>
+    ## اضبط الجدول والمخطط والإعدادات
+
+    تحتاج الآن إلى إنشاء جدول جديد أو اختيار جدول موجود لتخزين البيانات الواردة فيه.
+
+    1. اختر ما إذا كنت تريد تحميل البيانات إلى جدول جديد أو جدول موجود
+    2. اختر قاعدة البيانات التي ستستخدمها، والاسم الذي سيُعطى للجدول إذا كان جديداً
+    3. اختر مفتاح فرز واحداً أو أكثر
+    4. حدّد أي تعيينات من الملف المصدر إلى الجدول الوجهة لاسم العمود ونوع العمود والقيمة الافتراضية وقابلية القيم الفارغة
+    5. أخيراً، حدّد الإعدادات المتقدمة مثل نوع المحرك الذي تريد استخدامه، وتعبير التقسيم، والمفتاح الأساسي
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="تحليل المعلومات" size="md" />
+
+    عندما تنتهي من ضبط الجدول والمخطط والإعدادات، انقر على **Details and settings**
+  </Step>
+
+  <Step>
+    ## اضبط الأذونات
+
+    سيُعدّ ClickPipes مستخدم قاعدة بيانات مخصصاً لكتابة البيانات.
+    يمكنك اختيار دور لهذا المستخدم.
+    إذا كنت تستخدم العروض المادية أو تحتاج إلى الوصول إلى القواميس من الجدول الوجهة، فاختر &quot;Full access&quot;.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="ضبط الأذونات" size="md" />
+  </Step>
+
+  <Step>
+    ## أكمل الإعداد
+
+    انقر على **Create ClickPipe** لإكمال الإعداد
+
+    ينبغي أن يظهر ClickPipe الآن بحالة **provisioning**.
+    وبعد لحظات قليلة ستتغير حالته من **provisioning** إلى **completed**.
+  </Step>
+</Steps>

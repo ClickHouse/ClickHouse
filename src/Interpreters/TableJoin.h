@@ -168,6 +168,7 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
+    const bool join_runtime_filter_from_fixed_hash_table = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -332,6 +333,13 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
+    bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
+
+    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
+    {
+        static const std::vector<std::pair<String, String>> empty;
+        return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
+    }
 
     bool oneDisjunct() const;
 
@@ -468,7 +476,6 @@ public:
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
-    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct);
 }

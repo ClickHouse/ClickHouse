@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Amazon DocumentDB'
+description: 'Guide étape par étape pour configurer Amazon DocumentDB comme source pour ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/documentdb
+title: 'Guide de configuration de la source Amazon DocumentDB'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="supported-documentdb-versions">
+  ## Versions prises en charge de DocumentDB
+</div>
+
+ClickPipes prend en charge DocumentDB version 5.0.
+
+<div id="configure-change-stream-log-retention">
+  ## Configurer la rétention des journaux du flux de changements
+</div>
+
+Par défaut, Amazon DocumentDB conserve les journaux du flux de changements pendant 3 heures, alors que le chargement initial peut prendre bien plus longtemps selon le volume de données déjà présent dans votre instance DocumentDB. Nous vous recommandons de porter cette durée de rétention à 72 heures ou davantage, afin d’éviter qu’ils ne soient supprimés avant la fin du snapshot initial.
+
+<div id="update-change-stream-log-retention-via-aws-console">
+  ### Mettre à jour la durée de rétention des journaux du flux de changements via la console AWS
+</div>
+
+1. Cliquez sur `Parameter groups` dans le panneau de gauche, puis repérez le groupe de paramètres utilisé par votre cluster DocumentDB (si vous utilisez le groupe de paramètres `default`, vous devrez d’abord en créer un nouveau pour pouvoir le modifier).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="Sélectionner le groupe de paramètres" size="lg" border />
+
+2. Recherchez `change_stream_log_retention_duration`, sélectionnez-le et remplacez sa valeur par `259200` (72 heures)
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="Modifier le groupe de paramètres" size="lg" border />
+
+3. Cliquez sur `Apply Changes` pour appliquer immédiatement le groupe de paramètres modifié à votre cluster DocumentDB. Vous devriez voir le statut du groupe de paramètres passer à `applying`, puis à `in-sync` une fois la modification appliquée.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="Appliquer le groupe de paramètres" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="Statut du groupe de paramètres" size="lg" border />
+
+<div id="update-change-stream-log-retention-via-aws-cli">
+  ### Mettre à jour la rétention des journaux du flux de changements via l’AWS CLI
+</div>
+
+Vous pouvez également effectuer cette configuration via l’AWS CLI.
+
+Pour vérifier la durée actuelle de rétention des journaux du flux de changements :
+
+```shell
+aws docdb describe-db-cluster-parameters --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --query "Parameters[?ParameterName=='change_stream_log_retention_duration'].{Name:ParameterName,Value:ParameterValue}"
+```
+
+Pour définir la durée de rétention des journaux du flux de changements à 72 heures :
+
+```shell
+aws docdb modify-db-cluster-parameter-group --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --parameters "ParameterName=change_stream_log_retention_duration,ParameterValue=259200,ApplyMethod=immediate"
+```
+
+<div id="configure-database-user">
+  ## Configurer un utilisateur de base de données
+</div>
+
+Connectez-vous à votre cluster DocumentDB en tant qu’administrateur et exécutez la commande suivante pour créer un utilisateur de base de données destiné à ClickPipes pour le CDC MongoDB :
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  Veillez à remplacer `clickpipes_user` et `some_secure_password` par le nom d’utilisateur et le mot de passe souhaités.
+</Note>
+
+<div id="whats-next">
+  ## Quelle est la suite ?
+</div>
+
+Vous pouvez maintenant [créer votre ClickPipe](/fr/integrations/clickpipes/mongodb/index) et commencer à ingérer des données de votre instance DocumentDB dans ClickHouse Cloud.
+Veillez à noter les informations de connexion utilisées lors de la configuration de votre cluster DocumentDB, car vous en aurez besoin lors du processus de création du ClickPipe.

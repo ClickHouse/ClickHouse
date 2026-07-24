@@ -1,0 +1,38 @@
+---
+description: 'Documentation de référence pour CREATE NAMED COLLECTION'
+sidebarTitle: 'NAMED COLLECTION'
+slug: /sql-reference/statements/create/named-collection
+title: 'CREATE NAMED COLLECTION'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Crée une nouvelle collection nommée.
+
+**Syntaxe**
+
+```sql
+CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+key_name1 = 'some value' [[NOT] OVERRIDABLE],
+key_name2 = 'some value' [[NOT] OVERRIDABLE],
+key_name3 = 'some value' [[NOT] OVERRIDABLE],
+...
+```
+
+**Exemple**
+
+```sql
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+```
+
+**Instructions connexes**
+
+* [CREATE NAMED COLLECTION](/fr/reference/statements/alter/named-collection)
+* [DROP NAMED COLLECTION](/fr/reference/statements/drop#drop-function)
+
+**Voir aussi**
+
+* [Guide des collections nommées](/fr/concepts/features/configuration/server-config/named-collections)

@@ -1,0 +1,38 @@
+---
+sidebarTitle: 'Mise à l’échelle verticale automatique'
+slug: /cloud/features/autoscaling/vertical
+description: 'Configuration de la mise à l’échelle verticale automatique dans ClickHouse Cloud'
+keywords: ['autoscaling', 'auto scaling', 'vertical', 'mise à l’échelle', 'CPU', 'mémoire']
+title: 'Mise à l’échelle verticale automatique'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="Mise à l’échelle verticale automatique" />
+
+Les services des niveaux Scale et Enterprise prennent en charge la mise à l’échelle automatique en fonction de l’utilisation du CPU et de la mémoire. L’utilisation du service est surveillée en continu sur une période d’observation afin de prendre les décisions de mise à l’échelle. Si l’utilisation dépasse certains seuils ou descend en dessous de ceux-ci, le service est mis à l’échelle en conséquence pour répondre à la demande.
+
+<div id="configuring-vertical-auto-scaling">
+  ## Configuration de la mise à l’échelle verticale automatique
+</div>
+
+La mise à l’échelle des services Scale ou Enterprise de ClickHouse Cloud peut être ajustée par les membres de l’organisation disposant du rôle **Admin**. Pour configurer la mise à l’échelle verticale automatique, accédez à l’onglet **Settings** de votre service et ajustez la mémoire minimale et maximale, ainsi que les paramètres de CPU, comme indiqué ci-dessous.
+
+<Note>
+  Les services à réplica unique ne peuvent pas être mis à l’échelle dans tous les tiers.
+</Note>
+
+<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Page des paramètres de mise à l’échelle" border />
+
+Définissez la **Mémoire maximale** de vos replicas sur une valeur supérieure à la **Mémoire minimale**. Le service s’adaptera ensuite selon les besoins dans ces limites. Ces paramètres sont également disponibles lors de la création initiale du service. Chaque replica de votre service se verra attribuer les mêmes ressources de mémoire et de CPU.
+
+Vous pouvez également choisir de définir ces deux valeurs à l’identique, ce qui revient à « verrouiller » le service sur une configuration donnée. Cela forcera immédiatement la mise à l’échelle vers la taille souhaitée.
+
+Il est important de noter que cela désactivera toute mise à l’échelle automatique sur le cluster, et votre service ne sera pas protégé contre une augmentation de l’utilisation du CPU ou de la mémoire au-delà de ces paramètres.
+
+<Note>
+  Pour les services du tier Enterprise, les profils standard 1:4 prennent en charge la mise à l’échelle verticale automatique. Les profils personnalisés ne prennent pas en charge la mise à l’échelle verticale automatique ni la mise à l’échelle verticale manuelle. Toutefois, ces services peuvent être mis à l’échelle verticalement en contactant le support.
+</Note>

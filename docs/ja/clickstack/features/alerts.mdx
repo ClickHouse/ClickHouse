@@ -1,0 +1,393 @@
+---
+slug: /use-cases/observability/clickstack/alerts
+title: 'ClickStack のアラート'
+sidebarTitle: 'アラート'
+description: 'ClickStack のアラート'
+doc_type: 'guide'
+keywords: ['ClickStack', 'オブザーバビリティ', 'アラート', 'search-alerts', '通知', 'しきい値', 'Slack', 'Email', 'PagerDuty', 'error-monitoring', 'performance-monitoring', 'user-events']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack にはアラート機能が標準で備わっており、チームはログ、メトリクス、トレース全体にわたって問題をリアルタイムで検知し、対応できます。
+
+アラートは HyperDX インターフェイスから直接作成でき、Slack や PagerDuty などの一般的な通知システムと連携できます。
+
+アラート機能は ClickStack 上のデータ全体でシームレスに機能し、システムヘルスの追跡、パフォーマンス低下の検出、重要なビジネスイベントの監視に役立ちます。
+
+<div id="types-of-alerts">
+  ## アラートの種類
+</div>
+
+ClickStack では、アラートを作成する方法として、互いを補完する 2 つの方式 **検索アラート** と **ダッシュボードチャートアラート** をサポートしています。アラートを作成すると、そのアラートは検索またはチャートのいずれかに紐付けられます。
+
+<div id="search-alerts">
+  ### 1. 検索アラート
+</div>
+
+検索アラートでは、保存済みの検索結果に基づいて通知をトリガーできます。これにより、特定のイベントやパターンの発生頻度が想定より高い場合や低い場合を検知できます。
+
+定義した時間枠内で一致した結果の件数が、指定したしきい値を上回るか下回ると、アラートがトリガーされます。
+
+検索アラートを作成するには:
+
+検索に対してアラートを作成するには、その検索が保存されている必要があります。既存の保存済み検索に対してアラートを作成することも、アラートの作成中に検索を保存することもできます。以下の例では、検索はまだ保存されていないものとします。
+
+<Steps>
+  <Step>
+    #### アラート作成ダイアログを開く
+
+    まず[検索](/ja/clickstack/features/search)を実行し、`Search`ページ右上の`Alerts`ボタンをクリックします。
+
+    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="アラート検索ビュー" size="lg" />
+  </Step>
+
+  <Step>
+    #### アラートを作成する
+
+    アラート作成パネルでは、次の操作を行えます。
+
+    * アラートに関連付ける保存済み検索に名前を付ける。
+    * しきい値を設定し、指定した期間内に何回到達したらアラートとするかを指定する。しきい値は上限または下限として使用することもできます。ここで設定する期間は、アラートがトリガーされる頻度も決定します。
+    * `grouped by` の値を指定する。これにより、検索を `ServiceName` などで集計できるようになり、同じ検索から複数のアラートをトリガーできます。
+    * 通知先の webhook 宛先を選択する。この画面から直接新しい webhook を追加することもできます。詳しくは[webhook の追加](#add-webhook)を参照してください。
+
+    保存する前に、ClickStack はしきい値条件を可視化するため、想定どおりに動作するか確認できます。
+
+    <Image img="/images/use-cases/observability/search_alert.webp" alt="検索アラート" size="lg" />
+  </Step>
+</Steps>
+
+なお、1 つの検索に複数のアラートを追加できます。上記の手順を繰り返すと、現在のアラートがアラート編集ダイアログ上部にタブとして表示され、各アラートには番号が割り当てられます。
+
+<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="複数のアラート" size="md" />
+
+<div id="dashboard-alerts">
+  ### 2. ダッシュボードチャートアラート
+</div>
+
+ダッシュボードアラートは、チャートに対しても設定できます。
+
+完全なSQL集計とClickHouse関数による高度な計算を活用し、保存済みのダッシュボードからチャートベースのアラートを直接作成できます。
+
+メトリクスが設定したしきい値を超えると、アラートが自動的にトリガーされるため、KPI、レイテンシ、その他の主要なメトリクスを継続的に監視できます。
+
+<Note>
+  ダッシュボード上の可視化に対してアラートを作成するには、ダッシュボードが保存済みである必要があります。
+</Note>
+
+ダッシュボードアラートを追加するには、次の手順に従います。
+
+アラートは、チャートの作成時、ダッシュボードへのチャート追加時、または既存のチャートに追加して作成できます。以下の例では、チャートがすでにダッシュボード上に存在しているものとします。
+
+<Steps>
+  <Step>
+    #### チャート編集ダイアログを開く
+
+    チャートの設定メニューを開き、アラートボタンを選択します。チャート編集ダイアログが表示されます。
+
+    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="チャートアラートを編集" size="lg" />
+  </Step>
+
+  <Step>
+    #### アラートを追加する
+
+    **Add Alert** を選択します。
+
+    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="チャートにアラートを追加" size="lg" />
+  </Step>
+
+  <Step>
+    #### アラート条件を定義する
+
+    条件 (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`) 、しきい値、期間、webhook を定義します。ここで設定する期間は、アラートがトリガーされる頻度も決定します。
+
+    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="チャートのアラートを作成" size="lg" />
+
+    この画面から新しい webhook を直接追加することもできます。詳しくは [webhook の追加](#add-webhook) を参照してください。
+  </Step>
+</Steps>
+
+<div id="add-webhook">
+  ## webhook の追加
+</div>
+
+alert の作成時には、既存の webhook を使用することも、新しく作成することもできます。作成した webhook は、ほかの alert でも再利用できます。
+
+webhook は、Slack や PagerDuty などのさまざまなサービス種別に対して作成できるほか、汎用的なターゲット向けにも作成できます。
+
+たとえば、以下の chart に対する alert の作成を考えてみましょう。webhook を指定する前に、ユーザーは `Add New Webhook` を選択できます。
+
+<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="新しい webhook を追加" size="lg" />
+
+これにより webhook 作成ダイアログが開き、新しい webhook を作成できます。
+
+<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="webhook の作成" size="md" />
+
+webhook 名は必須で、説明は任意です。そのほかに必要な設定項目は、サービス種別によって異なります。
+
+利用できるサービス種別は、ClickStack Open Source と ClickStack Cloud とで異なる点に注意してください。詳細は[サービス種別のインテグレーション](#integrations)を参照してください。
+
+<div id="integrations">
+  ### サービス種別別インテグレーション
+</div>
+
+ClickStack の alerts は、標準で次のサービス種別と連携できます。
+
+* **Slack**: webhook または API を使用して、チャンネルに直接通知を送信します。
+* **PagerDuty**: PagerDuty API を介して、オンコールチーム向けにインシデントをルーティングします。
+* **Webhook**: 汎用 webhook を介して、alerts を任意のカスタムシステムやワークフローに接続します。
+
+<Info>
+  **ClickHouse Cloud only integrations**
+
+  Slack API および PagerDuty インテグレーションは、ClickHouse Cloud でのみサポートされています。
+</Info>
+
+サービス種別に応じて、指定する内容は異なります。具体的には次のとおりです。
+
+**Slack (Webhook URL)**
+
+* Webhook URL。例: `https://hooks.slack.com/services/<unique_path>`。詳細については、[Slack documentation](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) を参照してください。
+
+**Slack (API)**
+
+* Slack bot token。詳細については、[Slack documentation](https://docs.slack.dev/authentication/tokens/#bot/) を参照してください。
+
+**PagerDuty API**
+
+* PagerDuty integration key。詳細については、[PagerDuty documentation](https://support.pagerduty.com/main/docs/api-access-keys) を参照してください。
+
+**Generic**
+
+* Webhook URL
+* Webhook headers (任意)
+* Webhook ボディ (任意) 。現在、ボディではテンプレート変数 `{{title}}`、`{{body}}`、`{{link}}` をサポートしています。
+
+<div id="managing-alerts">
+  ## アラートの管理
+</div>
+
+アラートは、HyperDX の左側にあるアラートパネルから一元管理できます。
+
+<Image img="/images/use-cases/observability/manage_alerts.webp" alt="アラートの管理" size="lg" />
+
+この画面では、作成済みで現在 ClickStack で有効になっているすべてのアラートを確認できます。
+
+<Image img="/images/use-cases/observability/alerts_view.webp" alt="アラートビュー" size="lg" />
+
+この画面には、アラートの評価履歴も表示されます。アラートは一定の時間間隔で繰り返し評価されます (アラート作成時に設定した period/duration で定義) 。各評価のたびに、HyperDX はアラート条件が満たされているかどうかを確認するため、データに対してクエリを実行します。
+
+* **赤いバー**: この評価でしきい値条件が満たされ、アラートが発報されました (通知送信あり)
+* **緑のバー**: アラートは評価されましたが、しきい値条件は満たされませんでした (通知送信なし)
+
+各評価は独立しており、アラートはその時間ウィンドウのデータを確認し、その時点で条件が true の場合にのみ発報します。
+
+上の例では、1 つ目のアラートは毎回の評価で発報しており、問題が継続していることを示しています。2 つ目のアラートは、解消済みの問題を示しています。最初に 2 回発報した後 (赤いバー) 、その後の評価ではしきい値条件が満たされなくなりました (緑のバー) 。
+
+アラートをクリックすると、そのアラートが紐付けられているチャートまたは検索に移動します。
+
+<div id="deleting-alerts">
+  ### アラートの削除
+</div>
+
+アラートを削除するには、関連する Search またはチャートの編集ダイアログを開き、**Remove Alert** を選択します。
+以下の例では、`Remove Alert` ボタンをクリックすると、チャートからアラートが削除されます。
+
+<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="チャートのアラートの削除" size="lg" />
+
+<div id="sql-based-alerts">
+  ## SQLベースのチャートアラート
+</div>
+
+SQLベースのチャートアラートでは、任意の ClickHouse SQL を記述してアラート条件を定義できます。これにより、フィルタリング、集計、計算を含め、あらゆる処理を完全に制御できます。つまり、SQL で表現できるものはすべてアラートにできます。
+
+<div id="supported-chart-types">
+  ### サポートされているチャートタイプ
+</div>
+
+SQL ベースのアラートは、次の 3 つのチャート表示タイプでサポートされています。
+
+| チャートタイプ   | 動作                                                        |
+| --------- | --------------------------------------------------------- |
+| **Line**   | 時系列アラート。クエリは時間バケットごとの行を返す必要があります。各バケットはしきい値に対して個別に評価されます。 |
+| **Stacked Bar** | 時系列アラート。動作は Line と同じです。                                      |
+| **数値**    | 単一値アラート。クエリは単一の数値結果を返し、評価のたびに 1 回しきい値と比較されます。             |
+
+その他の SQL ベースのチャートタイプ (テーブル、円グラフ、ヒートマップなど) はアラートをサポートしていません。
+
+<div id="create-sql-based-alert">
+  ### SQLアラートを作成する
+</div>
+
+SQLベースのチャートにアラートを作成するには、次の手順を行います。
+
+<Steps>
+  <Step>
+    #### ダッシュボードでSQLベースのチャートを作成または開く
+
+    保存済みのダッシュボードで、[**SQL** チャートモードの新しいチャートを作成する](/ja/clickstack/features/dashboards/sql-visualizations)か、既存のSQLベースのチャートを開いて編集します。
+
+    表示タイプとして **Line**、**Stacked Bar**、または **Number** を選択します。
+
+    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="SQLチャートを作成" size="lg" />
+  </Step>
+
+  <Step>
+    #### アラートを追加する
+
+    チャートエディタのアラートセクションで **Add Alert** を選択します。次の項目を設定します。
+
+    * **しきい値タイプ**: `>=` (以上) 、`>` (より大きい) 、`<=` (以下) 、`<` (より小さい) 、`=` (等しい) 、`!=` (等しくない) 、`<= x >=` (範囲内) 、または `> or <` (範囲外)
+    * **しきい値**: 比較対象となる数値
+    * **インターバル**: アラートを評価する頻度 (1m、5m、15m、30m、1h、6h、12h、または 1d) 。これは各評価の time window も定義します。
+    * **Webhook**: アラート発報時に使用する通知チャネルです。[Webhook の追加](#add-webhook)を参照してください。
+
+    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="チャートアラートを編集" size="lg" />
+
+    <Warning>
+      **Alert Time Range**
+
+      通常、アラートクエリはインターバルごとに1回実行されます。ただし、エラーやクエリの遅延によって1つ以上のインターバルがスキップされた場合、次回の実行では、その未処理のインターバルを含む time window が使用されます。この場合、クエリの interval parameter は引き続きアラートに設定された period の値になりますが、time range parameter にはより長い time window が反映されます。
+    </Warning>
+  </Step>
+
+  <Step>
+    #### ダッシュボードを保存する
+
+    アラートを有効にするには、ダッシュボードを保存します。アラートは設定したインターバルで評価を開始します。
+  </Step>
+</Steps>
+
+<div id="sql-result-interpretation">
+  ### クエリ結果の解釈方法
+</div>
+
+アラートシステムは、しきい値と比較する対象を判断するために、SQLクエリが返すカラムを確認します。
+
+* **値カラム**: `SELECT` 句の**最後の数値カラム**がアラートの値として使用されます。クエリが複数の数値カラム (例: `count, avg_latency, p99_latency`) を返す場合、しきい値と比較されるのは最後のカラム (`p99_latency`) のみです。
+* **タイムスタンプカラム**: 時系列チャート (Line と Stacked Bar) では、システムは結果内の Date/DateTime カラムを時間バケット (つまり時系列チャートの x 軸) として識別します。各時間バケットの値カラムは、それぞれ独立してしきい値に対して評価され、いずれかの時間バケットの値が設定されたしきい値を超えた場合、アラートがトリガーされます。
+* **グループカラム**: 数値カラムでもタイムスタンプカラムでもないカラム (例: `ServiceName`, `Environment`) は、グループ化の次元として扱われます。グループが存在する場合、グループ値の一意な組み合わせごとに個別に追跡され、それぞれに対してアラートが生成されます。ClickStack は、設定されたしきい値を超えた値を持つ各グループごとにアラートを送信します。グループは時系列チャートでのみ利用できます。
+
+<div id="query-params">
+  ### クエリパラメータとマクロ
+</div>
+
+SQL アラートクエリでは、評価時に自動的に置き換えられるテンプレートパラメータとマクロをサポートしています。これらは、[SQL ベースのチャートを作成する](/ja/clickstack/features/dashboards/sql-visualizations)際に使用できるパラメータやマクロと同じものです。
+
+<div id="required-alert-parameters">
+  #### 必須および推奨パラメータ
+</div>
+
+Line グラフまたは Stacked Bar グラフのアラートに使用するクエリには、**必ず**インターバルパラメータまたはマクロ (`{intervalSeconds:Int64}`、`{intervalMilliseconds:Int64}`、`$__timeInterval(col)`、または `$__timeInterval_ms(col)`) を含める必要があります。アラートの実行時には、これらはアラートに設定された期間に置き換えられます。
+
+アラートに使用するクエリには、時間範囲フィルター (`{startDateMilliseconds:Int64}` と `{endDateMilliseconds:Int64}`、または `$__timeFilter(col)` など) を含めることを**推奨**します。クエリ内に時間範囲フィルターが含まれているかどうかにかかわらず、アラートクエリはアラートに設定された期間で実行されます。時間範囲フィルターがない場合、クエリは実行のたびにソーステーブルで利用可能な全期間を読み取ります。
+
+<Warning>
+  **アラートの時間範囲**
+
+  通常、アラートクエリはインターバルごとに 1 回実行されます。ただし、エラーやクエリの遅延により 1 つ以上のインターバルがスキップされた場合、次回の実行では、スキップされたインターバルを含む時間範囲が使用されます。この場合でも、クエリのインターバルパラメータにはアラートに設定された期間が引き続き設定されますが、時間範囲パラメータにはより長い時間範囲が反映されます。
+</Warning>
+
+<div id="example-queries">
+  ### アラートクエリの例
+</div>
+
+<div id="example-error-rate">
+  #### サービスごとのエラー率 (時系列)
+</div>
+
+いずれかのサービスのエラー率が 5% を超えた場合にアラートを発報します。また、トラフィックの少ないサービスでノイズの多いアラートが発生するのを避けるため、アラート期間内のリクエスト数が少なくとも 10 件あることを条件とします。
+
+```sql
+WITH error_rates AS (
+  SELECT
+    $__timeInterval(Timestamp) as ts,
+    ServiceName,
+    countIf (SpanKind = 'Server') as request_count,
+    countIf (
+      SpanKind = 'Server'
+      and StatusCode = 'Error'
+    ) as error_count,
+    error_count / request_count * 100 AS error_percent
+  FROM $__sourceTable
+  WHERE $__timeFilter(Timestamp)
+  GROUP BY ts, ServiceName
+)
+SELECT ts, ServiceName, error_percent
+FROM error_rates
+WHERE request_count > 10
+```
+
+**表示タイプ**: Line または Stacked Bar
+**しきい値**: `>= 5` (エラー率が 5% に達すると発報)
+
+このクエリでは、`ServiceName` は数値カラムでもタイムスタンプのカラムでもないため、各サービスは個別のアラートグループとして扱われます。アラートはサービスごとに個別に発報されます。
+
+<div id="example-anomaly-detection">
+  #### ラグ付き平均による異常検知 (時系列)
+</div>
+
+エラー数が移動平均を2標準偏差超えて上回った場合にアラートを発します。これにより、固定のしきい値ではなく、直近のベースライン動作に対するスパイクを検出できます。
+
+```sql
+WITH buckets AS (
+  SELECT
+    $__timeInterval(Timestamp) AS ts,
+    count() AS bucket_count
+  FROM $__sourceTable
+  WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+        - toIntervalSecond($__interval_s * 30) -- 30インターバル分さかのぼって取得
+    AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+    AND SeverityText = 'error'
+  GROUP BY ts
+  ORDER BY ts
+  WITH FILL
+    FROM toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+    TO toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+    STEP toIntervalSecond($__interval_s)
+),
+
+anomaly_detection AS (
+  SELECT
+    ts,
+    bucket_count,
+    avg(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_avg,
+    stddevPop(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_stddev,
+    greatest(
+      bucket_count - (previous_30_avg + 2 * previous_30_stddev), 0
+    ) AS excess_error_count
+  FROM buckets
+)
+
+SELECT ts, excess_error_count
+FROM anomaly_detection
+WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND ts < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+```
+
+**表示タイプ**: Line
+**しきい値**: `> 0` (ローリングベースラインを上回る過剰なエラーが検出されると発報します)
+
+このクエリは、ローリングウィンドウ計算を初期化するために、日付範囲の開始*前*の30インターバルを取得し、その後、最終出力を評価ウィンドウのみに絞り込みます。
+
+<div id="common-alert-scenarios">
+  ## 一般的なアラートのシナリオ
+</div>
+
+HyperDX で活用できる、一般的なアラートのシナリオをいくつか紹介します。
+
+**エラー:** デフォルトの
+`All Error Events` と `HTTP Status >= 400` の保存済み検索に対してアラートを設定し、
+エラーが過剰に発生したときに通知を受け取ることを推奨します。
+
+**低速な操作:** 低速な操作を対象とする検索 (例:
+`duration:>5000`) を設定し、そのような操作の発生件数が多すぎる場合に
+アラートを出すことができます。
+
+**ユーザーイベント:** 新規ユーザーの登録時や重要なユーザー操作が実行された際に、
+顧客対応チームへ通知されるようアラートを設定することもできます。

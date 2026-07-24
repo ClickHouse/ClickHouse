@@ -1,0 +1,74 @@
+---
+title: '副本感知路由'
+slug: /manage/replica-aware-routing
+description: '如何使用副本感知路由提高缓存复用率'
+keywords: ['云', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'session_id']
+doc_type: 'guide'
+noindex: true
+---
+
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+副本感知路由 (也称为 sticky sessions、sticky routing 或 session affinity) 通过持续将相关请求路由到同一个 ClickHouse 副本，提高缓存复用的概率。它采用尽力而为的方式，并不保证隔离性。
+
+<Warning>
+  **协议支持 —— 仅限 HTTP/HTTPS**
+
+  副本感知路由是在代理层通过 **HTTP/HTTPS 接口** 实现的，使用 `session_id` 查询参数 (见下文) 。它**不支持原生协议** (native 端口，例如以默认 native 模式运行的 `clickhouse-go` driver) 。如果你需要从原生协议 client 使用粘性路由，请改为让该 workload 通过 HTTP 接口连接——对于 `clickhouse-go` (v2)，请在 connection 上设置 `Protocol: clickhouse.HTTP`。
+</Warning>
+
+<div id="http-based-routing">
+  ## 基于 HTTP 的路由 (session_id)
+</div>
+
+要将工作负载固定到某个副本，请在 HTTPS 接口上设置 `session_id` 查询参数。代理会解析该请求，并基于 `session_id` 使用一致性哈希来选择副本，因此所有使用相同 `session_id` 的请求都会被路由到同一台服务器——直到集群拓扑发生变化。
+
+```bash
+echo 'SELECT hostName()' | curl \
+  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/?session_id=my-workload-1' -d @-
+```
+
+每个携带 `session_id=my-workload-1` 的请求都会落到同一个副本上。不同的 `session_id` 值会分别进行哈希，可能落到同一个副本，也可能落到不同的副本——这种映射关系是固定的，但你无法选择某个给定值会映射到*哪个*副本。
+
+<div id="subdomain-based-routing-deprecated">
+  ## 基于子域名的路由 (已弃用)
+</div>
+
+<Danger>
+  **已弃用**
+
+  下述基于子域名的机制**已弃用**，并且在新服务中默认不再启用。这种方式无法很好地扩展 (每个粘性端点都需要单独的 TLS 证书) 。请改用[基于 HTTP 的 `session_id` 方法](#http-based-routing)。
+</Danger>
+
+此前，启用副本感知路由后，可以在服务主机名下使用通配符子域名。对于主机名为 `abcxyz123.us-west-2.aws.clickhouse.cloud` 的服务，任何匹配 `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` 的主机名 (例如 `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) 都会由 Envoy 通过哈希一致地路由到某个固定副本。原始主机名则继续使用 `LEAST_CONNECTION` 负载均衡，即默认的路由算法。
+
+<div id="limitations-of-replica-aware-routing">
+  ## 副本感知路由的局限性
+</div>
+
+<div id="replica-aware-routing-does-not-guarantee-isolation">
+  ### 副本感知路由 不保证隔离
+</div>
+
+服务一旦发生任何变动——例如 server pod (容器组) 重启 (版本升级、崩溃、垂直扩缩容等) ，或扩容 / 缩容——都会改变路由哈希环。这会导致具有相同 `session_id` 的请求落到不同的 server pod (容器组) 上。
+
+<div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
+  ### 副本感知路由 与 Private Link 搭配时无法直接开箱即用
+</div>
+
+使用已弃用的子域名方法时，客户需要手动添加一条 DNS 记录，才能让新的主机名模式正常解析。如果配置不当，可能会导致服务器负载不均衡。
+
+<div id="replica-aware-routing-requires-http">
+  ### 副本感知路由要求使用 HTTP 协议
+</div>
+
+粘性路由基于 `session_id` 查询参数，而该参数仅存在于 HTTP/HTTPS 接口中。原生二进制协议不携带这类可供代理计算哈希的参数，因此原生协议无法使用副本感知路由。原生协议客户端若要使用此功能，必须将相关工作负载迁移到 HTTP 接口。
+
+<div id="configuring-replica-aware-routing">
+  ## 配置 副本感知路由
+</div>
+
+如需启用 副本感知路由，请联系[我们的支持团队](https://clickhouse.com/support/program)。

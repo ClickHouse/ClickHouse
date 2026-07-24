@@ -1,0 +1,5 @@
+Default value
+0
+Plain Tuple sorting key is allowed by default
+Tuple columns are not aggregated element-wise by default
+1	(10,100)

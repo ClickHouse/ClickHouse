@@ -193,8 +193,8 @@ class PredefinedQueryHandler : public HTTPHandler
 private:
     NameSet receive_params;
     std::string predefined_query;
-    CompiledRegexPtr url_regex;
-    std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
+    CompiledRegexPtr url_regexp;
+    std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regexp;
 
 public:
     PredefinedQueryHandler(
@@ -202,8 +202,8 @@ public:
         const HTTPHandlerConnectionConfig & connection_config,
         const NameSet & receive_params_,
         const std::string & predefined_query_,
-        const CompiledRegexPtr & url_regex_,
-        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+        const CompiledRegexPtr & url_regexp_,
+        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;

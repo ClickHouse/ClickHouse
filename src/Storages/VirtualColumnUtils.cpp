@@ -15,6 +15,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -72,7 +73,7 @@ static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & conte
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -121,10 +122,7 @@ void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr &
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
         {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -210,6 +208,15 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
+/// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
+/// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
+/// not participate in the path/file pre-listing predicate split, where the listing-time block can only
+/// materialize `_path`/`_file`/hive columns/`_idx`.
+static bool isReaderOnlyVirtualColumn(const String & name)
+{
+    return name == "_headers";
+}
+
 std::string_view findHivePartitioningInPath(const String & path)
 {
     auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
@@ -279,26 +286,39 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     return desc;
 }
 
+/// Appends one row to the already-detached mutable columns of `block`. The columns are detached once
+/// by the caller (see `getFilterByPathAndFileIndexes`) so this per-row helper does not pay any
+/// copy-on-write plumbing: it inserts directly through the mutable holders. `block` is used only for
+/// name/type/position lookup; its columns have been moved out into `columns`.
 static void addPathAndFileToVirtualColumns(
-    Block & block,
+    const Block & block,
+    MutableColumns & columns,
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
-    bool parse_hive_columns)
+    bool parse_hive_columns,
+    const String * file_name = nullptr)
 {
     if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
+        columns[block.getPositionByName("_path")]->insert(path);
 
     if (block.has("_file"))
     {
-        auto pos = path.find_last_of('/');
         String file;
-        if (pos != std::string::npos)
-            file = path.substr(pos + 1);
+        if (file_name)
+        {
+            file = *file_name;
+        }
         else
-            file = path;
+        {
+            auto pos = path.find_last_of('/');
+            if (pos != std::string::npos)
+                file = path.substr(pos + 1);
+            else
+                file = path;
+        }
 
-        block.getByName("_file").column->assumeMutableRef().insert(file);
+        columns[block.getPositionByName("_file")]->insert(file);
     }
 
     if (parse_hive_columns)
@@ -309,12 +329,13 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
+                column->type->getDefaultSerialization()->deserializeWholeText(
+                    *columns[block.getPositionByName(column->name)], buf, format_settings);
             }
         }
     }
 
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+    columns[block.getPositionByName("_idx")]->insert(idx);
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
@@ -330,7 +351,8 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -349,13 +371,18 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings)
+    const std::optional<FormatSettings> & format_settings,
+    const std::vector<String> * file_names)
 {
+    if (file_names && file_names->size() != paths.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of paths and file names do not match: {} != {}", paths.size(), file_names->size());
+
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -369,15 +396,22 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
     const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
 
+    /// Detach all block columns into mutable holders once, append all rows through them, and
+    /// assign them back once. This keeps `IColumn::mutate` (and its recursive subcolumn re-wrapping
+    /// for `LowCardinality` virtuals such as `_path`/`_file`) off the per-row append path.
+    MutableColumns columns = block.mutateColumns();
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
+            columns,
             paths[i],
             /* idx */i,
             hive_format_settings,
-            parse_hive_columns);
+            parse_hive_columns,
+            file_names ? &(*file_names)[i] : nullptr);
     }
+    block.setColumns(std::move(columns));
 
     filterBlockWithExpression(actions, block);
 
@@ -631,8 +665,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
                         ? res->result_type->getDefault()
                         : nested_type->getDefault();
-                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
-                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
+                    auto zero_column = res->result_type->createColumnConst(0, zero_field);
+                    const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));

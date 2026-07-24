@@ -1,0 +1,18 @@
+---
+description: '将 ClickHouse 连接到数据湖目录（包括 AWS Glue、Unity、REST、Lakekeeper、Nessie 和 OneLake）的参考指南。'
+slug: /use-cases/data-lake/reference
+title: '目录指南'
+keywords: ['数据湖', '湖仓', '目录', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse 通过 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎与多种数据湖目录集成。以下指南介绍了如何将 ClickHouse 连接到各个受支持的目录，包括配置、身份验证和查询示例。
+
+| 目录                                                                           | 说明                                                      |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog)                  | 查询在 AWS Glue Data Catalog 中注册且数据存储于 S3 的 Iceberg 表。     |
+| [Databricks Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) | 连接到 Databricks Unity Catalog，访问 Delta Lake 和 Iceberg 表。 |
+| [Iceberg REST Catalog](/zh/guides/use-cases/data-warehousing/rest-catalog)      | 使用任何实现 Iceberg REST 规范的目录，例如 Tabular。                   |
+| [Lakekeeper](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)          | 连接到 Lakekeeper Catalog，访问 Iceberg 表。                    |
+| [Project Nessie](/zh/guides/use-cases/data-warehousing/nessie-catalog)          | 使用 Nessie Catalog 查询 Iceberg 表，并利用类似 Git 的数据版本控制能力。     |
+| [Microsoft OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)      | 查询 Microsoft Fabric OneLake 中的 Iceberg 表。               |

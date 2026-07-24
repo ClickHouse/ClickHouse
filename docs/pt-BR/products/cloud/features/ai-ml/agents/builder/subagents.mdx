@@ -1,0 +1,54 @@
+---
+sidebarTitle: 'Subagentes'
+slug: /cloud/features/ai-ml/agents/builder/subagents
+title: 'Subagentes'
+description: 'Delegação de tarefas para agentes filhos no ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'subagentes', 'delegação']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Um subagente é um agente filho que um agente pai invoca para executar uma subtarefa independente. O filho opera com sua própria janela de contexto e suas próprias ferramentas associadas, e depois retorna um resultado compacto ao pai. O pai nunca vê as etapas intermediárias do filho — apenas a resposta final.
+
+Use subagentes para manter o agente pai focado. Pesquisas longas, explorações que exigem muitas ferramentas e etapas especializadas de revisão funcionam melhor quando seu estado intermediário, carregado de tokens, fica fora do contexto do pai.
+
+<div id="enable-subagents">
+  ## Habilitar subagentes
+</div>
+
+No Agent Builder, abra **Configurações avançadas** e ative **Subagentes**. Dois controles adicionais serão exibidos:
+
+* **Permitir autoexpansão** - quando ativado, o agente pode gerar cópias de si mesmo para executar trabalho em paralelo. Útil para padrões de fan-out (um agente pai, vários workers idênticos).
+* **Subagentes adicionais** - selecione outros agentes específicos para os quais este agente pai pode delegar. O agente pai decide em tempo de execução qual subagente (se houver) chamar com base na tarefa.
+
+Salve. Quando o agente for executado, ele terá uma nova ferramenta disponível para invocar subagentes.
+
+<div id="when-a-subagent-helps">
+  ## Quando um subagente ajuda
+</div>
+
+* **Subtarefas de pesquisa** - o agente pai decompõe uma pergunta complexa, delega uma parte a um subagente especializado nela e sintetiza as respostas.
+* **Etapas com uso intenso de ferramentas** - sessões de Code interpreter, ciclos de web search em várias etapas ou qualquer coisa que consumiria o contexto do agente pai com resultados intermediários de ferramentas.
+* **Revisão especializada** - um agente gera, outro revisa; todo o raciocínio do revisor permanece na sua própria janela de contexto.
+
+Evite subagentes para chamadas triviais. A transferência adiciona latência e tokens.
+
+<div id="subagents-vs-agent-chain">
+  ## Subagentes vs. cadeia de agentes
+</div>
+
+Subagentes são um mecanismo de delegação em tempo de execução — o agente pai decide na hora. Uma cadeia de agentes é um grafo predefinido de agentes executados em uma ordem fixa. Use subagentes quando o roteamento for dinâmico; use uma cadeia quando o roteamento for fixo.
+
+<div id="limits">
+  ## Limites
+</div>
+
+* Máximo de **10** subagentes listados por agente pai.
+* Profundidade máxima de **5** saltos a partir do agente raiz.
+* Máximo de **50** destinos únicos de subagentes carregados em uma única execução.
+* Máximo de **100** configurações expandidas de subagentes por solicitação.
+
+Os subagentes aos quais você se refere devem estar visíveis para o usuário que executa o agente pai. Referências que apontam para um agente inacessível ou excluído são ignoradas silenciosamente — projete seus agentes pai para lidar bem com a ausência de um agente filho.

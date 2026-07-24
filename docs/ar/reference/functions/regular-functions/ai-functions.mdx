@@ -1,0 +1,455 @@
+---
+description: 'توثيق دوال الذكاء الاصطناعي'
+sidebarTitle: 'الذكاء الاصطناعي'
+slug: /sql-reference/functions/ai-functions
+title: 'دوال الذكاء الاصطناعي'
+doc_type: 'reference'
+---
+
+دوال الذكاء الاصطناعي هي دوال مضمّنة في ClickHouse يمكنك استخدامها لاستدعاء الذكاء الاصطناعي أو إنشاء embeddings للعمل مع بياناتك، واستخراج المعلومات، وتصنيف البيانات، وغير ذلك...
+
+<Note>
+  دوال الذكاء الاصطناعي تجريبية. اضبط [`allow_experimental_ai_functions`](/ar/reference/settings/session-settings#allow_experimental_ai_functions) لتمكينها.
+</Note>
+
+<Note>
+  قد تُرجع دوال الذكاء الاصطناعي مخرجات غير متوقعة. وتعتمد النتيجة بدرجة كبيرة على جودة الموجّه والنموذج المستخدم.
+</Note>
+
+تشترك جميع الدوال في بنية تحتية موحّدة توفّر ما يلي:
+
+* **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
+* **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+
+<div id="configuration">
+  ## التهيئة
+</div>
+
+تستمد دوال AI بيانات اعتماد الموفّر والتهيئة من [**مجموعة مُسمّاة**](/ar/concepts/features/configuration/server-config/named-collections). لتحديد مجموعة مُسمّاة لاستخدامها لبيانات الاعتماد، استخدم الإعداد [`ai_function_credentials`](/ar/reference/settings/session-settings#ai_function_credentials).
+
+مثال على تعليمة لإنشاء مجموعة مُسمّاة تتضمن بيانات اعتماد الموفّر:
+
+```sql
+CREATE NAMED COLLECTION my_ai_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+```
+
+حدِّد المجموعة المُسمّاة بإعداد `ai_function_credentials`، للجلسة أو لاستعلام واحد:
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+عندما تكون قيمة `ai_function_credentials` فارغة (وهو الإعداد الافتراضي)، يتم طرح استثناء.
+
+<div id="named-collection-parameters">
+  ### معلمات المجموعة المسماة
+</div>
+
+| المعلمة       | النوع  | الافتراضي | الوصف                                                                                                                                          |
+| ------------- | ------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`    | String | —         | موفّر النموذج. القيم المدعومة: `'openai'` و`'anthropic'`. انظر الملاحظة أدناه.                                                                 |
+| `endpoint`    | String | —         | عنوان URL لنقطة نهاية واجهة برمجة التطبيقات.                                                                                                   |
+| `model`       | String | —         | اسم النموذج (مثل `'gpt-4o-mini'` و`'text-embedding-3-small'`).                                                                                 |
+| `api_key`     | String | —         | مفتاح المصادقة الخاص بالموفّر. اختياري: عند عدم تحديده، لا يُرسَل ترويس المصادقة، مما يتيح الاستهداف لخوادم متوافقة مع OpenAI لا تتطلب مصادقة. |
+| `max_tokens`  | UInt64 | `1024`    | الحد الأقصى لعدد الرموز الناتجة لكل استدعاء لواجهة برمجة التطبيقات.                                                                            |
+| `api_version` | String | —         | سلسلة إصدار واجهة برمجة التطبيقات. تستخدمها Anthropic (`'2023-06-01'`).                                                                        |
+
+<Note>
+  يمكن استخدام أي واجهة برمجة تطبيقات متوافقة مع OpenAI (مثل vLLM وOllama وLiteLLM) عبر ضبط `provider = 'openai'` وتوجيه `endpoint` إلى خدمتك.
+</Note>
+
+<div id="query-level-settings">
+  ### إعدادات على مستوى الاستعلام
+</div>
+
+يُحدَّد اختيار المجموعة المُسمّاة المستخدمة من خلال الإعداد [`ai_function_credentials`](/ar/reference/settings/session-settings#ai_function_credentials). وتَرِد الإعدادات الأخرى المتعلقة بالذكاء الاصطناعي في [الإعدادات](/ar/reference/settings/session-settings) تحت البادئة `ai_function_`.
+
+<div id="default-and-materialized-columns">
+  ### الاستخدام مع أعمدة `DEFAULT` و`MATERIALIZED`
+</div>
+
+تُقرأ قيمة الإعداد `ai_function_credentials` عند تقييم التعبير الافتراضي، وليس عند تعريف العمود. ولا يُخزَّن اسم المجموعة ضمن تعريف العمود:
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+يتطلب تقييم `expression` ثلاثة أمور: يجب ضبط `allow_experimental_ai_functions` و`ai_function_credentials`، ويجب أن يكون لدى المستخدم الذي يُجري التقييم امتياز `GRANT NAMED COLLECTION` على المجموعة المسماة (ويؤدي حلّ بيانات الاعتماد إلى إجراء فحص وصول لـ `NAMED COLLECTION`). ويؤدي غياب أيٍّ منها إلى ظهور استثناء (`SUPPORT_IS_DISABLED`، أو خطأ بيانات اعتماد فارغة، أو `ACCESS_DENIED`).
+
+يُقيَّم عمود `DEFAULT` عند `INSERT`، لذا يجب ضبط كلا الإعدادين في الجلسة أو الاستعلام الذي ينفّذ الإدراج:
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+لجعل الإدراج ممكنًا في مثل هذه الجداول دون تعيين هذين الإعدادين لكل جلسة، اضبطهما في [ملف تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles):
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+يُحتسَب عمود `MATERIALIZED` عند `INSERT` مثل عمود `DEFAULT`، كما يُعاد احتسابه أيضًا بواسطة عمليات mutation مثل `ALTER TABLE ... MATERIALIZE COLUMN`. تعمل عمليات mutation خارج جلسة المستخدم ولا ترث عبارة `SETTINGS` الخاصة بالاستعلام، لكنها ترث الإعدادات من profile إعدادات. اضبط كلا الإعدادين في profile إعدادات، وامنح `NAMED COLLECTION` لمالك الجدول، لكي تنجح إعادة الاحتساب الناتجة عن عمليات mutation.
+
+<div id="restricting-endpoint-hosts">
+  ### تقييد مضيفات نقطة النهاية
+</div>
+
+يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+لاحظ أن هذا الإعداد عام على مستوى الخادم ويسري على جميع الميزات التي تستخدم HTTP.
+
+<div id="supported-providers">
+  ## الموفّرون المدعومون
+</div>
+
+| الموفّر   | قيمة `provider` | وظائف الدردشة | ملاحظات                             |
+| --------- | --------------- | ------------- | ----------------------------------- |
+| OpenAI    | `'openai'`      | نعم           | الموفّر الافتراضي.                  |
+| Anthropic | `'anthropic'`   | نعم           | يستخدم نقطة النهاية `/v1/messages`. |
+
+<div id="observability">
+  ## Observability
+</div>
+
+يُتتبَّع نشاط AI function عبر [ProfileEvents](/ar/reference/system-tables/query_log) في ClickHouse:
+
+| ProfileEvent      | Description                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| `AIAPICalls`      | عدد طلبات HTTP المُرسلة إلى موفّر الذكاء الاصطناعي.                                          |
+| `AIInputTokens`   | إجمالي رموز الإدخال المستهلَكة.                                                              |
+| `AIOutputTokens`  | إجمالي رموز الإخراج المستهلَكة.                                                              |
+| `AIRowsProcessed` | عدد الصفوف التي تلقّت نتيجة.                                                                 |
+| `AIRowsSkipped`   | عدد الصفوف التي جرى تخطيها (تم تجاوز الحصة، أو حدث خطأ مع `ai_function_throw_on_error = 0`). |
+
+استعلم عن هذه الأحداث:
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  يُستبدل المحتوى داخل الوسوم أدناه، وقت بناء إطار عمل التوثيق، بـ
+  توثيق مُولَّد من system.functions. يُرجى عدم تعديل الوسوم أو حذفها.
+  راجع: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+أُضيف في: v26.4.0
+
+يُصنّف النص المُعطى ضمن إحدى الفئات المتاحة باستخدام موفّر LLM.
+
+ترسل الدالة النص مع موجّه تصنيف ثابت وتنسيق استجابة من نوع JSON-schema
+يقيّد النموذج بحيث يُرجع تسمية واحدة فقط من التسميات المزوّدة. وعندما تُعاد الاستجابة على شكل كائن JSON
+بالصيغة `{"category": "..."}`، تُستخرج التسمية ويُعاد نصّها.
+
+تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المسماة المحددة بواسطة الإعداد `ai_function_credentials`.
+
+**الصياغة**
+
+```sql
+aiClassify(text, categories[, temperature])
+```
+
+**الأسماء البديلة**: `AIClassify`
+
+**المعاملات**
+
+* `text` — النص المطلوب تصنيفه. [`String`](/ar/reference/data-types/string)
+* `categories` — قائمة ثابتة بتسميات الفئات المرشحة. [`Array(String)`](/ar/reference/data-types/array)
+* `temperature` — درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية. القيمة الافتراضية: `0.0`. [`Float64`](/ar/reference/data-types/float)
+
+**القيمة المُعادة**
+
+إحدى تسميات الفئات المقدَّمة، أو القيمة الافتراضية لنوع العمود (سلسلة فارغة) إذا فشل الطلب وكان `ai_function_throw_on_error` معطّلًا. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**تصنيف المشاعر**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+positive
+```
+
+**تصنيف عمود**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+أُضيفت في: v26.6.0
+
+تُنشئ متجه تضمين للنص المحدد باستخدام موفّر الذكاء الاصطناعي المُهيّأ.
+
+ترسل الدالة النص إلى نقطة نهاية التضمين المُهيّأة وتُرجع المتجه الناتج بصيغة `Array(Float32)`.
+ضمن كتلة واحدة من الصفوف، تُجمَّع المُدخلات في دفعات يصل حجمها إلى
+[`ai_function_embedding_max_batch_size`](/ar/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+عنصرًا لكل طلب HTTP لتقليل العبء الإضافي لكل استدعاء.
+
+تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المُسمّاة المحددة بواسطة الإعداد `ai_function_credentials`.
+وتطلب الوسيطة الاختيارية `dimensions`، عند دعمها من قِبل النموذج (مثل `text-embedding-3-*` من OpenAI)،
+متجهًا بالحجم المحدد؛ وإلا فسيُعاد الحجم الأصلي للنموذج.
+
+**البنية**
+
+```sql
+aiEmbed(text[, dimensions])
+```
+
+**الوسائط**
+
+* `text` — النص المطلوب تضمينه. [`String`](/ar/reference/data-types/string)
+* `dimensions` — عدد الأبعاد المستهدف الاختياري لمتجه الإخراج. تعني القيمة `0` أو عدم تحديدها استخدام الحجم الأصلي للنموذج. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+متجه التضمين، أو مصفوفة فارغة إذا كان الإدخال NULL أو فارغًا، أو إذا فشل الطلب وكان `ai_function_throw_on_error` معطّلًا، أو إذا جرى تجاوز الحصة وكان `ai_function_throw_on_quota_exceeded` معطّلًا. [`Array(Float32)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**تضمين سلسلة نصية واحدة**
+
+```sql title=Query
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**مع أبعاد محددة صراحة**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**تضمين عمود من النصوص**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+أُضيف في: v26.4.0
+
+يستخرج معلومات منظَّمة من نص غير منظَّم باستخدام موفّر LLM.
+
+يمكن أن تكون الوسيطة الثانية إما تعليمة بلغة طبيعية حرة الصياغة (مثل `'the main complaint'`) أو
+مخططًا مُرمَّزًا بتنسيق JSON بالشكل `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
+
+في وضع التعليمات، تُرجِع الدالة القيمة المستخرجة كسلسلة نصية عادية، أو سلسلة فارغة إذا لم يُعثر على أي شيء.
+وفي وضع المخطط، تُرجِع الدالة سلسلة كائن JSON تتطابق مفاتيحها مع المخطط المطلوب؛ وتكون الحقول المفقودة `null`.
+
+تُؤخذ بيانات اعتماد الموفّر والتهيئة من مجموعة مُسمّاة المحددة بواسطة الإعداد `ai_function_credentials`.
+
+**البنية**
+
+```sql
+aiExtract(text, instruction_or_schema[, temperature])
+```
+
+**الأسماء البديلة**: `AIExtract`
+
+**الوسيطات**
+
+* `text` — النص المراد استخراج المعلومات منه. [`String`](/ar/reference/data-types/string)
+* `instruction_or_schema` — تعليمة استخراج بصياغة حرة، أو كائن JSON ثابت يصف الحقول المطلوب استخراجها. [`const String`](/ar/reference/data-types/string)
+* `temperature` — درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية. القيمة الافتراضية: `0.0`. [`const Float64`](/ar/reference/data-types/float)
+
+**القيمة المُعادة**
+
+قيمة واحدة مستخرجة (وضع التعليمات) أو سلسلة JSON تمثل كائنًا (وضع المخطط). تُرجِع القيمة الافتراضية لنوع العمود (سلسلة فارغة) إذا فشل الطلب وكان `ai_function_throw_on_error` معطّلًا. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**تعليمة بصياغة حرة**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+late and damaged package
+```
+
+**استخراج المخطط**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+أُضيف في: v26.4.0
+
+ينشئ محتوى نصيًا حرّ الصياغة من موجّه باستخدام موفّر LLM.
+
+ترسل الدالة الموجّه إلى موفّر AI المُعدّ وتُرجِع النص المُنشأ.
+يمكن توفير موجّه نظام اختياري لتوجيه سلوك النموذج (مثل النبرة أو التنسيق أو الدور).
+إذا لم يتم توفير موجّه نظام، فسيكون موجّه النظام الافتراضي هو: `You are a helpful assistant. Provide a clear and concise response.`
+
+تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المسماة المحددة بواسطة الإعداد `ai_function_credentials`.
+
+**الصيغة**
+
+```sql
+aiGenerate(prompt[, system_prompt[, temperature]])
+```
+
+**الأسماء المستعارة**: `AIGenerate`
+
+**المعاملات**
+
+* `prompt` — موجّه المستخدم أو سؤاله الذي يُرسل إلى النموذج. [`String`](/ar/reference/data-types/string)
+* `system_prompt` — تعليمة اختيارية ثابتة على مستوى النظام تُوجّه سلوك النموذج (مثل الشخصية أو تنسيق المخرجات)، وتُرسل مع كل موجّه. [`String`](/ar/reference/data-types/string)
+* `temperature` — درجة حرارة أخذ العينات التي تتحكم في العشوائية. القيمة الافتراضية: `0.7`. [`Float64`](/ar/reference/data-types/float)
+
+**القيمة المُعادة**
+
+الاستجابة النصية المُولَّدة، أو القيمة الافتراضية لنوع العمود (سلسلة فارغة) إذا أخفق الطلب وكان `ai_function_throw_on_error` معطّلًا. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**سؤال بسيط**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+4
+```
+
+**باستخدام موجّه النظام**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**تلخيص قيم العمود**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+أُضيف في: v26.4.0
+
+يترجم النص المحدد إلى اللغة الهدف المطلوبة باستخدام موفّر LLM.
+
+يمكن تمرير تعليمات إضافية للأسلوب أو اللهجة كوسيطة ثالثة (مثلًا: `'أبقِ المصطلحات التقنية من دون ترجمة'`).
+
+تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المُسمّاة المحددة عبر الإعداد `ai_function_credentials`.
+
+**بناء الجملة**
+
+```sql
+aiTranslate(text, target_language[, instructions[, temperature]])
+```
+
+**الأسماء البديلة**: `AITranslate`
+
+**الوسيطات**
+
+* `text` — النص المراد ترجمته. [`String`](/ar/reference/data-types/string)
+* `target_language` — اسم اللغة المستهدفة أو رمز BCP-47 (مثل `'French'`، `'es-MX'`). [`String`](/ar/reference/data-types/string)
+* `instructions` — تعليمات إضافية ثابتة اختيارية للمترجم. [`String`](/ar/reference/data-types/string)
+* `temperature` — درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية. القيمة الافتراضية: `0.3`. [`Float64`](/ar/reference/data-types/float)
+
+**القيمة المُعادة**
+
+النص المترجَم، أو القيمة الافتراضية لنوع العمود (سلسلة فارغة) إذا فشل الطلب وكان `ai_function_throw_on_error` معطّلًا. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**الترجمة إلى الفرنسية**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**الترجمة إلى اليابانية مع إرشادات الأسلوب**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+{/*AUTOGENERATED_END*/}

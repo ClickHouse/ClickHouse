@@ -1,0 +1,57 @@
+---
+sidebarTitle: 'Notion'
+slug: /integrations/notion
+keywords: ['clickhouse', 'notion', 'mcp', 'custom agents', 'ai', 'integrate', 'connect']
+description: 'ClickHouse 원격 MCP 서버를 통해 ClickHouse Cloud를 Notion 사용자 지정 에이전트에 연결합니다.'
+title: 'Notion과 ClickHouse 연결'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Notion](https://www.notion.com/)은 메모, 문서, 프로젝트, AI 기반 사용자 지정 에이전트를 위한 통합 워크스페이스입니다.
+
+ClickHouse Cloud를 Notion [사용자 지정 에이전트](https://www.notion.com/help/mcp-connections-for-custom-agents)에 연결할 수 있습니다. 연결되면 에이전트는 Notion 내에서 데이터를 탐색하고, 읽기 전용 분석 쿼리를 실행하며, ClickHouse Cloud의 서비스 및 비용 정보를 확인할 수 있습니다.
+
+<div id="prerequisites">
+  ## 필수 조건
+</div>
+
+* [원격 MCP 서버가 활성화된](/ko/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) 상태로 실행 중인 [ClickHouse Cloud 서비스](/ko/get-started/setup/cloud)
+* **Business** 또는 **Enterprise** 요금제의 Notion 워크스페이스
+
+<div id="connect-clickhouse-to-notion">
+  ## ClickHouse를 Notion 사용자 지정 에이전트에 연결하기
+</div>
+
+ClickHouse는 Notion에서 사전 구성된 연결로 제공됩니다(현재 베타). 사용자 지정 MCP 서버를 설정하거나 URL을 붙여 넣을 필요가 없습니다.
+
+1. Notion 사이드바의 **Agents** 섹션에서 새 사용자 지정 에이전트를 만드세요.
+2. Agent의 **Settings**에서 **Tools and Access** 아래 **Add connection**을 선택한 다음, 사용 가능한 연결 목록에서 **ClickHouse**를 추가하세요.
+
+<Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="Notion의 Add connection 선택기에서 ClickHouse를 선택하는 화면" />
+
+3. **Connect**를 클릭하고 ClickHouse Cloud 자격 증명을 사용해 OAuth 절차를 완료하세요. 액세스 범위는 계정이 이미 접근할 수 있는 조직과 서비스로 제한됩니다.
+
+4. Agent 설정에서 새 ClickHouse 연결을 펼친 다음, 해당 Agent가 사용할 도구를 켜세요. 각 도구마다 Agent가 자동으로 실행할지, 또는 항상 승인을 요청할지도 선택할 수 있습니다. ClickHouse 원격 MCP 서버를 통해 노출되는 모든 도구는 읽기 전용입니다. 전체 최신 목록은 [사용 가능한 도구](/ko/products/cloud/features/ai-ml/remote-mcp#available-tools) 참고 문서를 참조하세요.
+
+<Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="도구별 토글이 표시된 Notion의 펼쳐진 ClickHouse 연결" />
+
+<Note>
+  각 사용자 지정 에이전트에는 전용 ClickHouse 연결이 필요하며, 연결을 인증한 사용자만 도구 설정을 변경할 수 있습니다. 자세한 내용은 Notion의 [Agent 연결을 위한 보안 모범 사례](https://www.notion.com/help/security-best-practices-for-agent-connections)를 참조하세요.
+</Note>
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* [ClickHouse Cloud 원격 MCP 서버 활성화 및 연결](/ko/products/cloud/features/ai-ml/mcp/remote-mcp)
+* [Cloud용 Remote MCP: 도구 참고](/ko/products/cloud/features/ai-ml/remote-mcp)
+* Notion: [사용자 지정 에이전트를 위한 MCP 연결](https://www.notion.com/help/mcp-connections-for-custom-agents)
+* Notion: [MCP 통합을 사용해 사용자 지정 에이전트를 도구 스택에 연결](https://www.notion.com/help/guides/connect-custom-agents-to-mcp-integrations)

@@ -1,0 +1,58 @@
+---
+noindex: true
+title: "Back Up and Restore ClickHouse (Manual)"
+sidebarTitle: "Backup and restore"
+description: "Perform manual backups and restores of ClickHouse data using SQL commands and S3 storage."
+---
+
+Perform manual backups and restores of ClickHouse data using SQL commands and S3 storage. For full syntax details, see the [upstream ClickHouse backup documentation](https://clickhouse.com/docs/operations/backup).
+
+For API-driven backup operations, see [Manage Backups via API](/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+## Prerequisites
+
+- An S3 bucket in the same region as your cluster
+- The IAM role tied to the Kubernetes service account must have read, write, and list access to the bucket
+
+## S3 Path Format
+
+All backup commands use the following S3 path:
+
+``` text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable | Description |
+|----|----|
+| `$REGION` | S3 region (e.g., `us-west-2`) |
+| `$S3_BUCKET` | Name of the S3 bucket for backups |
+| `$CLUSTER_S3_PREFIX` | S3 key prefix for the cluster, found in the `clickhousecluster` resource under `spec.s3.keyPrefix` (e.g., `ch-s3-{uuid}`) |
+| `$BACKUP_ID` | A unique identifier (UUID) for this backup |
+
+## Perform a Full Backup
+
+From one of the server pods, run:
+
+``` sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+The backup runs asynchronously. Check progress via the [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups) table:
+
+``` sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+## Incremental Backups
+
+See [Take an incremental backup](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup) in the upstream docs.
+
+## Restore from a Backup
+
+Run on the cluster you want to restore into:
+
+``` sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` is any unique identifier you assign to the restore operation.

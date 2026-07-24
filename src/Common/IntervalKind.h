@@ -67,6 +67,13 @@ struct IntervalKind
     /// returns "toDayOfMonth".
     const char * toNameOfFunctionExtractTimePart() const;
 
+    /// Inverse of `toNameOfFunctionExtractTimePart`: given a function name like
+    /// "toYear", "toMonth", "toDayOfMonth", ... sets `result` to the matching
+    /// `IntervalKind` and returns true. Returns false for any other name.
+    /// Used to recognise calendar-field extractor functions whose `EXTRACT`-style
+    /// dispatch can be redirected onto an `Interval` operand.
+    static bool tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result);
+
     /// Converts the string representation of an interval kind to its IntervalKind equivalent.
     /// Returns false if the conversion did not succeed.
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.

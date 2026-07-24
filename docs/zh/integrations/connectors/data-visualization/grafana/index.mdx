@@ -1,0 +1,118 @@
+---
+sidebarTitle: '快速入门'
+slug: /integrations/grafana
+description: 'ClickHouse 与 Grafana 集成简介'
+title: 'Grafana 的 ClickHouse 数据源插件'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/'
+keywords: ['Grafana', '数据可视化', '仪表盘', '插件', '数据源']
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_native.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+借助 Grafana，您可以通过仪表盘探索并共享所有数据。
+Grafana 需要通过插件连接到 ClickHouse，您可以在其 UI 中轻松完成安装。
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/bRce9xWiqQM"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 收集连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2-making-a-read-only-user">
+  ## 2. 创建只读用户
+</div>
+
+将 ClickHouse 连接到 Grafana 这类数据可视化工具时，建议创建一个只读用户，以防止数据被意外修改。
+
+Grafana 不会验证查询是否安全。查询中可以包含任何 SQL 语句，包括 `DELETE` 和 `INSERT`。
+
+要配置只读用户，请按以下步骤操作：
+
+1. 按照[在 ClickHouse 中创建用户和角色](/zh/concepts/features/security/access-rights)指南创建一个 `readonly` 用户 profile。
+2. 确保 `readonly` 用户拥有足够的权限，以修改底层 [clickhouse-go client](https://github.com/ClickHouse/clickhouse-go) 所需的 `max_execution_time` 设置。
+3. 如果您使用的是公共 ClickHouse 实例，不建议在 `readonly` profile 中设置 `readonly=2`。请改为保留 `readonly=1`，并将 `max_execution_time` 的约束类型设置为 [changeable&#95;in&#95;readonly](/zh/concepts/features/configuration/settings/constraints-on-settings)，以允许修改此设置。
+
+<div id="3--install-the-clickhouse-plugin-for-grafana">
+  ## 3. 安装 Grafana 的 ClickHouse 插件
+</div>
+
+在 Grafana 连接到 ClickHouse 之前，您需要先安装相应的 Grafana 插件。假设您已登录 Grafana，请按照以下步骤操作：
+
+1. 在侧边栏的 **Connections** 页面中，选择 **Add new connection** 选项卡。
+
+2. 搜索 **ClickHouse**，然后点击由 Grafana Labs 签名的插件：
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="在 Connections 页面选择 ClickHouse 插件" border />
+
+3. 在下一个页面中，点击 **Install** 按钮：
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="安装 ClickHouse 插件" border />
+
+<div id="4-define-a-clickhouse-data-source">
+  ## 4. 定义 ClickHouse 数据源
+</div>
+
+1. 安装完成后，点击 **Add new data source** 按钮。 (您也可以在 **Connections** 页面的 **Data sources** 选项卡中添加数据源。)
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="创建 ClickHouse 数据源" border />
+
+2. 向下滚动并找到 **ClickHouse** 数据源类型，或者在 **Add data source** 页面的搜索栏中直接搜索。选择 **ClickHouse** 数据源后，将显示以下页面：
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="连接配置页面" border />
+
+3. 输入服务器设置和凭据。关键设置包括：
+
+* **Server host address:** 您的 ClickHouse 服务的主机名。
+* **Server port:** 您的 ClickHouse 服务使用的端口。具体端口取决于服务器配置和所用协议。
+* **Protocol**：用于连接到您的 ClickHouse 服务的协议。
+* **Secure connection**：如果您的服务器要求安全连接，请启用此项。
+* **Username** 和 **Password**：输入您的 ClickHouse 用户凭据。如果您尚未配置任何用户，可尝试使用 `default` 作为用户名。建议[配置只读用户](#2-making-a-read-only-user)。
+
+有关更多设置，请参阅[插件配置](/zh/integrations/connectors/data-visualization/grafana/config)文档。
+
+4. 点击 **Save &amp; test** 按钮，验证 Grafana 能否连接到您的 ClickHouse 服务。如果连接成功，您将看到 **Data source is working** 消息：
+
+   <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="选择 Save & test" border />
+
+<div id="5-next-steps">
+  ## 5. 后续步骤
+</div>
+
+您的数据源现在已可使用！了解如何使用[查询构建器](/zh/integrations/connectors/data-visualization/grafana/query-builder)构建查询。
+
+有关配置的更多信息，请参阅[插件配置](/zh/integrations/connectors/data-visualization/grafana/config)文档。
+
+如果这些文档未涵盖您需要的信息，请查看 [GitHub 上的插件仓库](https://github.com/grafana/clickhouse-datasource)。
+
+<div id="upgrading-plugin-versions">
+  ## 升级插件版本
+</div>
+
+从 v4 开始，配置和查询可随着新版本的发布进行升级。
+
+v3 中的配置和查询会在打开时迁移到 v4。虽然旧版配置和仪表盘可以在 v4 中加载，但迁移结果在新版中重新保存之前不会被保留。如果你在打开旧配置/查询时发现任何问题，请放弃更改，并[在 GitHub 上报告该问题](https://github.com/grafana/clickhouse-datasource/issues)。
+
+如果配置/查询是使用较新版本创建的，插件将无法降级到旧版本。

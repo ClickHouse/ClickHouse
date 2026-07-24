@@ -8,6 +8,7 @@
 
 #include <base/scope_guard.h>
 #include <Core/TypeId.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -16,6 +17,7 @@
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -81,6 +83,10 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
+    /// `engine` is required by FFI helpers such as `ffi::get_from_string_map`. Pass `nullptr` only
+    /// for visit paths that make no engine-bound FFI calls (e.g. partition column extraction).
+    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+
     struct SchemaResult
     {
         DB::NamesAndTypesList names_and_types;
@@ -140,6 +146,10 @@ private:
     /// because they are not stored in the actual data,
     /// but instead in data paths directories.
     DB::Names partition_columns;
+    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    ffi::SharedExternEngine * engine;
+
+    std::exception_ptr visitor_exception;
 
     const LoggerPtr log = getLogger("SchemaVisitor");
 
@@ -163,6 +173,9 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitReadSchema(ffi::SharedScan * scan, SchemaVisitorData & data)
@@ -171,6 +184,9 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitWriteSchema(ffi::SharedWriteContext * write_context, SchemaVisitorData & data)
@@ -179,12 +195,18 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
-        while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
+        while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitorWrapper<visitPartitionColumn>)) {}
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitSchema(ffi::SharedSchema * schema, SchemaVisitorData & data)
@@ -192,40 +214,69 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
 private:
-    static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
+    static void setVisitorException(SchemaVisitorData * state)
     {
-        ffi::EngineSchemaVisitor visitor{};
-        visitor.data = &data;
-        visitor.make_field_list = &makeFieldList;
+        if (!state->visitor_exception)
+            state->visitor_exception = std::current_exception();
+    }
 
-        visitor.visit_boolean = &simpleTypeVisitor<DB::TypeIndex::Int8, true>;
-        visitor.visit_string = &simpleTypeVisitor<DB::TypeIndex::String>;
-        visitor.visit_long = &simpleTypeVisitor<DB::TypeIndex::Int64>;
-        visitor.visit_integer = &simpleTypeVisitor<DB::TypeIndex::Int32>;
-        visitor.visit_short = &simpleTypeVisitor<DB::TypeIndex::Int16>;
-        visitor.visit_byte = &simpleTypeVisitor<DB::TypeIndex::Int8>;
-        visitor.visit_float = &simpleTypeVisitor<DB::TypeIndex::Float32>;
-        visitor.visit_double = &simpleTypeVisitor<DB::TypeIndex::Float64>;
-        visitor.visit_binary = &simpleTypeVisitor<DB::TypeIndex::String>;
-        visitor.visit_date = &simpleTypeVisitor<DB::TypeIndex::Date32>;
-        visitor.visit_timestamp = &simpleTypeVisitor<DB::TypeIndex::DateTime64>;
-        visitor.visit_timestamp_ntz = &simpleTypeVisitor<DB::TypeIndex::DateTime64>;
-
-        visitor.visit_array = &arrayTypeVisitor;
-        visitor.visit_struct = &tupleTypeVisitor;
-        visitor.visit_map = &mapTypeVisitor;
-        visitor.visit_decimal = &decimalTypeVisitor;
-
-        return visitor;
+    template <auto Func, typename... Args>
+    static std::invoke_result_t<decltype(Func), void*, Args...> visitorWrapper(void * data, Args... args)
+    {
+        SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
+        if (!state->visitor_exception)
+        {
+            try
+            {
+                return Func(data, args...);
+            }
+            catch (...)
+            {
+                LOG_ERROR(state->log, "Error while visiting schema: {}", DB::getCurrentExceptionMessage(true));
+                setVisitorException(state);
+            }
+        }
+        if constexpr (std::is_void_v<decltype(Func(data, args...))>)
+            return;
+        else
+            return {};
     }
 
     static void visitPartitionColumn(void * data, ffi::KernelStringSlice slice)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         state->partition_columns.push_back(KernelUtils::fromDeltaString(slice));
+    }
+
+    static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
+    {
+        return ffi::EngineSchemaVisitor{
+            .data = &data,
+            .make_field_list = &visitorWrapper<makeFieldList>,
+            .visit_struct = &visitorWrapper<tupleTypeVisitor>,
+            .visit_array = &visitorWrapper<arrayTypeVisitor>,
+            .visit_map = &visitorWrapper<mapTypeVisitor>,
+            .visit_decimal = &visitorWrapper<decimalTypeVisitor>,
+            .visit_string = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
+            .visit_long = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int64>>,
+            .visit_integer = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int32>>,
+            .visit_short = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int16>>,
+            .visit_byte = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int8>>,
+            .visit_float = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float32>>,
+            .visit_double = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float64>>,
+            .visit_boolean = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int8, true>>,
+            .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
+            .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
+            .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
+            .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
+            .visit_variant = &visitorWrapper<visitVariant>,
+        };
     }
 
     static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
@@ -241,12 +292,17 @@ private:
         return id;
     }
 
-    static std::unique_ptr<std::string> extractPhysicalName(const ffi::CStringMap * metadata)
+    static std::unique_ptr<std::string> extractPhysicalName(
+        const ffi::CStringMap * metadata,
+        SchemaVisitorData * state)
     {
-        std::string * physical_name = static_cast<std::string *>(ffi::get_from_string_map(
-            metadata,
-            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
-            KernelUtils::allocateString));
+        std::string * physical_name = static_cast<std::string *>(KernelUtils::unwrapResult(
+            ffi::get_from_string_map(
+                metadata,
+                KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
+                KernelUtils::allocateString,
+                state->engine),
+            "get_from_string_map"));
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
@@ -268,7 +324,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -301,7 +357,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -348,6 +404,21 @@ private:
         listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
+    static void visitVariant(
+        [[maybe_unused]] void * data,
+        [[maybe_unused]] uintptr_t sibling_list_id,
+        [[maybe_unused]] ffi::KernelStringSlice name,
+        [[maybe_unused]] bool nullable,
+        [[maybe_unused]] const ffi::CStringMap * metadata)
+    {
+        /// Not simple to support,
+        /// delta lake has its own Variant serialization.
+        const std::string column_name(name.ptr, name.len);
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unsupported Variant data type: {}", column_name);
+    }
+
     template <DB::TypeIndex type>
     static void listBasedTypeVisitor(
         void * data,
@@ -367,7 +438,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -501,38 +572,40 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     return names_and_types;
 }
 
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
+    ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
     auto result = data.getSchemaResult();
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitReadSchema(scan, data);
     return data.getSchemaResult().names_and_types;
 }
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
 
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
-    SchemaVisitorData data;
+    /// Partition column extraction makes no engine-bound FFI calls, so no engine is needed.
+    SchemaVisitorData data(nullptr);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
 }
 
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
     return data.getSchemaResult().names_and_types;
 }

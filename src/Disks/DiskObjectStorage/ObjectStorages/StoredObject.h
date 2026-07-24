@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <limits>
+#include <optional>
 #include <string>
 #include <span>
 
@@ -15,18 +16,32 @@ namespace DB
 /// Object metadata: path, size, path_key_for_cache.
 struct StoredObject
 {
+    /// Sentinel meaning "size is not known yet", set by callers that can't
+    /// determine the size up-front (S3 `HEAD` without `Content-Length`, local
+    /// `stat` failure). Consumers doing offset arithmetic (`OffsetMap`,
+    /// `ReaderExecutor`) must check for it and stream until EOF instead of
+    /// treating it as a real file size.
+    static constexpr uint64_t UnknownSize = std::numeric_limits<uint64_t>::max();
+
     String remote_path; /// abs path
     String local_path; /// or equivalent "metadata_path"
+    std::optional<size_t> read_source_index;
 
     /// NOTE: the type must stay uint64_t — MetadataStorageFromDisk removal log serializes it as UInt64 LE.
-    uint64_t bytes_size = std::numeric_limits<uint64_t>::max();
+    uint64_t bytes_size = UnknownSize;
+
+    /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
+    /// catching an in-place overwrite mid-read. Empty means no validation.
+    String etag;
 
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",
-        uint64_t bytes_size_ = std::numeric_limits<uint64_t>::max())
+        uint64_t bytes_size_ = UnknownSize,
+        std::optional<size_t> read_source_index_ = std::nullopt)
         : remote_path(remote_path_)
         , local_path(local_path_)
+        , read_source_index(read_source_index_)
         , bytes_size(bytes_size_)
     {}
 

@@ -1,0 +1,35 @@
+---
+description: 'توثيق لتعديل تعبير SAMPLE BY'
+sidebarTitle: 'SAMPLE BY'
+slug: /sql-reference/statements/alter/sample-by
+title: 'تعديل تعبيرات مفتاح أخذ العينات'
+doc_type: 'مرجع'
+---
+
+العمليات التالية متاحة:
+
+<div id="modify">
+  ## تعديل
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+```
+
+يُغيِّر هذا الأمر [مفتاح أخذ العينات](/ar/reference/engines/table-engines/mergetree-family/mergetree) للجدول إلى `new_expression` (تعبير أو مجموعة مرتبة من التعبيرات). يجب أن يتضمن المفتاح الأساسي مفتاح أخذ العينات الجديد.
+
+<div id="remove">
+  ## حذف
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+```
+
+يزيل هذا الأمر [مفتاح أخذ العينات](/ar/reference/engines/table-engines/mergetree-family/mergetree) للجدول.
+
+الأمران `MODIFY` و`REMOVE` خفيفا الوزن، بمعنى أنهما يقتصران على تغيير البيانات الوصفية أو إزالة الملفات.
+
+<Note>
+  لا يعمل هذا إلا مع الجداول ضمن عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك الجداول [المكررة](/ar/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

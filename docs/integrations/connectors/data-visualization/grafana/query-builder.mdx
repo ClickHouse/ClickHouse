@@ -1,0 +1,256 @@
+---
+sidebarTitle: 'Query builder'
+slug: /integrations/grafana/query-builder
+description: 'Using the Query builder in the ClickHouse Grafana plugin'
+title: 'Query builder'
+doc_type: 'guide'
+keywords: ['grafana', 'query builder', 'visualization', 'dashboards', 'plugin']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge/>
+
+Any query can be run with the ClickHouse plugin.
+The query builder is a convenient option for simpler queries, but for complicated queries you will need to use the [SQL Editor](#sql-editor).
+
+All queries in the query builder have a [query type](#query-types), and require at least one column to be selected.
+
+The available query types are:
+- [Table](#table): the simplest query type for showing data in table format. Works well as a catch-all for both simple and complex queries containing aggregate functions.
+- [Logs](#logs): optimized for building queries for logs. Works best in explore view with [defaults configured](/integrations/connectors/data-visualization/grafana/config#logs).
+- [Time Series](#time-series): best used for building time series queries. Allows selecting a dedicated time column and adding aggregate functions.
+- [Traces](#traces): optimized for searching/viewing traces. Works best in explore view with [defaults configured](/integrations/connectors/data-visualization/grafana/config#traces).
+- [SQL Editor](#sql-editor): the SQL Editor can be used when you want full control over the query. In this mode, any SQL query can be executed.
+
+## Query types {#query-types}
+
+The *Query Type* setting will change the layout of the query builder to match the type of query being built.
+The query type also determines which panel is used when visualizing data.
+
+### Table {#table}
+
+The most flexible query type is the table query. This is a catch-all for the other query builders designed to handle simple and aggregate queries.
+
+| Field | Description |
+|----|----|
+| Builder Mode  | Simple queries exclude Aggregates and Group By, while aggregate queries include these options.  |
+| Columns | The selected columns. Raw SQL can be typed into this field to allow for functions and column aliasing. |
+| Aggregates | A list of [aggregate functions](/reference/functions/aggregate-functions/index). Allows for custom values for function and column. Only visible in Aggregate mode. |
+| Group By | A list of [GROUP BY](/reference/statements/select/group-by) expressions. Only visible in Aggregate mode. |
+| Order By | A list of [ORDER BY](/reference/statements/select/order-by) expressions. |
+| Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded. Some visualizations might need this set to `0` to show all the data. |
+| Filters | A list of filters to be applied in the `WHERE` clause. |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Example aggregate table query" border />
+
+This query type will render the data as a table.
+
+### Logs {#logs}
+
+The logs query type offers a query builder focused on querying logs data.
+Defaults can be configured in the data source's [log configuration](/integrations/connectors/data-visualization/grafana/config#logs) to allow the query builder to be pre-loaded with a default database/table and columns.
+OpenTelemetry can also be enabled to auto select the columns according to a schema version.
+
+**Time** and **Level** filters are added by default, along with an Order By for the Time column.
+These filters are tied to their respective fields, and will update as the columns are changed.
+The **Level** filter is excluded from the SQL by default, changing it from the `IS ANYTHING` option will enable it.
+
+The logs query type supports [data links](#data-links).
+
+| Field | Description |
+|----|----|
+| Use OTel | Enables OpenTelemetry columns. Will overwrite the selected columns to use columns defined by the selected OTel schema version (Disables column selection). |
+| Columns | Extra columns to be added to the log rows. Raw SQL can be typed into this field to allow for functions and column aliasing. |
+| Time | The primary timestamp column for the log. Will display time-like types, but allows for custom values/functions. |
+| Log Level | Optional. The *level* or *severity* of the log. Values typically look like `INFO`, `error`, `Debug`, etc. |
+| Message | The log message content. |
+| Order By | A list of [ORDER BY](/reference/statements/select/order-by) expressions. |
+| Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded, but this isn't recommended for large log datasets. |
+| Filters | A list of filters to be applied in the `WHERE` clause. |
+| Message Filter | A text input for conveniently filtering logs using a `LIKE %value%`. Excluded when input is empty. |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Example OTel logs query" border />
+
+<br/>
+This query type will render the data in the logs panel along with a logs histogram panel at the top.
+
+Extra columns that are selected in the query can be viewed in the expanded log row:
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Example of extra fields on logs query" border />
+
+### Time series {#time-series}
+
+The time series query type is similar to [table](#table), but with a focus on time series data.
+
+The two views are mostly the same, with these notable differences:
+- A dedicated *Time* field.
+- In Aggregate mode, a time interval macro is automatically applied along with a Group By for the Time field.
+- In Aggregate mode, the "Columns" field is hidden.
+- A time range filter and Order By are automatically added for the **Time** field.
+
+<Warning>
+**Is your visualization missing data?**
+
+In some cases the time series panel will appear to be cut off because the limit defaults to `1000`.
+
+Try removing the `LIMIT` clause by setting it to `0` (if your dataset allows).
+</Warning>
+
+| Field | Description |
+|----|----|
+| Builder Mode  | Simple queries exclude Aggregates and Group By, while aggregate queries include these options.  |
+| Time | The primary time column for the query. Will display time-like types, but allows for custom values/functions. |
+| Columns | The selected columns. Raw SQL can be typed into this field to allow for functions and column aliasing. Only visible in Simple mode. |
+| Aggregates | A list of [aggregate functions](/reference/functions/aggregate-functions/index). Allows for custom values for function and column. Only visible in Aggregate mode. |
+| Group By | A list of [GROUP BY](/reference/statements/select/group-by) expressions. Only visible in Aggregate mode. |
+| Order By | A list of [ORDER BY](/reference/statements/select/order-by) expressions. |
+| Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded, this is recommended for some time series datasets in order to show the full visualization. |
+| Filters | A list of filters to be applied in the `WHERE` clause. |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Example time series query" border />
+
+This query type will render the data with the time series panel.
+
+### Traces {#traces}
+
+The trace query type offers a query builder for easily searching and viewing traces.
+It is designed for OpenTelemetry data, but columns can be selected to render traces from a different schema.
+Defaults can be configured in the data source's [trace configuration](/integrations/connectors/data-visualization/grafana/config#traces) to allow the query builder to be pre-loaded with a default database/table and columns. If defaults are configured, the column selection will be collapsed by default.
+OpenTelemetry can also be enabled to auto select the columns according to a schema version.
+
+Default filters are added with the intent to show only top level spans.
+An Order By for the Time and Duration Time columns is also included.
+These filters are tied to their respective fields, and will update as the columns are changed.
+The **Service Name** filter is excluded from the SQL by default, changing it from the `IS ANYTHING` option will enable it.
+
+The trace query type supports [data links](#data-links).
+
+| Field | Description |
+|----|----|
+| Trace Mode | Changes the query from Trace Search to Trace ID lookup. |
+| Use OTel | Enables OpenTelemetry columns. Will overwrite the selected columns to use columns defined by the selected OTel schema version (Disables column selection). |
+| Trace ID Column | The trace's ID. |
+| Span ID Column | Span ID. |
+| Parent Span ID Column | Parent span ID. This is usually empty for top level traces. |
+| Service Name Column | Service name. |
+| Operation Name Column | Operation name. |
+| Start Time Column | The primary time column for the trace span. The time when the span started. |
+| Duration Time Column | The duration of the span. By default Grafana expects this to be a float in milliseconds. A conversion is automatically applied via the `Duration Unit` dropdown. |
+| Duration Unit | The unit of time used for the duration. Nanoseconds by default. The selected unit will be converted to a float in milliseconds as required by Grafana. |
+| Tags Column | Span Tags. Exclude this if not using an OTel based schema as it expects a specific Map column type. |
+| Service Tags Column | Service Tags. Exclude this if not using an OTel based schema as it expects a specific Map column type. |
+| Order By | A list of [ORDER BY](/reference/statements/select/order-by) expressions. |
+| Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded, but this isn't recommended for large trace datasets. |
+| Filters | A list of filters to be applied in the `WHERE` clause. |
+| Trace ID | The Trace ID to filter by. Only used in Trace ID mode, and when opening a trace ID [data link](#data-links). |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Example OTel trace query" border />
+
+This query type will render the data with the table view for Trace Search mode, and the trace panel for Trace ID mode.
+
+## SQL editor {#sql-editor}
+
+For queries that are too complex for the query builder, you can use the SQL Editor.
+This gives you full control over the query by allowing you to write and run plain ClickHouse SQL.
+
+The SQL editor can be opened by selecting "SQL Editor" at the top of the query editor.
+
+[Macro functions](#macros) can still be used in this mode.
+
+You can switch between query types to get a visualization that best fits your query.
+This switch also has an effect even in dashboard view, notably with time series data.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Example raw SQL query" border />
+
+## Data links {#data-links}
+
+Grafana [data links](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
+can be used to link to new queries.
+This feature has been enabled within the ClickHouse plugin for linking a trace to logs and vice versa. It works best with OpenTelemetry configured for both logs and traces in the [data source's config](/integrations/connectors/data-visualization/grafana/config#opentelemetry)
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+  Example of trace links in a table
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Trace links in table" border />
+</div>
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  Example of trace links in logs
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Trace links in logs" border />
+</div>
+
+### How to make a data link {#how-to-make-a-data-link}
+
+You can make a data link by selecting a column named `traceID` in your query. This name is case insensitive, and supports adding an underscore before the "ID". For example: `traceId`, `TraceId`, `TRACE_ID`, and `tracE_iD` would all be valid.
+
+If OpenTelemetry is enabled in a [log](#logs) or [trace](#traces) query, a trace ID column will be included automatically.
+
+By including a trace ID column, the "**View Trace**" and "**View Logs**" links will be attached to the data.
+
+### Linking abilities {#linking-abilities}
+
+With the data links present, you can open traces and logs using the provided trace ID.
+
+"**View Trace**" will open a split panel with the trace, and "**View Logs**" will open a logs query filtered by the trace ID.
+If the link is clicked from a dashboard instead of the explore view, the link will be opened in a new tab in the explore view.
+
+Having defaults configured for both [logs](/integrations/connectors/data-visualization/grafana/config#logs) and [traces](/integrations/connectors/data-visualization/grafana/config#traces) is required when crossing query types (logs to traces and traces to logs). Defaults aren't required when opening a link of the same query type since the query can be simply copied.
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  Example of viewing a trace (right panel) from a logs query (left panel)
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Example of data links linking" border />
+</div>
+
+## Macros {#macros}
+
+Macros are a simple way to add dynamic SQL to your query.
+Before a query gets sent to the ClickHouse server, the plugin will expand the macro and replace it will the full expression.
+
+Queries from both the SQL Editor and Query Builder can use macros.
+
+### Using macros {#using-macros}
+
+Macros can be included anywhere in the query, multiple times if needed.
+
+Here is an example of using the `$__timeFilter` macro:
+
+Input:
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE $__timeFilter(log_time)
+```
+
+Final query output:
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
+```
+
+In this example, the Grafana dashboard's time range is applied to the `log_time` column.
+
+The plugin also supports notation using braces `{}`. Use this notation when queries are needed inside [parameters](/reference/syntax#defining-and-using-query-parameters).
+
+### List of macros {#list-of-macros}
+
+This is a list of all macros available in the plugin:
+
+| Macro                                        | Description                                                                                                                                                                         | Output example                                                                                                    |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `$__dateFilter(columnName)`                  | Replaced by a time range filter on the provided column using the Grafana panel's time range as a [Date](/reference/data-types/date).                                 | `columnName >= toDate('2022-10-21') AND columnName <= toDate('2022-10-23')`                                       |
+| `$__timeFilter(columnName)`                  | Replaced by a time range filter on the provided column using the Grafana panel's time range as a [DateTime](/reference/data-types/datetime).                         | `columnName >= toDateTime(1415792726) AND time <= toDateTime(1447328726)`                                         |
+| `$__timeFilter_ms(columnName)`               | Replaced by a time range filter on the provided column using the Grafana panel's time range as a [DateTime64](/reference/data-types/datetime64).                     | `columnName >= fromUnixTimestamp64Milli(1415792726123) AND columnName <= fromUnixTimestamp64Milli(1447328726456)` |
+| `$__dateTimeFilter(dateColumn, timeColumn)`  | Shorthand that combines `$__dateFilter()` and `$__timeFilter()` using separate Date and DateTime columns. Alias `$__dt()`                                                                               | `$__dateFilter(dateColumn) AND $__timeFilter(timeColumn)`                                             |
+| `$__fromTime`                                | Replaced by the starting time of the Grafana panel range cast to a [DateTime](/reference/data-types/datetime).                                                     | `toDateTime(1415792726)`                                                                                          |
+| `$__fromTime_ms`                             | Replaced by the starting time of the panel range cast to a [DateTime64](/reference/data-types/datetime64).                                                         | `fromUnixTimestamp64Milli(1415792726123)`                                                                         |
+| `$__toTime`                                  | Replaced by the ending time of the Grafana panel range cast to a [DateTime](/reference/data-types/datetime).                                                       | `toDateTime(1447328726)`                                                                                          |
+| `$__toTime_ms`                               | Replaced by the ending time of the panel range cast to a [DateTime64](/reference/data-types/datetime64).                                                           | `fromUnixTimestamp64Milli(1447328726456)`                                                                         |
+| `$__timeInterval(columnName)`                | Replaced by a function calculating the interval based on window size in seconds.                                                                                                    | `toStartOfInterval(toDateTime(columnName), INTERVAL 20 second)`                                                   |
+| `$__timeInterval_ms(columnName)`             | Replaced by a function calculating the interval based on window size in milliseconds.                                                                                               | `toStartOfInterval(toDateTime64(columnName, 3), INTERVAL 20 millisecond)`                                         |
+| `$__interval_s`                              | Replaced by the dashboard interval in seconds.                                                                                                                                      | `20`                                                                                                              |
+| `$__conditionalAll(condition, $templateVar)` | Replaced by the first parameter when the template variable in the second parameter doesn't select every value. Replaced by the 1=1 when the template variable selects every value. | `condition` or `1=1`                                                                                              |

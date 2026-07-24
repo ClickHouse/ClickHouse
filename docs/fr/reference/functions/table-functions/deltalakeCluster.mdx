@@ -1,0 +1,59 @@
+---
+description: 'Il s’agit d’une extension de la fonction de table deltaLake.'
+sidebarTitle: 'deltaLakeCluster'
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
+doc_type: 'reference'
+---
+
+Il s’agit d’une extension de la fonction de table [deltaLake](/fr/reference/functions/table-functions/deltalake).
+
+Permet de traiter en parallèle les fichiers de tables [Delta Lake](https://github.com/delta-io/delta) dans Amazon S3 à partir de nombreux nœuds d’un cluster spécifié. Sur le nœud initiateur, une connexion est établie avec tous les nœuds du cluster et chaque fichier leur est réparti dynamiquement. Sur le nœud worker, celui-ci demande à l’initiateur la tâche suivante à traiter, puis l’exécute. Cette opération se répète jusqu’à ce que toutes les tâches soient terminées.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+`deltaLakeS3Cluster` est un alias de `deltaLakeCluster`, tous deux concernent S3.
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `cluster_name` — Nom d’un cluster utilisé pour construire un ensemble d’adresses et de paramètres de connexion pour les serveurs distants et locaux.
+* La description de tous les autres arguments est identique à celle des arguments de la fonction de table équivalente [deltaLake](/fr/reference/functions/table-functions/deltalake).
+* Le paramètre facultatif `extra_credentials` peut être utilisé pour transmettre un `role_arn` pour le contrôle d’accès basé sur les rôles dans ClickHouse Cloud. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour connaître les étapes de configuration.
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Une table ayant la structure spécifiée, permettant de lire les données d’un cluster depuis la table Delta Lake spécifiée dans S3.
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin d’accès au fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l’heure est inconnue, la valeur est `NULL`.
+* `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l’ETag est inconnu, la valeur est `NULL`.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [moteur deltaLake](/fr/reference/engines/table-engines/integrations/deltalake)
+* [fonction de table deltaLake](/fr/reference/functions/table-functions/deltalake)

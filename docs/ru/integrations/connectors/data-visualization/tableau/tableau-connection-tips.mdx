@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Советы по подключению'
+slug: /integrations/tableau/connection-tips
+keywords: ['clickhouse', 'tableau', 'онлайн', 'mysql', 'подключение', 'интеграция', 'интерфейс']
+description: 'Советы по подключению Tableau при использовании официального коннектора ClickHouse.'
+title: 'Советы по подключению'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="initial-sql-tab">
+  ## Вкладка Initial SQL
+</div>
+
+Если на вкладке Advanced установлен флажок *Set Session ID* (по умолчанию), вы можете задать [настройки](/ru/reference/settings/session-settings) для сеанса с помощью
+
+```text
+SET my_setting=value;
+```
+
+<div id="advanced-tab">
+  ## Вкладка Advanced
+</div>
+
+В 99% случаев вкладка Advanced вам не нужна, но в оставшемся 1% можно использовать следующие настройки:
+
+* **Пользовательские параметры подключения**. По умолчанию `socket_timeout` уже задан; этот параметр может потребоваться изменить, если какие-то выгрузки обновляются очень долго. Значение этого параметра указывается в миллисекундах. Остальные параметры можно найти [здесь](https://github.com/ClickHouse/clickhouse-jdbc/blob/master/clickhouse-client/src/main/java/com/clickhouse/client/config/ClickHouseClientOption.java); добавьте их в это поле, разделяя запятыми
+
+* **JDBC Driver custom&#95;http&#95;params**. Это поле позволяет добавить некоторые параметры в строку подключения ClickHouse, передав значения в [параметр драйвера `custom_http_params`](https://github.com/ClickHouse/clickhouse-jdbc#configuration). Например, именно так задается `session_id`, когда установлен флажок *Set Session ID*
+
+* **JDBC Driver `typeMappings`**. Это поле позволяет [передать список сопоставлений типов данных ClickHouse с типами данных Java, используемыми JDBC-драйвером](https://github.com/ClickHouse/clickhouse-jdbc#configuration). Благодаря этому параметру коннектор автоматически отображает большие целые числа как строки; вы можете изменить это, передав свой набор сопоставлений *(не знаю, зачем)* с помощью
+  ```text
+  UInt256=java.lang.Double,Int256=java.lang.Double
+  ```
+  Подробнее о сопоставлениях читайте в соответствующем разделе
+
+* **JDBC Driver URL Parameters**. В этом поле можно передать остальные [параметры драйвера](https://github.com/ClickHouse/clickhouse-jdbc#configuration), например `jdbcCompliance`. Будьте внимательны: значения параметров должны передаваться в формате URL-encoded, а если `custom_http_params` или `typeMappings` передаются и в этом поле, и в предыдущих полях вкладки Advanced, то значения из двух предыдущих полей вкладки Advanced имеют более высокий приоритет
+
+* Флажок **Set Session ID**. Он нужен для задания настроек на уровне сеанса на вкладке Initial SQL и генерирует `session_id` с временной меткой и псевдослучайным числом в формате `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
+
+<div id="limited-support-for-uint64-int128-uint256-data-types">
+  ## Ограниченная поддержка типов данных UInt64, Int128, (U)Int256
+</div>
+
+По умолчанию драйвер отображает поля типов *UInt64, Int128, (U)Int256* как строки, **но именно отображает, а не преобразует их**. Это означает, что при попытке задать следующее вычисляемое поле вы получите ошибку
+
+```text
+LEFT([myUInt256], 2) // Ошибка!
+```
+
+Чтобы работать с большими целочисленными полями так же, как со строками, необходимо явно обернуть поле в функцию STR()
+
+```text
+LEFT(STR([myUInt256]), 2) // Работает корректно!
+```
+
+Однако такие поля чаще всего используются для подсчета количества уникальных значений *(ID, например Watch ID и Visit ID в Yandex.Metrica)* или как *измерение* для задания детализации визуализации, и в этом случае они хорошо подходят.
+
+```text
+COUNTD([myUInt256]) // Тоже работает отлично!
+```
+
+При использовании предварительного просмотра данных (View data) для таблицы с полями UInt64 ошибка больше не появляется.

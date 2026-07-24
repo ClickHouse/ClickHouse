@@ -4,7 +4,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
-
 #include <boost/core/noncopyable.hpp>
 
 namespace DB
@@ -20,16 +19,39 @@ enum class StatisticsFileVersion : UInt16
     V0 = 0,
     V1 = 1, /// modified the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
     V2 = 2, /// minmax statistics now serialize Field type and use Field instead of Float64
+    V3 = 3, /// reserved — never use this value. PR #102356 briefly wrote V3 before being reverted.
+            /// The deserializer rejects V3 to avoid attempting to read incompatible reverted-format files.
+    V4 = 4, /// per-statistic size prefix added (`stat_size: UInt64` precedes each stat payload),
+            /// so unknown statistics types can be skipped on deserialize.
+            /// Also stores the column type name (`stored_type_name: String`) immediately after
+            /// the version field; deserialization returns nullptr if the stored type differs from
+            /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
+            /// are never used.
 };
 
 class Field;
 class Block;
+class IAggregateFunction;
 
 struct StatisticsUtils
 {
     /// Returns std::nullopt if input Field cannot be converted to a concrete value
     /// - `data_type` is the type of the column on which the statistics object was build on
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
+
+    /// Linearly interpolate the number of rows whose value is less than `val` over `[min, max]`,
+    /// scaled by `row_count`. Uses widened-integer arithmetic when all three fields share the
+    /// same integer type so that values near `2^53` are not collapsed by the Float64 conversion;
+    /// falls back to Float64 otherwise. Returns std::nullopt if the Fields cannot be brought to
+    /// a common numeric representation.
+    static std::optional<Float64> interpolateLessLinear(
+        const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
+
+    /// Returns true iff two aggregate functions have the same state size and identical argument
+    /// types. Statistics implementations use this to decide whether states from two parts can be
+    /// merged: a column type change (e.g. numeric → String) may preserve the state size while
+    /// switching to a different hash function, producing wrong estimates if the states are mixed.
+    static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
 };
 
 class IStatistics;
@@ -63,6 +85,12 @@ public:
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
+    /// Returns true iff `other` can be safely merged into this statistics object.
+    /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
+    /// shifts the aggregate-function state layout) should return false so that
+    /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
+    virtual bool isCompatibleWith(const IStatistics &) const { return true; }
+
 protected:
     SingleStatisticsDescription stat;
 };
@@ -77,6 +105,7 @@ struct Estimate
     std::optional<UInt64> estimated_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
+    std::optional<UInt64> estimated_null_count;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -95,8 +124,20 @@ public:
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 getNumRows() const { return rows; }
+    /// Total NULL rows for a Nullable column when `Basic` statistics are present; 0 otherwise.
+    /// Callers should consult `hasNullCount` first.
+    UInt64 getNullCount() const;
+    /// Returns `rows - getNullCount()` when null-count tracking is available, else `rows`.
+    UInt64 getNonNullRowCount() const;
+    /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
+    bool hasNullCount() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
+
+    /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.
+    Float64 estimateIsNull() const;
+    /// `(rows - null_count) / rows` when `Basic` statistics are present; otherwise a default factor.
+    Float64 estimateIsNotNull() const;
 
     std::optional<Float64> estimateLess(const Field & val) const;
     std::optional<Float64> estimateGreater(const Field & val) const;
@@ -144,7 +185,11 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    /// `allow_deprecated_minmax` grandfathers an explicitly-declared `minmax` statistics type that
+    /// already exists in the table's metadata (e.g. a table created by an older version). It is set
+    /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
+    /// such old tables are not rejected.
+    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
     ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
@@ -153,6 +198,10 @@ public:
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
     ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
+    /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
+    /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
+    /// types one at a time (and to silently skip types the current build doesn't know about).
+    StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);
@@ -169,5 +218,11 @@ private:
 
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+
+/// Validates a value of the `auto_statistics_types` MergeTree setting and rejects deprecated types
+/// (currently `minmax`). This must be called only on the setting-change path (CREATE / ALTER ...
+/// MODIFY SETTING), never when loading existing metadata, so that tables which still carry `minmax`
+/// in the setting keep loading and remain alterable.
+void validateAutoStatisticsTypes(const String & statistics_types_str);
 
 }

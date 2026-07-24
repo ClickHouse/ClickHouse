@@ -1,0 +1,710 @@
+---
+slug: /data-modeling/projections
+title: 'Проекции'
+description: 'Страница, на которой объясняется, что такое проекции, как их можно использовать для повышения производительности
+запросов и чем они отличаются от materialized view.'
+keywords: ['проекция', 'проекции', 'оптимизация запросов']
+sidebar_order: 1
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
+
+<div id="introduction">
+  ## Введение
+</div>
+
+ClickHouse предлагает различные механизмы ускорения аналитических запросов на
+больших объёмах данных в сценариях реального времени. Один из таких
+механизмов — использование *проекций*. Проекции помогают оптимизировать
+запросы за счёт переупорядочивания данных по интересующим атрибутам. Это может быть:
+
+1. Полное переупорядочивание
+2. Подмножество исходной таблицы в другом порядке
+3. Предварительно вычисленная агрегация (аналогично materialized view), но с порядком,
+   согласованным с агрегацией.
+
+<br />
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="Видеопроигрыватель YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="how-do-projections-work">
+  ## Как работают проекции?
+</div>
+
+На практике проекцию можно рассматривать как дополнительную скрытую таблицу
+к исходной таблице. Проекция может иметь другой порядок строк и, следовательно,
+другой первичный индекс по сравнению с исходной таблицей, а также автоматически
+и инкрементально предварительно вычислять агрегированные значения. В результате проекции
+дают два «рычага настройки» для ускорения выполнения запроса:
+
+* **Правильное использование первичных индексов**
+* **Предварительное вычисление агрегатов**
+
+В некотором смысле проекции похожи на [Materialized Views](/ru/concepts/features/materialized-views/index)
+, которые также позволяют использовать несколько порядков строк и предварительно вычислять агрегации
+во время вставки.
+Проекции обновляются автоматически и
+поддерживаются в синхронизации с исходной таблицей, в отличие от Materialized Views, которые
+обновляются явно. Когда запрос обращается к исходной таблице,
+ClickHouse автоматически анализирует первичные ключи и выбирает таблицу, которая может
+дать тот же корректный результат, но при этом требует прочитать минимальный объём данных,
+как показано на рисунке ниже:
+
+<Image img="/images/data-modeling/projections_1.webp" size="md" alt="Проекции в ClickHouse" />
+
+<div id="smarter_storage_with_part_offset">
+  ### Более эффективное хранение с `_part_offset`
+</div>
+
+Начиная с версии 25.5, ClickHouse поддерживает виртуальный столбец `_part_offset` в
+проекциях, что позволяет по-новому определять проекцию.
+
+Теперь есть два способа задать проекцию:
+
+* **Хранить полные столбцы (исходное поведение)**: Проекция содержит полные
+  данные, и их можно читать напрямую, что обеспечивает более высокую производительность, когда фильтры соответствуют
+  порядку сортировки проекции.
+
+* **Хранить только ключ сортировки + `_part_offset`**: Проекция работает как индекс.
+  ClickHouse использует первичный индекс проекции, чтобы находить совпадающие строки, но читает
+  фактические данные из базовой таблицы. Это уменьшает накладные расходы на хранение ценой
+  немного большего объема операций ввода-вывода при выполнении запроса.
+
+Описанные выше подходы также можно сочетать: хранить некоторые столбцы в проекции, а
+другие — косвенно через `_part_offset`.
+
+<div id="when-to-use-projections">
+  ## Когда использовать проекции?
+</div>
+
+Проекции — привлекательная возможность для новых пользователей, поскольку они автоматически
+поддерживаются при вставке данных. Кроме того, запросы можно просто отправлять к
+одной таблице, а проекции по возможности будут использоваться для ускорения
+времени отклика.
+
+В отличие от этого, при использовании materialized view пользователю приходится выбирать
+подходящую оптимизированную целевую таблицу или переписывать запрос в зависимости от
+фильтров. Это повышает нагрузку на пользовательские приложения и увеличивает
+сложность на стороне клиента.
+
+Несмотря на эти преимущества, у проекций есть ряд внутренних ограничений,
+о которых следует знать, поэтому применять их стоит умеренно.
+
+* Проекции не позволяют использовать разные TTL для исходной таблицы и
+  (скрытой) целевой таблицы, тогда как materialized view позволяют задавать разные TTL.
+* Легковесные обновления и удаления не поддерживаются для таблиц с проекциями.
+* Materialized view можно выстраивать в цепочку: целевая таблица одной materialized view
+  может быть исходной таблицей другой materialized view, и так далее. С
+  проекциями это невозможно.
+* Определения проекций не поддерживают JOIN, а materialized view — поддерживают. Однако запросы к таблицам с проекциями могут свободно использовать JOIN.
+* Определения проекций не поддерживают фильтры (условие `WHERE`), а materialized view — поддерживают. Однако в запросах к таблицам с проекциями фильтры можно использовать без ограничений.
+
+Мы рекомендуем использовать проекции, когда:
+
+* Требуется полное переупорядочивание данных. Хотя выражение в
+  проекции теоретически может использовать `GROUP BY,` materialized view лучше
+  подходят для поддержки агрегатов. Кроме того, оптимизатор запросов с большей вероятностью
+  будет использовать проекции, в которых применяется простое переупорядочивание, то есть `SELECT * ORDER BY x`.
+  В этом выражении можно выбрать подмножество столбцов, чтобы уменьшить
+  объем хранилища.
+* Пользователей устраивает связанное с этим потенциальное увеличение объема хранилища и
+  накладные расходы из-за двукратной записи данных. Проверьте влияние на скорость вставки и
+  [оцените дополнительные затраты на хранение](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<div id="examples">
+  ## Примеры
+</div>
+
+<div id="filtering-without-using-primary-keys">
+  ### Фильтрация по столбцам, не входящим в первичный ключ
+</div>
+
+В этом примере мы покажем, как добавить проекцию в таблицу.
+Мы также рассмотрим, как проекция может использоваться для ускорения запросов, которые фильтруют
+по столбцам, не входящим в первичный ключ таблицы.
+
+В этом примере мы будем использовать набор данных New York Taxi Data,
+доступный на [sql.clickhouse.com](https://sql.clickhouse.com/) и упорядоченный
+по `pickup_datetime`.
+
+Давайте напишем простой запрос, чтобы найти все идентификаторы поездок, в которых пассажиры
+оставили водителю чаевые свыше $200:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+Обратите внимание: поскольку мы фильтруем по `tip_amount`, которого нет в `ORDER BY`, ClickHouse
+пришлось выполнить полное сканирование таблицы. Давайте ускорим этот запрос.
+
+Чтобы сохранить исходную таблицу и результаты, мы создадим новую таблицу и скопируем данные с помощью `INSERT INTO SELECT`:
+
+```sql
+CREATE TABLE nyc_taxi.trips_with_projection AS nyc_taxi.trips;
+INSERT INTO nyc_taxi.trips_with_projection SELECT * FROM nyc_taxi.trips;
+```
+
+Чтобы добавить проекцию, используем оператор `ALTER TABLE` вместе с оператором `ADD PROJECTION`:
+
+```sql
+ALTER TABLE nyc_taxi.trips_with_projection
+ADD PROJECTION prj_tip_amount
+(
+    SELECT *
+    ORDER BY tip_amount, dateDiff('minutes', pickup_datetime, dropoff_datetime)
+)
+```
+
+После добавления проекции необходимо выполнить оператор `MATERIALIZE PROJECTION`,
+чтобы данные в ней были физически упорядочены и перезаписаны в соответствии
+с указанным выше запросом:
+
+```sql
+ALTER TABLE nyc.trips_with_projection MATERIALIZE PROJECTION prj_tip_amount
+```
+
+Теперь, когда мы добавили проекцию, снова выполним запрос:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips_with_projection WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+Обратите внимание: нам удалось значительно сократить время выполнения запроса и
+просканировать меньше строк.
+
+Мы можем убедиться, что приведённый выше запрос действительно использовал созданную нами проекцию,
+выполнив запрос к таблице `system.query_log`:
+
+```sql
+SELECT query, projections 
+FROM system.query_log 
+WHERE query_id='<query_id>'
+```
+
+```response
+   ┌─query─────────────────────────────────────────────────────────────────────────┬─projections──────────────────────┐
+   │ SELECT                                                                       ↴│ ['default.trips.prj_tip_amount'] │
+   │↳  tip_amount,                                                                ↴│                                  │
+   │↳  trip_id,                                                                   ↴│                                  │
+   │↳  dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min↴│                                  │
+   │↳FROM trips WHERE tip_amount > 200 AND trip_duration_min > 0                   │                                  │
+   └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
+```
+
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### Использование проекций для ускорения запросов к UK price paid
+</div>
+
+Чтобы показать, как проекции можно использовать для ускорения выполнения запросов, давайте
+рассмотрим пример с реальным набором данных. В этом примере мы будем
+использовать таблицу из нашего руководства [UK Property Price Paid](/ru/get-started/sample-datasets/uk-price-paid)
+с 30,03 миллиона строк. Этот набор данных также доступен в нашей
+среде [sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS).
+
+Если вы хотите увидеть, как была создана таблица и как в нее были вставлены данные, можно
+обратиться к странице [&quot;The UK property prices dataset&quot;](/ru/get-started/sample-datasets/uk-price-paid).
+
+Мы можем выполнить два простых запроса к этому набору данных. Первый показывает графства в Лондоне,
+где были зафиксированы самые высокие цены продажи, а второй вычисляет среднюю цену по графствам:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+Обратите внимание: хотя оба запроса выполняются очень быстро, в обоих случаях происходит полное сканирование всей таблицы из 30,03 миллиона строк, поскольку
+ни `town`, ни `price` не входили в оператор `ORDER BY` при
+создании таблицы:
+
+```sql highlight={6}
+CREATE TABLE uk.uk_price_paid
+(
+  ...
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+Давайте посмотрим, можно ли ускорить этот запрос с помощью проекций.
+
+Чтобы сохранить исходную таблицу и результаты, мы создадим новую таблицу и скопируем данные с помощью `INSERT INTO SELECT`:
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
+```
+
+Мы создаем и заполняем проекцию `prj_oby_town_price`, которая формирует
+дополнительную (скрытую) таблицу с первичным индексом, упорядоченную по городу и цене, чтобы
+оптимизировать запрос, выводящий графства для указанного города по самым
+высоким ценам покупки:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_obj_town_price
+  (
+    SELECT *
+    ORDER BY
+        town,
+        price
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_obj_town_price)
+SETTINGS mutations_sync = 1
+```
+
+Настройка [`mutations_sync`](/ru/reference/settings/session-settings#mutations_sync)
+используется для принудительного синхронного выполнения.
+
+Мы создаём и заполняем проекцию `prj_gby_county` — дополнительную (скрытую) таблицу,
+которая инкрементально предвычисляет агрегатные значения avg(price) для всех 130 существующих
+графств Великобритании:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_gby_county
+  (
+    SELECT
+        county,
+        avg(price)
+    GROUP BY county
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_gby_county)
+SETTINGS mutations_sync = 1
+```
+
+<Note>
+  Если в проекции используется предложение `GROUP BY`, как в проекции `prj_gby_county`
+  выше, то движок нижележащего хранилища (скрытой) таблицы
+  становится `AggregatingMergeTree`, а все агрегатные функции преобразуются в
+  `AggregateFunction`. Это обеспечивает корректную инкрементальную агрегацию данных.
+</Note>
+
+На рисунке ниже показана визуализация основной таблицы `uk_price_paid_with_projections`
+и двух её проекций:
+
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="Визуализация основной таблицы uk_price_paid_with_projections и двух её проекций" />
+
+Если теперь снова выполнить запрос, который выводит районы Лондона с тремя
+самыми высокими ценами продажи, мы увидим улучшение производительности запроса:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid_with_projections
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+Аналогично — для запроса, который выводит округа Великобритании с тремя самыми высокими
+средними ценами продажи:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid_with_projections
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+Обратите внимание, что оба запроса обращаются к исходной таблице и оба
+приводят к полному сканированию таблицы (все 30,03 миллиона строк считываются с диска) до того, как мы
+создали две проекции.
+
+Также обратите внимание, что запрос, который выводит графства Лондона для трёх самых высоких
+цен, считывает 2,17 миллиона строк. Когда мы напрямую использовали вторую таблицу,
+оптимизированную для этого запроса, с диска было считано всего 81,92 тысячи строк.
+
+Причина этого различия заключается в том, что в настоящее время оптимизация `optimize_read_in_order`,
+упомянутая выше, не поддерживается для проекций.
+
+Мы проверяем таблицу `system.query_log`, чтобы увидеть, что ClickHouse
+автоматически использовал две проекции для двух приведённых выше запросов (см.
+столбец проекции ниже):
+
+```sql
+SELECT
+  tables,
+  query,
+  query_duration_ms::String ||  ' ms' AS query_duration,
+        formatReadableQuantity(read_rows) AS read_rows,
+  projections
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (type = 'QueryFinish') AND (tables = ['default.uk_price_paid_with_projections'])
+ORDER BY initial_query_start_time DESC
+  LIMIT 2
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+    county,
+    avg(price)
+FROM uk_price_paid_with_projections
+GROUP BY county
+ORDER BY avg(price) DESC
+LIMIT 3
+query_duration: 5 ms
+read_rows:      132.00
+projections:    ['uk.uk_price_paid_with_projections.prj_gby_county']
+
+Row 2:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+  county,
+  price
+FROM uk_price_paid_with_projections
+WHERE town = 'LONDON'
+ORDER BY price DESC
+LIMIT 3
+SETTINGS log_queries=1
+query_duration: 11 ms
+read_rows:      2.29 million
+projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+<div id="further-examples">
+  ### Дополнительные примеры
+</div>
+
+В следующих примерах используется тот же набор данных о ценах в Великобритании, чтобы сравнить запросы с проекциями и без них.
+
+Чтобы сохранить исходную таблицу (и производительность), мы снова создаём копию таблицы с помощью `CREATE AS` и `INSERT INTO SELECT`.
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
+```
+
+<div id="build-projection">
+  #### Создадим проекцию
+</div>
+
+Создадим агрегирующую проекцию по измерениям `toYear(date)`, `district` и `town`:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD PROJECTION projection_by_year_district_town
+    (
+        SELECT
+            toYear(date),
+            district,
+            town,
+            avg(price),
+            sum(price),
+            count()
+        GROUP BY
+            toYear(date),
+            district,
+            town
+    )
+```
+
+Заполните проекцию для существующих данных. (Без материализации проекция будет создана только для данных, вставленных после этого):
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    MATERIALIZE PROJECTION projection_by_year_district_town
+SETTINGS mutations_sync = 1
+```
+
+Следующие запросы показывают различия в производительности при использовании проекций и без них. Чтобы отключить использование проекций, мы используем настройку [`optimize_use_projections`](/ru/reference/settings/session-settings#optimize_use_projections), которая включена по умолчанию.
+
+<div id="average-price-projections">
+  #### Запрос 1. Средняя цена по годам
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+
+  ```
+</RunnableCode>
+
+Результаты должны быть одинаковыми, но во втором примере запрос будет выполняться быстрее!
+
+<div id="average-price-london-projections">
+  #### Запрос 2. Средняя цена за год в Лондоне
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  ```
+</RunnableCode>
+
+<div id="most-expensive-neighborhoods-projections">
+  #### Запрос 3. Самые дорогие районы
+</div>
+
+Условие (date &gt;= &#39;2020-01-01&#39;) нужно изменить так, чтобы оно соответствовало размерности проекции (`toYear(date) >= 2020)`:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+И снова результат тот же, но обратите внимание на рост производительности у второго запроса.
+
+<div id="combining-projections">
+  ### Объединение проекций в одном запросе
+</div>
+
+Начиная с версии 25.6, развивая поддержку `_part_offset`, появившуюся в
+предыдущей версии, ClickHouse теперь может использовать несколько проекций для ускорения
+одного запроса с несколькими фильтрами.
+
+Важно, что ClickHouse по-прежнему читает данные только из одной проекции (или базовой таблицы),
+но может использовать первичные индексы других проекций, чтобы отсечь ненужные части до чтения.
+Это особенно полезно для запросов с фильтрацией по нескольким столбцам, каждый из
+которых потенциально может соответствовать разной проекции.
+
+> В настоящее время этот механизм отсекает только части целиком. Отсечение на
+> уровне гранул пока не поддерживается.
+
+Чтобы продемонстрировать это, мы определим таблицу (с проекциями, использующими столбцы `_part_offset`)
+и вставим пять строк для примера, соответствующих приведённым выше диаграммам.
+
+```sql
+CREATE TABLE page_views
+(
+    id UInt64,
+    event_date Date,
+    user_id UInt32,
+    url String,
+    region String,
+    PROJECTION region_proj
+    (
+        SELECT _part_offset ORDER BY region
+    ),
+    PROJECTION user_id_proj
+    (
+        SELECT _part_offset ORDER BY user_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY (event_date, id)
+SETTINGS
+  index_granularity = 1, -- одна строка на гранулу
+  max_bytes_to_merge_at_max_space_in_pool = 1; -- отключить слияние
+```
+
+Затем вставляем данные в таблицу:
+
+```sql
+INSERT INTO page_views VALUES (
+1, '2025-07-01', 101, 'https://example.com/page1', 'europe');
+INSERT INTO page_views VALUES (
+2, '2025-07-01', 102, 'https://example.com/page2', 'us_west');
+INSERT INTO page_views VALUES (
+3, '2025-07-02', 106, 'https://example.com/page3', 'us_west');
+INSERT INTO page_views VALUES (
+4, '2025-07-02', 107, 'https://example.com/page4', 'us_west');
+INSERT INTO page_views VALUES (
+5, '2025-07-03', 104, 'https://example.com/page5', 'asia');
+```
+
+<Note>
+  Примечание: в этой таблице для наглядности используются нестандартные настройки, например гранулы по одной строке
+  и отключённые слияния частей, которые не рекомендуются для использования в production.
+</Note>
+
+Такая конфигурация даёт:
+
+* Пять отдельных частей (по одной на каждую вставленную строку)
+* Одну запись в первичном индексе на строку (в базовой таблице и в каждой проекции)
+* Каждая часть содержит ровно одну строку
+
+В этой конфигурации мы выполняем запрос с фильтрацией по `region` и `user_id`.
+Поскольку первичный индекс базовой таблицы строится по `event_date` и `id`, в данном случае
+он не помогает, поэтому ClickHouse использует:
+
+* `region_proj`, чтобы отсечь части по региону
+* `user_id_proj`, чтобы дополнительно отсечь части по `user_id`
+
+Это поведение можно увидеть с помощью `EXPLAIN projections = 1`, который показывает,
+как ClickHouse выбирает и применяет проекции.
+
+```sql
+EXPLAIN projections=1
+SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
+```
+
+```response
+    ┌─explain────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                              │
+ 2. │   Expression                                                                           │                                                                        
+ 3. │     ReadFromMergeTree (default.page_views)                                             │
+ 4. │     Projections:                                                                       │
+ 5. │       Name: region_proj                                                                │
+ 6. │         Description: Projection has been analyzed and is used for part-level filtering │
+ 7. │         Condition: (region in ['us_west', 'us_west'])                                  │
+ 8. │         Search Algorithm: binary search                                                │
+ 9. │         Parts: 3                                                                       │
+10. │         Marks: 3                                                                       │
+11. │         Ranges: 3                                                                      │
+12. │         Rows: 3                                                                        │
+13. │         Filtered Parts: 2                                                              │
+14. │       Name: user_id_proj                                                               │
+15. │         Description: Projection has been analyzed and is used for part-level filtering │
+16. │         Condition: (user_id in [107, 107])                                             │
+17. │         Search Algorithm: binary search                                                │
+18. │         Parts: 1                                                                       │
+19. │         Marks: 1                                                                       │
+20. │         Ranges: 1                                                                      │
+21. │         Rows: 1                                                                        │
+22. │         Filtered Parts: 2                                                              │
+    └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Вывод `EXPLAIN` (показанный выше) показывает логический план запроса сверху вниз:
+
+| Номер строки | Описание                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 3            | Планирует чтение из базовой таблицы `page_views`                                                                         |
+| 5-13         | Использует `region_proj`, чтобы определить 3 части, где region = &#39;us&#95;west&#39;, отсекая 2 из 5 частей            |
+| 14-22        | Использует user`_id_proj`, чтобы определить 1 часть, где `user_id = 107`, дополнительно отсекая 2 из 3 оставшихся частей |
+
+В итоге из базовой таблицы читается всего **1 из 5 частей**.
+За счет объединения анализа индексов нескольких проекций ClickHouse значительно уменьшает объем сканируемых данных,
+повышая производительность при низких накладных расходах на хранение.
+
+<div id="related-content">
+  ## Связанные материалы
+</div>
+
+* [Практическое введение в первичные индексы в ClickHouse](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [Materialized Views](/ru/concepts/features/materialized-views/index)
+* [ALTER PROJECTION](/ru/reference/statements/alter/projection)

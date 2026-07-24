@@ -1,0 +1,323 @@
+---
+sidebarTitle: 'Power BI'
+slug: /integrations/powerbi
+keywords: ['clickhouse', 'Power BI', 'подключение', 'интеграция', 'интерфейс']
+description: 'Microsoft Power BI — это программный продукт для интерактивной визуализации данных, разработанный Microsoft и ориентированный прежде всего на бизнес-аналитику.'
+title: 'Power BI'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Power BI может выполнять запросы к данным из [ClickHouse Cloud](https://clickhouse.com/cloud) или загружать данные в память из самоуправляемого развертывания.
+
+Существует несколько вариантов Power BI, которые можно использовать для визуализации данных:
+
+* Power BI Desktop: настольное приложение для Windows для создания панелей мониторинга и визуализаций
+* Power BI Service: доступный в Azure SaaS-сервис для размещения панелей мониторинга, созданных в Power BI Desktop
+
+В Power BI панели мониторинга создаются в версии Desktop, а затем публикуются в Power BI Service.
+
+В этом руководстве вы узнаете, как:
+
+* [установить ODBC-драйвер ClickHouse](#install-the-odbc-driver)
+* [установить коннектор ClickHouse Power BI в Power BI Desktop](#power-bi-installation)
+* [выполнять запросы к данным из ClickHouse для визуализации в Power BI Desktop](#query-and-visualise-data)
+* [настроить локальный шлюз данных для Power BI Service](#power-bi-service)
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+<div id="power-bi-installation">
+  ### Установка Power BI
+</div>
+
+В этом руководстве предполагается, что на вашем компьютере с Windows уже установлен Microsoft Power BI Desktop. Скачать и установить Power BI Desktop можно [здесь](https://www.microsoft.com/en-us/download/details.aspx?id=58494)
+
+Мы рекомендуем обновить Power BI до последней версии. Коннектор ClickHouse по умолчанию доступен начиная с версии `2.137.751.0`.
+
+<div id="gather-your-clickhouse-connection-details">
+  ### Подготовьте сведения о подключении к ClickHouse
+</div>
+
+Для подключения к вашему экземпляру ClickHouse потребуются следующие сведения:
+
+* Имя хоста — ClickHouse
+* Имя пользователя — имя пользователя из учетных данных
+* Пароль — пароль пользователя
+* База данных — имя базы данных в экземпляре, к которой вы хотите подключиться
+
+<div id="power-bi-desktop">
+  ## Power BI desktop
+</div>
+
+Чтобы начать работать с запросами к данным в Power BI Desktop, выполните следующие шаги:
+
+1. Установите ODBC-драйвер ClickHouse
+2. Найдите коннектор ClickHouse
+3. Подключитесь к ClickHouse
+4. Выполняйте запросы и визуализируйте данные
+
+<div id="install-the-odbc-driver">
+  ### Установите драйвер ODBC
+</div>
+
+Скачайте последний [релиз ClickHouse ODBC](https://github.com/ClickHouse/clickhouse-odbc/releases).
+
+Запустите скачанный установщик `.msi` и следуйте указаниям мастера установки.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_install.webp" alt="Мастер установки ODBC-драйвера ClickHouse с вариантами установки" border />
+
+<br />
+
+<Note>
+  `Debug symbols` необязательны
+</Note>
+
+<div id="verify-odbc-driver">
+  #### Проверьте ODBC Driver
+</div>
+
+После завершения установки драйвера вы можете убедиться, что он установлен успешно, следующим образом:
+
+Найдите ODBC в меню «Пуск» и выберите &quot;ODBC Data Sources **(64-bit)**&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Поиск Windows с параметром ODBC Data Sources (64-bit)" border />
+
+<br />
+
+Убедитесь, что ClickHouse Driver присутствует в списке.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_verify.webp" alt="Администратор источников данных ODBC с драйверами ClickHouse на вкладке Drivers" border />
+
+<br />
+
+<div id="find-the-clickhouse-connector">
+  ### Найдите коннектор ClickHouse
+</div>
+
+<Note>
+  Доступно в Power BI Desktop версии `2.137.751.0`
+</Note>
+
+На стартовом экране Power BI Desktop нажмите &quot;Get Data&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="Стартовый экран Power BI Desktop с кнопкой Get Data" border />
+
+<br />
+
+Введите &quot;ClickHouse&quot; в строке поиска
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_search_clickhouse.webp" alt="Диалоговое окно Power BI Get Data с запросом ClickHouse в строке поиска" border />
+
+<br />
+
+<div id="connect-to-clickhouse">
+  ### Подключение к ClickHouse
+</div>
+
+Выберите коннектор и введите учетные данные экземпляра ClickHouse:
+
+* Host (обязательно) — Домен/адрес вашего экземпляра. Убедитесь, что он указан без префиксов и суффиксов.
+* Port (обязательно) — Порт вашего экземпляра.
+* Database — Имя вашей базы данных.
+* Options — Любой параметр ODBC из списка
+  на [странице ClickHouse ODBC в GitHub](https://github.com/ClickHouse/clickhouse-odbc#configuration)
+* Data Connectivity mode — DirectQuery
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_db.webp" alt="Диалог подключения ClickHouse с полями Host, Port, Database и режимом подключения" border />
+
+<br />
+
+<Note>
+  Мы рекомендуем выбрать DirectQuery для выполнения запросов напрямую к ClickHouse.
+
+  Если в вашем сценарии используется небольшой объем данных, можно выбрать режим импорта, и тогда все данные будут загружены в Power BI.
+</Note>
+
+* Укажите имя пользователя и пароль
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_user.webp" alt="Диалог учетных данных подключения ClickHouse для имени пользователя и пароля" border />
+
+<br />
+
+<div id="query-and-visualise-data">
+  ### Запрос и визуализация данных
+</div>
+
+Наконец, в представлении Navigator должны отображаться базы данных и таблицы. Выберите нужную таблицу и нажмите &quot;Load&quot;, чтобы
+импортировать данные из ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="Окно Navigator в Power BI, в котором показаны таблицы базы данных ClickHouse и примеры данных" border />
+
+<br />
+
+После завершения импорта данные ClickHouse будут доступны в Power BI как обычно.
+
+<br />
+
+<div id="power-bi-service">
+  ## Power BI Service
+</div>
+
+Чтобы использовать Microsoft Power BI Service, необходимо создать [локальный шлюз данных](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-onprem).
+
+Подробнее о настройке Custom Connectors см. в документации Microsoft: [использование пользовательских коннекторов данных с локальным шлюзом данных](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-custom-connectors).
+
+<div id="odbc-driver-import-only">
+  ## Драйвер ODBC (только импорт)
+</div>
+
+Мы рекомендуем использовать коннектор ClickHouse с DirectQuery.
+
+Установите [драйвер ODBC](#install-the-odbc-driver) на экземпляр локального шлюза данных и [проверьте](#verify-odbc-driver) его, как описано выше.
+
+<div id="create-a-new-user-dsn">
+  ### Создайте новый User DSN
+</div>
+
+После завершения установки драйвера можно создать источник данных ODBC. Найдите ODBC в меню «Пуск» и выберите &quot;ODBC Data Sources (64-bit)&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Поиск Windows с вариантом ODBC Data Sources (64-bit)" border />
+
+<br />
+
+Здесь нужно добавить новый User DSN. Нажмите кнопку &quot;Add&quot; слева.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_add_dsn.webp" alt="Администратор источников данных ODBC с выделенной кнопкой Add для создания нового DSN" border />
+
+<br />
+
+Выберите версию ODBC-драйвера с поддержкой Unicode.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_unicode.webp" alt="Диалог Create New Data Source с выбранным ClickHouse Unicode Driver" border />
+
+<br />
+
+Заполните сведения о подключении.
+
+<Image size="sm" img="/images/integrations/data-visualization/powerbi_connection_details.webp" alt="Диалог настройки ODBC-драйвера ClickHouse с параметрами подключения" border />
+
+<br />
+
+<Note>
+  Если вы используете развертывание с включенным SSL (например, ClickHouse Cloud или самоуправляемый экземпляр), в поле `SSLMode` следует указать `require`.
+
+  * В `Host` протокол указывать не нужно (то есть без `http://` или `https://`).
+  * `Timeout` — целое число в секундах. Значение по умолчанию: `30 секунд`.
+</Note>
+
+<div id="get-data-into-power-bi">
+  ### Загрузка данных в Power BI
+</div>
+
+Если у вас еще не установлен Power BI,
+[скачайте и установите Power BI Desktop](https://www.microsoft.com/en-us/download/details.aspx?id=58494).
+
+На стартовом экране Power BI Desktop нажмите &quot;Get Data&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="Главный экран Power BI Desktop с кнопкой Get Data" border />
+
+<br />
+
+Выберите &quot;Other&quot; -&gt; &quot;ODBC&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Диалог Get Data в Power BI с выбранным пунктом ODBC в категории Other" border />
+
+<br />
+
+Выберите из списка ранее созданный источник данных.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_dsn.webp" alt="Диалог выбора драйвера ODBC с настроенным ClickHouse DSN" border />
+
+<br />
+
+<Note>
+  Если при создании источника данных вы не указали учетные данные, вам будет предложено ввести имя пользователя и пароль.
+</Note>
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="Диалог учетных данных для подключения к ODBC DSN" border />
+
+<br />
+
+В результате вы должны увидеть базы данных и таблицы в представлении Navigator. Выберите нужную таблицу и нажмите &quot;Load&quot;, чтобы импортировать данные из ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="Представление Navigator в Power BI с таблицами базы данных ClickHouse и примером данных" border />
+
+<br />
+
+После завершения импорта данные ClickHouse будут доступны в Power BI как обычно.
+
+<div id="optimizing-work-with-large-datasets">
+  ## Оптимизация работы с большими наборами данных
+</div>
+
+PowerBI рассчитан на традиционные построчные базы данных с умеренными объёмами данных. При работе с ClickHouse в большом масштабе (миллиарды строк) для достижения оптимальной производительности требуются определённые архитектурные подходы.
+
+PowerBI автоматически генерирует SQL-запросы с вложенными подзапросами, сложными JOIN и преобразованиями на лету. Такие конструкции хорошо работают в традиционных SQL-базах данных, но могут быть неэффективны при запросах к крупным колоночным базам данных, таким как ClickHouse.
+
+**Рекомендуемый подход для больших наборов данных:** вместо прямых запросов к исходным таблицам создавайте в ClickHouse отдельные `materialized view` для каждой визуализации на панели мониторинга. Это даёт:
+
+* Стабильно высокую производительность независимо от объёма данных
+* Меньшую нагрузку на ваш кластер ClickHouse
+* Более предсказуемые затраты
+
+<Warning>
+  Если ваши панели мониторинга работают медленно, проверьте ClickHouse [`query_log`](/ru/reference/system-tables/query_log), чтобы понять, какие SQL-запросы Power BI фактически выполняет. Среди типичных проблем — вложенные подзапросы, сканирование таблиц целиком и неэффективные JOIN. Определив причину, создайте [materialized view](/ru/concepts/features/materialized-views/index), которые устраняют именно эти проблемы.
+</Warning>
+
+<div id="implementation-best-practices">
+  ### Рекомендации по реализации
+</div>
+
+<div id="pre-aggregation-strategy">
+  #### Стратегия предварительной агрегации
+</div>
+
+Создайте materialized view для нескольких уровней агрегации:
+
+* Почасовые агрегации для детализированных панелей мониторинга за недавний период
+* Ежедневные агрегации для исторических тенденций
+* Ежемесячные rollup-агрегации для долгосрочной отчетности
+* Храните сырые данные с подходящим TTL для разового анализа по запросу
+
+<div id="data-modelling-optimization">
+  #### Оптимизация моделирования данных
+</div>
+
+* Определяйте ключи `ORDER BY` в соответствии с шаблонами запросов
+* Используйте партиционирование для временных рядов
+* Преобразуйте небольшие таблицы-измерения в словари для эффективного поиска по ключу
+* Используйте проекции для дополнительной оптимизации запросов
+
+<div id="known-limitations">
+  ## Известные ограничения
+</div>
+
+<div id="uint64">
+  ### UInt64
+</div>
+
+Беззнаковые целочисленные типы, такие как UInt64 и выше, не загружаются в набор данных автоматически, поскольку Int64 — это максимальный целочисленный тип, поддерживаемый Power BI.
+
+<Note>
+  Чтобы корректно импортировать данные, перед нажатием кнопки &quot;Load&quot; в Navigator сначала нажмите &quot;Transform Data&quot;.
+</Note>
+
+В этом примере в таблице `pageviews` есть столбец UInt64, который по умолчанию распознаётся как &quot;Binary&quot;.
+&quot;Transform Data&quot; открывает Power Query Editor, где можно переназначить тип столбца, задав, например,
+Text.
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_16.webp" alt="Power Query Editor с преобразованием типа данных для столбца UInt64" border />
+
+<br />
+
+После этого нажмите &quot;Close &amp; Apply&quot; в левом верхнем углу и продолжите загрузку данных.

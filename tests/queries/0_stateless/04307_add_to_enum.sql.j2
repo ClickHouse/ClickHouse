@@ -1,0 +1,129 @@
+{% for NULLABLE_START, NULLABLE_END in {'' : '', 'Nullable(' : ')'}.items() -%}
+SELECT '======= NULLABLE {{ NULLABLE_START }} {{ NULLABLE_END }} ===============';
+{% for ENUM_TYPE in ['Enum', 'Enum8', 'Enum16'] -%}
+
+SELECT '======= {{ ENUM_TYPE }} ===============';
+DROP TABLE IF EXISTS enum;
+CREATE TABLE enum (x {{ NULLABLE_START }}{{ ENUM_TYPE }}('One' = 1, 'Two', 'Three'){{ NULLABLE_END }}) ENGINE = Memory;
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Zero' = 0, 'Four' = 4);
+INSERT INTO enum VALUES (0);
+INSERT INTO enum VALUES (4);
+SELECT '======================';
+SELECT * FROM enum ORDER BY x;
+{% if ENUM_TYPE != 'Enum16' -%}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+{% else %}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000);
+{% endif %}
+{% if ENUM_TYPE == 'Enum8' -%}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+{% endif %}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 4); -- It is Ok to repeat elements while name and value are the same
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 4, 'Seven' = 7);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousandOne');
+SHOW CREATE TABLE enum;
+INSERT INTO enum VALUES (100);
+INSERT INTO enum VALUES ('Hundred');
+INSERT INTO enum VALUES ('Three');
+SELECT '======================';
+SELECT * FROM enum ORDER BY x;
+
+DROP TABLE enum;
+{% endfor -%}
+{% endfor -%}
+
+
+CREATE OR REPLACE TABLE nonenum (x Int8) ENGINE = Memory;
+ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('A' = 1); -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('B' = 1000); -- { serverError ILLEGAL_COLUMN }
+DROP TABLE nonenum;
+
+CREATE OR REPLACE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
+ALTER TABLE enumoverflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enumoverflow;
+
+CREATE OR REPLACE TABLE enum_relative (x Enum8('Two' = 2)) ENGINE = Memory;
+ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'hundred' = 100);
+ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'two' = 2); -- { serverError BAD_ARGUMENTS }
+SHOW CREATE TABLE enum_relative;
+DROP TABLE enum_relative;
+
+CREATE OR REPLACE TABLE enum_relative_mixed (x Enum8('base' = 10)) ENGINE = Memory;
+ALTER TABLE enum_relative_mixed MODIFY COLUMN x ADD ENUM VALUES('a', 'b' = 20, 'c' = 1);
+SHOW CREATE TABLE enum_relative_mixed;
+INSERT INTO enum_relative_mixed VALUES (11), (20), (1);
+SELECT * FROM enum_relative_mixed ORDER BY x;
+DROP TABLE enum_relative_mixed;
+
+CREATE OR REPLACE TABLE enum_relative_adjacent (x Enum8('base' = 10)) ENGINE = Memory;
+ALTER TABLE enum_relative_adjacent MODIFY COLUMN x ADD ENUM VALUES('a', 'c' = 1);
+SHOW CREATE TABLE enum_relative_adjacent;
+INSERT INTO enum_relative_adjacent VALUES (11), (1);
+SELECT * FROM enum_relative_adjacent ORDER BY x;
+DROP TABLE enum_relative_adjacent;
+
+SELECT '======= SHORTHAND AUTO ASSIGN ===============';
+CREATE OR REPLACE TABLE enum_shorthand (x Enum8('One' = 1, 'Two')) ENGINE = Memory;
+ALTER TABLE enum_shorthand MODIFY COLUMN x ADD ENUM VALUES('Three');
+SHOW CREATE TABLE enum_shorthand;
+DROP TABLE enum_shorthand;
+
+SELECT '======= ENUM8 SHORTHAND OVERFLOW ===============';
+CREATE OR REPLACE TABLE enum8_shorthand_overflow (x Enum8('a' = 127)) ENGINE = Memory;
+ALTER TABLE enum8_shorthand_overflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enum8_shorthand_overflow;
+
+SELECT '======= OUT OF RANGE VALUE ===============';
+CREATE OR REPLACE TABLE enum_out_of_range (x Enum8('a' = 1)) ENGINE = Memory;
+ALTER TABLE enum_out_of_range MODIFY COLUMN x ADD ENUM VALUES('too_big' = 128); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enum_out_of_range;
+
+SELECT '======= CHAINED ADD ENUM VALUES IN ONE STATEMENT ===============';
+CREATE OR REPLACE TABLE enum_chained (x Enum8('base' = 1)) ENGINE = Memory;
+ALTER TABLE enum_chained MODIFY COLUMN x ADD ENUM VALUES('a' = 2), MODIFY COLUMN x ADD ENUM VALUES('b' = 3);
+SHOW CREATE TABLE enum_chained;
+INSERT INTO enum_chained VALUES (1), (2), (3);
+SELECT * FROM enum_chained ORDER BY x;
+DROP TABLE enum_chained;
+
+SELECT '======= MODIFY TYPE THEN ADD ENUM VALUES IN ONE STATEMENT ===============';
+CREATE OR REPLACE TABLE enum_modify_then_add (x Enum8('a' = 1)) ENGINE = Memory;
+ALTER TABLE enum_modify_then_add
+    MODIFY COLUMN x Enum8('a' = 1, 'b' = 2),
+    MODIFY COLUMN x ADD ENUM VALUES('c'); -- { serverError NOT_IMPLEMENTED }
+DROP TABLE enum_modify_then_add;
+
+SELECT '======= MODIFY TYPE THEN ADD ENUM VALUES TO OTHER COLUMN IN ONE STATEMENT ===============';
+CREATE OR REPLACE TABLE enum_modify_then_add_different (x Enum8('a' = 1), y Enum8('aa' = 10)) ENGINE = Memory;
+ALTER TABLE enum_modify_then_add_different
+    MODIFY COLUMN x Enum8('a' = 1, 'b' = 2),
+    MODIFY COLUMN y ADD ENUM VALUES('cc'=20);
+SHOW CREATE TABLE enum_modify_then_add_different;
+INSERT INTO enum_modify_then_add_different VALUES (1, 10), (2, 20);
+SELECT * FROM enum_modify_then_add_different ORDER BY x FORMAT CSV;
+DROP TABLE enum_modify_then_add_different;
+
+CREATE OR REPLACE TABLE enum_add_then_modify (y Int8) ENGINE = Memory;
+ALTER TABLE enum_add_then_modify ADD COLUMN x Enum8('a' = 1), MODIFY COLUMN x ADD ENUM VALUES('b' = 2); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DROP TABLE enum_add_then_modify;
+
+SELECT '======= ALTER AST VALIDATION ===============';
+CREATE OR REPLACE TABLE enum_alter_validation (x Enum8('a' = 1)) ENGINE = Memory;
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES(tuple('b', 2)); -- { serverError UNEXPECTED_AST_STRUCTURE }
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES(bad_identifier); -- { serverError UNEXPECTED_AST_STRUCTURE }
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES(); -- { serverError EMPTY_DATA_PASSED }
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 'sto'); -- { serverError UNEXPECTED_AST_STRUCTURE }
+DROP TABLE enum_alter_validation;
+
+CREATE OR REPLACE TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100), ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x RESET SETTING min_compress_block_size ADD ENUM VALUES('Hundred' = 100); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x Nullable(Enum ('c')) ADD ENUM VALUES('Hundred' = 100); -- { clientError SYNTAX_ERROR }
+SELECT '======= ADD ENUM VALUES SYNTAX ERRORS ===============';
+ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES(, 'Hundred' = 100); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100,); -- { clientError SYNTAX_ERROR }

@@ -1,0 +1,370 @@
+---
+description: 'ClickHouse 쿼리 분석기를 자세히 설명하는 페이지'
+keywords: ['분석기']
+sidebarTitle: '분석기'
+slug: /operations/analyzer
+title: '분석기'
+doc_type: '참고'
+---
+
+ClickHouse 버전 `24.3`부터 새 쿼리 분석기가 기본적으로 활성화되었습니다.
+작동 방식에 대한 자세한 내용은 [여기](/ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)에서 확인할 수 있습니다.
+
+<div id="known-incompatibilities">
+  ## 알려진 비호환성
+</div>
+
+많은 버그를 수정하고 새로운 최적화를 도입했지만, 그에 따라 ClickHouse 동작에도 일부 호환되지 않는 변경 사항이 생겼습니다. 아래 변경 사항을 읽고 분석기에 맞게 쿼리를 어떻게 재작성해야 하는지 확인하십시오.
+
+<div id="invalid-queries-are-no-longer-optimized">
+  ### 잘못된 쿼리는 더 이상 최적화되지 않습니다
+</div>
+
+이전 쿼리 계획 인프라에서는 쿼리 검증 단계 전에 AST 수준의 최적화를 적용했습니다.
+이 최적화로 인해 원래 쿼리가 유효하고 실행 가능한 형태로 재작성될 수 있었습니다.
+
+분석기에서는 최적화 단계에 앞서 쿼리 검증이 수행됩니다.
+즉, 이전에는 실행할 수 있었던 잘못된 쿼리를 이제는 더 이상 지원하지 않습니다.
+이러한 경우에는 쿼리를 수동으로 수정해야 합니다.
+
+<div id="example-1">
+  #### 예시 1
+</div>
+
+다음 쿼리는 집계 후 `toString(number)`만 사용할 수 있음에도 프로젝션 목록에서 컬럼 `number`를 사용합니다.
+이전 분석기에서는 `GROUP BY toString(number)`가 `GROUP BY number,`로 최적화되어 해당 쿼리가 유효했습니다.
+
+```sql
+SELECT number
+FROM numbers(1)
+GROUP BY toString(number)
+```
+
+<div id="example-2">
+  #### 예시 2
+</div>
+
+이 쿼리에서도 동일한 문제가 발생합니다. `number` 컬럼은 다른 키로 집계한 뒤에 사용됩니다.
+이전 쿼리 분석기는 `number > 5` 필터를 `HAVING` 절에서 `WHERE` 절로 옮겨 이 쿼리를 수정했습니다.
+
+```sql
+SELECT
+    number % 2 AS n,
+    sum(number)
+FROM numbers(10)
+GROUP BY n
+HAVING number > 5
+```
+
+쿼리를 수정하려면 표준 SQL 구문에 맞게 집계되지 않은 컬럼에 대한 모든 조건을 `WHERE` 절로 옮겨야 합니다:
+
+```sql
+SELECT
+    number % 2 AS n,
+    sum(number)
+FROM numbers(10)
+WHERE number > 5
+GROUP BY n
+```
+
+<div id="create-view-with-invalid-query">
+  ### 잘못된 쿼리로 `CREATE VIEW`
+</div>
+
+분석기는 항상 타입 검사를 수행합니다.
+이전에는 잘못된 `SELECT` 쿼리로 `VIEW`를 생성할 수 있었습니다.
+이 경우 첫 번째 `SELECT` 또는 `INSERT` 시점에 실패했습니다(`MATERIALIZED VIEW`의 경우).
+
+이제는 이런 방식으로 `VIEW`를 생성할 수 없습니다.
+
+<div id="example-view">
+  #### 예시
+</div>
+
+```sql
+CREATE TABLE source (data String)
+ENGINE=MergeTree
+ORDER BY tuple();
+
+CREATE VIEW some_view
+AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
+FROM source;
+```
+
+<div id="known-incompatibilities-of-the-join-clause">
+  ### `JOIN` 절의 알려진 비호환 사항
+</div>
+
+<div id="join-using-column-from-projection">
+  #### 프로젝션의 컬럼을 사용한 `JOIN`
+</div>
+
+기본적으로 `SELECT` 목록의 별칭은 `JOIN USING` 키로 사용할 수 없습니다.
+
+새로운 설정인 `analyzer_compatibility_join_using_top_level_identifier`을 활성화하면 `JOIN USING`의 동작이 바뀌며, 왼쪽 테이블의 컬럼을 직접 사용하는 대신 `SELECT` 쿼리의 프로젝션 목록에 있는 표현식을 기준으로 식별자를 우선 해석합니다.
+
+예를 들면:
+
+```sql
+SELECT a + 1 AS b, t2.s
+FROM VALUES('a UInt64, b UInt64', (1, 1)) AS t1
+JOIN VALUES('b UInt64, s String', (1, 'one'), (2, 'two')) t2
+USING (b);
+```
+
+`analyzer_compatibility_join_using_top_level_identifier`를 `true`로 설정하면, 이전 버전의 동작과 동일하게 join 조건이 `t1.a + 1 = t2.b`로 해석됩니다.
+결과는 `2, 'two'`입니다.
+설정이 `false`이면 join 조건은 기본적으로 `t1.b = t2.b`로 해석되며, 쿼리는 `2, 'one'`을 반환합니다.
+`t1`에 `b`가 없으면 쿼리는 오류를 발생시키며 실패합니다.
+
+<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
+  #### `JOIN USING`과 `ALIAS`/`MATERIALIZED` 컬럼의 동작 변경
+</div>
+
+분석기에서는 `ALIAS` 또는 `MATERIALIZED` 컬럼이 포함된 `JOIN USING` 쿼리에서 `*`를 사용하면, 기본적으로 해당 컬럼도 결과 집합에 포함됩니다.
+
+예시:
+
+```sql
+CREATE TABLE t1 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 VALUES (1), (2);
+
+CREATE TABLE t2 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t2 VALUES (2), (3);
+
+SELECT * FROM t1
+FULL JOIN t2 USING (payload);
+```
+
+분석기에서는 이 쿼리 결과에 두 테이블의 `id`와 함께 `payload` 컬럼도 포함됩니다.
+반면 이전 분석기에서는 특정 설정(`asterisk_include_alias_columns` 또는 `asterisk_include_materialized_columns`)이 활성화된 경우에만 이러한 `ALIAS` 컬럼이 포함되었으며,
+컬럼 순서도 달라질 수 있었습니다.
+
+일관되고 예상 가능한 결과를 얻으려면, 특히 기존 쿼리를 분석기로 마이그레이션할 때는 `*`를 사용하는 대신 `SELECT` 절에서 컬럼을 명시적으로 지정하는 것이 좋습니다.
+
+<div id="handling-of-type-modifiers-for-columns-in-using-clause">
+  #### `USING` 절의 컬럼 타입 수정자 처리
+</div>
+
+새 버전의 분석기에서는 `USING` 절에 지정된 컬럼의 공통 상위 타입(common supertype)을 결정하는 규칙이 표준화되어, 더 예측 가능한 결과를 얻을 수 있습니다.
+특히 `LowCardinality` 및 `Nullable` 같은 타입 수정자를 다룰 때 그렇습니다.
+
+* `LowCardinality(T)` and `T`: 타입이 `LowCardinality(T)`인 컬럼을 타입이 `T`인 컬럼과 조인하면, 결과 공통 상위 타입은 `T`가 되며 `LowCardinality` 수정자는 사실상 제거됩니다.
+* `Nullable(T)` and `T`: 타입이 `Nullable(T)`인 컬럼을 타입이 `T`인 컬럼과 조인하면, 결과 공통 상위 타입은 `Nullable(T)`가 되어 널 허용 속성이 유지됩니다.
+
+예시:
+
+```sql
+SELECT id, toTypeName(id)
+FROM VALUES('id LowCardinality(String)', ('a')) AS t1
+FULL OUTER JOIN VALUES('id String', ('b')) AS t2
+USING (id);
+```
+
+이 쿼리에서는 `id`의 공통 상위 유형(common supertype)이 `String`으로 결정되고, `t1`의 `LowCardinality` 수정자는 제거됩니다.
+
+<div id="projection-column-names-changes">
+  ### 프로젝션 컬럼 이름 변경 사항
+</div>
+
+프로젝션 이름을 계산할 때는 별칭이 치환되지 않습니다.
+
+```sql
+SELECT
+    1 + 1 AS x,
+    x + 1
+SETTINGS enable_analyzer = 0
+FORMAT PrettyCompact
+
+   ┌─x─┬─plus(plus(1, 1), 1)─┐
+1. │ 2 │                   3 │
+   └───┴─────────────────────┘
+
+SELECT
+    1 + 1 AS x,
+    x + 1
+SETTINGS enable_analyzer = 1
+FORMAT PrettyCompact
+
+   ┌─x─┬─plus(x, 1)─┐
+1. │ 2 │          3 │
+   └───┴────────────┘
+```
+
+<div id="incompatible-function-arguments-types">
+  ### 호환되지 않는 함수 인수 타입
+</div>
+
+분석기에서는 초기 쿼리 분석 중에 타입 추론이 이루어집니다.
+이 변경으로 인해 타입 검사는 단락 평가 전에 수행되므로, `if` 함수의 인수는 항상 공통 supertype을 가져야 합니다.
+
+예를 들어, 다음 쿼리는 `There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not`라는 오류와 함께 실패합니다:
+
+```sql
+SELECT toTypeName(if(0, [2, 3, 4], 'String'))
+```
+
+<div id="heterogeneous-clusters">
+  ### 이기종 클러스터
+</div>
+
+분석기는 클러스터 내 서버 간 통신 프로토콜을 크게 변경합니다. 따라서 `enable_analyzer` 설정값이 서로 다른 서버 간에는 분산 쿼리를 실행할 수 없습니다.
+
+<div id="mutations-are-interpreted-by-previous-analyzer">
+  ### 뮤테이션은 이전 분석기로 해석됩니다
+</div>
+
+뮤테이션은 아직도 이전 분석기를 사용합니다.
+즉, 일부 새로운 ClickHouse SQL 기능은 뮤테이션에서 사용할 수 없습니다. 예를 들어 `QUALIFY` 절은 사용할 수 없습니다.
+현재 상태는 [여기](https://github.com/ClickHouse/ClickHouse/issues/61563)에서 확인할 수 있습니다.
+
+<div id="unsupported-features">
+  ### 지원되지 않는 기능
+</div>
+
+현재 분석기에서 지원하지 않는 기능 목록은 다음과 같습니다:
+
+* Annoy 인덱스.
+* Hypothesis 인덱스. [여기](https://github.com/ClickHouse/ClickHouse/pull/48381)에서 작업이 진행 중입니다.
+* Window view는 지원되지 않습니다. 앞으로도 지원할 계획이 없습니다.
+
+<div id="cloud-migration">
+  ## Cloud 마이그레이션
+</div>
+
+새로운 기능 및 성능 최적화를 지원하기 위해 현재 쿼리 분석기가 비활성화되어 있는 모든 인스턴스에서 이를 활성화하고 있습니다. 이 변경으로 SQL 범위 규칙이 더 엄격해지므로, 규정을 준수하지 않는 쿼리는 사용자가 수동으로 업데이트해야 합니다.
+
+<div id="migration-workflow">
+  ### 마이그레이션 워크플로
+</div>
+
+1. `normalized_query_hash`를 사용해 `system.query_log`를 필터링하여 쿼리를 식별합니다:
+
+```sql
+SELECT query 
+FROM clusterAllReplicas(default, system.query_log)
+WHERE normalized_query_hash='{hash}' 
+LIMIT 1 
+SETTINGS skip_unavailable_shards=1
+```
+
+2. 다음 설정을 추가해 분석기를 활성화한 뒤 쿼리를 실행합니다.
+
+```sql
+SETTINGS
+    enable_analyzer=1,
+    analyzer_compatibility_join_using_top_level_identifier=1
+```
+
+3. 분석기를 비활성화했을 때의 출력과 일치하는지 확인할 수 있도록 쿼리를 리팩터링하고 결과를 검증합니다.
+
+내부 테스트에서 가장 자주 확인된 비호환성은 다음 내용을 참조하십시오.
+
+<div id="unknown-expression-identifier">
+  ### 알 수 없는 표현식 식별자
+</div>
+
+오류: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. 예외 코드: 47
+
+원인: 필터에서 계산된 별칭(alias)을 참조하거나, 모호한 서브쿼리 프로젝션, 또는 &quot;동적&quot; CTE 범위와 같은 비표준적이고 관대한 레거시 동작에 의존하는 쿼리는 이제 유효하지 않은 것으로 올바르게 판단되어 즉시 거부됩니다.
+
+해결 방법: SQL 패턴을 다음과 같이 수정하십시오.
+
+* 필터 로직: 결과를 기준으로 필터링하는 경우 WHERE의 로직을 HAVING으로 옮기고, 원본 데이터를 기준으로 필터링하는 경우 WHERE에 동일한 표현식을 다시 작성하십시오.
+* 서브쿼리 범위: 바깥쪽 쿼리에 필요한 모든 컬럼을 명시적으로 선택하십시오.
+* JOIN 키: 키가 별칭(alias)인 경우 USING 대신 전체 표현식을 포함한 ON을 사용하십시오.
+* 바깥쪽 쿼리에서는 내부 테이블이 아니라 서브쿼리/CTE 자체의 별칭(alias)을 참조하십시오.
+
+<div id="non-aggregated-columns-in-group-by">
+  ### GROUP BY의 비집계 컬럼
+</div>
+
+오류: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. 예외 코드: 215
+
+원인: 이전 분석기는 GROUP BY 절에 없는 컬럼도 선택할 수 있게 허용했습니다(이 경우 임의의 값을 선택하는 일이 많았습니다). 분석기는 표준 SQL을 따릅니다. 즉, 선택한 모든 컬럼은 집계 함수이거나 그룹화 키여야 합니다.
+
+해결 방법: 해당 컬럼을 `any()`, `argMax()`로 감싸거나 GROUP BY에 추가합니다.
+
+```sql
+/* 원본 쿼리 */
+-- device_id가 모호함
+SELECT user_id, device_id FROM table GROUP BY user_id
+
+/* 수정된 쿼리 */
+SELECT user_id, any(device_id) FROM table GROUP BY user_id
+-- 또는
+SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+<div id="duplicate-cte-names">
+  ### 중복된 CTE 이름
+</div>
+
+오류: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. 예외 코드: 179
+
+원인: 이전 분석기에서는 동일한 이름의 공통 테이블 표현식(WITH ...)을 여러 개 정의해, 나중에 정의한 표현식이 앞서 정의한 표현식을 가리도록 허용했습니다. 분석기는 이러한 모호성을 허용하지 않습니다.
+
+해결 방법: 중복된 CTE 이름을 각각 고유하게 변경합니다.
+
+```sql
+/* 원본 쿼리 */
+WITH 
+  data AS (SELECT 1 AS id), 
+  data AS (SELECT 2 AS id) -- 재정의됨
+SELECT * FROM data;
+
+/* 수정된 쿼리 */
+WITH 
+  raw_data AS (SELECT 1 AS id), 
+  processed_data AS (SELECT 2 AS id)
+SELECT * FROM processed_data;
+```
+
+<div id="ambiguous-column-identifiers">
+  ### 모호한 컬럼 식별자
+</div>
+
+오류: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` 예외 코드: 207
+
+원인: 쿼리에서 JOIN에 포함된 여러 테이블에 있는 동일한 컬럼 이름을, 어느 테이블의 컬럼인지 지정하지 않은 채 참조합니다. 이전 분석기는 내부 로직을 기준으로 해당 컬럼을 추정하는 경우가 많았지만, 현재 분석기는 컬럼 이름을 명시적으로 지정해야 합니다.
+
+해결 방법: 컬럼을 `table&#95;alias.column&#95;name` 형식으로 완전히 지정하십시오.
+
+```sql
+/* 원본 쿼리 */
+SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
+
+/* 수정된 쿼리 */
+SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
+```
+
+<div id="invalid-usage-of-final">
+  ### FINAL의 잘못된 사용
+</div>
+
+오류: `Table expression modifiers FINAL are not supported for subquery...` 또는 `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). 예외 코드: 1, 181
+
+원인: FINAL은 테이블 스토리지, 구체적으로 [Shared]ReplacingMergeTree에 사용하는 수정자입니다. 분석기는 다음과 같은 경우 FINAL 적용을 허용하지 않습니다.
+
+* 서브쿼리 또는 파생 테이블(예: FROM (SELECT ...) FINAL)
+* FINAL을 지원하지 않는 테이블 엔진(예: SharedMergeTree)
+
+해결 방법: FINAL은 서브쿼리 내부의 원본 테이블에만 적용하거나, 엔진이 지원하지 않으면 제거하십시오.
+
+```sql
+/* 원본 쿼리 */
+SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
+
+/* 수정된 쿼리 */
+SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
+```
+
+<div id="countdistinct-case-insensitivity">
+  ### `countDistinct()` 함수의 대소문자 구분
+</div>
+
+오류: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. 예외 코드: 46
+
+원인: 함수 이름은 대소문자를 구분하며, 분석기에서 엄격하게 매핑됩니다. `countdistinct`(모두 소문자)는 더 이상 자동으로 인식되지 않습니다.
+
+해결 방법: 표준 `countDistinct`(camelCase) 또는 ClickHouse 전용 `uniq`를 사용하십시오.

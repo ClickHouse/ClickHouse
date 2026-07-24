@@ -68,6 +68,9 @@ public:
 protected:
     Chunk generate() override
     {
+        if (isCancelled())
+            return {};
+
         Columns columns;
         columns.reserve(block_header->columns());
         for (const auto & col : *block_header)
@@ -76,7 +79,22 @@ protected:
             columns.emplace_back(createColumn());
         }
 
-        return {std::move(columns), block_size};
+        /// `createColumn` may exit early on cancellation and emit fewer rows than
+        /// `block_size`; with multiple columns each call observes cancellation
+        /// independently and may produce different counts. Take the smallest size
+        /// and truncate the rest so the resulting `Chunk` has consistent row counts.
+        size_t actual_rows = block_size;
+        for (const auto & column : columns)
+            actual_rows = std::min(actual_rows, column->size());
+
+        if (actual_rows == 0)
+            return {};
+
+        for (auto & column : columns)
+            if (column->size() > actual_rows)
+                column = column->cut(0, actual_rows);
+
+        return {std::move(columns), actual_rows};
     }
 
 private:

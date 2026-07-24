@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Querio'
+slug: /integrations/querio
+keywords: ['Querio', 'connect', 'integrate', 'analytics', 'AI']
+description: 'Querio は、AI ネイティブの分析・ビジネスインテリジェンス向けワークスペースです。ClickHouse を Querio に接続すると、SQL、Python、AI を使ってライブデータの探索、可視化、分析を行えます。'
+title: 'ClickHouse を Querio に接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Querio は、AI を活用した分析およびビジネスインテリジェンス向けのワークスペースです。チームは SQL、Python、自然言語を使ってデータをクエリし、探索し、可視化し、インサイトを導き出せます。Querio を ClickHouse のデータベースまたは warehouse に接続すると、データを移動することなく、ClickHouse 上のデータに対して大規模なリアルタイム分析を実行し、ボード、ノートブック、AI 支援レポートを作成できます。
+
+<div id="setup-clickhouse-for-querio">
+  ## Querio 用に ClickHouse をセットアップする
+</div>
+
+<Steps>
+  <Step>
+    ### 専用ユーザーを作成する
+
+    セキュリティのベストプラクティスとして、Querio 専用のユーザーアカウントを作成し、必要最小限の権限だけを付与してください。
+
+    ```sql
+    CREATE USER querio_user IDENTIFIED BY 'STRONG_PASSWORD';
+    ```
+
+    <Tip>
+      長くランダムなパスワード (16 文字以上) を使用し、できればパスワードマネージャーで生成してください。
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 読み取り専用のデータベースアクセスを付与する
+
+    Querio の権限は、クエリに必要なデータベースとテーブルだけに制限してください。
+
+    ```sql
+    GRANT SELECT ON my_database.* TO querio_user;
+    ```
+
+    特定のテーブルに対しては、次を使用します。
+
+    ```sql
+    GRANT SELECT ON database.table_name TO querio_user;
+    ```
+
+    Querio がアクセスを必要とするデータベースごとに、この手順を繰り返してください。
+  </Step>
+
+  <Step>
+    ### 接続情報を確認する
+
+    Querio を ClickHouse に接続するには、次の接続情報が必要です。
+
+    | パラメーター     | 説明                                           |
+    | ---------- | -------------------------------------------- |
+    | `HOST`     | ClickHouse サーバーまたはクラスターのアドレス                 |
+    | `PORT`     | ポート 9440 (セキュアなネイティブプロトコルのデフォルト) または設定済みのポート |
+    | `DATABASE` | Querio でクエリする database                       |
+    | `USERNAME` | `querio_user` (または選択したユーザー名)                 |
+    | `PASSWORD` | user account のパスワード                          |
+
+    <Note>
+      * ClickHouse Cloud の場合、接続情報は Cloud Console で確認できます
+      * セルフマネージドのインスタンスで ClickHouse が別のポートを使用している場合は、サーバー設定を確認してください
+      * ポート 9440 は、セキュアなネイティブプロトコル接続のデフォルトです
+    </Note>
+  </Step>
+</Steps>
+
+<div id="create-account-and-connect">
+  ## Querio アカウントを作成して ClickHouse に接続する
+</div>
+
+[https://app.querio.ai/](https://app.querio.ai/) にアクセスし、Querio のワークスペースにログインするか、新規作成します。
+
+1. Querio で **Settings → Datasources** に移動し、**Add Datasource** をクリックします。
+
+2. データベースオプションの一覧から **ClickHouse** を選択します。
+
+3. 上記の接続情報を入力し、設定を保存します。
+
+4. Querio が接続を検証します。検証が完了すると、ClickHouse をワークスペース全体でデータソースとして利用できるようになります。
+
+<div id="querying-clickhouse">
+  ## ClickHouse へのクエリ実行
+</div>
+
+Querio を ClickHouse に接続すると、プラットフォーム内のどこからでもデータを調査・分析できます。Querio ノートブックで SQL ブロックまたは Python セルを作成し、データソースとして ClickHouse を選択すれば、ClickHouse クラスターに対して直接クエリを実行できます。Querio の可視化機能と AI ツールを使ってインサイトを得て、ボードを作成し、結果を共有できます。
+
+<div id="additional-resources">
+  ## 参考資料
+</div>
+
+* [Querio のドキュメント](https://docs.querio.ai/integrations/clickhouse)
+* [Querio のスタートガイドとチュートリアル](https://www.querio.ai)

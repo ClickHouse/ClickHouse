@@ -11,7 +11,6 @@
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -117,6 +116,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
+    UInt64 getNumberOfDefaultRows() const override;
     std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
 
@@ -148,7 +148,7 @@ public:
     /// distribution between dynamic paths and shared data.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;

@@ -8,7 +8,7 @@ title: 'SummingMergeTree table engine'
 doc_type: 'reference'
 ---
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -188,6 +188,50 @@ ARRAY JOIN
 When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/sumMappedArrays.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
+
+### Tuple element aggregation {#tuple-element-aggregation}
+
+When the `allow_tuple_element_aggregation` setting is enabled, `Tuple` columns are recursively flattened so that each leaf element participates in summation independently. This allows you to store multiple metrics in a single `Tuple` column and have them summed element-wise during merges.
+
+The same rules apply to the flattened sub-columns as to regular columns:
+
+- Only numeric sub-columns are summed.
+- Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from summation.
+- If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
+- If all numeric sub-columns of a row are zero after summation, the row is deleted.
+
+:::note
+This setting is immutable and must be specified at table creation time.
+:::
+
+```sql
+CREATE TABLE summing_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        impressions UInt64,
+        clicks UInt64,
+        nested Tuple(
+            conversions UInt64
+        )
+    )
+) ENGINE = SummingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO summing_tuples VALUES (1, (100, 10, (1)));
+INSERT INTO summing_tuples VALUES (1, (200, 20, (3)));
+
+OPTIMIZE TABLE summing_tuples FINAL;
+
+SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM summing_tuples;
+```
+
+```text
+┌─key─┬─metrics.impressions─┬─metrics.clicks─┬─metrics.nested.conversions─┐
+│   1 │                 300 │             30 │                          4 │
+└─────┴─────────────────────┴────────────────┴────────────────────────────┘
+```
 
 ## Related content {#related-content}
 

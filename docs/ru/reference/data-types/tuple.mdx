@@ -1,0 +1,226 @@
+---
+description: 'Документация по типу данных Tuple в ClickHouse'
+sidebarTitle: 'Tuple(T1, T2, ...)'
+slug: /sql-reference/data-types/tuple
+title: 'Tuple(T1, T2, ...)'
+doc_type: 'reference'
+---
+
+Tuple из элементов, каждый из которых имеет отдельный [тип](/ru/reference/data-types/index). Tuple должен содержать как минимум один элемент.
+
+Tuple используются для временной группировки столбцов. Столбцы можно группировать, когда в запросе используется выражение IN, а также для указания некоторых формальных параметров лямбда-функций. Подробнее см. в разделах [Операторы IN](/ru/reference/statements/in) и [Функции высшего порядка](/ru/reference/functions/regular-functions/overview#higher-order-functions).
+
+Tuple могут быть результатом запроса. В этом случае в текстовых форматах, кроме JSON, значения разделяются запятыми в `()`. В форматах JSON Tuple выводятся как массивы (в `[]`).
+
+<div id="creating-tuples">
+  ## Создание Tuple
+</div>
+
+Для создания Tuple можно использовать функцию:
+
+```sql
+tuple(T1, T2, ...)
+```
+
+Пример создания Tuple:
+
+```sql
+SELECT tuple(1, 'a') AS x, toTypeName(x)
+```
+
+```text
+┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
+│ (1,'a') │ Tuple(UInt8, String)      │
+└─────────┴───────────────────────────┘
+```
+
+Tuple может состоять из одного элемента
+
+Пример:
+
+```sql
+SELECT tuple('a') AS x;
+```
+
+```text
+┌─x─────┐
+│ ('a') │
+└───────┘
+```
+
+Синтаксис `(tuple_element1, tuple_element2)` можно использовать, чтобы создать Tuple из нескольких элементов без вызова функции `tuple()`.
+
+Пример:
+
+```sql
+SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
+```
+
+```text
+┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
+│ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
+└─────────┴────────────────────────────────────────┴─────────────┘
+```
+
+<div id="data-type-detection">
+  ## Определение типов данных
+</div>
+
+При создании Tuple на лету ClickHouse определяет типы аргументов Tuple как минимальные типы, в которые помещаются переданные значения. Если значение — [NULL](/ru/reference/settings/formats#input_format_null_as_default), тип определяется как [Nullable](/ru/reference/data-types/nullable).
+
+Пример автоматического определения типа данных:
+
+```sql
+SELECT tuple(1, NULL) AS x, toTypeName(x)
+```
+
+```text
+┌─x─────────┬─toTypeName(tuple(1, NULL))──────┐
+│ (1, NULL) │ Tuple(UInt8, Nullable(Nothing)) │
+└───────────┴─────────────────────────────────┘
+```
+
+<div id="referring-to-tuple-elements">
+  ## Обращение к элементам Tuple
+</div>
+
+К элементам Tuple можно обращаться по имени или индексу:
+
+```sql title="Query"
+CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
+INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
+
+SELECT a.s FROM named_tuples; -- по имени
+SELECT a.2 FROM named_tuples; -- по индексу
+```
+
+```text title="Response"
+┌─a.s─┐
+│ y   │
+│ x   │
+└─────┘
+
+┌─tupleElement(a, 2)─┐
+│                 10 │
+│                -10 │
+└────────────────────┘
+```
+
+<div id="comparison-operations-with-tuple">
+  ## Операции сравнения с Tuple
+</div>
+
+Два значения Tuple сравниваются последовательно: их элементы сопоставляются слева направо. Если элемент первого Tuple больше (меньше), чем соответствующий элемент второго Tuple, то первый Tuple больше (меньше) второго; в противном случае (если оба элемента равны) сравнивается следующий элемент.
+
+Пример:
+
+```sql
+SELECT (1, 'z') > (1, 'a') c1, (2022, 01, 02) > (2023, 04, 02) c2, (1,2,3) = (3,2,1) c3;
+```
+
+```text
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  0 │  0 │
+└────┴────┴────┘
+```
+
+Практические примеры:
+
+```sql
+CREATE TABLE test
+(
+    `year` Int16,
+    `month` Int8,
+    `day` Int8
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((2022, 12, 31), (2000, 1, 1));
+
+SELECT * FROM test;
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+│ 2000 │     1 │   1 │
+└──────┴───────┴─────┘
+
+SELECT *
+FROM test
+WHERE (year, month, day) > (2010, 1, 1);
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+└──────┴───────┴─────┘
+CREATE TABLE test
+(
+    `key` Int64,
+    `duration` UInt32,
+    `value` Float64
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((1, 42, 66.5), (1, 42, 70), (2, 1, 10), (2, 2, 0));
+
+SELECT * FROM test;
+
+┌─key─┬─duration─┬─value─┐
+│   1 │       42 │  66.5 │
+│   1 │       42 │    70 │
+│   2 │        1 │    10 │
+│   2 │        2 │     0 │
+└─────┴──────────┴───────┘
+
+-- Найдём значение для каждого ключа с наибольшей длительностью; если длительности равны, выбираем наибольшее значение
+
+SELECT
+    key,
+    max(duration),
+    argMax(value, (duration, value))
+FROM test
+GROUP BY key
+ORDER BY key ASC;
+
+┌─key─┬─max(duration)─┬─argMax(value, tuple(duration, value))─┐
+│   1 │            42 │                                    70 │
+│   2 │             2 │                                     0 │
+└─────┴───────────────┴───────────────────────────────────────┘
+```
+
+<div id="nullable-tuple">
+  ## Nullable(Tuple(T1, T2, ...))
+</div>
+
+<Info>
+  **Бета-возможность**
+
+  Требуется `SET enable_nullable_tuple_type = 1`
+  Это бета-возможность.
+</Info>
+
+Позволяет всему Tuple принимать значение `NULL`, в отличие от `Tuple(Nullable(T1), Nullable(T2), ...)`, где значение `NULL` могут принимать только отдельные элементы.
+
+| Тип                                        | Tuple может быть NULL | Элементы могут быть NULL |
+| ------------------------------------------ | --------------------- | ------------------------ |
+| `Nullable(Tuple(String, Int64))`           | ✅                     | ❌                        |
+| `Tuple(Nullable(String), Nullable(Int64))` | ❌                     | ✅                        |
+
+Пример:
+
+```sql
+SET enable_nullable_tuple_type = 1;
+
+CREATE TABLE test (
+    id UInt32,
+    data Nullable(Tuple(String, Int64))
+) ENGINE = Memory;
+
+INSERT INTO test VALUES (1, ('hello', 42)), (2, NULL);
+
+SELECT * FROM test WHERE data IS NULL;
+```
+
+```txt
+ ┌─id─┬─data─┐
+ │  2 │ ᴺᵁᴸᴸ │
+ └────┴──────┘
+```

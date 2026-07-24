@@ -1,0 +1,1324 @@
+---
+slug: /materialized-view/incremental-materialized-view
+title: 'العرض المادي التزايدي'
+description: 'كيفية استخدام العروض المادية التزايدية لتسريع الاستعلامات'
+keywords: ['العروض المادية التزايدية', 'تسريع الاستعلامات', 'تحسين الاستعلامات']
+score: 10000
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="background">
+  ## الخلفية
+</div>
+
+تتيح لك العروض المادية التزايدية (العروض المادية) نقل تكلفة المعالجة من وقت الاستعلام إلى وقت الإدراج، مما يؤدي إلى تسريع استعلامات `SELECT`.
+
+وخلافًا لقواعد البيانات المعاملاتية مثل Postgres، فإن العرض المادي في ClickHouse ليس سوى مُشغِّل ينفّذ استعلامًا على كتل البيانات أثناء إدراجها في جدول. ثم تُدرَج نتيجة هذا الاستعلام في جدول &quot;الهدف&quot; ثانٍ. وإذا أُدرجت صفوف إضافية، فستُرسَل النتائج مرة أخرى إلى جدول الهدف، حيث تُحدَّث النتائج الوسيطة وتُدمَج. وهذه النتيجة المدمجة تكافئ تنفيذ الاستعلام على كامل البيانات الأصلية.
+
+والسبب الرئيسي لاستخدام العروض المادية هو أن النتائج المُدرَجة في جدول الهدف تمثل ناتج عمليات تجميع أو تصفية أو تحويل تُجرى على الصفوف. وغالبًا ما تكون هذه النتائج تمثيلًا أصغر للبيانات الأصلية (ملخصًا جزئيًا في حالة عمليات التجميع). وهذا، إلى جانب بساطة الاستعلام الناتج لقراءة النتائج من جدول الهدف، يضمن أن تكون أوقات الاستعلام أسرع مما لو أُجريت المعالجة نفسها على البيانات الأصلية، إذ ينقل المعالجة (ومن ثم زمن استجابة الاستعلام) من وقت الاستعلام إلى وقت الإدراج.
+
+تُحدَّث العروض المادية في ClickHouse آنيًا مع تدفق البيانات إلى الجدول الذي تستند إليه، فتعمل بصورة أقرب إلى الفهارس التي تُحدَّث باستمرار. وهذا يختلف عن قواعد البيانات الأخرى، حيث تكون العروض المادية عادةً لقطات ثابتة لاستعلام يجب تحديثها (على نحو مشابه لـ [العروض المادية القابلة للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) في ClickHouse).
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="مخطط العرض المادي" />
+
+<div id="example">
+  ## مثال
+</div>
+
+لأغراض المثال، سنستخدم مجموعة بيانات Stack Overflow الموثقة في [&quot;تصميم المخطط&quot;](/ar/guides/clickhouse/data-modelling/schema-design).
+
+لنفترض أننا نريد الحصول على عدد الأصوات الإيجابية والسلبية يومياً لمنشور معين.
+
+```sql
+CREATE TABLE votes
+(
+    `Id` UInt32,
+    `PostId` Int32,
+    `VoteTypeId` UInt8,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 29.359 sec. Processed 238.98 million rows, 2.13 GB (8.14 million rows/s., 72.45 MB/s.)
+```
+
+يُعدّ هذا استعلامًا بسيطًا نسبيًا في ClickHouse بفضل الدالة [`toStartOfDay`](/ar/reference/functions/regular-functions/date-time-functions#toStartOfDay):
+
+```sql
+SELECT toStartOfDay(CreationDate) AS day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY day
+ORDER BY day ASC
+LIMIT 10
+```
+
+```response
+┌─────────────────day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 00:00:00 │       6 │         0 │
+│ 2008-08-01 00:00:00 │     182 │        50 │
+│ 2008-08-02 00:00:00 │     436 │       107 │
+│ 2008-08-03 00:00:00 │     564 │       100 │
+│ 2008-08-04 00:00:00 │    1306 │       259 │
+│ 2008-08-05 00:00:00 │    1368 │       269 │
+│ 2008-08-06 00:00:00 │    1701 │       211 │
+│ 2008-08-07 00:00:00 │    1544 │       211 │
+│ 2008-08-08 00:00:00 │    1241 │       212 │
+│ 2008-08-09 00:00:00 │     576 │        46 │
+└─────────────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.133 sec. Processed 238.98 million rows, 2.15 GB (1.79 billion rows/s., 16.14 GB/s.)
+Peak memory usage: 363.22 MiB.
+```
+
+هذا الاستعلام سريع بالفعل بفضل ClickHouse، لكن هل بإمكاننا تحقيق أداء أفضل؟
+
+إذا أردنا احتساب هذا عند وقت الإدراج باستخدام طريقة عرض مُجسَّدة، فنحتاج إلى جدول لاستقبال النتائج. يجب أن يحتفظ هذا الجدول بصف واحد فقط لكل يوم. وإذا وردت تحديثات ليوم موجود مسبقاً، وجب دمج الأعمدة الأخرى في صف ذلك اليوم. ولكي يتحقق هذا الدمج للحالات التراكمية، يجب تخزين الحالات الجزئية للأعمدة الأخرى.
+
+يتطلب هذا نوع محرك خاصًا في ClickHouse: وهو [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree). يستبدل هذا المحرك جميع الصفوف التي تحمل نفس مفتاح الترتيب بصف واحد يحتوي على القيم المجمّعة للأعمدة الرقمية. سيدمج الجدول التالي أي صفوف تشترك في نفس التاريخ، مع جمع قيم الأعمدة الرقمية:
+
+```sql
+CREATE TABLE up_down_votes_per_day
+(
+  `Day` Date,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY Day
+```
+
+لتوضيح العرض المُجسَّد، لنفترض أن جدول votes فارغ ولم يستقبل أي بيانات بعد. يُنفّذ العرض المُجسَّد استعلام `SELECT` المذكور أعلاه على البيانات المُدرجة في `votes`، وتُرسَل النتائج إلى `up_down_votes_per_day`:
+
+```sql
+CREATE MATERIALIZED VIEW up_down_votes_per_day_mv TO up_down_votes_per_day AS
+SELECT toStartOfDay(CreationDate)::Date AS Day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY Day
+```
+
+تُعدّ عبارة `TO` هنا أساسية، إذ تحدد الوجهة التي ستُرسَل إليها النتائج، أي `up_down_votes_per_day`.
+
+يمكننا إعادة ملء جدول Votes بالاستناد إلى عملية الإدراج السابقة:
+
+```sql
+INSERT INTO votes SELECT toUInt32(Id) AS Id, toInt32(PostId) AS PostId, VoteTypeId, CreationDate, UserId, BountyAmount
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 111.964 sec. Processed 477.97 million rows, 3.89 GB (4.27 million rows/s., 34.71 MB/s.)
+Peak memory usage: 283.49 MiB.
+```
+
+عند الانتهاء، يمكننا التحقق من حجم `up_down_votes_per_day` — إذ ينبغي أن يحتوي على صف واحد لكل يوم:
+
+```sql
+SELECT count()
+FROM up_down_votes_per_day
+FINAL
+```
+
+```response
+┌─count()─┐
+│    5723 │
+└─────────┘
+```
+
+لقد خفّضنا فعليًا عدد الصفوف هنا من 238 مليونًا (في `votes`) إلى 5000 عبر تخزين نتيجة الاستعلام. لكن الأهم هو أنه إذا أُدرجت أصوات جديدة في جدول `votes`، فستُرسَل قيم جديدة إلى `up_down_votes_per_day` لليوم المقابل لها، حيث ستُدمَج تلقائيًا بشكل غير متزامن في الخلفية، بحيث يبقى صف واحد فقط لكل يوم. وهكذا سيظل `up_down_votes_per_day` صغيرًا ومحدّثًا دائمًا.
+
+وبما أن دمج الصفوف يتم بشكل غير متزامن، فقد يوجد أكثر من صف واحد لليوم نفسه عند تنفيذ المستخدم لاستعلام. ولضمان دمج أي صفوف معلّقة وقت الاستعلام، لدينا خياران:
+
+* استخدام المعدِّل `FINAL` مع اسم الجدول. لقد فعلنا ذلك في استعلام العدّ أعلاه.
+* التجميع حسب مفتاح الترتيب المستخدم في جدولنا النهائي، أي `CreationDate`، ثم جمع المقاييس. ويكون هذا عادةً أكثر كفاءة ومرونة (إذ يمكن استخدام الجدول لأغراض أخرى)، لكن الخيار الأول قد يكون أبسط في بعض الاستعلامات. نعرض كلا الخيارين أدناه:
+
+```sql
+SELECT
+        Day,
+        UpVotes,
+        DownVotes
+FROM up_down_votes_per_day
+FINAL
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+10 rows in set. Elapsed: 0.004 sec. Processed 8.97 thousand rows, 89.68 KB (2.09 million rows/s., 20.89 MB/s.)
+Peak memory usage: 289.75 KiB.
+```
+
+```sql
+SELECT Day, sum(UpVotes) AS UpVotes, sum(DownVotes) AS DownVotes
+FROM up_down_votes_per_day
+GROUP BY Day
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 │       6 │         0 │
+│ 2008-08-01 │     182 │        50 │
+│ 2008-08-02 │     436 │       107 │
+│ 2008-08-03 │     564 │       100 │
+│ 2008-08-04 │    1306 │       259 │
+│ 2008-08-05 │    1368 │       269 │
+│ 2008-08-06 │    1701 │       211 │
+│ 2008-08-07 │    1544 │       211 │
+│ 2008-08-08 │    1241 │       212 │
+│ 2008-08-09 │     576 │        46 │
+└────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.010 sec. Processed 8.97 thousand rows, 89.68 KB (907.32 thousand rows/s., 9.07 MB/s.)
+Peak memory usage: 567.61 KiB.
+```
+
+لقد سرّع هذا استعلامنا من 0.133s إلى 0.004s — أي تحسّن بأكثر من 25 مرة!
+
+<Warning>
+  **مهم: `ORDER BY` = `GROUP BY`**
+
+  في معظم الحالات، يجب أن تتوافق الأعمدة المستخدمة في عبارة `GROUP BY` ضمن تحويل العروض المادية مع الأعمدة المستخدمة في عبارة `ORDER BY` للجدول الهدف عند استخدام محركَي الجدول `SummingMergeTree` أو `AggregatingMergeTree`. تعتمد هذه المحركات على أعمدة `ORDER BY` لدمج الصفوف ذات القيم المتطابقة أثناء عمليات الدمج في الخلفية. وقد يؤدي عدم التوافق بين أعمدة `GROUP BY` و`ORDER BY` إلى تراجع أداء الاستعلامات، أو إلى عمليات دمج غير فعّالة، أو حتى إلى اختلافات في البيانات.
+</Warning>
+
+<div id="a-more-complex-example">
+  ### مثال أكثر تعقيدًا
+</div>
+
+يستخدم المثال أعلاه Materialized Views لحساب مجموعين والاحتفاظ بهما لكل يوم. وتمثل المجاميع أبسط أشكال التجميع التي يمكن الاحتفاظ بحالاتها الجزئية، إذ يمكننا ببساطة إضافة القيم الجديدة إلى القيم الحالية عند وصولها. ومع ذلك، يمكن استخدام Materialized Views في ClickHouse مع أي نوع من أنواع التجميع.
+
+لنفترض أننا نريد حساب بعض الإحصاءات للمنشورات لكل يوم: المئين 99.9 للحقل `Score` ومتوسط الحقل `CommentCount`. قد يبدو الاستعلام المستخدم لحساب ذلك كما يلي:
+
+```sql
+SELECT
+        toStartOfDay(CreationDate) AS Day,
+        quantile(0.999)(Score) AS Score_99th,
+        avg(CommentCount) AS AvgCommentCount
+FROM posts
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌─────────────────Day─┬────────Score_99th─┬────AvgCommentCount─┐
+│ 2024-03-31 00:00:00 │  5.23700000000008 │ 1.3429811866859624 │
+│ 2024-03-30 00:00:00 │                 5 │ 1.3097158891616976 │
+│ 2024-03-29 00:00:00 │  5.78899999999976 │ 1.2827635327635327 │
+│ 2024-03-28 00:00:00 │                 7 │  1.277746158224246 │
+│ 2024-03-27 00:00:00 │ 5.738999999999578 │ 1.2113264918282023 │
+│ 2024-03-26 00:00:00 │                 6 │ 1.3097536945812809 │
+│ 2024-03-25 00:00:00 │                 6 │ 1.2836721018539201 │
+│ 2024-03-24 00:00:00 │ 5.278999999999996 │ 1.2931667891256429 │
+│ 2024-03-23 00:00:00 │ 6.253000000000156 │  1.334061135371179 │
+│ 2024-03-22 00:00:00 │ 9.310999999999694 │ 1.2388059701492538 │
+└─────────────────────┴───────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.113 sec. Processed 59.82 million rows, 777.65 MB (528.48 million rows/s., 6.87 GB/s.)
+Peak memory usage: 658.84 MiB.
+```
+
+كما في السابق، يمكننا إنشاء عرض مادي ينفّذ الاستعلام أعلاه عند إدراج منشورات جديدة في جدول `posts` الخاص بنا.
+
+لأغراض المثال، ولتجنّب تحميل بيانات `posts` من S3، سننشئ جدولًا مكررًا باسم `posts_null` له البنية نفسها الخاصة بـ `posts`. ومع ذلك، لن يخزّن هذا الجدول أي بيانات، بل سيُستخدم فقط بواسطة العرض المادي عند إدراج صفوف. ولمنع تخزين البيانات، يمكننا استخدام [نوع `Null` من محرك الجدول](/ar/reference/engines/table-engines/special/null).
+
+```sql
+CREATE TABLE posts_null AS posts ENGINE = Null
+```
+
+يُعد محرك الجدول Null تحسينًا قويًا — فكّر فيه على أنه `/dev/null`. سيحسب العرض المادي الإحصاءات الموجزة ويخزّنها عندما يستقبل جدول `posts_null` صفوفًا وقت الإدراج — فهو مجرد مُحفِّز. ومع ذلك، لن تُخزَّن البيانات الخام. ومع أننا في حالتنا على الأرجح ما زلنا نريد تخزين المنشورات الأصلية، يمكن استخدام هذا النهج لحساب التجميعات مع تجنّب أعباء تخزين البيانات الخام.
+
+وعليه، يصبح العرض المادي كما يلي:
+
+```sql
+CREATE MATERIALIZED VIEW post_stats_mv TO post_stats_per_day AS
+       SELECT toStartOfDay(CreationDate) AS Day,
+       quantileState(0.999)(Score) AS Score_quantiles,
+       avgState(CommentCount) AS AvgCommentCount
+FROM posts_null
+GROUP BY Day
+```
+
+لاحظ كيف نُضيف اللاحقة `State` إلى نهاية دوال التجميع. وهذا يضمن إرجاع حالة التجميع الخاصة بالدالة بدلًا من النتيجة النهائية. وتحتوي هذه الحالة على معلومات إضافية تتيح دمج هذه الحالة الجزئية مع حالات أخرى. على سبيل المثال، في حالة حساب المتوسط، سيتضمن ذلك عدد القيم ومجموع العمود.
+
+> تُعد حالات التجميع الجزئية ضرورية لحساب النتائج الصحيحة. فعلى سبيل المثال، عند حساب متوسط، فإن الاكتفاء بأخذ متوسط متوسطات النطاقات الفرعية يؤدي إلى نتائج غير صحيحة.
+
+ننشىء الآن الجدول الهدف لهذا العرض `post_stats_per_day`، والذي يخزّن حالات التجميع الجزئية هذه:
+
+```sql
+CREATE TABLE post_stats_per_day
+(
+  `Day` Date,
+  `Score_quantiles` AggregateFunction(quantile(0.999), Int32),
+  `AvgCommentCount` AggregateFunction(avg, UInt8)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Day
+```
+
+في حين كان `SummingMergeTree` كافيًا سابقًا لتخزين عمليات العدّ، فإننا نحتاج إلى نوع محرك أكثر تقدمًا لوظائف أخرى: [`AggregatingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+ولضمان أن يعرف ClickHouse أنه ستُخزَّن حالات التجميع، نُعرّف `Score_quantiles` و`AvgCommentCount` بالنوع `AggregateFunction`، مع تحديد الدالة المصدر للحالات الجزئية ونوع الأعمدة المصدر الخاصة بها. وكما هو الحال مع `SummingMergeTree`، ستُدمج الصفوف التي لها قيمة المفتاح نفسها في `ORDER BY` (`Day` في المثال أعلاه).
+
+ولملء `post_stats_per_day` عبر العرض المادي الخاص بنا، يمكننا ببساطة إدراج جميع الصفوف من `posts` في `posts_null`:
+
+```sql
+INSERT INTO posts_null SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 13.329 sec. Processed 119.64 million rows, 76.99 GB (8.98 million rows/s., 5.78 GB/s.)
+```
+
+> في بيئة الإنتاج، من المرجّح أن تُلحِق العرض المادي بجدول `posts`. وقد استخدمنا `posts_null` هنا لتوضيح جدول Null.
+
+يجب أن يستخدم استعلامنا النهائي اللاحقة `Merge` مع دوالنا (لأن الأعمدة تخزّن حالات التجميع الجزئية):
+
+```sql
+SELECT
+        Day,
+        quantileMerge(0.999)(Score_quantiles),
+        avgMerge(AvgCommentCount)
+FROM post_stats_per_day
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+لاحظ أننا نستخدم `GROUP BY` هنا بدلًا من `FINAL`.
+
+<div id="other-applications">
+  ## تطبيقات أخرى
+</div>
+
+يركّز ما سبق أساسًا على استخدام العروض المادية لتحديث التجميعات الجزئية للبيانات بصورة تدريجية، وبذلك يُنقَل عبء المعالجة من وقت الاستعلام إلى وقت الإدراج. وإلى جانب حالة الاستخدام الشائعة هذه، للعروض المادية تطبيقات أخرى عديدة.
+
+<div id="filtering-and-transformation">
+  ### التصفية والتحويل
+</div>
+
+في بعض الحالات، قد نرغب في إدراج مجموعة فرعية فقط من الصفوف والأعمدة عند الإدراج. في هذه الحالة، يمكن لجدول `posts_null` تلقّي عمليات إدراج، مع استخدام استعلام `SELECT` لتصفية الصفوف قبل إدراجها في جدول `posts`. على سبيل المثال، لنفترض أننا أردنا تحويل عمود `Tags` في جدول `posts`. يحتوي هذا العمود على قائمة بأسماء الوسوم مفصولة بالرمز pipe. ومن خلال تحويلها إلى مصفوفة، يمكننا التجميع حسب قيم الوسوم الفردية بسهولة أكبر.
+
+> يمكننا إجراء هذا التحويل عند تشغيل `INSERT INTO SELECT`. ويتيح لنا العرض المادي تضمين هذا المنطق في DDL الخاصة بـ ClickHouse والإبقاء على `INSERT` بسيطًا، مع تطبيق التحويل على أي صفوف جديدة.
+
+يظهر أدناه العرض المادي المستخدم لهذا التحويل:
+
+```sql
+CREATE MATERIALIZED VIEW posts_mv TO posts AS
+        SELECT * EXCEPT Tags, arrayFilter(t -> (t != ''), splitByChar('|', Tags)) as Tags FROM posts_null
+```
+
+<div id="lookup-table">
+  ### جدول مرجعي
+</div>
+
+ينبغي مراعاة أنماط الوصول عند اختيار مفتاح الترتيب في ClickHouse. ويُفضَّل استخدام الأعمدة التي تُستخدَم كثيرًا في عبارات التصفية والتجميع. وقد يكون ذلك مقيِّدًا في الحالات التي تكون فيها لدى المستخدمين أنماط وصول أكثر تنوعًا لا يمكن حصرها في مجموعة واحدة من الأعمدة. على سبيل المثال، تأمّل جدول `comments` التالي:
+
+```sql
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+```response
+0 rows in set. Elapsed: 46.357 sec. Processed 90.38 million rows, 11.14 GB (1.95 million rows/s., 240.22 MB/s.)
+```
+
+يُحسِّن مفتاح الترتيب هنا الجدولَ للاستعلامات التي تُصفّي حسب `PostId`.
+
+لنفترض أن مستخدمًا يرغب في التصفية وفق `UserId` معيّن وحساب متوسط `Score` الخاص به:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.778 sec. Processed 90.38 million rows, 361.59 MB (116.16 million rows/s., 464.74 MB/s.)
+Peak memory usage: 217.08 MiB.
+```
+
+على الرغم من أن هذا سريع (فالبيانات صغيرة بالنسبة إلى ClickHouse)، يمكننا أن نستدل من عدد الصفوف المُعالجة — 90.38 مليونًا — على أن ذلك يتطلب فحصًا كاملًا للجدول. وبالنسبة إلى مجموعات البيانات الأكبر، يمكننا استخدام عرض مادي للبحث عن قيم `PostId` الخاصة بنا من أجل تصفية العمود `UserId`. ويمكن بعد ذلك استخدام هذه القيم لإجراء عملية بحث فعّالة.
+
+في هذا المثال، يمكن أن يكون العرض المادي بسيطًا جدًا، إذ يحدد فقط `PostId` و`UserId` من `comments` on insert. ثم تُرسَل هذه النتائج بدورها إلى جدول `comments_posts_users` المرتّب حسب `UserId`. ننشئ أدناه إصدارًا من جدول `Comments` باستخدام Null ونستخدمه لتعبئة العرض وجدول `comments_posts_users`:
+
+```sql
+CREATE TABLE comments_posts_users (
+  PostId UInt32,
+  UserId Int32
+) ENGINE = MergeTree ORDER BY UserId
+
+CREATE TABLE comments_null AS comments
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW comments_posts_users_mv TO comments_posts_users AS
+SELECT PostId, UserId FROM comments_null
+
+INSERT INTO comments_null SELECT * FROM comments
+```
+
+```response
+0 rows in set. Elapsed: 5.163 sec. Processed 90.38 million rows, 17.25 GB (17.51 million rows/s., 3.34 GB/s.)
+```
+
+يمكننا الآن استخدام هذا العرض ضمن استعلام فرعي لتسريع الاستعلام السابق:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE PostId IN (
+        SELECT PostId
+        FROM comments_posts_users
+        WHERE UserId = 8592047
+) AND UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 88.61 thousand rows, 771.37 KB (7.09 million rows/s., 61.73 MB/s.)
+```
+
+<div id="chaining">
+  ### ربط / تتابع العروض المادية
+</div>
+
+يمكن ربط العروض المادية على شكل سلسلة (أو بشكل متتابع)، مما يتيح إنشاء مسارات عمل معقدة.
+لمزيد من المعلومات، راجع دليل [&quot;العروض المادية المتتابعة&quot;](/ar/concepts/features/materialized-views/cascading-materialized-views).
+
+<div id="materialized-views-and-joins">
+  ## العروض المادية وJOINs
+</div>
+
+<Info>
+  **العروض المادية القابلة للتحديث**
+
+  ينطبق ما يلي على العروض المادية التزايدية فقط. تنفّذ العروض المادية القابلة للتحديث استعلامها دوريًا على كامل مجموعة البيانات المستهدفة، وتدعم JOINs بشكل كامل. يُنصح باستخدامها مع JOINs المعقدة إذا كان بالإمكان تقبّل انخفاض حداثة النتائج.
+</Info>
+
+تدعم العروض المادية التزايدية في ClickHouse عمليات `JOIN` دعمًا كاملًا، ولكن مع قيد مهم واحد: **لا يتم تشغيل العرض المادي إلا عند حدوث عمليات إدراج في الجدول المصدر (الجدول الواقع في أقصى اليسار في الاستعلام).** أما الجداول الموجودة على الجانب الأيمن في JOINs فلا تؤدي إلى تشغيل تحديثات، حتى إذا تغيّرت بياناتها. ويكتسب هذا السلوك أهمية خاصة عند إنشاء العروض المادية **التزايدية**، حيث تُجمَّع البيانات أو تُحوَّل وقت الإدراج.
+
+عند تعريف عرض مادي تزايدي باستخدام `JOIN`، يعمل الجدول الواقع في أقصى اليسار ضمن استعلام `SELECT` بوصفه المصدر. وعند إدراج صفوف جديدة في هذا الجدول، ينفّذ ClickHouse استعلام العرض المادي *فقط* على هذه الصفوف المُدرجة حديثًا. وتُقرأ الجداول الموجودة على الجانب الأيمن في JOIN كاملةً أثناء هذا التنفيذ، لكن التغييرات التي تطرأ عليها وحدها لا تؤدي إلى تشغيل العرض.
+
+يجعل هذا السلوك JOINs في العروض المادية مشابهةً لعملية join على لقطة من البيانات مقابل بيانات أبعاد ثابتة.
+
+ويعمل هذا جيدًا عند إثراء البيانات باستخدام جداول مرجعية أو جداول أبعاد. ومع ذلك، فإن أي تحديثات على الجداول الموجودة على الجانب الأيمن (مثل البيانات الوصفية للمستخدم) لن تُحدِّث العرض المادي بأثر رجعي. ولمشاهدة البيانات المُحدَّثة، يجب أن تصل عمليات إدراج جديدة إلى الجدول المصدر.
+
+<div id="materialized-views-and-joins-example">
+  ### مثال
+</div>
+
+لنستعرض مثالًا عمليًا باستخدام [مجموعة بيانات Stack Overflow](/ar/guides/clickhouse/data-modelling/schema-design). سنستخدم عرضًا ماديًا لحساب **الشارات اليومية لكل مستخدم**، بما في ذلك اسم العرض الخاص بالمستخدم من جدول `users`.
+
+للتذكير، فمخططات جداولنا هي:
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` UInt32,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `DisplayName` LowCardinality(String),
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `Location` LowCardinality(String),
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32
+)
+ENGINE = MergeTree
+ORDER BY Id;
+```
+
+سنفترض أن جدول `users` مملوء بالبيانات مسبقًا:
+
+```sql
+INSERT INTO users
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet');
+```
+
+يُعرَّف العرض المادي والجدول الهدف المرتبط به على النحو التالي:
+
+```sql
+CREATE TABLE daily_badges_by_user
+(
+    Day Date,
+    UserId Int32,
+    DisplayName LowCardinality(String),
+    Gold UInt32,
+    Silver UInt32,
+    Bronze UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY (DisplayName, UserId, Day);
+
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user AS
+SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+<Info>
+  **محاذاة التجميع والترتيب**
+
+  يجب أن تتضمن عبارة `GROUP BY` في العرض المادي `DisplayName` و`UserId` و`Day` لكي تتطابق مع `ORDER BY` في الجدول الهدف `SummingMergeTree`. وهذا يضمن تجميع الصفوف ودمجها على نحو صحيح. وقد يؤدي إغفال أيٍّ منها إلى نتائج غير صحيحة أو إلى عمليات دمج غير فعّالة.
+</Info>
+
+إذا قمنا الآن بتعبئة بيانات الشارات، فسيُفعَّل العرض، مما سيملأ جدول `daily_badges_by_user` الخاص بنا.
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 433.762 sec. Processed 1.16 billion rows, 28.50 GB (2.67 million rows/s., 65.70 MB/s.)
+```
+
+لنفترض أننا نريد عرض الشارات التي حصل عليها مستخدم معيّن؛ يمكننا كتابة الاستعلام التالي:
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+8 rows in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 642.14 KB (1.86 million rows/s., 36.44 MB/s.)
+```
+
+الآن، إذا تلقّى هذا المستخدم شارة جديدة وأُدرِج صف جديد، فسيُحدَّث العرض لدينا:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2025-04-13 │ 2936484 │ gingerwizard │    1 │      0 │      0 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+9 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 642.27 KB (1.96 million rows/s., 38.50 MB/s.)
+```
+
+<Warning>
+  لاحظ زمن الاستجابة لعملية الإدراج هنا. إذ يُجرى JOIN لصف المستخدم المُدرَج مع جدول `users` بالكامل، ما يؤثر بشكل كبير في أداء الإدراج. نقترح أدناه أساليب لمعالجة ذلك في [&quot;استخدام الجدول المصدر في عوامل التصفية وعمليات JOIN&quot;](/ar/concepts/features/materialized-views/incremental-materialized-view#using-source-table-in-filters-and-joins-in-materialized-views).
+</Warning>
+
+في المقابل، إذا أدرجنا شارةً لمستخدم جديد ثم أدرجنا بعد ذلك صف هذا المستخدم، فسيفشل العرض المادي لدينا في التقاط مقاييس المستخدمين.
+
+```sql
+INSERT INTO badges VALUES (53505059, 23923286, 'Good Answer', now(), 'Bronze', 0);
+INSERT INTO users VALUES (23923286, 1, now(),  'brand_new_user', now(), 'UK', 1, 1, 0);
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user';
+```
+
+```response
+0 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 644.32 KB (1.98 million rows/s., 38.94 MB/s.)
+```
+
+في هذه الحالة، لا يُنفَّذ العرض إلا عند إدراج الشارة قبل وجود صفّ المستخدم. وإذا أدرجنا شارة أخرى للمستخدم، فسيُدرَج صفّ، كما هو متوقَّع:
+
+```sql
+INSERT INTO badges VALUES (53505060, 23923286, 'Teacher', now(), 'Bronze', 0);
+
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user'
+```
+
+```response
+┌────────Day─┬───UserId─┬─DisplayName────┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2025-04-13 │ 23923286 │ brand_new_user │    0 │      0 │      1 │
+└────────────┴──────────┴────────────────┴──────┴────────┴────────┘
+
+1 row in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 644.48 KB (1.87 million rows/s., 36.72 MB/s.)
+```
+
+لكن تجدر الإشارة إلى أن هذه النتيجة غير صحيحة.
+
+<div id="join-best-practices">
+  ### أفضل الممارسات لعمليات JOIN في العروض المادية
+</div>
+
+* **استخدم الجدول الواقع في أقصى اليسار كمُحفّز.** لا يُحفّز العرض المادي إلا الجدول الموجود على الجانب الأيسر من عبارة `SELECT`. أما التغييرات التي تطرأ على الجداول الموجودة على اليمين فلن تُحفّز التحديثات.
+
+* **أدرِج بيانات الجداول المنضمّة مسبقًا.** تأكد من وجود البيانات في الجداول المنضمّة قبل إدراج الصفوف في الجدول المصدر. إذ يُقيَّم JOIN وقت الإدراج، لذا ستؤدي البيانات المفقودة إلى صفوف غير متطابقة أو قيم NULL.
+
+* **قلّل الأعمدة المسحوبة من عمليات JOIN.** حدّد فقط الأعمدة المطلوبة من الجداول المنضمّة لتقليل استخدام الذاكرة وخفض زمن الاستجابة وقت الإدراج (انظر أدناه).
+
+* **قيّم الأداء وقت الإدراج.** تزيد عمليات JOIN من تكلفة عمليات الإدراج، خاصةً مع الجداول الكبيرة على الجانب الأيمن. قِس معدلات الإدراج باستخدام بيانات ممثلة من بيئة الإنتاج.
+
+* **فضّل استخدام Dictionaries لعمليات البحث البسيطة**. استخدم [Dictionaries](/ar/concepts/features/dictionaries/index) لعمليات البحث من نوع key-value (مثل ربط معرّف المستخدم بالاسم) لتجنّب عمليات JOIN المكلفة.
+
+* **حاذِ بين `GROUP BY` و`ORDER BY` لتحقيق كفاءة الدمج.** عند استخدام `SummingMergeTree` أو `AggregatingMergeTree`، تأكد من أن `GROUP BY` يطابق عبارة `ORDER BY` في الجدول الهدف للسماح بدمج الصفوف بكفاءة.
+
+* **استخدم أسماءً مستعارة صريحة للأعمدة.** عندما تحتوي الجداول على أسماء أعمدة متداخلة، استخدم الأسماء المستعارة لتجنّب الالتباس وضمان صحة النتائج في الجدول الهدف.
+
+* **راعِ حجم الإدراج وتكراره.** تعمل عمليات JOIN جيدًا مع أعباء عمل الإدراج المتوسطة. أما في حالات استيعاب البيانات عالي الإنتاجية، ففكّر في استخدام staging tables أو عمليات الربط المسبق أو أساليب أخرى مثل Dictionaries و[Refreshable Materialized Views](/ar/concepts/features/materialized-views/refreshable-materialized-view).
+
+<div id="using-source-table-in-filters-and-joins-in-materialized-views">
+  ### استخدام الجدول المصدر في عوامل التصفية وعمليات JOIN
+</div>
+
+عند العمل مع العروض المادية في ClickHouse، من المهم فهم كيفية التعامل مع الجدول المصدر أثناء تنفيذ الاستعلام الخاص بالعرض المادي. وبالتحديد، يُستبدل الجدول المصدر في استعلام العرض المادي بكتلة البيانات المُدرَجة. وقد يؤدي هذا السلوك إلى بعض النتائج غير المتوقعة إذا لم يُفهم بالشكل الصحيح.
+
+<div id="example-scenario">
+  #### مثال توضيحي
+</div>
+
+لنفترض الإعداد التالي:
+
+```sql
+CREATE TABLE t0 (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw1_inner (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw2_inner (`c0` Int) ENGINE = Memory;
+
+CREATE VIEW vt0 AS SELECT * FROM t0;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN ( SELECT * FROM t0 ) AS x ON t0.c0 = x.c0;
+
+CREATE MATERIALIZED VIEW mvw2 TO mvw2_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN vt0 ON t0.c0 = vt0.c0;
+
+INSERT INTO t0 VALUES (1),(2),(3);
+
+INSERT INTO t0 VALUES (1),(2),(3),(4),(5);
+
+SELECT * FROM mvw1;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  5 │
+└────┘
+```
+
+```sql
+SELECT * FROM mvw2;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  8 │
+└────┘
+```
+
+<div id="explanation">
+  #### الشرح
+</div>
+
+في المثال أعلاه، لدينا عرضان ماديان `mvw1` و`mvw2` ينفذان عمليات متشابهة، مع اختلاف طفيف في كيفية إشارتهما إلى الجدول المصدر `t0`.
+
+في `mvw1`، يُشار إلى الجدول `t0` مباشرةً داخل استعلام فرعي `(SELECT * FROM t0)` في الجانب الأيمن من عملية JOIN. وعند إدراج بيانات في `t0`، يُنفَّذ استعلام العرض المادي مع استبدال `t0` بكتلة البيانات المُدرجة. وهذا يعني أن عملية JOIN تُجرى فقط على الصفوف المُدرجة حديثًا، لا على الجدول بأكمله.
+
+أما في الحالة الثانية عند الربط مع `vt0`، فيقرأ العرض جميع البيانات من `t0`. ويضمن ذلك أن عملية JOIN تأخذ جميع الصفوف في `t0` في الحسبان، وليس فقط الكتلة المُدرجة حديثًا.
+
+ويكمن الفرق الأساسي في كيفية تعامل ClickHouse مع الجدول المصدر داخل استعلام العرض المادي. فعندما يُفعَّل عرض مادي بواسطة عملية insert، يُستبدل الجدول المصدر (`t0` في هذه الحالة) بكتلة البيانات المُدرجة. ويمكن الاستفادة من هذا السلوك لتحسين الاستعلامات، لكنه يتطلب أيضًا الانتباه بعناية لتجنّب النتائج غير المتوقعة.
+
+<div id="use-cases-and-caveats">
+  ### حالات الاستخدام والمحاذير
+</div>
+
+عمليًا، يمكنك استخدام هذا السلوك لتحسين العروض المادية التي تحتاج فقط إلى معالجة مجموعة فرعية من بيانات الجدول المصدر. على سبيل المثال، يمكنك استخدام استعلام فرعي لتصفية الجدول المصدر قبل ضمّه إلى جداول أخرى. وقد يساعد ذلك في تقليل حجم البيانات التي يعالجها العرض المادي وتحسين الأداء.
+
+```sql
+CREATE TABLE t0 (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t1 (id UInt32, description String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO t1 VALUES (1, 'A'), (2, 'B'), (3, 'C');
+
+CREATE TABLE mvw1_target_table (id UInt32, value String, description String) ENGINE = MergeTree() ORDER BY id;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_target_table AS
+SELECT t0.id, t0.value, t1.description
+FROM t0
+JOIN (SELECT * FROM t1 WHERE t1.id IN (SELECT id FROM t0)) AS t1
+ON t0.id = t1.id;
+```
+
+في هذا المثال، لا تحتوي المجموعة المُنشأة من الاستعلام الفرعي `IN (SELECT id FROM t0)` إلا على الصفوف المُدرجة حديثًا، مما قد يساعد في تصفية `t1` بالاعتماد عليها.
+
+<div id="example-with-stack-overflow">
+  #### مثال مع Stack Overflow
+</div>
+
+راجع [مثال العرض المادي السابق](/ar/concepts/features/materialized-views/incremental-materialized-view#example) لحساب **الأوسمة اليومية لكل مستخدم**، بما في ذلك الاسم المعروض للمستخدم من جدول `users`.
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+أثّر هذا العرض بشكل كبير في كمون عمليات insert على جدول `badges`، مثلًا.
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+باستخدام النهج أعلاه، يمكننا تحسين هذا العرض. سنضيف عامل تصفية إلى جدول `users` باستخدام معرّفات المستخدم في صفوف الشارات التي أُدرجت:
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN
+(
+    SELECT
+        Id,
+        DisplayName
+    FROM users
+    WHERE Id IN (
+        SELECT UserId
+        FROM badges
+    )
+) AS u ON b.UserId = u.Id
+GROUP BY
+    Day,
+    b.UserId,
+    u.DisplayName
+```
+
+لا يقتصر الأمر على تسريع الإدراج الأولي للشارات:
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 132.118 sec. Processed 323.43 million rows, 4.69 GB (2.45 million rows/s., 35.49 MB/s.)
+Peak memory usage: 1.99 GiB.
+```
+
+لكن هذا يعني أيضًا أن عمليات إدراج `badge` مستقبلًا ستكون فعّالة:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 0.583 sec.
+```
+
+في العملية المذكورة أعلاه، لا يُسترجَع سوى صف واحد من جدول users لمعرّف المستخدم `2936484`. كما جرى تحسين عملية البحث هذه باستخدام مفتاح ترتيب الجدول `Id`.
+
+<div id="materialized-views-and-unions">
+  ## العروض المادية وعمليات `UNION`
+</div>
+
+تُستخدم استعلامات `UNION ALL` عادةً لدمج البيانات من عدة جداول مصدر في مجموعة نتائج واحدة.
+
+ومع أن `UNION ALL` غير مدعومة مباشرةً في العروض المادية التزايدية، يمكنك تحقيق النتيجة نفسها من خلال إنشاء عرض مادي منفصل لكل فرع `SELECT` وكتابة نتائجه في جدول هدف مشترك.
+
+في مثالنا، سنستخدم مجموعة بيانات Stack Overflow. تأمّل الجدولين `badges` و`comments` أدناه، اللذين يمثّلان الشارات التي يحصل عليها المستخدم والتعليقات التي يضيفها إلى المنشورات:
+
+```sql
+CREATE TABLE stackoverflow.comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY CreationDate
+
+CREATE TABLE stackoverflow.badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+```
+
+يمكن ملؤها بأوامر `INSERT INTO` التالية:
+
+```sql
+INSERT INTO stackoverflow.badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO stackoverflow.comments SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+```
+
+لنفترض أننا نريد إنشاء عرض موحّد لنشاط المستخدمين، يُظهر آخر نشاط لكل مستخدم بدمج هذين الجدولين:
+
+```sql
+SELECT
+ UserId,
+ argMax(description, event_time) AS last_description,
+ argMax(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+LIMIT 10
+```
+
+لنفترض أن لدينا جدولًا مستهدفًا لتلقّي نتائج هذا الاستعلام. لاحظ استخدام محرك الجدول [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree) و[AggregateFunction](/ar/reference/data-types/aggregatefunction) لضمان دمج النتائج بشكل صحيح:
+
+```sql
+CREATE TABLE user_activity
+(
+    `UserId` String,
+    `last_description` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `activity_type` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `last_activity` SimpleAggregateFunction(max, DateTime64(3, 'UTC'))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY UserId
+```
+
+إذا كنت تريد أن يتحدّث هذا الجدول عند إدراج صفوف جديدة في `badges` أو `comments`، فقد يكون النهج المباشر لهذه المشكلة هو محاولة إنشاء عرض مادي باستخدام استعلام union السابق:
+
+```sql
+CREATE MATERIALIZED VIEW user_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(description, event_time) AS last_description,
+ argMaxState(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+```
+
+رغم أن هذا صحيح نحويًا، فإنه سيؤدي إلى نتائج غير مقصودة - إذ لن تُفعَّل طريقة العرض إلا عند عمليات الإدراج في جدول `comments`. على سبيل المثال:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+لن تؤدي عمليات الإدراج في الجدول `badges` إلى تشغيل الـ view، مما يمنع `user_activity` من تلقّي التحديثات:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+لحلّ هذه المشكلة، نُنشئ ببساطة عرضًا ماديًا لكل عبارة SELECT:
+
+```sql
+DROP TABLE user_activity_mv;
+TRUNCATE TABLE user_activity;
+
+CREATE MATERIALIZED VIEW comment_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Text, CreationDate) AS last_description,
+ argMaxState('comment', CreationDate) AS activity_type,
+    max(CreationDate) AS last_activity
+FROM stackoverflow.comments
+GROUP BY UserId;
+
+CREATE MATERIALIZED VIEW badges_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Name, Date) AS last_description,
+ argMaxState('badge', Date) AS activity_type,
+    max(Date) AS last_activity
+FROM stackoverflow.badges
+GROUP BY UserId;
+```
+
+يُعطي الإدراج في أيٍّ من الجدولين الآن النتائج الصحيحة. على سبيل المثال، إذا أدرجنا بيانات في جدول `comments`:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 10:18:47.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+وبالمثل، تنعكس عمليات الإدراج في جدول `badges` أيضًا في جدول `user_activity`:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ gingerwizard │ badge         │ 2025-04-15 10:20:18.000 │
+└─────────┴──────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="materialized-views-parallel-vs-sequential">
+  ## المعالجة المتوازية مقابل المعالجة المتسلسلة
+</div>
+
+كما يتضح في المثال السابق، يمكن أن يكون الجدول مصدرًا لعدة عروض مادية. ويعتمد ترتيب تنفيذ هذه العروض على الإعداد [`parallel_view_processing`](/ar/reference/settings/session-settings#parallel_view_processing).
+
+تكون قيمة هذا الإعداد افتراضيًا `0` (`false`)، ما يعني أن العروض المادية تُنفَّذ بشكل متسلسل وفق ترتيب `uuid`.
+
+على سبيل المثال، تأمّل جدول `source` التالي و3 عروض مادية، يرسل كلٌّ منها صفوفًا إلى جدول `target`:
+
+```sql
+CREATE TABLE source
+(
+    `message` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE target
+(
+    `message` String,
+    `from` String,
+    `now` DateTime64(9),
+    `sleep` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE MATERIALIZED VIEW mv_2 TO target
+AS SELECT
+    message,
+    'mv2' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_3 TO target
+AS SELECT
+    message,
+    'mv3' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_1 TO target
+AS SELECT
+    message,
+    'mv1' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+```
+
+لاحظ أن كل عرض من هذه العروض ينتظر ثانية واحدة قبل إدراج صفوفه في جدول `target`، مع تضمين اسمه ووقت الإدراج أيضًا.
+
+تستغرق عملية إدراج صف في الجدول `source` نحو 3 ثوانٍ، إذ يُنفَّذ كل عرض بالتسلسل:
+
+```sql
+INSERT INTO source VALUES ('test')
+```
+
+```response
+1 row in set. Elapsed: 3.786 sec.
+```
+
+يمكننا التحقق من وصول الصفوف من كل صف باستخدام `SELECT`:
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 14:52:01.306162309 │
+│ test    │ mv1  │ 2025-04-15 14:52:02.307693521 │
+│ test    │ mv2  │ 2025-04-15 14:52:03.309250283 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.015 sec.
+```
+
+يتوافق هذا مع `uuid` الخاص بالعروض:
+
+```sql
+SELECT
+    name,
+ uuid
+FROM system.tables
+WHERE name IN ('mv_1', 'mv_2', 'mv_3')
+ORDER BY uuid ASC
+```
+
+```response
+┌─name─┬─uuid─────────────────────────────────┐
+│ mv_3 │ ba5e36d0-fa9e-4fe8-8f8c-bc4f72324111 │
+│ mv_1 │ b961c3ac-5a0e-4117-ab71-baa585824d43 │
+│ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
+└──────┴──────────────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+في المقابل، لننظر في ما يحدث إذا أدرجنا صفًا مع تفعيل `parallel_view_processing=1`. عند تفعيل هذا الإعداد، تُنفَّذ طرق العرض بالتوازي، من دون أي ضمانات بشأن الترتيب الذي تصل به الصفوف إلى الجدول الهدف:
+
+```sql
+TRUNCATE target;
+SET parallel_view_processing = 1;
+
+INSERT INTO source VALUES ('test');
+```
+
+```response
+1 row in set. Elapsed: 1.588 sec.
+```
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 19:47:32.242937372 │
+│ test    │ mv1  │ 2025-04-15 19:47:32.243058183 │
+│ test    │ mv2  │ 2025-04-15 19:47:32.337921800 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+على الرغم من أن ترتيب وصول الصفوف من كل عرض متطابق هنا، فإن ذلك غير مضمون، كما يوضحه تقارب وقت الإدراج لكل صف. ولاحظ أيضًا تحسّن أداء الإدراج.
+
+<div id="materialized-views-when-to-use-parallel">
+  ### متى تستخدم المعالجة المتوازية
+</div>
+
+يمكن أن يؤدي تفعيل `parallel_view_processing=1` إلى تحسين معدل نقل عمليات الإدراج بشكل كبير، كما هو موضح أعلاه، خاصةً عند إرفاق عدة عروض مادية بجدول واحد. ومع ذلك، من المهم فهم الموازنة بين الفوائد والتكاليف:
+
+* **زيادة الضغط الناتج عن الإدراج**: تُنفَّذ جميع العروض المادية بالتزامن، مما يزيد من استخدام CPU والذاكرة. وإذا كان كل عرض ينفّذ عمليات حسابية كثيفة أو عمليات JOIN، فقد يؤدي ذلك إلى زيادة الحمل على النظام.
+* **الحاجة إلى ترتيب تنفيذ صارم**: في حالات نادرة من سير العمل تكون فيها أولوية لترتيب تنفيذ العروض (مثل الاعتماديات المتسلسلة)، قد يؤدي التنفيذ المتوازي إلى حالة غير متسقة أو إلى race condition. ومع أنه يمكن تصميم النظام لتجاوز ذلك، فإن مثل هذه الإعدادات تكون هشة وقد تتعطل مع الإصدارات المستقبلية.
+
+<Info>
+  **القيم الافتراضية التاريخية والاستقرار**
+
+  ظل التنفيذ التسلسلي هو الإعداد الافتراضي لفترة طويلة، ويعود ذلك جزئيًا إلى تعقيدات معالجة الأخطاء. تاريخيًا، كان الفشل في أحد materialized views قد يمنع تنفيذ العروض الأخرى. وقد حسّنت الإصدارات الأحدث هذا السلوك من خلال عزل الإخفاقات على مستوى كل block، لكن التنفيذ التسلسلي لا يزال يوفّر دلالات أوضح لحالات الفشل.
+</Info>
+
+بوجه عام، فعّل `parallel_view_processing=1` عندما:
+
+* تكون لديك عدة عروض مادية مستقلة
+* تسعى إلى تحقيق أقصى أداء لعمليات الإدراج
+* تكون مدركًا لقدرة النظام على التعامل مع التنفيذ المتزامن للعروض
+
+اتركه معطّلًا عندما:
+
+* تكون هناك اعتماديات بين العروض المادية
+* تحتاج إلى تنفيذ متوقع ومرتّب
+* تكون بصدد استكشاف أخطاء سلوك الإدراج أو تدقيقه وتريد إعادة تشغيل حتمية
+
+<div id="materialized-views-common-table-expressions-ctes">
+  ## العروض المادية وتعبيرات الجدول الشائعة (CTE)
+</div>
+
+تدعم العروض المادية تعبيرات الجدول الشائعة (CTEs) **غير التكرارية**.
+
+<Info>
+  **تعبيرات الجدول الشائعة **ليست** مُجسَّدة**
+
+  لا يقوم ClickHouse بتخزين تعبيرات CTE تخزينًا ماديًا؛ بل يستبدل تعريف CTE مباشرةً داخل الاستعلام، ما قد يؤدي إلى تقييم التعبير نفسه عدة مرات (إذا استُخدم CTE أكثر من مرة).
+</Info>
+
+انظر إلى المثال التالي، الذي يحسب النشاط اليومي لكل نوع من المنشورات.
+
+```sql
+CREATE TABLE daily_post_activity
+(
+    Day Date,
+ PostType String,
+ PostsCreated SimpleAggregateFunction(sum, UInt64),
+ AvgScore AggregateFunction(avg, Int32),
+ TotalViews SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Day, PostType);
+
+CREATE MATERIALIZED VIEW daily_post_activity_mv TO daily_post_activity AS
+WITH filtered_posts AS (
+    SELECT
+ toDate(CreationDate) AS Day,
+ PostTypeId,
+ Score,
+ ViewCount
+    FROM posts
+    WHERE Score > 0 AND PostTypeId IN (1, 2)  -- Question or Answer
+)
+SELECT
+    Day,
+    CASE PostTypeId
+        WHEN 1 THEN 'Question'
+        WHEN 2 THEN 'Answer'
+    END AS PostType,
+    count() AS PostsCreated,
+    avgState(Score) AS AvgScore,
+    sum(ViewCount) AS TotalViews
+FROM filtered_posts
+GROUP BY Day, PostTypeId;
+```
+
+مع أن CTE ليس ضروريًا هنا إطلاقًا، فإن العرض سيعمل كما هو متوقع لأغراض المثال:
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```sql
+SELECT
+    Day,
+    PostType,
+    avgMerge(AvgScore) AS AvgScore,
+    sum(PostsCreated) AS PostsCreated,
+    sum(TotalViews) AS TotalViews
+FROM daily_post_activity
+GROUP BY
+    Day,
+    PostType
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─PostType─┬───────────AvgScore─┬─PostsCreated─┬─TotalViews─┐
+│ 2024-03-31 │ Question │ 1.3317757009345794 │          214 │       9728 │
+│ 2024-03-31 │ Answer   │ 1.4747191011235956 │          356 │          0 │
+│ 2024-03-30 │ Answer   │ 1.4587912087912087 │          364 │          0 │
+│ 2024-03-30 │ Question │ 1.2748815165876777 │          211 │       9606 │
+│ 2024-03-29 │ Question │ 1.2641509433962264 │          318 │      14552 │
+│ 2024-03-29 │ Answer   │ 1.4706927175843694 │          563 │          0 │
+│ 2024-03-28 │ Answer   │  1.601637107776262 │          733 │          0 │
+│ 2024-03-28 │ Question │ 1.3530864197530865 │          405 │      24564 │
+│ 2024-03-27 │ Question │ 1.3225806451612903 │          434 │      21346 │
+│ 2024-03-27 │ Answer   │ 1.4907539118065434 │          703 │          0 │
+└────────────┴──────────┴────────────────────┴──────────────┴────────────┘
+
+10 rows in set. Elapsed: 0.013 sec. Processed 11.45 thousand rows, 663.87 KB (866.53 thousand rows/s., 50.26 MB/s.)
+Peak memory usage: 989.53 KiB.
+```
+
+في ClickHouse، تُدرَج تعبيرات الجداول المشتركة (CTEs) مباشرةً، ما يعني أنها تُنسخ وتُلصق فعليًا داخل الاستعلام أثناء التحسين، ولا يتم **تجسيدها**. وهذا يعني ما يلي:
+
+* إذا كان تعبير الجدول المشترك (CTE) يشير إلى جدول مختلف عن الجدول المصدر (أي الجدول المرتبط به العرض المادي)، وكان مستخدمًا في عبارة `JOIN` أو `IN`، فسيتصرف كاستعلام فرعي أو كعملية join، وليس كمُشغِّل.
+* سيظل العرض المادي يُفعَّل فقط عند تنفيذ عمليات insert في الجدول المصدر الرئيسي، لكن سيُعاد تنفيذ تعبير الجدول المشترك (CTE) مع كل عملية insert، ما قد يسبب عبئًا إضافيًا غير ضروري، خصوصًا إذا كان الجدول المشار إليه كبيرًا.
+
+على سبيل المثال،
+
+```sql
+WITH recent_users AS (
+  SELECT Id FROM stackoverflow.users WHERE CreationDate > now() - INTERVAL 7 DAY
+)
+SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
+```
+
+في هذه الحالة، يُعاد تقييم تعبير الجدول الشائع الخاص بـ users عند كل عملية insert في posts، ولن يتم تحديث العرض المادي عند insert مستخدمين جدد، بل فقط عند insert في posts.
+
+بوجه عام، استخدم تعبيرات الجدول الشائعة للمنطق الذي يعمل على الجدول المصدر نفسه المرتبط به العرض المادي، أو تأكد من أن الجداول المشار إليها صغيرة ومن غير المرجح أن تتسبب في اختناقات بالأداء. بديلًا عن ذلك، يمكنك النظر في [التحسينات نفسها الموصى بها لـ JOINs مع Materialized Views](/ar/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

@@ -58,6 +58,19 @@ See `tests/clickhouse-test --help` for all options of `clickhouse-test`.
 You can run all tests or run subset of tests by providing a filter for test names: `./clickhouse-test substring`.
 There are also options to run tests in parallel or in random order.
 
+#### Running tests on macOS (Darwin) {#running-tests-on-macos}
+
+Many functional tests shell out to GNU command-line utilities (`timeout`, `head`, `sed`, `grep`, `date`, etc.). macOS ships the BSD variants of these tools, whose behavior and options differ (for example, BSD `head` rejects `head -c 1G`, BSD `ps` lacks the `--` long options, and there is no `timeout` at all). Running the tests against the BSD tools produces spurious failures.
+
+The macOS CI runners install the GNU tools via Homebrew and put them ahead of the BSD ones on `PATH`. Reproduce the same locally:
+
+```sh
+brew install coreutils gnu-sed grep
+export PATH="$(brew --prefix)/opt/coreutils/libexec/gnubin:$(brew --prefix)/opt/gnu-sed/libexec/gnubin:$(brew --prefix)/opt/grep/libexec/gnubin:$PATH"
+```
+
+`coreutils` provides GNU `timeout`, `head`, `date`, and friends; `gnu-sed` and `grep` provide GNU `sed` and `grep`. After this, `which timeout head sed grep` should resolve to the `gnubin` paths.
+
 ### Running fast tests {#running-fast-tests}
 
 You may need a decently powerful machine to run a subset of tests (called "Fast test"). The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 GB storage.
@@ -158,6 +171,34 @@ Tests should be
 - make sure the other tests don't test the same stuff (i.e. grep first).
 :::
 
+### Templated tests with Jinja {#templated-tests-with-jinja}
+
+A `.sql` test can be written as a [Jinja2](https://jinja.palletsprojects.com/) template by adding a `.j2` suffix to the file name, so `foo.sql` becomes `foo.sql.j2`. Before running the test, `clickhouse-test` renders the template into an ordinary `.sql` script and executes the result.
+
+This is useful when a test repeats the same query with small variations: a loop generates the queries from a compact template instead of writing each one out by hand. The most commonly used constructs are:
+
+- `{% for ... %} ... {% endfor %}` to repeat a block,
+- `{{ expression }}` to substitute a value into the output,
+- `-%}` and `{%-` to trim adjacent whitespace so the generated script stays clean.
+
+For example, this template:
+
+```sql
+{% for type in ['UInt8', 'UInt16', 'UInt32'] -%}
+SELECT toTypeName(0::{{ type }});
+{% endfor -%}
+```
+
+renders to:
+
+```sql
+SELECT toTypeName(0::UInt8);
+SELECT toTypeName(0::UInt16);
+SELECT toTypeName(0::UInt32);
+```
+
+The expected output can be supplied either as a plain `<name>.reference` file containing the fully-expanded results, or as a `<name>.reference.j2` template, which `clickhouse-test` renders the same way before comparing. Use the templated form when the expected output also follows a repeating pattern. For more examples, see the existing `*.sql.j2` files in `tests/queries/0_stateless/`.
+
 ### Restricting test runs {#restricting-test-runs}
 
 A test can have zero or more _tags_ specifying restrictions in which contexts the test runs in CI.
@@ -205,7 +246,7 @@ List of available tags:
 | `no-release` | Disables tests in Release builds ||
 | `no-darwin` | Disables test on macOS (Darwin) | Test relies on Linux-specific features such as distributed queries, `procfs`, or HTTP server |
 
-The following options are also supported: `no-stress`, `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+The following options are also supported: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 In addition to above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.

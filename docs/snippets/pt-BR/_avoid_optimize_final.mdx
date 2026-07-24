@@ -1,0 +1,62 @@
+---
+title: Evite o Optimize Final
+---
+
+As tabelas do ClickHouse que usam a **engine MergeTree** armazenam dados em disco como **partes imutáveis**, criadas toda vez que dados são inseridos.
+
+Cada inserção cria uma nova parte contendo arquivos de coluna ordenados e compactados, além de metadados como índices e somas de verificação. Para uma descrição detalhada da estrutura das partes e de como elas são formadas, recomendamos este [guia](/pt-BR/concepts/core-concepts/parts).
+
+Com o tempo, processos em segundo plano mesclam partes menores em partes maiores para reduzir a fragmentação e melhorar o desempenho das consultas.
+
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Mesclagens simples" />
+
+Embora seja tentador disparar manualmente essa mesclagem usando:
+
+```sql
+OPTIMIZE TABLE <table> FINAL;
+```
+
+**você deve evitar a operação `OPTIMIZE FINAL` na maioria dos casos**, pois ela inicia
+operações que consomem muitos recursos e podem afetar o desempenho do cluster.
+
+<Info>
+  **`OPTIMIZE FINAL` vs `FINAL`**
+
+  `OPTIMIZE FINAL` não é o mesmo que `FINAL`, cujo uso às vezes é necessário
+  para obter resultados sem duplicatas, como no `ReplacingMergeTree`. Em geral,
+  `FINAL` pode ser usado sem problemas se suas consultas estiverem filtrando as mesmas colunas
+  da sua chave primária.
+</Info>
+
+<div id="why-avoid">
+  ## Por que evitar?
+</div>
+
+<div id="its-expensive">
+  ### É caro
+</div>
+
+Executar `OPTIMIZE FINAL` força o ClickHouse a mesclar **todas** as partes ativas em **uma única parte**, mesmo que grandes mesclas já tenham ocorrido. Isso envolve:
+
+1. **Descomprimir** todas as partes
+2. **Mesclar** os dados
+3. **Comprimir** tudo novamente
+4. **Gravar** a parte final em disco ou no armazenamento de objetos
+
+Essas etapas são **intensivas em CPU e E/S** e podem sobrecarregar significativamente o sistema, especialmente quando há grandes volumes de dados.
+
+<div id="it-ignores-safety-limits">
+  ### Ignora os limites de segurança
+</div>
+
+Normalmente, o ClickHouse evita mesclar partes maiores que ~150 GB (configurável por meio de [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/pt-BR/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)). Mas `OPTIMIZE FINAL` **ignora essa proteção**, o que significa que:
+
+* Ele pode tentar mesclar **várias partes de 150 GB** em uma única parte enorme
+* Isso pode resultar em **tempos de mesclagem longos**, **pressão de memória** ou até mesmo **erros de falta de memória**
+* Essas partes grandes podem se tornar difíceis de mesclar; ou seja, as tentativas de mesclá-las ainda mais falham pelos motivos mencionados acima. Nos casos em que mesclagens são necessárias para o comportamento correto em query time, isso pode resultar em consequências indesejadas, como [o acúmulo de duplicatas em uma ReplacingMergeTree](/pt-BR/concepts/features/operations/insert/deduplication#using-replacingmergetree-for-upserts), reduzindo o desempenho em query time.
+
+<div id="let-background-merges-do-the-work">
+  ## Deixe as mesclagens em segundo plano fazerem o trabalho
+</div>
+
+O ClickHouse já realiza mesclagens inteligentes em segundo plano para otimizar o armazenamento e a eficiência das consultas. Elas são incrementais, consideram os recursos disponíveis e respeitam os limites configurados. A menos que você tenha uma necessidade muito específica (por exemplo, finalizar os dados antes de congelar uma tabela ou exportá-los), **é melhor deixar o ClickHouse gerenciar as mesclagens por conta própria**.

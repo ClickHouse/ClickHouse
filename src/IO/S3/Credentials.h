@@ -224,8 +224,19 @@ struct CredentialsConfiguration
     bool no_sign_request = false;
     std::string role_arn{};
     std::string role_session_name{};
+    std::string external_id{};
     std::string sts_endpoint_override{};
     std::string kms_role_arn{};
+
+    /// When true, no server-managed credential source is resolved (environment/IMDS/IRSA/instance-profile/
+    /// AWS-config providers and role_arn-based STS); only explicit credentials are honored. Defaults to true
+    /// (fail closed): server-internal callers that legitimately use the server's credentials opt out explicitly.
+    bool forbid_implicit_credentials = true;
+
+    /// With `forbid_implicit_credentials`, build an anonymous client instead of throwing when a request would
+    /// be refused. Set only when loading a persistent table from existing metadata (so it becomes inaccessible
+    /// rather than aborting startup); never for user-issued queries, which must still be rejected.
+    bool anonymous_fallback_for_server_credentials = false;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
@@ -240,7 +251,7 @@ public:
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
-    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_);
+    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
 
@@ -253,6 +264,7 @@ public:
 private:
     std::string role_arn;
     std::string role_session_name;
+    std::string external_id;
 };
 class AssumeRoleResult
 {
@@ -301,6 +313,7 @@ public:
     static std::shared_ptr<Aws::Auth::AWSCredentialsProvider> create(
             std::string role_arn_,
             std::string session_name_,
+            std::string external_id_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
             const DB::S3::PocoHTTPClientConfiguration & client_configuration,
@@ -309,6 +322,7 @@ public:
     AwsAuthSTSAssumeRoleCredentialsProvider(
             std::string role_arn_,
             std::string session_name_,
+            std::string external_id_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<AWSAssumeRoleClient> client_);
 
@@ -318,6 +332,7 @@ public:
     {
         std::string role_arn;
         std::string session_name;
+        std::string external_id;
         std::string endpoint;
         Aws::Auth::AWSCredentials credentials;
 
@@ -331,6 +346,7 @@ protected:
 private:
     std::string role_arn;
     std::string session_name;
+    std::string external_id;
     uint64_t expiration_window_seconds;
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;

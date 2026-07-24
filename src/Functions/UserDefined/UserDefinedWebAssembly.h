@@ -101,7 +101,10 @@ public:
         ASTPtr create_query;
     };
 
+    RegisteredFunction prepareFunction(ASTPtr create_function_query, WasmModuleManager & module_manager) const;
     std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager);
+    void addOrReplace(RegisteredFunction registered_function);
+    void replaceAll(VectorWithMemoryTracking<RegisteredFunction> registered_functions);
 
     bool has(const String & function_name) const;
     FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);

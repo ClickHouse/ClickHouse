@@ -1,0 +1,152 @@
+---
+slug: /cloud/managed-postgres/pricing
+sidebarTitle: 'Цены'
+title: 'Цены'
+description: 'Модель ценообразования, уровни, типы инстансов и подробности о бета-ценах для Postgres, управляемого ClickHouse'
+keywords: ['цены Postgres', 'цены Managed Postgres', 'бета-цены Postgres', 'калькулятор цен Postgres', 'цены NVMe', 'цены уровней Postgres']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
+
+Postgres, управляемый ClickHouse, построен на локальном NVMe-хранилище, что позволяет обеспечивать производительность уровня продакшн и нативную интеграцию с ClickHouse без ценовой наценки, характерной для традиционных сетевых систем хранения. На этой странице описаны модель ценообразования, доступные типы инстансов и сравнение уровней сервиса.
+
+Postgres, управляемый ClickHouse, теперь доступен в бета. Сервис останется бесплатным до начала учета потребления 15 июня 2026 года, чтобы команды могли подобрать подходящий размер инстансов до начала тарификации.
+
+В течение бета-периода на все планы действует скидка 50%, что отражает нашу приверженность ранним клиентам. Цены начинаются примерно от **$30/месяц** за 1 vCPU, 8 ГБ оперативной памяти и 59 ГБ NVMe-хранилища.
+
+<Tip>
+  **Калькулятор цен**
+
+  Чтобы узнать точную стоимость, воспользуйтесь [калькулятором цен](https://clickhouse.com/pricing?service=postgres#pricing-calculator), чтобы подобрать оптимальную конфигурацию и оценить стоимость для вашей рабочей нагрузки.
+</Tip>
+
+<div id="price-performance">
+  ## Соотношение цены и производительности
+</div>
+
+Поскольку сервис работает на локальном NVMe-хранилище, многие рабочие нагрузки могут обеспечивать существенно лучшее соотношение цены и производительности по сравнению с традиционными архитектурами сетевого хранилища. Сравнение бенчмарков с альтернативными провайдерами Postgres на аналогичных аппаратных профилях см. в [PostgresBench](https://postgresbench.clickhouse.com/).
+
+Для сопоставимых рабочих нагрузок клиентам может требоваться в 2–4 раза меньше вычислительных ресурсов. Эти потенциальные преимущества в эффективности следует учитывать при сравнении цен у разных провайдеров, хотя фактический выигрыш зависит от конкретной рабочей нагрузки и должен быть подтверждён на ваших приложениях.
+
+<div id="pricing-model">
+  ## Модель ценообразования
+</div>
+
+Сервис работает на локальном NVMe-хранилище, поэтому стоимость рассчитывается исходя из полной конфигурации виртуальной машины — CPU, памяти и хранилища, а не по отдельным тарифам на вычислительные ресурсы и диск.
+
+Доступно более 50 конфигураций — от 1 vCPU / 8 GB оперативной памяти / 59 GB NVMe до 96 vCPU / 768 GB оперативной памяти / 60 TB NVMe-хранилища, что обеспечивает гибкость как для ресурсоемких по вычислениям рабочих нагрузок Postgres, так и для рабочих нагрузок, требующих большого объема хранилища.
+
+<div id="tier-based-pricing">
+  ### Ценообразование по уровням
+</div>
+
+Цены, возможности и лимиты ресурсов различаются в зависимости от уровня организации — [Basic, Scale или Enterprise](/ru/products/cloud/features/cloud-tiers), однако каждый уровень включает ключевые возможности сервиса, в том числе Postgres для продакшна на локальном NVMe-хранилище, нативную CDC в ClickHouse и расширение `pg_clickhouse`.
+
+В таблице ниже приведена сводка по функциям, возможностям и лимитам, включенным в каждый уровень. Чтобы сравнить цены для разных уровней, воспользуйтесь [калькулятором цен](https://clickhouse.com/pricing?service=postgres#pricing-calculator).
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0'}}>
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Basic</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Отлично подходит для тестирования новых идей и запуска первых проектов. Ограниченные объемы хранилища и памяти.</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/ru/products/managed-postgres/scaling">До 8 ГБ оперативной памяти для вычислений</a></li>
+      <li><a href="/ru/products/managed-postgres/scaling">До 118 ГБ локального NVMe-хранилища</a></li>
+      <li><a href="/ru/products/managed-postgres/backup-and-restore">Резервные копии со сроком хранения 1 день</a></li>
+      <li><a href="/ru/products/managed-postgres/backup-and-restore">PITR и Branches</a></li>
+      <li>Включает <a href="/ru/products/managed-postgres/high-availability">Высокую доступность</a></li>
+      <li><a href="/ru/products/managed-postgres/monitoring/query-insights">Query Insights</a> со сроком хранения 1 день</li>
+      <li><a href="/ru/products/managed-postgres/extensions">Более 90 расширений Postgres</a></li>
+      <li><a href="/ru/products/managed-postgres/clickhouse-integration">Нативный CDC для ClickHouse</a></li>
+      <li><a href="/ru/products/managed-postgres/extensions">расширение <code>pg&#95;clickhouse</code></a></li>
+      <li><a href="/ru/products/managed-postgres/migrations/clickhouse-cloud">Полностью управляемая миграция данных</a></li>
+      <li>Экспертная поддержка, время ответа — 1 рабочий день</li>
+      <li><a href="/ru/products/cloud/guides/security/cloud-access-management/manage-my-account">Аутентификация с единым входом (SSO)</a> через учетные записи Google или Microsoft</li>
+      <li><a href="/ru/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">Многофакторная аутентификация</a></li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Scale</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Для продакшн-сред, больших объемов данных и профессиональных сценариев использования.</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Все, что входит в Basic, плюс</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/ru/products/managed-postgres/scaling">До 60 ТБ хранилища</a></li>
+      <li><a href="/ru/products/managed-postgres/scaling">До 96 vCPU и 768 ГБ оперативной памяти</a></li>
+      <li><a href="/ru/products/managed-postgres/scaling">Автомасштабирование хранилища</a></li>
+      <li><a href="/ru/products/managed-postgres/read-replicas">Реплики для чтения</a></li>
+      <li><a href="/ru/products/managed-postgres/security">Приватная сеть</a></li>
+      <li><a href="/ru/products/managed-postgres/backup-and-restore">Резервные копии со сроком хранения 7 дней</a></li>
+      <li><a href="/ru/products/managed-postgres/monitoring/query-insights">Query Insights</a> со сроком хранения 7 дней</li>
+      <li>Экспертная поддержка: время ответа — 1 час, 24x7, для инцидентов уровня Severity 1</li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Enterprise</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Для работы со средами продакшн, очень большими объемами данных в крупных масштабах или корпоративными сценариями использования.</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Все возможности Scale, а также</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li>Поддержка уровня Enterprise со временем ответа в течение 30 минут для инцидентов Severity 1</li>
+      <li>Частные регионы</li>
+      <li>Закрепленный ведущий инженер поддержки</li>
+      <li><a href="/ru/products/managed-postgres/extensions">Пользовательские расширения</a> (*требуется одобрение)</li>
+      <li><a href="/ru/products/managed-postgres/migrations/clickhouse-cloud">Руководства по миграции с консультационной поддержкой</a></li>
+      <li><a href="/ru/products/managed-postgres/upgrades">Обновления по расписанию</a></li>
+    </ul>
+  </div>
+</div>
+
+<div id="instance-types">
+  ### Типы инстансов
+</div>
+
+Конфигурации инстансов сгруппированы в три категории, чтобы упростить выбор инфраструктуры с учётом характеристик рабочей нагрузки.
+
+* **Оптимизированные для памяти:** Предназначены для рабочих нагрузок с интенсивным использованием памяти и более высоким соотношением памяти к CPU (например, 1:8 или 1:4). Поддерживают семейства `r8gd`, `r6gd`, `m6gd` и `m8gd` на базе AWS Graviton. Лучше всего подходят для больших рабочих наборов данных, высокого коэффициента попаданий в кэш и нагрузок на базу данных, ограниченных объёмом памяти.
+* **Оптимизированные для хранилища:** Предназначены для рабочих нагрузок, которым требуются большие объёмы локального NVMe-хранилища без пропорционального масштабирования вычислительных ресурсов. Поддерживают семейства `i8g`, `i8ge`, `i7i` и `i7ie` на базе AWS Graviton; доступны конфигурации с объёмом локального NVMe-хранилища до 60 ТБ. Лучше всего подходят для больших датасетов, рабочих нагрузок временных рядов, хранения логов и событий, а также OLTP-нагрузок с высокими требованиями к хранилищу.
+* **Оптимизированные для CPU:** Предназначены для ресурсоёмких рабочих нагрузок с более низким соотношением памяти к CPU (обычно около 1:2). Поддерживают семейства `c6gd` и лучше всего подходят для транзакционных рабочих нагрузок с высоким параллелизмом и запросов, ограниченных производительностью CPU.
+
+<div id="pricing-calculator">
+  ## Калькулятор цен
+</div>
+
+Используйте [калькулятор цен](https://clickhouse.com/pricing?service=postgres#pricing-calculator), чтобы оценить стоимость развертывания для различных профилей рабочей нагрузки и конфигураций. Вы можете настроить:
+
+* Уровень организации (Basic, Scale, Enterprise)
+* Регион
+* Тип конфигурации (Memory, Storage или CPU Optimized)
+* Архитектура CPU (ARM или x86)
+* Размер vCPU, памяти и хранилища
+* Конфигурации Standby / Высокая доступность (HA)
+
+Это позволяет сравнить стоимость более чем 50 поддерживаемых комбинаций конфигурации и подобрать оптимальный вариант для вашей рабочей нагрузки.
+
+<div id="beta-pricing-highlights">
+  ## Основные моменты бета-цен
+</div>
+
+В бета-период:
+
+* Сервис предоставляется бесплатно до начала тарификации по факту использования **15 июня 2026 года**
+* Нативный CDC (фиксация изменений данных) через **ClickPipes** включен без дополнительной платы
+* В настоящее время плата не взимается за **исходящий сетевой трафик** и **резервные копии**
+* Для всех тарифных планов в настоящее время действуют **бета-цены со скидкой 50%**
+
+<div id="disclaimers">
+  ## Оговорки
+</div>
+
+По мере развития продукта в период бета цены и состав тарифов могут быть уточнены до General Availability (GA). Обратите внимание на следующее:
+
+* Тарификация исходящего сетевого трафика будет введена после GA. Для приложений, размещённых рядом с базой данных, расходы на исходящий трафик, как ожидается, будут минимальными.
+* На этапе GA может взиматься дополнительная плата за резервные копии при сроках хранения, превышающих лимит, который ещё определяется.
+* Мы ожидаем, что нативный CDC через ClickPipes останется бесплатным или будет стоить минимально на этапе GA, если Postgres и ClickHouse размещены в том же регионе, что соответствует концепции единой платформы OLTP + OLAP.
+* При масштабировании и операциях обслуживания новые инстансы на короткое время запускаются параллельно со старыми, чтобы ваша база данных оставалась доступной — до завершения перехода вы можете видеть одновременное начисление платы как за старые, так и за новые инстансы. Длительность этого окна зависит от типа инстанса и объёма хранилища.
+* Сервис может переключиться на сопоставимый тип инстанса предыдущего поколения, чтобы сохранить выбранную конфигурацию высокой доступности, если ёмкость выбранного типа инстанса временно ограничена в некоторых зонах доступности. Плата будет взиматься по тарифу целевого типа инстанса.
+* Текущие цены могут меняться и быть пересмотрены ближе к GA по мере того, как в период бета мы будем получать больше информации о реальных сценариях использования, характеристиках рабочих нагрузок и требованиях к инфраструктуре.

@@ -1,0 +1,49 @@
+---
+alias: []
+description: 'Documentación sobre el formato LineAsStringWithNamesAndTypes'
+input_format: false
+keywords: ['LineAsStringWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/LineAsStringWithNamesAndTypes
+title: 'LineAsStringWithNamesAndTypes'
+doc_type: 'referencia'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✗       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+El formato `LineAsStringWithNames` es similar al formato [`LineAsString`](/es/reference/formats/LineAsString/LineAsString),
+pero genera dos filas de encabezado: una con los nombres de las columnas y otra con los tipos.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+```sql title="Query"
+CREATE TABLE example (
+    name String,
+    value Int32
+)
+ENGINE = Memory;
+
+INSERT INTO example VALUES ('John', 30), ('Jane', 25), ('Peter', 35);
+
+SELECT * FROM example FORMAT LineAsStringWithNamesAndTypes;
+```
+
+```response title="Response"
+name    value
+String    Int32
+John    30
+Jane    25
+Peter    35
+```
+
+<div id="format-settings">
+  ## Ajustes de formato
+</div>

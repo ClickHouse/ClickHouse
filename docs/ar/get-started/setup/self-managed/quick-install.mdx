@@ -1,0 +1,100 @@
+---
+description: 'ثبّت ClickHouse بسرعة باستخدام برنامج نصي للتثبيت عبر curl'
+keywords: ['ClickHouse', 'install', 'quick', 'curl']
+sidebarTitle: 'تثبيت سريع'
+slug: /install/quick-install
+title: 'تثبيت سريع'
+hide_title: true
+doc_type: 'guide'
+---
+
+إذا لم تكن بحاجة إلى تثبيت ClickHouse لبيئة الإنتاج، فيمكنك تشغيل برنامج نصي للتثبيت باستخدام curl. سيحدّد البرنامج النصي ملفًا تنفيذيًا مناسبًا لنظام التشغيل لديك.
+
+<Steps>
+  <Step>
+    ## ثبّت ClickHouse باستخدام curl
+
+    شغّل الأمر التالي لتنزيل ملف تنفيذي واحد لنظام التشغيل لديك.
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    على Linux وmacOS، يثبّت هذا أيضًا [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
+    في `~/.local/bin` (مع وصلة رمزية `chctl`) بحيث يمكنك إدارة إصدارات ClickHouse
+    وخوادمه المحلية.
+
+    ولتثبيت الملف التنفيذي `clickhouse` فقط من دون `clickhousectl`، اضبط
+    `CLICKHOUSE_ONLY=1`:
+
+    ```bash
+    curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
+    ```
+
+    <Note>
+      لمستخدمي Mac: إذا ظهرت لك أخطاء تفيد بأنه لا يمكن التحقق من مطوّر الملف التنفيذي، فيُرجى الاطلاع [هنا](/ar/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos).
+    </Note>
+  </Step>
+
+  <Step>
+    ## ابدأ clickhouse-local
+
+    يتيح لك `clickhouse-local` معالجة الملفات المحلية والبعيدة باستخدام
+    بناء SQL القوي في ClickHouse ومن دون الحاجة إلى أي إعدادات. تُخزَّن بيانات الجداول
+    في موقع مؤقت، ما يعني أنه بعد إعادة تشغيل `clickhouse-local`
+    لن تعود الجداول التي أُنشئت سابقًا متاحة.
+
+    شغّل الأمر التالي لبدء [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local):
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## ابدأ clickhouse-server
+
+    إذا كنت ترغب في الاحتفاظ بالبيانات، فستحتاج إلى تشغيل `clickhouse-server`. يمكنك
+    بدء تشغيل خادم ClickHouse باستخدام الأمر التالي:
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## ابدأ clickhouse-client
+
+    بعد تشغيل الخادم، افتح نافذة طرفية جديدة وشغّل الأمر التالي
+    لتشغيل `clickhouse-client`:
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    سترى شيئًا مشابهًا لما يلي:
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    تُخزَّن بيانات الجداول في الدليل الحالي وستظل متاحة بعد إعادة تشغيل
+    خادم ClickHouse. وإذا لزم الأمر، يمكنك تمرير
+    `-C config.xml` كوسيط إضافي في سطر الأوامر إلى `./clickhouse server`
+    وتوفير المزيد من الإعدادات في ملف إعدادات.
+    جميع إعدادات التهيئة المتاحة موثقة [هنا](/ar/reference/settings/server-settings/settings) وفي
+    [قالب ملف الإعدادات
+    النموذجي](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
+
+    أنت الآن جاهز لبدء إرسال أوامر SQL إلى ClickHouse!
+
+    <Tip>
+      يرشدك [البدء السريع](/ar/get-started/setup/install) خلال خطوات إنشاء الجداول وإدراج البيانات.
+    </Tip>
+  </Step>
+</Steps>

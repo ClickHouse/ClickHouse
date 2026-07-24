@@ -52,7 +52,7 @@ public:
         return Base::create(std::move(nested_column_), std::move(indexes_));
     }
 
-    static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
+    static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
         return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
     }
@@ -157,7 +157,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
@@ -223,5 +223,23 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
 bool isLazyReplicationUseful(const ColumnPtr & column);
-
+/// Apply transformation on replicated columns with shared index only once.
+void transformColumnsWithSharedIndex(
+    Columns & columns,
+    std::function<ColumnPtr(const ColumnPtr &)> index_transform,
+    std::function<void(ColumnPtr &)> non_replicated_transform,
+    std::span<size_t> positions = {});
+/// Same as above, but apply the same transformation to replicated and non replicated columns.
+void transformColumnsWithSharedIndex(
+    Columns & columns,
+    std::function<ColumnPtr(const ColumnPtr &)> transform,
+    std::span<size_t> positions = {});
+/// Materializes ColumnReplicated where lazy replication is not useful:
+/// - `isLazyReplicationUseful` returns false.
+/// - index size <= nested data size, when size check is enabled.
+ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check = true);
+/// Optimize ColumnReplicated columns memory layout:
+/// 1. Materializes columns where replication provides no benefit.
+/// 2. Compacts remaining ColumnReplicated columns by removing unreferenced nested rows.
+void compactReplicatedColumns(Columns & columns);
 }

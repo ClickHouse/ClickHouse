@@ -1,0 +1,130 @@
+---
+description: 'Mantém os dados em buffer na RAM e os descarrega periodicamente em outra
+  tabela. Durante a operação de leitura, os dados são lidos do buffer e da outra tabela
+  simultaneamente.'
+sidebarTitle: 'Buffer'
+slug: /engines/table-engines/special/buffer
+title: 'Motor de tabela Buffer'
+doc_type: 'referência'
+---
+
+Mantém os dados em buffer na RAM e os descarrega periodicamente em outra tabela. Durante a operação de leitura, os dados são lidos do buffer e da outra tabela simultaneamente.
+
+<Note>
+  Uma alternativa recomendada ao motor de tabela Buffer é habilitar [inserções assíncronas](/pt-BR/concepts/features/operations/insert/asyncinserts).
+</Note>
+
+```sql
+Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
+```
+
+<div id="engine-parameters">
+  ### Parâmetros do motor
+</div>
+
+<div id="database">
+  #### `database`
+</div>
+
+`database` – nome do banco de dados. Você pode usar `currentDatabase()` ou outra expressão constante que retorne uma string.
+
+<div id="table">
+  #### `table`
+</div>
+
+`table` – Tabela para a qual os dados serão gravados.
+
+<div id="num_layers">
+  #### `num_layers`
+</div>
+
+`num_layers` – Camada de paralelismo. Fisicamente, a tabela será representada por `num_layers` buffers independentes.
+
+<div id="min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes">
+  #### `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes`
+</div>
+
+Condições para gravar em armazenamento os dados do buffer.
+
+<div id="optional-engine-parameters">
+  ### Parâmetros opcionais do motor
+</div>
+
+<div id="flush_time-flush_rows-and-flush_bytes">
+  #### `flush_time`, `flush_rows`, and `flush_bytes`
+</div>
+
+Condições para fazer o flush dos dados do buffer em segundo plano (omitido ou zero significa que não há parâmetros `flush*`).
+
+Os dados sofrem flush do buffer e são gravados na tabela de destino se todas as condições `min*` ou pelo menos uma condição `max*` forem atendidas.
+
+Além disso, se pelo menos uma condição `flush*` for atendida, um flush será iniciado em segundo plano. Isso difere de `max*`, pois `flush*` permite configurar flushes em segundo plano separadamente para evitar adicionar latência às consultas `INSERT` em tabelas Buffer.
+
+<div id="min_time-max_time-and-flush_time">
+  #### `min_time`, `max_time` e `flush_time`
+</div>
+
+Condição para o tempo, em segundos, a partir do momento da primeira gravação no buffer.
+
+<div id="min_rows-max_rows-and-flush_rows">
+  #### `min_rows`, `max_rows`, and `flush_rows`
+</div>
+
+Condição para a quantidade de linhas no buffer.
+
+<div id="min_bytes-max_bytes-and-flush_bytes">
+  #### `min_bytes`, `max_bytes`, and `flush_bytes`
+</div>
+
+Condição para a quantidade de bytes no buffer.
+
+Durante a operação de gravação, os dados são inseridos em um ou mais buffers aleatórios (configurados com `num_layers`). Ou, se a parte de dados a ser inserida for grande o suficiente (maior que `max_rows` ou `max_bytes`), ela é gravada diretamente na tabela de destino, sem passar pelo buffer.
+
+As condições para o flush dos dados são calculadas separadamente para cada um dos buffers de `num_layers`. Por exemplo, se `num_layers = 16` e `max_bytes = 100000000`, o consumo máximo de RAM é de 1,6 GB.
+
+Exemplo:
+
+```sql
+CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10, 100, 10000, 1000000, 10000000, 100000000)
+```
+
+Criando uma tabela `merge.hits_buffer` com a mesma estrutura de `merge.hits` e usando o mecanismo Buffer. Ao gravar nessa tabela, os dados ficam em buffer na RAM e depois são gravados na tabela &#39;merge.hits&#39;. Um único buffer é criado, e os dados sofrem flush se uma destas condições ocorrer:
+
+* tiverem se passado 100 segundos desde o último flush (`max_time`) ou
+* tiverem sido gravadas 1 milhão de linhas (`max_rows`) ou
+* tiverem sido gravados 100 MB de dados (`max_bytes`) ou
+* tiverem se passado 10 segundos (`min_time`) e tiverem sido gravadas 10.000 linhas (`min_rows`) e 10 MB (`min_bytes`) de dados
+
+Por exemplo, se apenas uma linha tiver sido gravada, ela sofrerá flush após 100 segundos, independentemente de qualquer outra coisa. Mas, se muitas linhas tiverem sido gravadas, os dados sofrerão flush antes.
+
+Quando o servidor é parado, com `DROP TABLE` ou `DETACH TABLE`, os dados em buffer também sofrem flush para a tabela de destino.
+
+Você pode definir strings vazias entre aspas simples para o banco de dados e o nome da tabela. Isso indica a ausência de uma tabela de destino. Nesse caso, quando as condições de flush dos dados forem atingidas, o buffer será simplesmente limpo. Isso pode ser útil para manter uma janela de dados na memória.
+
+Ao ler de uma tabela Buffer, os dados são processados tanto a partir do buffer quanto da tabela de destino (se houver uma).
+Observe que a tabela Buffer não oferece suporte a índice. Em outras palavras, os dados no buffer são totalmente varridos, o que pode ser lento para buffers grandes. (Para os dados em uma tabela subordinada, será usado o índice compatível com ela.)
+
+Se o conjunto de colunas na tabela Buffer não corresponder ao conjunto de colunas em uma tabela subordinada, será inserido um subconjunto das colunas existentes em ambas as tabelas.
+
+Se os tipos não corresponderem em uma das colunas da tabela Buffer e de uma tabela subordinada, uma mensagem de erro será registrada no log do servidor, e o buffer será limpo.
+O mesmo acontece se a tabela subordinada não existir quando o buffer sofrer flush.
+
+<Note>
+  Executar ALTER na tabela Buffer em lançamentos anteriores a 26 de outubro de 2021 causará um erro `Block structure mismatch` (consulte [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) e [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), portanto excluir a tabela Buffer e recriá-la em seguida é a única opção. Verifique se esse erro foi corrigido no seu lançamento antes de tentar executar ALTER na tabela Buffer.
+</Note>
+
+Se o servidor for reiniciado de forma anormal, os dados no buffer serão perdidos.
+
+`FINAL` e `SAMPLE` não funcionam corretamente para tabelas Buffer. Essas condições são passadas para a tabela de destino, mas não são usadas para processar os dados no buffer. Se esses recursos forem necessários, recomendamos usar a tabela Buffer apenas para gravação e ler a partir da tabela de destino.
+
+Ao adicionar dados a uma tabela Buffer, um dos buffers é bloqueado. Isso causa atrasos se uma operação de leitura estiver sendo executada simultaneamente na tabela.
+
+Os dados inseridos em uma tabela Buffer podem acabar na tabela subordinada em uma ordem diferente e em blocos diferentes. Por isso, é difícil usar uma tabela Buffer para gravar corretamente em uma CollapsingMergeTree. Para evitar problemas, você pode definir `num_layers` como 1.
+
+Se a tabela de destino for replicada, algumas características esperadas de tabelas replicadas são perdidas ao gravar em uma tabela Buffer. As mudanças aleatórias na ordem das linhas e nos tamanhos das partes de dados fazem com que a desduplicação de dados deixe de funcionar, o que significa que não é possível ter uma gravação confiável &#39;exactly once&#39; em tabelas replicadas.
+
+Devido a essas desvantagens, só podemos recomendar o uso de uma tabela Buffer em casos raros.
+
+Uma tabela Buffer é usada quando muitos INSERTs são recebidos de um grande número de servidores em um determinado intervalo de tempo, e os dados não podem ser armazenados em buffer antes da inserção, o que significa que os INSERTs não conseguem ser executados com rapidez suficiente.
+
+Observe que não faz sentido inserir dados uma linha por vez, mesmo em tabelas Buffer. Isso resultará em uma velocidade de apenas alguns milhares de linhas por segundo, enquanto a inserção de blocos maiores de dados pode atingir mais de um milhão de linhas por segundo.

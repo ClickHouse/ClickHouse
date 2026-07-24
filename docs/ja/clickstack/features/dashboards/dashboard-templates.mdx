@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/dashboard-templates
+title: 'ダッシュボードテンプレート'
+sidebarTitle: 'ダッシュボードテンプレート'
+description: 'ClickStack であらかじめ用意されたダッシュボードテンプレートをインポートする方法'
+doc_type: 'guide'
+keywords: ['ClickStack', 'ダッシュボード', 'テンプレート', 'インポート', 'オブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack には、一般的なインフラストラクチャやアプリケーションのメトリクスをすぐに可視化できる、あらかじめ用意されたダッシュボードテンプレートのライブラリが含まれています。
+
+<div id="browsing-templates">
+  ## 利用可能なテンプレートを参照する
+</div>
+
+組み込みのテンプレートライブラリを参照するには、**Dashboards** に移動し、**Browse dashboard templates** をクリックします。
+
+<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="ダッシュボードテンプレートを参照ボタン" size="lg" />
+
+テンプレートギャラリーが開き、テンプレートがカテゴリ別に表示されます。そのテンプレートのインポートを開始するには、**Import** をクリックします。
+
+<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="ダッシュボードテンプレートギャラリー" size="lg" />
+
+<div id="importing-a-template">
+  ## テンプレートのインポート
+</div>
+
+テンプレートをインポートするには、ダッシュボードの各可視化にデータソースを設定する必要があります。各可視化のドロップダウンからデータソースを選択し、`Finish Import` をクリックします。
+
+<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="ダッシュボードテンプレートのインポート" size="lg" />
+
+<div id="pre-built-templates">
+  ## あらかじめ用意されたテンプレート
+</div>
+
+<div id="otel-runtime-metrics">
+  ### OTel ランタイムメトリクス
+</div>
+
+組み込みの OTel ランタイムメトリクス テンプレートは、[OpenTelemetry runtime metrics](https://opentelemetry.io/docs/specs/semconv/runtime/) でインストルメントされたアプリケーション向けに設計されています。
+
+| Template                    | Description                                              |
+| --------------------------- | -------------------------------------------------------- |
+| **.NET Runtime Metrics**    | .NET アプリケーション向けの GC コレクション、ヒープサイズ、スレッドプールの使用状況、アセンブリ数    |
+| **Go Runtime Metrics**      | Go アプリケーション向けの Goroutine 数、GC の一時停止時間、ヒープ使用量、メモリー統計      |
+| **JVM Runtime Metrics**     | JVM ベースのアプリケーション向けのヒープおよび非ヒープメモリー、GC の継続時間、スレッド数、クラス読み込み |
+| **Node.js Runtime Metrics** | Node.js アプリケーション向けのイベントループ遅延、ヒープ使用量、CPU 使用率、V8 メモリー      |
+
+注記:
+
+* 各テンプレートは、[`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) リソース属性がダッシュボードのランタイムと一致するサービス向けの [カスタムフィルター](/ja/clickstack/features/dashboards/overview#custom-filters) で設定されています。
+  * ClickHouse のメトリクス テーブル スキーマをカスタマイズしている環境では、正しい Service Name カラムと Resource Attributes カラムをクエリできるよう、このフィルターの調整が必要になる場合があります。
+  * 高ボリューム環境では、`ResourceAttributes['telemetry.sdk.language']` カラムを [マテリアライズ](/ja/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) することで、フィルターのロード時間を短縮できます。
+* テンプレートは公開時点で最新の OTel Semantic Conventions を参照しており、OTel Spec の更新に合わせて定期的に更新されます。古い OTel SDK でインストルメントされたサービスでは、古いメトリクス名を参照するように [可視化を編集](/ja/clickstack/features/dashboards/overview#dashboards-editing-visualizations) する必要がある場合があります。

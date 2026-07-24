@@ -1,0 +1,91 @@
+---
+slug: /use-cases/observability/clickstack/faq
+title: 'ClickStack 常见问题'
+sidebarTitle: '常见问题'
+description: '有关 ClickStack 告警、仪表盘、下钻和指标发现的常见问题解答。'
+doc_type: 'guide'
+keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指标发现']
+---
+
+本页汇总了有关 ClickStack 各项功能的常见问题，包括告警、仪表盘与下钻，以及指标发现。
+
+<div id="alerting">
+  ## 告警
+</div>
+
+<Accordion title="ClickStack 支持哪些类型的告警？">
+  ClickStack 支持两种类型的告警：
+
+  * [搜索告警](/zh/clickstack/features/alerts#search-alerts)：当某个时间窗口内匹配的日志或 trace 结果数量超过或低于阈值时触发通知。
+  * [仪表盘图表告警](/zh/clickstack/features/alerts#dashboard-alerts)：当仪表盘卡片上绘制的某项指标越过设定阈值时触发通知。
+
+  这两类告警都使用静态阈值条件。完整说明请参见 [告警](/zh/clickstack/features/alerts)。
+</Accordion>
+
+<Accordion title="我可以针对复杂的指标条件（例如比率、p95/p99 或多指标公式）设置告警吗？">
+  两个指标的比率、p95 和 p99 值都可以通过 [图表构建器](/zh/clickstack/features/dashboards/overview#navigate-chart-explorer) UI 绘制到仪表盘卡片上。然后，您可以基于这些卡片创建阈值告警。
+
+  不过，ClickStack 目前还不支持：
+
+  * 针对指标使用自定义 SQL 查询进行告警。
+  * 将多个条件或多个指标组合成单条告警规则。
+  * 动态告警条件或基于异常检测的告警条件 (异常检测已在规划中) 。
+
+  如果您需要为复杂指标设置告警，推荐做法是先将其构建为仪表盘图表，再为该图表添加阈值告警。
+</Accordion>
+
+<Accordion title="我可以将 materialized views 用于告警场景吗？">
+  在适用的情况下，ClickStack 会自动在告警中使用 materialized views。不过，OpenTelemetry 指标数据源目前还不支持 materialized views。对于指标，ClickStack 与默认的 [ClickHouse OpenTelemetry metrics schema](/zh/clickstack/ingesting-data/schemas) 配合效果最佳。有关 materialized views 的更多信息，请参见 [Materialized views](/zh/clickstack/managing/materialized-views)。
+</Accordion>
+
+<div id="dashboards-and-drill-downs">
+  ## 仪表盘与下钻
+</div>
+
+<Accordion title="ClickStack 是否支持参数化仪表盘或仪表盘变量？">
+  ClickStack 支持仪表盘中的自定义下拉过滤器，过滤器选项由从 ClickHouse 查询的数据填充。这些过滤器可让你根据特定值 (例如服务名称、环境或主机) 动态限定仪表盘上所有卡片的范围。
+
+  ClickStack 目前尚不支持类似 Grafana 模板变量的可复用仪表盘变量。由于 ClickStack 仅使用 ClickHouse 作为数据源，因此无需额外的变量抽象层，也能原生提供下钻和过滤能力。
+
+  有关创建仪表盘和应用过滤器的详细信息，请参阅 [仪表盘](/zh/clickstack/features/dashboards/overview)。
+</Accordion>
+
+<Accordion title="支持哪些下钻能力？">
+  ClickStack 支持以下下钻工作流：
+
+  * [仪表盘级过滤](/zh/clickstack/features/dashboards/overview#filter-dashboards): 在仪表盘级别应用的 Lucene 或 SQL 过滤器以及时间范围调整，会同步到所有卡片。
+  * 自定义仪表盘过滤器: 自定义仪表盘支持专门的过滤控件，其选项取自你的数据，因此用户无需手动编写查询即可限定所有卡片的范围。
+  * 点击查看事件: 点击仪表盘卡片中的数据并选择 **View Events** 后，会跳转到 [搜索](/zh/clickstack/features/search) 页面，并自动带上适用于日志和 trace 数据的相关过滤器。
+  * [表格行点击下钻](/zh/clickstack/features/dashboards/row-click-drilldowns): 可将表格卡片配置为在点击某一行时打开搜索页面或另一个仪表盘，并将该行的值作为过滤器一并传递。这支持多级工作流，例如从服务清单下钻到按服务划分的详情仪表盘。
+  * [预置仪表盘下钻](/zh/clickstack/features/dashboards/overview#presets): [Services](/zh/clickstack/features/dashboards/overview#services-dashboard)、[ClickHouse](/zh/clickstack/features/dashboards/overview#clickhouse-dashboard) 和 [Kubernetes](/zh/clickstack/features/dashboards/overview#kubernetes-dashboard) 仪表盘提供更丰富的内置跨选项卡下钻导航。
+
+  <Note>
+    **View Events** 下钻最适用于日志和 trace 数据。由于无法在 [搜索](/zh/clickstack/features/search) 页面中查看指标数据，因此从指标卡片下钻时，会改为链接到所选时间点附近的日志。
+  </Note>
+</Accordion>
+
+<div id="metrics-discovery">
+  ## 指标发现
+</div>
+
+<Accordion title="是否有用于浏览和搜索指标的 UI？">
+  ![指标属性浏览器](/images/clickstack/faq/metrics-explorer.webp)
+
+  可通过[图表构建器](/zh/clickstack/features/dashboards/overview#navigate-chart-explorer)中的指标名称下拉菜单查看可用的指标名称。选择某个指标后，指标属性浏览器 面板会显示该指标的描述、单位以及可用属性及其值。这样，你就可以浏览这些属性，并直接在该面板中将其添加为过滤器或分组字段。
+
+  目前还没有类似日志搜索体验的专用指标搜索页面。改进指标发现能力仍是当前积极推进的开发方向。
+</Accordion>
+
+<Accordion title="对于指标，基于 SQL 的发现方式会是预期的长期方案吗？">
+  不是。虽然目前可以使用 SQL 查询来发现指标，但这并不是预期的长期方案。更完善的指标发现工具正在积极开发中。
+</Accordion>
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+* [告警](/zh/clickstack/features/alerts): 搜索告警、仪表盘图表告警和 webhook 集成。
+* [仪表盘](/zh/clickstack/features/dashboards/overview): 创建可视化、构建仪表盘和应用过滤器。
+* [搜索](/zh/clickstack/features/search): 使用 Lucene 和 SQL 语法查询日志和 trace。
+* [Schemas](/zh/clickstack/ingesting-data/schemas): 适用于日志、trace 和指标的 OpenTelemetry 数据 schema。
+* [架构](/zh/clickstack/architecture): ClickStack 的各个组件及其协同工作方式。

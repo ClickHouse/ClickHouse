@@ -756,7 +756,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            chassert(analyzed_join.oneDisjunct());
+            /// Not checking non-emptiness: for `ASOF` with a pure inequality the visitor
+            /// records keys into `data` and `asofToJoinKeys` populates the clause later.
+            /// Truly empty clauses are caught by the `any_keys_empty` check below.
+            chassert(analyzed_join.getClauses().size() == 1);
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };

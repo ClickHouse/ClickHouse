@@ -58,7 +58,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
 }
 
@@ -315,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+                throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped(context_);
 
@@ -528,6 +528,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
+                    /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog
+                    /// metadata); nothing to drop/truncate for it here.
+                    if (!table_ptr)
+                        continue;
 
                     /// Skip tables that don't support truncation (e.g. views)
                     /// when doing TRUNCATE ALL TABLES.
@@ -677,6 +681,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
+            /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog metadata).
+            if (!table_ptr)
+                continue;
 
             /// Skip tables that don't support truncation (e.g. views).
             if (!table_ptr->supportsTruncate())

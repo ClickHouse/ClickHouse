@@ -1,0 +1,67 @@
+---
+slug: /faq/operations/delete-old-data
+title: 'ClickHouse 테이블에서 오래된 레코드를 삭제할 수 있습니까?'
+toc_hidden: true
+toc_priority: 20
+description: '이 페이지는 ClickHouse 테이블에서 오래된 레코드를 삭제할 수 있는지에 대한 질문에 답변합니다'
+doc_type: '참고'
+keywords: ['데이터 삭제', 'TTL', '데이터 보존', '정리', '데이터 수명 주기']
+---
+
+짧게 답하면 「예」입니다. ClickHouse에는 오래된 데이터를 제거해 디스크 공간을 확보할 수 있는 여러 가지 메커니즘이 있습니다. 각 메커니즘은 서로 다른 시나리오에 맞게 설계되었습니다.
+
+<div id="ttl">
+  ## TTL
+</div>
+
+ClickHouse에서는 특정 조건이 충족되면 데이터를 자동으로 삭제할 수 있습니다. 이 조건은 임의의 컬럼을 기반으로 하는 표현식으로 설정되며, 일반적으로는 timestamp 컬럼에 대한 고정 오프셋을 사용합니다.
+
+이 방식의 가장 큰 장점은 실행을 트리거하는 외부 시스템이 필요하지 않다는 점입니다. TTL을 설정하면 데이터 삭제가 백그라운드에서 자동으로 수행됩니다.
+
+<Note>
+  TTL은 데이터를 [/dev/null](https://en.wikipedia.org/wiki/Null_device)로 이동하는 데만 사용할 수 있는 것이 아니라, SSD에서 HDD로 이동하는 것처럼 서로 다른 스토리지 시스템 간에 데이터를 이동하는 데도 사용할 수 있습니다.
+</Note>
+
+자세한 내용은 [TTL 구성](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)을 참조하십시오.
+
+<div id="delete-from">
+  ## DELETE FROM
+</div>
+
+[DELETE FROM](/ko/reference/statements/delete)을 사용하면 ClickHouse에서 표준 DELETE 쿼리를 실행할 수 있습니다. filter 절에서 지정한 행은 삭제된 것으로 표시되며, 이후 결과 집합에서 제외됩니다. 행 정리는 비동기적으로 수행됩니다.
+
+<Note>
+  DELETE FROM은 버전 23.3 이상부터 일반 제공됩니다. 이전 버전에서는 실험적 기능이며, 다음과 같이 활성화해야 합니다:
+
+  ```sql
+  SET allow_experimental_lightweight_delete = true;
+  ```
+</Note>
+
+<div id="alter-delete">
+  ## ALTER DELETE
+</div>
+
+ALTER DELETE는 비동기 배치 작업으로 행을 삭제합니다. DELETE FROM과 달리, ALTER DELETE 이후에 실행되고 배치 작업이 완료되기 전에 실행되는 쿼리 결과에는 삭제 대상으로 지정된 행이 포함됩니다. 자세한 내용은 [ALTER DELETE](/ko/reference/statements/alter/delete) 문서를 참조하십시오.
+
+`ALTER DELETE`는 오래된 데이터를 유연하게 삭제할 때 사용할 수 있습니다. 이를 정기적으로 수행해야 한다면, 주된 단점은 쿼리를 제출할 외부 시스템이 필요하다는 점입니다. 또한 삭제할 행이 하나뿐이어도 뮤테이션이 전체 파트를 재작성하므로 성능 측면에서도 고려가 필요합니다.
+
+이는 ClickHouse 기반 시스템을 [GDPR](https://gdpr-info.eu) 준수 상태로 만드는 가장 일반적인 방법입니다.
+
+[뮤테이션](/ko/reference/statements/alter/index#mutations)에 대한 자세한 내용도 참조하십시오.
+
+<div id="drop-partition">
+  ## DROP PARTITION
+</div>
+
+`ALTER TABLE ... DROP PARTITION`는 전체 파티션을 비용 효율적으로 삭제하는 방법입니다. 유연성은 다소 떨어지고 테이블 생성 시 적절한 파티셔닝 구성을 해야 하지만, 대부분의 일반적인 경우에는 충분히 사용할 수 있습니다. 뮤테이션과 마찬가지로, 일상적으로 사용하려면 외부 시스템에서 실행해야 합니다.
+
+자세한 내용은 [파티션 조작](/ko/reference/statements/alter/partition)을 참조하십시오.
+
+<div id="truncate">
+  ## TRUNCATE
+</div>
+
+테이블(table)의 모든 데이터를 삭제하는 일은 다소 과감해 보일 수 있지만, 경우에 따라서는 정확히 필요한 작업일 수 있습니다.
+
+자세한 내용은 [테이블 비우기](/ko/reference/statements/truncate)를 참조하십시오.

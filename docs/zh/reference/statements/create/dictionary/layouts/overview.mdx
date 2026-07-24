@@ -1,0 +1,156 @@
+---
+description: '用于在内存中存储字典的布局类型'
+sidebarTitle: '概览'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: '字典布局类型'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
+
+<div id="storing-dictionaries-in-memory">
+  ## 字典布局类型
+</div>
+
+字典可通过多种方式存储在内存中，每种方式都需要在 CPU 和 RAM 占用之间进行权衡。
+
+| 布局                                                                                                                            | 说明                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [flat](/zh/reference/statements/create/dictionary/layouts/flat)                                                                  | 将数据存储在按键索引的扁平数组中。该布局速度最快，但键必须为 `UInt64`，且受 `max_array_size` 限制。 |
+| [hashed](/zh/reference/statements/create/dictionary/layouts/hashed)                                                              | 将数据存储在哈希表中。对键大小没有限制，支持任意数量的元素。                                  |
+| [sparse&#95;hashed](/zh/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | 类似 `hashed`，但以更高的 CPU 开销换取更低的内存占用。                              |
+| [complex&#95;key&#95;hashed](/zh/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | 类似 `hashed`，用于复合键。                                              |
+| [complex&#95;key&#95;sparse&#95;hashed](/zh/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | 类似 `sparse_hashed`，用于复合键。                                       |
+| [hashed&#95;array](/zh/reference/statements/create/dictionary/layouts/hashed-array)                                              | 属性存储在数组中，并通过哈希表将键映射到数组索引。适用于属性较多且更节省内存的场景。                      |
+| [complex&#95;key&#95;hashed&#95;array](/zh/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | 类似 `hashed_array`，用于复合键。                                        |
+| [range&#95;hashed](/zh/reference/statements/create/dictionary/layouts/range-hashed)                                              | 带有有序范围的哈希表。支持按键 + 日期/时间范围进行查找。                                  |
+| [complex&#95;key&#95;range&#95;hashed](/zh/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | 类似 `range_hashed`，用于复合键。                                        |
+| [cache](/zh/reference/statements/create/dictionary/layouts/cache)                                                                | 固定大小的内存缓存。仅存储经常访问的键。                                            |
+| [complex&#95;key&#95;cache](/zh/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | 类似 `cache`，用于复合键。                                               |
+| [ssd&#95;cache](/zh/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | 类似 `cache`，但将数据存储在 SSD 上，并在内存中保留索引。                             |
+| [complex&#95;key&#95;ssd&#95;cache](/zh/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | 类似 `ssd_cache`，用于复合键。                                           |
+| [direct](/zh/reference/statements/create/dictionary/layouts/direct)                                                              | 不在内存中存储，而是针对每个请求直接查询 source。                                    |
+| [complex&#95;key&#95;direct](/zh/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | 类似 `direct`，用于复合键。                                              |
+| [ip&#95;trie](/zh/reference/statements/create/dictionary/layouts/ip-trie)                                                        | 用于快速进行 IP 前缀查找 (基于 CIDR) 的 Trie 结构。                             |
+
+<Tip>
+  **推荐布局**
+
+  [flat](/zh/reference/statements/create/dictionary/layouts/flat)、[hashed](/zh/reference/statements/create/dictionary/layouts/hashed) 和 [complex&#95;key&#95;hashed](/zh/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) 可提供最佳查询性能。
+  不推荐使用缓存类布局，因为其性能可能较差，且参数调优困难——详见 [cache](/zh/reference/statements/create/dictionary/layouts/cache)。
+</Tip>
+
+<div id="specify-dictionary-layout">
+  ## 指定字典布局
+</div>
+
+<CloudDetails />
+
+你可以使用 `LAYOUT` 子句 (用于 DDL) ，或在配置文件定义中使用 `layout` 设置来配置字典布局。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY (...)
+    ...
+    LAYOUT(LAYOUT_TYPE(param value)) -- 布局设置
+    ...
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            ...
+            <layout>
+                <layout_type>
+                    <!-- 布局设置 -->
+                </layout_type>
+            </layout>
+            ...
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+另请参阅 [CREATE DICTIONARY](/zh/reference/statements/create/dictionary) 以了解完整的 DDL 语法。
+
+布局中不包含 `complex-key*` 的字典，其键类型为 [UInt64](/zh/reference/data-types/int-uint)；`complex-key*` 字典则使用复合键 (复杂键，可包含任意类型) 。
+
+**数值键示例** (列 key&#95;column 的类型为 [UInt64](/zh/reference/data-types/int-uint)) ：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        key_column UInt64,
+        ...
+    )
+    PRIMARY KEY key_column
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <structure>
+        <id>
+            <name>key_column</name>
+        </id>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**复合键示例** (该键包含一个 [String](/zh/reference/data-types/string) 类型的元素) ：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        country_code String,
+        ...
+    )
+    PRIMARY KEY country_code
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>country_code</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="improve-performance">
+  ## 提高字典性能
+</div>
+
+有几种方法可以提高字典性能：
+
+* 在 `GROUP BY` 之后调用字典相关函数。
+* 将要提取的属性标记为 injective。
+  如果不同的键对应不同的属性值，则该属性称为 injective。
+  因此，当 `GROUP BY` 使用按键获取属性值的函数时，该函数会自动从 `GROUP BY` 中移出。
+
+对于字典错误，ClickHouse 会生成异常。
+错误示例包括：
+
+* 正在访问的字典无法加载。
+* 查询 `cached` 字典时出错。
+
+你可以在 [system.dictionaries](/zh/reference/system-tables/dictionaries) 表中查看字典列表及其状态。

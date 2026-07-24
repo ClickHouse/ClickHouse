@@ -209,14 +209,15 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
             size_t str1_length = str1_offsets[i] - str1_data_offset;
-
-            const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
+                /// Form the pointers only after the overflow check, otherwise an out-of-range offset
+                /// would make the pointer arithmetic itself out of bounds (undefined behavior).
+                const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
+                const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
                 size_t str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
                 size_t str2_adjusted_length = std::min(num_bytes, str2_length - str2_offset);
                 result[i] = normalComparison<false>(
@@ -322,14 +323,15 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
-            auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
-
-            const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
+                /// Form the pointers only after the overflow check, otherwise an out-of-range offset
+                /// would make the pointer arithmetic itself out of bounds (undefined behavior).
+                const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
+                const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
+                auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
                 auto str2_adjusted_length = str2_offset >= str2_length ? 0 : std::min(num_bytes, str2_length - str2_offset);
                 result[i] = normalComparison<reverse>(
                     str1, str1_adjusted_length,

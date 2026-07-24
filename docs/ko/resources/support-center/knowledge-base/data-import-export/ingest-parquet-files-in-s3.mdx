@@ -1,0 +1,154 @@
+---
+title: S3 버킷의 Parquet 파일을 수집하는 방법
+description: "설정, 액세스 권한, 데이터 가져오기 예시를 포함해 ClickHouse에서 S3 테이블 엔진을 사용하여 S3 버킷의 Parquet 파일을 수집하고 쿼리하는 기본 방법을 알아봅니다."
+date: 2023-03-22
+tags: ['데이터 수집']
+keywords: ['Parquet', 'S3 버킷']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ingesting-parquet-files-from-an-s3-bucket">
+  ## S3 버킷에서 Parquet 파일 수집하기
+</div>
+
+아래에서는 S3 테이블 엔진을 사용해 Parquet 파일을 읽는 기본 사항을 설명합니다.
+
+* IAM 서비스 사용자의 액세스 키와 시크릿 키를 생성합니다.
+  일반 로그인 사용자는 MFA 정책이 구성되어 있을 수 있으므로 대체로 작동하지 않습니다.
+
+* 서비스 사용자가 버킷과 폴더에 접근할 수 있도록 정책에 권한을 설정합니다.
+
+다음은 실제 데이터에 적용하기 전에 Parquet 파일에 정상적으로 접근할 수 있는지 동작을 테스트하는 데 사용할 수 있는 매우 간단한 예시입니다.
+
+사용자와 버킷을 생성하는 예시가 필요하면 처음 두 섹션(create user 및 create bucket)을 따르면 됩니다:
+https://clickhouse.com/docs/guides/sre/configuring-s3-for-clickhouse-use/
+
+저는 이 샘플 파일을 사용했습니다: https://github.com/Teradata/kylo/tree/master/samples/sample-data/parquet
+그리고 이를 테스트 버킷에 업로드했습니다
+
+버킷에는 다음과 같이 정책을 설정할 수 있습니다:
+(필요에 따라 조정하십시오. 이 예시는 권한이 비교적 넓게 열려 있지만 테스트에는 도움이 됩니다. 필요에 따라 권한 범위를 더 좁힐 수 있습니다)
+
+```
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::1234567890:user/mars-s3-user"
+                ]
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::mars-doc-test",
+                "arn:aws:s3:::mars-doc-test/*"
+            ]
+        }
+    ]
+}
+```
+
+S3 테이블 엔진을 사용하면 다음 구문으로 쿼리를 실행할 수 있습니다:
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+```
+clickhouse-cloud :)  select count(*) from s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet','ABC123', 'abc+123', 'Parquet', 'first_name String');
+
+SELECT count(*)
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'first_name String')
+
+Query id: fd4f1193-d604-4ac0-9a46-bdd2d5e14727
+
+┌─count()─┐
+│    1000 │
+└─────────┘
+
+1 row in set. Elapsed: 1.274 sec. Processed 1.00 thousand rows, 14.64 KB (784.81 rows/s., 11.49 KB/s.)
+```
+
+Parquet 포맷의 데이터 타입 참고 문서는 다음에서 확인할 수 있습니다:
+https://clickhouse.com/docs/interfaces/formats/#data-format-parquet
+
+데이터를 네이티브 ClickHouse 테이블로 가져오려면:
+
+다음과 같이 테이블을 생성합니다(Parquet 파일의 컬럼 몇 개만 선택한 예시입니다):
+
+```
+clickhouse-cloud :) CREATE TABLE my_parquet_table (id UInt64, first_name String) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE my_parquet_table
+(
+    `id` UInt64,
+    `first_name` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 412e3994-bf8e-444e-ac43-a7c82642b7da
+
+Ok.
+
+0 rows in set. Elapsed: 0.600 sec.
+```
+
+새 테이블(table)에 삽입할 데이터를 S3 버킷에서 선택합니다:
+
+```
+clickhouse-cloud :) INSERT INTO my_parquet_table (id, first_name) SELECT id, first_name FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123','abc+123', 'Parquet', 'id UInt64, first_name String') FORMAT Parquet
+
+INSERT INTO my_parquet_table (id, first_name) SELECT
+    id,
+    first_name
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'id UInt64, first_name String')
+
+Query id: c3cdc871-f338-462d-8797-6751b45a0b58
+
+Ok.
+
+0 rows in set. Elapsed: 1.220 sec. Processed 1.00 thousand rows, 22.64 KB (819.61 rows/s., 18.56 KB/s.)
+```
+
+가져오기 여부를 확인합니다:
+
+```
+clickhouse-cloud :) SELECT * FROM my_parquet_table LIMIT 10;
+
+SELECT *
+FROM my_parquet_table
+LIMIT 10
+
+Query id: 1ccf59dd-d804-46a9-aadd-ed5c57b9e1a0
+
+┌─id─┬─first_name─┐
+│  1 │ Amanda     │
+│  2 │ Albert     │
+│  3 │ Evelyn     │
+│  4 │ Denise     │
+│  5 │ Carlos     │
+│  6 │ Kathryn    │
+│  7 │ Samuel     │
+│  8 │ Harry      │
+│  9 │ Jose       │
+│ 10 │ Emily      │
+└────┴────────────┘
+```
+
+실제 데이터를 가져올 준비가 되면 와일드카드와 범위 같은 특수 구문을 사용해 버킷의 폴더, 하위 폴더, 파일을 지정할 수 있습니다.
+먼저 가져오기를 테스트할 때는 몇 개의 디렉터리와 파일로 범위를 좁혀 보는 것을 권장합니다. 예를 들어 특정 연도, 몇 개월, 일부 날짜 범위만 먼저 테스트할 수 있습니다.
+
+여기의 경로 옵션 외에도, 최근에 추가된 `**` 구문을 사용하면 모든 하위 디렉터리를 재귀적으로 지정할 수 있습니다.
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+예를 들어, 경로와 버킷 구조가 다음과 같다고 가정해 보겠습니다.
+`https://your_s3_bucket.s3.amazonaws.com/<your_folder>/<year>/<month>/<day>/<filename>.parquet`
+`https://mars-doc-test.s3.amazonaws.com/system_logs/2022/11/01/my-app-logs-0001.parquet`
+
+다음은 2021년부터 2022년까지 매월 1일의 모든 파일을 가져옵니다.
+`https://mars-doc-test.s3.amazonaws.com/system_logs/{2021-2022}/**/01/*.parquet`

@@ -73,7 +73,7 @@ class CIDBCluster:
                 "X-ClickHouse-Key": self.pwd,
             }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -178,7 +178,7 @@ class CIDBCluster:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
                 break
-        print(f"ERROR: Failed to query CIDB")
+        print("ERROR: Failed to query CIDB")
         return False
 
     def insert_json(self, table, json_str):

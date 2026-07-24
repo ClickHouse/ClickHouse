@@ -1,0 +1,241 @@
+---
+slug: /cloud/data-sources/secure-iceberg
+sidebarTitle: 'Acceder de forma segura a datos de Iceberg'
+title: 'Acceder de forma segura a datos de Iceberg'
+description: 'Este artículo muestra cómo los clientes de ClickHouse Cloud pueden acceder de forma segura a datos de Apache Iceberg en almacenamiento de objetos mediante control de acceso basado en roles.'
+keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'autenticación']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse Cloud permite el acceso seguro basado en roles a datos de Iceberg almacenados en almacenamiento de objetos (normalmente S3) mediante una relación de confianza de AWS IAM basada en ARN. Esta guía sigue el mismo patrón de configuración segura que [Acceder de forma segura a datos de S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) y añade la configuración específica de Iceberg en ClickHouse.
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+* Obtenga el ID del rol de servicio de ClickHouse Cloud (IAM).
+* Cree un rol de IAM en su cuenta de AWS que ClickHouse pueda asumir.
+* Adjunte al rol las políticas específicas de Iceberg para objetos y catálogos.
+* Use funciones de tabla de Iceberg o el motor de tabla IcebergS3 con credenciales basadas en roles.
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## Obtén el ID del rol de servicio de ClickHouse (ARN)
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Inicia sesión en tu cuenta de ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ### 2. Selecciona el servicio de ClickHouse en el que quieres consultar datos de Iceberg.
+  </Step>
+
+  <Step>
+    ### 3. Ve a la pestaña **Configuración**.
+  </Step>
+
+  <Step>
+    ### 4. Desplázate hasta **Información de seguridad de red**.
+  </Step>
+
+  <Step>
+    ### 5. Copia el valor de **ID del rol de servicio (IAM)**.
+
+    Este ARN es necesario para la política de confianza del rol de IAM de AWS que accederá a tus datos de Iceberg.
+
+    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtención del ARN del rol de IAM del servicio de ClickHouse" border />
+  </Step>
+</Steps>
+
+<div id="setting-up-iam-assume-role">
+  ## Configurar la asunción de un rol de IAM
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Inicie sesión en AWS y vaya al servicio IAM.
+  </Step>
+
+  <Step>
+    ### 2. Seleccione Roles y luego Create role.
+
+    Seleccione `Trusted entity type` como `Custom trust policy` e introduzca los valores según el paso 3.
+  </Step>
+
+  <Step>
+    ### 3. Añada las políticas de confianza y de IAM.
+
+    Reemplace `{service-role-id}` por el ID del rol de servicio (IAM) de su instancia de ClickHouse.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ClickHouseServiceRoleTrustPolicy",
+          "Effect": "Allow",
+          "Action": "sts:AssumeRole",
+          "Principal": {
+            "AWS": "{service-role-id}"  
+          }
+        },
+        {
+          "Sid": "ReadOnlyIcebergS3IAMPolicy",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket",
+            "s3:GetObject",
+            "s3:ListMultipartUploadParts",
+            "s3:GetObjectVersion",
+            "s3:ListBucketVersions"
+          ],
+          "Resource": [
+            "arn:aws:s3:::{your-bucket}",
+            "arn:aws:s3:::{your-bucket}/*"
+          ]
+        },
+        {
+          "Sid": "OptionalGlueDataCatalogIAMPolicy",
+          "Effect": "Allow",
+          "Action": [
+            "glue:GetDatabase",
+            "glue:GetDatabases",
+            "glue:GetTable",
+            "glue:GetTables",
+            "glue:GetPartition",
+            "glue:GetPartitions"
+          ],
+          "Resource": "arn:aws:glue:{region}:{account-id}:*"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      Para cargas de trabajo de lectura/escritura, la política de IAM debe incluir `s3:PutObject`, `s3:DeleteObject` y acciones de modificación de metadatos para Iceberg. El ejemplo anterior es una opción conservadora de solo lectura.
+
+      Si necesita un aislamiento más estricto, exija que las solicitudes se originen en los endpoints de VPC de ClickHouse Cloud. Para obtener más información sobre esta opción, consulte [Secure S3 advanced action control](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#advanced-action-control).
+    </Note>
+  </Step>
+
+  <Step>
+    ### 4. Finalice la creación del rol.
+
+    a. Haga clic en Next y luego otra vez en Next en la pantalla de asignación de permisos.
+
+    b. Añada un nombre (p. ej., `iceberg-role-for-clickhouse`) y una descripción.
+
+    c. Añada etiquetas (opcional).
+
+    d. Revise las políticas.
+
+    e. Seleccione `Create role`.
+  </Step>
+
+  <Step>
+    ### 5. Copie el nuevo **ARN del rol de IAM** después de crearlo.
+  </Step>
+</Steps>
+
+<div id="configure-iceberg-access">
+  ## Configurar el acceso a Iceberg en ClickHouse Cloud
+</div>
+
+<div id="iceberg-table-function-with-role-arn">
+  ### Opción A: función de tabla Iceberg con ARN del rol
+</div>
+
+Utilice la función de tabla `icebergS3` con la opción `NOSIGN` y credenciales basadas en roles. ClickHouse Cloud llamará a STS para asumir el rol.
+
+```sql
+SELECT count(*)
+FROM icebergS3(
+  'https://{your-bucket}.s3.{region}.amazonaws.com/{iceberg-path}/',
+  'NOSIGN',
+  extra_credentials(role_arn='arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse', role_session_name='iceberg-session')
+);
+```
+
+<div id="persistent-iceberg-table-engine">
+  ### Opción B: motor de tabla persistente de Iceberg
+</div>
+
+```sql
+CREATE TABLE iceberg_secure (
+  id UInt64,
+  event_date Date,
+  data String
+)
+ENGINE = IcebergS3(
+  'https://{your-bucket}.s3.{region}.amazonaws.com/{iceberg-path}/',
+  'NOSIGN',
+  extra_credentials(role_arn='arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse')
+);
+```
+
+<div id="glue-catalog-plus-icebergs3">
+  ### Opción C: catálogo de Glue + IcebergS3
+</div>
+
+```sql
+CREATE TABLE my_db.my_table
+ENGINE = IcebergS3(
+  's3://{your-bucekt}/warehouse/{db}/{table}/',
+  'NOSIGN',
+  extra_credentials(role_arn='arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse')
+)
+SETTINGS
+  catalog_type = 'glue',
+  warehouse = '{your-warehouse}',
+  storage_endpoint = 's3://{your-bucket}',
+  region = '{region}'
+  aws_role_arn = 'arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse';
+```
+
+> Nota: Al usar el catálogo de Glue, asegúrese de que su rol de IAM tenga permisos de lectura y de listado tanto en S3 como en Glue.
+
+<div id="datalake-catalog-for-glue">
+  ### Opción D: Catálogo de DataLake para Glue
+</div>
+
+<Note>
+  El Catálogo de DataLake para Glue estará disponible en la versión 26.2.
+</Note>
+
+```sql
+CREATE DATABASE glue_test2
+ENGINE = DataLakeCatalog
+SETTINGS 
+    catalog_type = 'glue', 
+    region = {region}, 
+    aws_role_arn = 'arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse',
+    aws_role_session_name = {session-name},
+    SETTINGS
+    allow_database_glue_catalog = 1;
+```
+
+<div id="validate-access">
+  ## Verificar el acceso
+</div>
+
+1. Ejecuta una consulta sencilla:
+
+```sql
+SELECT * FROM icebergS3('https://{your-bucket}.s3.{region}.amazonaws.com/{iceberg-path}/', 'NOSIGN')
+LIMIT 5;
+```
+
+2. Comprueba si hay errores de IAM, como `AccessDenied` o `InvalidAccessKeyId`.
+
+<div id="troubelshooting">
+  ## Solución de problemas
+</div>
+
+* Verifique el ARN del rol en la configuración del servicio de ClickHouse Cloud.
+* Asegúrese de que su bucket/objetos estén en la misma región que las consultas de Iceberg para reducir la latencia y el costo.
+* Confirme que la ruta de la tabla Iceberg apunte a una ubicación válida de metadatos de Iceberg (archivos `metadata/v1/...` en la raíz de la tabla).
+* Para el modo de catálogo, compruebe los metadatos de Glue y la visibilidad de las particiones en la consola de AWS Glue.

@@ -1,0 +1,356 @@
+---
+description: 'Detalles sobre la copia de seguridad y la restauración hacia o desde un disco local'
+sidebarTitle: 'Disco local / disco S3'
+slug: /operations/backup/disk
+title: 'COPIA DE SEGURIDAD / RESTAURACIÓN en disco'
+doc_type: 'guide'
+---
+
+import ExampleSetup from '/snippets/es/_example_setup.mdx';
+import Syntax from '/snippets/es/_syntax.mdx';
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+<Syntax />
+
+<div id="configure-backup-destinations-for-disk">
+  ## Configurar destinos de copia de seguridad en disco
+</div>
+
+<div id="configure-a-backup-destination">
+  ### Configurar un destino de copia de seguridad para disco local
+</div>
+
+En los ejemplos siguientes verá el destino de copia de seguridad especificado como `Disk('backups', '1.zip')`.
+Para usar el motor de copia de seguridad `Disk`, primero debe añadir un archivo que especifique
+el destino de copia de seguridad en la ruta que se indica a continuación:
+
+```text
+/etc/clickhouse-server/config.d/backup_disk.xml
+```
+
+Por ejemplo, la siguiente configuración define un disco llamado `backups` y luego añade ese disco a
+la lista **allowed&#95;disk** de **backups**:
+
+```xml highlight={4,10-13}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>
+```
+
+<div id="backuprestore-using-an-s3-disk">
+  ### Configurar un destino de copia de seguridad para un disco S3
+</div>
+
+También es posible realizar `BACKUP`/`RESTORE` en S3 configurando un disco S3 en la
+configuración de almacenamiento de ClickHouse. Configure el disco de esta forma, añadiendo un archivo a
+`/etc/clickhouse-server/config.d`, como se hizo antes para el disco local.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint></endpoint>
+                <access_key_id></access_key_id>
+                <secret_access_key></secret_access_key>
+            </s3_plain>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+```
+
+`BACKUP`/`RESTORE` en disco S3 se realiza de la misma manera que en disco local:
+
+```sql
+BACKUP TABLE data TO Disk('s3_plain', 'cloud_backup');
+RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
+```
+
+<Note>
+  * Este disco no debe usarse para `MergeTree` en sí, solo para `BACKUP`/`RESTORE`
+  * Si tus tablas usan almacenamiento S3 y los tipos de los discos son diferentes,
+    no se utilizan llamadas `CopyObject` para copiar las partes al bucket de destino; en su lugar,
+    se descargan y se vuelven a subir, lo cual es muy ineficiente. En este caso, es preferible usar
+    la sintaxis `BACKUP ... TO S3(<endpoint>)` para este caso de uso.
+</Note>
+
+<div id="usage-examples">
+  ## Ejemplos de uso de copias de seguridad y restauración en disco local
+</div>
+
+<div id="backup-and-restore-a-table">
+  ### Hacer una copia de seguridad de una tabla y restaurarla
+</div>
+
+<ExampleSetup />
+
+Para hacer una copia de seguridad de la tabla, puede ejecutar:
+
+```sql title="Query"
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status─────────┐
+1. │ 065a8baf-9db7-4393-9c3f-ba04d1e76bcd │ BACKUP_CREATED │
+   └──────────────────────────────────────┴────────────────┘
+```
+
+La tabla puede restaurarse desde la copia de seguridad con el siguiente comando si está vacía:
+
+```sql title="Query"
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status───┐
+1. │ f29c753f-a7f2-4118-898e-0e4600cd2797 │ RESTORED │
+   └──────────────────────────────────────┴──────────┘
+```
+
+<Note>
+  El `RESTORE` anterior fallará si la tabla `test.table` contiene datos.
+  La configuración `allow_non_empty_tables=true` permite que `RESTORE TABLE` inserte datos
+  en tablas no vacías. Esto mezclará los datos que ya había en la tabla con los datos extraídos de la copia de seguridad.
+  Por lo tanto, esta configuración puede provocar la duplicación de datos en la tabla y debe usarse con precaución.
+</Note>
+
+Para restaurar la tabla cuando ya contiene datos, ejecute:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+SETTINGS allow_non_empty_tables=true
+```
+
+Las tablas se pueden restaurar o respaldar con nombres nuevos:
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backups', '1.zip')
+```
+
+El archivo de la copia de seguridad tiene la siguiente estructura:
+
+```text
+├── .backup
+└── metadata
+    └── test_db
+        └── test_table.sql
+```
+
+{/* POR HACER: 
+  Explicación aquí sobre el formato de la copia de seguridad. Ver la incidencia 24a
+  https://github.com/ClickHouse/clickhouse-docs/issues/3968
+  */}
+
+Se pueden usar formatos distintos de zip. Consulte [&quot;Copias de seguridad como archivos tar&quot;](#backups-as-tar-archives)
+más abajo para más detalles.
+
+<div id="incremental-backups">
+  ### Copias de seguridad incrementales en disco
+</div>
+
+Una copia de seguridad base en ClickHouse es la copia de seguridad completa inicial a partir de la cual se crean las
+siguientes copias de seguridad incrementales. Las copias de seguridad incrementales solo almacenan los cambios
+realizados desde la copia de seguridad base, por lo que esta debe mantenerse disponible para
+poder restaurar desde cualquier copia de seguridad incremental. El destino de la copia de seguridad base puede establecerse con la opción
+`base_backup`.
+
+<Note>
+  Las copias de seguridad incrementales dependen de la copia de seguridad base. La copia de seguridad base debe mantenerse disponible
+  para poder restaurar desde una copia de seguridad incremental.
+</Note>
+
+Para hacer una copia de seguridad incremental de una tabla, primero haga una copia de seguridad base:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'd.zip')
+```
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'incremental-a.zip')
+SETTINGS base_backup = Disk('backups', 'd.zip')
+```
+
+Todos los datos de la copia de seguridad incremental y de la copia de seguridad base se pueden restaurar en una
+tabla nueva `test_db.test_table2` con el comando:
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table2
+FROM Disk('backups', 'incremental-a.zip');
+```
+
+<div id="assign-a-password-to-the-backup">
+  ### Proteger una copia de seguridad
+</div>
+
+A las copias de seguridad escritas en disco se les puede aplicar una contraseña al archivo.
+La contraseña puede especificarse mediante la configuración `password`.
+
+<Note>
+  La protección con contraseña solo es compatible con archivos ZIP (`.zip`, `.zipx`).
+  La ruta de la copia de seguridad debe terminar en `.zip` o `.zipx` para que se acepte la contraseña.
+  Usar una contraseña con cualquier otro formato, incluidos los archivos tar y las rutas que no apuntan a archivos,
+  dará como resultado el error `BAD_ARGUMENTS`: `Password is not applicable, backup cannot be encrypted`.
+</Note>
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+Para restaurar una copia de seguridad protegida con contraseña, la contraseña debe volver a
+especificarse mediante la configuración `password`:
+
+```sql
+RESTORE TABLE test_db.test_table
+FROM Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+<div id="backups-as-tar-archives">
+  ### Copias de seguridad como archivos tar
+</div>
+
+Las copias de seguridad pueden almacenarse no solo como archivos zip, sino también como archivos tar.
+La funcionalidad es la misma que con zip, salvo que la protección con contraseña no está
+disponible para los archivos tar. Además, los archivos tar admiten varios
+métodos de compresión.
+
+Para hacer una copia de seguridad de una tabla como archivo tar:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar')
+```
+
+para restaurar a partir de un archivo tar:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.tar')
+```
+
+Para cambiar el método de compresión, se debe añadir el sufijo de archivo correcto al
+nombre de la copia de seguridad. Por ejemplo, para comprimir el archivo TAR con gzip, ejecute:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
+```
+
+Los sufijos de archivo de compresión admitidos son:
+
+* `tar.gz`
+* `.tgz`
+* `tar.bz2`
+* `tar.lzma`
+* `.tar.zst`
+* `.tzst`
+* `.tar.xz`
+
+<div id="compression-settings">
+  ### Configuración de compresión
+</div>
+
+El método de compresión y el nivel de compresión se pueden especificar mediante
+las opciones `compression_method` y `compression_level`, respectivamente.
+
+{/* POR HACER:
+  Se necesita más información sobre estos ajustes y por qué convendría hacerlo 
+  */}
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'filename.zip')
+SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="restore-specific-partitions">
+  ### Restaurar particiones específicas
+</div>
+
+Si es necesario restaurar particiones específicas asociadas a una tabla, se pueden indicar aquí.
+
+Vamos a crear una tabla sencilla particionada en cuatro particiones, insertar algunos datos y luego
+hacer una copia de seguridad solo de la primera y la cuarta partición:
+
+<Accordion title="Configuración">
+  ```sql
+  CREATE IF NOT EXISTS test_db;
+         
+  -- Crear una tabla particionada
+  CREATE TABLE test_db.partitioned (
+      id UInt32,
+      data String,
+      partition_key UInt8
+  ) ENGINE = MergeTree()
+  PARTITION BY partition_key
+  ORDER BY id;
+
+  INSERT INTO test_db.partitioned VALUES
+  (1, 'data1', 1),
+  (2, 'data2', 2),
+  (3, 'data3', 3),
+  (4, 'data4', 4);
+
+  SELECT count() FROM test_db.partitioned;
+
+  SELECT partition_key, count() 
+  FROM test_db.partitioned
+  GROUP BY partition_key
+  ORDER BY partition_key;
+  ```
+
+  ```response
+     ┌─count()─┐
+  1. │       4 │
+     └─────────┘
+     ┌─partition_key─┬─count()─┐
+  1. │             1 │       1 │
+  2. │             2 │       1 │
+  3. │             3 │       1 │
+  4. │             4 │       1 │
+     └───────────────┴─────────┘
+  ```
+</Accordion>
+
+Ejecute el siguiente comando para hacer una copia de seguridad de las particiones 1 y 4:
+
+```sql
+BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'
+TO Disk('backups', 'partitioned.zip')
+```
+
+Ejecute el siguiente comando para restaurar las particiones 1 y 4:
+
+```sql
+RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'
+FROM Disk('backups', 'partitioned.zip')
+SETTINGS allow_non_empty_tables=true
+```

@@ -1,0 +1,348 @@
+---
+slug: /use-cases/observability/clickstack/dashboards
+title: 'ClickStack 可视化与仪表盘'
+sidebarTitle: '仪表盘'
+description: 'ClickStack 可视化与仪表盘'
+doc_type: 'guide'
+keywords: ['clickstack', '仪表盘', '可视化', '监控', '可观测性']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import Tagging from '/snippets/zh/_clickstack_tagging.mdx';
+
+ClickStack 支持事件可视化，并在 ClickStack UI (HyperDX) 中内置了图表功能。这些图表可以添加到仪表盘中，与其他用户共享。
+
+可视化可以基于链路追踪、指标、日志或任何用户定义的 wide 事件 schema 创建。
+
+<div id="creating-visualizations">
+  ## 创建可视化
+</div>
+
+HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链路追踪和日志可视化，便于快速创建用于数据分析的可视化内容。该界面在创建仪表盘时也会复用。下面将介绍如何使用 Chart Explorer 创建可视化。
+
+每个可视化都从选择**数据源**开始，然后选择**指标**，并可按需添加**过滤表达式**和 **group by** 字段。从概念上讲，HyperDX 中的可视化在底层对应的是 SQL `GROUP BY` 查询——你需要定义要在所选维度上聚合的指标。
+
+<Tip>
+  **AI 驱动的图表生成**
+
+  ClickStack 还支持通过 [text-to-chart](/zh/clickstack/text-to-chart) 功能，使用自然语言提示词创建图表。只需描述你想看到的内容，ClickStack 就会自动生成可视化。
+</Tip>
+
+例如，你可以绘制按服务名称分组的错误数量 (`count()`) 图表。
+
+在下面的示例中，我们使用 [sql.clickhouse.com](https://sql.clickhouse.com) 上提供的远程数据集，详见指南 [&quot;Remote Demo Dataset&quot;](/zh/clickstack/example-datasets/remote-demo-data)。**你也可以访问 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 来复现这些示例。**
+
+<Steps>
+  <Step>
+    ### 前往 Chart Explorer
+
+    从左侧菜单中选择 `Chart Explorer`。
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+  </Step>
+
+  <Step>
+    ### 创建可视化
+
+    在下面的示例中，我们绘制按服务名称区分的平均请求耗时随时间变化的图表。这要求用户指定一个指标、一列 (可以是 SQL 表达式) 以及一个聚合字段。
+
+    从顶部菜单中选择 `Line/Bar` 可视化类型，然后选择 `Traces` 数据集 (如果使用 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)，则选择 `Demo Traces`) 。填写以下值：
+
+    * 指标：`Average`
+    * 列：`Duration/1000`
+    * Where：`<empty>`
+    * Group By：`ServiceName`
+    * 别名：`Average Time`
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Simple visualization" size="lg" />
+
+    请注意，你既可以使用 SQL `WHERE` 子句，也可以使用 Lucene 语法来过滤事件，并设置事件可视化的时间范围。还支持多个 series。
+
+    例如，添加过滤器 `ServiceName:"frontend"`，按 `frontend` 服务进行过滤。点击 `Add Series`，添加第二个表示事件数量随时间变化的 series，并将别名设为 `Count`。
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Simple visualization 2" size="lg" />
+
+    若要基于现有 series 创建一个类似的新 series，你可以直接复制，而不必从头开始。点击某个 series 行上的复制图标 (`Duplicate series`)，即可在其正下方插入一个副本。副本会保留原 series 的设置，例如指标、列和过滤器。然后你只需修改不同的字段 (例如聚合方式) ，并为副本设置自己的别名。在所有支持多个 series 的地方都可以使用复制功能。对于仅允许一个 series 的可视化类型，例如 `Number`、`Pie` 和 `Heatmap`，则会隐藏该功能。
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg" />
+
+    若要基于现有 series 创建一个类似的新 series，你可以直接复制，而不必从头开始。点击某个 series 行上的复制图标 (`Duplicate series`)，即可在其正下方插入一个副本。副本会保留原 series 的设置，例如指标、列和过滤器。然后你只需修改不同的字段 (例如聚合方式) ，并为副本设置自己的别名。在所有支持多个 series 的地方都可以使用复制功能。对于仅允许一个 series 的可视化类型，例如 `Number`、`Pie` 和 `Heatmap`，则会隐藏该功能。
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg" />
+
+    <Note>
+      可以基于任何数据源创建可视化——无论是指标、链路追踪还是日志。ClickStack 将这些统一视为宽事件。任何**数值列**都可以按时间绘制成图，而**字符串**、**日期**或**数值**列都可用于分组。
+
+      这种统一方式使你能够基于一致且灵活的模型，跨不同类型的遥测数据构建仪表盘。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="creating-dashboards">
+  ## 创建仪表盘
+</div>
+
+仪表盘可用于将相关的可视化分组，让您能够并排比较指标并分析规律，从而识别系统中潜在的根因。这些仪表盘既可用于临时调查，也可保存下来用于持续监控。
+
+可以在仪表盘级别应用全局过滤器，并自动传递到该仪表盘中的所有可视化。这使您能够在各个图表之间进行一致的下钻，并简化跨服务和不同遥测类型的事件关联。
+
+下面我们将使用日志和 trace 数据源创建一个包含两个可视化的仪表盘。如指南 [&quot;远程演示数据集&quot;](/zh/clickstack/example-datasets/remote-demo-data) 所述，这些步骤可以在 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 上复现，也可以通过连接到托管在 [sql.clickhouse.com](https://sql.clickhouse.com) 上的数据集在本地复现。
+
+<Steps>
+  <Step>
+    ### 前往仪表盘
+
+    在左侧菜单中选择 `Dashboards`。然后点击 `New Dashboard`，创建临时仪表盘或已保存的仪表盘。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="创建仪表盘" size="lg" />
+  </Step>
+
+  <Step>
+    ### 创建可视化——按服务查看平均请求耗时
+
+    选择 `Add New Tile`，打开可视化创建面板。
+
+    在顶部菜单中选择 `Line/Bar` 可视化类型，然后选择 `Traces` 数据集 (如果使用 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)，则选择 `Demo Traces`) 。填写以下值，以创建一个按服务名称展示平均请求耗时随时间变化的图表：
+
+    * 图表名称：`Average duration by service`
+    * 指标：`Average`
+    * 列：`Duration/1000`
+    * Where：`<empty>`
+    * Group By：`ServiceName`
+    * 别名：`Average Time`
+
+    点击 `Save` 之前，先点击 **play** 按钮。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="创建仪表板可视化" size="lg" />
+
+    调整可视化大小，使其占满仪表板的整个宽度。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="包含可视化内容的仪表板" size="lg" />
+  </Step>
+
+  <Step>
+    ### 创建可视化——按服务查看事件随时间的变化
+
+    选择 `Add New Tile` 打开可视化创建面板。
+
+    从顶部菜单中选择 `Line/Bar` 可视化类型，然后选择 `Logs` 数据集 (如果使用 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)，则选择 `Demo Logs`) 。填写以下值，以创建一个按服务名称展示事件计数随时间变化的图表：
+
+    * 图表名称：`Event count by service`
+    * 指标：`Count of Events`
+    * 条件：`<empty>`
+    * 分组依据：`ServiceName`
+    * 别名：`Count of events`
+
+    点击 `Save` 前，先点击 **play** 按钮。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="仪表板可视化 2" size="lg" />
+
+    调整可视化大小，使其占满整个仪表板宽度。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="带可视化内容的仪表板 2" size="lg" />
+  </Step>
+
+  <Step>
+    ### 为 span 耗时添加热力图卡片
+
+    热力图卡片会将落入每个 (时间、值) bucket 的事件数绘制成彩色网格。当你想查看某个分布随时间变化的**形态**，而不只是平均值或某一个百分位数时，应使用热力图。延迟热力图能够揭示双峰耗时模式、慢尾聚集或突发扩散，而这些现象在线图中往往会被平均掉。
+
+    要添加热力图卡片：
+
+    1. 选择 `Add New Tile`。
+    2. 从顶部菜单中选择 `Heatmap` 可视化类型。数据源下拉列表只会显示[source type is `Traces`](/zh/clickstack/managing/config#traces) 的数据源。日志、指标和 session 数据源会被过滤掉，因为热力图需要 span 耗时列，而这只有 traces 数据源才提供。
+    3. 按名称选择任意一个 traces 数据源。名称本身是任意的，关键在于类型。
+
+    选择数据源后，热力图会预填以下内容：
+
+    * **Value**：该数据源的 `Duration Expression`，并按当前显示单位进行缩放 (例如 `(Duration)/1e6`，将每个事件的 span 耗时从纳秒转换为毫秒)
+    * **Count**：`count()`
+
+    4. 设置图表名称，并使用 `Where` 将热力图限定到你想观察其性能的特定服务或一组操作。
+    5. 调整时间范围以匹配你关注的时间段。较大的时间范围可以揭示分布偏移和双峰延迟模式，而较短的时间窗口可能会掩盖这些现象。
+
+    下面的示例展示了一个服务在 24 小时时间窗口内的情况，其 span 耗时的快路径和慢路径清晰地分离成两条水平带。
+
+    如需进一步自定义热力图，请点击 **Display Settings** 打开抽屉面板，以设置 **Scale** (Log 或 Linear) 、**Value** 和 **Count** 表达式。完整选项列表记录在 Event Deltas 页面的 [Customize the heatmap](/zh/clickstack/features/event-deltas#customize) 中。这里复用了同一个抽屉面板。
+
+    点击 `Run` 预览图表，然后点击 `Save`。
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="已预填 span 耗时默认值、ServiceName payment 过滤条件和 Display Settings 按钮的热力图卡片编辑器" size="lg" />
+
+    保存后的卡片会在仪表盘上渲染为热力图。将鼠标悬停在任意单元上，即可查看 bucket 边界和事件数。
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="显示 payment 服务在 24 小时内 span 耗时分布的热力图仪表盘卡片" size="lg" />
+
+    <Tip>
+      **每个热力图会执行两条 ClickHouse 查询**
+
+      热力图会按顺序执行两条查询：先执行一个较小的**边界查询**来确定值范围，再执行一个**热力图查询**来统计每个 bucket 中的事件数。如果你想查看或复制它们，这两条查询都可以在编辑器的 **Generated SQL** 下看到。
+    </Tip>
+
+    #### 下钻到 Event Deltas
+
+    点击已渲染热力图卡片中的任意单元，即可打开 **View in Event Deltas** 操作。
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="点击热力图单元后显示 View in Event Deltas 操作" size="lg" />
+
+    选择它后，会打开 [Event Deltas](/zh/clickstack/features/event-deltas) 视图，并带入该卡片的数据源、`Where` 子句和时间范围。在那里，你可以交互式检查同一分布，按 attribute 切分以查看慢 spans 与快 spans 的差异，并查看任意单元背后的各个 spans，而无需手动重新构建查询。
+  </Step>
+
+  <Step>
+    ### 筛选仪表板
+
+    可在仪表板级别应用 Lucene 或 SQL 过滤器以及时间范围，这些设置会自动同步到所有可视化中。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="带筛选条件的仪表板" size="lg" />
+
+    为演示这一点，请将 Lucene 过滤器 `ServiceName:"frontend"` 应用到仪表板，并将时间窗口调整为最近 3 小时。注意，此时所有可视化都只显示来自 `frontend` 服务的数据。
+
+    仪表板会自动保存。要设置仪表板名称，请选中标题并进行修改，然后点击 `Save Name`。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="保存仪表板" size="lg" />
+  </Step>
+</Steps>
+
+<div id="dashboards-editing-visualizations">
+  ## 仪表盘 - 编辑可视化
+</div>
+
+要删除、编辑或复制可视化，请将鼠标悬停在其上，然后使用相应的操作按钮。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="编辑仪表盘" size="lg" />
+
+<div id="dashboard-listing-search">
+  ## 仪表盘 - 列表与搜索
+</div>
+
+可在仪表盘页面查看仪表盘。仪表盘按标签组织，并内置搜索和过滤功能，便于快速定位特定仪表盘。
+
+可以将仪表盘加入收藏，方便从侧边栏和列表页面顶部快速访问。收藏内容仅对各个用户单独保存。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="仪表盘搜索" size="lg" />
+
+<div id="tagging">
+  ## 仪表盘 - 标签
+</div>
+
+<Tagging />
+
+<div id="custom-filters">
+  ## 自定义过滤器
+</div>
+
+除了所有仪表盘上都可用的[自由文本过滤器](#filter-dashboards)之外，已保存的仪表盘还支持自定义下拉过滤器，其选项来自对 ClickHouse 的查询结果。这些过滤器提供可复用的点选式过滤控件，让仪表盘查看者无需手动编写表达式即可进行过滤。
+
+<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="显示可用服务名称的服务下拉过滤器" size="lg" />
+
+以下步骤演示如何为在[“创建仪表盘”](#creating-dashboards)部分中创建的仪表盘添加自定义过滤器。
+
+<Steps>
+  <Step>
+    ### 打开“Edit Filters”对话框
+
+    打开一个已保存的仪表盘，然后在工具栏中选择 **Edit Filters**。
+
+    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="仪表盘工具栏中的 Edit Filters 按钮" size="lg" />
+  </Step>
+
+  <Step>
+    ### 添加新过滤器
+
+    点击 **Add new filter**。通过填写 **Name**、选择 **Data source**，并输入 **Filter expression** 来配置过滤器；它可以是一个 SQL 列或表达式，其不同值将填充到下拉框中。点击 **Save filter**。
+
+    例如，要为链路追踪数据添加服务过滤器，可选择 `Traces` 数据源，并将 `ServiceName` 用作过滤表达式。“Dropdown values filter”为可选项，可用于限制下拉框中显示的值。
+
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="包含 Name、Data source 和 Filter expression 字段的 Add filter 对话框" size="md" />
+
+    Filters 模态框会显示该仪表盘上已配置的所有过滤器。你可以在这里编辑或删除现有过滤器，也可以添加更多过滤器。
+
+    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="显示已配置 Services 过滤器的 Filters 模态框" size="md" />
+  </Step>
+
+  <Step>
+    ### 使用过滤器
+
+    关闭 Filters 模态框。新的下拉过滤器会显示在搜索栏下方。点击它可查看可用值，然后选择一个值，以过滤仪表盘上的所有可视化内容。
+
+    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="已按 frontend 服务过滤的仪表盘" size="lg" />
+  </Step>
+
+  <Step>
+    ### &#x20;(可选) 将过滤器值保存为默认值
+
+    要将某个过滤器选择保存为仪表盘的默认值，请在仪表盘菜单中选择 **Save Query &amp; Filters as Default**。此后，该仪表盘打开时将始终自动应用所选过滤器。若要重置，请在同一菜单中选择 **Remove Default Query &amp; Filters**。
+
+    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="显示 Save Query and Filters as Default 选项的仪表盘菜单" size="lg" />
+  </Step>
+</Steps>
+
+<Note>
+  自定义下拉过滤器适用于已保存的仪表盘。要查看这种用法的实际示例，请参阅 [Kubernetes 仪表盘](#kubernetes-dashboard)，其中为 pod (容器组) 、部署、节点名称、命名空间和集群提供了内置下拉过滤器。
+</Note>
+
+<div id="drilldown-to-search">
+  ## 下钻到搜索页
+</div>
+
+仪表盘卡片支持下钻到搜索页。点击可视化中的某个数据点，会打开一个包含以下选项的上下文菜单：
+
+* **查看所有事件** — 跳转到搜索页，显示所选时间范围内的所有事件。
+* **按组筛选** — 跳转到搜索页，并筛选为特定数据系列。
+
+<Image img="/images/clickstack/dashboards/drilldown.webp" alt="显示“查看所有事件”和“按组筛选”选项的下钻上下文菜单" size="lg" />
+
+这对于调查在仪表盘中发现的特定峰值或异常非常有用——你可以快速从聚合视图切换到底层的单条事件。
+
+<div id="presets">
+  ## 预设
+</div>
+
+HyperDX 部署后即提供开箱即用的仪表盘。
+
+<div id="clickhouse-dashboard">
+  ### ClickHouse 仪表盘
+</div>
+
+此仪表盘提供用于监控 ClickHouse 的可视化视图。要进入此仪表盘，请从左侧菜单中选择。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="ClickHouse 仪表盘" size="lg" />
+
+此仪表盘使用选项卡分别展示 **Selects**、**Inserts** 和 **ClickHouse 基础设施** 的监控信息。
+
+<Info>
+  **所需的系统表访问权限**
+
+  此仪表盘会查询 ClickHouse [系统表](/zh/reference/system-tables/index) 以显示关键指标。需要以下授权：
+
+  `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
+
+  `GRANT SHOW COLUMNS, SELECT(active, database, partition, rows, table) ON system.parts`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, memory_usage, normalized_query_hash, query, query_duration_ms, query_kind, read_rows, tables, type, written_bytes, written_rows) ON system.query_log`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, hostname, metric, value) ON system.transposed_metric_log`
+</Info>
+
+<div id="services-dashboard">
+  ### 服务仪表板
+</div>
+
+服务仪表板会根据 trace 数据显示当前处于活跃状态的服务。这要求你已收集链路追踪数据，并配置了有效的链路追踪数据源。
+
+系统会从 trace 数据中自动识别服务名称，并提供一组预建的可视化，分布在三个选项卡中：HTTP Services、Database 和 Errors。
+
+这些可视化可使用 Lucene 或 SQL 语法进行过滤，并且可以调整时间窗口，以便进行更有针对性的分析。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="ClickHouse services" size="lg" />
+
+<div id="kubernetes-dashboard">
+  ### Kubernetes 仪表板
+</div>
+
+此仪表板可让您查看通过 OpenTelemetry 收集的 Kubernetes 事件。它提供高级过滤选项，支持按 Kubernetes pod (容器组) 、部署、节点名称、命名空间和集群进行筛选，也支持自由文本搜索。
+
+为便于导航，Kubernetes 数据分为三个选项卡：Pods、Nodes 和 Namespaces。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse Kubernetes" size="lg" />

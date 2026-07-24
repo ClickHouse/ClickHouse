@@ -1,4 +1,6 @@
+import mmap
 import os
+import shutil
 import time
 
 import pytest
@@ -12,20 +14,32 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 @pytest.fixture(scope="module")
 def started_node():
     cluster = helpers.cluster.ClickHouseCluster(__file__)
+    node = cluster.add_instance(
+        "node",
+        main_configs=[
+            "configs/crash_log.xml",
+            "configs/core_dump.xml",
+            "configs/disable_trace_log.xml",
+        ],
+        env_variables={
+            "ASAN_OPTIONS": "use_sigaltstack=0 disable_coredump=0",
+            "TSAN_OPTIONS": "use_sigaltstack=0 memory_limit_mb=5120 disable_coredump=0",
+            "MSAN_OPTIONS": "disable_coredump=0",
+        },
+        stay_alive=True,
+    )
     try:
-        node = cluster.add_instance(
-            "node", main_configs=["configs/crash_log.xml"], stay_alive=True
-        )
-
         cluster.start()
         yield node
     finally:
-        cluster.shutdown(ignore_fatal=True)
+        shutil.rmtree(os.path.join(node.path, "database", "cores"), ignore_errors=True)
+        cluster.shutdown(ignore_fatal=True, ignore_sanitizer=True)
 
 
 def send_signal(started_node, signal):
+    pid = started_node.get_process_pid("clickhouse")
     started_node.exec_in_container(
-        ["bash", "-c", f"pkill -{signal} clickhouse"], user="root"
+        ["bash", "-c", f"kill -{signal} {pid}"], user="root"
     )
 
 
@@ -109,4 +123,57 @@ def test_pkill_query_log(started_node):
         send_signal(started_node, signal)
         wait_for_clickhouse_stop(started_node)
         started_node.restart_clickhouse()
-        assert started_node.query("SELECT COUNT(*) FROM system.query_log") >= f"3\n"
+        assert started_node.query("SELECT COUNT(*) FROM system.query_log") >= "3\n"
+
+
+REPORT_PREAMBLE = b"CLICKHOUSE SANITIZER REPORT\n"
+CORES_DIR = "/var/lib/clickhouse/cores"
+
+
+def find_report_in_core(core_path):
+    # The core is mostly sparse holes: scan only the data extents.
+    with open(core_path, "rb") as f, mmap.mmap(f.fileno(), 0, prot=mmap.PROT_READ) as core:
+        offset = 0
+        while True:
+            try:
+                start = os.lseek(f.fileno(), offset, os.SEEK_DATA)
+            except OSError:
+                return None
+            offset = os.lseek(f.fileno(), start, os.SEEK_HOLE)
+            pos = core.find(REPORT_PREAMBLE, start, offset + len(REPORT_PREAMBLE))
+            if pos != -1:
+                report = core[pos : pos + (1 << 20)]
+                terminator = report.find(b"\x00")
+                return report[:terminator] if terminator != -1 else report
+
+
+def test_sanitizer_report_in_core_dump(started_node):
+    if not any(
+        started_node.is_built_with_sanitizer(name)
+        for name in ("address", "thread", "memory")
+    ):
+        pytest.skip("requires an ASan, TSan or MSan build")
+
+    # Only a server started with --daemon changes its working directory to the
+    # cores directory, and the previous test may have restarted it without it.
+    started_node.restart_clickhouse(daemon=True)
+
+    cores_dir = os.path.join(started_node.path, "database", "cores")
+    for name in os.listdir(cores_dir):
+        os.remove(os.path.join(cores_dir, name))
+
+    started_node.query("SYSTEM ENABLE FAILPOINT trigger_sanitizer_error")
+    started_node.query("SELECT 1", ignore_error=True)
+
+    wait_for_clickhouse_stop(started_node)
+
+    cores = [os.path.join(cores_dir, name) for name in os.listdir(cores_dir)]
+    assert len(cores) == 1
+
+    report = find_report_in_core(cores[0])
+    assert report is not None
+    assert b"Sanitizer" in report
+    assert b"SUMMARY:" in report
+
+    shutil.rmtree(cores_dir, ignore_errors=True)
+    started_node.restart_clickhouse()

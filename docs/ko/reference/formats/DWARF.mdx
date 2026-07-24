@@ -1,0 +1,92 @@
+---
+alias: []
+description: 'DWARF 포맷 문서'
+input_format: true
+keywords: ['DWARF']
+output_format: false
+slug: /interfaces/formats/DWARF
+title: 'DWARF'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`DWARF` 포맷은 ELF 파일(실행 파일, 라이브러리 또는 객체 파일)에서 DWARF 디버그 심볼을 파싱합니다.
+`dwarfdump`와 비슷하지만 훨씬 빠르고(초당 수백 MB) SQL도 지원합니다.
+`.debug_info` 섹션의 각 Debug Information Entry(DIE)마다 한 개의 행을 생성하며,
+DWARF 인코딩에서 트리의 자식 목록을 끝내는 데 사용하는 &quot;null&quot; 엔트리도 포함합니다.
+
+<Info>
+  `.debug_info`는 컴파일 단위에 해당하는 *unit*으로 구성됩니다.
+
+  * 각 unit은 루트에 `compile_unit` DIE가 있는 *DIE* 트리입니다.
+  * 각 DIE에는 *tag*와 *속성* 목록이 있습니다.
+  * 각 속성에는 *name*과 *value*가 있으며(값이 어떻게 인코딩되는지를 지정하는 *form*도 있습니다).
+
+  DIE는 소스 코드의 여러 요소를 나타내며, *tag*는 그것이 어떤 종류의 요소인지 알려줍니다. 예를 들면 다음과 같습니다.
+
+  * 함수(tag = `subprogram`)
+  * 클래스/struct/enum(`class_type`/`structure_type`/`enumeration_type`)
+  * 변수(`variable`)
+  * 함수 인수(`formal_parameter`).
+
+  트리 구조는 해당 소스 코드 구조를 그대로 반영합니다. 예를 들어 `class_type` DIE에는 클래스의 메서드를 나타내는 `subprogram` DIE가 포함될 수 있습니다.
+</Info>
+
+`DWARF` 포맷은 다음 컬럼을 출력합니다.
+
+* `offset` - `.debug_info` 섹션에서 DIE의 위치
+* `size` - 인코딩된 DIE의 바이트 수(속성 포함)
+* `tag` - DIE의 유형이며, 관례적인 &quot;DW&#95;TAG&#95;&quot; 접두사는 생략됩니다
+* `unit_name` - 이 DIE가 포함된 컴파일 단위의 이름
+* `unit_offset` - 이 DIE가 포함된 컴파일 단위의 `.debug_info` 섹션 내 위치
+* `ancestor_tags` - 트리에서 현재 DIE의 상위 조상 tag를 담은 배열로, 가장 안쪽에서 가장 바깥쪽 순으로 정렬됩니다
+* `ancestor_offsets` - 조상의 offset이며 `ancestor_tags`와 같은 순서로 대응됩니다
+* 편의를 위해 속성 배열에서 중복해서 제공되는 몇 가지 공통 속성:
+  * `name`
+  * `linkage_name` - 맹글링된 정규화 전체 이름으로, 일반적으로 함수에만 있지만 모든 함수에 있는 것은 아닙니다
+  * `decl_file` - 이 엔터티가 선언된 소스 코드 파일의 이름
+  * `decl_line` - 이 엔터티가 선언된 소스 코드의 줄 번호
+* 속성을 설명하는 병렬 배열:
+  * `attr_name` - 속성의 이름이며, 관례적인 &quot;DW&#95;AT&#95;&quot; 접두사는 생략됩니다
+  * `attr_form` - 속성이 인코딩되고 해석되는 방식이며, 관례적인 DW&#95;FORM&#95; 접두사는 생략됩니다
+  * `attr_int` - 속성의 정수 값이며, 숫자 값이 없으면 0입니다
+  * `attr_str` - 속성의 문자열 값이며, 문자열 값이 없으면 비어 있습니다
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+`DWARF` 포맷은 함수 정의 수가 가장 많은 컴파일 단위(Template 인스턴스화와 포함된 헤더 파일의 함수 포함)를 찾는 데 사용할 수 있습니다:
+
+```sql title="Query"
+SELECT
+    unit_name,
+    count() AS c
+FROM file('programs/clickhouse', DWARF)
+WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
+GROUP BY unit_name
+ORDER BY c DESC
+LIMIT 3
+```
+
+```text title="Response"
+┌─unit_name──────────────────────────────────────────────────┬─────c─┐
+│ ./src/Core/Settings.cpp                                    │ 28939 │
+│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
+│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
+└────────────────────────────────────────────────────────────┴───────┘
+
+3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
+Peak memory usage: 271.92 MiB.
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

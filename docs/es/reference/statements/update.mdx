@@ -1,0 +1,149 @@
+---
+description: 'Las actualizaciones ligeras simplifican el proceso de actualización de datos en la base de datos mediante partes de parche.'
+keywords: ['update']
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/update
+title: 'La sentencia UPDATE de actualización ligera'
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<Note>
+  Las actualizaciones ligeras se encuentran actualmente en fase beta.
+  Si tienes algún problema, abre una incidencia en el [repositorio de ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+La sentencia de actualización ligera `UPDATE` actualiza las filas de una tabla `[db.]table` que coinciden con la expresión `filter_expr`.
+Se denomina &quot;actualización ligera&quot; para diferenciarla de la consulta [`ALTER TABLE ... UPDATE`](/es/reference/statements/alter/update), que es un proceso costoso que reescribe columnas completas en las partes de datos.
+Solo está disponible para la familia de motores de tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree).
+
+```sql
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+```
+
+`filter_expr` debe ser de tipo `UInt8`. Esta consulta actualiza los valores de las columnas especificadas con los valores de las expresiones correspondientes en las filas en las que `filter_expr` toma un valor distinto de cero.
+Los valores se convierten al tipo de la columna mediante el operador `CAST`. No se admite la actualización de columnas utilizadas en el cálculo de las claves primarias o de partición.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+```sql
+UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
+
+UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
+```
+
+<div id="lightweight-update-does-not-update-data-immediately">
+  ## Las actualizaciones ligeras no actualizan los datos inmediatamente
+</div>
+
+La actualización ligera `UPDATE` se implementa mediante **partes de parche**, un tipo especial de parte de datos que contiene solo las columnas y filas actualizadas.
+Una actualización ligera `UPDATE` crea partes de parche, pero no modifica físicamente de inmediato los datos originales en el almacenamiento.
+El proceso de actualización es similar al de una consulta `INSERT ... SELECT ...`, pero la consulta `UPDATE` espera a que se complete la creación de la parte de parche antes de devolver el control.
+
+Los valores actualizados quedan:
+
+* **Inmediatamente visibles** en las consultas `SELECT` mediante la aplicación de parches
+* **Materializados físicamente** solo durante fusiones y mutaciones posteriores
+* **Eliminados automáticamente** una vez que todas las partes activas tienen los parches materializados
+
+<div id="lightweight-update-requirements">
+  ## Requisitos de las actualizaciones ligeras
+</div>
+
+Las actualizaciones ligeras son compatibles con los motores [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/es/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/es/reference/engines/table-engines/mergetree-family/collapsingmergetree) y [`VersionedCollapsingMergeTree`](/es/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), así como con sus versiones [`Replicated`](/es/reference/engines/table-engines/mergetree-family/replication) y [`Shared`](/es/products/cloud/features/infrastructure/shared-merge-tree).
+
+Para usar actualizaciones ligeras, la materialización de las columnas `_block_number` y `_block_offset` debe habilitarse mediante las opciones de configuración de la tabla [`enable_block_number_column`](/es/reference/settings/merge-tree-settings#enable_block_number_column) y [`enable_block_offset_column`](/es/reference/settings/merge-tree-settings#enable_block_offset_column).
+
+<div id="lightweight-delete">
+  ## Eliminaciones ligeras
+</div>
+
+Una consulta de [eliminación ligera](/es/reference/statements/delete) puede ejecutarse como una actualización ligera `UPDATE` en lugar de una mutación `ALTER UPDATE`. La implementación de la eliminación ligera se controla mediante el ajuste [`lightweight_delete_mode`](/es/reference/settings/session-settings#lightweight_delete_mode).
+
+<div id="performance-considerations">
+  ## Consideraciones de rendimiento
+</div>
+
+**Ventajas de las actualizaciones ligeras:**
+
+* La latencia de la actualización es comparable a la de la consulta `INSERT ... SELECT ...`
+* Solo se escriben las columnas y los valores actualizados, no columnas completas en las partes de datos
+* No es necesario esperar a que terminen las fusiones o mutaciones en ejecución; por lo tanto, la latencia de una actualización es predecible
+* Es posible ejecutar actualizaciones ligeras en paralelo
+
+**Posibles impactos en el rendimiento:**
+
+* Añaden una sobrecarga a las consultas `SELECT` que necesitan aplicar parches
+* Los [índices de omisión](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) no se usarán para las columnas de partes de datos que tengan parches pendientes de aplicar. Las [proyecciones](/es/reference/engines/table-engines/mergetree-family/mergetree#projections) no se usarán si la tabla tiene partes de parche, incluso en las partes de datos que no tengan parches pendientes de aplicar.
+* Las actualizaciones pequeñas demasiado frecuentes pueden provocar un error &quot;Too many parts&quot;. Se recomienda agrupar varias actualizaciones en una sola consulta, por ejemplo, incluyendo los ID de las actualizaciones en una sola cláusula `IN` dentro de la cláusula `WHERE`
+* Las actualizaciones ligeras están diseñadas para actualizar pequeñas cantidades de filas (hasta aproximadamente el 10 % de la tabla). Si necesita actualizar una cantidad mayor, se recomienda usar la mutación [`ALTER TABLE ... UPDATE`](/es/reference/statements/alter/update)
+
+<div id="concurrent-operations">
+  ## Operaciones concurrentes
+</div>
+
+Las actualizaciones ligeras, a diferencia de las mutaciones tradicionales, no esperan a que finalicen las fusiones/mutaciones que están en ejecución.
+La consistencia de las actualizaciones ligeras concurrentes se controla mediante la configuración [`update_sequential_consistency`](/es/reference/settings/session-settings#update_sequential_consistency) y [`update_parallel_mode`](/es/reference/settings/session-settings#update_parallel_mode).
+
+<div id="update-permissions">
+  ## Actualizar permisos
+</div>
+
+`UPDATE` requiere el privilegio `ALTER UPDATE`. Para habilitar las sentencias `UPDATE` en una tabla específica para un usuario concreto, ejecute:
+
+```sql
+GRANT ALTER UPDATE ON db.table TO username;
+```
+
+<div id="details-of-the-implementation">
+  ## Detalles de la implementación
+</div>
+
+Las partes de parche son iguales que las partes normales, pero contienen solo las columnas actualizadas y varias columnas del sistema:
+
+* `_part` - el nombre de la parte original
+* `_part_offset` - el número de fila en la parte original
+* `_block_number` - el número de bloque de la fila en la parte original
+* `_block_offset` - el desplazamiento del bloque de la fila en la parte original
+* `_data_version` - la versión de los datos actualizados (número de bloque asignado a la consulta `UPDATE`)
+
+En promedio, esto añade unos 40 bytes (datos sin comprimir) de sobrecarga por cada fila actualizada en las partes de parche.
+Las columnas del sistema ayudan a localizar las filas de la parte original que deben actualizarse.
+Las columnas del sistema están relacionadas con las [columnas virtuales](/es/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) de la parte original, que se añaden durante la lectura si deben aplicarse partes de parche.
+Las partes de parche se ordenan por `_part` y `_part_offset`.
+
+Las partes de parche pertenecen a particiones distintas de la parte original.
+El ID de partición de la parte de parche es `patch-<hash of column names in patch part>-<original_partition_id>`.
+Por lo tanto, las partes de parche con columnas diferentes se almacenan en particiones distintas.
+Por ejemplo, tres actualizaciones `SET x = 1 WHERE <cond>`, `SET y = 1 WHERE <cond>` y `SET x = 1, y = 1 WHERE <cond>` crearán tres partes de parche en tres particiones distintas.
+
+Las partes de parche pueden fusionarse entre sí para reducir la cantidad de parches aplicados en las consultas `SELECT` y disminuir la sobrecarga. La fusión de partes de parche usa el algoritmo de fusión [replacing](/es/reference/engines/table-engines/mergetree-family/replacingmergetree) con `_data_version` como columna de versión.
+Por lo tanto, las partes de parche siempre almacenan la versión más reciente de cada fila actualizada de la parte.
+
+Las actualizaciones ligeras no esperan a que terminen las fusiones y mutaciones que se estén ejecutando en ese momento, y siempre usan una instantánea actual de las partes de datos para ejecutar una actualización y generar una parte de parche.
+Por eso, puede haber dos casos al aplicar partes de parche.
+
+Por ejemplo, si leemos la parte `A`, necesitamos aplicar la parte de parche `X`:
+
+* si `X` contiene la propia parte `A`. Esto ocurre si `A` no estaba participando en una fusión cuando se ejecutó `UPDATE`.
+* si `X` contiene las partes `B` y `C`, que están cubiertas por la parte `A`. Esto ocurre si había una fusión (`B`, `C`) -&gt; `A` en ejecución cuando se ejecutó `UPDATE`.
+
+Para estos dos casos, respectivamente, hay dos formas de aplicar partes de parche:
+
+* Usar una fusión por las columnas ordenadas `_part`, `_part_offset`.
+* Usar join por las columnas `_block_number`, `_block_offset`.
+
+El modo join es más lento y requiere más memoria que el modo de fusión, pero se usa con menos frecuencia.
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* [`ALTER UPDATE`](/es/reference/statements/alter/update) - Operaciones `UPDATE` de alto costo
+* [eliminación ligera](/es/reference/statements/delete) - Operaciones de eliminación ligera con `DELETE`
+* [`APPLY PATCHES`](/es/reference/statements/alter/apply-patches) - Forzar la materialización física de los parches en las partes de datos (operación de mutación)

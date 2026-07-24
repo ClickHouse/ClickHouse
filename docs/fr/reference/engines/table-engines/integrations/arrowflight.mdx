@@ -1,0 +1,110 @@
+---
+description: 'Le moteur permet d’interroger des jeux de données distants et d’y insérer des données via Apache Arrow Flight.'
+sidebarTitle: 'ArrowFlight'
+slug: /engines/table-engines/integrations/arrowflight
+title: 'Moteur de table ArrowFlight'
+doc_type: 'reference'
+---
+
+Le moteur de table ArrowFlight permet à ClickHouse de lire des jeux de données distants et d’y écrire via le protocole [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
+Cette intégration permet à ClickHouse d’interagir avec des serveurs externes compatibles avec Flight dans un format Arrow colonnaire, avec des performances élevées.
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**Paramètres du moteur**
+
+* `host:port` — Adresse du serveur Arrow Flight distant. Si le port n’est pas renseigné, le port par défaut `8815` est utilisé. [String](/fr/reference/data-types/string).
+* `dataset_name` — Identifiant du jeu de données sur le serveur Flight (utilisé comme descripteur PATH ou dans une requête `SELECT *`, selon le paramètre `arrow_flight_request_descriptor_type`). [String](/fr/reference/data-types/string).
+* `username` — Nom d’utilisateur pour l’authentification HTTP basique. [String](/fr/reference/data-types/string).
+* `password` — Mot de passe pour l’authentification HTTP basique. [String](/fr/reference/data-types/string).
+
+Si `username` et `password` ne sont pas renseignés, l’authentification n’est pas utilisée (cela fonctionne uniquement si le serveur Arrow Flight autorise l’accès sans authentification).
+
+La liste des colonnes est facultative : si elle n’est pas renseignée, le schéma est inféré à partir du serveur Arrow Flight distant via `GetSchema`.
+
+<div id="named-collections">
+  ## Collections nommées
+</div>
+
+Le moteur prend en charge les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) pour stocker des paramètres de connexion :
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+Paramètres de la collection nommée :
+
+| Paramètre                  | Requis                            | Par défaut | Description                                                                                 |
+| -------------------------- | --------------------------------- | ---------- | ------------------------------------------------------------------------------------------- |
+| `host` or `hostname`       | Non                               | `""`       | Nom d’hôte du serveur.                                                                      |
+| `port`                     | Oui                               | —          | Port du serveur.                                                                            |
+| `dataset`                  | Oui                               | —          | Nom du jeu de données ou descripteur.                                                       |
+| `use_basic_authentication` | Non                               | `true`     | Activer l’authentification basique.                                                         |
+| `user` or `username`       | Si l’authentification est activée | —          | Nom d’utilisateur pour l’authentification.                                                  |
+| `password`                 | Non                               | `""`       | Mot de passe pour l’authentification.                                                       |
+| `enable_ssl`               | Non                               | `false`    | Activer le chiffrement TLS.                                                                 |
+| `ssl_ca`                   | Non                               | `""`       | Chemin vers le fichier du certificat de l’autorité de certification pour la validation TLS. |
+| `ssl_override_hostname`    | Non                               | `""`       | Remplacer le nom d’hôte vérifié lors de la validation TLS.                                  |
+
+<div id="settings">
+  ## Paramètres
+</div>
+
+* `arrow_flight_request_descriptor_type` — Contrôle la façon dont le nom du jeu de données est envoyé au serveur Flight. Valeurs possibles : `path` (par défaut, l’envoie sous forme de descripteur PATH) ou `command` (l’envoie sous forme de descripteur CMD avec `SELECT * FROM <dataset>`). Utilisez `command` pour les serveurs Flight qui attendent des commandes SQL (par exemple, Dremio).
+
+<div id="usage-example">
+  ## Exemple d’utilisation
+</div>
+
+Lecture de données depuis un serveur Arrow Flight distant :
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+Insertion de données dans un serveur Arrow Flight distant :
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+<div id="notes">
+  ## Remarques
+</div>
+
+* Si des colonnes sont spécifiées dans l’instruction `CREATE TABLE`, elles doivent correspondre au schéma renvoyé par le serveur Flight.
+* Si les colonnes sont omises, le schéma est déduit automatiquement depuis le serveur distant.
+* La lecture (`SELECT`) et l’écriture (`INSERT`) sont toutes deux prises en charge.
+* Le paramètre `arrow_flight_request_descriptor_type` détermine si le nom du jeu de données est envoyé sous forme de descripteur PATH ou de descripteur CMD encapsulant une requête `SELECT *`.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [table function arrowFlight](/fr/reference/functions/table-functions/arrowflight)
+* [Interface Arrow Flight](/fr/concepts/features/interfaces/arrowflight)
+* [Spécification SQL d’Apache Arrow Flight](https://arrow.apache.org/docs/format/FlightSql.html)
+* [format Arrow dans ClickHouse](/fr/reference/formats/Arrow/Arrow)

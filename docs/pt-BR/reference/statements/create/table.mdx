@@ -1,0 +1,835 @@
+---
+description: 'Documentação da tabela'
+keywords: ['compressão', 'codec', 'esquema', 'DDL']
+sidebarTitle: 'TABELA'
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
+doc_type: 'referência'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Cria uma nova tabela. Esta consulta pode assumir várias formas sintáticas, dependendo do caso de uso.
+
+Por padrão, as tabelas são criadas apenas no servidor atual. As consultas DDL distribuídas são implementadas por meio da cláusula `ON CLUSTER`, que é [descrita separadamente](/pt-BR/reference/statements/distributed-ddl).
+
+<div id="syntax-forms">
+  ## Variações de sintaxe
+</div>
+
+<div id="with-explicit-schema">
+  ### Com esquema explícito
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
+    ...
+) ENGINE = engine
+  [COMMENT 'comment for table']
+```
+
+Cria uma tabela chamada `table_name` no banco de dados `db` ou no banco de dados atual, se `db` não estiver definido, com a estrutura especificada entre colchetes e o `engine` especificado.
+A estrutura da tabela é uma lista de descrições de colunas, índices secundários, projeções e restrições. Se a [chave primária](#primary-key) for compatível com o `engine`, ela será indicada como parâmetro do motor de tabela.
+
+Uma descrição de coluna é `name type` no caso mais simples. Exemplo: `RegionID UInt32`.
+
+Expressões também podem ser definidas para valores padrão (veja abaixo).
+
+Se necessário, a chave primária pode ser especificada com uma ou mais expressões-chave.
+
+Comentários podem ser adicionados às colunas e à tabela.
+
+<div id="with-a-schema-similar-to-other-table">
+  ### Com o esquema de uma tabela existente
+</div>
+
+O ClickHouse permite copiar o esquema e os dados de uma tabela existente.
+
+Para replicar o esquema de uma tabela existente:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
+```
+
+Isso cria uma tabela com a mesma estrutura de outra tabela.
+
+<div id="with-a-schema-and-data-cloned-from-another-table">
+  ### Com o esquema e os dados de uma tabela existente
+</div>
+
+Para replicar o esquema e os dados de uma tabela existente:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
+```
+
+Isso cria uma tabela com o mesmo esquema e os mesmos dados que uma tabela existente.  Depois que a nova tabela é criada, todas as partições de `db.table` são anexadas a ela. Em outras palavras, os dados de `db.table` são clonados para `db2.table_clone` no momento da criação. Esta consulta é equivalente à seguinte:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+```
+
+Para ambas as funcionalidades, você pode especificar um engine diferente para a tabela. Se o engine não for especificado, será usado o mesmo engine da tabela original (`db.table`).
+
+<div id="from-a-table-function">
+  ### De uma função de tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+```
+
+Cria uma tabela com o mesmo resultado da [função de tabela](/pt-BR/reference/functions/table-functions/index) especificada. A tabela criada também funcionará da mesma forma que a função de tabela correspondente.
+
+<div id="from-select-query">
+  ### A partir da consulta SELECT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
+```
+
+Cria uma tabela com uma estrutura igual à do resultado da consulta `SELECT`, com o motor `engine`, e a preenche com os dados de `SELECT`. Você também pode especificar explicitamente a definição das colunas.
+
+Se a tabela já existir e `IF NOT EXISTS` for especificado, a consulta não fará nada.
+
+Pode haver outras cláusulas após a cláusula `ENGINE` na consulta. Veja a documentação detalhada sobre como criar tabelas nas descrições de [motores de tabela](/pt-BR/reference/engines/table-engines/index).
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+```text title="Response"
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
+
+<div id="null-or-not-null-modifiers">
+  ## Modificadores `NULL` ou `NOT NULL`
+</div>
+
+Os modificadores `NULL` e `NOT NULL`, quando usados após o tipo de dado na definição da coluna, indicam se ela pode ou não ser [Nullable](/pt-BR/reference/data-types/nullable).
+
+Se o tipo não for `Nullable` e `NULL` for especificado, ele será tratado como `Nullable`; se `NOT NULL` for especificado, não será. Por exemplo, `INT NULL` é o mesmo que `Nullable(INT)`. Se o tipo for `Nullable` e os modificadores `NULL` ou `NOT NULL` forem especificados, uma exceção será gerada.
+
+Veja também a configuração [data&#95;type&#95;default&#95;nullable](/pt-BR/reference/settings/session-settings#data_type_default_nullable).
+
+<div id="default_values">
+  ## Valores padrão
+</div>
+
+A descrição da coluna pode especificar uma expressão de valor padrão na forma de `DEFAULT expr`, `MATERIALIZED expr` ou `ALIAS expr`. Exemplo: `URLDomain String DEFAULT domain(URL)`.
+
+A expressão `expr` é opcional. Se for omitida, o tipo da coluna deve ser especificado explicitamente, e o valor padrão será `0` para colunas numéricas, `''` (a string vazia) para colunas de string, `[]` (o array vazio) para colunas de array, `1970-01-01` para colunas de data ou `NULL` para colunas Nullable.
+
+O tipo da coluna com valor padrão pode ser omitido; nesse caso, ele é inferido a partir do tipo de `expr`. Por exemplo, o tipo da coluna `EventDate DEFAULT toDate(EventTime)` será date.
+
+Se um tipo de dado e uma expressão de valor padrão forem especificados, será inserida uma função implícita de conversão de tipo que converte a expressão para o tipo especificado. Exemplo: `Hits UInt32 DEFAULT 0` é representado internamente como `Hits UInt32 DEFAULT toUInt32(0)`.
+
+Uma expressão de valor padrão `expr` pode referenciar colunas arbitrárias da tabela e constantes. O ClickHouse verifica se alterações na estrutura da tabela não introduzem loops no cálculo da expressão. Para INSERT, ele verifica se as expressões podem ser resolvidas — isto é, se todas as colunas a partir das quais elas podem ser calculadas foram fornecidas.
+
+<div id="default">
+  ### DEFAULT
+</div>
+
+`DEFAULT expr`
+
+Valor padrão comum. Se o valor dessa coluna não for especificado em uma consulta INSERT, ele será calculado com base em `expr`.
+
+Exemplo:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime DEFAULT now(),
+    updated_at_date Date DEFAULT toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id) VALUES (1);
+
+SELECT * FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="materialized">
+  ### MATERIALIZED
+</div>
+
+`MATERIALIZED expr`
+
+Expressão materializada. Os valores dessas colunas são calculados automaticamente de acordo com a expressão materializada especificada quando as linhas são inseridas. Não é possível especificar explicitamente esses valores durante `INSERT`s.
+
+Além disso, colunas com valor padrão desse tipo não são incluídas no resultado de `SELECT *`. Isso preserva a invariante de que o resultado de um `SELECT *` sempre pode ser inserido de volta na tabela usando `INSERT`. Esse comportamento pode ser desativado com a configuração `asterisk_include_materialized_columns`.
+
+Exemplo:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime MATERIALIZED now(),
+    updated_at_date Date MATERIALIZED toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1);
+
+SELECT * FROM test;
+┌─id─┐
+│  1 │
+└────┘
+
+SELECT id, updated_at, updated_at_date FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="ephemeral">
+  ### EPHEMERAL
+</div>
+
+`EPHEMERAL [expr]`
+
+Coluna efêmera. Colunas desse tipo não são armazenadas na tabela e não é possível consultá-las com `SELECT`. O único propósito das colunas efêmeras é servir de base para expressões de valor padrão de outras colunas.
+
+Um insert sem colunas explicitamente especificadas ignorará colunas desse tipo. Isso preserva a invariante de que o resultado de um `SELECT *` sempre pode ser inserido de volta na tabela usando `INSERT`.
+
+Exemplo:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    unhexed String EPHEMERAL,
+    hexed FixedString(4) DEFAULT unhex(unhexed)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+
+SELECT
+    id,
+    hexed,
+    hex(hexed)
+FROM test
+FORMAT Vertical;
+
+Row 1:
+──────
+id:         1
+hexed:      Z��
+hex(hexed): 5A90B714
+```
+
+<div id="alias">
+  ### ALIAS
+</div>
+
+`ALIAS expr`
+
+Colunas calculadas (sinônimo). Colunas desse tipo não são armazenadas na tabela, e não é possível fazer INSERT de valores nelas.
+
+Quando consultas SELECT fazem referência explícita a colunas desse tipo, o valor é calculado no momento da consulta a partir de `expr`. Por padrão, `SELECT *` exclui colunas ALIAS. Esse comportamento pode ser desativado com a configuração `asterisk_include_alias_columns`.
+
+Ao usar a consulta ALTER para adicionar novas colunas, os dados antigos dessas colunas não são gravados. Em vez disso, ao ler dados antigos que não têm valores para as novas colunas, as expressões são calculadas dinamicamente por padrão. No entanto, se a execução dessas expressões exigir colunas diferentes que não estejam indicadas na consulta, essas colunas também serão lidas, mas apenas para os blocos de dados que precisarem disso.
+
+Se você adicionar uma nova coluna a uma tabela, mas depois alterar sua expressão padrão, os valores usados para os dados antigos mudarão (para dados cujos valores não foram armazenados em disco). Observe que, ao executar mesclagens em segundo plano, os dados das colunas que estiverem ausentes em uma das partes que estão sendo mescladas serão gravados na parte mesclada.
+
+Não é possível definir valores padrão para elementos em estruturas de dados aninhadas.
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    size_bytes Int64,
+    size String ALIAS formatReadableSize(size_bytes)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1, 4678899);
+
+SELECT id, size_bytes, size FROM test;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+```
+
+<div id="primary-key">
+  ## Chave primária
+</div>
+
+Você pode definir uma [chave primária](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) ao criar uma tabela. A chave primária pode ser especificada de duas formas:
+
+* Na lista de colunas
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...,
+    PRIMARY KEY(expr1[, expr2,...])
+)
+ENGINE = engine;
+```
+
+* Fora da lista de colunas
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
+```
+
+<Tip>
+  Não é possível combinar as duas formas em uma única consulta.
+</Tip>
+
+<div id="constraints">
+  ## Restrições
+</div>
+
+Além das descrições das colunas, também é possível definir restrições:
+
+<div id="constraint">
+  ### CONSTRAINT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    ...
+    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
+    ...
+) ENGINE = engine
+```
+
+`boolean_expr_1` pode ser qualquer expressão booleana. Se forem definidas restrições para a tabela, cada uma delas será verificada para cada linha na consulta `INSERT`. Se alguma restrição não for atendida — o servidor gerará uma exceção com o nome da restrição e a expressão de verificação.
+
+Adicionar um grande número de restrições pode afetar negativamente o desempenho de consultas `INSERT` grandes.
+
+As restrições existentes em todas as tabelas podem ser inspecionadas por meio da tabela [`system.constraints`](/pt-BR/reference/system-tables/constraints).
+
+<div id="assume">
+  ### ASSUME
+</div>
+
+A cláusula `ASSUME` é usada para definir uma `CONSTRAINT` em uma tabela que se presume ser true. Essa restrição pode então ser usada pelo otimizador para melhorar o desempenho das consultas SQL.
+
+Veja este exemplo em que `ASSUME CONSTRAINT` é usado na criação da tabela `users_a`:
+
+```sql
+CREATE TABLE users_a (
+    uid Int16, 
+    name String, 
+    age Int16, 
+    name_len UInt8 MATERIALIZED length(name), 
+    CONSTRAINT c1 ASSUME length(name) = name_len
+) 
+ENGINE=MergeTree 
+ORDER BY (name_len, name);
+```
+
+Aqui, `ASSUME CONSTRAINT` é usado para declarar que a função `length(name)` é sempre igual ao valor da coluna `name_len`. Isso significa que, sempre que `length(name)` for chamada em uma consulta, o ClickHouse poderá substituí-la por `name_len`, o que tende a ser mais rápido, pois evita chamar a função `length()`.
+
+Assim, ao executar a consulta `SELECT name FROM users_a WHERE length(name) < 5;`, o ClickHouse pode otimizá-la para `SELECT name FROM users_a WHERE name_len < 5`; por causa de `ASSUME CONSTRAINT`. Isso pode fazer com que a consulta seja executada mais rapidamente, pois evita calcular o comprimento de `name` para cada linha.
+
+`ASSUME CONSTRAINT` **não impõe a restrição**; ele apenas informa ao otimizador que a restrição é válida. Se a restrição não for realmente válida, os resultados das consultas poderão estar incorretos. Portanto, você só deve usar `ASSUME CONSTRAINT` se tiver certeza de que a restrição é válida.
+
+<div id="ttl-expression">
+  ## Expressão TTL
+</div>
+
+Define por quanto tempo os valores são armazenados. Pode ser especificada apenas para tabelas da família MergeTree. Para uma descrição detalhada, consulte [TTL para colunas e tabelas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
+
+<div id="column_compression_codec">
+  ## Codecs de compressão de colunas
+</div>
+
+Por padrão, o ClickHouse aplica compressão `lz4` na versão autogerenciada e `zstd` no ClickHouse Cloud.
+
+Para a família de motores `MergeTree`, você pode alterar o método de compressão padrão na seção [compressão](/pt-BR/reference/settings/server-settings/settings#compression) da configuração do servidor.
+
+Você também pode definir o método de compressão para cada coluna na consulta `CREATE TABLE`.
+
+```sql
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD),
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9)),
+    value Float32 CODEC(Delta, ZSTD)
+)
+ENGINE = <Engine>
+...
+```
+
+O codec `Default` pode ser especificado para fazer referência à compressão padrão, que pode depender de diferentes configurações (e das propriedades dos dados) em tempo de execução.
+Exemplo: `value UInt64 CODEC(Default)` — o mesmo que não especificar um codec.
+
+Você também pode remover o CODEC atual da coluna e usar a compressão padrão de config.xml:
+
+```sql
+ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
+```
+
+Os codecs podem ser combinados em um pipeline, por exemplo, `CODEC(Delta, Default)`.
+
+<Tip>
+  Você não pode descomprimir arquivos de banco de dados do ClickHouse com utilitários externos, como `lz4`. Em vez disso, use o utilitário especial [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
+</Tip>
+
+A compressão é compatível com os seguintes motores de tabela:
+
+* Família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Oferece suporte a codecs de compressão de colunas e à seleção do método de compressão padrão por meio das configurações de [compression](/pt-BR/reference/settings/server-settings/settings#compression).
+* Família [Log](/pt-BR/reference/engines/table-engines/log-family/index). Usa o método de compressão `lz4` por padrão e oferece suporte a codecs de compressão de colunas.
+* [Set](/pt-BR/reference/engines/table-engines/special/set). Oferece suporte apenas à compressão padrão.
+* [Join](/pt-BR/reference/engines/table-engines/special/join). Oferece suporte apenas à compressão padrão.
+
+O ClickHouse oferece suporte a codecs de uso geral e codecs especializados.
+
+<div id="general-purpose-codecs">
+  ### Codecs de uso geral
+</div>
+
+<div id="none">
+  #### NONE
+</div>
+
+`NONE` — Sem compressão.
+
+<div id="lz4">
+  #### LZ4
+</div>
+
+`LZ4` — Algoritmo de [compressão de dados](https://github.com/lz4/lz4) sem perda usado por padrão. Aplica a compactação rápida LZ4.
+
+<div id="lz4hc">
+  #### LZ4HC
+</div>
+
+`LZ4HC[(level)]` — algoritmo LZ4 HC (alta compressão) com nível configurável. Nível padrão: 9. Se `level <= 0`, o nível padrão é aplicado. Níveis possíveis: [1, 12]. Faixa de níveis recomendada: [4, 9].
+
+<div id="zstd">
+  #### ZSTD
+</div>
+
+`ZSTD[(level)]` — [algoritmo de compressão ZSTD](https://en.wikipedia.org/wiki/Zstandard) com `level` configurável. Níveis possíveis: [1, 22]. Nível padrão: 1.
+
+Níveis altos de compressão são úteis em cenários assimétricos, como comprimir uma vez e descomprimir repetidamente. Níveis mais altos significam melhor compressão e maior uso de CPU.
+
+<div id="zstd_qat">
+  #### Obsoleto: ZSTD_QAT
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="deflate_qpl">
+  #### Obsoleto: DEFLATE_QPL
+</div>
+
+<CloudNotSupportedBadge />
+
+<div id="specialized-codecs">
+  ### Codecs especializados
+</div>
+
+Esses codecs foram projetados para tornar a compressão mais eficiente ao explorar características específicas dos dados. Alguns desses codecs não comprimem os dados por conta própria; em vez disso, eles pré-processam os dados para que uma segunda etapa de compressão, usando um codec de uso geral, possa alcançar uma taxa de compressão mais alta.
+
+<div id="delta">
+  #### Delta
+</div>
+
+`Delta(delta_bytes)` — Método de compressão em que os valores brutos são substituídos pela diferença entre dois valores vizinhos, exceto o primeiro valor, que permanece inalterado. `delta_bytes` é o tamanho máximo dos valores brutos; o valor padrão é `sizeof(type)`. Especificar `delta_bytes` como argumento está obsoleto, e o suporte será removido em um lançamento futuro. Delta é um codec de preparação de dados, ou seja, não pode ser usado isoladamente.
+
+<div id="doubledelta">
+  #### DoubleDelta
+</div>
+
+`DoubleDelta(bytes_size)` — Calcula a delta das deltas e a grava em formato binário compacto. `bytes_size` tem significado semelhante a `delta_bytes` no codec [Delta](#delta). Especificar `bytes_size` como argumento está obsoleto, e o suporte será removido em um lançamento futuro. As taxas de compressão ideais são obtidas para sequências monotônicas com passo constante, como séries temporais. Pode ser usado com qualquer tipo numérico. Implementa o algoritmo usado no Gorilla TSDB, estendendo-o para oferecer suporte a tipos de 64 bits. Usa 1 bit extra para deltas de 32 bits: prefixos de 5 bits em vez de prefixos de 4 bits. Para mais informações, consulte Compressing Time Stamps em [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta é um codec de preparação de dados, ou seja, não pode ser usado isoladamente.
+
+<div id="gcd">
+  #### GCD
+</div>
+
+`GCD()` - - Calcula o máximo divisor comum (GCD) dos valores da coluna e, em seguida, divide cada valor pelo GCD. Pode ser usado com colunas de inteiros, decimais e data/hora. O codec é particularmente adequado para colunas com valores que variam (aumentam ou diminuem) em múltiplos do GCD, por exemplo, 24, 28, 16, 24, 8, 24 (GCD = 4). GCD é um codec de preparação de dados, ou seja, não pode ser usado isoladamente.
+
+<div id="gorilla">
+  #### Gorilla
+</div>
+
+`Gorilla(bytes_size)` — Calcula o XOR entre o valor atual de ponto flutuante e o anterior e o grava em formato binário compacto. Quanto menor a diferença entre valores consecutivos, ou seja, quanto mais lentamente os valores da série mudam, melhor a taxa de compressão. Implementa o algoritmo usado no Gorilla TSDB, estendendo-o para oferecer suporte a tipos de 64 bits. Os valores possíveis de `bytes_size` são: 1, 2, 4, 8; o valor padrão é `sizeof(type)` se ele for igual a 1, 2, 4 ou 8. Em todos os outros casos, é 1. Para mais informações, consulte a seção 4.1 de [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+
+<div id="alp">
+  #### ALP
+</div>
+
+<ExperimentalBadge />
+
+`ALP()` — Compressão adaptativa sem perdas para dados de ponto flutuante baseada em escala decimal. O ALP tenta representar cada valor como um inteiro exato escalonado usando potências de 10 e, em seguida, comprime os inteiros resultantes com Frame-of-Reference e bit-packing. Valores que não podem ser representados com exatidão são armazenados como exceções brutas. Funciona melhor para números oriundos de valores decimais (por exemplo, medições e moeda). Compatível com `Float32` e `Float64`. Para detalhes, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+<Note>
+  Este codec é experimental e requer `SET allow_experimental_codecs = 1` para ser usado.
+</Note>
+
+<div id="fpc">
+  #### FPC
+</div>
+
+`FPC(level, float_size)` - Prediz repetidamente o próximo valor de ponto flutuante na sequência usando o melhor de dois preditores, depois aplica XOR entre o valor real e o valor previsto e comprime o resultado com zeros à esquerda. Assim como o Gorilla, é eficiente para armazenar uma série de valores de ponto flutuante que mudam lentamente. Para valores de 64 bits (double), o FPC é mais rápido que o Gorilla; para valores de 32 bits, o desempenho pode variar. Valores possíveis de `level`: 1-28; o valor padrão é 12. Valores possíveis de `float_size`: 4, 8; o valor padrão é `sizeof(type)` se o tipo for Float. Em todos os outros casos, é 4. Para uma descrição detalhada do algoritmo, consulte [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+
+<div id="t64">
+  #### T64
+</div>
+
+`T64` — Abordagem de compressão que recorta os bits altos não utilizados dos valores em tipos de dados inteiros (incluindo `Enum`, `Date` e `DateTime`). Em cada passo do algoritmo, o codec pega um bloco de 64 valores, coloca-os em uma matriz de 64x64 bits, transpõe essa matriz, recorta os bits não utilizados dos valores e retorna o restante como uma sequência. Bits não utilizados são os bits que não diferem entre os valores máximo e mínimo em toda a data part para a qual a compressão é usada.
+
+Os codecs `DoubleDelta` e `Gorilla` são usados no Gorilla TSDB como componentes do algoritmo de compressão. A abordagem Gorilla é eficaz em cenários em que há uma sequência de valores que mudam lentamente com seus timestamps. Os timestamps são comprimidos com eficiência pelo codec `DoubleDelta`, e os valores são comprimidos com eficiência pelo codec `Gorilla`. Por exemplo, para obter uma tabela armazenada com eficiência, você pode criá-la com a seguinte configuração:
+
+```sql
+CREATE TABLE codec_example
+(
+    timestamp DateTime CODEC(DoubleDelta),
+    slow_values Float32 CODEC(Gorilla)
+)
+ENGINE = MergeTree()
+```
+
+<div id="encryption-codecs">
+  ### Codecs de criptografia
+</div>
+
+Esses codecs, na verdade, não comprimem os dados; em vez disso, criptografam os dados em disco. Eles só estão disponíveis quando uma chave de criptografia é especificada nas configurações de [encryption](/pt-BR/reference/settings/server-settings/settings#encryption). Observe que a criptografia só faz sentido no fim dos pipelines de codec, porque dados criptografados normalmente não podem ser comprimidos de forma significativa.
+
+Codecs de criptografia:
+
+<div id="aes_128_gcm_siv">
+  #### AES_128_GCM_SIV
+</div>
+
+`CODEC('AES-128-GCM-SIV')` — Criptografa os dados usando AES-128 no modo GCM-SIV da [RFC 8452](https://tools.ietf.org/html/rfc8452).
+
+<div id="aes-256-gcm-siv">
+  #### AES-256-GCM-SIV
+</div>
+
+`CODEC('AES-256-GCM-SIV')` — Criptografa os dados com AES-256 no modo GCM-SIV.
+
+Esses codecs usam um nonce fixo e, portanto, a criptografia é determinística. Isso os torna compatíveis com motores que fazem deduplicação, como [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication), mas há uma fraqueza: quando o mesmo bloco de dados é criptografado duas vezes, o texto cifrado resultante será exatamente o mesmo, de modo que um invasor que consiga ler o disco poderá perceber essa equivalência (embora apenas a equivalência, sem acessar o conteúdo).
+
+<Note>
+  A maioria dos motores, incluindo a família &quot;*MergeTree&quot;, cria arquivos de índice em disco sem aplicar codecs. Isso significa que texto simples aparecerá no disco se uma coluna criptografada for indexada.
+</Note>
+
+<Note>
+  Se você executar uma consulta SELECT mencionando um valor específico em uma coluna criptografada (como em sua cláusula WHERE), o valor poderá aparecer em [system.query&#95;log](/pt-BR/reference/system-tables/query_log). Talvez você queira desativar o logging.
+</Note>
+
+**Exemplo**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<Note>
+  Se for necessário aplicar compressão, ela deverá ser especificada explicitamente. Caso contrário, apenas a criptografia será aplicada aos dados.
+</Note>
+
+**Exemplo**
+
+```sql
+CREATE TABLE mytable
+(
+    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+)
+ENGINE = MergeTree ORDER BY x;
+```
+
+<div id="temporary-tables">
+  ## Tabelas temporárias
+</div>
+
+<Note>
+  Observe que as tabelas temporárias não são replicadas. Como resultado, não há garantia de que os dados inseridos em uma tabela temporária estarão disponíveis em outras réplicas. O principal caso de uso em que tabelas temporárias podem ser úteis é consultar ou fazer join com pequenos conjuntos de dados externos durante uma única sessão.
+</Note>
+
+O ClickHouse oferece suporte a tabelas temporárias, que têm as seguintes características:
+
+* As tabelas temporárias desaparecem quando a sessão termina, inclusive se a conexão for perdida.
+* Uma tabela temporária usa o motor de tabela Memory quando nenhum motor é especificado e pode usar qualquer motor de tabela, exceto os motores Replicated e `KeeperMap`.
+* Não é possível especificar o DB para uma tabela temporária. Ela é criada fora dos bancos de dados.
+* Não é possível criar uma tabela temporária com uma consulta DDL distribuída em todos os servidores do cluster (usando `ON CLUSTER`): essa tabela existe apenas na sessão atual.
+* Se uma tabela temporária tiver o mesmo nome que outra tabela e uma consulta especificar o nome da tabela sem especificar o DB, a tabela temporária será usada.
+* No processamento distribuído de consultas, tabelas temporárias com o motor Memory usadas em uma consulta são enviadas aos servidores remotos.
+
+Para criar uma tabela temporária, use a seguinte sintaxe:
+
+```sql
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) [ENGINE = engine]
+```
+
+Na maioria dos casos, as tabelas temporárias não são criadas manualmente, mas sim ao usar dados externos em uma consulta ou para `(GLOBAL) IN` distribuído. Para mais informações, consulte as seções apropriadas
+
+É possível usar tabelas com [ENGINE = Memory](/pt-BR/reference/engines/table-engines/special/memory) em vez de tabelas temporárias.
+
+<div id="replace-table">
+  ## REPLACE TABLE
+</div>
+
+A instrução `REPLACE` permite atualizar uma tabela [atomicamente](/pt-BR/concepts/core-concepts/glossary#atomicity).
+
+<Note>
+  Esta instrução é compatível com os motores de banco de dados [`Atomic`](/pt-BR/reference/engines/database-engines/atomic) e [`Replicated`](/pt-BR/reference/engines/database-engines/replicated),
+  que são os motores de banco de dados padrão do ClickHouse e do ClickHouse Cloud, respectivamente.
+</Note>
+
+Em geral, se você precisar excluir alguns dados de uma tabela,
+poderá criar uma nova tabela e preenchê-la com uma instrução `SELECT` que não recupere os dados indesejados,
+depois remover a tabela antiga e renomear a nova.
+Essa abordagem é demonstrada no exemplo abaixo:
+
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+
+INSERT INTO myNewTable
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
+DROP TABLE myOldTable;
+
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+Em vez da abordagem acima, também é possível usar `REPLACE` (desde que você esteja usando os motores de banco de dados padrão) para obter o mesmo resultado:
+
+```sql
+REPLACE TABLE myOldTable
+ENGINE = MergeTree()
+ORDER BY CounterID 
+AS
+SELECT * FROM myOldTable
+WHERE CounterID <12345;
+```
+
+<div id="syntax">
+  ### Sintaxe
+</div>
+
+```sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
+
+<Note>
+  Todas as sintaxes da instrução `CREATE` também funcionam para esta instrução. Executar `REPLACE` em uma tabela que não existe resultará em erro.
+</Note>
+
+<div id="examples">
+  ### Exemplos:
+</div>
+
+<Tabs>
+  <Tab title="Local">
+    Considere a tabela a seguir:
+
+    ```sql
+    CREATE DATABASE base 
+    ENGINE = Atomic;
+
+    CREATE OR REPLACE TABLE base.t1
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s────┐
+    │ 1 │ test │
+    └───┴──────┘
+    ```
+
+    Podemos usar a instrução `REPLACE` para apagar todos os dados:
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s──┐
+    │ 2 │ \N │
+    └───┴────┘
+    ```
+
+    Ou podemos usar a instrução `REPLACE` para alterar a estrutura da tabela:
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┐
+    │ 3 │
+    └───┘
+    ```
+  </Tab>
+
+  <Tab title="Cloud">
+    Considere a tabela a seguir no ClickHouse Cloud:
+
+    ```sql
+    CREATE DATABASE base;
+
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    1    test
+    ```
+
+    Podemos usar a instrução `REPLACE` para apagar todos os dados:
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64, 
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    2    
+    ```
+
+    Ou podemos usar a instrução `REPLACE` para alterar a estrutura da tabela:
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    3
+    ```
+  </Tab>
+</Tabs>
+
+<div id="comment-clause">
+  ## Cláusula COMMENT
+</div>
+
+Você pode adicionar um comentário à tabela ao criá-la.
+
+**Sintaxe**
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+
+<Note>
+  A cláusula `COMMENT` deve ser especificada **depois** de quaisquer cláusulas específicas de armazenamento, como `PARTITION BY`, `ORDER BY` e `SETTINGS` específicos de armazenamento.
+
+  Após a cláusula `COMMENT`, apenas `SETTINGS` específicos da consulta (como `max_threads` etc.) serão interpretados, e não as configurações relacionadas ao armazenamento.
+
+  Isso significa que a ordem correta das cláusulas é:
+
+  * `ENGINE`
+  * cláusulas de armazenamento
+  * `COMMENT`
+  * configurações da consulta (se houver)
+</Note>
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+```text title="Response"
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Otimizando o ClickHouse com esquemas e codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* Blog: [Trabalhando com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

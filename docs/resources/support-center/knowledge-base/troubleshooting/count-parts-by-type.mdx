@@ -1,0 +1,100 @@
+---
+title: Find counts and sizes of wide or compact parts
+description: 'This knowledgebase article shows you how to find part counts by the type of part - wide or compact.'
+date: 2026-01-12
+tags: ['Troubleshooting']
+keywords: ['compact parts', 'wide parts']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+<br/>
+
+The following query can be used to count the number of parts by type:
+
+```sql
+SELECT
+    table,
+    part_type,
+    count(*)
+FROM system.parts
+WHERE active
+GROUP BY
+    table,
+    part_type
+ORDER BY
+    table ASC,
+    part_type ASC
+```
+
+An example response is shown below:
+
+```response
+┌─table───────────────────┬─part_type─┬─count()─┐
+│ asynchronous_metric_log │ Compact   │       6 │
+│ metric_log              │ Compact   │       1 │
+│ otel_logs               │ Compact   │       5 │
+│ otel_logs               │ Wide      │       2 │
+│ part_log                │ Compact   │       2 │
+│ query_log               │ Compact   │       5 │
+│ session_log             │ Compact   │       2 │
+│ text_log                │ Compact   │       7 │
+│ trace_log               │ Compact   │       6 │
+└─────────────────────────┴───────────┴─────────┘
+```
+
+Run the query below to query part size for wide and compact parts:
+
+```sql
+SELECT
+    table,
+    column,
+    part_type,
+    sum(rows),
+    sum(column_data_compressed_bytes),
+    sum(column_data_uncompressed_bytes)
+FROM system.parts_columns
+WHERE active
+GROUP BY
+    table,
+    column,
+    part_type
+ORDER BY
+    table ASC,
+    column ASC,
+    part_type ASC
+```
+
+An example response is shown below:
+
+```response
+┌─table─────┬─column─────────────┬─part_type─┬─sum(rows)─┬─sum(column_data_compressed_bytes)─┬─sum(column_data_uncompressed_bytes)─┐
+│ otel_logs │ Body               │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ Body               │ Wide      │  18900157 │                         316784170 │                          2807508947 │
+│ otel_logs │ LogAttributes      │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ LogAttributes      │ Wide      │  18900157 │                         215812392 │                          3173566494 │
+│ otel_logs │ ResourceAttributes │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ ResourceAttributes │ Wide      │  18900157 │                          94428129 │                          2258154988 │
+│ otel_logs │ ServiceName        │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ ServiceName        │ Wide      │  18900157 │                             24726 │                            18973727 │
+│ otel_logs │ SeverityNumber     │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ SeverityNumber     │ Wide      │  18900157 │                             51973 │                            75600628 │
+│ otel_logs │ SeverityText       │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ SeverityText       │ Wide      │  18900157 │                             24726 │                            18973727 │
+│ otel_logs │ SpanId             │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ SpanId             │ Wide      │  18900157 │                             13048 │                            18900157 │
+│ otel_logs │ Timestamp          │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ Timestamp          │ Wide      │  18900157 │                          61225801 │                           151201256 │
+│ otel_logs │ TraceFlags         │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ TraceFlags         │ Wide      │  18900157 │                             51973 │                            75600628 │
+│ otel_logs │ TraceId            │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ TraceId            │ Wide      │  18900157 │                             13048 │                            18900157 │
+└───────────┴────────────────────┴───────────┴───────────┴───────────────────────────────────┴─────────────────────────────────────┘
+```
+
+<Info>
+**Compact part size shows as zero**
+
+Note that columns sizes are not calculated in compact parts and they therefore show as `0` above.
+</Info>

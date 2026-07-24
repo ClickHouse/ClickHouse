@@ -1,0 +1,339 @@
+---
+sidebarTitle: 'Databricks'
+slug: /integrations/data-ingestion/apache-spark/databricks
+description: 'دمج ClickHouse مع Databricks'
+keywords: ['clickhouse', 'databricks', 'spark', 'Unity Catalog', 'بيانات']
+title: 'دمج ClickHouse مع Databricks'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+يعمل موصل ClickHouse Spark بسلاسة مع Databricks. يوضّح هذا الدليل كيفية الإعداد والتثبيت وأساليب الاستخدام الخاصة بـ Databricks.
+
+<div id="api-selection">
+  ## اختيار واجهة برمجة تطبيقات لـ Databricks
+</div>
+
+افتراضيًا، يستخدم Databricks ‏Unity Catalog، مما يمنع تسجيل الكتالوج في Spark. في هذه الحالة، **يجب** عليك استخدام **واجهة برمجة تطبيقات TableProvider** (الوصول المستند إلى التنسيق).
+
+ومع ذلك، إذا عطّلت Unity Catalog عبر إنشاء عنقود باستخدام وضع الوصول **No isolation shared**، يمكنك استخدام **واجهة برمجة تطبيقات Catalog** بدلًا من ذلك. توفّر **واجهة برمجة تطبيقات Catalog** تهيئة مركزية وتكاملًا أصليًا مع Spark SQL.
+
+| حالة Unity Catalog              | واجهة برمجة تطبيقات الموصى بها      | ملاحظات                                                   |
+| ------------------------------- | ----------------------------------- | --------------------------------------------------------- |
+| **مُمكّن** (افتراضيًا)          | واجهة برمجة تطبيقات TableProvider (مستند إلى التنسيق) | تمنع Unity Catalog تسجيل الكتالوج في Spark                |
+| **معطّل** (No isolation shared) | واجهة برمجة تطبيقات Catalog                           | يتطلب عنقودًا بوضع الوصول &quot;No isolation shared&quot; |
+
+<div id="installation">
+  ## التثبيت في Databricks
+</div>
+
+<div id="installation-ui">
+  ### الخيار 1: رفع JAR عبر واجهة مستخدم Databricks
+</div>
+
+1. ابنِ ملف JAR الخاص ببيئة التشغيل أو [نزّله](https://repo1.maven.org/maven2/com/clickhouse/spark/):
+   ```bash
+   clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
+   ```
+
+2. ارفع ملف JAR إلى مساحة العمل في Databricks:
+   * انتقل إلى **Workspace** → ثم إلى المجلد المطلوب
+   * انقر على **Upload** → ثم اختر ملف JAR
+   * سيُحفَظ ملف JAR في مساحة العمل الخاصة بك
+
+3. ثبّت المكتبة على العنقود:
+   * انتقل إلى **Compute** → ثم اختر العنقود الخاص بك
+   * انقر على علامة التبويب **Libraries**
+   * انقر على **Install New**
+   * اختر **DBFS** أو **Workspace** → ثم انتقل إلى ملف JAR الذي رفعته
+   * انقر على **Install**
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="علامة التبويب Libraries في Databricks" />
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="تثبيت المكتبة من وحدة تخزين مساحة العمل" />
+
+4. أعد تشغيل العنقود لتحميل المكتبة
+
+<div id="installation-cli">
+  ### الخيار 2: التثبيت باستخدام Databricks CLI
+</div>
+
+```bash
+# Upload JAR to DBFS
+databricks fs cp clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar \
+  dbfs:/FileStore/jars/
+
+# Install on cluster
+databricks libraries install \
+  --cluster-id <your-cluster-id> \
+  --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
+```
+
+<div id="installation-maven">
+  ### الخيار 3: إحداثيات Maven (موصى به)
+</div>
+
+1. انتقل إلى مساحة عمل Databricks الخاصة بك:
+   * انتقل إلى **Compute** → اختر العنقود الخاص بك
+   * انقر على علامة التبويب **Libraries**
+   * انقر على **Install New**
+   * اختر علامة التبويب **Maven**
+
+2. أضف إحداثيات Maven:
+
+```text
+com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
+```
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="إعداد مكتبات Maven في Databricks" />
+
+3. انقر على **تثبيت** ثم أعد تشغيل العنقود لتحميل المكتبة
+
+<div id="tableprovider-api">
+  ## استخدام TableProvider API
+</div>
+
+عندما يكون Unity Catalog مفعّلًا (افتراضيًا)، **يجب** عليك استخدام TableProvider API (الوصول المستند إلى التنسيق)، لأن Unity Catalog يمنع تسجيل الكتالوج في Spark. وإذا كنت قد عطّلت Unity Catalog باستخدام عنقود بوضع الوصول &quot;No isolation shared&quot;، فيمكنك استخدام [Catalog API](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) بدلًا من ذلك.
+
+<div id="reading-data-table-provider">
+  ### قراءة البيانات
+</div>
+
+<Tabs>
+  <Tab title="بايثون">
+    ```python
+    # قراءة البيانات من ClickHouse باستخدام TableProvider API
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-cloud-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "events") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .load()
+
+    # يتم استنتاج المخطط تلقائيًا
+    df.display()
+    ```
+  </Tab>
+
+  <Tab title="سكالا">
+    ```scala
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-clickhouse-cloud-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "events")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .load()
+
+    df.show()
+    ```
+  </Tab>
+</Tabs>
+
+<div id="writing-data-unity">
+  ### كتابة البيانات
+</div>
+
+<Tabs>
+  <Tab title="بايثون">
+    ```python
+    # الكتابة إلى ClickHouse - سيُنشأ الجدول تلقائيًا إذا لم يكن موجودًا
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-cloud-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "events_copy") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .option("order_by", "id") \  # مطلوب: حدِّد ORDER BY عند إنشاء جدول جديد
+        .option("settings.allow_nullable_key", "1") \  # مطلوب في ClickHouse Cloud إذا كان ORDER BY يتضمن أعمدة Nullable
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="سكالا">
+    ```scala
+    df.write
+      .format("clickhouse")
+      .option("host", "your-clickhouse-cloud-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "events_copy")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .option("order_by", "id")  // مطلوب: حدِّد ORDER BY عند إنشاء جدول جديد
+      .option("settings.allow_nullable_key", "1")  // مطلوب في ClickHouse Cloud إذا كان ORDER BY يتضمن أعمدة Nullable
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  يفترض هذا المثال وجود نطاقات الأسرار مُعدّة مسبقًا في Databricks. للحصول على إرشادات الإعداد، راجع وثائق إدارة الأسرار في Databricks: [Secret management documentation](https://docs.databricks.com/aws/en/security/secrets/).
+</Note>
+
+<div id="considerations">
+  ## اعتبارات خاصة بـ Databricks
+</div>
+
+<div id="access-mode">
+  ### متطلبات وضع الوصول
+</div>
+
+يتطلب ClickHouse Spark Connector وضع الوصول **Dedicated** (المعروف سابقًا باسم Single User). ولا يدعم وضع الوصول **Standard** (المعروف سابقًا باسم Shared) عند تمكين Unity Catalog، لأن Databricks يحظر موصلات DataSource V2 الخارجية في هذا الإعداد.
+
+| وضع الوصول              | Unity Catalog | مدعوم |
+| ----------------------- | ------------- | ----- |
+| Dedicated (Single User) | مُمكّن        | ✅ نعم |
+| Dedicated (Single User) | معطّل         | ✅ نعم |
+| Standard (Shared)       | مُمكّن        | ❌ لا  |
+| Standard (Shared)       | معطّل         | ✅ نعم |
+
+<div id="secret-management">
+  ### إدارة الأسرار
+</div>
+
+استخدم نطاقات الأسرار في Databricks لتخزين بيانات اعتماد ClickHouse بشكل آمن:
+
+```python
+# Access secrets
+password = dbutils.secrets.get(scope="clickhouse", key="password")
+```
+
+للحصول على تعليمات الإعداد، راجع [وثائق Databricks الخاصة بإدارة الأسرار](https://docs.databricks.com/aws/en/security/secrets/).
+
+{/* TODO: أضف لقطة شاشة لتهيئة نطاقات الأسرار في Databricks */}
+
+<div id="clickhouse-cloud">
+  ### الاتصال بـ ClickHouse Cloud
+</div>
+
+عند الاتصال بـ ClickHouse Cloud من Databricks:
+
+1. استخدم **بروتوكول HTTPS** (`protocol: https`, `http_port: 8443`)
+2. فعِّل **SSL** (`ssl: true`)
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="workflow-example">
+  ### مثال كامل لسير العمل
+</div>
+
+<Tabs>
+  <Tab title="بايثون">
+    ```python
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import col
+
+    # تهيئة Spark باستخدام موصل ClickHouse
+    spark = SparkSession.builder \
+        .config("spark.jars.packages", "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.9.0") \
+        .getOrCreate()
+
+    # القراءة من ClickHouse
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "source_table") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .load()
+
+    # تحويل البيانات
+    transformed_df = df.filter(col("status") == "active")
+
+    # الكتابة إلى ClickHouse
+    transformed_df.write \
+        .format("clickhouse") \
+        .option("host", "your-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "target_table") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .option("order_by", "id") \
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    import org.apache.spark.sql.SparkSession
+    import org.apache.spark.sql.functions.col
+
+    // تهيئة Spark باستخدام موصل ClickHouse
+    val spark = SparkSession.builder
+      .config("spark.jars.packages", "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.9.0")
+      .getOrCreate()
+
+    // القراءة من ClickHouse
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "source_table")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .load()
+
+    // تحويل البيانات
+    val transformedDF = df.filter(col("status") === "active")
+
+    // الكتابة إلى ClickHouse
+    transformedDF.write
+      .format("clickhouse")
+      .option("host", "your-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "target_table")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .option("order_by", "id")
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+</Tabs>
+
+<div id="related">
+  ## وثائق ذات صلة
+</div>
+
+* [دليل Spark Native Connector](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - الوثائق الكاملة للموصل
+* [وثائق واجهة برمجة تطبيقات TableProvider](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - تفاصيل الوصول المستند إلى التنسيق
+* [وثائق واجهة برمجة تطبيقات Catalog](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - تفاصيل الوصول القائم على الكتالوج

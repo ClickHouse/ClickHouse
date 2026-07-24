@@ -1,0 +1,151 @@
+---
+description: 'Documentation du type de données Time dans ClickHouse, qui stocke
+  l’heure avec une précision à la seconde'
+slug: /sql-reference/data-types/time
+sidebarTitle: 'Time'
+title: 'Time'
+doc_type: 'reference'
+---
+
+Le type de données `Time` représente une heure avec des composantes heure, minute et seconde.
+Il est indépendant de toute date calendaire et convient aux valeurs qui ne nécessitent pas de composantes de jour, de mois ou d’année.
+
+Syntaxe :
+
+```sql
+Time
+```
+
+Plage de représentation textuelle : [-999:59:59, 999:59:59].
+
+Résolution : 1 seconde.
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+**Représentation et performances**.
+Le type de données `Time` stocke en interne un entier signé de 32 bits qui code les secondes.
+Les valeurs de type `Time` et `DateTime` ont la même taille en octets et offrent donc des performances comparables.
+
+**Normalisation**.
+Lors de l’analyse de chaînes en `Time`, les composantes temporelles sont normalisées, mais non validées.
+Par exemple, `25:70:70` est interprété comme `26:11:10`.
+
+**Valeurs négatives**.
+Les signes moins en tête sont pris en charge et conservés.
+Les valeurs négatives résultent généralement d’opérations arithmétiques sur des valeurs `Time`.
+Pour le type `Time`, les entrées négatives sont conservées aussi bien pour les entrées textuelles (par exemple, `'-01:02:03'`) que pour les entrées numériques (par exemple, `-3723`).
+
+**Saturation**.
+La composante horaire est limitée à l’intervalle [-999:59:59, 999:59:59].
+Les valeurs dont les heures dépassent 999 (ou sont inférieures à -999) sont représentées et reconverties en texte sous la forme `999:59:59` (ou `-999:59:59`).
+
+**Fuseaux horaires**.
+`Time` ne prend pas en charge les fuseaux horaires, c’est-à-dire que les valeurs `Time` sont interprétées sans contexte régional.
+Spécifier un fuseau horaire pour `Time` comme paramètre de type ou lors de la création d’une valeur génère une erreur.
+De même, les tentatives d’appliquer ou de modifier le fuseau horaire sur des colonnes `Time` ne sont pas prises en charge et entraînent une erreur.
+Les valeurs `Time` ne sont pas réinterprétées silencieusement selon différents fuseaux horaires.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+**1.** Création d’une table avec une colonne de type `Time` et insertion de données dans cette table :
+
+```sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Time
+-- - from string,
+-- - from integer interpreted as number of seconds since 00:00:00.
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**2.** Filtrage des valeurs de `Time`
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT * FROM tab WHERE time = toTime('14:30:25')
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+Les valeurs de la colonne `Time` peuvent être filtrées à l’aide d’une valeur de type chaîne dans le prédicat `WHERE`. Celle-ci sera automatiquement convertie en `Time` :
+
+```sql
+SELECT * FROM tab WHERE time = '14:30:25'
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**3.** Vérification du type résultant :
+
+```sql
+SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+```
+
+```text
+   ┌────column─┬─type─┐
+1. │ 14:30:25 │ Time │
+   └───────────┴──────┘
+```
+
+<div id="addition-with-date">
+  ## Addition avec une Date
+</div>
+
+Une valeur [Time](/fr/reference/data-types/time) peut être ajoutée à une valeur [Date](/fr/reference/data-types/date) ou [Date32](/fr/reference/data-types/date32) pour obtenir un [DateTime](/fr/reference/data-types/datetime) ou [DateTime64](/fr/reference/data-types/datetime64) :
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+Voir [Addition de date et d’heure](/fr/reference/operators/index#date-time-addition) pour plus de détails sur toutes les combinaisons prises en charge et les types de résultat.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [Fonctions de conversion de type](/fr/reference/functions/regular-functions/type-conversion-functions)
+* [Fonctions de manipulation des dates et heures](/fr/reference/functions/regular-functions/date-time-functions)
+* [Fonctions de manipulation des tableaux](/fr/reference/functions/regular-functions/array-functions)
+* [Le paramètre `date_time_input_format`](/fr/reference/settings/formats#date_time_input_format)
+* [Le paramètre `date_time_output_format`](/fr/reference/settings/formats#date_time_output_format)
+* [Le paramètre `timezone` de configuration du serveur](/fr/reference/settings/server-settings/settings#timezone)
+* [Le paramètre `session_timezone`](/fr/reference/settings/session-settings#session_timezone)
+* [Le type de données `DateTime`](/fr/reference/data-types/datetime)
+* [Le type de données `Date`](/fr/reference/data-types/date)

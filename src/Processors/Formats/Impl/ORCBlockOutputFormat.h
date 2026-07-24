@@ -4,6 +4,7 @@
 
 #if USE_ORC
 #include <Common/PODArray_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
@@ -15,7 +16,7 @@ namespace DB
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 class WriteBuffer;
 
 

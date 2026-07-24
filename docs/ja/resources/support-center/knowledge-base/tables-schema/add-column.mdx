@@ -1,0 +1,218 @@
+---
+title: テーブルにカラムを追加する
+description: このガイドでは、既存のテーブルにカラムを追加する方法を説明します。
+date: 2024-12-18
+tags: ['データモデリング']
+keywords: ['カラムの追加']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="adding-a-column-to-a-table">
+  ## テーブルにカラムを追加する
+</div>
+
+clickhouse-local を使用します。
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+次のようなテーブルがあるとします。
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+レコードを1件追加しましょう:
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+次に、`events` テーブルに対してクエリを実行します：
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+<div id="adding-a-new-column">
+  ## 新しいカラムの追加
+</div>
+
+ここで、`Float64` 型の `favoriteNumber` という新しいカラムを追加することにします。
+これは [`ALTER TABLE...ADD COLUMN`](/ja/reference/statements/alter/column#add-column) 句を使って実行できます。
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+`events` テーブルにクエリを実行すると、次の出力が表示されます:
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+`Alexey` の行では、その行を追加した時点ではそのカラムが存在していなかったため、デフォルト値は 7 になります。
+次に、別のカラムを追加してみましょう。
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+`events` テーブルにクエリを実行すると、次の出力が表示されます。
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+<div id="modifying-a-columns-default-value">
+  ## カラムのデフォルト値の変更
+</div>
+
+[`ALTER TABLE...MODIFY COLUMN`](/ja/reference/statements/alter/column#modify-column) 句を使って `favoriteNumber` カラムを別の型に変更すると、少し複雑な挙動になります。
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+`events` に再度クエリを実行すると、次の出力が表示されます：
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tyler` には値 `7` が保持されます。これは、その行が作成された時点でのデフォルト値です。
+`Alexey` には新しいデフォルト値 `99` が適用されます。これは、その行が作成された時点では `favoriteNumber` カラムが存在していなかったためです。
+
+`Alexey` の行に現在のデフォルト値をすぐ反映させたい場合は、現在のデフォルト値をディスクに書き込むよう強制するため、[`OPTIMIZE TABLE` ](/ja/reference/statements/optimize) を実行する必要があります:
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+それが済んだら、デフォルト値をもう一度変更するとします。
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+次に、別の行を挿入します：
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+最後に、`events` に対してもう一度クエリを実行してみましょう:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tanya` には新しいデフォルト値の `21` が適用されますが、`Alexey` には古いデフォルト値の `99` が適用されます。
+
+<div id="controlling-column-position-in-table">
+  ## テーブル内のカラムの位置を制御する
+</div>
+
+新しいカラムを追加すると、デフォルトではテーブルの末尾に追加されます。
+ただし、`FIRST` 句と `AFTER` 句を使うことで、カラムを配置する位置を指定できます。
+
+たとえば、`name` カラムの後に `favoriteColor` という名前のカラムを追加する場合は、次のようにします。
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+`events` にクエリを実行してみましょう:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+また、`favoriteDatabase` カラムを追加して、それを一覧の先頭に表示したい場合は、次のようにします。
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+それでは、テーブル定義を見てみましょう。
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```

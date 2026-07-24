@@ -1,0 +1,183 @@
+---
+slug: /troubleshooting
+sidebarTitle: 'استكشاف المشكلات وإصلاحها'
+doc_type: 'guide'
+keywords: [
+  'استكشاف مشكلات ClickHouse وإصلاحها',
+  'أخطاء ClickHouse',
+  'استكشاف مشكلات قاعدة البيانات وإصلاحها',
+  'مشكلات الاتصال في ClickHouse',
+  'تجاوز حد الذاكرة',
+  'مشكلات الأداء في ClickHouse',
+  'رسائل خطأ قاعدة البيانات',
+  'مشكلات التهيئة في ClickHouse',
+  'خطأ رفض الاتصال',
+  'تصحيح أخطاء ClickHouse',
+  'مشكلات الاتصال بقاعدة البيانات',
+  'دليل استكشاف المشكلات وإصلاحها'
+]
+title: 'استكشاف المشكلات الشائعة وإصلاحها'
+description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيوعًا، بما في ذلك بطء الاستعلامات، وأخطاء الذاكرة، ومشكلات الاتصال، ومشكلات التهيئة.'
+---
+
+هل تواجه مشكلات في ClickHouse؟ ستجد هنا حلولًا للمشكلات الشائعة.
+
+<div id="performance-and-errors">
+  ## الأداء والأخطاء
+</div>
+
+الاستعلامات التي تعمل ببطء، أو حالات انتهاء المهلة، أو ظهور رسائل خطأ محددة مثل &quot;Memory limit exceeded&quot; أو &quot;Connection refused.&quot;
+
+<Accordion title="عرض حلول الأداء والأخطاء">
+  ### أداء الاستعلامات
+
+  * [تعرّف على الاستعلامات التي تستهلك أكبر قدر من الموارد](/ar/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+  * [الدليل الكامل لتحسين الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/query-optimization)
+  * [حسّن عمليات JOIN](/ar/concepts/best-practices/minimize-optimize-joins)
+  * [شغّل استعلامات تشخيصية للعثور على مواطن الاختناق](/ar/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+
+  <br />
+
+  ### أداء إدراج البيانات
+
+  * [سرّع إدراج البيانات](/ar/concepts/features/operations/insert/bulkinserts)
+  * [أعِدّ عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts)
+
+  <br />
+
+  ### أدوات التحليل المتقدمة
+
+  {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+
+  * [تحقّق من العمليات التي تعمل حاليًا](/ar/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+  * [راقب أداء النظام](/ar/reference/system-tables/processes)
+
+  <br />
+
+  ### رسائل الخطأ
+
+  * **&quot;Memory limit exceeded&quot;** → [شخّص أخطاء تجاوز حد الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * **&quot;Connection refused&quot;** → [أصلِح مشكلات الاتصال](#connections-and-authentication)
+  * **&quot;Login failures&quot;** → [أعِدّ المستخدمين والأدوار والأذونات](/ar/concepts/features/security/access-rights)
+  * **&quot;SSL certificate errors&quot;** → [أصلِح مشكلات الشهادات](/ar/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * **&quot;Table/database errors&quot;** → [دليل إنشاء قاعدة البيانات](/ar/reference/statements/create/database) | [مشكلات معرّف UUID للجدول](/ar/reference/engines/database-engines/atomic)
+  * **&quot;Network timeouts&quot;** → [استكشاف أخطاء الشبكة وإصلاحها](/ar/concepts/features/interfaces/http)
+  * **مشكلات أخرى** → [تتبّع الأخطاء عبر العنقود لديك](/ar/reference/system-tables/errors)
+</Accordion>
+
+<div id="memory-and-resources">
+  ## الذاكرة والموارد
+</div>
+
+ارتفاع استهلاك الذاكرة، أو الأعطال الناتجة عن نفادها، أو الحاجة إلى مساعدة في تحديد الحجم المناسب لنشر ClickHouse.
+
+<Accordion title="عرض حلول الذاكرة">
+  ### تصحيح أخطاء الذاكرة ومراقبتها:
+
+  * [تحديد ما يستهلك الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * [التحقق من استهلاك الذاكرة الحالي](/ar/reference/system-tables/processes)
+  * [تحليل تخصيص الذاكرة](/ar/concepts/features/performance/allocation-profiling)
+  * [تحليل أنماط استهلاك الذاكرة](/ar/reference/system-tables/query_log)
+
+  <br />
+
+  ### إعدادات الذاكرة:
+
+  * [ضبط حدود الذاكرة](/ar/concepts/features/configuration/settings/memory-overcommit)
+  * [إعدادات ذاكرة الخادم](/ar/reference/settings/server-settings/settings)
+  * [إعدادات ذاكرة الجلسة](/ar/reference/settings/session-settings)
+
+  <br />
+
+  ### التوسيع وتحديد الحجم:
+
+  * [حدّد الحجم المناسب لخدمتك](/ar/guides/oss/best-practices/tips)
+  * [ضبط التوسيع التلقائي](/ar/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+<div id="connections-and-authentication">
+  ## الاتصالات والمصادقة
+</div>
+
+تعذّر الاتصال بـ ClickHouse، أو حدثت حالات فشل في المصادقة، أو ظهرت أخطاء في شهادة SSL، أو كانت هناك مشكلات في إعداد العميل.
+
+<Accordion title="عرض حلول الاتصال">
+  ### مشكلات الاتصال الأساسية
+
+  * [إصلاح مشكلات واجهة HTTP](/ar/concepts/features/interfaces/http)
+  * [معالجة مشكلات شهادة SSL](/ar/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * [إعداد مصادقة المستخدم](/ar/concepts/features/security/access-rights)
+
+  <br />
+
+  ### واجهات العميل
+
+  * [عملاء ClickHouse الأصليون](/ar/concepts/features/interfaces/native-clients-interfaces-index)
+  * [مشكلات واجهة MySQL](/ar/concepts/features/interfaces/mysql)
+  * [مشكلات واجهة PostgreSQL](/ar/concepts/features/interfaces/postgresql)
+  * [تهيئة واجهة gRPC](/ar/concepts/features/interfaces/grpc)
+  * [إعداد واجهة SSH](/ar/concepts/features/interfaces/ssh)
+
+  <br />
+
+  ### الشبكة والبيانات
+
+  * [إعدادات أمان الشبكة](/ar/reference/settings/server-settings/settings)
+  * [مشكلات تحليل تنسيق البيانات](/ar/reference/formats/index)
+</Accordion>
+
+<div id="setup-and-configuration">
+  ## الإعداد والتهيئة
+</div>
+
+التثبيت الأولي، تهيئة الخادم، إنشاء قاعدة البيانات، مشكلات إدخال البيانات، أو إعداد النسخ المتماثل.
+
+<Accordion title="عرض حلول الإعداد والتهيئة">
+  ### الإعداد الأولي
+
+  * [تهيئة إعدادات الخادم](/ar/reference/settings/server-settings/settings)
+  * [إعداد الأمان والتحكم في الوصول](/ar/concepts/features/security/access-rights)
+  * [تهيئة العتاد على نحو صحيح](/ar/guides/oss/best-practices/tips)
+
+  <br />
+
+  ### إدارة قواعد البيانات
+
+  * [إنشاء قواعد البيانات وإدارتها](/ar/reference/statements/create/database)
+  * [اختيار محرك الجدول المناسب](/ar/reference/engines/table-engines/index)
+
+  {/* - [تعديل المخططات بأمان](/reference/statements/alter/index) */}
+
+  <br />
+
+  ### عمليات البيانات
+
+  * [تحسين الإدراج المجمّع للبيانات](/ar/concepts/features/operations/insert/bulkinserts)
+  * [معالجة مشكلات تنسيق البيانات](/ar/reference/formats/index)
+  * [إعداد مسارات البيانات المتدفقة](/ar/concepts/features/operations/insert/asyncinserts)
+  * [تحسين أداء التكامل مع S3](/ar/integrations/connectors/data-ingestion/AWS/performance)
+
+  <br />
+
+  ### التهيئة المتقدمة
+
+  * [إعداد النسخ المتماثل للبيانات](/ar/reference/engines/table-engines/mergetree-family/replication)
+  * [تهيئة الجداول الموزعة](/ar/reference/engines/table-engines/special/distributed)
+
+  {/* - [إعداد ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) */}
+
+  * [إعداد النسخ الاحتياطي والاستعادة](/ar/concepts/features/backup-restore/overview)
+  * [تهيئة المراقبة](/ar/reference/system-tables/overview)
+</Accordion>
+
+<div id="still-need-help">
+  ## هل ما زلت بحاجة إلى مساعدة؟
+</div>
+
+إذا لم تتمكن من العثور على حل:
+
+1. **اسأل الذكاء الاصطناعي** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>اسأل الذكاء الاصطناعي</button> للحصول على إجابات فورية.
+2. **تحقق من جداول النظام** - [نظرة عامة](/ar/reference/system-tables/overview)
+3. **راجع سجلات الخادم** - ابحث عن رسائل الخطأ في سجلات ClickHouse لديك
+4. **اسأل المجتمع** - [انضم إلى مجتمعنا على Slack](https://clickhouse.com/slack)، [مناقشات GitHub](https://github.com/ClickHouse/ClickHouse/discussions)
+5. **احصل على دعم احترافي** - [دعم ClickHouse Cloud](https://clickhouse.com/support)

@@ -1,0 +1,63 @@
+---
+date: 2025-11-11
+title: 如何生成用于支持的 HAR 文件
+tags: ['工具与实用程序']
+keywords: ['HAR 文件', 'HTTP Archive']
+description: 'HAR（HTTP Archive）文件会记录浏览器中的网络活动，帮助我们的支持团队诊断页面加载缓慢、请求失败或其他网络问题。'
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="from-google-chrome">
+  ## 在 Google Chrome 中
+</div>
+
+1. 按 <kbd>F12</kbd> 或 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac) 打开 开发者工具。
+2. 点击“Network”选项卡。
+3. 刷新页面并重现该问题。
+4. 在 开发者工具 中，点击下载按钮。
+
+<div id="from-mozilla-firefox">
+  ## 在 Mozilla Firefox 中
+</div>
+
+1. 按 <kbd>F12</kbd>，或按 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd> (Mac) 打开开发者工具。
+2. 点击“Network”选项卡。
+3. 刷新页面并重现问题。
+4. 在开发者工具中，右键点击请求列表，然后选择“将全部另存为 HAR”。
+
+<div id="from-microsoft-edge">
+  ## 在 Microsoft Edge 中
+</div>
+
+1. 按 <kbd>F12</kbd> 或 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac) 打开开发者工具。
+2. 点击“Network”选项卡。
+3. 重新加载页面并复现该问题。
+4. 在开发者工具中，右键点击网络列表，然后选择“Save all as HAR with content”。
+
+<div id="from-safari">
+  ## 在 Safari 中
+</div>
+
+1. 启用 开发者工具 (如果尚未启用) ：
+   * 前往 Safari &gt; Settings &gt; Advanced。
+   * 在底部勾选“在菜单栏中显示 Develop 菜单”。
+2. 点击 Develop &gt; Show Web Inspector。
+3. 点击“Network”选项卡。
+4. 重新加载页面并重现问题。
+5. 在 开发者工具 中，点击“Export”按钮。
+
+<div id="sending-har-file">
+  ## 发送 .HAR 文件
+</div>
+
+1. 将文件重命名为简短且便于识别的名称 (例如：login-issue.har) 。
+2. 压缩文件 (可选，但建议这样做) 。
+3. 将其附加到支持工单中，或通过电子邮件发送给分配给您的支持联系人。
+
+<Note>
+  HAR 文件可能包含会话 Cookie 或其他敏感数据。
+  仅与已获授权的支持人员共享这些文件。
+</Note>

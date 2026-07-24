@@ -1,0 +1,154 @@
+---
+title: Cómo ingestar archivos Parquet desde un bucket de S3
+description: "Aprende los conceptos básicos del uso del motor de tabla S3 en ClickHouse para ingestar y consultar archivos Parquet desde un bucket de S3, incluida la configuración, los permisos de acceso y ejemplos de importación de datos."
+date: 2023-03-22
+tags: ['Ingestión de datos']
+keywords: ['Parquet', 'bucket de S3']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ingesting-parquet-files-from-an-s3-bucket">
+  ## Ingesta de archivos Parquet desde un bucket de S3
+</div>
+
+A continuación, se presentan algunos conceptos básicos sobre el uso del motor de tabla S3 para leer archivos Parquet.
+
+* cree claves de acceso y secretas para un usuario de servicio de IAM.
+  los usuarios normales de inicio de sesión por lo general no funcionan, ya que pueden haberse configurado con una política de MFA.
+
+* establezca los permisos en la política para permitir que el usuario de servicio acceda al bucket y a las carpetas.
+
+A continuación se muestra un ejemplo muy sencillo que puede usar para probar que el acceso a sus archivos Parquet funciona correctamente antes de aplicarlo a sus datos reales.
+
+Si necesita un ejemplo de cómo crear un usuario y un bucket, puede seguir las dos primeras secciones (crear usuario y crear bucket):
+https://clickhouse.com/docs/guides/sre/configuring-s3-for-clickhouse-use/
+
+Yo utilicé este archivo de muestra: https://github.com/Teradata/kylo/tree/master/samples/sample-data/parquet
+y lo cargué en mi bucket de prueba
+
+Puede configurar la política del bucket de una forma similar a esta:
+(ajústela según sea necesario; esta es bastante abierta en cuanto a privilegios, pero ayudará en las pruebas. puede restringir sus permisos según sea necesario)
+
+```
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::1234567890:user/mars-s3-user"
+                ]
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::mars-doc-test",
+                "arn:aws:s3:::mars-doc-test/*"
+            ]
+        }
+    ]
+}
+```
+
+Puede ejecutar consultas con una sintaxis como esta mediante el motor de tabla S3:
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+```
+clickhouse-cloud :)  select count(*) from s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet','ABC123', 'abc+123', 'Parquet', 'first_name String');
+
+SELECT count(*)
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'first_name String')
+
+Query id: fd4f1193-d604-4ac0-9a46-bdd2d5e14727
+
+┌─count()─┐
+│    1000 │
+└─────────┘
+
+1 row in set. Elapsed: 1.274 sec. Processed 1.00 thousand rows, 14.64 KB (784.81 rows/s., 11.49 KB/s.)
+```
+
+La referencia de tipos de datos para el formato Parquet está aquí:
+https://clickhouse.com/docs/interfaces/formats/#data-format-parquet
+
+Para incorporar los datos a una tabla nativa de ClickHouse:
+
+cree la tabla, algo así (solo elegí un par de columnas del archivo Parquet):
+
+```
+clickhouse-cloud :) CREATE TABLE my_parquet_table (id UInt64, first_name String) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE my_parquet_table
+(
+    `id` UInt64,
+    `first_name` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 412e3994-bf8e-444e-ac43-a7c82642b7da
+
+Ok.
+
+0 rows in set. Elapsed: 0.600 sec.
+```
+
+Seleccione los datos del bucket de S3 para insertarlos en la nueva tabla:
+
+```
+clickhouse-cloud :) INSERT INTO my_parquet_table (id, first_name) SELECT id, first_name FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123','abc+123', 'Parquet', 'id UInt64, first_name String') FORMAT Parquet
+
+INSERT INTO my_parquet_table (id, first_name) SELECT
+    id,
+    first_name
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'id UInt64, first_name String')
+
+Query id: c3cdc871-f338-462d-8797-6751b45a0b58
+
+Ok.
+
+0 rows in set. Elapsed: 1.220 sec. Processed 1.00 thousand rows, 22.64 KB (819.61 rows/s., 18.56 KB/s.)
+```
+
+Compruebe la importación:
+
+```
+clickhouse-cloud :) SELECT * FROM my_parquet_table LIMIT 10;
+
+SELECT *
+FROM my_parquet_table
+LIMIT 10
+
+Query id: 1ccf59dd-d804-46a9-aadd-ed5c57b9e1a0
+
+┌─id─┬─first_name─┐
+│  1 │ Amanda     │
+│  2 │ Albert     │
+│  3 │ Evelyn     │
+│  4 │ Denise     │
+│  5 │ Carlos     │
+│  6 │ Kathryn    │
+│  7 │ Samuel     │
+│  8 │ Harry      │
+│  9 │ Jose       │
+│ 10 │ Emily      │
+└────┴────────────┘
+```
+
+Cuando estés listo para importar tus datos reales, puedes usar una sintaxis especial, como comodines y rangos, para especificar las carpetas, subcarpetas y archivos en tu bucket.
+Te recomiendo filtrar algunos directorios y archivos para probar la importación primero; por ejemplo, un año determinado, un par de meses y algún rango de fechas.
+
+además de las opciones de ruta aquí, recientemente se añadió la sintaxis `**`, que especifica todos los subdirectorios de forma recursiva.
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+Por ejemplo, suponiendo que las rutas y la estructura del bucket sean algo así:
+`https://your_s3_bucket.s3.amazonaws.com/<your_folder>/<year>/<month>/<day>/<filename>.parquet`
+`https://mars-doc-test.s3.amazonaws.com/system_logs/2022/11/01/my-app-logs-0001.parquet`
+
+Esto obtendría todos los archivos correspondientes al día 1 de cada mes en 2021-2022
+`https://mars-doc-test.s3.amazonaws.com/system_logs/{2021-2022}/**/01/*.parquet`

@@ -1,0 +1,101 @@
+---
+title: Повышение производительности поиска в столбцах Map в ClickHouse
+description: Узнайте, как оптимизировать поиск в столбцах Map в ClickHouse для повышения производительности запросов, материализуя определённые ключи в виде отдельных столбцов.
+date: 2022-10-30
+tags: ['Производительность и оптимизация']
+keywords: ['Производительность Map']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## Проблема
+</div>
+
+Поиск в Map, например `a['key']`, имеет линейную сложность (как упомянуто [здесь](/ru/reference/data-types/map)) и может быть неэффективным. Это связано с тем, что для выбора значения по определённому ключу из таблицы пришлось бы перебирать все ключи (~M) во всех строках (N) столбца Map, что в итоге даёт ~MxN операций поиска.
+
+Поиск с использованием Map может быть в 10 раз медленнее, чем в столбце String. Приведённый ниже эксперимент также показывает замедление примерно в 10 раз для холодного запроса и разницу на несколько порядков в объёме обработанных данных (7.21 MB против 5.65 GB).
+
+```sql
+-- создать таблицу с SpanName как String и ResourceAttributes как Map
+DROP TABLE IF EXISTS tbl;
+CREATE TABLE tbl (
+    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
+    `TraceId` String CODEC (ZSTD(1)),
+    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
+    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
+    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId);
+
+-- создать UDF для генерации случайных данных Map для ResourceAttributes
+DROP FUNCTION IF EXISTS genmap;
+CREATE FUNCTION genmap AS (n) -> arrayMap (x-> (x::String, (x*rand32())::String), range(1, n));
+
+-- проверить, что genmap работает корректно
+SELECT genmap(10)::Map(String, String);
+
+-- вставить 1 млн строк
+INSERT INTO tbl
+SELECT
+    now() - randUniform(1, 1000000.) as Timestamp,
+    randomPrintableASCII(2) as TraceId,
+    randomPrintableASCII(2) as ServiceName,
+    rand32() as Duration,
+    randomPrintableASCII(2) as SpanName,
+    genmap(rand64()%500)::Map(String, String) as ResourceAttributes
+FROM numbers(1_000_000);
+
+-- запрос по SpanName выполняется быстрее
+-- [cold] 0 rows in set. Elapsed: 0.642 sec. Processed 1.00 million rows, 7.21 MB (1.56 million rows/s., 11.22 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 0.164 sec. Processed 1.00 million rows, 7.21 MB (6.10 million rows/s., 43.99 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    SpanName
+FROM tbl
+GROUP BY SpanName ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- запрос по ResourceAttributes выполняется медленнее
+-- [cold] 0 rows in set. Elapsed: 6.432 sec. Processed 1.00 million rows, 5.65 GB (155.46 thousand rows/s., 879.07 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 5.935 sec. Processed 1.00 million rows, 5.65 GB (168.50 thousand rows/s., 952.81 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    ResourceAttributes['1'] as hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+```
+
+**Решение**
+Чтобы улучшить запрос, мы можем добавить ещё один столбец, значение которого по умолчанию будет браться по определённому ключу из столбца Map, а затем материализовать этот столбец, чтобы заполнить значения для существующих строк. Так мы извлекаем и сохраняем нужное значение при вставке, тем самым ускоряя поиск при выполнении запроса.
+
+```sql
+-- решение — добавить столбец со значением, по умолчанию равным определённому ключу в Map
+ALTER TABLE tbl ADD COLUMN hostname LowCardinality(String) DEFAULT ResourceAttributes['1'];
+ALTER TABLE tbl MATERIALIZE COLUMN hostname;
+
+-- запрос по hostname (новый столбец) теперь выполняется быстрее
+-- [холодный] 0 rows in set. Elapsed: 2.215 sec. Processed 1.00 million rows, 21.67 MB (451.52 thousand rows/s., 9.78 MB/s.)
+-- [тёплый] 0 rows in set. Elapsed: 0.541 sec. Processed 1.00 million rows, 21.67 MB (1.85 million rows/s., 40.04 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- сбросить кэш для выполнения запроса в холодном режиме
+SYSTEM DROP FILESYSTEM CACHE;
+```
