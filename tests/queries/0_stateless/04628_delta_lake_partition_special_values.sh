@@ -45,7 +45,7 @@ committed_paths() {
     grep -h '"add"' "${path}"/_delta_log/*.json \
         | sed -E 's/.*"path":"([^"]*)".*/\1/' \
         | sed -E 's:/[0-9a-f-]{36}\.parquet$:/<uuid>.parquet:' \
-        | sort
+        | LC_ALL=C sort
 }
 
 # List the committed `partitionValues` object of every add action, sorted. This shows the exact
@@ -55,7 +55,7 @@ committed_partition_values() {
     local path="$1"
     grep -h '"add"' "${path}"/_delta_log/*.json \
         | sed -E 's/.*("partitionValues":\{[^}]*\}).*/\1/' \
-        | sort
+        | LC_ALL=C sort
 }
 
 # schema for (number Int32 NOT NULL, part Nullable(String)) partitioned by part
