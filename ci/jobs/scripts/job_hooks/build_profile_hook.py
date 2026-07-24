@@ -139,6 +139,10 @@ def _verify_trace_extraction(build_directory, profile_data_file):
 # (FINAL_BINARIES in ci/jobs/build_profile_diff_job.py), relative to the build
 # directory.
 _FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
+# The headline size comparison (HEADLINE_BINARIES in build_profile_diff_job.py)
+# reads the stripped binary. It carries no symbols by construction, so only its
+# size row is required.
+_SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
 
 
 def _any_line(artifact_file, matches):
@@ -160,17 +164,21 @@ def _verify_final_binary_coverage(build_directory, build_size_file, binary_symbo
     symlink of a non-standalone keeper, which the producer legitimately
     skips) must have its row in binary_sizes.txt (`wc -c` lines ending with
     the path) and its rows in binary_symbols.txt (nm lines starting with the
-    path). Whole-file absence is left to _REQUIRED_ARTIFACTS to report.
+    path). The stripped binary - the headline size comparison's only input -
+    must have its size row too (it has no symbols by construction). Whole-file
+    absence is left to _REQUIRED_ARTIFACTS to report.
     """
-    for rel in _FINAL_BINARIES:
+    for rel in _FINAL_BINARIES + _SIZE_ONLY_BINARIES:
         binary = Path(build_directory) / rel
         if binary.is_symlink() or not binary.is_file():
             continue
         path = f"{build_directory}/{rel}"
-        for artifact, matches, what in (
+        checks = [
             (build_size_file, lambda line: line.split() and line.split()[-1] == path, "size"),
-            (binary_symbol_file, lambda line: line.startswith(path + " "), "symbol"),
-        ):
+        ]
+        if rel in _FINAL_BINARIES:
+            checks.append((binary_symbol_file, lambda line: line.startswith(path + " "), "symbol"))
+        for artifact, matches, what in checks:
             if _has_data(artifact) and not _any_line(artifact, matches):
                 raise RuntimeError(
                     f"The build linked [{path}] but [{artifact}] holds no {what} "

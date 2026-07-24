@@ -143,6 +143,13 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
 -- for ``clickhouse`` only, while the master baseline has both binaries.
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     ({_PR}, 'prsha-lost-keeper', '2026-07-02 00:00:00', 'arm_release', 'I5', '{_MAIN}', 'OptFunction', 'main_fn', 10000000);
+
+-- A PR run whose producer lost the stripped binary's size row: the run still
+-- resolves via the main binary, so the headline size comparison would come up
+-- empty. And a master run missing the same row, for the baseline direction.
+INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
+    ({_PR}, 'prsha-lost-stripped', '2026-07-02 00:00:00', 'arm_release', 'I6', '{_MAIN}', 1500),
+    (0, 'basesha-no-stripped', '2026-06-30 00:00:00', 'arm_release', 'I7', '{_MAIN}', 1400);
 """
 
 
@@ -198,6 +205,36 @@ def test_binary_sizes_read_from_the_pinned_run_only():
     # (master keeps debug symbols, PR builds strip them).
     assert "clickhouse-stripped" in section.body
     assert f"`{job.strip_build_dir(_MAIN)}`" not in section.body
+
+
+def test_binary_sizes_missing_pr_side_stripped_is_flagged():
+    """A lost PR-side stripped size row is an incomplete comparison, not green.
+
+    The run resolves via the main binary's rows, so losing only the
+    ``clickhouse-stripped`` row would silently empty the headline size
+    section while the job still renders "no significant changes".
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, "prsha-lost-stripped")
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
+    assert pr_side is not None and base_side is not None
+    section = job.compare_binaries(db, pr_side, base_side)
+    assert section.significant
+    assert "clickhouse-stripped" in section.body
+    assert "incomplete" in section.body
+    assert "missing PR-side size data" in section.summary
+
+
+def test_binary_sizes_missing_baseline_is_called_out():
+    """A baseline without the stripped size row shows a note, not silence."""
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, "basesha-no-stripped")
+    assert pr_side is not None and base_side is not None
+    section = job.compare_binaries(db, pr_side, base_side)
+    assert not section.significant
+    assert "No master baseline size data yet" in section.body
+    assert "clickhouse-stripped" in section.body
 
 
 def test_objects_compared_against_the_warmup_build():

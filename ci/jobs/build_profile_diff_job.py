@@ -486,6 +486,13 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
     self-extracting binaries differ by gigabytes on any PR. Even stripped, the
     two sides differ in the official-build flag and PGO/BOLT availability -
     the significance threshold absorbs that residual.
+
+    This is the check's headline size signal, so it must never disappear
+    silently: a headline binary whose size row the PR build did not upload
+    (while the run itself resolved via the main binary's rows) means the
+    profile producer lost it, and is flagged as an incomplete comparison
+    instead of an all-green omission. A row the master baseline lacks is
+    called out as a missing baseline.
     """
     section = Section(title="Binary sizes")
     rows = db.query(
@@ -496,29 +503,47 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         GROUP BY file
         ORDER BY file"""
     )
-    lines = [
+    sizes = {row["file"]: (int(row["pr_size"]), int(row["base_size"])) for row in rows}
+    missing_pr = [f for f in HEADLINE_BINARIES if not sizes.get(f, (0, 0))[0]]
+    missing_base = [f for f in HEADLINE_BINARIES if sizes.get(f, (0, 0))[0] and not sizes[f][1]]
+    lines = []
+    summaries = []
+    if missing_pr:
+        names = ", ".join(md_code(strip_build_dir(f)) for f in missing_pr)
+        lines.append(
+            f"⚠️ This build uploaded no size row for {names}: the profile "
+            "producer lost it and the headline size comparison is incomplete."
+        )
+        lines.append("")
+        section.significant = True
+        summaries.append(f"missing PR-side size data for {', '.join(strip_build_dir(f) for f in missing_pr)}")
+    if missing_base:
+        names = ", ".join(md_code(strip_build_dir(f)) for f in missing_base)
+        lines.append(f"No master baseline size data yet for {names}.")
+        lines.append("")
+    table = [
         "| Binary | Master | PR | Δ |",
         "|---|---:|---:|---:|",
     ]
-    summaries = []
-    for row in rows:
-        pr_size, base_size = int(row["pr_size"]), int(row["base_size"])
+    for file in HEADLINE_BINARIES:
+        pr_size, base_size = sizes.get(file, (0, 0))
         if not pr_size or not base_size:
             continue
         delta = pr_size - base_size
-        name = strip_build_dir(row["file"])
+        name = strip_build_dir(file)
         if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
-        lines.append(f"| {md_code(name)} | {format_bytes(base_size)} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
-    if len(lines) > 2:
-        lines.append("")
-        lines.append(
+        table.append(f"| {md_code(name)} | {format_bytes(base_size)} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
+    if len(table) > 2:
+        table.append("")
+        table.append(
             "Only the stripped binary is compared: the official master build keeps "
             "debug symbols while PR builds strip them, so the other binaries differ "
             "by construction."
         )
-        section.body = "\n".join(lines)
+        lines += table
+    section.body = "\n".join(lines).rstrip()
     section.summary = "; ".join(summaries)
     return section
 

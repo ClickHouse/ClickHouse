@@ -396,19 +396,22 @@ def test_trace_extraction_accepts_extracted_profile(tmp_path):
 
 
 def _coverage_fixture(tmp_path, keeper_symlink=False):
-    """A build dir with both final binaries and fully covering artifacts."""
+    """A build dir with the final and stripped binaries and covering artifacts."""
     build_dir = tmp_path / "build"
     (build_dir / "programs").mkdir(parents=True)
     (build_dir / "programs" / "clickhouse").write_bytes(b"\x7fELF")
+    (build_dir / "programs" / "clickhouse-stripped").write_bytes(b"\x7fELF")
     if keeper_symlink:
         (build_dir / "programs" / "clickhouse-keeper").symlink_to("clickhouse")
     else:
         (build_dir / "programs" / "clickhouse-keeper").write_bytes(b"\x7fELF")
     main = f"{build_dir}/programs/clickhouse"
     keeper = f"{build_dir}/programs/clickhouse-keeper"
+    stripped = f"{build_dir}/programs/clickhouse-stripped"
     sizes = tmp_path / "binary_sizes.txt"
-    sizes.write_text(f"4 {main}\n4 {keeper}\n")
+    sizes.write_text(f"4 {main}\n4 {keeper}\n4 {stripped}\n")
     symbols = tmp_path / "binary_symbols.txt"
+    # The stripped binary legitimately has no symbol rows.
     symbols.write_text(f"{main} 0 16 t main\n{keeper} 0 16 t keeper_main\n")
     return build_dir, sizes, symbols
 
@@ -449,8 +452,33 @@ def test_final_binary_coverage_skips_symlinked_keeper(tmp_path):
     """
     build_dir, sizes, symbols = _coverage_fixture(tmp_path, keeper_symlink=True)
     main = f"{build_dir}/programs/clickhouse"
-    sizes.write_text(f"4 {main}\n")
+    stripped = f"{build_dir}/programs/clickhouse-stripped"
+    sizes.write_text(f"4 {main}\n4 {stripped}\n")
     symbols.write_text(f"{main} 0 16 t main\n")
+    _verify_final_binary_coverage(str(build_dir), sizes, symbols)
+
+
+def test_final_binary_coverage_requires_stripped_size_row(tmp_path):
+    """Losing only the stripped binary's size row fails the hook.
+
+    The stripped binary is the headline size comparison's only input
+    (HEADLINE_BINARIES in build_profile_diff_job.py), while the run itself is
+    resolved via the main binary's rows - so a producer that loses just this
+    one row would leave the check running with an empty headline section, a
+    size regression turned false-green. It has no symbols by construction,
+    so only its size row is demanded.
+    """
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path)
+    main = f"{build_dir}/programs/clickhouse"
+    keeper = f"{build_dir}/programs/clickhouse-keeper"
+    sizes.write_text(f"4 {main}\n4 {keeper}\n")
+    with pytest.raises(RuntimeError, match="clickhouse-stripped"):
+        _verify_final_binary_coverage(str(build_dir), sizes, symbols)
+
+    # A build that did not produce the stripped binary at all owes no row.
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path / "second")
+    (build_dir / "programs" / "clickhouse-stripped").unlink()
+    sizes.write_text(f"4 {build_dir}/programs/clickhouse\n4 {build_dir}/programs/clickhouse-keeper\n")
     _verify_final_binary_coverage(str(build_dir), sizes, symbols)
 
 
