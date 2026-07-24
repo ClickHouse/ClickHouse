@@ -12,8 +12,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cstring>
-
 namespace DB
 {
     namespace ErrorCodes
@@ -99,6 +97,14 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
 
 namespace
 {
+
+/// Store a UInt64 into the `.size` stream as little-endian bytes (the on-disk encoding), so the
+/// corruption tests reproduce the same bit pattern on big-endian hosts as on little-endian ones.
+void putSizeLE(char * dst, UInt64 value)
+{
+    for (size_t i = 0; i < sizeof(UInt64); ++i)
+        dst[i] = static_cast<char>((value >> (8 * i)) & 0xFF);
+}
 
 /// A column of varied-length strings, including some large ones so the data stream is non-trivial.
 ColumnString::MutablePtr makeVariedStringColumn(size_t rows)
@@ -222,14 +228,9 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
     }
 }
 
-/// The symmetric corruption: the SIZES stream (not the data stream) is the corrupt one. The two
-/// substreams are stored separately, so a bad granule / version skew / seek can desync them with a
-/// garbage per-row length. A single length with bit 63 set makes the accumulated offset (and hence
-/// bytes_to_read) >= 2^63; the pre-read data.resize() then reaches Allocator::checkSize, which
-/// throws a LOGICAL_ERROR ("Too large size ... passed to allocator") that aborts under
-/// debug/sanitizer builds (the observed CI crash). A corrupt part must fail loudly at the point of
-/// deserialization (TOO_LARGE_STRING_SIZE) rather than abort the server -- mirroring the bound the
-/// single-stream path already enforces in deserializeBinaryImpl.
+/// A corrupt SIZES stream (a per-row length with bit 63 set) must fail with TOO_LARGE_STRING_SIZE at
+/// deserialization instead of reaching data.resize() and aborting in the allocator under debug/sanitizer
+/// builds (the observed CI crash).
 TEST(StringSerialization, WithSizeStreamCorruptSizeStreamThrows)
 {
     MainThreadStatus::getInstance();
@@ -253,7 +254,7 @@ TEST(StringSerialization, WithSizeStreamCorruptSizeStreamThrows)
     std::string sizes_bytes = sizes_out.str();
     ASSERT_GE(sizes_bytes.size(), sizeof(UInt64));
     const UInt64 corrupt_size = 0x8000000000000000ULL | 1ULL;
-    memcpy(sizes_bytes.data(), &corrupt_size, sizeof(UInt64));
+    putSizeLE(sizes_bytes.data(), corrupt_size);
 
     ReadBufferFromString sizes_in(sizes_bytes);
     ReadBufferFromString data_in(data_out.str());
@@ -308,8 +309,8 @@ TEST(StringSerialization, WithSizeStreamCorruptSkippedPrefixSizeThrows)
     std::string sizes_bytes = sizes_out.str();
     ASSERT_GE(sizes_bytes.size(), 2 * sizeof(UInt64));
     const UInt64 corrupt_size = 0x8000000000000000ULL;
-    memcpy(sizes_bytes.data(), &corrupt_size, sizeof(UInt64));
-    memcpy(sizes_bytes.data() + sizeof(UInt64), &corrupt_size, sizeof(UInt64));
+    putSizeLE(sizes_bytes.data(), corrupt_size);
+    putSizeLE(sizes_bytes.data() + sizeof(UInt64), corrupt_size);
 
     ReadBufferFromString sizes_in(sizes_bytes);
     ReadBufferFromString data_in(data_out.str());
@@ -417,7 +418,7 @@ TEST(StringSerialization, WithSizeStreamMidRangeCorruptSizeLeavesColumnConsisten
     std::string sizes_bytes = sizes_out.str();
     ASSERT_GE(sizes_bytes.size(), (corrupt_index + 1) * sizeof(UInt64));
     const UInt64 corrupt_size = 0x8000000000000000ULL | 1ULL;
-    memcpy(sizes_bytes.data() + corrupt_index * sizeof(UInt64), &corrupt_size, sizeof(UInt64));
+    putSizeLE(sizes_bytes.data() + corrupt_index * sizeof(UInt64), corrupt_size);
 
     ReadBufferFromString sizes_in(sizes_bytes);
     ReadBufferFromString data_in(data_out.str());
@@ -503,6 +504,27 @@ TEST(StringSerialization, StringSizeSubcolumnShortSizeStreamThrows)
     }
 }
 
+/// A null `.size` stream is an absent/defaulted substream, not a truncated one. The `s.size` reader must
+/// return the column unchanged (like the String path), NOT throw CANNOT_READ_ALL_DATA: the short-stream
+/// check only applies once a stream was actually read.
+TEST(StringSerialization, StringSizeSubcolumnNullStreamReturnsUnchanged)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+
+    auto size_serialization = SerializationStringSize::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    /// Getter returns nullptr for every substream (the column is absent from the source).
+    settings.getter = [](const ISerialization::SubstreamPath &) -> ReadBuffer * { return nullptr; };
+    size_serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnUInt64::create();
+    size_serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+    ASSERT_EQ(assert_cast<const ColumnUInt64 &>(*result).size(), 0u);
+}
+
 /// An oversized per-row size in the `.size` substream must fail with the same corruption exception on
 /// the `s.size` subcolumn path instead of being exposed as subcolumn data.
 TEST(StringSerialization, StringSizeSubcolumnOversizeThrows)
@@ -527,7 +549,7 @@ TEST(StringSerialization, StringSizeSubcolumnOversizeThrows)
     std::string sizes_bytes = sizes_out.str();
     ASSERT_GE(sizes_bytes.size(), (corrupt_index + 1) * sizeof(UInt64));
     const UInt64 corrupt_size = 0x8000000000000000ULL | 1ULL;
-    memcpy(sizes_bytes.data() + corrupt_index * sizeof(UInt64), &corrupt_size, sizeof(UInt64));
+    putSizeLE(sizes_bytes.data() + corrupt_index * sizeof(UInt64), corrupt_size);
 
     ReadBufferFromString sizes_in(sizes_bytes);
     ReadBufferFromString data_in(data_out.str());
@@ -551,12 +573,9 @@ TEST(StringSerialization, StringSizeSubcolumnOversizeThrows)
     }
 }
 
-/// The WITH_SIZE_STREAM analogue of IncorrectStateAfterMemoryLimitExceeded. After the size slice passes
-/// validation, the override still appends offsets and then runs fallible in-place ops (data.resize,
-/// ignore, readBigStrict) on the caller-owned column. A MEMORY_LIMIT_EXCEEDED fault injected at
-/// data.resize (assumeMutable does not clone) would leave the committed offsets with the old chars
-/// buffer, so offsets.back() > chars.size() reappears on the exception path. The append/read block is
-/// now rolled back on any throw, so any column the caller is left holding stays internally consistent.
+/// The WITH_SIZE_STREAM analogue of IncorrectStateAfterMemoryLimitExceeded: a fault injected in the
+/// post-validation append/read block (offsets append, data.resize, ignore, readBigStrict) must leave any
+/// column the caller is left holding internally consistent (offsets.back() <= chars.size()).
 TEST(StringSerialization, WithSizeStreamConsistentAfterMemoryLimitExceeded)
 {
     MainThreadStatus::getInstance();

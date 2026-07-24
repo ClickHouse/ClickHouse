@@ -258,6 +258,14 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column_for_cache, num_read_rows);
         }
     }
+    else
+    {
+        /// A null stream is an absent/defaulted substream, not a truncated one: return the column
+        /// unchanged, matching SerializationString::deserializeBinaryBulkWithSizeStream. The short-stream
+        /// check below only applies once a stream was actually read.
+        settings.path.pop_back();
+        return;
+    }
 
     /// Validate the requested `.size` slice BEFORE the compaction step, symmetric to the String path
     /// (SerializationString::deserializeBinaryBulkWithSizeStream). The `.size` substream is read with
