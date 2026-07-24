@@ -491,9 +491,10 @@ ASTPtr parseQuery(
     const std::string & query,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks)
+    size_t max_parser_backtracks,
+    bool allow_multipart_table_paths)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks, allow_multipart_table_paths);
 }
 
 
@@ -504,7 +505,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_parser_depth,
     size_t max_parser_backtracks,
     bool allow_settings_after_format_in_insert,
-    bool implicit_select)
+    bool implicit_select,
+    bool allow_multipart_table_paths)
 {
     ASTPtr ast;
 
@@ -520,7 +522,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     {
         begin = pos;
 
-        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
+        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks, allow_multipart_table_paths);
 
         bool is_insert_with_data = false;
         if (ASTInsertQuery * insert = getInsertAST(ast); insert && insert->data)

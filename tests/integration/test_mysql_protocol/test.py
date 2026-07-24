@@ -1197,6 +1197,41 @@ def test_mysql_metadata_commands_access_control(started_cluster):
     node.query("DROP TABLE default.mysql_acl_employees", settings=creds)
 
 
+def test_mysql_namespace_scope(started_cluster):
+    # COM_INIT_DB with a namespace selection ("db.ns") must check access against the
+    # physical database like SQL USE does, and COM_FIELD_LIST must accept the stored
+    # table names that SHOW TABLES returns under a scope.
+    node = cluster.instances["node"]
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_ns_user", settings=creds)
+    node.query(
+        "CREATE TABLE IF NOT EXISTS default.`ns.t` (x UInt64, s String) ENGINE=MergeTree ORDER BY x",
+        settings=creds,
+    )
+    node.query(
+        "CREATE USER mysql_ns_user IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_table_namespaces = 1, enable_analyzer = 1",
+        settings=creds,
+    )
+    node.query("GRANT SELECT, SHOW ON default.* TO mysql_ns_user", settings=creds)
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_ns_user",
+        password="",
+        database="default",
+        port=server_port,
+    )
+    # grants on the physical database are enough to select a namespace in it
+    client.select_db("default.ns")
+    # SHOW TABLES under the scope returns stored names; clients feed them back
+    assert sorted(_com_field_list(client, "ns.t")) == ["s", "x"]
+    client.close()
+
+    node.query("DROP USER mysql_ns_user", settings=creds)
+    node.query("DROP TABLE default.`ns.t`", settings=creds)
+
+
 def _mysql_recv_packet(sock):
     header = b""
     while len(header) < 4:

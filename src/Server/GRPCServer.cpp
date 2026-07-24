@@ -70,6 +70,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsUInt64 interactive_delay;
@@ -967,7 +968,8 @@ namespace
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
-        ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks],
+            settings[Setting::allow_experimental_table_namespaces]);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();

@@ -2141,26 +2141,25 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
-    /// a dotted DEFAULT DATABASE may select a namespace; validate before taking the mutex
-    CurrentDatabaseInfo database_info;
-    if (!database.empty())
-        database_info = validateCurrentDatabaseName(database, getSettingsRef()[Setting::allow_experimental_table_namespaces], shared_from_this());
+    {
+        /// Apply user's profiles, constraints, settings, roles.
+        std::lock_guard lock(mutex);
 
-    /// Apply user's profiles, constraints, settings, roles.
-    std::lock_guard lock(mutex);
+        setUserIDWithLock(user_id_, lock);
 
-    setUserIDWithLock(user_id_, lock);
+        /// A profile can specify a value and a readonly constraint for same setting at the same time,
+        /// so we shouldn't check constraints here.
+        setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
-    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
-
-    setCurrentRolesWithLock(default_roles, lock);
-    setExternalRolesWithLock(external_roles_, lock);
+        setCurrentRolesWithLock(default_roles, lock);
+        setExternalRolesWithLock(external_roles_, lock);
+    }
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
+    /// A dotted name may select a namespace; validate it with the user's own profiles
+    /// already applied, and never under the mutex (the validation may query a catalog).
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, !database_info.table_prefix.empty(), lock);
+        setCurrentDatabase(database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
