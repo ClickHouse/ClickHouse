@@ -561,6 +561,24 @@ static JoinClauses buildJoinClauses(
     std::stack<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push(join_expression);
 
+    /// A node stays on the stack until its children are built, so it is visited twice.
+    /// Its table sides do not change in between, so avoid walking the subtree again.
+    std::unordered_map<const IQueryTreeNode *, std::set<JoinTableSide>> expression_sides_cache;
+
+    auto get_expression_sides = [&](const QueryTreeNodePtr & node) -> const std::set<JoinTableSide> &
+    {
+        auto it = expression_sides_cache.find(node.get());
+        if (it == expression_sides_cache.end())
+            it = expression_sides_cache
+                     .emplace(
+                         node.get(),
+                         extractJoinTableSidesFromExpression(
+                             node.get(), left_table_expressions, right_table_expressions, join_node))
+                     .first;
+
+        return it->second;
+    };
+
     auto get_and_check_built_clause = [&built_clauses](const IQueryTreeNode* node) -> JoinClauses &
     {
         auto it = built_clauses.find(node);
@@ -577,11 +595,10 @@ static JoinClauses buildJoinClauses(
     {
         auto node = nodes_to_process.top();
         auto * function_node = node->as<FunctionNode>();
-        const auto function_name = function_node ? function_node->getFunctionName() : String();
-        const auto expression_sides
-            = extractJoinTableSidesFromExpression(node.get(), left_table_expressions, right_table_expressions, join_node);
+        const bool is_logical_function
+            = function_node && (function_node->getFunctionName() == "and" || function_node->getFunctionName() == "or");
         // If the expression is a logical expression and it contains expressions from both sides, let's combine the clauses, otherwise let's just build one join clause
-        if ((function_name == "and" || function_name == "or") && expression_sides.size() == 2)
+        if (is_logical_function && get_expression_sides(node).size() == 2)
         {
             auto & arguments = function_node->getArguments().getNodes();
             auto * first_argument = arguments.front().get();
@@ -595,7 +612,7 @@ static JoinClauses buildJoinClauses(
 
             nodes_to_process.pop();
             JoinClauses result;
-            if (function_name == "or")
+            if (function_node->getFunctionName() == "or")
             {
                 for (auto & argument : arguments)
                 {

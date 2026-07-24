@@ -1,0 +1,51 @@
+-- single equality
+0	0
+1	1
+2	2
+3	3
+4	4
+-- n-ary AND, flattened by the analyzer into one node with many children
+0	0
+1	1
+2	2
+3	3
+4	4
+-- OR of equalities: each branch becomes a separate join clause
+0	0
+0	5
+0	10
+0	15
+1	1
+-- AND over OR: cross product of child clauses
+0	0
+0	5
+0	10
+0	15
+1	1
+-- alternating AND/OR nesting: the shape that survives analyzer flattening as a deep tree
+0	0
+1	1
+2	2
+3	3
+4	4
+-- logical node touching only one side: must not be split into multiple clauses
+1	1
+2	2
+6	6
+7	7
+11	11
+-- residual inequality condition alongside key conditions
+5	5
+10	10
+11	11
+-- same results with general join planning disabled
+0	0
+1	1
+2	2
+3	3
+4	4
+0	0
+0	5
+0	10
+0	15
+1	1
