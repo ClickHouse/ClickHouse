@@ -326,16 +326,16 @@ SELECT clamp(15, 0, 7) AS result;
 
 Introducido en: v1.1.0
 
-Devuelve el valor máximo entre los argumentos.
+Devuelve el valor más alto entre los argumentos.
 Los argumentos `NULL` se ignoran.
 
 * Para arrays, devuelve el array lexicográficamente mayor.
-* Para los tipos `DateTime`, el tipo del resultado se amplía al tipo más grande (p. ej., `DateTime64` si se mezcla con `DateTime32`).
+* Para los tipos `DateTime`, el tipo del resultado se promueve al tipo más grande (p. ej., `DateTime64` si se mezcla con `DateTime32`).
 
 <Info>
   **Use la configuración `least_greatest_legacy_null_behavior` para cambiar el comportamiento de `NULL`**
 
-  La versión [24.12](/es/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introdujo un cambio incompatible con versiones anteriores por el que los valores `NULL` se ignoran, mientras que antes devolvía `NULL` si uno de los argumentos era `NULL`.
+  La versión [24.12](/es/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introdujo un cambio incompatible con versiones anteriores por el que los valores `NULL` se ignoran, mientras que antes devolvía `NULL` si alguno de los argumentos era `NULL`.
   Para conservar el comportamiento anterior, establezca la configuración `least_greatest_legacy_null_behavior` (valor predeterminado: `false`) en `true`.
 </Info>
 
@@ -351,15 +351,15 @@ greatest(x1[, x2, ...])
 
 **Valor devuelto**
 
-Devuelve el valor más alto entre los argumentos, promovido al tipo compatible de mayor tamaño. [`Any`](/es/reference/data-types/index)
+Devuelve el mayor valor entre los argumentos, promovido al tipo compatible de mayor tamaño. [`Any`](/es/reference/data-types/index)
 
 **Ejemplos**
 
 **Tipos numéricos**
 
 ```sql title=Query
-SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -383,13 +383,13 @@ SELECT greatest(['hello'], ['there'], ['world']);
 **Tipos de DateTime**
 
 ```sql title=Query
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯(now(), 3))─┐
-│  2025-05-28 15:50:53.000 │
+┌─greatest(toD⋯0.000', 3))─┐
+│  2025-01-02 12:00:00.000 │
 └──────────────────────────┘
 ```
 
@@ -483,8 +483,8 @@ Devuelve el menor valor de entre los argumentos, convertido al tipo compatible d
 **Tipos numéricos**
 
 ```sql title=Query
-SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -508,13 +508,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **Tipos de DateTime**
 
 ```sql title=Query
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯(now(), 3))─┐
-│  2025-05-27 15:55:20.000 │
+┌─least(toDate⋯0.000', 3))─┐
+│  2025-01-01 12:00:00.000 │
 └──────────────────────────┘
 ```
 
