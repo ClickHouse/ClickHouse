@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <thread>
-#include <unordered_map>
 
 #include <Core/ServerUUID.h>
 #include <Common/ThreadStatus.h>
@@ -29,7 +28,6 @@
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 
-#include <Common/DimensionalMetrics.h>
 #include <Common/HistogramMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -333,23 +331,6 @@ static void increasePriority(const HolderPtr & holder)
 {
     for (auto & it : *holder)
         it->increasePriority();
-}
-
-static double getDimensionalMetricValue(const String & name, const DimensionalMetrics::LabelValues & labels)
-{
-    double value = 0;
-    DimensionalMetrics::Factory::instance().forEachFamily([&](const DimensionalMetrics::MetricFamily & family)
-    {
-        if (family.getName() != name)
-            return;
-
-        family.forEachMetric([&](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
-        {
-            if (label_values == labels)
-                value += metric.get();
-        });
-    });
-    return value;
 }
 
 [[maybe_unused]] static void increasePriority(const HolderPtr & holder, size_t pos)
@@ -3124,53 +3105,24 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
 
     const FileCacheOriginInfo user_a("usage_metrics_user_a", 1);
     const FileCacheOriginInfo user_b("usage_metrics_user_b", 1);
-    const FileCacheOriginInfo user_query("usage_metrics_user_query", 1);
-    const FileCacheOriginInfo user_disabled("usage_metrics_user_disabled", 1);
     const FileCacheOriginInfo user_setting("usage_metrics_user_setting", 1);
 
     auto key_metadata_a = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_a"), std::make_shared<const FileCacheOriginInfo>(user_a), &cache_metadata);
     auto key_metadata_b = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_b"), std::make_shared<const FileCacheOriginInfo>(user_b), &cache_metadata);
-    auto key_metadata_query = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_query"), std::make_shared<const FileCacheOriginInfo>(user_query), &cache_metadata);
-    auto key_metadata_disabled = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_disabled"), std::make_shared<const FileCacheOriginInfo>(user_disabled), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
 
-    auto get_size = [](const String & cache_name, const String & user_id)
+    auto get_usage = [](IFileCachePriority & priority, const String & user_id)
     {
-        return getDimensionalMetricValue("filesystem_cache_size_bytes", {cache_name, user_id});
-    };
-    auto get_elements = [](const String & cache_name, const String & user_id)
-    {
-        return getDimensionalMetricValue("filesystem_cache_elements", {cache_name, user_id});
+        const auto usage = priority.getUsageStatPerClient();
+        if (const auto it = usage.find(user_id); it != usage.end())
+            return it->second;
+        return IFileCachePriority::UsageStat{};
     };
 
     const String disabled_cache_name = "usage_metrics_setting_disabled";
     const String enabled_cache_name = "usage_metrics_setting_enabled";
-    const double disabled_setting_size_before = get_size(disabled_cache_name, user_setting.user_id);
-    const double disabled_setting_elements_before = get_elements(disabled_cache_name, user_setting.user_id);
-    const double enabled_setting_size_before = get_size(enabled_cache_name, user_setting.user_id);
-    const double enabled_setting_elements_before = get_elements(enabled_cache_name, user_setting.user_id);
-
-    struct UsageDelta
-    {
-        Int64 size = 0;
-        Int64 elements = 0;
-    };
-
-    std::unordered_map<String, UsageDelta> usage_deltas;
-    auto on_usage_change = [&](const String & user_id, Int64 size_delta, Int64 elements_delta)
-    {
-        auto & usage_delta = usage_deltas[user_id];
-        usage_delta.size += size_delta;
-        usage_delta.elements += elements_delta;
-    };
-    auto get_delta = [&](const String & user_id)
-    {
-        if (auto it = usage_deltas.find(user_id); it != usage_deltas.end())
-            return it->second;
-        return UsageDelta{};
-    };
 
     auto make_settings = [](const String & path, bool expose_usage_metrics)
     {
@@ -3189,8 +3141,7 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
         FileCache cache(disabled_cache_name, make_settings(cache_base_path, false));
         cache.initialize();
         download(cache.getOrSet(FileCacheKey::fromPath("usage_metrics_setting_disabled_key"), 0, 10, 10, {}, 0, user_setting));
-        ASSERT_DOUBLE_EQ(get_size(disabled_cache_name, user_setting.user_id), disabled_setting_size_before);
-        ASSERT_DOUBLE_EQ(get_elements(disabled_cache_name, user_setting.user_id), disabled_setting_elements_before);
+        ASSERT_TRUE(cache.getUsageStatPerClient().empty());
     }
 
     {
@@ -3200,30 +3151,17 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
             auto holder = cache.getOrSet(FileCacheKey::fromPath("usage_metrics_setting_enabled_key"), 0, 10, 10, {}, 0, user_setting);
             download(holder);
         }
-        ASSERT_DOUBLE_EQ(get_size(enabled_cache_name, user_setting.user_id), enabled_setting_size_before + 10);
-        ASSERT_DOUBLE_EQ(get_elements(enabled_cache_name, user_setting.user_id), enabled_setting_elements_before + 1);
+        auto usage = cache.getUsageStatPerClient();
+        ASSERT_EQ(usage[user_setting.user_id].size, 10);
+        ASSERT_EQ(usage[user_setting.user_id].elements, 1);
         cache.removeAllReleasable(user_setting.user_id);
-        ASSERT_DOUBLE_EQ(get_size(enabled_cache_name, user_setting.user_id), enabled_setting_size_before);
-        ASSERT_DOUBLE_EQ(get_elements(enabled_cache_name, user_setting.user_id), enabled_setting_elements_before);
-    }
-
-    {
-        LRUFileCachePriority disabled_priority(IFileCachePriority::QueueType::Main, 100, 10);
-        IFileCachePriority::IteratorPtr disabled_it;
-        {
-            auto write_lock = cache_guard.writeLock();
-            auto state_lock = state_guard.lock();
-            disabled_it = disabled_priority.add(key_metadata_disabled, 0, 10, write_lock, &state_lock);
-        }
-        ASSERT_EQ(get_delta(user_disabled.user_id).size, 0);
-        ASSERT_EQ(get_delta(user_disabled.user_id).elements, 0);
-        disabled_it->remove(cache_guard.writeLock());
-        ASSERT_EQ(get_delta(user_disabled.user_id).size, 0);
-        ASSERT_EQ(get_delta(user_disabled.user_id).elements, 0);
+        usage = cache.getUsageStatPerClient();
+        ASSERT_EQ(usage[user_setting.user_id].size, 0);
+        ASSERT_EQ(usage[user_setting.user_id].elements, 0);
     }
 
     LRUFileCachePriority main_priority(IFileCachePriority::QueueType::Main, 100, 10);
-    main_priority.setOnUsageChangeCallback(on_usage_change);
+    main_priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
     IFileCachePriority::IteratorPtr it_a;
     IFileCachePriority::IteratorPtr it_b;
     {
@@ -3233,45 +3171,90 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
         it_b = main_priority.add(key_metadata_b, 0, 7, write_lock, &state_lock);
     }
 
-    ASSERT_EQ(get_delta(user_a.user_id).size, 10);
-    ASSERT_EQ(get_delta(user_a.user_id).elements, 1);
-    ASSERT_EQ(get_delta(user_b.user_id).size, 7);
-    ASSERT_EQ(get_delta(user_b.user_id).elements, 1);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).size, 10);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).elements, 1);
+    ASSERT_EQ(get_usage(main_priority, user_b.user_id).size, 7);
+    ASSERT_EQ(get_usage(main_priority, user_b.user_id).elements, 1);
 
     {
         auto state_lock = state_guard.lock();
         it_a->incrementSize(5, state_lock);
     }
-    ASSERT_EQ(get_delta(user_a.user_id).size, 15);
-    ASSERT_EQ(get_delta(user_a.user_id).elements, 1);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).size, 15);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).elements, 1);
 
     it_a->decrementSize(3);
-    ASSERT_EQ(get_delta(user_a.user_id).size, 12);
-    ASSERT_EQ(get_delta(user_a.user_id).elements, 1);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).size, 12);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).elements, 1);
 
     it_a->invalidate();
-    ASSERT_EQ(get_delta(user_a.user_id).size, 0);
-    ASSERT_EQ(get_delta(user_a.user_id).elements, 0);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).size, 0);
+    ASSERT_EQ(get_usage(main_priority, user_a.user_id).elements, 0);
     it_a->remove(cache_guard.writeLock());
 
     it_b->remove(cache_guard.writeLock());
-    ASSERT_EQ(get_delta(user_b.user_id).size, 0);
-    ASSERT_EQ(get_delta(user_b.user_id).elements, 0);
+    ASSERT_EQ(get_usage(main_priority, user_b.user_id).size, 0);
+    ASSERT_EQ(get_usage(main_priority, user_b.user_id).elements, 0);
 
     /// Internal query-limit queues do not represent real filesystem cache occupancy
     /// and must not contribute to per-user usage gauges.
     LRUFileCachePriority query_priority(IFileCachePriority::QueueType::Query, 100, 10);
-    query_priority.setOnUsageChangeCallback(on_usage_change);
+    query_priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
     IFileCachePriority::IteratorPtr query_it;
     {
         auto write_lock = cache_guard.writeLock();
         auto state_lock = state_guard.lock();
-        query_it = query_priority.add(key_metadata_query, 0, 10, write_lock, &state_lock);
+        query_it = query_priority.add(key_metadata_a, 0, 10, write_lock, &state_lock);
     }
 
-    ASSERT_EQ(get_delta(user_query.user_id).size, 0);
-    ASSERT_EQ(get_delta(user_query.user_id).elements, 0);
+    ASSERT_TRUE(query_priority.getUsageStatPerClient().empty());
     query_it->remove(cache_guard.writeLock());
+
+    SLRUFileCachePriority slru_priority(IFileCachePriority::QueueType::Main, 100, 10, 0.5);
+    slru_priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+    IFileCachePriority::IteratorPtr slru_a;
+    IFileCachePriority::IteratorPtr slru_b;
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        slru_a = slru_priority.add(key_metadata_a, 20, 11, write_lock, &state_lock);
+        slru_b = slru_priority.add(key_metadata_b, 20, 13, write_lock, &state_lock);
+    }
+    ASSERT_EQ(get_usage(slru_priority, user_a.user_id).size, 11);
+    ASSERT_EQ(get_usage(slru_priority, user_b.user_id).size, 13);
+    slru_a->remove(cache_guard.writeLock());
+    slru_b->remove(cache_guard.writeLock());
+    ASSERT_EQ(get_usage(slru_priority, user_a.user_id).elements, 0);
+    ASSERT_EQ(get_usage(slru_priority, user_b.user_id).elements, 0);
+
+    const FileCacheOriginInfo user_a_system(user_a.user_id, 1, FileSegmentKeyType::System);
+    auto key_metadata_a_system = std::make_shared<KeyMetadata>(
+        FileCacheKey::fromPath("usage_metrics_key_a_system"),
+        std::make_shared<const FileCacheOriginInfo>(user_a_system),
+        &cache_metadata);
+    SplitFileCachePriority split_priority(
+        IFileCachePriority::QueueType::Main,
+        makeLRUInner,
+        100,
+        10,
+        0.5,
+        0.5,
+        "usage_metrics_split");
+    split_priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+    IFileCachePriority::IteratorPtr split_data;
+    IFileCachePriority::IteratorPtr split_system;
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        split_data = split_priority.add(key_metadata_a, 30, 17, write_lock, &state_lock);
+        split_system = split_priority.add(key_metadata_a_system, 30, 19, write_lock, &state_lock);
+    }
+    ASSERT_EQ(get_usage(split_priority, user_a.user_id).size, 36);
+    ASSERT_EQ(get_usage(split_priority, user_a.user_id).elements, 2);
+    split_data->remove(cache_guard.writeLock());
+    split_system->remove(cache_guard.writeLock());
+    ASSERT_EQ(get_usage(split_priority, user_a.user_id).size, 0);
+    ASSERT_EQ(get_usage(split_priority, user_a.user_id).elements, 0);
 }
 
 TEST_F(FileCacheTest, SLRUDowngradeMetric)
@@ -3280,6 +3263,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
     SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
@@ -3317,6 +3301,9 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);   /// fills protected
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+    const auto usage_before = priority.getUsageStatPerClient().at(origin.user_id);
+    ASSERT_EQ(usage_before.size, 20);
+    ASSERT_EQ(usage_before.elements, 2);
 
     auto & events = CurrentThread::getProfileEvents();
     const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
@@ -3327,6 +3314,9 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+    const auto usage_after = priority.getUsageStatPerClient().at(origin.user_id);
+    ASSERT_EQ(usage_after.size, usage_before.size);
+    ASSERT_EQ(usage_after.elements, usage_before.elements);
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)

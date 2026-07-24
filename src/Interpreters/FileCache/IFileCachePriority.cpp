@@ -12,7 +12,45 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
+}
+
+void FileCacheUsageCounters::add(size_t size_delta, size_t elements_delta) noexcept
+{
+    size.fetch_add(size_delta, std::memory_order_relaxed);
+    elements.fetch_add(elements_delta, std::memory_order_relaxed);
+}
+
+void FileCacheUsageCounters::sub(size_t size_delta, size_t elements_delta) noexcept
+{
+    const size_t previous_size = size.fetch_sub(size_delta, std::memory_order_relaxed);
+    const size_t previous_elements = elements.fetch_sub(elements_delta, std::memory_order_relaxed);
+    chassert(previous_size >= size_delta);
+    chassert(previous_elements >= elements_delta);
+}
+
+FileCacheUsageCounters * FileCacheUsageTracker::getOrSet(const String & user_id)
+{
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = usage_by_user.try_emplace(user_id);
+    if (inserted)
+        it->second = std::make_unique<FileCacheUsageCounters>();
+    return it->second.get();
+}
+
+std::unordered_map<String, std::pair<size_t, size_t>> FileCacheUsageTracker::snapshot() const
+{
+    std::lock_guard lock(mutex);
+    std::unordered_map<String, std::pair<size_t, size_t>> result;
+    result.reserve(usage_by_user.size());
+    for (const auto & [user_id, usage] : usage_by_user)
+    {
+        result.emplace(
+            user_id,
+            std::pair{
+                usage->size.load(std::memory_order_relaxed),
+                usage->elements.load(std::memory_order_relaxed)});
+    }
+    return result;
 }
 
 IFileCachePriority::IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_)
@@ -25,12 +63,24 @@ IFileCachePriority::Entry::Entry(
     size_t offset_,
     size_t size_,
     KeyMetadataPtr key_metadata_,
+    FileCacheUsageCounters * usage_counters_,
     State initial_state)
     : key(key_)
     , offset(offset_)
     , key_metadata(key_metadata_)
     , size(size_)
+    , usage_counters(usage_counters_)
     , state(initial_state)
+{
+}
+
+IFileCachePriority::Entry::Entry(
+    const Key & key_,
+    size_t offset_,
+    size_t size_,
+    KeyMetadataPtr key_metadata_,
+    State initial_state)
+    : Entry(key_, offset_, size_, std::move(key_metadata_), nullptr, initial_state)
 {
 }
 
@@ -39,6 +89,7 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
+    , usage_counters(other.usage_counters)
 {
 }
 
@@ -58,20 +109,6 @@ KeyMetadataPtr IFileCachePriority::Entry::getKeyMetadata() const
     return locked;
 }
 
-void IFileCachePriority::notifyUsageChange(const KeyMetadataWeakPtr & key_metadata, Int64 size_delta, Int64 elements_delta) const
-{
-    /// Resolve the user id from the key metadata only when the callback is installed,
-    /// so this stays zero-overhead (no weak pointer lock) when the feature is disabled.
-    if (queue_type != QueueType::Main || !on_usage_change_callback || (!size_delta && !elements_delta))
-        return;
-
-    /// Entries with non-zero size are kept alive by the metadata bucket, so locking is expected to succeed.
-    /// If the metadata has already expired, skip the update instead of throwing: this is also reached from
-    /// noexcept paths such as `LRUIterator::invalidateImpl`, and a missed update is harmless for a gauge.
-    if (auto locked = key_metadata.lock())
-        on_usage_change_callback(locked->origin->user_id, size_delta, elements_delta);
-}
-
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 {
     if ((max_size != 0 && getSize(lock) > max_size) || (max_elements != 0 && getElementsCount(lock) > max_elements))
@@ -86,10 +123,13 @@ void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 
 std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriority::getUsageStatPerClient()
 {
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "getUsageStatPerClient() is not implemented for {} policy",
-        magic_enum::enum_name(getType()));
+    if (!usage_tracker)
+        return {};
+
+    std::unordered_map<std::string, UsageStat> result;
+    for (const auto & [user_id, usage] : usage_tracker->snapshot())
+        result.emplace(user_id, UsageStat{.size = usage.first, .elements = usage.second});
+    return result;
 }
 
 void IFileCachePriority::removeEntries(

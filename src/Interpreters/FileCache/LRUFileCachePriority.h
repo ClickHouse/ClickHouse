@@ -136,8 +136,8 @@ public:
             max_elements,
             description,
             state);
-        if (getOnUsageChangeCallback())
-            result->setOnUsageChangeCallback(getOnUsageChangeCallback());
+        if (getUsageTracker())
+            result->setUsageTracker(getUsageTracker());
         return result;
     }
 

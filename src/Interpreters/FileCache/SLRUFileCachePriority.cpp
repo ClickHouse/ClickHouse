@@ -99,16 +99,16 @@ FileCachePriorityPtr SLRUFileCachePriority::copy() const
         description,
         probationary_queue.state,
         protected_queue.state);
-    if (getOnUsageChangeCallback())
-        result->setOnUsageChangeCallback(getOnUsageChangeCallback());
+    if (getUsageTracker())
+        result->setUsageTracker(getUsageTracker());
     return result;
 }
 
-void SLRUFileCachePriority::setOnUsageChangeCallback(OnUsageChangeCallback callback)
+void SLRUFileCachePriority::setUsageTracker(FileCacheUsageTrackerPtr tracker)
 {
-    IFileCachePriority::setOnUsageChangeCallback(std::move(callback));
-    protected_queue.setOnUsageChangeCallback(getOnUsageChangeCallback());
-    probationary_queue.setOnUsageChangeCallback(getOnUsageChangeCallback());
+    IFileCachePriority::setUsageTracker(std::move(tracker));
+    protected_queue.setUsageTracker(getUsageTracker());
+    probationary_queue.setUsageTracker(getUsageTracker());
 }
 
 size_t SLRUFileCachePriority::getSize(const CacheStateGuard::Lock & lock) const
@@ -180,7 +180,12 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
             "(key: {}, offset: {})", key_metadata->key, offset);
     }
 
-    auto entry = std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata);
+    auto entry = std::make_shared<Entry>(
+        key_metadata->key,
+        offset,
+        size,
+        key_metadata,
+        getOrSetUsageCounters(key_metadata->origin->user_id));
     return std::make_shared<SLRUIterator>(
         this,
         is_protected
@@ -201,7 +206,12 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
     /// everything else goes to probationary.
     bool is_protected = (original_queue_type == QueueEntryType::SLRU_Protected);
 
-    auto entry = std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata);
+    auto entry = std::make_shared<Entry>(
+        key_metadata->key,
+        offset,
+        size,
+        key_metadata,
+        getOrSetUsageCounters(key_metadata->origin->user_id));
     return std::make_shared<SLRUIterator>(
         this,
         is_protected
@@ -580,7 +590,13 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 /// and reset size for the old entry,
                 /// thus size will be transferred from one entry to another.
                 /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
-                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->getKeyMetadata(), Entry::State::PreActive);
+                auto empty_entry = std::make_shared<Entry>(
+                    entry->key,
+                    entry->offset,
+                    /* size */0,
+                    entry->getKeyMetadata(),
+                    entry->usage_counters,
+                    Entry::State::PreActive);
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
@@ -759,6 +775,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             prev_entry->offset,
             /* size */0,
             prev_entry->getKeyMetadata(),
+            prev_entry->usage_counters,
             Entry::State::PreActive);
 
         return protected_queue.add(

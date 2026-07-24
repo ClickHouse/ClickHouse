@@ -17,6 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
 #include <Common/UDFProcessRegistry.h>
@@ -71,6 +72,16 @@ namespace ErrorCodes
 
 namespace
 {
+
+DimensionalMetrics::MetricFamily & filesystem_cache_size_bytes = DimensionalMetrics::Factory::instance().registerMetric(
+    "filesystem_cache_size_bytes",
+    "Filesystem cache size in bytes, labelled by cache name and user id.",
+    {"cache_name", "user_id"});
+
+DimensionalMetrics::MetricFamily & filesystem_cache_elements = DimensionalMetrics::Factory::instance().registerMetric(
+    "filesystem_cache_elements",
+    "Filesystem cache elements (file segments), labelled by cache name and user id.",
+    {"cache_name", "user_id"});
 
 template <typename Max, typename T>
 void calculateMax(Max & max, T x)
@@ -205,13 +216,36 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
+        std::set<FilesystemCacheUsageLabels> current_usage_labels;
 
         for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
-            total_bytes += cache_data->cache->getUsedCacheSize();
-            max_bytes += cache_data->cache->getMaxCacheSize();
-            total_files += cache_data->cache->getFileSegmentsNum();
+            const auto & cache = cache_data->cache;
+            total_bytes += cache->getUsedCacheSize();
+            max_bytes += cache->getMaxCacheSize();
+            total_files += cache->getFileSegmentsNum();
+
+            if (cache->exposesUsageMetricsPerUser() && cache->isInitialized())
+            {
+                for (const auto & [user_id, usage] : cache->getUsageStatPerClient())
+                {
+                    const auto labels = FilesystemCacheUsageLabels{cache->getName(), user_id};
+                    current_usage_labels.insert(labels);
+                    filesystem_cache_size_bytes.withLabels({labels.first, labels.second}).set(usage.size);
+                    filesystem_cache_elements.withLabels({labels.first, labels.second}).set(usage.elements);
+                }
+            }
         }
+
+        for (const auto & labels : previous_filesystem_cache_usage_labels)
+        {
+            if (!current_usage_labels.contains(labels))
+            {
+                filesystem_cache_size_bytes.withLabels({labels.first, labels.second}).set(0);
+                filesystem_cache_elements.withLabels({labels.first, labels.second}).set(0);
+            }
+        }
+        previous_filesystem_cache_usage_labels = std::move(current_usage_labels);
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
             "Total bytes in the `cache` virtual filesystem. This cache is hold on disk." };

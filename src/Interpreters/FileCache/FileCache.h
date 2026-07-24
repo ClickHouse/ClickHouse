@@ -247,6 +247,7 @@ public:
 
     using UsageStat = IFileCachePriority::UsageStat;
     std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+    bool exposesUsageMetricsPerUser() const { return expose_usage_metrics_per_user; }
 
     void deactivateBackgroundOperations();
 
@@ -330,6 +331,7 @@ private:
     const double split_cache_ratio;
 
     const bool skip_cache_on_disk_failure;
+    const bool expose_usage_metrics_per_user;
     std::atomic<bool> expose_eviction_metrics;
     std::atomic<bool> expose_eviction_metrics_per_user;
 

@@ -136,34 +136,11 @@ namespace FileCacheSetting
 
 namespace
 {
-    DimensionalMetrics::MetricFamily & filesystem_cache_size_bytes = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_size_bytes",
-        "Filesystem cache size in bytes, labelled by cache name and user id.",
-        {"cache_name", "user_id"});
-
-    DimensionalMetrics::MetricFamily & filesystem_cache_elements = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_elements",
-        "Filesystem cache elements (file segments), labelled by cache name and user id.",
-        {"cache_name", "user_id"});
-
     std::string getCommonUserID()
     {
         auto user_from_context = DB::Context::getGlobalContextInstance()->getFilesystemCacheUser();
         const auto user = user_from_context.empty() ? toString(ServerUUID::get()) : user_from_context;
         return user;
-    }
-
-    void updateFilesystemCacheUsageMetrics(const String & cache_name, const String & user_id, Int64 size_delta, Int64 elements_delta)
-    {
-        if (size_delta > 0)
-            filesystem_cache_size_bytes.withLabels({cache_name, user_id}).increment(static_cast<DimensionalMetrics::Value>(size_delta));
-        else if (size_delta < 0)
-            filesystem_cache_size_bytes.withLabels({cache_name, user_id}).decrement(static_cast<DimensionalMetrics::Value>(-size_delta));
-
-        if (elements_delta > 0)
-            filesystem_cache_elements.withLabels({cache_name, user_id}).increment(static_cast<DimensionalMetrics::Value>(elements_delta));
-        else if (elements_delta < 0)
-            filesystem_cache_elements.withLabels({cache_name, user_id}).decrement(static_cast<DimensionalMetrics::Value>(-elements_delta));
     }
 
     const HistogramMetrics::Buckets hits_buckets = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 1024, 8192};
@@ -322,6 +299,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
+    , expose_usage_metrics_per_user(settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
     , name(cache_name)
@@ -448,22 +426,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
-    if (settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user])
+    if (expose_usage_metrics_per_user && !main_priority->isOvercommitEviction())
     {
-        /// `name` is the primary cache name (the one that first created this instance in `FileCacheFactory`).
-        /// When several cache configurations share the same path they alias a single `FileCache` instance,
-        /// so usage is reported once, under the primary name, and never double-counted across aliases.
-        main_priority->setOnUsageChangeCallback([this](const String & user_id, Int64 size_delta, Int64 elements_delta)
-        {
-            try
-            {
-                updateFilesystemCacheUsageMetrics(name, user_id, size_delta, elements_delta);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to update filesystem cache usage metrics");
-            }
-        });
+        main_priority->setUsageTracker(std::make_shared<FileCacheUsageTracker>());
     }
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);

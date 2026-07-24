@@ -54,10 +54,10 @@ Indicates startup scripts failures by error type. Set to 1 when a startup script
 Number of merge tree data parts, labelled by part state, part type, and whether it is a projection part.
 
 ### `filesystem_cache_size_bytes` {#filesystem-cache-size-bytes}
-Filesystem cache size in bytes, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`.
+Filesystem cache size in bytes, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`. The gauge is sampled periodically by the asynchronous metrics task, so it can lag behind current cache usage by one update interval. Run `SYSTEM RELOAD ASYNCHRONOUS METRICS` to request an immediate sample.
 
 ### `filesystem_cache_elements` {#filesystem-cache-elements}
-Filesystem cache elements (file segments), labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`.
+Filesystem cache elements (file segments), labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`. The gauge is sampled periodically by the asynchronous metrics task, so it can lag behind current cache usage by one update interval. Run `SYSTEM RELOAD ASYNCHRONOUS METRICS` to request an immediate sample.
 
 :::note
 When several cache configurations share the same `path`, they refer to a single physical cache instance (see `FileCacheFactory`). The `cache_name` label of the usage gauges above is the *primary* cache name — the name of the configuration that first created the instance. Usage is reported once, under the primary name, to avoid double-counting the shared cache. Other alias names for the same instance have no separate series, even though `system.filesystem_cache_settings` reports the same `current_size` and `current_elements_num` for each alias.

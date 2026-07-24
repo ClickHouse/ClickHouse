@@ -122,7 +122,12 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     bool)
 {
     return std::make_shared<LRUIterator>(add(
-        std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata),
+        std::make_shared<Entry>(
+            key_metadata->key,
+            offset,
+            size,
+            key_metadata,
+            getOrSetUsageCounters(key_metadata->origin->user_id)),
         lock,
         state_lock));
 }
@@ -168,7 +173,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
 
     if (entry->size)
     {
-        notifyUsageChange(entry->key_metadata, static_cast<Int64>(entry->size), 1);
+        addTrackedUsage(*entry, entry->size, 1);
         state->add(entry->size, /* elements */1, *state_lock);
     }
 
@@ -186,7 +191,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     auto & entry = **it;
     if (entry.size)
     {
-        notifyUsageChange(entry.key_metadata, -static_cast<Int64>(entry.size.load()), -1);
+        subTrackedUsage(entry, entry.size.load(), 1);
         state->sub(entry.size, /* elements */1);
     }
 
@@ -785,7 +790,7 @@ void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
 
     const size_t entry_size = entry_ptr->size;
     if (entry_size)
-        cache_priority->notifyUsageChange(entry_ptr->key_metadata, -static_cast<Int64>(entry_size), -1);
+        cache_priority->subTrackedUsage(*entry_ptr, entry_size, 1);
 
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
@@ -820,10 +825,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry_ptr->toString());
 
-    cache_priority->notifyUsageChange(
-        entry_ptr->key_metadata,
-        static_cast<Int64>(size),
-        static_cast<Int64>(elements));
+    cache_priority->addTrackedUsage(*entry_ptr, size, elements);
 
     cache_priority->state->add(size, elements, lock);
     entry_ptr->size += size;
@@ -846,10 +848,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              size, entry_ptr->toString());
 
     const bool became_empty = entry_ptr->size == size;
-    cache_priority->notifyUsageChange(
-        entry_ptr->key_metadata,
-        -static_cast<Int64>(size),
-        became_empty ? -1 : 0);
+    cache_priority->subTrackedUsage(*entry_ptr, size, became_empty ? 1 : 0);
     cache_priority->state->sub(size, /* elements */became_empty ? 1 : 0);
     entry_ptr->size -= size;
 }

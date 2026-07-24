@@ -10,6 +10,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 #include <utility>
 
 #include <fmt/ranges.h>
@@ -25,6 +27,27 @@ using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
 struct CacheUsage;
 using CacheUsagePtr = std::shared_ptr<CacheUsage>;
+
+struct FileCacheUsageCounters
+{
+    std::atomic<size_t> size = 0;
+    std::atomic<size_t> elements = 0;
+
+    void add(size_t size_delta, size_t elements_delta) noexcept;
+    void sub(size_t size_delta, size_t elements_delta) noexcept;
+};
+
+class FileCacheUsageTracker
+{
+public:
+    FileCacheUsageCounters * getOrSet(const String & user_id);
+    std::unordered_map<String, std::pair<size_t, size_t>> snapshot() const;
+
+private:
+    mutable std::mutex mutex;
+    std::unordered_map<String, std::unique_ptr<FileCacheUsageCounters>> usage_by_user;
+};
+using FileCacheUsageTrackerPtr = std::shared_ptr<FileCacheUsageTracker>;
 
 
 class IFileCachePriority : private boost::noncopyable
@@ -65,6 +88,9 @@ public:
         const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
+        /// Non-owning pointer into `FileCacheUsageTracker`. The tracker never erases counters
+        /// and is retained by the priority until after its entries are destroyed.
+        FileCacheUsageCounters * const usage_counters;
 
         std::string toString(const std::string & prefix = "") const;
 
@@ -95,7 +121,19 @@ public:
             Removed,
         };
 
-        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_, State initial_state = State::Active);
+        Entry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            FileCacheUsageCounters * usage_counters_ = nullptr,
+            State initial_state = State::Active);
+        Entry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            State initial_state);
         Entry(const Entry & other);
 
         State getState() const { return state.load(); }
@@ -472,15 +510,12 @@ public:
     }
     const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 
-    using OnUsageChangeCallback = std::function<void(const UserID & user_id, Int64 size_delta, Int64 elements_delta)>;
-
-    virtual void setOnUsageChangeCallback(OnUsageChangeCallback callback)
+    virtual void setUsageTracker(FileCacheUsageTrackerPtr tracker)
     {
-        chassert(!on_usage_change_callback, "on_usage_change_callback cannot be set twice");
-        on_usage_change_callback = std::move(callback);
+        chassert(!usage_tracker, "usage_tracker cannot be set twice");
+        usage_tracker = std::move(tracker);
     }
-
-    const OnUsageChangeCallback & getOnUsageChangeCallback() const { return on_usage_change_callback; }
+    const FileCacheUsageTrackerPtr & getUsageTracker() const { return usage_tracker; }
 
 protected:
     IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
@@ -490,17 +525,24 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    void notifyUsageChange(const UserID & user_id, Int64 size_delta, Int64 elements_delta) const
+    FileCacheUsageCounters * getOrSetUsageCounters(const UserID & user_id) const
     {
-        if (queue_type == QueueType::Main && on_usage_change_callback && (size_delta || elements_delta))
-            on_usage_change_callback(user_id, size_delta, elements_delta);
+        if (queue_type != QueueType::Main || !usage_tracker)
+            return nullptr;
+        return usage_tracker->getOrSet(user_id);
     }
 
-    /// Same as above, but resolves the user id from the (weak) key metadata of a queue entry.
-    /// The weak pointer is locked only when the callback is installed, so this stays zero-overhead
-    /// when the feature is disabled (the default). It never throws, so it is safe to call from
-    /// noexcept paths such as `LRUIterator::invalidateImpl`.
-    void notifyUsageChange(const KeyMetadataWeakPtr & key_metadata, Int64 size_delta, Int64 elements_delta) const;
+    static void addTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
+    {
+        if (entry.usage_counters)
+            entry.usage_counters->add(size_delta, elements_delta);
+    }
+
+    static void subTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
+    {
+        if (entry.usage_counters)
+            entry.usage_counters->sub(size_delta, elements_delta);
+    }
 
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
@@ -511,7 +553,7 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
-    OnUsageChangeCallback on_usage_change_callback;
+    FileCacheUsageTrackerPtr usage_tracker;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

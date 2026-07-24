@@ -132,7 +132,7 @@ public:
         IFileCachePriority::setOnEvictCallback(std::move(callback));
     }
 
-    void setOnUsageChangeCallback(OnUsageChangeCallback callback) override;
+    void setUsageTracker(FileCacheUsageTrackerPtr tracker) override;
 
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override

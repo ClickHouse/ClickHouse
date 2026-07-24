@@ -57,6 +57,7 @@ def test_filesystem_cache_usage_metrics(start_cluster):
         "INSERT INTO usage_metrics_test "
         "SELECT number, repeat('x', 8192) FROM numbers(100)"
     )
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
 
     debug = node.query(
         "SELECT * FROM system.dimensional_metrics "
@@ -81,6 +82,11 @@ def test_filesystem_cache_usage_metrics(start_cluster):
         f"AND value > 0"
     ).strip())
     assert labelled_users > 0, debug
+
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE '{CACHE_NAME}'")
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    assert metric_value("filesystem_cache_size_bytes") == 0
+    assert metric_value("filesystem_cache_elements") == 0
 
 
 SHARED_ALIAS_A = "shared_alias_a"
@@ -127,6 +133,8 @@ def test_shared_cache_alias_usage_metrics(start_cluster):
         node.query(
             f"INSERT INTO {table} SELECT number, repeat('x', 8192) FROM numbers(50)"
         )
+
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
 
     # Both alias names report the same physical usage in system.filesystem_cache_settings.
     size_a = cache_setting_for("current_size", SHARED_ALIAS_A)
