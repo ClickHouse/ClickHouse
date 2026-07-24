@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualizations and dashboards with ClickStack'
-sidebarTitle: 'Dashboards'
+sidebarTitle: 'Overview'
 description: 'Visualizations and dashboards with ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
@@ -287,7 +287,7 @@ This dashboard uses tabs to separate monitoring of **Selects**, **Inserts**, and
 <Info>
 **Required system table access**
 
-This dashboard queries the ClickHouse [system tables](/reference/system-tables/index) to expose key metrics. The following grants are required:
+This dashboard queries the ClickHouse [system tables](/reference/system-tables/overview) to expose key metrics. The following grants are required:
 
 `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 
