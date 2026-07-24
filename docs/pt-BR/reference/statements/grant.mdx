@@ -191,6 +191,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
 Exemplos de como essa hierarquia é tratada:
 
 * O privilégio `ALTER` inclui todos os outros privilégios `ALTER*`.
-* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT` e `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` e `ALTER MODIFY CONSTRAINT`.
 
 Os privilégios são aplicados em diferentes níveis. Saber em que nível um privilégio se aplica indica qual sintaxe está disponível para ele.
 
@@ -452,6 +454,7 @@ Permite executar consultas [ALTER](/pt-BR/reference/statements/alter/index) de a
   * `ALTER CONSTRAINT`. Nível: `GROUP`. Aliases: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. Nível: `TABLE`. Aliases: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. Nível: `TABLE`. Aliases: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. Nível: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   * `ALTER TTL`. Nível: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. Nível: `TABLE`. Aliases: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. Nível: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,11 +470,11 @@ Permite executar consultas [ALTER](/pt-BR/reference/statements/alter/index) de a
 Exemplos de como essa hierarquia funciona:
 
 * O privilégio `ALTER` inclui todos os outros privilégios `ALTER*`.
-* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT` e `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` inclui os privilégios `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` e `ALTER MODIFY CONSTRAINT`.
 
 **Observações**
 
-* O privilégio `MODIFY SETTING` permite modificar as configurações do mecanismo de tabela. Ele não afeta configurações nem parâmetros de configuração do servidor.
+* O privilégio `MODIFY SETTING` permite modificar as configurações do motor de tabela. Ele não afeta configurações nem parâmetros de configuração do servidor.
 * A operação `ATTACH` requer o privilégio [CREATE](#create).
 * A operação `DETACH` requer o privilégio [DROP](#drop).
 * Para interromper uma mutação com a consulta [KILL MUTATION](/pt-BR/reference/statements/kill#kill-mutation), você precisa ter um privilégio para iniciar essa mutação. Por exemplo, se quiser interromper a consulta `ALTER UPDATE`, precisará do privilégio `ALTER UPDATE`, `ALTER TABLE` ou `ALTER`.
@@ -629,7 +632,7 @@ Permite que um usuário execute instruções [SYSTEM](/pt-BR/reference/statement
     * `SYSTEM DROP UNCOMPRESSED CACHE`. Nível: `GLOBAL`. Aliases: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. Nível: `GROUP`
     * `SYSTEM RELOAD CONFIG`. Nível: `GLOBAL`. Aliases: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. Nível: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. Nível: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Nível: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. Nível: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. Nível: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -644,6 +647,8 @@ Permite que um usuário execute instruções [SYSTEM](/pt-BR/reference/statement
   * `SYSTEM FLUSH`. Nível: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. Nível: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. Nível: `GLOBAL`. Aliases: `FLUSH LOGS`
+
+Os comandos `SYSTEM UNLOAD DICTIONARY` e `SYSTEM UNLOAD DICTIONARIES` reutilizam o privilégio `SYSTEM RELOAD DICTIONARY`, portanto um usuário com `SYSTEM RELOAD DICTIONARY` também pode descarregar dicionários.
 
 O privilégio `SYSTEM RELOAD EMBEDDED DICTIONARIES` é concedido implicitamente pelo privilégio `SYSTEM RELOAD DICTIONARY ON *.*`.
 
@@ -775,9 +780,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Permite ao usuário executar as funções [dictGet](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) e [dictIsIn](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+Permite ao usuário executar as funções [dictGet](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictGetRoot](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetRoot), [dictGetChildren](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetChildren), [dictGetDescendants](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants) e [dictIsIn](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
 
 Nível de privilégio: `DICTIONARY`.
 

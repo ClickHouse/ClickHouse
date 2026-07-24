@@ -21,11 +21,11 @@ Cela réduit l’indisponibilité et évite la perte définitive de données cri
   ### Fonctionnement des sauvegardes dans ClickHouse Cloud
 </div>
 
-Les sauvegardes de ClickHouse Cloud combinent des sauvegardes « complètes » et « incrémentielles » qui forment une chaîne de sauvegarde. La chaîne commence par une sauvegarde complète, puis des sauvegardes incrémentielles sont effectuées au cours des périodes planifiées suivantes afin de constituer une séquence de sauvegardes. Lorsqu’une chaîne de sauvegarde atteint une certaine longueur, une nouvelle chaîne est créée. L’ensemble de cette chaîne de sauvegardes peut ensuite être utilisé pour restaurer les données vers un nouveau service, si nécessaire. Une fois que toutes les sauvegardes d’une chaîne donnée ont dépassé la durée de rétention définie pour le service (plus d’informations sur la rétention ci-dessous), la chaîne est supprimée.
+Les sauvegardes de ClickHouse Cloud combinent des sauvegardes « complètes » et « incrémentielles » qui forment une chaîne de sauvegarde. La chaîne commence par une sauvegarde complète, puis des sauvegardes incrémentielles sont effectuées au cours des périodes planifiées suivantes afin de constituer une séquence de sauvegardes. Lorsqu’une chaîne de sauvegarde atteint une certaine longueur, une nouvelle chaîne est créée. L’ensemble de cette chaîne de sauvegardes peut ensuite être utilisé pour restaurer les données vers un nouveau service, si nécessaire. Une fois que toutes les sauvegardes d’une chaîne donnée ont dépassé la durée de rétention définie pour le service (plus d’informations sur la rétention ci-dessous), la chaîne est supprimée.
 
-Dans la capture d’écran ci-dessous, les carrés en trait plein représentent les sauvegardes complètes et les carrés en pointillés représentent les sauvegardes incrémentielles. Le rectangle en trait plein autour des carrés indique la période de rétention ainsi que les sauvegardes visibles par l’utilisateur final, qui peuvent servir à une restauration à partir d’une sauvegarde. Dans le scénario ci-dessous, des sauvegardes sont effectuées toutes les 24 heures et conservées pendant 2 jours.
+Dans la capture d’écran ci-dessous, les carrés en trait plein représentent les sauvegardes complètes et les carrés en pointillés représentent les sauvegardes incrémentielles qui font partie de la chaîne.
 
-Le jour 1, une sauvegarde complète est effectuée pour démarrer la chaîne de sauvegarde. Le jour 2, une sauvegarde incrémentielle est effectuée, et les sauvegardes complète et incrémentielle peuvent toutes deux être utilisées pour la restauration. Au jour 7, la chaîne contient une sauvegarde complète et six sauvegardes incrémentielles, dont les deux plus récentes sont visibles par l’utilisateur. Le jour 8, une nouvelle sauvegarde complète est effectuée et, au jour 9, dès que la nouvelle chaîne contient deux sauvegardes, la chaîne précédente est supprimée.
+Le jour 1, une sauvegarde complète est effectuée pour démarrer la chaîne de sauvegarde. Le jour 2, une sauvegarde incrémentielle est effectuée, et les sauvegardes complète et incrémentielle peuvent toutes deux être utilisées pour la restauration. Au jour 7, la chaîne contient une sauvegarde complète et six sauvegardes incrémentielles, toutes visibles et disponibles pour la restauration. Le jour 8, une nouvelle sauvegarde complète est effectuée et, au jour 9, dès que la nouvelle chaîne contient deux sauvegardes, la chaîne précédente est supprimée.
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemple de chaîne de sauvegarde dans ClickHouse Cloud" />
 
@@ -89,18 +89,14 @@ Consultez [« Exporter des sauvegardes vers votre propre compte cloud »](/fr/
 Pour exporter des sauvegardes vers votre propre compte cloud, vous avez deux possibilités :
 
 <Steps>
-  <Step>
-    ##### Via l’interface Cloud Console
-
+  <Step title="Via l’interface Cloud Console" id="via-ui">
     Les sauvegardes externes peuvent être [configurées dans l’interface](/fr/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
     Par défaut, des sauvegardes seront ensuite effectuées chaque jour (comme indiqué dans la [politique de sauvegarde par défaut](/fr/products/cloud/features/backups/overview#default-backup-policy)).
     Cependant, nous prenons également en charge les sauvegardes [configurables](/fr/products/cloud/guides/backups/configurable-backups) vers votre propre compte cloud, ce qui permet de définir une planification personnalisée.
     Il est important de noter que toutes les sauvegardes vers votre bucket sont des sauvegardes complètes, sans aucun lien avec des sauvegardes antérieures ou futures.
   </Step>
 
-  <Step>
-    ##### À l’aide de commandes SQL
-
+  <Step title="À l’aide de commandes SQL" id="using-commands">
     Vous pouvez utiliser des [commandes SQL](/fr/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands) pour exporter des sauvegardes vers votre bucket.
   </Step>
 </Steps>

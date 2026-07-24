@@ -26,6 +26,18 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
+          title: "سجلات نقرات Criteo بحجم تيرابايت",
+          href: "/ar/get-started/sample-datasets/criteo",
+          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
+          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
+        },
+        {
+          title: "اختبار أداء JOB",
+          href: "/ar/get-started/sample-datasets/job",
+          imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
+          imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
+        },
+        {
           title: "Star Schema Benchmark (SSB)",
           href: "/ar/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
@@ -76,6 +88,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
+          title: "ماذا في القائمة؟ (NYPL)",
+          href: "/ar/get-started/sample-datasets/menus",
+          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
+          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
+        },
+        {
           title: "بيانات شكاوى شرطة نيويورك",
           href: "/ar/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
@@ -92,12 +110,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ar/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
-        },
-        {
-          title: "ماذا في القائمة؟ (NYPL)",
-          href: "/ar/get-started/sample-datasets/menus",
-          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
-          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         }
       ]
     },
@@ -125,7 +137,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ar/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
-        }
+        },
+        { title: "WikiStat", href: "/ar/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
       ]
     },
     {
@@ -142,22 +155,22 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/dbpedia-dark.jpg"
         },
         {
-          title: "البحث المتجهي في Hacker News",
+          title: "Hacker News vector search",
           href: "/ar/get-started/sample-datasets/hacker-news-vector-search",
           imgLight: "/images/sample-datasets-grid/hacker-news-vector-search-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
-        },
-        {
-          title: "LAION 5B dataset",
-          href: "/ar/get-started/sample-datasets/laion5b",
-          imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
-          imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         },
         {
           title: "مجموعة بيانات Laion-400M",
           href: "/ar/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
+        },
+        {
+          title: "LAION 5B dataset",
+          href: "/ar/get-started/sample-datasets/laion5b",
+          imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
+          imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         }
       ]
     },
@@ -175,22 +188,16 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
-          title: "تحليل بيانات Stack Overflow",
-          href: "/ar/get-started/sample-datasets/stackoverflow",
-          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
-          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
-        },
-        {
           title: "تحليلات الويب المجهولة الهوية",
           href: "/ar/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
-          title: "سجلات نقرات Criteo بحجم تيرابايت",
-          href: "/ar/get-started/sample-datasets/criteo",
-          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
-          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
+          title: "الاستعلام عن بيانات GitHub",
+          href: "/ar/get-started/sample-datasets/github",
+          imgLight: "/images/sample-datasets-grid/github-light.jpg",
+          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
         {
           title: "مجموعة بيانات أحداث GitHub",
@@ -205,12 +212,11 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
-          title: "الاستعلام عن بيانات GitHub",
-          href: "/ar/get-started/sample-datasets/github",
-          imgLight: "/images/sample-datasets-grid/github-light.jpg",
-          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
+          title: "تحليل بيانات Stack Overflow",
+          href: "/ar/get-started/sample-datasets/stackoverflow",
+          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
+          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
         },
-        { title: "WikiStat", href: "/ar/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" },
         {
           title: "مجموعة بيانات التفاعلات السلبية على YouTube",
           href: "/ar/get-started/sample-datasets/youtube-dislikes",
@@ -221,7 +227,10 @@ export const SampleDatasetExplorer = ({ categories }) => {
     }
   ]
 
-  const cats = categories || CATEGORIES
+  // Keep the explorer in the same order as the sidebar. The playground is a
+  // standalone page link above the explorer, followed by these categories.
+  const categoryOrder = ["benchmarks", "vector-search", "web-social", "geo-location", "time-series-sensors", "public-records"]
+  const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id))
 
   const [selectedId, setSelectedId] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null
@@ -375,7 +384,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
                       {cat.datasets.length} {cat.datasets.length === 1 ? "مجموعة بيانات" : "مجموعات بيانات"}
                     </span>
                     <span className="sde-explore">
-                      Explore
+                      استكشاف
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -394,7 +403,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              All categories
+              جميع الفئات
             </button>
           </div>
 

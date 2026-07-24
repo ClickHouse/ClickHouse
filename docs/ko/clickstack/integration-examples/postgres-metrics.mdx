@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 * 적절한 권한이 있는 PostgreSQL 모니터링 사용자
 
 <Steps>
-  <Step>
-    #### 모니터링 사용자에게 필요한 권한이 있는지 확인
-
+  <Step title="모니터링 사용자에게 필요한 권한이 있는지 확인" id="monitoring-permissions">
     PostgreSQL 수신기는 통계 뷰에 대한 읽기 권한이 있는 사용자가 필요합니다. 모니터링 사용자에게 `pg_monitor` 역할을 부여하십시오.
 
     ```sql
@@ -45,9 +43,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 사용자 지정 OTel collector 구성 생성
-
+  <Step title="사용자 지정 OTel collector 구성 생성" id="create-custom-config">
     ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정하여 기본 OpenTelemetry collector 구성을 확장할 수 있습니다.
 
     `postgres-metrics.yaml` 파일을 생성하십시오.
@@ -93,9 +89,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 사용자 지정 구성으로 ClickStack 배포
-
+  <Step title="사용자 지정 구성으로 ClickStack 배포" id="deploy-clickstack">
     사용자 지정 구성을 마운트하십시오.
 
     ```bash
@@ -111,9 +105,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 메트릭 수집 확인
-
+  <Step title="메트릭 수집 확인" id="verify-metrics">
     구성이 완료되면 HyperDX에 로그인하여 메트릭이 수집되고 있는지 확인하십시오.
 
     1. Metrics Explorer로 이동합니다
@@ -133,13 +125,11 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 <Info>
   **데이터베이스 수준 메트릭만 포함**
 
-  이 데모 데이터셋에는 샘플 데이터를 가볍게 유지하기 위해 데이터베이스 수준 메트릭만 포함되어 있습니다. 실제 PostgreSQL 데이터베이스를 모니터링할 때는 테이블 및 인덱스 메트릭도 자동으로 수집됩니다.
+  이 데모 데이터세트에는 샘플 데이터를 가볍게 유지하기 위해 데이터베이스 수준 메트릭만 포함되어 있습니다. 실제 PostgreSQL 데이터베이스를 모니터링할 때는 테이블 및 인덱스 메트릭도 자동으로 수집됩니다.
 </Info>
 
 <Steps>
-  <Step>
-    #### 샘플 메트릭 데이터셋 다운로드
-
+  <Step title="샘플 메트릭 데이터셋 다운로드" id="download-sample">
     미리 생성된 메트릭 파일을 다운로드합니다(현실적인 패턴이 반영된 24시간 분량의 PostgreSQL 메트릭).
 
     ```bash
@@ -158,9 +148,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     * **교착 상태 발생(14:15, 16:30)** - 드물게 발생하는 교착 상태
   </Step>
 
-  <Step>
-    #### ClickStack 시작
-
+  <Step title="ClickStack 시작" id="start-clickstack">
     ClickStack 인스턴스를 시작합니다.
 
     ```bash
@@ -172,9 +160,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ClickStack이 완전히 시작될 때까지 약 30초 정도 기다립니다.
   </Step>
 
-  <Step>
-    #### ClickStack에 메트릭 로드
-
+  <Step title="ClickStack에 메트릭 로드" id="load-metrics">
     메트릭을 ClickHouse에 직접 로드합니다.
 
     ```bash
@@ -188,9 +174,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### HyperDX에서 메트릭 확인
-
+  <Step title="HyperDX에서 메트릭 확인" id="verify-metrics-demo">
     로드가 완료되면 메트릭을 가장 빠르게 확인하는 방법은 사전 구축된 대시보드를 사용하는 것입니다.
 
     대시보드를 가져와 여러 PostgreSQL 메트릭을 한 번에 보려면 [대시보드 및 시각화](#dashboards) 섹션으로 이동하십시오.
@@ -210,13 +194,11 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 ClickStack으로 PostgreSQL 모니터링을 빠르게 시작할 수 있도록 PostgreSQL 메트릭을 위한 핵심 시각화를 제공합니다.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">다운로드</TrackedLink>할 대시보드 구성 파일
+  <Step title="대시보드 구성 다운로드" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">대시보드 구성 파일 다운로드</TrackedLink>.
   </Step>
 
-  <Step>
-    #### 사전 구축된 대시보드 가져오기
-
+  <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
 
@@ -227,9 +209,7 @@ ClickStack으로 PostgreSQL 모니터링을 빠르게 시작할 수 있도록 Po
     <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="가져오기 완료 대화상자" />
   </Step>
 
-  <Step>
-    #### 대시보드 보기
-
+  <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다:
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="PostgreSQL 메트릭 대시보드" />
@@ -301,7 +281,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * 서로 다른 엔드포인트와 서비스 이름으로 수신기 구성을 복제해 여러 PostgreSQL 인스턴스를 모니터링하세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 빠른 설정을 위해 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 환경에 배포할 때는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 환경 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 ClickStack에 기본 제공되는 OpenTelemetry Collector를 빠르게 설정할 수 있도록 확장한 것입니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
