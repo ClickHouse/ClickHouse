@@ -160,10 +160,15 @@ class FuzzerLogParser:
                         strict=True,
                     )
                     if output:
-                        fatal_query_id = Shell.get_output(
-                            f"rg --text -o -r '$1' '{server_pattern}' {file} | head -n1",
+                        # Capture the id from group 1 of the record, not via get_output (which
+                        # strips), so an id with surrounding spaces (e.g. `{ q }`) is preserved
+                        # for get_failed_query()'s exact `{...}` lookup.
+                        fatal_record = Shell.get_output(
+                            f"rg --text -o '{server_pattern}' {file} | head -n1",
                             strict=True,
-                        ).strip()
+                        )
+                        match = re.match(server_pattern, fatal_record)
+                        fatal_query_id = match.group(1) if match else ""
                 else:
                     output = Shell.get_output(
                         f"rg --text -A 10 -o '{pattern}' {file} | head -n10",

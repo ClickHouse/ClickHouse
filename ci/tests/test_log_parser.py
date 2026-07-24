@@ -331,3 +331,38 @@ def test_get_failed_query_treats_query_id_as_literal(tmp_path):
     assert result is not None
     assert "short_id_query" in result
     assert "long_id_query" not in result
+
+
+def test_parse_failure_preserves_spaced_query_id(tmp_path):
+    # Query ids are arbitrary strings and may carry surrounding whitespace (e.g. `{ q }`). The
+    # id captured from the fatal record must be preserved byte-for-byte: if it is stripped to
+    # `q`, the exact `{...}` executeQuery lookup no longer matches the real `{ q }` record and
+    # the crashing query is dropped from the reported info.
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    server_log.write_text(
+        # An earlier, unrelated query whose comment quotes a logical error. The legacy whole-log
+        # fallback would extract THIS record's query, so the test only passes if the SELECTED
+        # fatal record's spaced id is captured (byte-for-byte) and used for the lookup.
+        "2026.07.23 08:00:00.000000 [ 40 ] {q1} <Debug> executeQuery: "
+        "(from [::1]:1) (in query: SELECT unrelated_marker -- Logical error 'x')\n"
+        "2026.07.23 09:00:00.000000 [ 50 ] { q } <Debug> executeQuery: "
+        "(from [::1]:2) (in query: SELECT spaced_id_query)\n"
+        "2026.07.23 10:00:00.000000 [ 100 ] { q } <Fatal> : Logical error: "
+        "'background failure'.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: 'background failure'")
+    # The crashing query is attributed via the record's spaced id, not lost to a strip; and it is
+    # the selected record's query, not the earlier unrelated one the whole-log fallback would grab.
+    assert "spaced_id_query" in info
+    assert "unrelated_marker" not in info
