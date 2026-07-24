@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -21,35 +22,99 @@ namespace ErrorCodes
 namespace
 {
 
-/// Hive declares maps as MAP<primitive_type, data_type>: a map key cannot be a nested
-/// (ARRAY/MAP/STRUCT) type, so no Hive schema could read such values back. ClickHouse allows
-/// composite Map keys whose elements would serialize fine on their own, so reject them upfront.
-/// The walk must descend through every wrapper whose serializeTextHive is a transparent
-/// pass-through (Nullable), otherwise a composite-key Map hidden inside, e.g.,
+/// Reject unsupported types upfront, from the declared header rather than from the values.
+/// The per-value checks in serializeTextHive are not enough: `SerializationNullable` writes `\N`
+/// without descending into the nested serializer and empty `Array`/`Map` values never invoke the
+/// element serializer at all, so, e.g., `CAST(NULL, 'Nullable(Time)')` or
+/// `CAST([], 'Array(Decimal(39, 2))')` would silently produce a file whose declared schema no
+/// Hive table could have. The walk must descend through every wrapper whose serializeTextHive is
+/// a transparent pass-through (Nullable), otherwise an unsupported type hidden inside, e.g.,
 /// Nullable(Tuple(Map(Array(UInt8), UInt8))) would slip past the check and still be written.
-void assertMapKeysArePrimitive(const DataTypePtr & type)
+void assertTypeIsSupported(const DataTypePtr & type)
 {
     if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
     {
-        assertMapKeysArePrimitive(type_nullable->getNestedType());
+        assertTypeIsSupported(type_nullable->getNestedType());
     }
     else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        assertMapKeysArePrimitive(type_array->getNestedType());
+        assertTypeIsSupported(type_array->getNestedType());
     }
     else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
     {
+        /// Hive declares maps as MAP<primitive_type, data_type>: a map key cannot be a nested
+        /// (ARRAY/MAP/STRUCT) type, so no Hive schema could read such values back. ClickHouse
+        /// allows composite Map keys whose elements would serialize fine on their own, so they
+        /// need an explicit rejection with a dedicated message.
         WhichDataType key_type(type_map->getKeyType());
         if (key_type.isArray() || key_type.isMap() || key_type.isTuple())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Type {} is not supported by the HiveText output format: Hive supports only primitive types as Map keys",
                 type_map->getName());
-        assertMapKeysArePrimitive(type_map->getValueType());
+        assertTypeIsSupported(type_map->getKeyType());
+        assertTypeIsSupported(type_map->getValueType());
     }
     else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & element : type_tuple->getElements())
-            assertMapKeysArePrimitive(element);
+            assertTypeIsSupported(element);
+    }
+    else
+    {
+        switch (type->getTypeId())
+        {
+            /// Types with a serializeTextHive implementation. `Nothing` is allowed because it has
+            /// no values to serialize: rejecting it would break, e.g., `SELECT NULL FORMAT HiveText`
+            /// (whose type is `Nullable(Nothing)`) and `SELECT [] FORMAT HiveText` (`Array(Nothing)`).
+            case TypeIndex::Nothing:
+            case TypeIndex::UInt8:
+            case TypeIndex::UInt16:
+            case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
+            case TypeIndex::Int8:
+            case TypeIndex::Int16:
+            case TypeIndex::Int32:
+            case TypeIndex::Int64:
+            case TypeIndex::BFloat16:
+            case TypeIndex::Float32:
+            case TypeIndex::Float64:
+            case TypeIndex::Decimal32:
+            case TypeIndex::Decimal64:
+            case TypeIndex::Decimal128:
+            case TypeIndex::String:
+            case TypeIndex::Date:
+            case TypeIndex::Date32:
+            case TypeIndex::DateTime:
+            case TypeIndex::DateTime64:
+                return;
+
+            /// Hive `DECIMAL` supports precision up to 38 only, so `Decimal256` (precisions 39..76)
+            /// could not be declared by any Hive schema. Keep the message of the per-value check
+            /// in `SerializationDecimal::serializeTextHive`.
+            case TypeIndex::Decimal256:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Decimal precision {} is not supported by the HiveText output format: the maximum precision of Hive DECIMAL is {}",
+                    getDecimalPrecision(*type), DecimalUtils::max_precision<Decimal128>);
+
+            /// Numeric-backed types with no Hive counterpart: spell the type family the same way
+            /// the corresponding per-value checks in serializeTextHive do.
+            case TypeIndex::Enum8:
+            case TypeIndex::Enum16:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Enum is not supported by the HiveText output format");
+            case TypeIndex::Time:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Time is not supported by the HiveText output format");
+            case TypeIndex::Time64:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Time64 is not supported by the HiveText output format");
+            case TypeIndex::Interval:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Interval is not supported by the HiveText output format");
+
+            /// Everything else (the wide integers, AggregateFunction, Dynamic, Variant,
+            /// LowCardinality, Object, UUID, IPv4/IPv6, FixedString, QBit, ...) has no Hive text
+            /// representation either.
+            default:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Type {} is not supported by the HiveText output format", type->getName());
+        }
     }
 }
 
@@ -60,7 +125,7 @@ HiveTextRowOutputFormat::HiveTextRowOutputFormat(WriteBuffer & out_, SharedHeade
     : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
     for (const auto & column : *header_)
-        assertMapKeysArePrimitive(column.type);
+        assertTypeIsSupported(column.type);
 }
 
 void HiveTextRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
@@ -264,7 +329,13 @@ Likewise, `Map` keys must be of a primitive type: Hive declares maps
 as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
 `Map` or `Tuple` (which ClickHouse permits) is rejected with a
 `NOT_IMPLEMENTED` exception, because no Hive schema could read such values
-back.
+back. All these checks are applied upfront to the declared column types, before
+any row is written: a query whose header contains an unsupported type anywhere
+in its type tree is rejected even when the actual values would never reach the
+unsupported serialization (for example, a `Nullable` of an unsupported type
+holding only `NULL` values, or an empty `Array`/`Map` of an unsupported element
+type), because the file's declared schema still could not belong to any Hive
+table.
 
 `Date`, `Date32`, `DateTime` and `DateTime64` are always written in the plain
 Hive date and timestamp text (`yyyy-MM-dd` and `yyyy-MM-dd HH:mm:ss[.fffffffff]`),

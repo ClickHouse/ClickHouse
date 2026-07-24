@@ -145,7 +145,13 @@ value range. Likewise, `Decimal` values with a precision above 38 (that is,
 as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
 `Map` or `Tuple` (which ClickHouse permits) is rejected with a
 `NOT_IMPLEMENTED` exception, because no Hive schema could read such values
-back.
+back. All these checks are applied upfront to the declared column types, before
+any row is written: a query whose header contains an unsupported type anywhere
+in its type tree is rejected even when the actual values would never reach the
+unsupported serialization (for example, a `Nullable` of an unsupported type
+holding only `NULL` values, or an empty `Array`/`Map` of an unsupported element
+type), because the file's declared schema still could not belong to any Hive
+table.
 
 `Date`, `Date32`, `DateTime` and `DateTime64` are always written in the plain
 Hive date and timestamp text (`yyyy-MM-dd` and `yyyy-MM-dd HH:mm:ss[.fffffffff]`),
