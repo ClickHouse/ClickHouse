@@ -65,6 +65,12 @@ def check_data(node, source):
     ).strip()
 
 
+def check_recursive_data(node, source, path):
+    return node.query(
+        f"SELECT count(), countIf({path} = 'rare') FROM {source}"
+    ).strip()
+
+
 def test_native_protocol_downgrade(started_cluster):
     create_table(
         latest,
@@ -85,6 +91,62 @@ def test_native_protocol_downgrade(started_cluster):
     create_table(old, "from_new")
     old.query("INSERT INTO from_new SELECT * FROM remote('latest', default, sparse_new)")
     assert check_data(old, "from_new") == "1000\t1\t1000"
+
+
+@pytest.mark.parametrize(
+    ("suffix", "column_type", "value", "path"),
+    [
+        (
+            "typed_tuple",
+            "JSON(t Tuple(a Nullable(String), b UInt64), max_dynamic_paths = 0)",
+            "CAST(if(number = 0, '{\\\"t\\\":{\\\"a\\\":\\\"rare\\\",\\\"b\\\":1}}', "
+            "'{\\\"t\\\":{\\\"a\\\":null,\\\"b\\\":1}}'), "
+            "'JSON(t Tuple(a Nullable(String), b UInt64), max_dynamic_paths = 0)')",
+            "j.t.a",
+        ),
+        (
+            "tuple_json",
+            "Tuple(o JSON(x Nullable(String), max_dynamic_paths = 0))",
+            "tuple(CAST(if(number = 0, '{\\\"x\\\":\\\"rare\\\"}', '{\\\"x\\\":null}'), "
+            "'JSON(x Nullable(String), max_dynamic_paths = 0)'))",
+            "j.o.x",
+        ),
+    ],
+)
+def test_recursive_native_protocol_downgrade(
+    started_cluster, suffix, column_type, value, path
+):
+    source = f"recursive_{suffix}_new"
+    destination = f"recursive_{suffix}_old"
+    latest.query(
+        f"""
+        CREATE TABLE {source} (id UInt64, j {column_type})
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            ratio_of_defaults_for_sparse_serialization = 0.5,
+            serialization_info_version = 'with_subcolumns',
+            nullable_serialization_version = 'allow_sparse'
+        """
+    )
+    old.query(
+        f"""
+        CREATE TABLE {destination} (id UInt64, j {column_type})
+        ENGINE = MergeTree
+        ORDER BY id
+        """
+    )
+    latest.query(
+        f"INSERT INTO {source} SELECT number, {value} FROM numbers(1000)"
+    )
+
+    remote_source = f"remote('latest', default, {source})"
+    assert check_recursive_data(old, remote_source, path) == "1000\t1"
+    old.query(f"INSERT INTO {destination} SELECT * FROM {remote_source}")
+    assert check_recursive_data(old, destination, path) == "1000\t1"
+    assert check_recursive_data(
+        latest, f"remote('old', default, {destination})", path
+    ) == "1000\t1"
 
 
 def test_object_storage_merge_and_mutation(started_cluster):

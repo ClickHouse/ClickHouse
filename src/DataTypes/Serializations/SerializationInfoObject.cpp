@@ -41,21 +41,22 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
     new_infos.reserve(new_names.size());
     for (const auto & path : new_names)
     {
+        const auto & new_path_type = new_object.getTypedPaths().at(path);
+        auto new_info = new_path_type->createSerializationInfo(new_settings);
         auto old_type_it = old_object.getTypedPaths().find(path);
         auto old_info_it = name_to_elem.find(path);
-        if (old_type_it != old_object.getTypedPaths().end() && old_info_it != name_to_elem.end())
+        if (old_type_it != old_object.getTypedPaths().end()
+            && old_info_it != name_to_elem.end()
+            && old_info_it->second->structureEquals(*new_info))
         {
-            new_infos.push_back(old_info_it->second->createWithType(
-                *old_type_it->second,
-                *new_object.getTypedPaths().at(path),
-                new_settings));
+            new_info = old_info_it->second->createWithType(*old_type_it->second, *new_path_type, new_settings);
         }
-        else
+        else if (old_type_it == old_object.getTypedPaths().end() || old_info_it == name_to_elem.end())
         {
-            auto info = new_object.getTypedPaths().at(path)->createSerializationInfo(new_settings);
-            info->addDefaults(data.num_rows);
-            new_infos.push_back(std::move(info));
+            new_info->addDefaults(data.num_rows);
         }
+
+        new_infos.push_back(std::move(new_info));
     }
 
     return std::make_shared<SerializationInfoObject>(std::move(new_infos), std::move(new_names), new_settings);

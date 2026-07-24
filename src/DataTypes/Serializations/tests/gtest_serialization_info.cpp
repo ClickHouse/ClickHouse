@@ -293,6 +293,37 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
     EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
 }
 
+TEST(SerializationInfoObject, CreateWithChangedTypedPathStructure)
+{
+    const auto check_evolution = [](const String & old_name, const String & new_name)
+    {
+        auto old_type = DataTypeFactory::instance().get(old_name);
+        auto new_type = DataTypeFactory::instance().get(new_name);
+
+        auto settings = defaultSettings();
+        settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+        auto old_info = old_type->createSerializationInfo(settings);
+        old_info->addDefaults(100);
+        auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
+        auto fresh_info = new_type->createSerializationInfo(settings);
+        EXPECT_TRUE(evolved_info->structureEquals(*fresh_info));
+    };
+
+    check_evolution(
+        "JSON(t Tuple(a String), max_dynamic_paths=0)",
+        "JSON(t Tuple(a String, b UInt64), max_dynamic_paths=0)");
+    check_evolution(
+        "JSON(t Tuple(a String, b UInt64), max_dynamic_paths=0)",
+        "JSON(t Tuple(a String), max_dynamic_paths=0)");
+    check_evolution(
+        "JSON(t Tuple(a String), max_dynamic_paths=0)",
+        "JSON(t Tuple(b String), max_dynamic_paths=0)");
+    check_evolution(
+        "JSON(t Tuple(a Tuple(b String)), max_dynamic_paths=0)",
+        "JSON(t Tuple(a Tuple(b String, c UInt64)), max_dynamic_paths=0)");
+}
+
 TEST(SerializationInfoObject, NativeRevisionGate)
 {
     constexpr size_t rows = 4;
