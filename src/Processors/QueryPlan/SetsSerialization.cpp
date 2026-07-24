@@ -45,6 +45,17 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
+/// Sanity cap for a hostile set payload; checked before the columns vector is allocated.
+static constexpr UInt64 MAX_SET_COLUMNS = 1'000'000;
+
+static void checkSetColumnsCount(UInt64 num_columns, const PreparedSets::Hash & hash)
+{
+    if (num_columns > MAX_SET_COLUMNS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized set {}_{} declares {} columns which exceeds the limit of {}",
+            hash.low64, hash.high64, num_columns, MAX_SET_COLUMNS);
+}
+
 QueryPlanAndSets::QueryPlanAndSets() = default;
 QueryPlanAndSets::~QueryPlanAndSets() = default;
 QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
@@ -275,6 +286,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
             UInt64 num_rows = 0;
             readVarUInt(num_columns, body);
             readVarUInt(num_rows, body);
+            checkSetColumnsCount(num_columns, entry.hash);
 
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);
@@ -356,6 +368,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
+            checkSetColumnsCount(num_columns, hash);
 
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);

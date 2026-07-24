@@ -42,8 +42,9 @@ void serializeQueryPlanHeader(const Block & header, WriteBuffer & out)
     }
 }
 
-/// Sanity cap for a hostile header; far above any real plan. Checked before allocation.
+/// Sanity caps for a hostile header; far above any real plan. Checked before allocation.
 static constexpr UInt64 MAX_QUERY_PLAN_HEADER_COLUMNS = 1'000'000;
+static constexpr UInt64 MAX_QUERY_PLAN_COLUMN_NAME_BYTES = 16ULL << 20;
 
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 {
@@ -58,7 +59,7 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 
     for (auto & column : columns)
     {
-        readStringBinary(column.name, in);
+        readStringBinary(column.name, in, MAX_QUERY_PLAN_COLUMN_NAME_BYTES);
         column.type = decodeDataType(in, max_type_complexity);
     }
 
