@@ -113,9 +113,13 @@ void IFramingFormat::finalize()
     pumpProfileEvents(/*force=*/ true);
 
     /// The final progress is written after the logs and profile events above, so a successful
-    /// stream ends with it (see `setFinalProgress`). On a failure the `exception` packet below
-    /// stays terminal.
-    if (has_final_progress)
+    /// stream ends with it (see `setFinalProgress`). It is suppressed once an exception was
+    /// recorded: the final `progress` packet with the final counters is the success terminator of
+    /// the stream, and a failed stream must end with the `exception` packet instead. The counters
+    /// can already be stashed here when the failure happens after the query itself finished - for
+    /// example, in `BlockIO::onFinish` (a query-log write) after `flushQueryProgress` - and writing
+    /// them would make the failed stream carry a success-style tail before the `exception`.
+    if (has_final_progress && exception_message.empty())
         emitToOut([&] { writeProgressPacket(final_progress); });
 
     if (!exception_message.empty())

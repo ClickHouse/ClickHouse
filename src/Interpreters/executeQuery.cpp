@@ -252,6 +252,7 @@ namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
     extern const char framing_finalize_throw[];
+    extern const char framing_throw_after_final_progress[];
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
@@ -3161,6 +3162,16 @@ void executeQuery(
                 };
 
                 flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
+
+                /// Test-only: emulate a failure after the final counters were stashed in the framing
+                /// format (see `writeFinalProgress` above) but before the query fully finished - the
+                /// same window where `BlockIO::onFinish` (a query-log write, for example) can throw.
+                /// The recovery must deliver a framed `exception` packet and must not emit the
+                /// success-style final `progress` packet (see `IFramingFormat::finalize`).
+                fiu_do_on(FailPoints::framing_throw_after_final_progress,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after stashing the final progress");
+                });
             });
 
             /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
