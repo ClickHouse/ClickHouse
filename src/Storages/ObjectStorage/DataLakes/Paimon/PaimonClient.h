@@ -13,6 +13,7 @@
 #include <Core/TypeId.h>
 #include <Disks/IStoragePolicy.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/Decimal.h>
@@ -331,6 +332,12 @@ private:
     /// the object mid-read.  ETag is pinned (S3, when s3_validate_etag_on_read) so an in-place
     /// overwrite is reported as S3_OBJECT_CHANGED_DURING_READ instead of yielding torn bytes.
     Poco::JSON::Object::Ptr readMutableMetadataJSON(const String & path) const;
+
+    /// Build a StoredObject for reading a mutable metadata object, with the ETag pinned
+    /// (S3, when s3_validate_etag_on_read) so a concurrent in-place rewrite is reported as
+    /// S3_OBJECT_CHANGED_DURING_READ instead of splicing bytes of two object generations
+    /// across retried requests.
+    StoredObject makeEtagPinnedStoredObject(const String & path) const;
 
     const ObjectStoragePtr object_storage;
     const String table_location;
