@@ -210,6 +210,19 @@ def main():
         assert '"label":"page_cache_*"' in explorer
         assert '"label":"page_*"' not in explorer
         assert 'aria-expanded={isOpen}' in explorer
+        assert 'className="relative w-full"' in explorer
+        assert "border-gray-500 bg-gray-50" in explorer
+        assert "placeholder:text-gray-600" in explorer
+        assert "focus:border-gray-600" in explorer
+        assert "dark:border-white/30 dark:bg-white/5" in explorer
+        assert "dark:placeholder:text-gray-400" in explorer
+        assert "focus:outline-0 focus-visible:outline-0" in explorer
+        assert "dark:focus:border-[#fdff75]" in explorer
+        assert "focus:ring-" not in explorer
+        assert '<circle cx="11" cy="11" r="8" />' in explorer
+        assert '<path d="m21 21-4.3-4.3" />' in explorer
+        assert 'style={{ top: "50%", transform: "translateY(-50%)" }}' in explorer
+        assert "py-2 pl-9 pr-3" in explorer
         assert '<details' not in explorer
         assert '<summary' not in explorer
         assert explorer.startswith("const SessionSettingsExplorer = () => {")

@@ -158,14 +158,30 @@ const ServerSettingsExplorer = () => {
 
   return (
     <div className="not-prose my-6 w-full">
-      <input
-        aria-label="Search settings"
-        type="search"
-        value={searchTerm}
-        onChange={(event) => setSearchTerm(event.target.value)}
-        placeholder="Search settings, e.g. parallel replicas or %materialized%"
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-500 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20 dark:border-white/10 dark:bg-transparent dark:text-white dark:placeholder:text-gray-500"
-      />
+      <div className="relative w-full">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="pointer-events-none absolute left-3 h-4 w-4 text-gray-500 dark:text-gray-400"
+          style={{ top: "50%", transform: "translateY(-50%)" }}
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          aria-label="Search settings"
+          type="search"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          placeholder="Search settings, e.g. parallel replicas or %materialized%"
+          className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
+        />
+      </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>{matchingCount} matching {matchingCount === 1 ? "setting" : "settings"}</span>
