@@ -83,7 +83,13 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-Рассмотрим жизненный цикл сервиса Postgres.
+Давайте рассмотрим жизненный цикл сервиса Postgres.
+
+<Warning>
+  **Скрытие учетных данных с 31 июля 2026 года**
+
+  Начиная с **31 июля 2026 года** API больше не возвращает свойства `password` и `connectionString` в ответах. Они отображаются только в ответе [create](#create) и в ответе [password reset], если запрос не содержал пароль. Рекомендуем сохранить учетные данные из ответа [create](#create). Если вы управляете сервисами через Terraform, до 31 июля 2026 года обновите provider до версии **v3.21.0 или новее** (см. [справочник по Terraform](/ru/products/managed-postgres/terraform)).
+</Warning>
 
 <div id="create">
   ### Создание
@@ -113,12 +119,13 @@ create_data='{
 ```
 
 Теперь используйте эти данные, чтобы создать новый экземпляр; обратите внимание, что для этого требуется заголовок Content-
-Type:
+Type. Сохраните ответ, чтобы получить доступ к возвращённым учётным данным:
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 При успешном выполнении будет создан новый экземпляр и возвращена информация о нём,
@@ -161,7 +168,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-Результат будет похож на JSON, возвращаемый при создании, но следите
+Результат будет похож на JSON, возвращаемый при создании (но без свойств `password` и `connectionString` после 31 июля 2026 года), но следите
 за `state`: когда его значение изменится на `running`, сервер будет готов к работе:
 
 ```bash
@@ -174,15 +181,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-Теперь для подключения можно использовать свойство `connectionString`, например через
-[psql]:
+Теперь для подключения можно использовать свойство `connectionString`, сохранённое из ответа, полученного при создании,
+например через [psql]:
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -450,23 +453,25 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Управление ключами API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "Спецификация OpenAPI для ClickHouse Cloud: Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "Справочник ClickHouse Cloud API: Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "Получить список сервисов Postgres организации"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "Получить список сервисов Postgres организации"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "Создать новый сервис Postgres"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "Создать новый сервис Postgres"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs: psql — интерактивный терминал PostgreSQL"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "Обновить сервис PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "Обновить сервис PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs: конфигурация сервера"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Обновить конфигурацию сервиса Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Заменить конфигурацию сервиса Postgres"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "Удалить сервис PostgreSQL"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "Удалить сервис PostgreSQL"
+
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Сбросить пароль суперпользователя сервиса Postgres"
 
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Конечная точка Prometheus для Managed Postgres"
 
@@ -478,6 +483,6 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [счётчики по каждому выполнению]: /products/managed-postgres/monitoring/query-insights#counters "Счётчики Query Insights по каждому выполнению"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Список шаблонов медленных запросов в Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Список шаблонов медленных запросов Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "Получить шаблон медленного запроса в Postgres с недавними выполнениями"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Получить шаблон медленного запроса Postgres с последними выполнениями"

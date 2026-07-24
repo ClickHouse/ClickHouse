@@ -1,0 +1,127 @@
+---
+description: 'ClickHouse server より先に Linux OOM killer の標的となり、
+  サーバーが負荷を軽減して生き残るための猶予を与える、犠牲的な子プロセス。'
+slug: /operations/settings/oom-canary
+title: 'OOM canary'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  OOM canary は実験的な機能で、デフォルトでは無効になっています。本番環境での検証が完了するまで、
+  その動作は ClickHouse のバージョンによって変更される可能性があります。
+</Note>
+
+<div id="overview">
+  ## 概要
+</div>
+
+ホストまたは memory cgroup のメモリが不足すると、Linux の OOM (out-of-memory)
+キラーが `SIGKILL` でプロセスを強制終了します。通常は最も多くメモリを消費しているプロセスが対象となり、
+専用ホストではたいてい `clickhouse-server` 自身です。その結果、サーバーは回復の機会を与えられないまま、
+丸ごと失われてしまいます。
+
+OOM canary は、先に終了させられる対象を変えます。小さな *犠牲用の* 子プロセスを実行し、
+それ自身が OOM の最優先ターゲットになることで、カーネルはサーバーではなくそのプロセスを
+kill します。するとサーバーはその終了を検知し、それが OOM
+イベントだったことを確認したうえでメモリ逼迫を緩和し、生き残れるようになります。
+
+canary はメモリ制限を引き上げるものではなく、適切な limits の代替でもありません
+([メモリオーバーコミット](/ja/concepts/features/configuration/settings/memory-overcommit) および
+`max_server_memory_usage` を参照) 。これは最後の防衛線であり、少量の固定メモリと引き換えに、
+一時的なメモリ急増を生き延びられる可能性を確保するものです。
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+canary は、独立した `clickhouse oom-canary` プロセスです。自身の
+`oom_score_adj` を最大値 (`1000`) に設定してカーネルが最初にこれを対象にするようにしたうえで、
+`oom_canary_size` バイト (デフォルトでは 100 MB) を割り当て、実際にアクセスし、`mlock` して、
+resident set が実体を持つようにします。サーバーが終了すると、自動的に終了させられます。
+
+サーバー側では、監視スレッドが canary を (`pidfd` 経由で) 監視し、
+canary が終了すると対応します。
+
+* `SIGKILL` によって kill され、**かつ** cgroup OOM の証拠がある → OOM 対応を実行した後、
+  新しい canary を再起動します。
+* OOM の証拠**なしで** kill された場合 (たとえば手動の `kill -9`) 、または一時的な障害で終了した場合
+  → 対応は行わず、再起動のみ行います。
+* 恒久的な初期化失敗、またはサーバーのシャットダウン → canary は自動的に無効化されます。
+
+OOM の証拠として使われるのは、cgroup v2 の `memory.events.local` `oom_kill`
+カウンターのみです。これは意図的に cgroup ローカルに限定されています。階層的なカウンターやホスト全体のカウンターは
+無関係なプロセスによって増加する可能性があり、誤った対応をトリガーしかねないためです。
+
+OOM が確認されると、対応として次の独立した手順が実行されます: `FATAL`
+メッセージをログに記録する、アロケータ (jemalloc) のアリーナを purge する、実行中の
+すべてのクエリをベストエフォートでキャンセルする、すべての merge と mutations をキャンセルする、そして
+[`system.crash_log`](/ja/reference/system-tables/crash_log) にイベントを
+キューに入れます。システムログは同期的には flush されません。メモリ逼迫下で I/O を強制すると、
+状況が悪化する可能性があるためです。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+* **Linux ≥ 5.3.** モニターは `pidfd_open` を介して canary を管理します。古いカーネルでは、
+  canary は起動時に自身を無効化します。非 Linux プラットフォームでは no-op です。
+* **OOM 対応 には `memory.events.local` を備えた cgroup v2 が必要です。** これがない場合でも、
+  canary は `SIGKILL` の後に再起動しますが、OOM を確認できないため、
+  対応 は実行されません (起動時に警告がログに記録されます) 。
+* **`mlock` capability (任意) 。** canary のメモリを lock するには
+  `CAP_IPC_LOCK` または十分な `RLIMIT_MEMLOCK` が必要です。失敗した場合、canary は
+  警告をログに記録し、そのメモリがスワップアウトされる可能性があるため、
+  OOM の対象としての有効性が弱まります。
+
+<Warning>
+  **memory.oom.group**
+
+  サーバーの cgroup で cgroup v2 の `memory.oom.group` が有効になっている場合、OOM 時にカーネルは
+  cgroup 全体を 1 つの単位として kill します。つまり、サーバーは
+  canary とともに終了し、対応 は実行されません。この
+  モードでは canary はサーバーを保護できません。起動時に警告がログに記録されます。
+</Warning>
+
+<div id="configuration">
+  ## 設定
+</div>
+
+OOM canary は[サーバー設定](/ja/reference/settings/server-settings/settings)で制御します。
+これらはサーバー設定のトップレベル要素として設定し、再起動時に適用されます。
+
+| 設定                                   | 既定値                  | 説明                                                                                                                  |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `oom_canary_enable`                  | `false`              | OOM canary を有効にします。                                                                                                 |
+| `oom_canary_size`                    | `104857600` (100 MB) | canary が確保してアクセスするバイト数です。値が大きいほど、OOM の対象として選ばれやすくなります。                                                              |
+| `oom_canary_relaunch`                | `true`               | canary が終了した後に再起動します (復旧不能な初期化失敗またはシャットダウンの場合を除く) 。ただし、以下の制限に従います。                                                  |
+| `oom_canary_max_rapid_relaunches`    | `10`                 | 自動再起動が無効になるまでの、連続する*短時間での*再起動の最大回数です。過剰な再起動を避けるためのものです。canary が `oom_canary_max_backoff_seconds` を超えて存続するとリセットされます。 |
+| `oom_canary_initial_backoff_seconds` | `1`                  | 再起動間の初期遅延です。最大値に達するまで、再起動のたびに 2 倍になります。                                                                             |
+| `oom_canary_max_backoff_seconds`     | `60`                 | 再起動間の最大遅延です。                                                                                                        |
+
+```xml
+<clickhouse>
+    <oom_canary_enable>1</oom_canary_enable>
+    <oom_canary_size>104857600</oom_canary_size>
+</clickhouse>
+```
+
+<div id="observability">
+  ## オブザーバビリティ
+</div>
+
+OOM が確認されると、
+[`system.crash_log`](/ja/reference/system-tables/crash_log) に `signal = 9` の
+行が記録され、`signal_description` には `OOM Canary` への言及が含まれます:
+
+```sql
+SELECT event_time, signal, signal_description
+FROM system.crash_log
+WHERE signal = 9 AND signal_description LIKE '%OOM Canary%'
+ORDER BY event_time DESC;
+```
+
+canaryのライフサイクルと、OOM対応の各ステップもサーバーログに記録されます。

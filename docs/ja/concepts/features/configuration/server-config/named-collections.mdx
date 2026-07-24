@@ -367,6 +367,8 @@ SELECT dictGet('dict', 'B', 2);
 * `user` の別名として `username`
 * `database` の別名として `db`
 
+[PostgreSQL table engine](/ja/reference/engines/table-engines/integrations/postgresql) の接続プール設定 (`postgresql_connection_pool_size` およびその他の `postgresql_*` 設定) も、コレクションに保存するか、`key = value` 形式のオーバーライドとして渡すことができます。これらは `PostgreSQL` テーブルエンジン、`postgresql` テーブル関数、および `PostgreSQL` データベースエンジンに適用されます。テーブルで明示的に指定した `SETTINGS` clause は、コレクション内の値よりも優先されます。
+
 パラメータ `addresses_expr` は、コレクション内では `host:port` の代わりに使用します。このパラメータは省略可能です。これは、`host`、`hostname`、`port` といった他の省略可能なパラメータがあるためです。優先順位は次の疑似コードで説明します。
 
 ```sql

@@ -8,10 +8,6 @@ doc_type: 'reference'
 
 import DeprecatedBadge from "/snippets/zh/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
-<div id="functions-for-working-with-uuids">
-  # UUIDs 相关函数
-</div>
-
 <div id="uuidv7-generation">
   ## UUIDv7 生成
 </div>
@@ -243,7 +239,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **返回值**
 
-返回一个精确到毫秒的 timestamp。如果该 UUID 不是有效的第 7 版 UUID，则返回 `1970-01-01 00:00:00.000`。[`DateTime64(3)`](/zh/reference/data-types/datetime64)
+返回一个精确到毫秒的时间戳。如果该 UUID 不是有效的第 7 版 UUID，则返回 `1970-01-01 00:00:00.000`。[`DateTime64(3)`](/zh/reference/data-types/datetime64)
 
 **示例**
 
@@ -267,53 +263,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<div id="dateTime64ToSnowflake">
-  ## dateTime64ToSnowflake
-</div>
-
-引入版本：v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  此函数已弃用，且仅在启用 setting [`allow_deprecated_snowflake_conversion_functions`](/zh/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) 时才能使用。
-  该函数将在未来的某个版本中移除。
-
-  请改用函数 [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID)。
-</Warning>
-
-将 [DateTime64](/zh/reference/data-types/datetime64) 转换为给定时间点对应的第一个 [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID)。
-
-**语法**
-
-```sql
-dateTime64ToSnowflake(value)
-```
-
-**参数**
-
-* `value` — 日期时间。[`DateTime64`](/zh/reference/data-types/datetime64)
-
-**返回值**
-
-返回将输入值转换为该时间点的第一个 Snowflake ID 后的结果。[`Int64`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**用法示例**
-
-```sql title=Query
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-```response title=Response
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dateTime64ToSnowflakeID">
@@ -349,51 +300,6 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 
 ```response title=Response
 6832626394434895872
-```
-
-<div id="dateTimeToSnowflake">
-  ## dateTimeToSnowflake
-</div>
-
-Introduced in：v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  此函数已弃用，仅在启用设置 [`allow_deprecated_snowflake_conversion_functions`](/zh/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) 时才能使用。
-  该函数将在未来的某个版本中移除。
-
-  请改用函数 [dateTimeToSnowflakeID](#dateTimeToSnowflakeID)。
-</Warning>
-
-将 [DateTime](/zh/reference/data-types/datetime) 值转换为给定时间点对应的第一个 [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID)。
-
-**Syntax**
-
-```sql
-dateTimeToSnowflake(value)
-```
-
-**参数**
-
-* `value` — 日期时间。[`DateTime`](/zh/reference/data-types/datetime)
-
-**返回值**
-
-返回该时间对应的第一个 Snowflake ID。[`Int64`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-```response title=Response
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -439,10 +345,14 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 将 [DateTime](/zh/reference/data-types/datetime) 值转换为给定时间对应的 [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7)。
 
-有关 UUID 结构、计数器管理以及并发保障的详细信息，请参见[“UUIDv7 生成”](#uuidv7-generation)一节。
+有关 UUID 结构、计数器管理以及并发保证的详细信息，请参见[&quot;UUIDv7 生成&quot;](#uuidv7-generation)一节。
 
 <Note>
   截至 2025 年 9 月，第 7 版 UUID 仍处于草案阶段，其布局未来可能会发生变化。
+</Note>
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
 </Note>
 
 **语法**
@@ -469,8 +379,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **同一时间戳的多个 UUID**
@@ -500,6 +410,10 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 函数 `generateSnowflakeID` 可保证时间戳中的计数字段在所有并发运行的线程和查询中的各次函数调用之间保持单调递增。
 
 实现细节请参见[“Snowflake ID 生成”](#snowflake-id-generation)一节。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，可能返回不同的结果。
+</Note>
 
 **语法**
 
@@ -567,6 +481,10 @@ SELECT generateSnowflakeID('expr', 1);
 
 生成一个 [第 4 版](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](/zh/reference/data-types/uuid)。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -617,10 +535,14 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 生成一个[第 7 版](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04)的 [UUID](/zh/reference/data-types/uuid)。
 
-有关 UUID 结构、计数器管理和并发保证的详细信息，请参见[“UUIDv7 生成”](#uuidv7-generation)一节。
+有关 UUID 结构、计数器管理和并发保证的详细信息，请参见[&quot;UUIDv7 生成&quot;](#uuidv7-generation)一节。
 
 <Note>
   截至 2025 年 9 月，第 7 版 UUID 仍处于草案阶段，其布局今后可能会发生变化。
+</Note>
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
 </Note>
 
 **语法**
@@ -741,98 +663,6 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 └─────────────────────┘
 ```
 
-<div id="snowflakeToDateTime">
-  ## snowflakeToDateTime
-</div>
-
-引入版本：v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  此函数已弃用，仅在启用设置 [`allow_deprecated_snowflake_conversion_functions`](/zh/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) 时才能使用。
-  该函数将在未来的某个版本中被移除。
-
-  请改用函数 [`snowflakeIDToDateTime`](#snowflakeIDToDateTime)。
-</Warning>
-
-提取 [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) 中的时间戳部分，并以 [DateTime](/zh/reference/data-types/datetime) 格式返回。
-
-**语法**
-
-```sql
-snowflakeToDateTime(value[, time_zone])
-```
-
-**参数**
-
-* `value` — Snowflake ID。[`Int64`](/zh/reference/data-types/int-uint)
-* `time_zone` — 可选。[时区](/zh/reference/settings/server-settings/settings#timezone)。该函数会根据时区解析 `time_string`。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-返回 `value` 的时间戳部分。[`DateTime`](/zh/reference/data-types/datetime)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-<div id="snowflakeToDateTime64">
-  ## snowflakeToDateTime64
-</div>
-
-引入版本：v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  此函数已弃用，且仅在启用设置 [`allow_deprecated_snowflake_conversion_functions`](/zh/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) 时才能使用。
-  该函数将在未来的某个版本中被移除。
-
-  请改用函数 [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64)。
-</Warning>
-
-提取 [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) 中的时间戳部分，并以 [DateTime64](/zh/reference/data-types/datetime64) 格式返回。
-
-**语法**
-
-```sql
-snowflakeToDateTime64(value[, time_zone])
-```
-
-**参数**
-
-* `value` — Snowflake ID。[`Int64`](/zh/reference/data-types/int-uint)
-* `time_zone` — 可选。[时区](/zh/reference/settings/server-settings/settings#timezone)。函数会根据该时区解析 `time_string`。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-返回 `value` 的时间戳部分。[`DateTime64(3)`](/zh/reference/data-types/datetime64)
-
-**示例**
-
-**用法示例**
-
-```sql title=Query
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
 <div id="toUUIDOrDefault">
   ## toUUIDOrDefault
 </div>
@@ -868,8 +698,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **转换失败则返回默认 UUID**
@@ -880,8 +710,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrNull">

@@ -1165,7 +1165,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 <Note>
   計算されたハッシュ値は、同じ入力値であっても引数の型が異なれば一致する場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型などに当てはまります。
+  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する同じデータの `Array(Tuple(key, value))` 型などに当てはまります。
 </Note>
 
 **構文**
@@ -2692,6 +2692,46 @@ SELECT xxHash64('Hello, world!');
 ┌─xxHash64('Hello, world!')─┐
 │      17691043854468224118 │
 └───────────────────────────┘
+```
+
+<div id="xxHash64Spark">
+  ## xxHash64Spark
+</div>
+
+導入バージョン: v26.7.0
+
+Spark と同じシードを使用して、文字列の [xxHash](http://cyan4973.github.io/xxHash/) を計算します。
+
+この関数は [`xxHash64`](#xxHash64) と同じですが、シード `42` を使用し、結果を `Int64` として返します。
+サポートされる入力は `String` と `NULL` のみです。
+`NULL` の場合、この関数は Spark のシードの挙動と同様に `42` を返します。
+
+**構文**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**引数**
+
+* `arg` — ハッシュ化する入力文字列です。 [`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+入力文字列から計算された 64 ビットハッシュを返します。 [`Int64`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
 ```
 
 <div id="xxh3">

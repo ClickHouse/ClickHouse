@@ -11,7 +11,10 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application des correctifs ni des mises à niveau. Nous déployons régulièrement des mises à niveau qui incluent des correctifs, de nouvelles fonctionnalités et des améliorations de performances. Pour obtenir la liste complète des nouveautés de ClickHouse, consultez notre [Cloud changelog](/fr/resources/changelogs/cloud/2026).
+Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application des correctifs ni des mises à niveau. Nous déployons régulièrement des mises à niveau qui incluent des correctifs, de nouvelles fonctionnalités et des améliorations de performances.
+
+* Pour obtenir la liste complète des nouveautés de ClickHouse, consultez notre [Cloud changelog](/fr/resources/changelogs/cloud/2026)
+* Pour le calendrier de publication des versions, consultez la page [release status](/fr/resources/changelogs/cloud/release-status)
 
 <Note>
   Nous introduisons un nouveau mécanisme de mise à niveau, un concept que nous appelons « make before break » (ou MBB). Avec cette nouvelle approche, nous ajoutons des répliques mises à jour avant de supprimer les anciennes pendant l’opération de mise à niveau. Cela permet des mises à niveau plus transparentes et moins perturbatrices pour les workloads en cours d’exécution.
@@ -59,7 +62,7 @@ Les trois canaux de mise à niveau sont les suivants :
 
 <ScalePlanFeatureBadge feature="Le canal de mise à niveau rapide" />
 
-En plus du calendrier de mise à niveau habituel, nous proposons un canal **Fast release** si vous souhaitez que vos services reçoivent des mises à jour avant le calendrier de release habituel.
+En plus du calendrier de mise à niveau habituel, nous proposons un **canal de mise à niveau rapide** si vous souhaitez que vos services reçoivent des mises à jour avant le calendrier de release habituel.
 
 Concrètement, les services :
 
@@ -69,12 +72,12 @@ Concrètement, les services :
 Vous pouvez modifier le calendrier de release du service dans la console Cloud, comme indiqué ci-dessous :
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Sélectionner le type de canal de release" border />
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Sélectionner le type de canal de mise à niveau" border />
 </div>
 
 <br />
 
-Ce canal **Fast release** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
+Ce **canal de mise à niveau rapide** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
 
 <div id="regular-release-channel">
   ### Canal de mise à niveau standard
