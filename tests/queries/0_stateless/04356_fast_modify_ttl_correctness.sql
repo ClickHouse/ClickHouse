@@ -78,14 +78,26 @@ DROP TABLE t_ttl_col;
 SELECT 'Batched ALTER with another TTL change falls back and materializes the column TTL';
 DROP TABLE IF EXISTS t_ttl_batch;
 -- The `MODIFY TTL` alone would be eligible for the fast path (constant 100-day shift), but the same
--- ALTER also adds a column TTL. The fast path only shifts the stored rows-TTL timestamps and would
+-- ALTER also sets a column TTL. The fast path only shifts the stored rows-TTL timestamps and would
 -- never materialize the new column TTL, so the batch must fall back to the full rewrite, which
 -- clears the expired `x` values.
 CREATE TABLE t_ttl_batch (id UInt32, d DateTime('UTC'), x String) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
 INSERT INTO t_ttl_batch SELECT number, now('UTC') - INTERVAL 100 DAY, 'x' FROM numbers(1000);
-ALTER TABLE t_ttl_batch MODIFY TTL d + INTERVAL 200 DAY, MODIFY COLUMN x String TTL d + INTERVAL 10 DAY;
+ALTER TABLE t_ttl_batch MODIFY COLUMN x String TTL d + INTERVAL 10 DAY, MODIFY TTL d + INTERVAL 200 DAY;
 SELECT count(), countIf(x = '') FROM t_ttl_batch;
 DROP TABLE t_ttl_batch;
+
+SELECT 'Batched ALTER adding a column with a TTL falls back to the regular rewrite';
+DROP TABLE IF EXISTS t_ttl_batch2;
+-- `ADD COLUMN` is not a TTL alter by itself, so the `MODIFY TTL` command is the one that triggers
+-- materialization here; it must still notice the column TTL introduced by the sibling command and
+-- use the regular `MATERIALIZE TTL` (no delta) instead of the fast form.
+CREATE TABLE t_ttl_batch2 (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
+INSERT INTO t_ttl_batch2 SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
+ALTER TABLE t_ttl_batch2 ADD COLUMN x String TTL d + INTERVAL 10 DAY, MODIFY TTL d + INTERVAL 200 DAY;
+SELECT count() FROM t_ttl_batch2;
+SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch2';
+DROP TABLE t_ttl_batch2;
 
 SELECT 'Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows';
 DROP TABLE IF EXISTS t_ttl_stale;
