@@ -24,10 +24,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP SETTINGS variable [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 لاستخدام `ALTER USER`، يجب أن يكون لديك امتياز [ALTER USER](/ar/reference/statements/grant#access-management).
+
+`SET variable = value` هو اسم مستعار لـ `MODIFY SETTING variable = value`: إذ يغيّر إعدادًا واحدًا فقط مع الإبقاء على بقية الإعدادات كما هي. ويُفضَّل استخدامه (أو `MODIFY SETTING`) بدلًا من عبارة `SETTINGS` المجرّدة، لأنها تستبدل قائمة الإعدادات بالكامل وتزيل أيضًا جميع ملفات التعريف الموروثة (الأصل).
 
 <div id="grantees-clause">
   ## عبارة GRANTEES
