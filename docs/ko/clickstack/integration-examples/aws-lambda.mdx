@@ -43,9 +43,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 * 레이어를 추가할 수 있는 권한이 있는 Lambda 실행 역할
 
 <Steps>
-  <Step>
-    #### 적절한 Rotel Lambda Extension layer 선택하기
-
+  <Step title="적절한 Rotel Lambda Extension layer 선택하기" id="choose-layer">
     Lambda 런타임 아키텍처에 맞는 Lambda layer를 선택하십시오. `{version}` 필드는
     배포 대상 AWS 리전에 따라 달라집니다. 해당 리전에 맞는 최신 버전 번호는 [releases](https://github.com/streamfold/rotel-lambda-extension/releases)
     페이지에서 확인하십시오.
@@ -65,9 +63,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
     * sa-east-1
   </Step>
 
-  <Step>
-    #### Lambda 함수에 Rotel 레이어 추가
-
+  <Step title="Lambda 함수에 Rotel 레이어 추가" id="add-layer">
     *이 예시에서는 `{arch}`, `{region}`, `{version}`을 위의 적절한 값으로 바꾸십시오.*
 
     ##### 옵션 1: AWS Console
@@ -97,15 +93,13 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... 기타 구성 ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
   </Step>
 
-  <Step>
-    #### 확장 기능이 ClickStack으로 내보내도록 구성하기
-
+  <Step title="확장 기능이 ClickStack으로 내보내도록 구성하기" id="configure-extension">
     Rotel Lambda Extension은 환경 변수를 사용해 구성합니다. OTLP exporter endpoint가 ClickStack 인스턴스를 가리키도록 구성해야 합니다. 다음 예시에서는 AWS Lambda 함수가 ClickStack 인스턴스에 연결할 수 있다고 가정합니다.
 
     ##### 기본 구성(환경 변수)
@@ -113,13 +107,13 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
     다음 환경 변수를 Lambda 함수에 추가하세요:
 
     ```bash
-    # 필수: ClickStack OTLP 엔드포인트
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # 선택 사항: 인증 헤더
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # 선택 사항: 서비스 이름 (기본값: Lambda 함수 이름)
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
@@ -203,9 +197,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
     </Note>
   </Step>
 
-  <Step>
-    #### 통합 테스트
-
+  <Step title="통합 테스트" id="test-integration">
     ClickStack으로 로그가 전송되는지 확인하려면 람다 함수를 호출하세요:
 
     ```bash
@@ -222,9 +214,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
     ```
   </Step>
 
-  <Step>
-    #### HyperDX에서 로그 확인
-
+  <Step title="HyperDX에서 로그 확인" id="verify-logs">
     구성이 완료되면 HyperDX(ClickStack의 UI)에 로그인한 후 로그가 정상적으로 유입되는지 확인합니다.
 
     <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda 로그 보기" />
@@ -248,29 +238,25 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 기본적으로 AWS Lambda는 모든 로그를 CloudWatch Logs로 전송하며, 규모가 커지면 비용이 많이 발생할 수 있습니다. 로그가 ClickStack으로 정상적으로 수집되는 것을 확인했다면 비용을 줄이기 위해 CloudWatch 로깅을 비활성화할 수 있습니다.
 
 <Steps>
-  <Step>
-    #### 실행 역할에서 CloudWatch 권한 제거
-
+  <Step title="실행 역할에서 CloudWatch 권한 제거" id="remove-permissions">
     1. AWS Console을 열고 **AWS Lambda**로 이동합니다
     2. 대상 Lambda 함수로 이동합니다
     3. **Configuration** → **Permissions**를 선택합니다
     4. 실행 역할 이름을 클릭해 IAM 콘솔을 엽니다
-    5. 역할을 편집하여 `logs:*` actions를 제거합니다:
+    5. 역할을 편집하여 `logs:*` 작업을 제거합니다:
        * 사용자 지정 정책을 사용하는 경우 `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`를 제거하도록 수정합니다
        * AWS 관리형 정책 `AWSLambdaBasicExecutionRole`를 사용하는 경우 해당 정책을 역할에서 제거합니다
     6. 역할을 저장합니다
   </Step>
 
-  <Step>
-    #### CloudWatch 로깅이 비활성화되었는지 확인
-
+  <Step title="CloudWatch 로깅이 비활성화되었는지 확인" id="verify-disabled">
     함수를 다시 호출한 뒤 다음을 확인합니다:
 
     1. 새로운 CloudWatch 로그 스트림이 생성되지 않습니다
     2. 로그가 계속 ClickStack/HyperDX에 표시됩니다
 
     ```bash
-    # 정책 변경 후 새 로그 스트림이 없어야 합니다
+    # 정책 변경 후에는 새 로그 스트림이 표시되지 않아야 합니다
     aws logs describe-log-streams \
       --log-group-name /aws/lambda/my-function \
       --order-by LastEventTime \
@@ -287,9 +273,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 Rotel Lambda Extension은 OpenTelemetry 자동 계측 레이어와 원활하게 연동되어, 로그뿐 아니라 분산 트레이스와 메트릭도 수집합니다.
 
 <Steps>
-  <Step>
-    #### 언어별 계측 레이어 선택
-
+  <Step title="언어별 계측 레이어 선택" id="choose-instrumentation">
     AWS는 여러 언어용 OpenTelemetry 자동 계측 레이어를 제공합니다:
 
     | 언어      | 레이어 ARN 패턴                                                                            |
@@ -301,9 +285,7 @@ Rotel Lambda Extension은 OpenTelemetry 자동 계측 레이어와 원활하게 
     최신 버전은 [AWS OpenTelemetry Lambda 리포지토리](https://github.com/aws-observability/aws-otel-lambda)에서 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    #### 함수에 두 레이어를 모두 추가
-
+  <Step title="함수에 두 레이어를 모두 추가" id="add-both-layers">
     Rotel 확장 레이어와 계측 레이어를 **모두** 추가합니다:
 
     ```bash
@@ -315,9 +297,7 @@ Rotel Lambda Extension은 OpenTelemetry 자동 계측 레이어와 원활하게 
     ```
   </Step>
 
-  <Step>
-    #### 자동 계측 구성
-
+  <Step title="자동 계측 구성" id="configure-instrumentation">
     자동 계측을 활성화하려면 `AWS_LAMBDA_EXEC_WRAPPER` 환경 변수를 설정합니다:
 
     **Node.js의 경우:**
@@ -339,9 +319,7 @@ Rotel Lambda Extension은 OpenTelemetry 자동 계측 레이어와 원활하게 
     ```
   </Step>
 
-  <Step>
-    #### HyperDX에서 트레이스 확인
-
+  <Step title="HyperDX에서 트레이스 확인" id="verify-traces">
     함수를 호출한 후 다음을 확인하십시오:
 
     1. HyperDX의 **Traces** 보기로 이동합니다

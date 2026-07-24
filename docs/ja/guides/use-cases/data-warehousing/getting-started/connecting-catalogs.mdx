@@ -32,11 +32,10 @@ import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) は、Databricks のレイクハウスデータに対する一元的なガバナンスを提供します。
 
-Databricks は、レイクハウス向けに複数のデータフォーマットをサポートしています。ClickHouse では、Unity Catalog のテーブルを Delta と Iceberg の両方の形式でクエリできます。
+Databricks は、レイクハウス向けに複数のデータフォーマットをサポートしています。ClickHouse では、外部ストレージロケーションを使用する Unity Catalog の Delta テーブルおよび Iceberg テーブルをクエリできます。
 
 <Note>
-  Unity Catalog とのインテグレーションは、マネージドテーブルと外部テーブルで動作します。
-  このインテグレーションは現在、AWS でのみサポートされています。
+  このインテグレーションは現在、AWS でのみサポートされています。Databricks のマネージドストレージ上のテーブルは、Unity Catalog がそれらのロケーションに対する認証情報の払い出しを提供していないため、サポートされていません。詳細については、[Unity Catalog リファレンス](/ja/guides/use-cases/data-warehousing/unity-catalog) を参照してください。
 </Note>
 
 <div id="configuring-unity-in-databricks">

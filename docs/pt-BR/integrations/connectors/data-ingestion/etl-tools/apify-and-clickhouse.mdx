@@ -35,15 +35,11 @@ Carregue dados coletados ou processados no ClickHouse para análises, monitorame
 </div>
 
 <Steps>
-  <Step>
-    ### Reúna os dados de conexão do ClickHouse
-
+  <Step title="Reúna os dados de conexão do ClickHouse" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ### Pré-requisitos do Apify
-
+  <Step title="Pré-requisitos do Apify" id="2-apify-prerequisites">
     Você também vai precisar de:
 
     * Uma [conta no Apify](https://console.apify.com/sign-up) (com nível gratuito disponível).
@@ -51,9 +47,7 @@ Carregue dados coletados ou processados no ClickHouse para análises, monitorame
     * Node.js 18+ instalado localmente (para os exemplos em JavaScript).
   </Step>
 
-  <Step>
-    ### Instale as dependências
-
+  <Step title="Instale as dependências" id="3-install-dependencies">
     Instale o cliente JavaScript do Apify e o cliente JavaScript do ClickHouse:
 
     ```bash
@@ -65,9 +59,7 @@ Carregue dados coletados ou processados no ClickHouse para análises, monitorame
     </Note>
   </Step>
 
-  <Step>
-    ### Crie uma tabela de destino no ClickHouse
-
+  <Step title="Crie uma tabela de destino no ClickHouse" id="4-create-a-target-table">
     Crie uma tabela para armazenar os dados coletados. O esquema depende do Actor usado. Este exemplo usa [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) para um Actor de coleta de dados de produtos:
 
     ```sql
@@ -84,9 +76,7 @@ Carregue dados coletados ou processados no ClickHouse para análises, monitorame
     ```
   </Step>
 
-  <Step>
-    ### Busque o dataset do Apify e carregue-o no ClickHouse
-
+  <Step title="Busque o dataset do Apify e carregue-o no ClickHouse" id="5-fetch-and-load">
     O script a seguir busca os resultados da execução de um Actor no Apify e os insere no ClickHouse:
 
     ```javascript
@@ -124,9 +114,7 @@ Carregue dados coletados ou processados no ClickHouse para análises, monitorame
     </Tip>
   </Step>
 
-  <Step>
-    ### Automatize com webhooks
-
+  <Step title="Automatize com webhooks" id="6-automate-with-webhooks">
     Em vez de executar o script manualmente, automatize o pipeline para que os dados sejam carregados no ClickHouse sempre que um Actor for concluído:
 
     1. No [Apify Console](https://console.apify.com/), acesse seu Actor e abra a aba **Integrations**.
@@ -163,7 +151,7 @@ Alinhe o esquema da sua tabela no ClickHouse aos campos de saída do Actor. Veri
   ### Desempenho
 </div>
 
-Para inserções com alta taxa de transferência a partir do cliente JavaScript, siga as [dicas de otimização de desempenho](/pt-BR/integrations/language-clients/js#tips-for-performance-optimizations). Agrupe várias linhas em inserções maiores, em vez de inserir uma linha de cada vez, e considere usar [async inserts](/pt-BR/concepts/features/operations/insert/asyncinserts) quando o agrupamento no lado do cliente não for prático.
+Para inserções com alta taxa de transferência a partir do cliente JavaScript, siga as [dicas de otimização de desempenho](/pt-BR/integrations/language-clients/js/index#tips-for-performance-optimizations). Agrupe várias linhas em inserções maiores, em vez de inserir uma linha de cada vez, e considere usar [async inserts](/pt-BR/concepts/features/operations/insert/asyncinserts) quando o agrupamento no lado do cliente não for prático.
 
 <div id="security">
   ### Segurança
@@ -177,8 +165,8 @@ Os exemplos desta página usam o usuário e o banco de dados `default` para simp
 
 * [Documentação da plataforma Apify](https://docs.apify.com)
 * [Referência da API da Apify](https://docs.apify.com/api/v2)
-* [Cliente JavaScript da Apify](https://docs.apify.com/api/client/js)
+* [cliente JavaScript do Apify](https://docs.apify.com/api/client/js)
 * [Cliente Python da Apify](https://docs.apify.com/api/client/python)
 * [Apify Store (Actors prontos para uso)](https://apify.com/store)
 * [Visão geral das integrações da Apify](https://docs.apify.com/platform/integrations)
-* [Cliente JavaScript do ClickHouse](/pt-BR/integrations/language-clients/js)
+* [Cliente JavaScript do ClickHouse](/pt-BR/integrations/language-clients/js/index)

@@ -82,7 +82,7 @@ Conéctese a su instancia de Cloud SQL para Postgres con el usuario administrado
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contendrá el conjunto de eventos de cambio generados a partir de las tablas especificadas y luego se usará para ingestar el flujo de replicación.
+La publication `clickpipes` define el conjunto de tablas cuyos eventos de cambio se transmitirán a ClickPipes. Recomendamos no usar `FOR ALL TABLES` a menos que tenga la intención de replicar todas las tablas, ya que incluir tablas innecesarias aumenta el tráfico de WAL desde Postgres hasta ClickPipes y reduce la eficiencia general de la replicación.
 
 [//]: # "TODO Add SSH Tunneling"
 
