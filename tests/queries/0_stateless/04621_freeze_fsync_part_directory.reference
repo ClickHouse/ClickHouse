@@ -1,3 +1,10 @@
-on: ancestor chain synced
-proj: subtree synced
-off: DirectorySync = 0
+full on: full ancestor chain synced
+full proj: projection subtree synced
+full off: DirectorySync = 0
+full content: data archive synced
+full proj content: projection archive synced
+packed on: full ancestor chain synced
+packed proj: projection subtree synced
+packed off: DirectorySync = 0
+packed content: data archive synced
+packed proj content: projection archive synced

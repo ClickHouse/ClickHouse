@@ -89,6 +89,32 @@ DiskPtr DataPartStorageOnDiskBase::getDisk() const
     return volume->getDisk();
 }
 
+void DataPartStorageOnDiskBase::syncFrozenPartDirectory(
+    IDisk & disk, const std::string & to, const std::string & dir_path, const ClonePartParams & params) const
+{
+    /// No-op on remote disks; skipped under an external transaction (its writes are not
+    /// materialized on disk here, so the transaction commit is responsible for the fsync).
+    if (!params.fsync_part_directory || params.external_transaction || disk.isRemote())
+        return;
+
+    /// Part dir + projection subdirs, children first.
+    syncDirectoryTree(disk, fs::path(to) / dir_path);
+
+    /// Ancestors from the part dir's parent up to and including the disk root (""). The root must
+    /// be synced too: the caller creates `shadow/` without an fsync, so a directory merely existing
+    /// is not evidence its entry is durable. `to` is the part dir's parent; strip a trailing
+    /// separator so parent_path() ascends.
+    fs::path dir = fs::path(to).has_filename() ? fs::path(to) : fs::path(to).parent_path();
+    while (true)
+    {
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir.string());
+        guard.reset();
+        if (dir.empty())
+            break;
+        dir = dir.parent_path();
+    }
+}
+
 std::string DataPartStorageOnDiskBase::getFullPath() const
 {
     return fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "";
@@ -568,30 +594,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
-    /// Make the frozen hardlink snapshot durable: the hardlink loop above fsyncs nothing, so a
-    /// power loss erases the acknowledged snapshot (for a hardlink snapshot the directory entries
-    /// *are* the snapshot). Gated on `fsync_part_directory`; a no-op on remote disks; skipped
-    /// under an external transaction (its writes are not materialized on disk here).
-    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
-    {
-        /// Part dir + projection subdirs (bottom-up): persists the hardlinked file entries.
-        syncDirectoryTree(*disk, fs::path(to) / dir_path);
-
-        /// Every directory from the part dir's parent up to and including the disk root ("").
-        /// This persists each new directory entry: e.g. `shadow/` is created without fsync by the
-        /// caller, so only fsyncing the disk root makes the `shadow` entry durable on the first
-        /// FREEZE. A directory merely existing is not evidence that its entry is durable.
-        /// `to` names the part dir's parent; strip a trailing separator so parent_path() ascends.
-        fs::path dir = fs::path(to).has_filename() ? fs::path(to) : fs::path(to).parent_path();
-        while (true)
-        {
-            SyncGuardPtr guard = disk->getDirectorySyncGuard(dir.string());
-            guard.reset();
-            if (dir.empty())
-                break;
-            dir = dir.parent_path();
-        }
-    }
+    syncFrozenPartDirectory(*disk, to, dir_path, params);
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
     /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the

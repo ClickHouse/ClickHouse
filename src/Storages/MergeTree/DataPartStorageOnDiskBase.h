@@ -181,6 +181,11 @@ protected:
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
 
+    /// fsync the frozen snapshot subtree and every directory up to the disk root when
+    /// params.fsync_part_directory is set. Shared by the Full and Packed freeze overrides.
+    /// `to` is the parent of the snapshot part dir, `dir_path` the part dir name.
+    void syncFrozenPartDirectory(IDisk & disk, const std::string & to, const std::string & dir_path, const ClonePartParams & params) const;
+
     /// Lazily load the per-part skp_idx.packed archive (if any), reading it as a standalone disk
     /// file. Subsequent calls return the cached reader, or nullptr when there is no such file --
     /// including on storages that don't keep skp_idx.packed standalone (e.g. packed part storage,

@@ -900,6 +900,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             need_commit = true;
         }
 
+        /// This branch rewrites data.packed, so its content must be fsynced too. write_buf->sync()
+        /// only sets a deferred need_sync flag that finalizeWriter consumes, never fsyncing eagerly,
+        /// so (unlike the directory sync) the gate omits the external_transaction exclusion: this
+        /// also covers each projection archive, which is frozen under the shared transaction below.
+        const bool fsync_content = params.fsync_part_directory && !disk->isRemote();
+
         auto files = reader->getFileNames();
         bool metadata_version_emitted = false;
         for (const auto & file : files)
@@ -929,6 +935,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
             copyData(*read_buf, *write_buf);
             write_buf->finalize();
+            if (fsync_content)
+                write_buf->sync();
         }
 
         /// A caller that relies on freeze to persist the destination metadata version passes
@@ -986,6 +994,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
 
     if (!params.external_transaction && !to_detached)
         dest_storage->resetReader(getReadSettings());
+
+    /// The archive and projection subdirs are on disk now; make their directory entries durable.
+    syncFrozenPartDirectory(*disk, to, dir_path, params);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
