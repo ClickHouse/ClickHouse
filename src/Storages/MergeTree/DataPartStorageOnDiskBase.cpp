@@ -59,6 +59,22 @@ namespace
     }
 }
 
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path)
+{
+    /// Subtree first (children before parents), then the ancestor chain up to the disk root ("").
+    syncDirectoryTree(disk, clone_dir_path);
+
+    fs::path dir = fs::path(clone_dir_path).parent_path();
+    while (true)
+    {
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir.string());
+        guard.reset();
+        if (dir.empty())
+            break;
+        dir = dir.parent_path();
+    }
+}
+
 std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
     const std::string & name,
     const ReadSettings & settings,
@@ -573,23 +589,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     /// (e.g. DETACH commits a covering empty part and drops the source) sees the clone already on
     /// disk. See the commit message / #111382 for the full rationale.
     if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
-    {
-        /// The clone subtree (part dir + projection subdirs), children first.
-        syncDirectoryTree(*disk, fs::path(to) / dir_path);
-
-        /// Ancestors from the clone's immediate parent up to the disk root (""): fsync(dir) persists
-        /// entries inside dir, not dir's own entry, so the parent chain (e.g. a freshly created
-        /// detached/) must be synced too.
-        fs::path dir = (fs::path(to) / dir_path).parent_path();
-        while (true)
-        {
-            SyncGuardPtr guard = disk->getDirectorySyncGuard(dir.string());
-            guard.reset();
-            if (dir.empty())
-                break;
-            dir = dir.parent_path();
-        }
-    }
+        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
     /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the
