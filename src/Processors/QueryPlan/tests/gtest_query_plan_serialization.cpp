@@ -24,6 +24,9 @@
 
 #include <Common/tests/gtest_global_context.h>
 
+#include <atomic>
+#include <thread>
+
 using namespace DB;
 
 namespace
@@ -80,6 +83,21 @@ QueryPlan makeSourcePlan()
 {
     QueryPlan plan;
     plan.addStep(std::make_unique<TestSourceStep>(makeTestHeader()));
+    return plan;
+}
+
+/// A chain of alias steps. The payload is big enough that serializing it is not instantaneous,
+/// which is what gives a concurrent sender the chance to observe a half-filled cache entry.
+QueryPlan makeChainPlan(size_t step_count)
+{
+    QueryPlan plan = makeSourcePlan();
+    for (size_t i = 0; i < step_count; ++i)
+    {
+        ActionsDAG dag(plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        const auto & alias = dag.addAlias(*dag.getInputs().front(), "x_" + std::to_string(i));
+        dag.getOutputs().push_back(&alias);
+        plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+    }
     return plan;
 }
 
@@ -216,6 +234,51 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     /// Requests above the supported version clamp to the current one.
     plan.ensureSerialized(current + 100);
     EXPECT_EQ(plan.getSerializedData(current + 100), current_bytes);
+}
+
+TEST(QueryPlanSerialization, ConcurrentSendersGetTheWholePlan)
+{
+    registerStepsOnce();
+
+    const size_t thread_count = 8;
+    const size_t iterations = 100;
+
+    for (size_t iteration = 0; iteration < iterations; ++iteration)
+    {
+        /// Every iteration needs a cold cache: the race is between the sender that fills the entry
+        /// and the ones arriving while it is still writing. All the replicas of a query share one
+        /// plan and send it from their own threads, so they all land here at the same time.
+        auto plan = makeChainPlan(16);
+        const std::string reference = serializePlan(plan);
+
+        std::atomic<size_t> ready = 0;
+        std::atomic<bool> start = false;
+        std::vector<std::string> sent(thread_count);
+        std::vector<std::thread> senders;
+
+        for (size_t i = 0; i < thread_count; ++i)
+        {
+            senders.emplace_back([&, i]
+            {
+                ready.fetch_add(1);
+                while (!start.load())
+                    std::this_thread::yield();
+
+                plan.ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+                sent[i] = plan.getSerializedData(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            });
+        }
+
+        while (ready.load() < thread_count)
+            std::this_thread::yield();
+        start.store(true);
+
+        for (auto & sender : senders)
+            sender.join();
+
+        for (size_t i = 0; i < thread_count; ++i)
+            ASSERT_EQ(sent[i], reference) << "sender " << i << " on iteration " << iteration;
+    }
 }
 
 namespace

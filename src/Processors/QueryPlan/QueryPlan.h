@@ -12,6 +12,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
@@ -252,7 +253,28 @@ private:
     /// Cached serialized representation, one entry per effective serialization version
     /// (in practice 1-2 entries: the current version and possibly one older peer's version).
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
-    mutable std::map<UInt64, std::unique_ptr<WriteBufferFromOwnString>> serialized_plans;
+    ///
+    /// One plan is shared by all the replicas of a query, and each replica sends it from its own
+    /// thread, so the cache is guarded. Without the mutex a sender could pick up an entry another
+    /// thread is still writing and put a truncated plan on the wire.
+    struct SerializedPlanCache
+    {
+        std::mutex mutex;
+        std::map<UInt64, std::unique_ptr<WriteBufferFromOwnString>> plans;
+
+        SerializedPlanCache() = default;
+
+        /// A plan is moved while it is being built, never while it is being sent, so the cached
+        /// bytes move without locking. The mutex itself is not movable and stays behind.
+        SerializedPlanCache(SerializedPlanCache && other) noexcept : plans(std::move(other.plans)) { }
+        SerializedPlanCache & operator=(SerializedPlanCache && other) noexcept
+        {
+            plans = std::move(other.plans);
+            return *this;
+        }
+    };
+
+    mutable SerializedPlanCache serialized_plans;
 };
 
 /// This is a structure which contains a query plan and a list of sets.

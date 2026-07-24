@@ -393,30 +393,39 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
 void QueryPlan::ensureSerialized(size_t max_supported_version) const
 {
     UInt64 version = effectiveSerializationVersion(max_supported_version);
-    auto & buffer = serialized_plans[version];
-    if (buffer)
+
+    std::lock_guard lock(serialized_plans.mutex);
+    if (serialized_plans.plans.contains(version))
         return;  // Already serialized for this version
 
-    buffer = std::make_unique<WriteBufferFromOwnString>();
+    /// The entry is published only once it is complete, so a concurrent sender either does not
+    /// see it and waits here, or gets the whole plan. Nothing is cached if `serialize` throws.
+    auto buffer = std::make_unique<WriteBufferFromOwnString>();
     serialize(*buffer, version);
     buffer->finalize();
+    serialized_plans.plans.emplace(version, std::move(buffer));
 }
 
 std::string_view QueryPlan::getSerializedData(size_t max_supported_version) const
 {
-    auto it = serialized_plans.find(effectiveSerializationVersion(max_supported_version));
-    if (it == serialized_plans.end() || !it->second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Query plan is not serialized for version {}. Call ensureSerialized() first.",
-            effectiveSerializationVersion(max_supported_version));
+    UInt64 version = effectiveSerializationVersion(max_supported_version);
 
+    std::lock_guard lock(serialized_plans.mutex);
+    auto it = serialized_plans.plans.find(version);
+    if (it == serialized_plans.plans.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Query plan is not serialized for version {}. Call ensureSerialized() first.", version);
+
+    /// Cached buffers are never rewritten or dropped, so the view outlives the lock.
     return it->second->stringView();
 }
 
 bool QueryPlan::isSerialized(size_t max_supported_version) const
 {
-    auto it = serialized_plans.find(effectiveSerializationVersion(max_supported_version));
-    return it != serialized_plans.end() && it->second != nullptr;
+    UInt64 version = effectiveSerializationVersion(max_supported_version);
+
+    std::lock_guard lock(serialized_plans.mutex);
+    return serialized_plans.plans.contains(version);
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data)
