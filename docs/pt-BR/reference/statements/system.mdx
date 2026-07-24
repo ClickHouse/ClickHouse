@@ -46,6 +46,33 @@ O status do dicionário pode ser verificado consultando a tabela `system.diction
 SELECT name, status FROM system.dictionaries;
 ```
 
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
+
+Descarrega um Dicionário `dictionary_name` para liberar a memória dele, se o status do dicionário for `LOADED`.
+O dicionário é recarregado sob demanda quando necessário novamente.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+O status do dicionário pode ser verificado consultando a tabela `system.dictionaries`.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+A consulta `SYSTEM UNLOAD DICTIONARIES` descarrega todos os dicionários com status `LOADED` (consulte a coluna `status` de [`system.dictionaries`](/pt-BR/reference/system-tables/dictionaries)), ou seja, os dicionários que já foram carregados com sucesso.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 <div id="reload-models">
   ## SYSTEM RELOAD MODELS
 </div>
@@ -112,6 +139,13 @@ Para um gerenciamento de cache mais prático (automático), consulte os parâmet
 
 Limpa o cache de marks.
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+Limpa o cache do índice primário, que mantém em memória as chaves primárias das tabelas [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
+Seu tamanho é configurado pela definição no nível do servidor [`primary_index_cache_size`](/pt-BR/reference/settings/server-settings/settings#primary_index_cache_size).
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ Limpa os caches por URL do Confluent Schema Registry usados pelo formato `AvroCo
 
 Limpa o cache de metadados do Parquet.
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+Limpa o cache em memória dos arquivos de metadados do Paimon processados (listas de manifestos e manifestos).
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+Limpa o cache de polígonos constantes pré-processados usado pela função [`pointInPolygon`](/pt-BR/reference/functions/regular-functions/geo/coordinates#pointinpolygon). O limite de tamanho configurado (a configuração no nível do servidor `point_in_polygon_cache_size`) permanece inalterado, portanto o cache continua aceitando novas entradas depois disso. Para desativar o cache, defina `point_in_polygon_cache_size` como `0`.
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-Limpa os caches de cabeçalho, de dicionário e de postings do índice de texto.
+Limpa os caches de tokens, de cabeçalho e de postings do índice de texto.
 
 Se quiser limpar um desses caches individualmente, você pode executar
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, ou
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, ou
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+Limpa o cache de marcas dos índices secundários (de salto de dados).
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+Limpa o cache de blocos não comprimidos dos índices secundários (de salto de dados).
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+Limpa o cache de arquivos mapeados em memória.
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+Limpa o cache de páginas em espaço do usuário, o cache em memória do próprio ClickHouse para dados lidos do armazenamento subjacente.
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+Limpa o cache do índice de similaridade vetorial.
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+Limpa o cache dos pools de conexões HTTP usados nas conexões de saída.
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+Limpa o cache dos clientes S3.
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+Carrega as marcas de uma tabela para o [cache de marcas](#drop-mark-cache). As marcas dos índices secundários também são carregadas para o [cache de marcas de índice](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+Carrega os índices primários de uma tabela `MergeTree` para o [cache de índice primário](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+Limpa o cache de metadados do disco especificado.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+Reconcilia o estado em memória do cache do sistema de arquivos do ClickHouse com os arquivos de cache efetivamente presentes em disco e retorna o `cache_name`, o `path` e o `size` baixado de cada segmento de arquivo em cache. Um nome de cache opcional limita a operação a um único cache.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` está disponível apenas no ClickHouse Cloud.
+</Note>
+
+Remove o Distributed Cache. Use `CONNECTIONS` para remover apenas as conexões em cache com os servidores do Distributed Cache ou informe o identificador de um servidor específico.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -196,6 +338,12 @@ O cache de expressões compiladas é ativado/desativado pela configuração [`co
 </div>
 
 Limpa o cache de condições de consulta.
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+Limpa o cache de cabeçalhos de criptografia. Esse cache armazena os cabeçalhos de criptografia lidos no início de arquivos criptografados e é usado pelo caminho de leitura experimental `use_reader_executor` para evitar relê-los; seu tamanho é configurado pela configuração do servidor `encryption_header_cache_size`.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP QUERY CACHE

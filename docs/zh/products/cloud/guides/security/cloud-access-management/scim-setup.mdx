@@ -12,10 +12,6 @@ import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/Pri
 
 <PrivatePreviewBadge />
 
-<Note>
-  SCIM 预配目前处于私有预览阶段。
-</Note>
-
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
 ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，跨域身份管理) ，用于自动化管理用户和组的生命周期。连接到您的身份提供商后，您分配给 ClickHouse Cloud 应用的每位用户都会自动在您的组织中创建，并获得相应的角色；profile 更新也会自动同步；而从您的 IdP 中移除某位用户时，其访问权限也会一并移除——无需手动邀请，也不会留下孤立账户。
@@ -48,9 +44,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
 </div>
 
 <Steps>
-  <Step>
-    ### 启用 SCIM
-
+  <Step title="启用 SCIM" id="enable-scim-provisioning">
     以组织管理员身份登录 **ClickHouse Cloud 控制台**，然后打开 **组织设置 → SAML 和 SCIM 设置 → SCIM 配置**。
 
     ![在组织设置中进入 SCIM 配置选项卡](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -68,9 +62,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     复制它——稍后您需要将其粘贴到 Okta 中。
   </Step>
 
-  <Step>
-    ### 生成 SCIM 访问令牌
-
+  <Step title="生成 SCIM 访问令牌" id="generate-scim-token">
     找到 `Create an API key` 部分，并选择过期日期。
 
     <Tip>
@@ -84,10 +76,8 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     ![生成新的 SCIM API 密钥](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### 定义角色映射
-
-    在 SCIM 配置面板中，点击 **Map roles in &quot;用户和角色&quot;** (或直接进入 **用户和角色 → Roles**) 。
+  <Step title="定义角色映射" id="define-role-mapping">
+    在 SCIM 配置面板中，点击 **“用户和角色”中的“映射角色”** (或直接进入 **用户和角色 → Roles**) 。
 
     SCIM 组会按名称绑定到 ClickHouse Cloud 角色，但需要注意以下规则：
 
@@ -103,9 +93,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
 </div>
 
 <Steps>
-  <Step>
-    ### 在 Okta 中打开您的 ClickHouse Cloud 应用
-
+  <Step title="在 Okta 中打开您的 ClickHouse Cloud 应用" id="open-clickhouse-cloud-app">
     在 **Okta Admin Console** 中，前往 **Applications → Applications**，搜索您在为 ClickHouse Cloud 配置 SAML 单点登录时创建的应用。打开它。
 
     如果您尚未创建该 SAML 应用，请先参考 [SAML SSO 设置指南](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)——SCIM 预配也是在同一个应用中配置的。
@@ -119,9 +107,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     ![应用中现已显示 Provisioning 选项卡](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### 将 Okta 连接到 SCIM 端点
-
+  <Step title="将 Okta 连接到 SCIM 端点" id="connect-okta-scim">
     打开应用的 **Provisioning** 选项卡，然后点击 `Edit`。填写表单：
 
     * **SCIM connector base URL** — 前面步骤中的 SCIM 端点 URL。
@@ -147,9 +133,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     点击 `Save`。
   </Step>
 
-  <Step>
-    ### 配置预配行为
-
+  <Step title="配置预配行为" id="configure-provisioning-behavior">
     仍在 **Provisioning** 选项卡中，点击左侧边栏中的 `To App`。点击 `Edit` 并启用：
 
     | 设置                     | 操作      | 作用                                            |
@@ -166,9 +150,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     ![保存预配设置并返回 Sign On 选项卡](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### 映射用户属性
-
+  <Step title="映射用户属性" id="map-user-attributes">
     Okta 和 ClickHouse Cloud 需要就用户字段的对应关系保持一致。在 **Provisioning** 选项卡中，点击 `To App`，然后检查你的应用的 **Attribute Mappings**。Okta SAML 应用的默认设置通常就可以满足需求——请核对下表：
 
     | Okta attribute    | ClickHouse Cloud (SCIM) attribute | Required                       |
@@ -189,9 +171,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     </Warning>
   </Step>
 
-  <Step>
-    ### 推送组并分配用户
-
+  <Step title="推送组并分配用户" id="push-groups-and-assign-users">
     角色就是在这里自动应用的。
 
     **在 Okta 中创建组。** 对于你之前设置的每个角色映射，在 Okta 中创建或确认一个**显示名称完全一致**的组。例如，如果你的映射是 `ClickHouse-Admins → Admin`，就在 Okta 中创建一个名为 `ClickHouse-Admins` 的组。
@@ -251,88 +231,107 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
   ## 生产环境最佳实践
 </div>
 
-**定期轮换令牌。** 为 SCIM 令牌轮换设置日历提醒。建议周期：每 12 个月一次；或者只要有知晓该令牌的管理员离开公司，就立即轮换。ClickHouse Cloud 允许每个组织同时保留两个有效令牌，正是为了让你在轮换时不影响预配。
+<div id="rotate-tokens">
+  ### 定期轮换令牌
+</div>
 
-**使用组，而不是直接分配。** 直接将用户分配给应用程序虽然可行，但很快就会难以审计。通过 Okta 组来管理分配，意味着访问审查和角色变更都可以在同一个地方完成。
+为 SCIM 令牌轮换设置日历提醒。建议周期：每 12 个月一次；或者只要有知晓该令牌的管理员离开公司，就立即轮换。ClickHouse Cloud 允许每个组织同时保留两个有效令牌，正是为了让你在轮换时不影响预配。
 
-**查看审计日志。** 每一次 SCIM 操作——创建用户、停用用户、更新 profile——都会记录在 ClickHouse Cloud 审计日志中。请参阅 [Audit logging](/zh/products/cloud/reference/security/audit-logging)。应定期检查日志，尤其是在大规模预配之后。
+<div id="use-groups">
+  ### 使用组，而不是直接分配
+</div>
 
-**设置合理的默认角色。** 如果某个 Okta 用户被分配给应用程序，但不在任何已推送的组中，系统就会使用 **默认角色** 创建该用户。请选择限制最严格、但仍能让用户完成*一些*操作的角色，这样即使配置有误，也能以更安全的方式失败。
+直接将用户分配给应用程序虽然可行，但很快就会难以审计。通过 Okta 组来管理分配，意味着访问审查和角色变更都可以在同一个地方完成。
 
-**避免同时使用 SCIM 和手动邀请。** 一旦启用 SCIM，就应通过 Okta 管理成员关系——不要再向同一批用户发送手动邀请。混用这两种方式会让“谁才是事实来源”变得模糊，并且可能产生重复项。
+<div id="review-audit-log">
+  ### 查看审计日志
+</div>
 
-**监控失败的预配任务。** Okta 会重试失败的预配调用，但最终会将它们放入 **Tasks** 队列。把这个队列加入你的 IT 团队已在监控的仪表盘，或者使用 Okta 的 webhook 或电子邮件告警来标记持续发生的故障。
+每一次 SCIM 操作——创建用户、停用用户、更新 profile——都会记录在 ClickHouse Cloud 审计日志中。请参阅 [Audit logging](/zh/products/cloud/reference/security/audit-logging)。应定期检查日志，尤其是在大规模预配之后。
+
+<div id="default-role">
+  ### 设置合理的默认角色
+</div>
+
+如果某个 Okta 用户被分配给应用程序，但不在任何已推送的组中，系统就会使用 **默认角色** 创建该用户。请选择限制最严格、但仍能让用户完成*一些*操作的角色，这样即使配置有误，也能以更安全的方式失败。
+
+<div id="avoid-manual-invites">
+  ### 避免同时使用 SCIM 和手动邀请
+</div>
+
+一旦启用 SCIM，就应通过 Okta 管理成员关系——不要再向同一批用户发送手动邀请。混用这两种方式会让“谁才是事实来源”变得模糊，并且可能产生重复项。
+
+<div id="monitor-failed-tasks">
+  ### 监控失败的预配任务
+</div>
+
+Okta 会重试失败的预配调用，但最终会将它们放入 **Tasks** 队列。把这个队列加入你的 IT 团队已在监控的仪表盘，或者使用 Okta 的 webhook 或电子邮件告警来标记持续发生的故障。
 
 <div id="troubleshooting">
   ## 故障排查
 </div>
 
-<div id="test-credentials-fails">
-  ### Okta 中“测试连接器配置”失败
-</div>
+<AccordionGroup>
+  <Accordion title="Okta 中的 &#x22;Test connector configuration&#x22; 失败">
+    * 确认 ClickHouse Cloud 控制台中已**启用** SCIM。
+    * 确认 Okta 中的 **base URL** 与 Cloud Console 中显示的 SCIM 端点 URL 完全一致——组织 ID 必须正确。
+    * 确认粘贴的 **token key and secret** 前后没有多余空格。
+    * 如果你已轮换过令牌，请确保使用的是**新**的 key 和 secret，而不是之前那一对。
+  </Accordion>
 
-* 确认已在 ClickHouse Cloud 控制台中**启用** SCIM。
-* 确认 Okta 中的 **base URL** 与 Cloud 控制台中显示的 SCIM 端点 URL 完全一致——组织 ID 必须正确。
-* 确认粘贴的 **token key and secret** 前后没有多余空白字符。
-* 如果你已轮换令牌，请确保使用的是**新的** key 和 secret，而不是之前那一对。
+  <Accordion title="用户已创建但没有权限">
+    * 检查你是否已在 **Map roles in &quot;用户和角色&quot;** 下为期望的角色添加一行映射。
+    * 检查 Okta 组名是否与映射中的 SCIM 组名**完全**一致，包括大小写和连字符。
+    * 如果你的设计本来就会为部分未分组用户进行预配，请确认已设置**默认角色**。
+  </Accordion>
 
-<div id="users-no-permissions">
-  ### 用户已创建，但没有任何权限
-</div>
+  <Accordion title="成员列表中出现重复用户">
+    这通常是由于 Okta 与之前手动邀请时使用的邮箱大小写不一致造成的。从成员列表中删除重复用户，然后在 Okta 中先取消分配再重新分配该用户，以重新进行预配。
+  </Accordion>
 
-* 检查你是否已在 **“用户和角色”中的“映射角色”** 下，为所需角色添加了一行。
-* 检查 Okta 组名是否与映射中的 SCIM 组名**完全**一致，包括大小写和连字符。
-* 如果你的设计本来就会为部分用户预配而不分配任何组，请确认已设置 **默认角色**。
+  <Accordion title="Group push 失败并显示 &#x22;displayName not recognised&#x22;">
+    Okta 中的组名与 ClickHouse Cloud 中已配置的映射不匹配。你可以重命名 Okta 组，或者在 SCIM 配置面板中的 **Map roles in &quot;用户和角色&quot;** 下添加映射 (也可通过 **用户和角色 → Roles** 添加) 。
+  </Accordion>
 
-<div id="duplicate-user">
-  ### 成员列表中有重复用户
-</div>
+  <Accordion title="已停用的用户仍显示为成员">
+    Okta 传播停用状态最多可能需要一分钟。如果几分钟后该用户仍显示为成员，请检查 Okta 的 **Provisioning → View Logs**，查看停用任务是否报错。
+  </Accordion>
 
-这通常是因为 Okta 与之前的手动邀请使用了大小写不一致的电子邮件地址。请从 Members 列表中删除重复项，然后在 Okta 中先取消分配该用户，再重新分配，以重新完成预配。
+  <Accordion title="我轮换了 SCIM 令牌，现在 Okta 失败了">
+    检查你是否在 Okta 中**同一个 SCIM application** 上更新了凭据。更新后，点击 `Test Connector Configuration` 进行确认。待预配恢复为绿色状态后，请在 ClickHouse Cloud 控制台中撤销旧令牌。
+  </Accordion>
 
-<div id="group-display-name">
-  ### 组推送失败，并提示“displayName not recognised”
-</div>
-
-Okta 中的组名与 ClickHouse Cloud 中已配置的映射不一致。请重命名 Okta 组，或在 SCIM 配置 面板的 **Map roles in &quot;用户和角色&quot;** 下添加映射 (也可通过 **用户和角色 → Roles** 添加) 。
-
-<div id="deactivated-users-remaining">
-  ### 已停用的用户仍显示为成员
-</div>
-
-Okta 传播停用状态最多可能需要一分钟。如果几分钟后该用户仍然显示为成员，请检查 Okta 的 **Provisioning → View Logs**，查看停用任务是否报错。
-
-<div id="token-rotation-issue">
-  ### 我轮换了 SCIM 令牌，现在 Okta 无法正常工作
-</div>
-
-请检查你是否在 Okta 的**同一个 SCIM 应用**中更新了凭据。更新后，点击 `Test Connector Configuration` 进行确认。待预配状态恢复为绿色后，再到 ClickHouse Cloud 控制台中撤销旧令牌。
-
-<div id="lost-token">
-  ### 我把 SCIM 令牌弄丢了
-</div>
-
-令牌无法找回。请在 ClickHouse Cloud 控制台的 **组织设置 → SAML 和 SCIM 设置 → SCIM 配置** 中撤销丢失的令牌并生成新令牌，然后更新 Okta 中的凭据。
+  <Accordion title="我丢失了 SCIM 令牌">
+    令牌无法恢复。在 ClickHouse Cloud 控制台的 **Organization settings → SAML 和 SCIM 设置 → SCIM 配置** 中，撤销丢失的令牌并生成一个新令牌，然后在 Okta 中更新凭据。
+  </Accordion>
+</AccordionGroup>
 
 <div id="faq">
   ## 常见问题
 </div>
 
-**在使用 SCIM 之前，是否需要先配置 SAML 单点登录？**
-是的。SCIM 会创建用户账户，但 ClickHouse Cloud 通过 SAML 对这些账户进行身份验证。请先设置 [SAML 单点登录](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)。
+<AccordionGroup>
+  <Accordion title="在使用 SCIM 之前，是否需要先配置 SAML 单点登录？">
+    是的。SCIM 会创建用户账户，但 ClickHouse Cloud 通过 SAML 对这些账户进行身份验证。请先设置 [SAML 单点登录](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)。
+  </Accordion>
 
-**SCIM 能否与 Microsoft Entra ID、OneLogin 或其他 SCIM 2.0 IdP 配合使用？**
-官方来说，不能——目前我们只测试并支持 Okta 这一种 IdP。该端点遵循 SCIM 2.0 (RFC 7644) ，但身份验证仅支持 Basic Auth，因此任何无法通过 Basic Auth 进行身份验证的 IdP 都无法使用。其他支持 Basic Auth 的 SCIM 2.0 IdP 在实际使用中可能可行，但我们不作任何保证。
+  <Accordion title="SCIM 能否与 Microsoft Entra ID、OneLogin 或其他 SCIM 2.0 IdP 配合使用？">
+    官方来说，不能——目前我们只测试并支持 Okta 这一种 IdP。该端点遵循 SCIM 2.0 (RFC 7644) ，但身份验证仅支持 Basic Auth，因此任何无法通过 Basic Auth 进行身份验证的 IdP 都无法使用。其他支持 Basic Auth 的 SCIM 2.0 IdP 在实际使用中可能可行，但我们不作任何保证。
+  </Accordion>
 
-**Okta 中的更改多久会显示在 ClickHouse Cloud 中？**
-大多数操作会在几秒内同步完成。批量更改 (大型组推送) 可能会因规模而需要更长时间，不过 Okta 会在出现瞬时错误时自动重试。
+  <Accordion title="Okta 中的更改多久会显示在 ClickHouse Cloud 中？">
+    大多数操作会在几秒内同步完成。批量更改 (大型组推送) 可能会因规模而需要更长时间，不过 Okta 会在出现瞬时错误时自动重试。
+  </Accordion>
 
-**能否通过单个 Okta 租户为多个 ClickHouse Cloud 组织开通配置？**
-可以——每个组织分别安装一次应用，并为其配置各自的 SCIM 端点 URL 和令牌。根据需要将相同的 Okta 组推送到每个应用即可。
+  <Accordion title="能否通过单个 Okta 租户为多个 ClickHouse Cloud 组织开通配置？">
+    可以——每个组织分别安装一次应用，并为其配置各自的 SCIM 端点 URL 和令牌。根据需要将相同的 Okta 组推送到每个应用即可。
+  </Accordion>
 
-**如果遇到问题，我该在哪里寻求帮助？**
-请在 ClickHouse Cloud 控制台中提交支持工单 (**Help → Contact support**) ，并附上：
+  <Accordion title="如果遇到问题，我该在哪里寻求帮助？">
+    请在 ClickHouse Cloud 控制台中提交支持工单 (**Help → Contact support**) ，并附上：
 
-* 你的组织 ID，
-* 你的 Okta 应用 ID，以及
-* Okta 日志中失败任务或测试的截图。
+    * 你的组织 ID，
+    * 你的 Okta 应用 ID，以及
+    * Okta 日志中失败任务或测试的截图。
+  </Accordion>
+</AccordionGroup>

@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Retool'
 slug: /integrations/retool
-keywords: ['clickhouse', 'retool', 'ربط', 'تكامل', 'واجهة المستخدم', 'مسؤول', 'لوحة', 'لوحة المعلومات', 'بدون برمجة', 'بدون-برمجة']
-description: 'أنشئ بسرعة تطبيقات ويب وجوال بواجهات مستخدم ثرية، وأتمت المهام المعقدة، وادمج الذكاء الاصطناعي—وكل ذلك بالاعتماد على بياناتك.'
+keywords: ['clickhouse', 'retool', 'ربط', 'تكامل', 'UI', 'مسؤول', 'لوحة', 'لوحة المعلومات', 'بدون برمجة', 'بدون برمجة']
+description: 'أنشئ بسرعة تطبيقات ويب وجوال بواجهات مستخدم غنية، وأتمت المهام المعقدة، ودمج الذكاء الاصطناعي — وكل ذلك بالاستفادة من بياناتك.'
 title: 'ربط Retool بـ ClickHouse'
 doc_type: 'guide'
 integration:
@@ -17,45 +17,43 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<div id="1-gather-your-connection-details">
-  ## 1. اجمع تفاصيل الاتصال لديك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="أنشئ مورد ClickHouse" id="2-create-a-clickhouse-resource">
+    سجّل الدخول إلى حسابك في Retool وانتقل إلى علامة التبويب *Resources*. اختر &quot;Create New&quot; -&gt; &quot;Resource&quot;:
 
-<div id="2-create-a-clickhouse-resource">
-  ## 2. أنشئ مورد ClickHouse
-</div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="إنشاء مورد جديد" />
 
-سجّل الدخول إلى حسابك في Retool وانتقل إلى علامة التبويب *Resources*. اختر &quot;Create New&quot; -&gt; &quot;Resource&quot;:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="إنشاء مورد جديد" />
+    حدّد &quot;JDBC&quot; من قائمة الموصلات المتاحة:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="اختيار موصل JDBC" />
 
-حدّد &quot;JDBC&quot; من قائمة الموصلات المتاحة:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="اختيار موصل JDBC" />
+    في معالج الإعداد، تأكد من اختيار `com.clickhouse.jdbc.ClickHouseDriver` كـ &quot;Driver name&quot;:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="تحديد برنامج التشغيل الصحيح" />
 
-في معالج الإعداد، تأكد من اختيار `com.clickhouse.jdbc.ClickHouseDriver` كـ &quot;Driver name&quot;:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="تحديد برنامج التشغيل الصحيح" />
+    أدخل بيانات اعتماد ClickHouse بالتنسيق التالي: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
+    إذا كان المثيل لديك يتطلب SSL أو كنت تستخدم ClickHouse Cloud، فأضف `&ssl=true` إلى سلسلة الاتصال، بحيث تصبح بالشكل `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="إدخال بيانات الاعتماد" />
 
-أدخل بيانات اعتماد ClickHouse بالتنسيق التالي: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
-إذا كان المثيل لديك يتطلب SSL أو كنت تستخدم ClickHouse Cloud، فأضف `&ssl=true` إلى سلسلة الاتصال، بحيث تصبح بالشكل `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="إدخال بيانات الاعتماد" />
+    بعد ذلك، اختبر الاتصال:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="اختبار الاتصال" />
 
-بعد ذلك، اختبر الاتصال:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="اختبار الاتصال" />
-
-<br />
-
-الآن، ينبغي أن تتمكن من المتابعة إلى تطبيقك باستخدام مورد ClickHouse.
+    الآن، ينبغي أن تتمكن من المتابعة إلى تطبيقك باستخدام مورد ClickHouse.
+  </Step>
+</Steps>

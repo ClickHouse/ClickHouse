@@ -8251,6 +8251,14 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
+    DECLARE(UniqueKeyProbeImplementation, unique_key_probe_implementation, UniqueKeyProbeImplementation::Auto, R"(
+Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
+baseline exists, so `auto` and `simple` both resolve to it.
+
+Reserved: this setting has no effect yet — the value is not read until the UNIQUE KEY INSERT
+write path that constructs the probe is wired up. Declared now so the lever ships with the
+implementation.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \

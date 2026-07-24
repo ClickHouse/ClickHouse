@@ -676,14 +676,12 @@ Après avoir identifié le sous-ensemble de colonnes pour la clé de tri, celles
   ### Modification de la clé primaire
 </div>
 
-Si vous connaissez bien vos patterns d’accès avant l’ingestion des données, supprimez simplement la table, puis recréez-la pour le type de données concerné.
+Si vous connaissez bien vos modes d’accès avant l’ingestion des données, supprimez simplement la table, puis recréez-la pour le type de données concerné.
 
 L’exemple ci-dessous montre une façon simple de créer une nouvelle table de logs à partir du schéma existant, mais avec une nouvelle clé primaire qui place la colonne `SeverityText` avant `ServiceName`.
 
 <Steps>
-  <Step>
-    #### Créer une nouvelle table
-
+  <Step title="Créer une nouvelle table" id="create-new-table-with-key">
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -700,9 +698,7 @@ L’exemple ci-dessous montre une façon simple de créer une nouvelle table de 
     </Info>
   </Step>
 
-  <Step>
-    #### Échanger puis supprimer la table
-
+  <Step title="Échanger puis supprimer la table" id="exhange-and-drop-table">
     L’instruction `EXCHANGE` sert à permuter les noms des tables de façon [atomique](/fr/concepts/core-concepts/glossary#atomicity). La table temporaire (qui devient alors l’ancienne table par défaut) peut ensuite être supprimée.
 
     ```sql
@@ -714,7 +710,7 @@ L’exemple ci-dessous montre une façon simple de créer une nouvelle table de 
 
 Cependant, **la clé primaire ne peut pas être modifiée sur une table existante**. Pour la changer, il faut créer une nouvelle table.
 
-Le processus suivant permet de conserver les anciennes données tout en continuant à les interroger de façon transparente (en utilisant leur clé existante dans la ClickStack UI, si nécessaire), tandis que les nouvelles données sont exposées via une nouvelle table optimisée pour les patterns d’accès des utilisateurs. Cette approche garantit qu’il n’est pas nécessaire de modifier les pipelines d’ingestion : les données continuent d’être envoyées vers les noms de table par défaut, et tous les changements restent transparents pour les utilisateurs.
+Le processus suivant permet de conserver les anciennes données tout en continuant à les interroger de façon transparente (en utilisant leur clé existante dans la ClickStack UI, si nécessaire), tandis que les nouvelles données sont exposées via une nouvelle table optimisée pour les modes d’accès des utilisateurs. Cette approche garantit qu’il n’est pas nécessaire de modifier les pipelines d’ingestion : les données continuent d’être envoyées vers les noms de table par défaut, et tous les changements restent transparents pour les utilisateurs.
 
 <Note>
   Le rechargement de données historiques dans une nouvelle table vaut rarement la peine à grande échelle. Le coût en compute et en IO est généralement élevé et ne justifie pas les gains de performance. À la place, laissez les données plus anciennes expirer [via TTL](/fr/clickstack/managing/ttl), tandis que les données plus récentes bénéficient de la clé améliorée.
@@ -723,10 +719,8 @@ Le processus suivant permet de conserver les anciennes données tout en continua
 Le même exemple, où `SeverityText` devient la première colonne de la clé primaire, est repris ci-dessous. Dans ce cas, une table est créée pour les nouvelles données, tout en conservant l’ancienne table pour l’analyse historique.
 
 <Steps>
-  <Step>
-    #### Créer une nouvelle table
-
-    Créez la nouvelle table avec la clé primaire souhaitée. Notez le suffixe `_23_01_2025` : adaptez-le à la date actuelle. Par exemple :
+  <Step title="Créer une nouvelle table" id="create-new-table-with-key-2">
+    Créez la nouvelle table avec la clé primaire souhaitée. Notez le suffixe `_23_01_2025` : adaptez-le à la date actuelle. Par exemple :
 
     ```sql
     CREATE TABLE otel_logs_23_01_2025 AS otel_logs
@@ -735,9 +729,7 @@ Le même exemple, où `SeverityText` devient la première colonne de la clé pri
     ```
   </Step>
 
-  <Step>
-    #### Créer une table Merge
-
+  <Step title="Créer une table Merge" id="create-merge-table">
     Le [moteur Merge](/fr/reference/engines/table-engines/special/merge) (à ne pas confondre avec MergeTree) ne stocke pas lui-même les données, mais permet de lire simultanément depuis n’importe quel nombre d’autres tables.
 
     ```sql
@@ -753,9 +745,7 @@ Le même exemple, où `SeverityText` devient la première colonne de la clé pri
     Vous pouvez maintenant interroger cette table pour vérifier qu’elle renvoie bien les données de `otel_logs`.
   </Step>
 
-  <Step>
-    #### Mettre à jour le ClickStack UI pour lire depuis la table Merge
-
+  <Step title="Mettre à jour le ClickStack UI pour lire depuis la table Merge" id="update-clickstack-ui-to-read-from-merge-tree">
     Configurez le ClickStack UI pour utiliser `otel_logs_merge` comme table pour la source de données de logs.
 
     <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Sélectionner la table Merge" />
@@ -763,9 +753,7 @@ Le même exemple, où `SeverityText` devient la première colonne de la clé pri
     À ce stade, les écritures continuent d’aller vers `otel_logs` avec la clé primaire d’origine, tandis que les lectures utilisent la table Merge. Cela n’entraîne aucun changement visible pour les utilisateurs ni aucun impact sur l’ingestion.
   </Step>
 
-  <Step>
-    #### Échanger les tables
-
+  <Step title="Échanger les tables" id="exchange-the-tables">
     Une instruction `EXCHANGE` est maintenant utilisée pour permuter atomiquement les noms des tables `otel_logs` et `otel_logs_23_01_2025`.
 
     ```sql
@@ -781,11 +769,9 @@ Le même exemple, où `SeverityText` devient la première colonne de la clé pri
 Ce processus peut être adapté si d’autres modifications des clés primaires sont nécessaires. Par exemple, si vous décidez qu’en réalité `SeverityNumber` doit faire partie de la clé primaire une semaine plus tard, plutôt que `SeverityText`. Le processus suivant peut être répété autant de fois que nécessaire en cas de modification de la clé primaire.
 
 <Steps>
-  <Step>
-    #### Créer une nouvelle table
-
+  <Step title="Créer une nouvelle table" id="create-new-table-with-key-3">
     Créez la nouvelle table avec la clé primaire souhaitée.
-    Dans l’exemple ci-dessous, `30_01_2025` est utilisé comme suffixe pour indiquer la date de la table. Par exemple :
+    Dans l’exemple ci-dessous, `30_01_2025` est utilisé comme suffixe pour indiquer la date de la table. Par exemple :
 
     ```sql
     CREATE TABLE otel_logs_30_01_2025 AS otel_logs
@@ -794,9 +780,7 @@ Ce processus peut être adapté si d’autres modifications des clés primaires 
     ```
   </Step>
 
-  <Step>
-    #### Échanger les tables
-
+  <Step title="Échanger les tables" id="exchange-the-tables-v2">
     Une instruction `EXCHANGE` est maintenant utilisée pour permuter atomiquement les noms des tables `otel_logs` et `otel_logs_30_01_2025`.
 
     ```sql
@@ -991,7 +975,7 @@ Les versions plus récentes de ClickHouse prennent également en charge des proj
   ### Alternatives
 </div>
 
-Si vous avez besoin de plusieurs clés de tri, les projections ne sont pas la seule option. Selon les contraintes opérationnelles et la manière dont vous souhaitez que ClickStack achemine les requêtes, envisagez :
+Si vous avez besoin de plusieurs clés de tri, les projections ne sont pas la seule option. Selon les contraintes opérationnelles et la façon dont vous voulez que ClickStack achemine les requêtes, envisagez :
 
-* de configurer votre collecteur OpenTelemetry pour écrire dans deux tables avec des clés de tri différentes, et de créer des sources ClickStack distinctes pour chaque table.
-* de créer une vue matérialisée comme pipeline de copie, c.-à-d. d’attacher une vue matérialisée à la table principale qui redirige les lignes brutes vers une table secondaire avec une clé de tri différente (un modèle de dénormalisation ou de routage). Créez une source pour cette table cible. Vous trouverez des exemples [ici](/fr/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).
+* De configurer votre OpenTelemetry Collector pour écrire dans deux tables avec des clés `ORDER BY` différentes, puis de créer des sources ClickStack distinctes pour chaque table.
+* De créer une vue matérialisée sous forme de pipeline de copie, c.-à-d. d’attacher une vue matérialisée à la table principale qui copie les lignes brutes vers une table secondaire avec une clé de tri différente (un schéma de dénormalisation ou de routage). Créez une source pour cette table cible. Vous trouverez des exemples [ici](/fr/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).
