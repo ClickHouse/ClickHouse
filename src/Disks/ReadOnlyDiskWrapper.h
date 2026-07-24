@@ -37,6 +37,10 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override { return delegate->iterateDirectory(path); }
 
+    /// Forward refresh() so a read-only replica re-reads object-storage metadata (e.g. `plain_rewritable`) and sees
+    /// files written by another server.
+    void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
+
     void copyDirectoryContent(
         const String & from_dir,
         const std::shared_ptr<IDisk> & to_disk,
