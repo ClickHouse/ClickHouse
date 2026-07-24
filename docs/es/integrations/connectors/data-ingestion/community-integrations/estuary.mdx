@@ -30,9 +30,7 @@ Estuary se conecta con ClickHouse a través del ClickPipe de Kafka. No necesitas
 * Una cuenta de ClickHouse Cloud con permisos para ClickPipe
 
 <Steps>
-  <Step>
-    ### Crear una materialización de Estuary
-
+  <Step title="Crear una materialización de Estuary" id="1-create-an-estuary-materialization">
     Para mover datos de tus colecciones de origen en Estuary a ClickHouse, primero tendrás que crear una **materialización**.
 
     1. En el dashboard de Estuary, ve a la página [Destinations](https://dashboard.estuary.dev/materializations).
@@ -56,9 +54,7 @@ Estuary se conecta con ClickHouse a través del ClickPipe de Kafka. No necesitas
     Estuary empezará a transmitir las colecciones seleccionadas como mensajes de Kafka. ClickHouse puede acceder a estos datos mediante un Kafka ClickPipe con los detalles del broker de Estuary y el token de autenticación que proporcionaste.
   </Step>
 
-  <Step>
-    ### Introducir los detalles de conexión de Kafka
-
+  <Step title="Introducir los detalles de conexión de Kafka" id="2-enter-kafka-connection-details">
     Configura un nuevo Kafka ClickPipe en ClickHouse e introduce los detalles de conexión:
 
     1. En tu dashboard de ClickHouse Cloud, selecciona **Data sources**.
@@ -82,9 +78,7 @@ Estuary se conecta con ClickHouse a través del ClickPipe de Kafka. No necesitas
        * El secreto será el mismo que la contraseña del broker (tu token de autenticación)
   </Step>
 
-  <Step>
-    ### Configurar los datos entrantes
-
+  <Step title="Configurar los datos entrantes" id="3-configure-incoming-data">
     1. Selecciona uno de tus Kafka **topics** (una de tus colecciones de datos de Estuary).
 
     2. Elige un **offset**.
@@ -95,7 +89,7 @@ Estuary se conecta con ClickHouse a través del ClickPipe de Kafka. No necesitas
 
     5. Asigna los campos de origen a las columnas de la tabla y confirma el nombre de la columna, el tipo y si admite Nullable.
 
-    6. En la sección final **Details and settings**, puedes seleccionar permisos para tu usuario dedicado de base de datos.
+    6. En la sección final **Details and settings**, puedes seleccionar permisos para tu usuario de base de datos dedicado.
 
     Cuando estés conforme con la configuración, crea tu ClickPipe.
 

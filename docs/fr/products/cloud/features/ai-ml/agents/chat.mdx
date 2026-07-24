@@ -2,8 +2,8 @@
 sidebarTitle: 'Chat'
 slug: /cloud/features/ai-ml/agents/chat
 title: 'Chat'
-description: 'Conversations, favoris, forking, multi-conversation et partage de discussions dans ClickHouse Agents'
-keywords: ['IA', 'ClickHouse Cloud', 'agents', 'chat', 'conversations', 'favoris', 'forking', 'multi-conversation']
+description: 'Conversations, favoris, conversations épinglées, forking, raccourcis clavier et partage de discussions dans ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'chat', 'conversations', 'favoris', 'conversations épinglées', 'raccourcis clavier', 'forking', 'partage']
 doc_type: 'reference'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge />
 
-L’espace de discussion de ClickHouse Agents prend en charge les conversations, la création de branches, la comparaison côte à côte et le partage.
+L’espace de discussion de ClickHouse Agents prend en charge les conversations, la création de branches et le partage.
 
 <Image img="/images/cloud/agent-builder/chat/chat.webp" alt="Espace de discussion de ClickHouse Agent montrant la navigation de gauche, l’en-tête d’identité de l’agent et le champ de saisie des messages" size="lg" />
 
@@ -37,6 +37,14 @@ Ajoutez un favori à un message ou à une conversation entière pour le retrouve
 
 <Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="En-tête du chat avec l’icône de favori mise en évidence et une infobulle « Ajouter aux favoris » visible" size="lg" />
 
+<div id="pinned-conversations">
+  ## Conversations épinglées
+</div>
+
+Épinglez une conversation pour la garder en haut de la barre latérale, à part de l’historique classé par date situé en dessous. Ouvrez le menu d’options de la conversation (l’icône à trois points) dans la barre latérale, puis sélectionnez **Épingler**. Les conversations épinglées sont regroupées dans une section **Épinglées**, au-dessus des groupes **Aujourd’hui**, **Hier** et des groupes plus anciens.
+
+Pour la désépingler, ouvrez le même menu et sélectionnez **Désépingler**.
+
 <div id="forking">
   ## Forking
 </div>
@@ -52,20 +60,6 @@ Les conversations forkées sont indépendantes ; les modifications ne sont donc
 
 <Image img="/images/cloud/agent-builder/chat/fork.webp" alt="Boîte de dialogue de sélection d’une option de fork affichant trois icônes de mode de fork, les cases à cocher Start fork here et Remember, ainsi que la barre d’outils d’action du message en dessous" size="lg" />
 
-<div id="multi-conversation">
-  ## Multi-conversation
-</div>
-
-Multi-conversation affiche deux conversations côte à côte et envoie le même prompt aux deux. Utilisez cette fonctionnalité pour comparer les réponses entre différents modèles ou pour effectuer un test A/B de différentes configurations d’agent.
-
-Cliquez sur le bouton **+** dans l’en-tête du chat pour ouvrir une conversation parallèle à côté de la conversation en cours.
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="En-tête du chat avec le bouton Add multi-conversation mis en évidence, et un indicateur + ClickHouse Agent au-dessus de la zone de saisie" size="lg" />
-
-Les deux conversations s’affichent alors côte à côte et reçoivent le même prompt :
-
-<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="Vue Multi-conversation avec deux conversations ClickHouse Agent côte à côte, exécutant toutes deux les mêmes appels à l’outil run_select_query" size="lg" />
-
 <div id="sharing-chats">
   ## Partage des discussions
 </div>
@@ -74,6 +68,8 @@ Générez un lien de partage pour n’importe quelle conversation afin de l’en
 
 Les modifications apportées aux messages existants apparaissent dans la vue partagée ; les messages ajoutés après la génération du lien n’y figurent pas.
 
+Toute personne ouvrant un lien partagé peut poursuivre la conversation dans son propre compte en cliquant sur **Continue this chat**. Cela copie la conversation — y compris la branche affichée — dans son historique en tant que nouvelle conversation privée, sans modifier votre conversation d’origine.
+
 Pour partager une conversation, ouvrez son menu dans la barre latérale et sélectionnez **Share** :
 
 <Image img="/images/cloud/agent-builder/chat/share.webp" alt="Menu de la conversation dans la barre latérale avec les options Share, Rename, Duplicate, Archive et Delete visibles" size="lg" />
@@ -81,3 +77,36 @@ Pour partager une conversation, ouvrez son menu dans la barre latérale et séle
 Cliquez ensuite sur **Create link** dans la boîte de dialogue de partage :
 
 <Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="Boîte de dialogue Share link to chat avec le bouton Create link et une note indiquant que votre nom et les messages ajoutés après le partage restent privés" size="md" />
+
+<div id="keyboard-shortcuts">
+  ## Raccourcis clavier
+</div>
+
+Ouvrez la référence des raccourcis clavier avec `Cmd+Shift+/` (`Ctrl+Shift+/` sur Windows et Linux), ou depuis le menu du compte, sous **Help** → **Keyboard shortcuts**. Chaque raccourci est personnalisable : cliquez sur une ligne dans la boîte de dialogue pour enregistrer une nouvelle combinaison, puis utilisez **Reset all to defaults** pour revenir aux paramètres par défaut.
+
+Les raccourcis par défaut sont :
+
+| Action                                      | macOS                 | Windows et Linux       |
+| ------------------------------------------- | --------------------- | ---------------------- |
+| Afficher les raccourcis clavier             | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| Nouvelle discussion                         | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| Activer le champ de saisie de la discussion | `Shift+Esc`           | `Shift+Esc`            |
+| Téléverser un fichier                       | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| Copier la dernière réponse                  | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| Envoyer le message                          | `Cmd+Enter`           | `Ctrl+Enter`           |
+| Afficher ou masquer la barre latérale       | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| Ouvrir le sélecteur de modèle               | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| Activer la recherche                        | `Cmd+/`               | `Ctrl+/`               |
+| Ouvrir les paramètres                       | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| Ajouter la conversation aux favoris         | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| Arrêter la génération                       | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| Régénérer la réponse                        | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| Modifier le dernier message                 | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| Continuer la réponse                        | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| Copier le dernier bloc de code              | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| Faire défiler jusqu’en haut                 | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| Faire défiler jusqu’en bas                  | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| Archiver la conversation                    | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| Supprimer la conversation                   | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+
+Vous pouvez également attribuer vos propres raccourcis pour ouvrir des panneaux comme les agents, les prompts, les fichiers et les favoris — aucun raccourci ne leur est attribué par défaut.

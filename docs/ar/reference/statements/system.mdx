@@ -46,6 +46,33 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 SELECT name, status FROM system.dictionaries;
 ```
 
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
+
+يفرّغ القاموس `dictionary_name` لتحرير الذاكرة التي يستخدمها إذا كانت حالة القاموس هي `LOADED`.
+ويُعاد تحميل القاموس تلقائيًا عند الحاجة إليه مجددًا.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+يمكن التحقق من حالة القاموس عبر الاستعلام عن جدول `system.dictionaries`.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+يفرّغ الاستعلام `SYSTEM UNLOAD DICTIONARIES` جميع القواميس التي تكون حالتها `LOADED` (راجع العمود `status` في [`system.dictionaries`](/ar/reference/system-tables/dictionaries))، أي القواميس التي سبق تحميلها بنجاح.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 <div id="reload-models">
   ## SYSTEM RELOAD MODELS
 </div>
@@ -112,6 +139,13 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 يمسح ذاكرة تخزين العلامات المؤقتة.
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للفهرس الأساسي، التي تحتفظ بالمفاتيح الأساسية لجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) في الذاكرة.
+يُضبط حجمها باستخدام الإعداد [`primary_index_cache_size`](/ar/reference/settings/server-settings/settings#primary_index_cache_size`) على مستوى الخادم.
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 يمسح ذاكرة التخزين المؤقت للبيانات الوصفية لملفات Parquet.
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت الموجودة في الذاكرة لملفات البيانات الوصفية المحلَّلة الخاصة بـ Paimon (manifest lists وmanifests).
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للمضلعات الثابتة المُعالجة مسبقًا والمستخدمة من قِبل الدالة [`pointInPolygon`](/ar/reference/functions/regular-functions/geo/coordinates#pointinpolygon). ويظل حد الحجم المُعدّ (إعداد الخادم `point_in_polygon_cache_size`) دون تغيير، لذلك تواصل ذاكرة التخزين المؤقت قبول الإدخالات بعد ذلك. ولتعطيل ذاكرة التخزين المؤقت بدلًا من ذلك، اضبط `point_in_polygon_cache_size` على `0`.
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-يمسح ذاكرات التخزين المؤقت لترويسة الفهرس النصي والقاموس وpostings.
+يمسح ذاكرات التخزين المؤقت للرموز وترويسة الفهرس النصي وpostings.
 
-إذا أردت مسح إحدى هذه الذاكرات المؤقتة بشكل منفصل، يمكنك تشغيل:
+إذا أردت مسح إحدى هذه الذاكرات المؤقتة بشكل منفصل، يمكنك تشغيل
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`، أو
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`، أو
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لعلامات الفهارس الثانوية (لتخطي البيانات).
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+يفرّغ ذاكرة التخزين المؤقت للكتل غير المضغوطة الخاصة بالفهارس الثانوية (لتخطي البيانات).
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للملفات المُعيَّنة في الذاكرة.
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+يمسح userspace page cache، وهي ذاكرة ClickHouse المؤقتة الخاصة داخل الذاكرة للبيانات المقروءة من طبقة التخزين الأساسية.
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت الخاصة بفهرس تشابه المتجهات.
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لمجمّعات اتصالات HTTP المستخدمة في الاتصالات الصادرة.
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لعملاء S3.
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+يحمّل علامات الجدول إلى [ذاكرة تخزين العلامات المؤقتة](#drop-mark-cache). كما تُحمَّل أيضًا علامات الفهرس الثانوية إلى [ذاكرة التخزين المؤقت لعلامات الفهرس](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+يحمّل الفهارس الأساسية لجدول `MergeTree` إلى [ذاكرة التخزين المؤقت للفهرس الأساسي](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للبيانات الوصفية للقرص المحدد.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+يُطابِق الحالة الموجودة في الذاكرة لذاكرة التخزين المؤقت لنظام الملفات في ClickHouse مع ملفات ذاكرة التخزين المؤقت الموجودة فعليًا على القرص، ويُرجع `cache_name` و`path` و`size` المُنزَّل لكل جزء ملف مخزَّن مؤقتًا. ويمكن استخدام اسم ذاكرة تخزين مؤقت اختياري لقصر العملية على ذاكرة تخزين مؤقت واحدة.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  يتوفر `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` فقط في ClickHouse Cloud.
+</Note>
+
+يحذف ذاكرة التخزين المؤقت الموزعة. استخدم `CONNECTIONS` لحذف الاتصالات المخزنة مؤقتًا بخوادم ذاكرة التخزين المؤقت الموزعة فقط، أو مرّر معرّف خادم لاستهداف خادم واحد.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -196,6 +338,12 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 يمسح ذاكرة التخزين المؤقت لشرط الاستعلام.
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لرؤوس التشفير. تحتفظ هذه الذاكرة برؤوس التشفير المقروءة من بداية الملفات المشفّرة، ويستخدمها مسار القراءة التجريبي `use_reader_executor` لتجنّب إعادة قراءتها؛ ويُضبط حجمها من خلال إعداد الخادم `encryption_header_cache_size`.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP QUERY CACHE

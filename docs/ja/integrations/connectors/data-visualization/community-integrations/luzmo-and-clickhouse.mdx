@@ -2,7 +2,7 @@
 sidebarTitle: 'Luzmo'
 slug: /integrations/luzmo
 keywords: ['ClickHouse', 'Luzmo', '接続', '連携', 'UI', '埋め込み']
-description: 'Luzmo は、ソフトウェアおよび SaaS アプリケーション向けに設計された、ClickHouse ネイティブの連携機能を備える埋め込み分析プラットフォームです。'
+description: 'Luzmo は、ソフトウェアおよび SaaS アプリケーション向けに設計された、ClickHouse とネイティブに連携できる埋め込み型分析プラットフォームです。'
 title: 'Luzmo と ClickHouse の連携'
 sidebar: 'integrations'
 doc_type: 'guide'
@@ -17,36 +17,34 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-<div id="1-setup-a-clickhouse-connection">
-  ## 1. ClickHouse 接続を設定する
-</div>
+<Steps>
+  <Step title="ClickHouse 接続を設定する" id="1-setup-a-clickhouse-connection">
+    ClickHouse に接続するには、**Connections page** に移動し、**New Connection** を選択してから、New Connection モーダルで ClickHouse を選択します。
 
-ClickHouse に接続するには、**Connections page** に移動し、**New Connection** を選択してから、New Connection モーダルで ClickHouse を選択します。
+    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="ClickHouse が選択された Create a New Connection ダイアログを表示する Luzmo インターフェイス" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="ClickHouse が選択された Create a New Connection ダイアログを表示する Luzmo インターフェイス" border />
+    **host**、**username**、**password** の入力が求められます。
 
-**host**、**username**、**password** の入力が求められます。
+    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="ClickHouse の host、username、password のフィールドが表示された Luzmo の接続設定フォーム" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="ClickHouse の host、username、password のフィールドが表示された Luzmo の接続設定フォーム" border />
+    * **Host**: これは、ClickHouse データベースが公開されているホストです。データを安全に転送するため、ここでは `https` のみ使用できます。host URL は次の形式を想定しています: `https://url-to-clickhouse-db:port/database`
+      デフォルトでは、プラグインは &#39;default&#39; データベースの 443 ポートに接続します。&#39;/&#39; の後にデータベースを指定すると、接続先のデータベースを設定できます。
+    * **Username**: ClickHouse クラスターへの接続に使用する username です。
+    * **Password**: ClickHouse クラスターに接続するための password です
 
-* **Host**: これは、ClickHouse データベースが公開されているホストです。データを安全に転送するため、ここでは `https` のみ使用できます。host URL は次の形式を想定しています: `https://url-to-clickhouse-db:port/database`
-  デフォルトでは、プラグインは &#39;default&#39; データベースの 443 ポートに接続します。&#39;/&#39; の後にデータベースを指定すると、接続先のデータベースを設定できます。
-* **Username**: ClickHouse クラスターへの接続に使用する username です。
-* **Password**: ClickHouse クラスターに接続するための password です
+    API 経由で [ClickHouse への接続を作成する](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) 方法については、開発者向けドキュメントの例を参照してください。
+  </Step>
 
-API 経由で [ClickHouse への接続を作成する](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) 方法については、開発者向けドキュメントの例を参照してください。
+  <Step title="データセットを追加する" id="2-add-datasets">
+    ClickHouse に接続したら、[こちら](https://academy.luzmo.com/article/ldx3iltg) の説明に従ってデータセットを追加できます。ClickHouse で利用可能な 1 つ以上のデータセットを選択し、Luzmo でそれらを [リンク](https://academy.luzmo.com/article/gkrx48x5) することで、ダッシュボード内でまとめて使用できるようになります。あわせて、[分析向けにデータを準備する](https://academy.luzmo.com/article/u492qov0) 方法についての記事もご確認ください。
 
-<div id="2-add-datasets">
-  ## 2. データセットを追加する
-</div>
+    API を使用してデータセットを追加する方法については、[開発者向けドキュメントのこの例](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody) を参照してください。
 
-ClickHouse への接続が完了したら、[こちら](https://academy.luzmo.com/article/ldx3iltg)で説明されているようにデータセットを追加できます。ClickHouse で利用可能な 1 つ以上のデータセットを選択し、Luzmo でそれらを[リンク](https://academy.luzmo.com/article/gkrx48x5)することで、ダッシュボード内でまとめて利用できるようになります。あわせて、[分析向けにデータを準備する](https://academy.luzmo.com/article/u492qov0) こちらの記事もご確認ください。
+    これで、データセットを使って美しい (埋め込み) ダッシュボードを作成したり、顧客からの質問に答えられる AI データアナリスト ([Luzmo IQ](https://luzmo.com/iq)) を活用したりできます。
 
-API を使用してデータセットを追加する方法については、[開発者向けドキュメントのこちらの例](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody)を参照してください。
-
-これで、データセットを使って美しい (埋め込み) ダッシュボードを構築したり、クライアントの質問に回答できる AI データアナリスト ([Luzmo IQ](https://luzmo.com/iq)) を活用したりできるようになります。
-
-<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="ClickHouse のデータの複数の可視化を表示する Luzmo ダッシュボードの例" border />
+    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="ClickHouse のデータの複数の可視化を表示する Luzmo ダッシュボードの例" border />
+  </Step>
+</Steps>
 
 <div id="usage-notes">
   ## 使用上の注意

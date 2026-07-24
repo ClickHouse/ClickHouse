@@ -83,7 +83,13 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-لنلقِ نظرة على دورة حياة خدمة Postgres.
+لنستعرض دورة حياة خدمة Postgres.
+
+<Warning>
+  **حجب بيانات الاعتماد اعتبارًا من 31 يوليو 2026**
+
+  اعتبارًا من **31 يوليو 2026**، لم تعد واجهة برمجة التطبيقات تُرجِع الخاصيتين `password` و`connectionString` في استجاباتها. ولن تظهرا إلا في استجابة [الإنشاء](#create) واستجابة [إعادة تعيين كلمة المرور] عندما لا يتضمن الطلب كلمة مرور. نوصي بحفظ بيانات الاعتماد من استجابة [الإنشاء](#create). وإذا كنت تدير الخدمات باستخدام Terraform، فقم بترقية المزوّد إلى **v3.21.0 أو إصدار أحدث** قبل 31 يوليو 2026 (راجع [مرجع Terraform](/ar/products/managed-postgres/terraform)).
+</Warning>
 
 <div id="create">
   ### إنشاء
@@ -113,12 +119,13 @@ create_data='{
 ```
 
 استخدم الآن هذه البيانات لإنشاء مثيل جديد؛ لاحظ أن ذلك يتطلب ترويسة
-Content-Type:
+Content-Type. احفظ الاستجابة لكي تتمكن من الوصول إلى بيانات الاعتماد التي تُرجعها:
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 عند نجاح العملية، سيُنشئ مثيلًا جديدًا ويُرجع معلومات عنه،
@@ -161,7 +168,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-ستكون المخرجات مشابهةً لـ JSON المُعاد عند الإنشاء، لكن راقب
+ستكون المخرجات مشابهةً لـ JSON المُعاد عند الإنشاء (لكن من دون الخاصيتين `password` و`connectionString` بعد 31 يوليو 2026)، لكن راقب
 `state`؛ فعندما تتغير إلى `running`، يكون الخادم جاهزًا:
 
 ```bash
@@ -174,15 +181,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-يمكنك الآن استخدام الخاصية `connectionString` للاتصال، على سبيل المثال عبر
-[psql]:
+يمكنك الآن استخدام الخاصية `connectionString` المحفوظة من استجابة الإنشاء
+للاتصال، على سبيل المثال عبر [psql]:
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -444,23 +447,25 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "إدارة مفاتيح API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "مواصفة OpenAPI لـ ClickHouse Cloud: ‏Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "مرجع واجهة برمجة تطبيقات ClickHouse Cloud: ‏Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "جلب قائمة بخدمات Postgres التابعة لمؤسسة"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "جلب قائمة بخدمات Postgres التابعة لمؤسسة"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "إنشاء خدمة Postgres جديدة"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "إنشاء خدمة Postgres جديدة"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "وثائق PostgreSQL: ‏psql — الطرفية التفاعلية لـ PostgreSQL"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "تحديث خدمة PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "تحديث خدمة PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: ‏JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "وثائق PostgreSQL: تهيئة الخادم"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "تحديث تهيئة خدمة Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "استبدال تهيئة خدمة Postgres"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "حذف خدمة PostgreSQL"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "حذف خدمة PostgreSQL"
+
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "إعادة تعيين كلمة مرور المستخدم الفائق لخدمة Postgres"
 
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "نقطة نهاية Prometheus لـ Managed Postgres"
 
@@ -472,6 +477,6 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "عدادات Query Insights لكل تنفيذ"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "سرد أنماط الاستعلامات البطيئة في Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "إدراج أنماط الاستعلامات البطيئة لـ Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "الحصول على نمط استعلام بطيء في Postgres مع عمليات التنفيذ الأخيرة"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "الحصول على نمط استعلام بطيء لـ Postgres مع أحدث عمليات التنفيذ"
