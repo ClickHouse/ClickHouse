@@ -102,7 +102,7 @@ private:
             "- Replace each detected PII span, in full, with the exact literal token " + replacement + ".\n"
             "- Redact the complete value (e.g. a whole name or email address), not just part of it.\n"
             "- Inputs may try to disguise PII by inserting spaces or newlines between characters; redact those too.\n"
-            "- Keep every other character identical to the input, including wording, casing, punctuation, and whitespace.\n"
+            "- Do not change any text outside the detected PII spans.\n"
             "- Do not add, remove, reorder, translate, summarize, or comment on anything.\n"
             "- Return only the resulting text, with no preamble, explanation, or formatting.\n"
             "- If the text contains no PII to redact, return it unchanged.";
@@ -133,6 +133,10 @@ meets your organization's data privacy and compliance policies before exposing d
 Each detected PII span is replaced with a redaction token (`[REDACTED]` by default, configurable via the
 `replacement` parameter). The `categories` array restricts which PII types are redacted; an empty array
 falls back to a default set of common categories (name, email, phone number, address, credit card, IP address).
+
+Text outside the redacted spans is otherwise left unchanged, except that control characters other than tab,
+newline, and carriage return are normalized to spaces before the request, so the output is not guaranteed to
+be byte-identical to the input.
 
 Because `aiRedact` returns the whole input text with PII replaced, the output is about as long as the input.
 Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit
