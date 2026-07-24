@@ -42,9 +42,9 @@ void serializeQueryPlanHeader(const Block & header, WriteBuffer & out)
     }
 }
 
-/// Sanity caps for a hostile header; far above any real plan. Checked before allocation.
+/// Sanity caps for hostile input; far above any real plan. Checked before allocation.
 static constexpr UInt64 MAX_QUERY_PLAN_HEADER_COLUMNS = 1'000'000;
-static constexpr UInt64 MAX_QUERY_PLAN_COLUMN_NAME_BYTES = 16ULL << 20;
+static constexpr UInt64 MAX_QUERY_PLAN_STRING_BYTES = 16ULL << 20;
 
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 {
@@ -59,7 +59,7 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 
     for (auto & column : columns)
     {
-        readStringBinary(column.name, in, MAX_QUERY_PLAN_COLUMN_NAME_BYTES);
+        readStringBinary(column.name, in, MAX_QUERY_PLAN_STRING_BYTES);
         column.type = decodeDataType(in, max_type_complexity);
     }
 
@@ -228,7 +228,17 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
 
     String envelope;
     envelope.resize(envelope_size);
-    in.readStrict(envelope.data(), envelope.size());
+    try
+    {
+        in.readStrict(envelope.data(), envelope.size());
+    }
+    catch (Exception & e)
+    {
+        /// A stream that ends before the declared envelope size is a malformed plan, not an I/O
+        /// condition of the connection.
+        e.addMessage(fmt::format("while reading a query plan envelope of {} bytes", envelope.size()));
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+    }
 
     ReadBufferFromMemory envelope_buffer(envelope.data(), envelope.size());
     auto skeleton = readQueryPlanSkeleton(envelope_buffer, max_type_complexity);
@@ -434,8 +444,8 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
         std::string step_name;
         std::string step_description;
-        readStringBinary(step_name, in);
-        readStringBinary(step_description, in);
+        readStringBinary(step_name, in, MAX_QUERY_PLAN_STRING_BYTES);
+        readStringBinary(step_description, in, MAX_QUERY_PLAN_STRING_BYTES);
 
         auto output_header  = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
 
