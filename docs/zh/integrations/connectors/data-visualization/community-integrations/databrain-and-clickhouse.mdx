@@ -31,75 +31,69 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 * 一个用于连接数据源的 Databrain 工作区。
 
 <div id="steps-to-connect-databrain-to-clickhouse">
-  ## 连接 Databrain 到 ClickHouse 的步骤
+  ## 将 Databrain 连接到 ClickHouse 的步骤
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. 获取您的连接信息
-</div>
+<Steps>
+  <Step title="收集连接信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="允许 Databrain IP 地址（如有需要）" id="2-allow-databrain-ip-addresses">
+    如果您的 ClickHouse 实例启用了 IP filtering，则需要将 Databrain 的 IP 地址加入白名单。
 
-<div id="2-allow-databrain-ip-addresses">
-  ### 2. 允许 Databrain 的 IP 地址 (如有需要)
-</div>
+    对于 ClickHouse Cloud 用户：
 
-如果您的 ClickHouse 实例启用了 IP 过滤，则需要将 Databrain 的 IP 地址加入允许列表。
+    1. 在 ClickHouse Cloud 控制台中导航到您的 service
+    2. 前往 **Settings** → **Security**
+    3. 将 Databrain 的 IP 地址添加到 allow list
 
-对于 ClickHouse Cloud 用户：
+    <Tip>
+      当前需要加入白名单的 IP 地址列表，请参阅 [Databrain 的 IP 白名单文档](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)。
+    </Tip>
+  </Step>
 
-1. 在 ClickHouse Cloud 控制台中进入您的服务
-2. 前往 **设置** → **安全**
-3. 将 Databrain 的 IP 地址添加到允许列表中
+  <Step title="在 Databrain 中将 ClickHouse 添加为数据源" id="3-add-clickhouse-as-a-data-source">
+    1. 登录 Databrain 账户，并进入要添加数据源的工作区。
 
-<Tip>
-  请参阅 [Databrain 的 IP 白名单文档](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)，获取当前需要加入白名单的 IP 地址列表。
-</Tip>
+    2. 在导航菜单中点击 **Data Sources**。
 
-<div id="3-add-clickhouse-as-a-data-source">
-  ### 3. 在 Databrain 中将 ClickHouse 添加为数据源
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrain 数据源菜单" border />
 
-1. 登录 Databrain 账户，并进入要添加数据源的工作区。
+    3. 点击 **Add a Data Source** 或 **Connect Data Source**。
 
-2. 在导航菜单中点击 **Data Sources**。
+    4. 在可用连接器列表中选择 **ClickHouse**。
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrain 数据源菜单" border />
+    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="显示 ClickHouse 选项的 Databrain 连接器选择界面" border />
 
-3. 点击 **Add a Data Source** 或 **Connect Data Source**。
+    5. 填写连接信息：
+       * **Destination Name**：为此连接输入一个便于识别的名称 (例如：&quot;Production ClickHouse&quot; 或 &quot;Analytics DB&quot;)
+       * **Host**：输入 ClickHouse 主机 URL (例如：`https://your-instance.region.aws.clickhouse.cloud`)
+       * **Port**：输入 `8443` (ClickHouse 默认的 HTTPS 端口)
+       * **Username**：输入 ClickHouse 用户名
+       * **Password**：输入 ClickHouse 密码
 
-4. 在可用连接器列表中选择 **ClickHouse**。
+    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Databrain ClickHouse 连接表单，显示配置字段" border />
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="显示 ClickHouse 选项的 Databrain 连接器选择界面" border />
+    6. 点击 **Test Connection**，验证 Databrain 是否可以连接到您的 ClickHouse 实例。
 
-5. 填写连接信息：
-   * **Destination Name**：为此连接输入一个便于识别的名称 (例如：&quot;Production ClickHouse&quot; 或 &quot;Analytics DB&quot;) 
-   * **Host**：输入 ClickHouse 主机 URL (例如：`https://your-instance.region.aws.clickhouse.cloud`) 
-   * **Port**：输入 `8443` (ClickHouse 默认的 HTTPS 端口) 
-   * **Username**：输入 ClickHouse 用户名
-   * **Password**：输入 ClickHouse 密码
+    7. 连接成功后，点击 **Save** 或 **Connect** 以添加数据源。
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Databrain ClickHouse 连接表单，显示配置字段" border />
+  <Step title="配置用户权限" id="4-configure-user-permissions">
+    确保您用于连接的 ClickHouse 用户具有所需权限：
 
-6. 点击 **Test Connection**，验证 Databrain 是否可以连接到 ClickHouse 实例。
+    ```sql
+    -- 授予读取 schema 信息的权限
+    GRANT SELECT ON information_schema.* TO your_databrain_user;
 
-7. 连接成功后，点击 **Save** 或 **Connect** 以添加数据源。
+    -- 授予对您的 database 和表的只读权限
+    GRANT SELECT ON your_database.* TO your_databrain_user;
+    ```
 
-<div id="4-configure-user-permissions">
-  ### 4. 配置用户权限
-</div>
-
-确保用于连接的 ClickHouse 用户具备所需权限：
-
-```sql
--- 授予读取 schema 信息的权限
-GRANT SELECT ON information_schema.* TO your_databrain_user;
-
--- 授予对数据库和表的读取权限
-GRANT SELECT ON your_database.* TO your_databrain_user;
-```
-
-将 `your_databrain_user` 和 `your_database` 替换为实际的用户名和数据库名。
+    将 `your_databrain_user` 和 `your_database` 替换为您的实际用户名和数据库名称。
+  </Step>
+</Steps>
 
 <div id="using-databrain-with-clickhouse">
   ## 将 Databrain 与 ClickHouse 配合使用
@@ -195,5 +189,5 @@ Databrain 在与 ClickHouse 配合使用时提供多项高级功能：
 
 * [Databrain 文档](https://docs.usedatabrain.com/)
 * [ClickHouse 集成指南](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
-* [创建仪表盘](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
-* [构建指标](https://docs.usedatabrain.com/guides/metrics/create-metrics)
+* [创建仪表盘](https://docs.usedatabrain.com/getting-started/core-concepts/dashboards)
+* [构建指标](https://docs.usedatabrain.com/getting-started/core-concepts/metrics)

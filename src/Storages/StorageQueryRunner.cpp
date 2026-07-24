@@ -557,7 +557,7 @@ private:
     void executeOnShard(UInt64 shard_num, const QueryRunnerJob & job, ContextMutablePtr job_context)
     {
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
-        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef(), /*force_connected=*/ true);
+        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef());
 
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)

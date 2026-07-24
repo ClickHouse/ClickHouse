@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Looker'
 slug: /integrations/looker
-keywords: ['ClickHouse', 'Looker', '连接', '集成', 'UI']
-description: 'Looker 是一个面向企业的 BI、数据应用和嵌入式分析平台，可帮助您实时探索并分享见解。'
+keywords: ['clickhouse', 'looker', '连接', '集成', '界面']
+description: 'Looker 是一个面向企业的 BI、数据应用和嵌入式分析平台，可帮助您实时探索并共享洞察。'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -19,44 +19,42 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 
 Looker 可通过官方 ClickHouse 数据源连接到 ClickHouse Cloud 或本地部署。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 准备连接信息
-</div>
+<Steps>
+  <Step title="收集您的连接详细信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="创建 ClickHouse 数据源" id="2-create-a-clickhouse-data-source">
+    前往 Admin -&gt; Database -&gt; Connections，然后点击右上角的 “Add Connection” 按钮。
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. 创建 ClickHouse 数据源
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="在 Looker 的数据库管理界面中添加新连接" border />
 
-前往 Admin -&gt; Database -&gt; Connections，然后点击右上角的 “Add Connection” 按钮。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="在 Looker 的数据库管理界面中添加新连接" border />
+    为数据源命名，并在 dialect 下拉菜单中选择 `ClickHouse`。然后在表单中输入您的凭据。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="在 Looker 连接表单中指定您的 ClickHouse 凭据" border />
 
-为数据源命名，并在 dialect 下拉菜单中选择 `ClickHouse`。然后在表单中输入您的凭据。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="在 Looker 连接表单中指定您的 ClickHouse 凭据" border />
+    如果您使用的是 ClickHouse Cloud，或者您的部署需要 SSL，请确保已在附加设置中启用 SSL。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="在 Looker 设置中为 ClickHouse 连接启用 SSL" border />
 
-如果您使用的是 ClickHouse Cloud，或者您的部署需要 SSL，请确保已在附加设置中启用 SSL。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="在 Looker 设置中为 ClickHouse 连接启用 SSL" border />
+    请先测试连接；完成后，再连接到新的 ClickHouse 数据源。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="测试并连接到 ClickHouse 数据源" border />
 
-请先测试连接；完成后，再连接到新的 ClickHouse 数据源。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="测试并连接到 ClickHouse 数据源" border />
-
-<br />
-
-现在，您应该已经可以将 ClickHouse 数据源关联到您的 Looker 项目。
+    现在，您应该已经可以将 ClickHouse 数据源关联到您的 Looker 项目。
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. 已知限制
+  ## 已知限制
 </div>
 
 1. 默认情况下，以下数据类型会被作为字符串处理：

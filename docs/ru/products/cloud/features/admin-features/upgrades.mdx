@@ -11,7 +11,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-С ClickHouse Cloud вам не нужно беспокоиться об установке исправлений и обновлениях. Мы регулярно выпускаем обновления, включающие исправления, новые возможности и улучшения производительности. Полный список нововведений в ClickHouse см. в нашем [changelog Cloud](/ru/resources/changelogs/cloud/2026).
+С ClickHouse Cloud вам не нужно беспокоиться об установке исправлений и обновлениях. Мы регулярно выпускаем обновления, включающие исправления, новые возможности и улучшения производительности.
+
+* Полный список нововведений в ClickHouse см. в нашем [changelog Cloud](/ru/resources/changelogs/cloud/2026)
+* Сведения о сроках выхода версий см. на странице [статуса релизов](/ru/resources/changelogs/cloud/release-status)
 
 <Note>
   Мы внедряем новый механизм обновления — подход, который называем &quot;make before break&quot; (или MBB). В рамках этого подхода перед удалением старых реплик в процессе обновления мы сначала добавляем обновленные. Благодаря этому обновления проходят более плавно и с меньшим влиянием на выполняющиеся рабочие нагрузки.
@@ -54,12 +57,12 @@ import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Канал быстрых релизов (ранние обновления)
+  ### Быстрый канал релизов (ранние обновления)
 </div>
 
-<ScalePlanFeatureBadge feature="Канал быстрых релизов" />
+<ScalePlanFeatureBadge feature="Быстрый канал релизов" />
 
-Помимо стандартного графика обновлений, мы предлагаем канал **быстрых релизов**, если вы хотите, чтобы ваши сервисы получали обновления раньше, чем это предусмотрено обычным графиком релизов.
+Помимо стандартного графика обновлений, мы предлагаем **быстрый канал релизов**, если вы хотите, чтобы ваши сервисы получали обновления раньше, чем это предусмотрено обычным графиком релизов.
 
 В частности, сервисы будут:
 
@@ -74,7 +77,7 @@ import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge
 
 <br />
 
-Этот канал **быстрых релизов** подходит для тестирования новых возможностей в некритичных средах. **Он не рекомендуется для production-рабочих нагрузок со строгими требованиями к доступности и надежности.**
+Этот **быстрый канал релизов** подходит для тестирования новых возможностей в некритичных средах. **Он не рекомендуется для production-рабочих нагрузок со строгими требованиями к доступности и надежности.**
 
 <div id="regular-release-channel">
   ### Обычный канал релизов
