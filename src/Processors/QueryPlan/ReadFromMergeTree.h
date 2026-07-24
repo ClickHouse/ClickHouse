@@ -264,6 +264,10 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// Direct reads from a text index (see `createReadTasksForTextIndex`). Non-empty tasks mean
+    /// the direct read has already been applied to this step.
+    const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }

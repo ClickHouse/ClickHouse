@@ -301,6 +301,14 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
+bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predicate) const
+{
+    return traverseTablesUntil([&predicate](const StoragePtr & table)
+    {
+        return table && predicate(table);
+    }) != nullptr;
+}
+
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
@@ -1744,6 +1752,19 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     forEachTable([&](const auto & table)
     {
         for (const auto & [name, size] : table->getColumnSizes())
+            column_sizes[name].add(size);
+    });
+
+    return column_sizes;
+}
+
+IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns) const
+{
+    ColumnSizeByName column_sizes;
+
+    forEachTable([&](const auto & table)
+    {
+        for (const auto & [name, size] : table->getColumnSizes(columns))
             column_sizes[name].add(size);
     });
 

@@ -97,6 +97,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -364,6 +365,15 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    /// Throws once from the background data-parts refresh of a read-only table to emulate a
+    /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
+    /// reschedules itself after such an error instead of stopping permanently.
+    extern const char merge_tree_refresh_parts_throw_once[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -1208,6 +1218,21 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
+}
+
+void MergeTreeData::checkMetadataProperties(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    ContextPtr local_context) const
+{
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        /*attach=*/false,
+        /*allow_empty_sorting_key=*/false,
+        allow_reverse_key,
+        allow_nullable_key,
+        local_context);
 }
 
 void MergeTreeData::setProperties(
@@ -2613,6 +2638,11 @@ void MergeTreeData::startStatisticsCache()
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 try
 {
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataParts");
+    });
+
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 
@@ -2709,6 +2739,10 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
+    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
+    /// reschedule that refreshStatistics performs in its own catch block.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
@@ -6413,6 +6447,41 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     }
 
     primary_index_size.add(part->getIndexSizeFromFile());
+}
+
+IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
+{
+    auto result = getColumnSizes();
+
+    /// Collect subcolumn names that are not already in the result.
+    Names subcolumn_names;
+    for (const auto & col_name : columns)
+    {
+        if (result.contains(col_name))
+            continue;
+
+        subcolumn_names.push_back(col_name);
+    }
+
+    if (subcolumn_names.empty())
+        return result;
+
+    /// For each requested column that is a subcolumn and not already in the result,
+    /// aggregate its size across all active parts using getSubcolumnSize.
+    /// This gives the correct on-disk size for subcolumns based on required substreams.
+    auto parts_lock = readLockParts();
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+    for (const auto & part : committed_parts_range)
+    {
+        for (const auto & col_name : subcolumn_names)
+        {
+            auto column = part->tryGetColumn(col_name);
+            if (column && column->isSubcolumn())
+                result[col_name].add(part->getSubcolumnSize(col_name));
+        }
+    }
+
+    return result;
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
