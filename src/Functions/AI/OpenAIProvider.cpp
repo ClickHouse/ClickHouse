@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
@@ -113,9 +114,9 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw AIProviderHTTPException(
-            status,
-            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;
@@ -196,9 +197,9 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw AIProviderHTTPException(
-            status,
-            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
+        throw Exception(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
     }
 
     Poco::JSON::Parser parser;
