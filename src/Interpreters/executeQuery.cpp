@@ -1374,17 +1374,19 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
 ///
 /// Scope — this defines the contract of `reattach_tables_before_query_execution`: tables are extracted
-/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, `BACKUP TABLE`/`RESTORE TABLE`
+/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, `BACKUP TABLE`
 /// (only explicit `TABLE` elements — see the `ASTBackupQuery` branch), and the `ASTQueryWithTableAndOutput`
 /// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...) — including the extra
 /// source/destination tables an `ALTER ... REPLACE/ATTACH/MOVE PARTITION` names in its `from_*`/`to_*` fields
 /// and the `AS` source of a `CREATE ... AS src` — see the `ASTQueryWithTableAndOutput` branch. Query classes that
 /// keep table references in other AST shapes — `SHOW COLUMNS`, `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE`,
-/// and the whole-database/whole-server `BACKUP`/`RESTORE DATABASE` and `BACKUP`/`RESTORE ALL` forms — are
-/// deliberately not covered: `RENAME` and `EXCHANGE` manipulate the tables' catalog registration themselves,
-/// the database/server-wide backup forms name no explicit table and expand into per-table work only during
-/// execution, and broadening the randomized `DETACH`/`ATTACH` to those queries would add churn to the test
-/// suite without exercising the data-integrity paths this testing hook targets.
+/// the whole-database/whole-server `BACKUP`/`RESTORE DATABASE` and `BACKUP`/`RESTORE ALL` forms, and all
+/// `RESTORE` forms including `RESTORE TABLE` — are deliberately not covered: `RENAME` and `EXCHANGE`
+/// manipulate the tables' catalog registration themselves, the database/server-wide backup forms name no
+/// explicit table and expand into per-table work only during execution, `RESTORE TABLE` can fail on the
+/// backup contents before ever touching its local destination table (see the `ASTBackupQuery` branch), and
+/// broadening the randomized `DETACH`/`ATTACH` to those queries would add churn to the test suite without
+/// exercising the data-integrity paths this testing hook targets.
 ///
 /// Only the `WITH name AS (subquery)` form (`ASTWithElement`) shadows a table identifier in FROM. A scalar
 /// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
@@ -1507,41 +1509,40 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     }
     else if (const auto * backup = ast->as<ASTBackupQuery>())
     {
-        /// Only the explicit `TABLE` elements are covered. `DATABASE` and `ALL` elements name no explicit
-        /// table here (`table_name`/`new_table_name` are empty) — the backup/restore executors expand them
-        /// into per-table work only later during execution (`BackupEntriesCollector::gatherDatabasesMetadata`,
-        /// `RestorerFromBackup::findDatabasesAndTablesInBackup`). Enumerating a whole database or the whole
-        /// server here just to `DETACH`/`ATTACH` every table would add churn far beyond what this testing hook
-        /// aims to exercise, and for `RESTORE DATABASE`/`RESTORE ALL` the destination tables usually do not
-        /// exist yet. So the whole-database and whole-server forms are deliberately out of scope, matching the
-        /// documented contract of `reattach_tables_before_query_execution`; `addTableIfNotEmpty` skips them
-        /// naturally because their name is empty.
+        /// Only the explicit `BACKUP TABLE` elements are covered. `DATABASE` and `ALL` elements name no
+        /// explicit table here (`table_name` is empty) — the backup executor expands them into per-table work
+        /// only later during execution (`BackupEntriesCollector::gatherDatabasesMetadata`). Enumerating a
+        /// whole database or the whole server here just to `DETACH`/`ATTACH` every table would add churn far
+        /// beyond what this testing hook aims to exercise. So the whole-database and whole-server forms are
+        /// deliberately out of scope, matching the documented contract of
+        /// `reattach_tables_before_query_execution`; `addTableIfNotEmpty` skips them naturally because their
+        /// name is empty.
+        ///
+        /// `RESTORE` is entirely out of scope, including the explicit `RESTORE TABLE old AS new` form whose
+        /// local destination table `new` may already exist. `RestorerFromBackup::run` first resolves the
+        /// source objects inside the backup (`findDatabasesAndTablesInBackup`) and only later reaches the
+        /// local destination (`createAndCheckTable`/`checkTable`), so a restore whose source entry is missing
+        /// from the backup fails without ever touching an existing destination table. Detaching and attaching
+        /// that destination here would give a failing query a side effect on a table it never touches,
+        /// breaking the side-effect-free invariant this hook keeps for failing queries, and proving that the
+        /// source entry exists would require opening the backup in this collector.
         ///
         /// For `BACKUP TABLE`, `database_name`/`table_name` is the local table being read.
-        /// For `RESTORE TABLE old AS new`, `database_name`/`table_name` is the object name inside the backup,
-        /// while the local table the query touches is the destination `new_database_name`/`new_table_name`.
-        /// (When the restore creates a new table, the destination does not exist yet and `addTableIfNotEmpty`
-        /// skips it, so this never detaches an unrelated existing table with the same in-backup name.)
-        for (const auto & element : backup->elements)
+        if (backup->kind == ASTBackupQuery::BACKUP)
         {
-            /// A `TEMPORARY TABLE` element names a session-local temporary table whose name is unqualified.
-            /// Resolving it through the persistent catalog would detach an unrelated persistent table of the
-            /// same name that the query never touches, so skip temporary-table elements.
-            if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
-                continue;
-            /// The access `RESTORE` requires on an existing destination depends on execution-time details
-            /// (`RestorerFromBackup` checks `CREATE_*`/`INSERT` or `SHOW_*` flags depending on the restored
-            /// object kind and mode), so require all table-level flags — over-requiring only skips
-            /// randomization. `BACKUP TABLE` checks `BACKUP` on the source table.
-            /// The restore destination is intentionally optional: `RESTORE TABLE old AS new` usually creates
-            /// `new`, so a miss is the normal case, not a sign the query is going to fail.
-            /// A `TABLE` element's unqualified name is completed with the current database by
-            /// `ASTBackupQuery::setCurrentDatabase` — never resolved against session temporary tables
-            /// (those use the `TEMPORARY TABLE` element type skipped above) — hence `ResolveOrdinary`.
-            if (backup->kind == ASTBackupQuery::RESTORE)
-                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel(), /* existence_required */ false);
-            else
+            for (const auto & element : backup->elements)
+            {
+                /// A `TEMPORARY TABLE` element names a session-local temporary table whose name is unqualified.
+                /// Resolving it through the persistent catalog would detach an unrelated persistent table of the
+                /// same name that the query never touches, so skip temporary-table elements.
+                if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
+                    continue;
+                /// `BACKUP TABLE` checks `BACKUP` on the source table.
+                /// A `TABLE` element's unqualified name is completed with the current database by
+                /// `ASTBackupQuery::setCurrentDatabase` — never resolved against session temporary tables
+                /// (those use the `TEMPORARY TABLE` element type skipped above) — hence `ResolveOrdinary`.
                 data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes, Context::ResolveOrdinary, AccessType::BACKUP);
+            }
         }
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
@@ -1644,8 +1645,8 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// `UNKNOWN_TABLE`) when its interpreter resolves the same name, so skip the hook for the whole query
     /// instead of first `DETACH`/`ATTACH`-ing the references that do exist (e.g. `src` in
     /// `SELECT * FROM src JOIN missing USING a` or `dst` in `CREATE OR REPLACE TABLE dst AS missing`).
-    /// Optional references — ones the query is allowed to create or ignore, such as the destination of
-    /// `RESTORE ... AS new` or the target of a plain `CREATE` — legitimately may not exist and do not
+    /// Optional references — ones the query is allowed to create or ignore, such as the target of a
+    /// plain `CREATE` — legitimately may not exist and do not
     /// disable the hook; the reattach loop below skips them individually. Like the access preflight, this
     /// is a best-effort, point-in-time check: a table dropped concurrently after it is not caught here,
     /// and the loop below re-resolves each table before detaching it.

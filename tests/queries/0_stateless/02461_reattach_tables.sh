@@ -71,23 +71,44 @@ check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reatt
 check_if_detached "EXISTS TABLE t_reattach_1" "t_reattach_1"
 check_if_detached "SHOW CREATE TABLE t_reattach_1" "t_reattach_1"
 
-# `BACKUP`/`RESTORE` cover only explicit `TABLE` elements. `BACKUP TABLE t` names the local table it reads,
-# so the reattach hook detaches it. `BACKUP DATABASE` (and `BACKUP`/`RESTORE ALL`, and the `RESTORE`
-# equivalents) name no explicit table and expand into per-table work only during execution, so they are
-# deliberately out of scope and must NOT detach any table. Use a unique per-run destination so parallel
-# runs and flaky-check reruns never collide on an existing backup path.
+# Only the explicit `BACKUP TABLE` elements are covered. `BACKUP TABLE t` names the local table it reads,
+# so the reattach hook detaches it. `BACKUP DATABASE` and `BACKUP ALL` name no explicit table and expand
+# into per-table work only during execution, so they are deliberately out of scope and must NOT detach any
+# table (`RESTORE` is entirely out of scope — see the `RESTORE` cases below). Use a unique per-run
+# destination so parallel runs and flaky-check reruns never collide on an existing backup path.
 BACKUP_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$RANDOM"
 check_if_detached "BACKUP TABLE t_reattach_1 TO Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
 check_if_not_detached "BACKUP DATABASE ${CLICKHOUSE_DATABASE} TO Disk('backups', '${BACKUP_SUFFIX}_db')" "t_reattach_1"
 
-# `RESTORE TABLE old AS new` writes the local DESTINATION table (`new`); the source object name `old` lives
-# only inside the backup. The collector therefore resolves the destination name for `RESTORE`, so a local
-# table whose name matches the in-backup SOURCE name is unrelated to the restore and must NOT be detached
-# (and the fresh destination does not exist yet, so nothing is detached there either). Restore the backup
-# taken just above under a new name and confirm the source-named local table `t_reattach_1` stays attached —
-# this locks down the `backup->kind == RESTORE` branch that must use `new_table_name`, not `table_name`.
+# `RESTORE` is entirely out of the hook's scope, including the explicit `RESTORE TABLE old AS new` form:
+# `RestorerFromBackup::run` first resolves the source objects inside the backup
+# (`findDatabasesAndTablesInBackup`) and only later touches the local destination, so a restore whose source
+# entry is missing from the backup fails without ever touching an existing destination table — detaching the
+# destination up front would give a failing query a `DETACH`/`ATTACH` side effect on a table it never
+# touches. Hence a restore detaches nothing: neither a local table whose name matches the in-backup SOURCE
+# name (`t_reattach_1` here), nor an existing destination table.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_restored"
 check_if_not_detached "RESTORE TABLE t_reattach_1 AS t_reattach_restored FROM Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_restored"
+
+# An existing (empty) destination of a restore that succeeds is not detached either.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_restored (a UInt64) ENGINE = MergeTree ORDER BY a"
+check_if_not_detached "RESTORE TABLE t_reattach_1 AS t_reattach_restored FROM Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_restored"
+
+# The focused regression for the failing-restore case: the destination exists, but the SOURCE is absent
+# from the backup, so the restore fails with BACKUP_ENTRY_NOT_FOUND in `findDatabasesAndTablesInBackup`
+# before ever touching the destination — which therefore must NOT be detached.
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t_reattach_restored"
+check_if_detached_impl "RESTORE TABLE t_reattach_missing_src AS t_reattach_restored FROM Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_restored"
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (restore of a source missing from the backup unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "BACKUP_ENTRY_NOT_FOUND"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_restored"; then
+    echo "FAIL (existing destination was detached for a restore that fails before touching it)"
+else
+    echo "OK"
+fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_restored"
 
 # A `... TEMPORARY TABLE t` statement targets a session-local temporary table, not the persistent table of
