@@ -1,8 +1,8 @@
 {
   "group": "Format Settings",
-  "root": "reference/settings/formats",
   "directory": "none",
   "pages": [
+    "reference/settings/formats",
     "reference/settings/formats/bool",
     "reference/settings/formats/date-time",
     "reference/settings/formats/format",
