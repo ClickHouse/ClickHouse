@@ -1,5 +1,5 @@
--- Multi-step PREWHERE must keep columns needed to evaluate the DEFAULT expression
--- of a column that is missing in the part. https://github.com/ClickHouse/ClickHouse/issues/111757
+-- Multi-step PREWHERE must keep columns needed to evaluate `DEFAULT`s of columns missing in the part.
+-- https://github.com/ClickHouse/ClickHouse/issues/111757
 
 DROP TABLE IF EXISTS t_multistep_prewhere_default;
 
