@@ -171,7 +171,7 @@ A value of `0` means unlimited.
 )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
-    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 64, R"(The number of threads to commit snapshot.)", 0) \
+    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 16, R"(The number of threads to commit snapshot.)", 0) \
     DECLARE(UInt64, max_snapshot_commit_thread_pool_free_size, 0, R"(If the number of idle threads in the snapshot commit thread pool exceeds `max_snapshot_commit_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
@@ -1404,6 +1404,7 @@ See [Controlling behavior on server CPU overload](/operations/settings/server-ov
     DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
+    DECLARE(UInt64, jemalloc_merge_tree_arenas, 1, R"(Number of dedicated jemalloc arenas for long-lived MergeTree per-part and per-table metadata. `0` disables the dedicated arena (metadata uses the default per-CPU arenas). `1` uses a single shared arena. `N > 1` creates a pool of `N` arenas and routes allocations per CPU; on many-core machines this avoids serializing metadata allocation on a single arena's locks. Capped at the number of CPUs the process may run on (its affinity mask), so a large value (or the core count) yields one arena per allowed CPU. Applied at startup.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_on_memory_exceeded_interval, 0, R"(If non-zero, sets the minimum interval in seconds between flushing jemalloc profiles on total memory exceeded errors. For example, 5 means at most one profile flush every 5 seconds. Takes priority over `jemalloc_flush_profile_on_memory_exceeded`.)", 0) \

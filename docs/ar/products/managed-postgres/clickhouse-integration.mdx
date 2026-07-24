@@ -25,9 +25,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 انقر على **Replicate data in ClickHouse** لبدء إعداد ClickPipe الخاص بك.
 
 <Steps>
-  <Step>
-    ## تكوين خدمة النسخ المتماثل
-
+  <Step title="تكوين خدمة النسخ المتماثل" id="configure-replication-service">
     املأ إعدادات النسخ المتماثل:
 
     * **اسم التكامل**: اسم لهذا الـ ClickPipe
@@ -43,9 +41,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     انقر **التالي** للمتابعة.
   </Step>
 
-  <Step>
-    ## تكوين إعدادات النسخ المتماثل
-
+  <Step title="تكوين إعدادات النسخ المتماثل" id="replication-settings">
     اضبط طريقة نسخ البيانات بدقة:
 
     * **فاصل المزامنة (بالثواني)**: عدد مرات سحب التغييرات من Postgres (الافتراضي: 60)
@@ -59,14 +55,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     انقر **التالي** للمتابعة.
   </Step>
 
-  <Step>
-    ## اختر الجداول المطلوب نسخها متماثلًا
+  <Step title="اختر الجداول المطلوب نسخها متماثلًا" id="select-tables">
+    اختر قاعدة البيانات الهدف وحدد الجداول المطلوب نسخها متماثلًا:
 
-    اختر قاعدة بيانات الوجهة وحدد الجداول المطلوب نسخها متماثلًا:
-
-    * **قاعدة بيانات الوجهة**: اختر قاعدة بيانات ClickHouse حالية أو أنشئ قاعدة بيانات جديدة
+    * **قاعدة البيانات الهدف**: اختر قاعدة بيانات ClickHouse حالية أو أنشئ قاعدة بيانات جديدة
     * **إضافة اسم schema كبادئة لأسماء جداول الوجهة الافتراضية**: يضيف schema الخاصة بـ Postgres كبادئة لتجنب تعارضات التسمية
-    * **الاحتفاظ بقيم NULL من المصدر**: يُبقي قيم NULL بدلًا من تحويلها إلى القيم الافتراضية
+    * **الاحتفاظ بقيم NULL من المصدر**: يُبقي قيم NULL بدلًا من تحويلها إلى القيم الافتراضية للنوع. ينطبق هذا الإعداد على جميع الجداول في الـ pipe ولا يمكن تغييره بعد إنشاء الـ pipe.
     * **إزالة الصفوف المحذوفة أثناء عمليات الدمج**: بالنسبة إلى جداول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree)، يزيل الصفوف المحذوفة فعليًا أثناء عمليات الدمج في الخلفية
 
     وسّع المخططات وحدد الجداول الفردية المطلوب نسخها متماثلًا. يمكنك أيضًا تخصيص أسماء جداول الوجهة وإعدادات الأعمدة.
@@ -76,9 +70,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     انقر **Replicate data to ClickHouse** لبدء النسخ المتماثل.
   </Step>
 
-  <Step>
-    ## راقب ClickPipe الخاص بك
-
+  <Step title="راقب ClickPipe الخاص بك" id="monitor-clickpipe">
     بمجرد بدء ClickPipe، ستراه مُدرجًا في القائمة نفسها. قد تستغرق اللقطة الأولية لجميع البيانات بعض الوقت، حسب حجم جداولك.
 
     <Image img="/images/managed-postgres/integration-running.webp" alt="قائمة تكامل ClickHouse تعرض ClickPipe قيد التشغيل مع خدمة الوجهة الخاصة به وحالته" size="md" border />

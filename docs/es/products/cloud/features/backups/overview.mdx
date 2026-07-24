@@ -23,9 +23,9 @@ Esto minimiza el tiempo de inactividad y evita la pérdida permanente de datos c
 
 Las copias de seguridad de ClickHouse Cloud combinan copias de seguridad &quot;completas&quot; e &quot;incrementales&quot; que forman una cadena de copias de seguridad. La cadena comienza con una copia de seguridad completa y, a continuación, se realizan copias de seguridad incrementales durante los siguientes períodos programados para crear una secuencia de copias de seguridad. Cuando una cadena de copias de seguridad alcanza cierta longitud, se inicia una nueva cadena. Toda esta cadena de copias de seguridad puede utilizarse para restaurar datos en un nuevo servicio si es necesario. Cuando todas las copias de seguridad incluidas en una cadena concreta superan el período de retención establecido para el servicio (más información sobre la retención más adelante), la cadena se descarta.
 
-En la captura de pantalla de abajo, los cuadrados con línea continua representan copias de seguridad completas y los cuadrados con línea discontinua representan copias de seguridad incrementales. El rectángulo de línea continua que rodea los cuadrados indica el período de retención y las copias de seguridad visibles para el usuario final, que pueden usarse para restaurar una copia de seguridad. En el escenario de abajo, las copias de seguridad se realizan cada 24 horas y se conservan durante 2 días.
+En la captura de pantalla de abajo, los cuadrados con línea continua representan copias de seguridad completas y los cuadrados con línea discontinua representan copias de seguridad incrementales que forman parte de la cadena.
 
-El día 1, se realiza una copia de seguridad completa para iniciar la cadena de copias de seguridad. El día 2, se realiza una copia de seguridad incremental, y tanto la copia de seguridad completa como la incremental están disponibles para restaurar. Para el día 7, tenemos una copia de seguridad completa y seis copias de seguridad incrementales en la cadena, con las dos copias de seguridad incrementales más recientes visibles para el usuario. El día 8, realizamos una nueva copia de seguridad completa y, el día 9, una vez que tenemos dos copias de seguridad en la nueva cadena, la cadena anterior se descarta.
+El día 1, se realiza una copia de seguridad completa para iniciar la cadena de copias de seguridad. El día 2, se realiza una copia de seguridad incremental, y tanto la copia de seguridad completa como la incremental están disponibles para restaurar. Para el día 7, tenemos una copia de seguridad completa y seis copias de seguridad incrementales en la cadena, todas visibles y disponibles para restaurar. El día 8, realizamos una nueva copia de seguridad completa y, el día 9, una vez que tenemos dos copias de seguridad en la nueva cadena, la cadena anterior se descarta.
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Ejemplo de cadena de copias de seguridad en ClickHouse Cloud" />
 
@@ -89,18 +89,14 @@ Consulta [&quot;Exportar copias de seguridad a tu propia cuenta de Cloud&quot;](
 Para exportar copias de seguridad a su propia cuenta en la nube, tiene dos opciones:
 
 <Steps>
-  <Step>
-    ##### A través de la interfaz de usuario de Cloud Console
-
+  <Step title="A través de la UI de Cloud Console" id="via-ui">
     Las copias de seguridad externas pueden [configurarse en la UI](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
-    De forma predeterminada, las copias de seguridad se realizarán a diario (como se especifica en la [política de copias de seguridad predeterminada](/es/products/cloud/features/backups/overview#default-backup-policy)).
+    De forma predeterminada, las copias de seguridad se realizarán a diario (como se especifica en la [política predeterminada de copias de seguridad](/es/products/cloud/features/backups/overview#default-backup-policy)).
     Sin embargo, también admitimos copias de seguridad [configurables](/es/products/cloud/guides/backups/configurable-backups) en su propia cuenta en la nube, lo que permite establecer una programación personalizada.
     Es importante tener en cuenta que todas las copias de seguridad en su bucket son copias de seguridad completas, sin relación con otras copias de seguridad anteriores o futuras.
   </Step>
 
-  <Step>
-    ##### Mediante comandos SQL
-
+  <Step title="Mediante comandos SQL" id="using-commands">
     Puede usar [comandos SQL](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands) para exportar copias de seguridad a su bucket.
   </Step>
 </Steps>

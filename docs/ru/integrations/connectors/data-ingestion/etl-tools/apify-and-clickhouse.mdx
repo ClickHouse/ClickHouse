@@ -35,15 +35,11 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 </div>
 
 <Steps>
-  <Step>
-    ### Подготовьте сведения о подключении к ClickHouse
-
+  <Step title="Подготовьте сведения о подключении к ClickHouse" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ### Необходимые условия для Apify
-
+  <Step title="Необходимые условия для Apify" id="2-apify-prerequisites">
     Также вам понадобятся:
 
     * [Учетная запись Apify](https://console.apify.com/sign-up) (доступен бесплатный уровень).
@@ -51,9 +47,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
     * Локально установленный Node.js 18+ (для примеров на JavaScript).
   </Step>
 
-  <Step>
-    ### Установите зависимости
-
+  <Step title="Установите зависимости" id="3-install-dependencies">
     Установите JavaScript-клиент Apify и JavaScript-клиент ClickHouse:
 
     ```bash
@@ -65,9 +59,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ### Создайте целевую таблицу в ClickHouse
-
+  <Step title="Создайте целевую таблицу в ClickHouse" id="4-create-a-target-table">
     Создайте таблицу для хранения собранных данных. Схема зависит от используемого Actor. В этом примере для Actor, собирающего данные о товарах, используется [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree):
 
     ```sql
@@ -84,9 +76,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
     ```
   </Step>
 
-  <Step>
-    ### Получите dataset Apify и загрузите его в ClickHouse
-
+  <Step title="Получите датасет Apify и загрузите его в ClickHouse" id="5-fetch-and-load">
     Следующий скрипт получает результаты запуска Actor в Apify и вставляет их в ClickHouse:
 
     ```javascript
@@ -120,13 +110,11 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
     ```
 
     <Tip>
-      Для больших dataset получайте результаты постранично с помощью параметров `limit` и `offset` конечной точки [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items). Также можно передать `clean=true`, чтобы получать только непустые дедуплицированные элементы.
+      Для больших датасетов получайте результаты постранично с помощью параметров `limit` и `offset` конечной точки [Список элементов датасета](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items). Также можно передать `clean=true`, чтобы получать только непустые дедуплицированные элементы.
     </Tip>
   </Step>
 
-  <Step>
-    ### Автоматизируйте процесс с помощью вебхуков
-
+  <Step title="Автоматизируйте процесс с помощью вебхуков" id="6-automate-with-webhooks">
     Вместо ручного запуска скрипта автоматизируйте конвейер, чтобы данные загружались в ClickHouse каждый раз, когда Actor завершает работу:
 
     1. В [консоли Apify](https://console.apify.com/) перейдите к нужному Actor и откройте вкладку **Integrations**.
@@ -163,7 +151,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
   ### Производительность
 </div>
 
-Для высокопроизводительных вставок из JavaScript-клиента следуйте рекомендациям в разделе [Советы по оптимизации производительности](/ru/integrations/language-clients/js#tips-for-performance-optimizations). Собирайте строки в более крупные батчи для вставки вместо того, чтобы вставлять их по одной, и рассмотрите [асинхронные вставки](/ru/concepts/features/operations/insert/asyncinserts), если батчинг на стороне клиента непрактичен.
+Для высокопроизводительных вставок из JavaScript-клиента следуйте рекомендациям в разделе [Советы по оптимизации производительности](/ru/integrations/language-clients/js/index#tips-for-performance-optimizations). Собирайте строки в более крупные батчи для вставки вместо того, чтобы вставлять их по одной, и рассмотрите [асинхронные вставки](/ru/concepts/features/operations/insert/asyncinserts), если батчинг на стороне клиента непрактичен.
 
 <div id="security">
   ### Безопасность
@@ -181,4 +169,4 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 * [Клиент Python для Apify](https://docs.apify.com/api/client/python)
 * [Apify Store (готовые Actors)](https://apify.com/store)
 * [Обзор интеграций Apify](https://docs.apify.com/platform/integrations)
-* [JavaScript-клиент ClickHouse](/ru/integrations/language-clients/js)
+* [JavaScript-клиент ClickHouse](/ru/integrations/language-clients/js/index)
