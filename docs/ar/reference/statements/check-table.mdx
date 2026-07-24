@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+للتحقق من حالة قاعدة بيانات كاملة بدلًا من سلامة الجداول الفردية، استخدم استعلام [`CHECK DATABASE`](/ar/reference/statements/check-database). وهو مخصّص أساسًا لقواعد البيانات التي تستخدم المحرك [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، حيث يتحقق من إمكانية الوصول إلى الكتالوج الخارجي.
+
 <div id="if-the-data-is-corrupted">
   ## إذا كانت البيانات تالفة
 </div>
