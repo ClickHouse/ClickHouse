@@ -2,17 +2,13 @@
 description: 'Документация по функциям обработки естественного языка (NLP)'
 sidebarTitle: 'NLP'
 slug: /sql-reference/functions/nlp-functions
-title: 'Функции обработки естественного языка (NLP)'
+title: 'Функции для обработки естественного языка (NLP)'
 doc_type: 'reference'
 keywords: ['NLP', 'обработка естественного языка']
 ---
 
 import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<div id="natural-language-processing-nlp-functions">
-  # Функции для обработки естественного языка (NLP)
-</div>
 
 <ExperimentalBadge />
 
@@ -287,6 +283,7 @@ wolf
 Передача символов в верхнем регистре приводит к неопределённым результатам.
 Для скалярных входных данных (включая FixedString) возвращает String, а для входных массивов — Array(String).
 Поддерживаются варианты Nullable и LowCardinality для типов String и FixedString.
+Список поддерживаемых идентификаторов языков доступен в [system.stemmers](/ru/reference/system-tables/stemmers).
 
 **Синтаксис**
 
@@ -297,7 +294,7 @@ stem(word, language)
 **Аргументы**
 
 * `word` — Одно слово в нижнем регистре (или массив слов) для стемминга. Должно быть в нижнем регистре — символы в верхнем регистре приводят к неопределённому результату. Принимает String, FixedString, Array(String), Array(FixedString), Array(Nullable(String)) или Array(Nullable(FixedString)). [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array)
-* `language` — Язык, для которого будут применяться правила стемминга. Используйте двухбуквенный код ISO 639-1 (например, &#39;en&#39;, &#39;de&#39;, &#39;fr&#39;), см. https://en.wikipedia.org/wiki/List&#95;of&#95;ISO&#95;639&#95;language&#95;codes. [`String`](/ru/reference/data-types/string)
+* `language` — Язык, для которого будут применяться правила стемминга. Канонические идентификаторы перечислены в [system.stemmers](/ru/reference/system-tables/stemmers) (например, &#39;english&#39;, &#39;german&#39;, &#39;porter&#39;). Snowball также принимает 2- или 3-буквенные коды ISO 639 (например, &#39;en&#39;, &#39;eng&#39;) в качестве псевдонимов там, где они определены, но их поддержка зависит от языка — для переносимости предпочтительнее использовать имена из `system.stemmers`. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 

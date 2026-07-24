@@ -46,6 +46,33 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 SELECT name, status FROM system.dictionaries;
 ```
 
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
+
+딕셔너리 상태가 `LOADED`인 경우, 메모리를 해제하기 위해 딕셔너리 `dictionary_name`의 로드를 해제합니다.
+필요한 경우 딕셔너리는 다시 지연 로드됩니다.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+딕셔너리 상태는 `system.dictionaries` 테이블을 조회하여 확인할 수 있습니다.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+`SYSTEM UNLOAD DICTIONARIES` 쿼리는 `LOADED` status를 가진 모든 딕셔너리, 즉 이전에 성공적으로 로드된 딕셔너리의 로드를 해제합니다([`system.dictionaries`](/ko/reference/system-tables/dictionaries)의 `status` 컬럼 참고).
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 <div id="reload-models">
   ## SYSTEM RELOAD MODELS
 </div>
@@ -112,6 +139,13 @@ ClickHouse의 내부 DNS 캐시를 비웁니다. 경우에 따라(이전 ClickHo
 
 마크 캐시를 비웁니다.
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+메모리에 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 프라이머리 키를 보관하는 프라이머리 인덱스 캐시를 비웁니다.
+크기는 서버 수준 설정인 [`primary_index_cache_size`](/ko/reference/settings/server-settings/settings#primary_index_cache_size)로 지정합니다.
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ Iceberg 메타데이터 캐시를 삭제합니다.
 
 Parquet 메타데이터 캐시를 비웁니다.
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+구문 분석된 Paimon 메타데이터 파일(manifest 목록 및 매니페스트)에 대한 인메모리 캐시를 지웁니다.
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+함수 [`pointInPolygon`](/ko/reference/functions/regular-functions/geo/coordinates#pointinpolygon)에서 사용하는 전처리된 상수 다각형의 캐시를 지웁니다. 구성된 크기 제한(`point_in_polygon_cache_size` server setting)은 변경되지 않으므로, 이후에도 캐시는 계속 새 항목을 저장합니다. 캐시를 비활성화하려면 대신 `point_in_polygon_cache_size`를 `0`으로 설정하십시오.
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-텍스트 인덱스의 헤더, 딕셔너리 및 포스팅 캐시를 지웁니다.
+텍스트 인덱스의 토큰, 헤더 및 포스팅 캐시를 지웁니다.
 
 이 캐시들 중 하나만 개별적으로 삭제하려면 다음을 실행할 수 있습니다.
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, 또는
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, 또는
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+보조(데이터 스키핑) 인덱스용 마크 캐시를 비웁니다.
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+보조(데이터 스키핑) 인덱스의 비압축 블록 캐시를 지웁니다.
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+메모리 매핑 파일의 캐시를 지웁니다.
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+사용자 공간 페이지 캐시, 즉 기반 저장소에서 읽은 데이터를 저장하는 ClickHouse 자체의 인메모리 캐시를 비웁니다.
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+vector similarity index cache를 비웁니다.
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+아웃바운드 연결에 사용되는 HTTP 연결 풀 캐시를 지웁니다.
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+S3 클라이언트 캐시를 지웁니다.
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+테이블의 마크를 [마크 캐시](#drop-mark-cache)에 로드합니다. 보조 인덱스 마크도 [인덱스 마크 캐시](#drop-index-mark-cache)에 함께 로드합니다.
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+`MergeTree` 테이블의 프라이머리 인덱스를 [프라이머리 인덱스 캐시](#drop-primary-index-cache)에 적재합니다.
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+지정한 디스크의 메타데이터 캐시를 지웁니다.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+ClickHouse의 파일 시스템 캐시에 대해 메모리에 있는 상태를 디스크에 실제로 존재하는 캐시 파일과 동기화하고, 캐시된 각 파일 세그먼트의 `cache_name`, `path`, 다운로드된 `size`를 반환합니다. 필요에 따라 캐시 이름을 지정하면 작업이 단일 캐시로 제한됩니다.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  `SYSTEM CLEAR|DROP DISTRIBUTED CACHE`는 ClickHouse Cloud에서만 사용할 수 있습니다.
+</Note>
+
+Distributed Cache를 삭제합니다. Distributed Cache 서버에 대한 캐시된 연결만 삭제하려면 `CONNECTIONS`를 사용하고, 단일 서버만 대상으로 하려면 서버 식별자를 지정하십시오.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -196,6 +338,12 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 쿼리 조건 캐시를 삭제합니다.
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+암호화 headers 캐시를 지웁니다. 이 캐시는 암호화된 파일 앞부분에서 읽은 암호화 headers를 저장하며, 실험적 `use_reader_executor` 읽기 경로에서 이를 다시 읽지 않도록 사용됩니다. 크기는 `encryption_header_cache_size` server setting으로 설정됩니다.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP QUERY CACHE

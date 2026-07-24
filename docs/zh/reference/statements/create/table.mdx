@@ -449,6 +449,14 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 较高的压缩级别适用于非对称场景，例如只压缩一次、反复解压。级别越高，压缩效果越好，但 CPU 使用率也越高。
 
+<div id="zxc">
+  #### ZXC
+</div>
+
+`ZXC[(level)]` — 非对称的 [`zxc` 压缩算法](https://github.com/hellobertrand/zxc)，支持配置 `level`。可选级别：[1, 7]。默认级别：3。
+
+`ZXC` 用较慢的压缩换取极快的解压缩，其压缩率介于 `LZ4` 和 `ZSTD` 之间。它非常适合“一次压缩、多次解压”的模式，并且在现代 ARM 核心上可实现最快的解压速度。更高的级别意味着更好的压缩效果和更慢的压缩速度，而解压缩仍然保持很快。
+
 <div id="zstd_qat">
   #### 已废弃：ZSTD_QAT
 </div>
@@ -497,10 +505,16 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 <ExperimentalBadge />
 
-`ALP()` — 一种基于十进制标度的浮点数据自适应无损压缩方法。ALP 会尝试将每个值用十进制幂表示为精确的缩放整数，然后使用 Frame-of-Reference 和位打包压缩得到的整数。无法被精确表示的值会作为原始例外值存储。它最适用于源自十进制的数值 (例如测量值、货币金额) 。支持 `Float32` 和 `Float64`。详情参见 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)。
+`ALP(variant)` — 用于浮点数据的自适应无损压缩。支持 `Float32` 和 `Float64`。详情参见 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)。
+
+该编解码器接受一个可选的变体参数：
+
+* `ALP()` 或 `ALP(AUTO)` (默认) — 使用 STD，并根据估算的压缩后大小决定是否回退到 RD。
+* `ALP(STD)` — 标准 ALP 变体。使用十进制幂将每个值表示为精确的带标度整数，然后使用 Frame-of-Reference 和位打包压缩生成的整数。无法表示的值会原样作为异常值存储。最适合源自 Decimal 的数值 (例如测量值、价格) 。
+* `ALP(RD)` — Real Doubles 变体。重新解释每个值的位模式，并将其拆分为高位部分 (符号位 + 指数 + 高位尾数位) 和低位部分。高位部分使用字典编码 (最多 8 个条目) ，低位部分使用位打包。当许多值具有相同的高位时，效果最佳。
 
 <Note>
-  此编解码器处于 Experimental 阶段，使用前需要设置 `SET allow_experimental_codecs = 1`。
+  此编解码器为 Experimental 功能，使用时需要设置 `SET allow_experimental_codecs = 1`。
 </Note>
 
 <div id="fpc">
@@ -508,6 +522,18 @@ ClickHouse 支持通用编解码器和专用编解码器。
 </div>
 
 `FPC(level, float_size)` - 使用两种预测器中效果更好的一种，反复预测序列中的下一个浮点值，然后将实际值与预测值进行 XOR，并对结果执行前导零压缩。与 Gorilla 类似，在存储一系列变化缓慢的浮点值时，这种方式效率很高。对于 64 位值 (double) ，FPC 比 Gorilla 更快；对于 32 位值，则要视具体情况而定。可选的 `level` 值为：1-28，默认值为 12。可选的 `float_size` 值为：4、8；如果类型为 Float，则默认值为 `sizeof(type)`。其他所有情况下，默认值均为 4。有关该算法的详细说明，请参阅 [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf)。
+
+<div id="sz3">
+  #### SZ3
+</div>
+
+<ExperimentalBadge />
+
+`SZ3` 或 `SZ3(algorithm, error_bound_mode, error_bound)` - 一种有损但有误差界限的编解码器 ([SZ3 Lossy Compressor](https://szcompressor.org/)) ，适用于类型为 `Float32`、`Float64`、`Array(Float32)` 或 `Array(Float64)` 的列。对于数组列，当所有数组长度都相同时，压缩效果最佳 (此时会作为定宽向量进行压缩) ；不同长度的数组也受支持，并会压缩为扁平的值序列。该编解码器不适用于 `Map` 列，因为其中的键会因有损压缩而损坏。`algorithm` 支持的值包括 `ALGO_LORENZO_REG`、`ALGO_INTERP_LORENZO` 和 `ALGO_INTERP`。`error_bound_mode` 支持的值包括 `ABS`、`REL`、`PSNR` 和 `ABS_AND_REL`。参数 `error_bound` 表示最大误差，类型为 `Float64`。
+
+<Note>
+  此编解码器为 Experimental，使用时需要先执行 `SET allow_experimental_codecs = 1`。
+</Note>
 
 <div id="t64">
   #### T64
