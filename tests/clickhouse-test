@@ -5532,12 +5532,18 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
 
 
 def list_all_tests(args):
-    """Write the tests that would be selected to `args.list_tests`, then return.
+    """Write the candidate tests to `args.list_tests`, then return.
 
-    Builds each suite exactly as a real run does (so the same tag / --no-long /
-    --no-parallel / --no-sequential / --test-list-file filtering applies) but
-    runs no test and needs no server. Writes unique test identities (see
-    `test_identity`), one per line, to the output file - the same format that
+    This is the *pre-skip* set: it applies the selection done while building a
+    suite - suite membership, `--no-parallel`/`--no-sequential`, and a
+    `--test-list-file` allowlist - but NOT the per-test runtime skips from
+    `TestCase.should_skip_test` (build-flag/tag skips like `no-asan` or
+    `no-azure-blob-storage`, `--no-long`, `--disabled`, the skip lists, cloud
+    filters, ...). Those depend on `args.build_flags`, which needs a running
+    server; listing deliberately needs none. A test that a lane would skip is
+    still listed here and is simply reported SKIPPED when its batch runs, so the
+    caller gets a superset it can safely distribute. Writes unique test
+    identities (see `test_identity`), one per line - the same format that
     `--test-list-file` reads back, so a caller can list, split, and feed a
     subset straight back in.
     """
@@ -6449,12 +6455,15 @@ def parse_args():
         type=str,
         default=None,
         metavar="FILE",
-        help="Write the tests that would be selected (respecting all other "
-        "selection options: tags, --no-long, --no-parallel/--no-sequential, "
-        "--test-list-file, etc.) to FILE, one name per line, and exit without "
-        "running anything or connecting to a server. The output format matches "
-        "what --test-list-file reads back. Lets a caller learn the exact test "
-        "universe in order to distribute it across jobs.",
+        help="Write the candidate tests to FILE, one name per line, and exit "
+        "without running anything or connecting to a server. This is the "
+        "pre-skip set: it honors suite selection, --no-parallel/--no-sequential "
+        "and --test-list-file, but not the per-test runtime skips (build-flag/tag "
+        "skips, --no-long, skip lists, cloud filters), which need a running "
+        "server - a lane-skipped test is still listed and simply reported "
+        "SKIPPED when run. The output format matches what --test-list-file reads "
+        "back. Lets a caller learn the test universe in order to distribute it "
+        "across jobs.",
     )
 
     parser.add_argument(
