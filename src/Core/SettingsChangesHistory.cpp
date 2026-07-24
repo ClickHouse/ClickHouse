@@ -41,6 +41,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
+            {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
+            {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
+            {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
+            {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the ReaderExecutor read buffer - consumed bytes kept in memory for cheap backward seeks."},
+            {"reader_executor_use_fibers", false, false, "New experimental ReaderExecutor setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},
+            {"reader_executor_max_tail_for_drain", 1048576, 524288, "Lowered the drain bound: draining more than 512 KiB to complete a dropped long connection costs more than a reopen."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
@@ -59,11 +66,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
-            {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
-            {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
-            {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
-            {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
-            {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the ReaderExecutor read buffer - consumed bytes kept in memory for cheap backward seeks."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"parallel_replicas_plan_based", false, false, "New setting"},
             {"use_paimon_metadata_files_cache", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."},
@@ -101,8 +103,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_use_quantized_codes", false, false, "New setting to opt into the two-stage approximate vector-search optimization over a Quantize(...) column codec; queries stay exact by default."},
             {"reader_executor_use_long_connections", false, false, "New experimental ReaderExecutor setting (off by default): reuse a held source connection across sequential windows."},
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
-            {"reader_executor_max_tail_for_drain", 524288, 524288, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},
-            {"reader_executor_use_fibers", false, false, "New experimental ReaderExecutor setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},
+            {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},
             {"precise_float_parsing", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
@@ -1325,12 +1326,15 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"merge_reader_executor_window_size", 1048576, 1048576, "New setting. Read window size for merge/mutation reads through the experimental ReaderExecutor."},
             {"merge_reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New setting. Plan window size for merge/mutation reads through the experimental ReaderExecutor."},
             {"merge_reader_executor_fill_ahead_lead", 2097152, 2097152, "New setting. Fill-ahead lead for merge/mutation reads through the experimental ReaderExecutor."},
             {"merge_reader_executor_hold_consumed", 0, 0, "New setting. Consumed-bytes retention for merge/mutation reads through the experimental ReaderExecutor."},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, true, "Enable by default"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
