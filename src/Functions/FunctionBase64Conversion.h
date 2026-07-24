@@ -117,8 +117,6 @@ struct Base64EncodeTraits
 template<Base64Variant variant>
 struct Base64DecodeTraits
 {
-    static constexpr bool has_size_optimization = false;
-
     template<typename Col>
     static size_t getBufferSize(Col const& src_column)
     {
@@ -129,7 +127,7 @@ struct Base64DecodeTraits
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
     {
-        int rc = 0;
+        int rc;
         size_t outlen = 0;
         if constexpr (variant == Base64Variant::URL)
         {

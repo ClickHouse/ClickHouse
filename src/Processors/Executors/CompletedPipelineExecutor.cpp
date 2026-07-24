@@ -7,7 +7,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 
 namespace DB
 {
@@ -38,7 +37,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR);
+        ThreadGroupSwitcher switcher(thread_group, "QueryCompPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }

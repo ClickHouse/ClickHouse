@@ -3,10 +3,9 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
 
@@ -38,9 +37,7 @@ void deleteFileFromS3(
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
         ProfileEvents::increment(*profile_event);
 
-    Stopwatch watch;
     auto outcome = s3_client->DeleteObject(request);
-    auto elapsed = watch.elapsedMicroseconds();
 
     auto log = getLogger("deleteFileFromS3");
 
@@ -49,9 +46,8 @@ void deleteFileFromS3(
         LOG_TRACE(log, "Writing Delete operation for blob {}", key);
         blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                    bucket, key,
-                                   local_path_for_blob_storage_log, file_size_for_blob_storage_log, elapsed,
-                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+                                   local_path_for_blob_storage_log, file_size_for_blob_storage_log,
+                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
     }
     else
     {
@@ -86,7 +82,7 @@ void deleteFilesFromS3(
     size_t batch_size,
     BlobStorageLogWriterPtr blob_storage_log,
     const Strings & local_paths_for_blob_storage_log,
-    const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
+    const std::vector<size_t> & file_sizes_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
@@ -117,7 +113,7 @@ void deleteFilesFromS3(
 
         while (current_position < keys.size())
         {
-            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
             String comma_separated_keys;
             size_t first_position = current_position;
             for (; current_position < keys.size() && current_chunk.size() < batch_size; ++current_position)
@@ -143,12 +139,11 @@ void deleteFilesFromS3(
             if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
                 ProfileEvents::increment(*profile_event);
 
-            Stopwatch watch;
             auto outcome = s3_client->DeleteObjects(request);
-            auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)
             {
+                const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
                 auto time_now = std::chrono::system_clock::now();
                 LOG_TRACE(log, "Writing Delete operation for blobs [{}]", comma_separated_keys);
                 for (size_t i = first_position; i < current_position; ++i)
@@ -156,14 +151,10 @@ void deleteFilesFromS3(
                     const String & local_path_for_blob_storage_log = (i < local_paths_for_blob_storage_log.size()) ? local_paths_for_blob_storage_log[i] : empty_string;
                     size_t file_size_for_blob_storage_log = (i < file_sizes_for_blob_storage_log.size()) ? file_sizes_for_blob_storage_log[i] : 0;
 
-                    /// For the elapsed time, record the average per file.
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                                bucket, keys[i],
                                                local_path_for_blob_storage_log, file_size_for_blob_storage_log,
-                                               elapsed / (current_position - first_position),
-                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage(),
-                                               time_now);
+                                               outcome_error, time_now);
                 }
             }
             else
@@ -188,7 +179,7 @@ void deleteFilesFromS3(
                 {
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
-                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys{keys.begin(), keys.end()};
+                    std::unordered_set<std::string_view> removed_keys{keys.begin(), keys.end()};
                     String not_found_keys;
                     std::exception_ptr other_error;
 

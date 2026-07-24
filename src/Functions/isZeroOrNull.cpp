@@ -21,7 +21,7 @@ namespace
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
 /// "WHERE isZeroOrNull(expr)" will return exactly the same rows that "WHERE expr" will filter out.
-class FunctionIsZeroOrNull final : public IFunction
+class FunctionIsZeroOrNull : public IFunction
 {
 public:
     static constexpr auto name = "isZeroOrNull";
@@ -161,7 +161,7 @@ SELECT x FROM t_null WHERE isZeroOrNull(y);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsZeroOrNull>(documentation);
 }

@@ -14,6 +14,7 @@
 
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
+#include <Common/Coverage.h>
 
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -99,11 +100,6 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 #if !defined(USE_MUSL)
 extern "C"
 {
-    void * dlopen(const char *, int);
-    void * dlmopen(long, const char *, int); // NOLINT
-    int dlclose(void *);
-    const char * dlerror();
-
     void * dlopen(const char *, int)
     {
         return nullptr;
@@ -130,15 +126,15 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*je_malloc_message)(void *, const char *s);
-static __attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
+extern "C" void (*malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*je_malloc_message)(void *, const char * s);
-static __attribute__((constructor(0))) void init_je_malloc_message()
+extern "C" void (*malloc_message)(void *, const char * s);
+__attribute__((constructor(0))) void init_je_malloc_message()
 {
-    je_malloc_message = [](void *, const char * str)
+    malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -160,7 +156,7 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-static __attribute__((constructor(202))) void init_ssl()
+__attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -218,6 +214,10 @@ int main(int argc_, char ** argv_)
     }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
+
+#if defined(SANITIZE_COVERAGE)
+    dumpCoverage();
+#endif
 
     return exit_code;
 }

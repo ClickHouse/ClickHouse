@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitByTransform.h>
@@ -38,21 +37,20 @@ LimitByStep::LimitByStep(
 
 void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!skip_stream_merging)
-        pipeline.resize(1);
+    pipeline.resize(1);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
     });
 }
 
 void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     settings.out << prefix << "Columns: ";
 
@@ -67,15 +65,13 @@ void LimitByStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+            settings.out << column;
         }
         settings.out << '\n';
     }
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
-    if (skip_stream_merging)
-        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -87,8 +83,6 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
     map.add("Length", group_length);
     map.add("Offset", group_offset);
-    if (skip_stream_merging)
-        map.add("Skip stream merging", true);
 }
 
 void LimitByStep::serialize(Serialization & ctx) const
@@ -102,15 +96,15 @@ void LimitByStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt64 group_length = 0;
-    UInt64 group_offset = 0;
+    UInt64 group_length;
+    UInt64 group_offset;
 
     readVarUInt(group_length, ctx.in);
     readVarUInt(group_offset, ctx.in);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
@@ -119,12 +113,6 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void LimitByStep::applyOrder(SortDescription sort_description)
-{
-    in_order = sort_description.hasPrefix(columns);
-}
-
-void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("LimitBy", LimitByStep::deserialize);

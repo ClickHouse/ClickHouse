@@ -3,7 +3,6 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -33,21 +32,21 @@ PollingQueue::PollingQueue()
 
 PollingQueue::~PollingQueue()
 {
-    int err = 0;
+    int err;
     err = close(pipe_fd[0]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(!err || errno == EINTR);
     err = close(pipe_fd[1]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(!err || errno == EINTR);
 }
 
-void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t events)
+void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
     if (tasks.contains(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
-    epoll.add(fd, data, events);
+    epoll.add(fd, data);
 }
 
 static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
@@ -73,7 +72,7 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
     lock.unlock();
 
-    epoll_event event{};
+    epoll_event event;
     event.data.ptr = nullptr;
     size_t num_events = epoll.getManyReady(1, &event, timeout);
 

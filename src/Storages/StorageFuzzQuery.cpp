@@ -1,8 +1,6 @@
 #include <Storages/StorageFuzzQuery.h>
 
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
@@ -68,21 +66,12 @@ ColumnPtr FuzzQuerySource::createColumn()
 
 StorageFuzzQuery::StorageFuzzQuery(
     const StorageID & table_id_, const ColumnsDescription & columns_, const String & comment_, const Configuration & config_)
-    : StorageWithCommonVirtualColumns(table_id_), config(config_)
+    : IStorage(table_id_), config(config_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment_);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageFuzzQuery::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 Pipe StorageFuzzQuery::read(
@@ -155,7 +144,6 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
     return configuration;
 }
 
-void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory)
 {
     factory.registerStorage(

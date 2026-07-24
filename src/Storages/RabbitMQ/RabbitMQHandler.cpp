@@ -1,7 +1,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <thread>
 
 namespace DB
 {
@@ -41,10 +40,7 @@ void RabbitMQHandler::startLoop()
     loop_running.store(true);
 
     while (loop_state.load() == Loop::RUN)
-    {
-        if (!uv_run(loop, UV_RUN_NOWAIT))
-            std::this_thread::yield();
-    }
+        uv_run(loop, UV_RUN_NOWAIT);
 
     LOG_DEBUG(log, "Background loop ended");
     loop_running.store(false);
@@ -68,13 +64,7 @@ int RabbitMQHandler::startBlockingLoop()
 
 void RabbitMQHandler::stopLoop()
 {
-    LOG_DEBUG(log, "Stopping background loop.");
-    loop_state.store(Loop::STOP);
-}
-
-void RabbitMQHandler::stopBlockingLoop()
-{
-    LOG_DEBUG(log, "Stopping blocking loop.");
+    LOG_DEBUG(log, "Implicit loop stop.");
     uv_stop(loop);
 }
 

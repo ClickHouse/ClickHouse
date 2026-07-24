@@ -4,8 +4,9 @@ sidebar_label: 'clickhouse-disks'
 sidebar_position: 59
 slug: /operations/utilities/clickhouse-disks
 title: 'Clickhouse-disks'
-doc_type: 'reference'
 ---
+
+# Clickhouse-disks
 
 A utility providing filesystem-like operations for ClickHouse disks. It can work in both interactive and not interactive modes.
 

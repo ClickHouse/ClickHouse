@@ -114,7 +114,7 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
+            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>()));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
@@ -129,7 +129,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * type_info.output_denominator);
         return true;
     }
 
@@ -142,7 +142,7 @@ namespace
         {
             max_prefix_encountered |= ParserKeyword{Keyword::MAX}.ignore(pos, expected);
 
-            QuotaType quota_type = {};
+            QuotaType quota_type;
             if (!parseQuotaType(pos, expected, quota_type))
                 return false;
 
@@ -156,7 +156,7 @@ namespace
                     return false;
             }
 
-            QuotaValue max_value = 0;
+            QuotaValue max_value;
             if (!parseMaxValue(pos, expected, quota_type, max_value))
                 return false;
 
@@ -224,7 +224,7 @@ namespace
         return true;
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -234,7 +234,7 @@ namespace
             if (!ParserKeyword{Keyword::TO}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
                 return false;
 
-            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(node);
+            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(node);
             return true;
         });
     }
@@ -298,7 +298,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!key_type)
         {
-            QuotaKeyType new_key_type = {};
+            QuotaKeyType new_key_type;
             if (parseKeyType(pos, expected, new_key_type))
             {
                 key_type = new_key_type;
@@ -318,13 +318,13 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         break;
     }
 
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = make_intrusive<ASTCreateQuotaQuery>();
+    auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;
 
     query->alter = alter;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -172,7 +173,7 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -212,7 +213,7 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
+    void prepare(const StorageInMemoryMetadata & metadata);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.

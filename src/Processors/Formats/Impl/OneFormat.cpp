@@ -34,7 +34,6 @@ Chunk OneInputFormat::read()
     return Chunk(Columns{std::move(column)}, 1);
 }
 
-void registerInputFormatOne(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory)
 {
     factory.registerInputFormat("One", [](
@@ -47,7 +46,6 @@ void registerInputFormatOne(FormatFactory & factory)
     });
 }
 
-void registerOneSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("One", [](const FormatSettings &)

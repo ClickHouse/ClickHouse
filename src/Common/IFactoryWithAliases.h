@@ -34,7 +34,7 @@ protected:
         return name;
     }
 
-    std::unordered_map<String, String> case_insensitive_name_mapping{};
+    std::unordered_map<String, String> case_insensitive_name_mapping;
 
 public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
@@ -134,10 +134,10 @@ private:
     virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps
-    AliasMap aliases{};
+    AliasMap aliases;
 
     /// Case insensitive aliases
-    AliasMap case_insensitive_aliases{};
+    AliasMap case_insensitive_aliases;
 };
 
 }

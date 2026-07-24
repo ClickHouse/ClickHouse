@@ -9,8 +9,6 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
-#include <Databases/DatabaseFactory.h>
-#include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
@@ -22,6 +20,7 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <cassert>
 #include <unordered_set>
 
 
@@ -40,6 +39,27 @@ namespace ErrorCodes
 
 namespace
 {
+    const std::vector<String> source_table_engines = {
+        "File",
+        "URL",
+        "Distributed",
+        "MongoDB",
+        "Redis",
+        "MySQL",
+        "PostgreSQL",
+        "SQLite",
+        "ODBC",
+        "JDBC",
+        "HDFS",
+        "S3",
+        "Hive",
+        "AzureBlobStorage",
+        "Kafka",
+        "NATS",
+        "RabbitMQ",
+    };
+
+
     AccessRights mixAccessRightsFromUserAndRoles(const User & user, const EnabledRolesInfo & roles_info)
     {
         AccessRights res = user.access;
@@ -53,35 +73,6 @@ namespace
         std::array<UUID, 1> ids;
         ids[0] = id;
         return ids;
-    }
-
-    /// Filter access-denied hint output (the "required grant"/"missing permissions" text in ACCESS_DENIED errors).
-    /// Column names from implicit expansion (e.g. SELECT *) require SHOW_COLUMNS to be shown in hints.
-    AccessRightsElement filterAccessElementForHints(const AccessRightsElement & element, const AccessRights & access)
-    {
-        if (element.columns.empty())
-            return element;
-
-        // Columns imply a resolved table and database (current DB is already substituted upstream).
-        chassert(!element.table.empty());
-        chassert(!element.database.empty());
-
-        if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
-            return element;
-
-        // Hide column names unless SHOW_COLUMNS covers all required columns.
-        AccessRightsElement res = element;
-        res.columns.clear();
-        return res;
-    }
-
-    AccessRightsElements filterAccessElementsForHints(const AccessRightsElements & elements, const AccessRights & access)
-    {
-        AccessRightsElements filtered;
-        filtered.reserve(elements.size());
-        for (const auto & element : elements)
-            filtered.push_back(filterAccessElementForHints(element, access));
-        return filtered;
     }
 
     /// Helper for using in templates.
@@ -131,11 +122,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
         if ((level == 0) && (max_flags_with_children & create_table))
             res |= create_arbitrary_temporary_table;
-
-        /// CREATE VIEW (on any database/table) => CREATE_TEMPORARY_VIEW (global)
-        static const AccessFlags create_temporary_view = AccessType::CREATE_TEMPORARY_VIEW;
-        if ((level == 0) && (max_flags_with_children & create_view))
-            res |= create_temporary_view;
 
         /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
@@ -216,7 +202,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "table_engines",
             "table_functions",
             "aggregate_function_combinators",
-            "completions",
 
             "functions", /// Can contain user-defined functions
 
@@ -263,46 +248,22 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     }
 
     /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
-    /// Source engine list is derived from StorageFactory — each engine declares its source_access_type
-    /// during registration, so this is always in sync without manual maintenance.
-    ///
-    /// We use grant() only (never revoke()) to avoid corrupting root_with_grant_option.
-    /// AccessRights::revoke() removes from BOTH root and root_with_grant_option, which would
-    /// break explicit GRANT TABLE ENGINE ... WITH GRANT OPTION for source engines. See #71544.
-    for (const auto & [engine_name, creator] : StorageFactory::instance().getAllStorages())
+    if (access_control.doesTableEnginesRequireGrant())
     {
-        if (!creator.features.source_access_type)
+        for (const auto & table_engine : source_table_engines)
         {
-            if (!access_control.doesTableEnginesRequireGrant())
-                res.grant(AccessType::TABLE_ENGINE, engine_name);
-        }
-        else
-        {
-            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
-            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
-                res.grant(AccessType::TABLE_ENGINE, engine_name);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+                res.grant(AccessType::TABLE_ENGINE, table_engine);
         }
     }
-
-    /// Database engines are registered in DatabaseFactory, not StorageFactory, but
-    /// CREATE DATABASE checks TABLE_ENGINE in InterpreterCreateQuery. Apply the same
-    /// source_access_type logic as the StorageFactory loop above.
-    ///
-    /// Engines that share names with StorageFactory (PostgreSQL, MySQL, SQLite, S3, etc.)
-    /// are processed by both loops with the same source_access_type — grant() is idempotent,
-    /// so duplicates are harmless.
-    for (const auto & [name, creator] : DatabaseFactory::instance().getDatabaseEngines())
+    else
     {
-        if (!creator.features.source_access_type)
+        /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
+        res.grant(AccessType::TABLE_ENGINE);
+        for (const auto & table_engine : source_table_engines)
         {
-            if (!access_control.doesTableEnginesRequireGrant())
-                res.grant(AccessType::TABLE_ENGINE, name);
-        }
-        else
-        {
-            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
-            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
-                res.grant(AccessType::TABLE_ENGINE, name);
+            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+                res.revoke(AccessType::TABLE_ENGINE, table_engine);
         }
     }
 
@@ -372,7 +333,6 @@ void ContextAccess::setUser(const UserPtr & user_) const
         /// User has been dropped.
         user_was_dropped = true;
         subscription_for_user_change = {};
-        subscription_for_initial_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
         access_with_implicit = nullptr;
@@ -421,32 +381,19 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
     setRolesInfo(enabled_roles->getRolesInfo());
 
-    if (params.initial_user_id)
-    {
-        subscription_for_initial_user_change = access_control->subscribeForChanges(
-            *params.initial_user_id,
-            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
-            {
-                if (auto ptr = weak_ptr.lock())
-                {
-                    std::lock_guard lock2{ptr->mutex};
-                    ptr->findRowPoliciesOfInitialUser();
-                }
-            });
-        findRowPoliciesOfInitialUser();
-    }
+    std::optional<UUID> initial_user_id;
+    if (!params.initial_user.empty())
+        initial_user_id = access_control->find<User>(params.initial_user);
+    row_policies_of_initial_user = initial_user_id ? access_control->tryGetDefaultRowPolicies(*initial_user_id) : nullptr;
 }
 
 
 void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const
 {
-    chassert(roles_info_);
+    assert(roles_info_);
     roles_info = roles_info_;
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
-#if CLICKHOUSE_CLOUD
-    enabled_masking_policies = access_control->getEnabledMaskingPolicies(*params.user_id, roles_info->enabled_roles);
-#endif
 
     enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
@@ -472,12 +419,6 @@ void ContextAccess::calculateAccessRights() const
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
-}
-
-
-void ContextAccess::findRowPoliciesOfInitialUser() const
-{
-    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
 }
 
 
@@ -519,55 +460,25 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     static const auto no_roles = std::make_shared<EnabledRolesInfo>();
     return no_roles;
 }
-#if CLICKHOUSE_CLOUD
-std::shared_ptr<const EnabledMaskingPolicies> ContextAccess::getEnabledMaskingPolicies() const
-{
-    std::lock_guard lock{mutex};
-    return enabled_masking_policies;
-}
-#endif
 
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
+    std::lock_guard lock{mutex};
+
+    if (initialized && !user && !user_was_dropped)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
     RowPolicyFilterPtr filter;
+    if (enabled_row_policies)
+        filter = enabled_row_policies->getFilter(database, table_name, filter_type);
 
+    if (row_policies_of_initial_user)
     {
-        std::lock_guard lock{mutex};
-
-        if (initialized && !user && !user_was_dropped)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-
-        if (enabled_row_policies)
-            filter = enabled_row_policies->getFilter(database, table_name, filter_type);
-
-        if (row_policies_of_initial_user)
-        {
-            /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
-            /// TODO: we need a better solution here. It seems we should pass the initial row policy
-            /// because a shard is allowed to not have the initial user or it might be another user
-            /// with the same name.
-            filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
-        }
-    }
-
-    if (filter && filter->policies.empty())
-    {
-        if (access_control->shouldThrowOnUnmatchedRowPolicies())
-        {
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                            "{}: Table {}.{} has row policies, but none of them are for the current user",
-                            getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name));
-        }
-        else
-        {
-            chassert(filter->isAlwaysTrue() || filter->isAlwaysFalse());
-            std::string_view filter_info =
-                filter->isAlwaysTrue() ? ", no filters will be used" :
-                (filter->isAlwaysFalse() ? ", no rows will be shown" : "");
-
-            LOG_TRACE(trace_log, "{}: Table {}.{} has row policies, but none of them are for the current user{}",
-                      getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name), filter_info);
-        }
+        /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
+        /// TODO: we need a better solution here. It seems we should pass the initial row policy
+        /// because a shard is allowed to not have the initial user or it might be another user
+        /// with the same name.
+        filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
     }
 
     return filter;
@@ -676,11 +587,8 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     auto access_granted = [&]
     {
-        /// Record every granted access, regardless of whether the caller is the throwing entry point
-        /// (`checkAccess` / `checkGrantOption`) or the non-throwing one (`isGranted`, used internally by
-        /// `checkAccessWithFilter`). Without this, an `isGranted`-driven success leaves no trace in
-        /// system.query_log.used_privileges even though the privilege was effectively required by the query.
-        context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
+        if constexpr (throw_if_denied)
+            context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
         return true;
     };
 
@@ -715,7 +623,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
-    bool granted = false;
+    bool granted;
     if constexpr (wildcard)
     {
         if constexpr (grant_option)
@@ -733,17 +641,6 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     if (!granted)
     {
-        auto format_required_access = [&](AccessFlags access_flags, const auto & ... fmt_args)
-        {
-            AccessRightsElement required_access{access_flags, fmt_args...};
-            return filterAccessElementForHints(required_access, *acs).toStringWithoutOptions();
-        };
-
-        auto format_missing_permissions = [&](const AccessRights & difference)
-        {
-            return filterAccessElementsForHints(difference.getElements(), *acs).toStringWithoutOptions();
-        };
-
         auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
         {
             if (grant_option && acs->isGranted(access_flags, fmt_args...))
@@ -752,32 +649,28 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    format_required_access(access_flags, fmt_args...));
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
             }
 
-            if constexpr (!throw_if_denied)
-                return false;
-            else
+            AccessRights difference;
+            difference.grant(flags, fmt_args...);
+            AccessRights original_rights = difference;
+            difference.makeDifference(*getAccessRights());
+
+            if (difference == original_rights)
             {
-                AccessRights difference;
-                difference.grant(flags, fmt_args...);
-                AccessRights original_rights = difference;
-                difference.makeDifference(*getAccessRights());
-
-                if (difference == original_rights)
-                {
-                    return access_denied(ErrorCodes::ACCESS_DENIED,
-                        "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                        format_required_access(access_flags, fmt_args...) + (grant_option ? " WITH GRANT OPTION" : ""));
-                }
-
                 return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
-                    "(Missing permissions: {}){}",
-                    format_required_access(access_flags, fmt_args...) + (grant_option ? " WITH GRANT OPTION" : ""),
-                    format_missing_permissions(difference),
-                    grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
             }
+
+
+            return access_denied(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
+                "(Missing permissions: {}){}",
+                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                difference.getElements().toStringWithoutOptions(),
+                grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
         return access_denied_no_grant(flags, args...);
@@ -856,7 +749,7 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
 template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const
 {
-    chassert(!element.grant_option || grant_option);
+    assert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())

@@ -4,8 +4,9 @@ sidebar_label: 'prometheusQueryRange'
 sidebar_position: 145
 slug: /sql-reference/table-functions/prometheusQueryRange
 title: 'prometheusQueryRange'
-doc_type: 'reference'
 ---
+
+# prometheusQuery Table Function
 
 Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
 

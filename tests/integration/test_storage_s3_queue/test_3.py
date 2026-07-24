@@ -59,11 +59,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=[
-                "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
-                "configs/keeper_retries.xml",
-            ],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -76,11 +72,7 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=[
-                "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
-                "configs/keeper_retries.xml",
-            ],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -277,7 +269,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
 def test_upgrade(started_cluster):
     node = started_cluster.instances["instance_23.12"]
     if "23.12" not in node.query("select version()").strip():
-        node.restart_with_original_version(clear_data_dir=True)
+        node.restart_with_original_version()
 
     table_name = f"test_upgrade"
     dst_table_name = f"{table_name}_dst"
@@ -398,7 +390,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
     def get_processed_files():
         return (
             node.query(
-                f"SELECT file_name FROM system.s3queue_metadata_cache WHERE zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 "
+                f"SELECT file_name FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 "
             )
             .strip()
             .split("\n")
@@ -407,7 +399,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
     def get_failed_files():
         return (
             node.query(
-                f"SELECT file_name FROM system.s3queue_metadata_cache WHERE zookeeper_path ilike '%{table_name}%' and status = 'Failed'"
+                f"SELECT file_name FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and status = 'Failed'"
             )
             .strip()
             .split("\n")
@@ -482,7 +474,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
     if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version(clear_data_dir=True)
+        node.restart_with_original_version()
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"

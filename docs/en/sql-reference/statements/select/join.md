@@ -3,9 +3,10 @@ description: 'Documentation for JOIN Clause'
 sidebar_label: 'JOIN'
 slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
-keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN', 'NATURAL JOIN']
-doc_type: 'reference'
+keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN']
 ---
+
+# JOIN clause
 
 The `JOIN` clause produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as a "self-join".
 
@@ -31,12 +32,10 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 | `RIGHT OUTER JOIN`| non-matching rows from right table are returned in addition to matching rows. |
 | `FULL OUTER JOIN` | non-matching rows from both tables are returned in addition to matching rows. |
 | `CROSS JOIN`      | produces cartesian product of whole tables, "join keys" are **not** specified.|
-| `NATURAL JOIN`    | automatically joins on all columns with the same name in both tables; each common column appears once in the result. Supports `INNER` (default), `LEFT`, `RIGHT`, and `FULL` variants. Equivalent to `JOIN ... USING (col1, col2, ...)` where the column list is derived automatically. |
 
 - `JOIN` without a type specified implies `INNER`.
 - The keyword `OUTER` can be safely omitted.
 - An alternative syntax for `CROSS JOIN` is specifying multiple tables in the [`FROM` clause](../../../sql-reference/statements/select/from.md) separated by commas.
-- If there are no matching columns for a `NATURAL JOIN`, it functions like a `CROSS JOIN`.
 
 Additional join types available in ClickHouse are:
 
@@ -99,14 +98,14 @@ Consider `table_1` and `table_2`:
 
 Query with one join key condition and an additional condition for `table_2`:
 
-```sql title="Query"
+```sql
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
 
 Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
 
-```response title="Response"
+```response
 ┌─name─┬─text───┐
 │ A    │ Text A │
 │ B    │ Text B │
@@ -116,19 +115,21 @@ Note that the result contains the row with the name `C` and the empty text colum
 
 Query with `INNER` type of a join and multiple conditions:
 
-```sql title="Query"
+```sql
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
     ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
 ```
 
-```sql title="Response"
+Result:
+
+```sql
 ┌─name─┬─text───┬─scores─┐
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
 ```
 Query with `INNER` type of a join and condition with `OR`:
 
-```sql title="Query"
+```sql
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
 
 CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree() ORDER BY key;
@@ -140,7 +141,9 @@ INSERT INTO t2 SELECT if(number % 2 == 0, toInt64(number), -number) as key, numb
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 1 │ -1 │   1 │
@@ -160,11 +163,13 @@ However, you can try experimental support for conditions like `t1.a = t2.key AND
 
 :::
 
-```sql title="Query"
+```sql
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 2 │ -2 │   2 │
@@ -315,7 +320,7 @@ For example, consider the following tables:
 ```text
          table_1                           table_2
       event   | ev_time | user_id       event   | ev_time | user_id
-    ----------|---------|----------   ----------|---------|----------
+    ----------|---------|---------- ----------|---------|----------
                   ...                               ...
     event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
                   ...                 event_2_2 |  12:30  |   42
@@ -392,7 +397,7 @@ SETTINGS max_block_size = 2;
 There are two ways to execute a JOIN involving distributed tables:
 
 - When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
-- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate one side of the join and collects the result into a temporary table. This temporary table is then passed to each remote server, and queries are run on them using the temporary data that was transmitted. For `LEFT` and `INNER` joins, the right table is calculated as the subquery. For `RIGHT` joins, the left table is calculated instead, since the right table is the one being preserved and should be read from shards.
+- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) section.
 
@@ -466,7 +471,7 @@ Each time a query is run with the same `JOIN`, the subquery is run again because
 
 In some cases, it is more efficient to use [IN](../../../sql-reference/operators/in.md) instead of `JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](/sql-reference/statements/create/dictionary/overview.md) section.
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
 
 ### Memory limitations {#memory-limitations}
 
@@ -477,7 +482,7 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode)
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) 
 setting instructs.
 
 ## Examples {#examples}

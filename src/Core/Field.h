@@ -274,10 +274,6 @@ public:
             Null    = 0,
             UInt64  = 1,
             Int64   = 2,
-            /// Note: there's no Float32. In theory, all Float32 values are exactly representable in
-            /// Float64. But in C++ if you static_cast back and forth, the result may change.
-            /// In particular, NaN may change to a different NaN, e.g. by cvtsd2ss instruction on x86.
-            /// So when a Float32 needs to be passed-through exactly, don't use Field.
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
@@ -320,12 +316,12 @@ public:
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
       */
-    Field(const Field & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `create` before any read; zero-initializing it would clear the whole buffer on every construction of this very hot object
+    Field(const Field & rhs)
     {
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(Field && rhs) noexcept
     {
         create(std::move(rhs));
     }
@@ -346,7 +342,7 @@ public:
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
 
     template <typename CharT>
-    Field(const CharT * data, size_t size) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(const CharT * data, size_t size)
     {
         create(data, size);
     }
@@ -414,8 +410,6 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
-    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
-    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -521,9 +515,9 @@ private:
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
-        > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
+        > storage;
 
-    Types::Which which{};
+    Types::Which which;
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.
@@ -623,9 +617,7 @@ private:
 
     ALWAYS_INLINE void destroy()
     {
-        auto old_which = which;
-        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
-        switch (old_which)
+        switch (which)
         {
             case Types::String:
                 destroy<String>();
@@ -648,13 +640,15 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
-            default: [[likely]]
+            default:
                  break;
         }
+
+        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
     }
 
     template <typename T>
-    NO_INLINE void destroy()
+    void destroy()
     {
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
@@ -735,7 +729,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
-Field::Field(T && rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `createConcrete` before any read
+Field::Field(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
@@ -842,15 +836,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
-String fieldToString(const Field & x);
-
-/// Check if a Field contains a NaN value.
-/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
-inline bool isNaNField(const Field & f)
-{
-    return f.isNaN();
-}
-
+String toString(const Field & x);
 }
 
 template <>
@@ -871,6 +857,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", fieldToString(x));
+        return fmt::format_to(ctx.out(), "{}", toString(x));
     }
 };

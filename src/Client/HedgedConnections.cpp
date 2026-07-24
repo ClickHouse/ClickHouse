@@ -2,7 +2,6 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
-#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -25,7 +24,6 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
-    extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
@@ -218,10 +216,6 @@ void HedgedConnections::sendQuery(
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
 
-        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
-            modified_settings[Setting::interactive_delay],
-            distributed_fanout * offset_states.size());
-
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.
@@ -396,7 +390,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd = 0;
+    int event_fd;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -461,7 +455,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event{};
+    epoll_event event;
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);

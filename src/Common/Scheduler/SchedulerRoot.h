@@ -64,7 +64,7 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(ThreadName name)
+    void start(const String & name)
     {
         if (!scheduler.joinable())
             scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
@@ -80,8 +80,6 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Attach to event queue for graceful shutdown processing
-                EventQueue::SchedulerThread scheduler_thread(&events);
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
@@ -116,7 +114,7 @@ public:
     void attachChild(const SchedulerNodePtr & child) override
     {
         // Take ownership
-        chassert(child->parent == nullptr);
+        assert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
@@ -194,7 +192,7 @@ public:
 private:
     void activate(Resource * value)
     {
-        chassert(value->next == nullptr && value->prev == nullptr);
+        assert(value->next == nullptr && value->prev == nullptr);
         if (current == nullptr) // No active children
         {
             current = value;
@@ -214,7 +212,7 @@ private:
     {
         if (value->next == nullptr)
             return; // Already deactivated
-        chassert(current != nullptr);
+        assert(current != nullptr);
         if (current == value)
         {
             if (current->next == current) // We are going to remove the last active child
@@ -234,11 +232,9 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadName name)
+    void schedulerThread(const String & name)
     {
-        DB::setThreadName(name);
-        EventQueue::SchedulerThread scheduler_thread(&events);
-
+        setThreadName(name.c_str(), true);
         while (!stop_flag.load())
         {
             // Dequeue and execute single request

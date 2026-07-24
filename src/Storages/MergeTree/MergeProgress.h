@@ -84,10 +84,9 @@ public:
         stage.rows_read += value.read_rows;
         if (stage.total_rows > 0)
         {
-            auto current = stage.initial_progress + stage.weight * static_cast<double>(stage.rows_read) / static_cast<double>(stage.total_rows);
-            merge_list_element_ptr->progress.store(current, std::memory_order_relaxed);
-            if (auto * parent = merge_list_element_ptr->parent_progress)
-                parent->store(current, std::memory_order_relaxed);
+            merge_list_element_ptr->progress.store(
+                stage.initial_progress + stage.weight * stage.rows_read / stage.total_rows,
+                std::memory_order_relaxed);
         }
     }
 

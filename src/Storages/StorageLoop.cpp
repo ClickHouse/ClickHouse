@@ -2,32 +2,29 @@
 #include <Storages/StorageFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
-#include <Common/CurrentThread.h>
 
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+
+    }
     StorageLoop::StorageLoop(
             const StorageID & table_id_,
-            StoragePtr inner_storage_,
-            ASTPtr inner_table_function_ast_)
+            StoragePtr inner_storage_)
             : IStorage(table_id_)
             , inner_storage(std::move(inner_storage_))
-            , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        setInMemoryMetadata(*inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false));
+        StorageInMemoryMetadata storage_metadata = inner_storage->getInMemoryMetadata();
+        setInMemoryMetadata(storage_metadata);
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(
-        ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
+        ContextPtr local_context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo & query_info) const
     {
-        /// `LoopSource` always materialises the inner select with
-        /// `QueryProcessingStage::Complete`, so the chunks it emits are plain column
-        /// data. Delegating to `inner_storage` here could advertise `WithMergeableState`
-        /// (e.g. when the inner storage is `Distributed`) and make the outer planner add
-        /// a `MergingAggregatedStep`, which then trips on the missing chunk info — see
-        /// issue #104863.
-        return QueryProcessingStage::FetchColumns;
+        auto storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), local_context);
+        return inner_storage->getQueryProcessingStage(local_context, to_stage, storage_snapshot, query_info);
     }
 
     void StorageLoop::read(
@@ -43,12 +40,10 @@ namespace DB
         query_info.optimize_trivial_count = false;
 
         query_plan.addStep(std::make_unique<ReadFromLoopStep>(
-                column_names, query_info, storage_snapshot, context, processed_stage, inner_storage,
-                inner_table_function_ast, max_block_size, num_streams
+                column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, max_block_size, num_streams
         ));
     }
 
-    void registerStorageLoop(StorageFactory & factory);
     void registerStorageLoop(StorageFactory & factory)
     {
         factory.registerStorage("Loop", [](const StorageFactory::Arguments & args)

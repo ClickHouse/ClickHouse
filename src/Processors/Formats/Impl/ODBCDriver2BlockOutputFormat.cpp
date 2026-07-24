@@ -95,7 +95,6 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 }
 
 
-void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormat(

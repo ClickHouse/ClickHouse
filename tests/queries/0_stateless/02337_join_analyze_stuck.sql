@@ -2,8 +2,6 @@
 
 -- https://github.com/ClickHouse/ClickHouse/issues/21557
 
-set ignore_format_null_for_explain = 0;
-
 EXPLAIN SYNTAX
 WITH
     x AS ( SELECT number FROM numbers(10) ),

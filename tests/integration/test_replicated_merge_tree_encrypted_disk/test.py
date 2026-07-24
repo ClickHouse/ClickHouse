@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
+    tmpfs=["/disk:size=100M"],
     macros={"replica": "node1"},
     with_zookeeper=True,
 )
@@ -19,7 +19,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
+    tmpfs=["/disk:size=100M"],
     macros={"replica": "node2"},
     with_zookeeper=True,
 )
@@ -72,8 +72,8 @@ def check_table():
     node2.query("SYSTEM SYNC REPLICA tbl LIGHTWEIGHT")
     assert node1.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
     assert node2.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-    assert node1.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
-    assert node2.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node1.query("CHECK TABLE tbl") == "1\n"
+    assert node2.query("CHECK TABLE tbl") == "1\n"
 
 
 # Actual tests:

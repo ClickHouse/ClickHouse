@@ -53,12 +53,11 @@ catch (const DB::Exception &)
 }
 
 StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
-    : IStorageSystemOneBlock(storage_id_, columns_description_)
+    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_description_);
-    storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(storage_metadata);
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
 }
 
 ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
@@ -102,21 +101,15 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
     };
 }
 
-VirtualColumnsDescription StorageSystemDictionaries::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    return desc;
-}
-
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
-    const bool need_to_check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
+    const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context->getExternalDictionariesLoader();
+
+    if (!check_access_for_dictionaries)
+        return;
 
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
@@ -128,7 +121,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         StorageID dict_id = getDictionaryID(load_result, dict_ptr);
 
         String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
-        if (need_to_check_access_for_dictionaries && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
+        if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
 
         size_t i = 0;

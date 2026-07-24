@@ -1,8 +1,6 @@
 #include <Storages/StorageInput.h>
 #include <Storages/IStorage.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 
 #include <memory>
@@ -23,24 +21,15 @@ namespace ErrorCodes
 }
 
 StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
-    : StorageWithCommonVirtualColumns(table_id)
+    : IStorage(table_id)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageInput::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
 
-
-class StorageInputSource final : public ISource, WithContext
+class StorageInputSource : public ISource, WithContext
 {
 public:
     StorageInputSource(ContextPtr context_, SharedHeader sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
@@ -86,7 +75,7 @@ private:
     StorageInput & storage;
 };
 
-void StorageInput::readImpl(
+void StorageInput::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

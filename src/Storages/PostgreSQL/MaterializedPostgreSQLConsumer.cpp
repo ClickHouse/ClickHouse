@@ -1,6 +1,5 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
 
-#include <Common/CurrentThread.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
@@ -80,18 +79,17 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
 MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
-    , table_description(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock())
+    , table_description(storage_info.storage->getInMemoryMetadataPtr()->getSampleBlock())
     , columns_attributes(storage_info.attributes)
-    , column_names(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getNamesOfPhysical())
-    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getAllPhysical(), table_description))
+    , column_names(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical())
+    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
     /// +2 because of _sign and _version columns
     if (columns_attributes.size() + 2 != columns_num)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
-                        storage_info.storage->getStorageID().getNameForLogs(),
+                        "Columns number mismatch. Attributes: {}, buffer: {}",
                         columns_attributes.size(), columns_num);
     }
 
@@ -138,7 +136,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     columns = sample_block.cloneEmptyColumns();
 
     for (const auto & name : sample_block.getNames())
-        columns_ast.children.emplace_back(make_intrusive<ASTIdentifier>(name));
+        columns_ast.children.emplace_back(std::make_shared<ASTIdentifier>(name));
 }
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getLastBuffer()
@@ -206,7 +204,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                     column_nullable.getNestedColumn(), value, type_description.first,
                     data_type.getNestedType(), storage_data.array_info, column_idx_in_table);
 
-            column_nullable.getNullMapData().emplace_back(false);
+            column_nullable.getNullMapData().emplace_back(0);
         }
         else
         {
@@ -237,7 +235,7 @@ void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_da
 
 void MaterializedPostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
 {
-    chassert(size > pos + 2);
+    assert(size > pos + 2);
     char current = unhex2(message + pos);
     pos += 2;
     while (pos < size && current != '\0')
@@ -262,7 +260,7 @@ T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_
 
 Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 16);
+    assert(size >= pos + 16);
     Int64 result = unhexN<Int64>(message, pos, 8);
     pos += 16;
     return result;
@@ -270,7 +268,7 @@ Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & p
 
 Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 8);
+    assert(size >= pos + 8);
     Int32 result = unhexN<Int32>(message, pos, 4);
     pos += 8;
     return result;
@@ -278,7 +276,7 @@ Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & p
 
 Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 4);
+    assert(size >= pos + 4);
     Int16 result = unhexN<Int16>(message, pos, 2);
     pos += 4;
     return result;
@@ -286,7 +284,7 @@ Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & p
 
 Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 2);
+    assert(size >= pos + 2);
     Int8 result = unhex2(message + pos);
     pos += 2;
     return result;
@@ -302,7 +300,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 {
     Int16 num_columns = readInt16(message, pos, size);
 
-    auto process_column_value = [&](Int8 identifier, Int16 column_idx)
+    auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
         switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
         {
@@ -347,11 +345,11 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     };
 
     std::exception_ptr error;
-    for (Int16 column_idx = 0; column_idx < num_columns; ++column_idx)
+    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         try
         {
-            process_column_value(readInt8(message, pos, size), column_idx);
+            proccess_column_value(readInt8(message, pos, size), column_idx);
         }
         catch (...)
         {
@@ -456,7 +454,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             auto & storage_data = storages.find(table_name)->second;
 
-            auto process_identifier = [&](Int8 identifier) -> bool
+            auto proccess_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
                 switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
@@ -485,11 +483,11 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             };
 
             /// Read either 'K' or 'O'. Never both of them. Also possible not to get both of them.
-            bool read_next = process_identifier(readInt8(replication_message, pos, size));
+            bool read_next = proccess_identifier(readInt8(replication_message, pos, size));
 
             /// 'N'. Always present, but could come in place of 'K' and 'O'.
             if (read_next)
-                process_identifier(readInt8(replication_message, pos, size));
+                proccess_identifier(readInt8(replication_message, pos, size));
 
             break;
         }
@@ -595,8 +593,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            Int32 data_type_id = 0;
-            Int32 type_modifier = 0; /// For example, n in varchar(n)
+            Int32 data_type_id;
+            Int32 type_modifier; /// For example, n in varchar(n)
 
             std::set<std::string> all_columns(storage_data.column_names.begin(), storage_data.column_names.end());
             std::set<std::string> received_columns;
@@ -695,12 +693,11 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     auto storage = storage_data.storage;
 
                     auto insert_context = Context::createCopy(context);
-                    insert_context->makeQueryContext();
                     insert_context->setInternalQuery(true);
 
-                    auto insert = make_intrusive<ASTInsertQuery>();
+                    auto insert = std::make_shared<ASTInsertQuery>();
                     insert->table_id = storage->getStorageID();
-                    insert->columns = make_intrusive<ASTExpressionList>(buffer->columns_ast);
+                    insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
                     InterpreterInsertQuery interpreter(
                         insert,
@@ -780,7 +777,7 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     if (new_table_with_lsn != waiting_list.end())
     {
         auto table_start_lsn = new_table_with_lsn->second;
-        chassert(!table_start_lsn.empty());
+        assert(!table_start_lsn.empty());
 
         if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
         {
@@ -834,7 +831,7 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 void MaterializedPostgreSQLConsumer::addNested(
     const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
 {
-    chassert(!storages.contains(postgres_table_name));
+    assert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, StorageData(nested_storage_info, log));
 
     auto it = deleted_tables.find(postgres_table_name);
@@ -848,7 +845,7 @@ void MaterializedPostgreSQLConsumer::addNested(
 
 void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
 {
-    chassert(!storages.contains(table_name));
+    assert(!storages.contains(table_name));
     storages.emplace(table_name, StorageData(nested_storage_info, log));
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.

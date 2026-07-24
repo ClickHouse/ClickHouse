@@ -198,8 +198,7 @@ private:
         auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
             pipeline_builder.getHeader().getColumnsWithTypeAndName(),
             header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            interpreter->getContext());
+            ActionsDAG::MatchColumnsMode::Position);
         auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
         pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
         {
@@ -210,7 +209,7 @@ private:
 
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
-            intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
+            intermediate_temporary_table_storage->getInMemoryMetadataPtr(),
             recursive_query_context,
             false /*async_insert*/);
 
@@ -228,7 +227,7 @@ private:
         /// TODO: Support proper locking
         TableExclusiveLockHolder table_exclusive_lock;
         temporary_table->truncate({},
-            temporary_table->getInMemoryMetadataPtr(recursive_query_context, false),
+            temporary_table->getInMemoryMetadataPtr(),
             recursive_query_context,
             table_exclusive_lock);
     }

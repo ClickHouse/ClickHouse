@@ -3,7 +3,6 @@
 #include <Access/IAccessEntity.h>
 #include <base/scope_guard.h>
 #include <list>
-#include <mutex>
 #include <queue>
 #include <unordered_map>
 
@@ -64,7 +63,7 @@ private:
     {
         UUID id;
         AccessEntityPtr entity;
-        AccessEntityType type{};
+        AccessEntityType type;
     };
     std::queue<Event> queue;
     std::mutex queue_mutex;

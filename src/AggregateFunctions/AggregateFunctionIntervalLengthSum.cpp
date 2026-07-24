@@ -14,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+
 namespace DB
 {
 
@@ -116,7 +117,7 @@ struct AggregateFunctionIntervalLengthSumData
     {
         readBinary(sorted, buf);
 
-        size_t size = 0;
+        size_t size;
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))
@@ -163,7 +164,7 @@ private:
             /// Check if current interval intersects with next one then add length, otherwise advance interval end.
             if (curr_segment.second < next_segment.first)
             {
-                res += static_cast<TResult>(length(curr_segment));
+                res += length(curr_segment);
                 curr_segment = next_segment;
             }
             else if (next_segment.second > curr_segment.second)
@@ -171,7 +172,7 @@ private:
                 curr_segment.second = next_segment.second;
             }
         }
-        res += static_cast<TResult>(length(curr_segment));
+        res += length(curr_segment);
 
         return res;
     }
@@ -270,74 +271,9 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
 }
 
-void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Takes multiple numeric ranges and calculates the total length when all overlapping parts are combined into a single unified range.
-
-:::note
-Arguments must be of the same data type.
-Otherwise, an exception will be thrown.
-:::
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-intervalLengthSum(start, end)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"start", "The starting value of the interval.", {"(U)Int32/64", "Float*", "DateTime", "Date"}},
-        {"end", "The ending value of the interval.", {"(U)Int32/64", "Float*", "DateTime", "Date"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the total length of union of all ranges (segments on numeric axis). Depending on the type of the argument, the return value may be UInt64 or Float64 type.", {"UInt64", "Float64"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Float32 example",
-        R"(
-CREATE TABLE fl_interval (id String, start Float32, end Float32) ENGINE = Memory;
-INSERT INTO fl_interval VALUES ('a', 1.1, 2.9), ('a', 2.5, 3.2), ('a', 4, 5);
-
-SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM fl_interval GROUP BY id ORDER BY id;
-        )",
-        R"(
-┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                           3.1 │ Float64                                   │
-└────┴───────────────────────────────┴───────────────────────────────────────────┘
-        )"
-    },
-    {
-        "DateTime example",
-        R"(
-CREATE TABLE dt_interval (id String, start DateTime, end DateTime) ENGINE = Memory;
-INSERT INTO dt_interval VALUES ('a', '2020-01-01 01:12:30', '2020-01-01 02:10:10'), ('a', '2020-01-01 02:05:30', '2020-01-01 02:50:31'), ('a', '2020-01-01 03:11:22', '2020-01-01 03:23:31');
-
-SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM dt_interval GROUP BY id ORDER BY id;
-        )",
-        R"(
-┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                          6610 │ UInt64                                    │
-└────┴───────────────────────────────┴───────────────────────────────────────────┘
-        )"
-    },
-    {
-        "Date example",
-        R"(
-CREATE TABLE date_interval (id String, start Date, end Date) ENGINE = Memory;
-INSERT INTO date_interval VALUES ('a', '2020-01-01', '2020-01-04'), ('a', '2020-01-12', '2020-01-18');
-
-SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM date_interval GROUP BY id ORDER BY id;
-        )",
-        R"(
-┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                             9 │ UInt64                                    │
-└────┴───────────────────────────────┴───────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation});
+    factory.registerFunction("intervalLengthSum", createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>);
 }
 
 }

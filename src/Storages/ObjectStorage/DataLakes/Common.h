@@ -1,0 +1,17 @@
+#pragma once
+#include <Core/Types.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+
+namespace DB
+{
+
+class IObjectStorage;
+
+std::vector<String> listFiles(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const String & prefix, const String & suffix);
+
+String resolvePathInsideTable(const String & table_path, const String & relative_path);
+
+}

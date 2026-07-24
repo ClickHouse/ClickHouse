@@ -7,6 +7,7 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -59,7 +60,7 @@ public:
     {
         std::shared_ptr<ColumnWithTypeAndName> values;
         Int64 default_value_index = -1;
-        UInt64 dictionary_size{};
+        UInt64 dictionary_size;
     };
 
 private:
@@ -80,7 +81,7 @@ private:
     const Block & header;
     const std::string format_name;
 
-    FormatSettings format_settings;
+    const FormatSettings & format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;

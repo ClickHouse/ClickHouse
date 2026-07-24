@@ -30,7 +30,7 @@ public:
     Macros() = default;
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key, LoggerPtr log = nullptr);
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
-    explicit Macros(std::map<String, String, std::less<>> map);
+    explicit Macros(std::map<String, String> map);
 
     struct MacroExpansionInfo
     {
@@ -38,7 +38,6 @@ public:
         StorageID table_id = StorageID::createEmpty();
         bool ignore_unknown = false;
         bool expand_special_macros_only = false;
-        bool expand_for_database = false;
         std::optional<String> shard = {};
         std::optional<String> replica = {};
 
@@ -65,11 +64,11 @@ public:
       */
     Names expand(const Names & source_names, size_t level = 0) const;
 
-    using MacroMap = std::map<String, String, std::less<>>;
+    using MacroMap = std::map<String, String>;
     MacroMap getMacroMap() const { return macros; }
 
-    String getValue(std::string_view key) const;
-    std::optional<String> tryGetValue(std::string_view key) const;
+    String getValue(const String & key) const;
+    std::optional<String> tryGetValue(const String & key) const;
 
 private:
     MacroMap macros;

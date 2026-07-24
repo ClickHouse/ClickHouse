@@ -11,9 +11,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
 #include <cmath>
@@ -50,7 +51,6 @@ using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
-using SphericalPointInRadians = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::radian>>;
 using SphericalLineString = LineString<SphericalPoint>;
 using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
@@ -64,7 +64,7 @@ using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
 template <typename Point>
 struct ColumnToPointsConverter
 {
-    static VectorWithMemoryTracking<Point> convert(ColumnPtr col)
+    static std::vector<Point> convert(ColumnPtr col)
     {
         const auto * tuple = typeid_cast<const ColumnTuple *>(col.get());
         const auto & tuple_columns = tuple->getColumns();
@@ -75,7 +75,7 @@ struct ColumnToPointsConverter
         const auto * first_container = x_data->getData().data();
         const auto * second_container = y_data->getData().data();
 
-        VectorWithMemoryTracking<Point> answer(col->size());
+        std::vector<Point> answer(col->size());
 
         for (size_t i = 0; i < col->size(); ++i)
         {
@@ -102,11 +102,11 @@ struct ColumnToPointsConverter
 template <typename Point>
 struct ColumnToLineStringsConverter
 {
-    static VectorWithMemoryTracking<LineString<Point>> convert(ColumnPtr col)
+    static std::vector<LineString<Point>> convert(ColumnPtr col)
     {
         const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
         size_t prev_offset = 0;
-        VectorWithMemoryTracking<LineString<Point>> answer;
+        std::vector<LineString<Point>> answer;
         answer.reserve(offsets.size());
         auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
         for (size_t offset : offsets)
@@ -124,11 +124,11 @@ struct ColumnToLineStringsConverter
 template <typename Point>
 struct ColumnToMultiLineStringsConverter
 {
-    static VectorWithMemoryTracking<MultiLineString<Point>> convert(ColumnPtr col)
+    static std::vector<MultiLineString<Point>> convert(ColumnPtr col)
     {
         const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
         size_t prev_offset = 0;
-        VectorWithMemoryTracking<MultiLineString<Point>> answer(offsets.size());
+        std::vector<MultiLineString<Point>> answer(offsets.size());
         auto all_linestrings = ColumnToLineStringsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
         for (size_t iter = 0; iter < offsets.size() && iter < all_linestrings.size(); ++iter)
         {
@@ -146,11 +146,11 @@ struct ColumnToMultiLineStringsConverter
 template <typename Point>
 struct ColumnToRingsConverter
 {
-    static VectorWithMemoryTracking<Ring<Point>> convert(ColumnPtr col)
+    static std::vector<Ring<Point>> convert(ColumnPtr col)
     {
         const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
         size_t prev_offset = 0;
-        VectorWithMemoryTracking<Ring<Point>> answer;
+        std::vector<Ring<Point>> answer;
         answer.reserve(offsets.size());
         auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
         for (size_t offset : offsets)
@@ -168,10 +168,10 @@ struct ColumnToRingsConverter
 template <typename Point>
 struct ColumnToPolygonsConverter
 {
-    static VectorWithMemoryTracking<Polygon<Point>> convert(ColumnPtr col)
+    static std::vector<Polygon<Point>> convert(ColumnPtr col)
     {
         const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
-        VectorWithMemoryTracking<Polygon<Point>> answer(offsets.size());
+        std::vector<Polygon<Point>> answer(offsets.size());
         auto all_rings = ColumnToRingsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
         size_t prev_offset = 0;
@@ -201,11 +201,11 @@ struct ColumnToPolygonsConverter
 template <typename Point>
 struct ColumnToMultiPolygonsConverter
 {
-    static VectorWithMemoryTracking<MultiPolygon<Point>> convert(ColumnPtr col)
+    static std::vector<MultiPolygon<Point>> convert(ColumnPtr col)
     {
         const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
         size_t prev_offset = 0;
-        VectorWithMemoryTracking<MultiPolygon<Point>> answer(offsets.size());
+        std::vector<MultiPolygon<Point>> answer(offsets.size());
 
         auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 

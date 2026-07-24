@@ -122,12 +122,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     updateDiagnosticInfo();
 
     if (likely(getRowNum() != 0))
-    {
-        if (row_between_delimiter_already_skipped)
-            row_between_delimiter_already_skipped = false;
-        else
-            format_reader->skipRowBetweenDelimiter();
-    }
+        format_reader->skipRowBetweenDelimiter();
 
     extra.read_columns.assign(columns.size(), false);
 
@@ -284,7 +279,6 @@ void TemplateRowInputFormat::syncAfterError()
 {
     skipToNextRowOrEof(*buf, row_format.delimiters.back(), row_between_delimiter, ignore_spaces);
     end_of_stream = buf->eof();
-    row_between_delimiter_already_skipped = !end_of_stream;
     /// It can happen that buf->position() is not at the beginning of row
     /// if some delimiters is similar to row_format.delimiters.back() and row_between_delimiter.
     /// It will cause another parsing error.
@@ -294,7 +288,6 @@ void TemplateRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
-    row_between_delimiter_already_skipped = false;
 }
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -585,7 +578,6 @@ static ParsedTemplateFormatString fillRowFormat(const FormatSettings & settings,
         allow_indexes);
 }
 
-void registerInputFormatTemplate(FormatFactory & factory);
 void registerInputFormatTemplate(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -614,7 +606,6 @@ void registerInputFormatTemplate(FormatFactory & factory)
     }
 }
 
-void registerTemplateSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})

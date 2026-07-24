@@ -5,7 +5,6 @@
 
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/UUID.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -202,7 +201,7 @@ public:
         DefaultsOrFilter defaults_or_filter) const
     {
         bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-        chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
         size_t attribute_names_size = attribute_names.size();
 
@@ -350,7 +349,7 @@ public:
     /// IKeyValueEntity implementation
     Names getPrimaryKey() const  override { return getStructure().getKeysNames(); }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names & result_names, PaddedPODArray<UInt8> & out_null_map, IColumn::Offsets & /* out_offsets */) const override
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map, const Names & result_names) const override
     {
         if (keys.empty())
             return Chunk(getSampleBlock(result_names).cloneEmpty().getColumns(), 0);
@@ -453,7 +452,7 @@ public:
     void updateDictionaryID(const StorageID & new_dictionary_id)
     {
         std::lock_guard lock{mutex};
-        chassert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
+        assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
         dictionary_id = new_dictionary_id;
     }
 

@@ -2,7 +2,6 @@
 description: 'Documentation for Clickhouse Obfuscator'
 slug: /operations/utilities/clickhouse-obfuscator
 title: 'clickhouse-obfuscator'
-doc_type: 'reference'
 ---
 
 A simple tool for table data obfuscation.

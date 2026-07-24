@@ -1,6 +1,5 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <Common/PODArray.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/WriteHelpers.h>
@@ -72,11 +71,6 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
         throw Exception(decompression_error_code, "Wrong compression methods list");
 
     UInt8 compression_methods_size = source[0];
-    /// +1 for the compression_methods_size byte itself
-    if (static_cast<UInt32>(compression_methods_size) + 1 > source_size)
-        throw Exception(decompression_error_code, "Wrong compression methods list: header claims {} codecs"
-                        " but compressed data is only {} bytes",
-                        static_cast<UInt32>(compression_methods_size), source_size);
 
     PODArray<char> compressed_buf(&source[compression_methods_size + 1], &source[source_size]);
     PODArray<char> uncompressed_buf;
@@ -92,12 +86,8 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
         if (compressed_buf.size() >= 1_GiB)
             throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
 
-        if (source_size < COMPRESSED_BLOCK_HEADER_SIZE)
-            throw Exception(decompression_error_code, "Compressed data is too short to contain a block header: {} bytes",
-                            source_size);
-
         {
-            UInt32 bytes_to_resize = 0;
+            UInt32 bytes_to_resize;
             if (common::addOverflow(static_cast<UInt32>(compressed_buf.size()), additional_size_at_the_end_of_buffer, bytes_to_resize))
                 throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
 
@@ -114,7 +104,7 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
                 uncompressed_size, decompressed_size);
 
         {
-            UInt32 bytes_to_resize = 0;
+            UInt32 bytes_to_resize;
             if (common::addOverflow(uncompressed_size, additional_size_at_the_end_of_buffer, bytes_to_resize))
                 throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 
@@ -131,9 +121,9 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
     return decompressed_size;
 }
 
-VectorWithMemoryTracking<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
+std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
 {
-    VectorWithMemoryTracking<uint8_t> result;
+    std::vector<uint8_t> result;
     uint8_t compression_methods_size = source[0];
     result.reserve(compression_methods_size);
 

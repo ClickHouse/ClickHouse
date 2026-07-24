@@ -5,19 +5,18 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ConcatReadBuffer.h>
-#include <Examples/clickhouse_examples.h>
 
 
 using namespace DB;
 
-int mainEntryExampleReadEscapedString(int, char **)
+int main(int, char **)
 try
 {
     std::string s1 = "abc\\x\n";
     std::string s2 = "\tdef";
 
     ReadBufferFromMemory rb1(s1.data(), 3);
-    ReadBufferFromMemory rb2(s2);
+    ReadBufferFromMemory rb2(s2.data(), s2.size());
 
     ConcatReadBuffer rb3(rb1, rb2);
 

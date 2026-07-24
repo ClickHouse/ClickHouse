@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/castColumn.h>
@@ -20,10 +19,6 @@ ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & req
         return nullptr;
 
     auto elem_type = elem->type;
-
-    if (!elem->column)
-        return nullptr;
-
     auto elem_column = elem->column->decompress();
 
     if (requested_column.isSubcolumn())
@@ -48,7 +43,7 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
     auto subcolumn_name = requested_subcolumn.getSubcolumnName();
     /// If requested subcolumn is dynamic, we should first perform cast and then
     /// extract the subcolumn, because the data of dynamic subcolumn can change after cast.
-    if ((elem->type->hasDynamicStructure() || requested_column_type->hasDynamicStructure()) && !elem->type->equals(*requested_column_type))
+    if ((elem->type->hasDynamicSubcolumns() || requested_column_type->hasDynamicSubcolumns()) && !elem->type->equals(*requested_column_type))
     {
         auto cast_column = castColumn({elem->column, elem->type, ""}, requested_column_type);
         auto elem_column = requested_column_type->tryGetSubcolumn(subcolumn_name, cast_column);

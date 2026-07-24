@@ -56,7 +56,7 @@ public:
     }
 };
 
-class StorageAzureConfigurationFriend : private StorageAzureConfiguration
+class StorageAzureConfigurationFriend : public StorageAzureConfiguration
 {
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override
@@ -75,7 +75,7 @@ public:
     }
 };
 
-static void loadNamedCollectionConfig(const String & xml)
+void loadNamedCollectionConfig(const String & xml)
 {
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
@@ -195,7 +195,7 @@ TEST(StorageAzureConfiguration, FromNamedCollectionWithPartialExtraCredentials)
 }
 
 // Helper to get engine args from a query string
-static ASTs getEngineArgs(const std::string & query)
+ASTs getEngineArgs(const std::string & query)
 {
     ParserQuery parser(query.data() + query.size());
     ASTPtr ast = parseQuery(parser, query, 0, 0, 0);

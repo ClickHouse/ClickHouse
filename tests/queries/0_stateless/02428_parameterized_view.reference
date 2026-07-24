@@ -4,12 +4,7 @@ ERROR
 10
 50
 SELECT *
-FROM
-(
-    SELECT *
-    FROM default.test_02428_Catalog
-    WHERE Price = _CAST(10, \'UInt64\')
-) AS test_02428_pv1
+FROM test_02428_pv1(price = 10)
 ERROR
 ERROR
 ERROR

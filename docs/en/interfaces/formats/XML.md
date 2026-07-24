@@ -6,7 +6,6 @@ keywords: ['XML']
 output_format: true
 slug: /interfaces/formats/XML
 title: 'XML'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

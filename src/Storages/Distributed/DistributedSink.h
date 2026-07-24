@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -36,7 +36,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink final : public SinkToStorage
+class DistributedSink : public SinkToStorage
 {
 public:
     DistributedSink(
@@ -127,7 +127,7 @@ private:
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        ContextMutablePtr local_context;
+        ContextPtr local_context;
         QueryPipeline pipeline;
         std::unique_ptr<PushingPipelineExecutor> executor;
 

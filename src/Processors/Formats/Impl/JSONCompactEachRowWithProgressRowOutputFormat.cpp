@@ -105,7 +105,6 @@ void JSONCompactEachRowWithProgressRowOutputFormat::finalizeImpl()
     }
 }
 
-void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONCompactEachRowWithProgress", [](

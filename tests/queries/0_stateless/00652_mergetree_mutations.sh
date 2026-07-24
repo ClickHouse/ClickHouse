@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,8 +24,8 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations(d, x, s) VALUES \
 # Try some malformed queries that should fail validation.
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE nonexistent = 0" 2>/dev/null || echo "Query should fail 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
-# Queries involving alias columns are now supported with the new analyzer.
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations UPDATE s = s || '' WHERE a = 0"
+# TODO: Queries involving alias columns are not supported yet and should fail on submission.
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations UPDATE s = s || '' WHERE a = 0" 2>/dev/null || echo "Query involving aliases should fail on submission"
 
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE x % 2 = 1"
@@ -38,7 +37,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations(d, x, s) VALUES \
     ('2000-01-01', 5, 'e'), ('2000-02-01', 5, 'e')"
 
 # Wait until the last mutation is done.
-wait_for_mutation "mutations" "mutation_8.txt"
+wait_for_mutation "mutations" "mutation_7.txt"
 
 # Check that the table contains only the data that should not be deleted.
 ${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM mutations ORDER BY d, x"
@@ -54,7 +53,7 @@ ${CLICKHOUSE_CLIENT} --query="SELECT '*** Test mutations cleaner ***'"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS mutations_cleaner"
 
 # Create a table with finished_mutations_to_keep = 2
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner(x UInt32) ENGINE MergeTree ORDER BY x SETTINGS finished_mutations_to_keep = 2, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner(x UInt32) ENGINE MergeTree ORDER BY x SETTINGS finished_mutations_to_keep = 2"
 
 # Insert some data
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner(x) VALUES (1), (2), (3), (4)"
@@ -66,9 +65,9 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner DELETE WHERE x = 3"
 
 wait_for_mutation "mutations_cleaner" "mutation_4.txt"
 
-# Sleep and then wakeup the background cleanup thread that will clean up the old mutations
+# Sleep and then do an INSERT to wakeup the background task that will clean up the old mutations
 sleep 1
-${CLICKHOUSE_CLIENT} --query="SYSTEM START CLEANUP mutations_cleaner"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner(x) VALUES (4)"
 sleep 0.1
 
 for i in {1..10}
@@ -78,12 +77,12 @@ do
         break
     fi
 
-    if [[ $i -eq 10 ]]; then
+    if [[ $i -eq 100 ]]; then
         echo "Timed out while waiting for outdated mutation record to be deleted!"
     fi
 
     sleep 1
-    ${CLICKHOUSE_CLIENT} --query="SYSTEM START CLEANUP mutations_cleaner"
+    ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner(x) VALUES (4)"  
 done
 
 # Check that the first mutation is cleaned

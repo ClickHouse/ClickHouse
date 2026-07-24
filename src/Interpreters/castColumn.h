@@ -1,10 +1,9 @@
 #pragma once
 
+#include <tuple>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Functions/CastOverloadResolver.h>
 
-#include <mutex>
-#include <tuple>
 
 namespace DB
 {

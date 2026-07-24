@@ -12,8 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
@@ -23,7 +21,7 @@ namespace Setting
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray final : public IFunction
+class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
@@ -134,7 +132,7 @@ private:
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         using Container = ColumnVectorOrDecimal<T>::Container;
-        VectorWithMemoryTracking<const Container *> containers(columns.size(), nullptr);
+        std::vector<const Container *> containers(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnVectorOrDecimal<T> * concrete_column = checkAndGetColumn<ColumnVectorOrDecimal<T>>(columns[i]);
@@ -151,12 +149,6 @@ private:
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
-            /// At x86-64-v3 the loop and SLP vectorizers widen the per-column scatter into AVX2 gathers / packed stores
-            /// for typical small `columns.size()` (1-4), which regresses array literal construction by 10-20% vs scalar
-            /// stores. Disabling unrolling and vectorization keeps the simple per-element copy.
-#if defined(__clang__) && defined(__AVX2__)
-#pragma clang loop unroll(disable) vectorize(disable)
-#endif
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
                 out_container[base + col_i] = (*containers[col_i])[row_i];
         }
@@ -166,7 +158,7 @@ private:
     bool executeString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         size_t total_bytes = 0;
-        VectorWithMemoryTracking<const ColumnString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnString * concrete_column = checkAndGetColumn<ColumnString>(columns[i]);
@@ -189,9 +181,9 @@ private:
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
-                cur_out_offset += ref.size();
+                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
+                cur_out_offset += ref.size;
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
@@ -200,7 +192,7 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        VectorWithMemoryTracking<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnFixedString * concrete_column = checkAndGetColumn<ColumnFixedString>(columns[i]);
@@ -222,8 +214,8 @@ private:
         {
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
+                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data, n);
                 curr_out_offset += n;
             }
         }
@@ -261,8 +253,7 @@ private:
         const size_t tuple_size = concrete_out_data->tupleSize();
         if (tuple_size == 0)
         {
-            /// Tuple() has no subcolumns to fill. Create `columns.size()` elements per row to match array offsets
-            out_data.insertManyDefaults(columns.size() * input_rows_count);
+            out_data.insertManyDefaults(columns.size());
         }
         else
         {
@@ -333,7 +324,7 @@ There is no supertype for types Int32, DateTime, Int8 ...
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArray>(documentation);
 }

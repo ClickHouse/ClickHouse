@@ -25,16 +25,14 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Union does not change header.
         /// We can push down expression and update header.
         auto union_input_headers = child->getInputHeaders();
-        auto expected_output = expression->getOutputHeader();
-
         for (auto & input_header : union_input_headers)
-            input_header = expected_output;
+            input_header = expression->getOutputHeader();
 
         ///                    - Something
         /// Expression - Union - Something
         ///                    - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
@@ -53,7 +51,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
             expr_node.step = std::make_unique<ExpressionStep>(
                 expr_node.children.front()->step->getOutputHeader(),
                 expression->getExpression().clone());
-            expr_node.step->setStepDescription(*expression);
+            expr_node.step->setStepDescription(expression->getStepDescription());
         }
 
         ///       - Expression - Something
@@ -92,7 +90,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
 
-            distinct_node.step->setStepDescription(*distinct);
+            distinct_node.step->setStepDescription(distinct->getStepDescription());
         }
 
         ///       - Distinct - Something

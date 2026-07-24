@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,10 +10,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+counters_query="SELECT active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters'"
+
 function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
-        res=$($CLICKHOUSE_CLIENT --query "SELECT active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters'")
+        res=`$CLICKHOUSE_CLIENT --query "$counters_query"`
         if [[ $res == "0" ]]; then
             break
         fi
@@ -23,7 +26,7 @@ function wait_for_mutation_cleanup()
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_mutations_counters;
 
-    CREATE TABLE t_mutations_counters (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
+    CREATE TABLE t_mutations_counters (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 
     INSERT INTO t_mutations_counters VALUES (1, 2) (2, 3);
 
@@ -33,7 +36,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE t_mutations_counters UPDATE b = 100 WHERE a = 1;
     ALTER TABLE t_mutations_counters UPDATE b = 200 WHERE a = 2;
 
-    SELECT 'active_on_fly_data_mutations (merges stopped)', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
+    $counters_query;
     SYSTEM START MERGES t_mutations_counters;
 "
 
@@ -41,16 +44,16 @@ wait_for_mutation "t_mutations_counters" "mutation_3.txt"
 wait_for_mutation_cleanup
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT 'active_on_fly_data_mutations', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
-    SELECT 'mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters' AND NOT is_done;
+    $counters_query;
+    SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters' AND NOT is_done;
     SELECT * FROM t_mutations_counters ORDER BY a;
 
     SYSTEM STOP MERGES t_mutations_counters;
     ALTER TABLE t_mutations_counters UPDATE b = 1000 WHERE a = 1;
 
-    SELECT 'active_on_fly_data_mutations (before kill)', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
-    KILL MUTATION WHERE database = currentDatabase() AND mutation_id = 'mutation_4.txt' SYNC FORMAT Null;
-    SELECT 'active_on_fly_data_mutations (after kill)', active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters';
+    $counters_query;
+    KILL MUTATION WHERE mutation_id = 'mutation_4.txt' SYNC FORMAT Null;
+    $counters_query;
 
     DROP TABLE t_mutations_counters;
 "

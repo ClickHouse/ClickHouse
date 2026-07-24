@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <utility>
 #include <atomic>
-#include <base/defines.h>
+#include <cassert>
 #include <base/types.h>
 #include <base/strong_typedef.h>
 
@@ -26,9 +26,9 @@ namespace CurrentMetrics
     using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
-    const std::string_view & getName(Metric event);
+    const char * getName(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
-    const std::string_view & getDocumentation(Metric event);
+    const char * getDocumentation(Metric event);
 
     /// Metric identifier -> current value of metric.
     extern std::atomic<Value> values[];
@@ -59,22 +59,12 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
-    inline bool cas(Metric metric, Value expected, Value desired)
-    {
-        return values[metric].compare_exchange_strong(expected, desired, std::memory_order_relaxed);
-    }
-
-    inline void max(Metric metric, Value value)
-    {
-        __atomic_fetch_max(reinterpret_cast<Value *>(&values[metric]), value, __ATOMIC_RELAXED);
-    }
-
     /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {
     private:
-        std::atomic<Value> * what{};
-        Value amount{};
+        std::atomic<Value> * what;
+        Value amount;
 
         Increment(std::atomic<Value> * what_, Value amount_)
             : what(what_), amount(amount_)
@@ -86,12 +76,7 @@ namespace CurrentMetrics
         explicit Increment(Metric metric, Value amount_ = 1)
             : Increment(&values[metric], amount_)
         {
-            // in src/Core/tests/gtest_BackgroundSchedulePool.cpp we create pool as
-            // auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
-            // which leads as to creation of Increment with metric == CurrentMetrics::end()
-            // actually this is not a real metric, however it is presented in CurrentMetrics::values array
-            // so we are able to increment it and we should not assert here when metric == CurrentMetrics::end()
-            chassert(metric <= CurrentMetrics::end());
+            assert(metric < CurrentMetrics::end());
         }
 
         ~Increment()

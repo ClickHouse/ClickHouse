@@ -25,7 +25,7 @@ RUN touch "/root/.ssh/known_hosts"
 
 # install java
 RUN apt-get update && \
-    apt-get install openjdk-17-jdk-headless libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends \
+    apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

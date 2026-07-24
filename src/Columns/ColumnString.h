@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -109,16 +110,17 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
+        WriteBufferFromOwnString wb;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, wb);
+        return {wb.str(), std::make_shared<DataTypeString>()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
         chassert(n < size());
-        return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
+        return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
     bool isDefaultAt(size_t n) const override
@@ -193,9 +195,6 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > size())
-            throwCannotPopBack(n, getName(), size());
-
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
         chars.resize(chars.size() - nested_n);
         offsets.resize_assume_reserved(offsets.size() - n);
@@ -209,17 +208,16 @@ public:
 
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     WeakHash32 getWeakHash32() const override;
 
@@ -232,8 +230,6 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-
-    void filter(const Filter & filt) override;
 
     void expand(const Filter & mask, bool inverted) override;
 
@@ -267,11 +263,6 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n), rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m));
     }
 
-#if USE_EMBEDDED_COMPILER
-    bool isComparatorCompilable() const override;
-    llvm::Value * compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const override;
-#endif
-
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
 
@@ -296,10 +287,10 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
 
     bool canBeInsideNullable() const override { return true; }
 
@@ -318,9 +309,6 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
-
-    /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
-    ColumnPtr createSizeSubcolumn() const;
 };
 
 

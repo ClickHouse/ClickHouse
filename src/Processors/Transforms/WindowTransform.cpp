@@ -3,24 +3,21 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
-#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -56,10 +53,7 @@ struct fmt::formatter<DB::RowNumber>
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool allow_rank_dense_rank_arguments;
-}
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -92,19 +86,19 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     // Note that the storage type of offset returned by get<> is different, so
     // we need to specify the type explicitly.
     const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
-    chassert(offset >= 0);
+    assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
-    chassert(compared_value_data.size() == sizeof(ValueType));
+    assert(compared_value_data.size == sizeof(ValueType));
     auto compared_value = unalignedLoad<ValueType>(
-        compared_value_data.data());
+        compared_value_data.data);
 
     const auto reference_value_data = reference_column->getDataAt(reference_row);
-    chassert(reference_value_data.size() == sizeof(ValueType));
+    assert(reference_value_data.size == sizeof(ValueType));
     auto reference_value = unalignedLoad<ValueType>(
-        reference_value_data.data());
+        reference_value_data.data);
 
-    bool is_overflow = false;
+    bool is_overflow;
     if (offset_is_preceding)
         is_overflow = common::subOverflow(reference_value, offset, reference_value);
     else
@@ -145,14 +139,14 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
     chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
-    chassert(compared_value_data.size() == sizeof(typename ColumnType::ValueType));
+    assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
     auto compared_value = unalignedLoad<typename ColumnType::ValueType>(
-        compared_value_data.data());
+        compared_value_data.data);
 
     const auto reference_value_data = reference_column->getDataAt(reference_row);
-    chassert(reference_value_data.size() == sizeof(typename ColumnType::ValueType));
+    assert(reference_value_data.size == sizeof(typename ColumnType::ValueType));
     auto reference_value = unalignedLoad<typename ColumnType::ValueType>(
-        reference_value_data.data());
+        reference_value_data.data);
 
     /// Floats overflow to Inf and the comparison will work normally, so we don't have to do anything.
     if (offset_is_preceding)
@@ -356,7 +350,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
             || window_description.frame.end_type
                 == WindowFrame::BoundaryType::Offset))
     {
-        chassert(order_by_indices.size() == 1);
+        assert(order_by_indices.size() == 1);
         const auto & entry = input_header.getByPosition(order_by_indices[0]);
         const IColumn * column = entry.column.get();
         APPLY_FOR_TYPES(compareValuesWithOffset)
@@ -418,27 +412,6 @@ WindowTransform::~WindowTransform()
     }
 }
 
-Columns & WindowTransform::inputAt(const RowNumber & x)
-{
-    chassert(x.block >= first_block_number);
-    chassert(x.block - first_block_number < blocks.size());
-    return blocks[x.block - first_block_number].input_columns;
-}
-
-WindowTransformBlock & WindowTransform::blockAt(const UInt64 block_number)
-{
-    chassert(block_number >= first_block_number);
-    chassert(block_number - first_block_number < blocks.size());
-    return blocks[block_number - first_block_number];
-}
-
-MutableColumns & WindowTransform::outputAt(const RowNumber & x)
-{
-    chassert(x.block >= first_block_number);
-    chassert(x.block - first_block_number < blocks.size());
-    return blocks[x.block - first_block_number].output_columns;
-}
-
 void WindowTransform::advancePartitionEnd()
 {
     if (partition_ended)
@@ -460,7 +433,7 @@ void WindowTransform::advancePartitionEnd()
         partition_ended = true;
         // We receive empty chunk at the end of data, so the partition_end must
         // be already at the end of data.
-        chassert(partition_end == end);
+        assert(partition_end == end);
         return;
     }
 
@@ -476,7 +449,7 @@ void WindowTransform::advancePartitionEnd()
     // past-the-end pointer, so it must be already in the "next" block we haven't
     // processed yet. This is also the last block we have.
     // The exception to this rule is end of data, for which we checked above.
-    chassert(end.block == partition_end.block + 1);
+    assert(end.block == partition_end.block + 1);
 
     // Try to advance the partition end pointer.
     const size_t partition_by_columns = partition_by_indices.size();
@@ -498,11 +471,11 @@ void WindowTransform::advancePartitionEnd()
     // is a pointer to the first row of the previous frame that must have been
     // valid, or to the first row of the partition, and we make sure not to drop
     // its block.
-    chassert(partition_start <= prev_frame_start);
+    assert(partition_start <= prev_frame_start);
     // The frame start should be inside the prospective partition, except the
     // case when it still has no rows.
-    chassert(prev_frame_start < partition_end || partition_start == partition_end);
-    chassert(first_block_number <= prev_frame_start.block);
+    assert(prev_frame_start < partition_end || partition_start == partition_end);
+    assert(first_block_number <= prev_frame_start.block);
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
@@ -530,12 +503,12 @@ void WindowTransform::advancePartitionEnd()
     }
 
     // Went until the end of block, go to the next.
-    chassert(partition_end.row == block_rows);
+    assert(partition_end.row == block_rows);
     ++partition_end.block;
     partition_end.row = 0;
 
     // Went until the end of data and didn't find the new partition.
-    chassert(!partition_ended && partition_end == blocksEnd());
+    assert(!partition_ended && partition_end == blocksEnd());
 }
 
 auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
@@ -547,7 +520,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
         for (;;)
         {
             assertValid(moved_row_number);
-            chassert(offset >= 0);
+            assert(offset >= 0);
 
             const auto block_rows = blockRowsNumber(moved_row_number);
             moved_row_number.row += offset;
@@ -574,12 +547,14 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
         for (;;)
         {
             assertValid(moved_row_number);
-            chassert(offset <= 0);
+            assert(offset <= 0);
 
-            chassert(offset >= -INT64_MAX);
-            if (moved_row_number.row >= -static_cast<UInt64>(offset))
+            // abs(offset) is less than INT64_MAX, as checked in the parser, so
+            // this negation should always work.
+            assert(offset >= -INT64_MAX);
+            if (moved_row_number.row >= static_cast<UInt64>(-offset))
             {
-                moved_row_number.row -= -static_cast<UInt64>(offset);
+                moved_row_number.row -= -offset;
                 offset = 0;
                 break;
             }
@@ -615,8 +590,8 @@ auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64
     const auto [original_row_number_to_validate, offset_after_move_back]
         = moveRowNumberNoCheck(moved_row_number, -(offset - offset_after_move));
 
-    chassert(original_row_number_to_validate == original_row_number);
-    chassert(0 == offset_after_move_back);
+    assert(original_row_number_to_validate == original_row_number);
+    assert(0 == offset_after_move_back);
 #endif
 
     return std::tuple<RowNumber, Int64>{moved_row_number, offset_after_move};
@@ -634,12 +609,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     assertValid(frame_start);
 
-    // When moving backwards (PRECEDING) and we hit the start of available data
-    // (offset_left < 0), the logical position is before partition_start.
-    // We must check offset_left < 0 first because partition_start might point
-    // to a block that has already been freed, making the comparison unreliable.
-    if (frame_start <= partition_start
-        || (window_description.frame.begin_preceding && offset_left < 0))
+    if (frame_start <= partition_start)
     {
         // Got to the beginning of partition and can't go further back.
         frame_start = partition_start;
@@ -657,7 +627,12 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     // Handled the equality case above. Now the frame start is inside the
     // partition, if we walked all the offset, it's final.
+    assert(partition_start < frame_start);
     frame_started = offset_left == 0;
+
+    // If we ran into the start of data (offset left is negative), we won't be
+    // able to make progress. Should have handled this case above.
+    assert(offset_left >= 0);
 }
 
 
@@ -708,9 +683,9 @@ void WindowTransform::advanceFrameStart()
         case WindowFrame::BoundaryType::Current:
             // CURRENT ROW differs between frame types only in how the peer
             // groups are accounted.
-            chassert(partition_start <= peer_group_start);
-            chassert(peer_group_start < partition_end);
-            chassert(peer_group_start <= current_row);
+            assert(partition_start <= peer_group_start);
+            assert(peer_group_start < partition_end);
+            assert(peer_group_start <= current_row);
             frame_start = peer_group_start;
             frame_started = true;
             break;
@@ -732,7 +707,7 @@ void WindowTransform::advanceFrameStart()
             break;
     }
 
-    chassert(frame_start_before <= frame_start);
+    assert(frame_start_before <= frame_start);
     if (frame_start == frame_start_before)
     {
         // If the frame start didn't move, this means we validated that the frame
@@ -742,17 +717,17 @@ void WindowTransform::advanceFrameStart()
         // last row of the block, but we can only tell for sure after a new
         // block arrives. We still have to update the state of aggregate
         // functions when the frame start becomes valid, so we continue.
-        chassert(frame_started);
+        assert(frame_started);
     }
 
-    chassert(partition_start <= frame_start);
-    chassert(frame_start <= partition_end);
+    assert(partition_start <= frame_start);
+    assert(frame_start <= partition_end);
     if (partition_ended && frame_start == partition_end)
     {
         // Check that if the start of frame (e.g. FOLLOWING) runs into the end
         // of partition, it is marked as valid -- we can't advance it any
         // further.
-        chassert(frame_started);
+        assert(frame_started);
     }
 }
 
@@ -771,7 +746,7 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
     }
 
     // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
-    chassert(window_description.frame.type == WindowFrame::FrameType::RANGE);
+    assert(window_description.frame.type == WindowFrame::FrameType::RANGE);
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -802,14 +777,14 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // (only loop over rows and not over blocks), that should hopefully be more
     // efficient.
     // partition_end is either in this new block or past-the-end.
-    chassert(frame_end.block  == partition_end.block
+    assert(frame_end.block  == partition_end.block
         || frame_end.block + 1 == partition_end.block);
 
     if (frame_end == partition_end)
     {
         // The case when we get a new block and find out that the partition has
         // ended.
-        chassert(partition_ended);
+        assert(partition_ended);
         frame_ended = partition_ended;
         return;
     }
@@ -817,19 +792,19 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // We advance until the partition end. It's either in the current block or
     // in the next one, which is also the past-the-end block. Figure out how
     // many rows we have to process.
-    UInt64 rows_end = 0;
+    UInt64 rows_end;
     if (partition_end.row == 0)
     {
-        chassert(partition_end == blocksEnd());
+        assert(partition_end == blocksEnd());
         rows_end = blockRowsNumber(frame_end);
     }
     else
     {
-        chassert(frame_end.block == partition_end.block);
+        assert(frame_end.block == partition_end.block);
         rows_end = partition_end.row;
     }
     // Equality would mean "no data to process", for which we checked above.
-    chassert(frame_end.row < rows_end);
+    assert(frame_end.row < rows_end);
 
     // Advance frame_end while it is still peers with the current row.
     for (; frame_end.row < rows_end; ++frame_end.row)
@@ -850,7 +825,7 @@ void WindowTransform::advanceFrameEndCurrentRow()
     }
 
     // Got to the end of partition (frame ended as well then) or end of data.
-    chassert(frame_end == partition_end);
+    assert(frame_end == partition_end);
     frame_ended = partition_ended;
 }
 
@@ -879,12 +854,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
         return;
     }
 
-    // When moving backwards (PRECEDING) and we hit the start of available data
-    // (offset_left < 0), the logical position is before partition_start.
-    // We must check offset_left < 0 first because partition_start might point
-    // to a block that has already been freed, making the comparison unreliable.
-    if (moved_row <= partition_start
-        || (window_description.frame.end_preceding && offset_left < 0))
+    if (moved_row <= partition_start)
     {
         // Clamp to the start of partition.
         frame_end = partition_start;
@@ -895,6 +865,10 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Frame end inside partition, if we walked all the offset, it's final.
     frame_end = moved_row;
     frame_ended = offset_left == 0;
+
+    // If we ran into the start of data (offset left is negative), we won't be
+    // able to make progress. Should have handled this case above.
+    assert(offset_left >= 0);
 }
 
 void WindowTransform::advanceFrameEndRangeOffset()
@@ -930,7 +904,7 @@ void WindowTransform::advanceFrameEndRangeOffset()
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
-    chassert(!frame_ended);
+    assert(!frame_ended);
 
     const auto frame_end_before = frame_end;
 
@@ -972,14 +946,14 @@ void WindowTransform::updateAggregationState()
 {
     // Assert that the frame boundaries are known, have proper order wrt each
     // other, and have not gone back wrt the previous frame.
-    chassert(frame_started);
-    chassert(frame_ended);
-    chassert(frame_start <= frame_end);
-    chassert(prev_frame_start <= prev_frame_end);
-    chassert(prev_frame_start <= frame_start);
-    chassert(prev_frame_end <= frame_end);
-    chassert(partition_start <= frame_start);
-    chassert(frame_end <= partition_end);
+    assert(frame_started);
+    assert(frame_ended);
+    assert(frame_start <= frame_end);
+    assert(prev_frame_start <= prev_frame_end);
+    assert(prev_frame_start <= frame_start);
+    assert(prev_frame_end <= frame_end);
+    assert(partition_start <= frame_start);
+    assert(frame_end <= partition_end);
 
     // We might have to reset aggregation state and/or add some rows to it.
     // Figure out what to do.
@@ -1064,8 +1038,8 @@ void WindowTransform::updateAggregationState()
 
 void WindowTransform::writeOutCurrentRow()
 {
-    chassert(current_row < partition_end);
-    chassert(current_row.block >= first_block_number);
+    assert(current_row < partition_end);
+    assert(current_row.block >= first_block_number);
 
     const auto & block = blockAt(current_row);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
@@ -1101,15 +1075,15 @@ void WindowTransform::writeOutCurrentRow()
 static void assertSameColumns(const Columns & left_all,
     const Columns & right_all)
 {
-    chassert(left_all.size() == right_all.size());
+    assert(left_all.size() == right_all.size());
 
     for (size_t i = 0; i < left_all.size(); ++i)
     {
         const auto * left_column = left_all[i].get();
         const auto * right_column = right_all[i].get();
 
-        chassert(left_column);
-        chassert(right_column);
+        assert(left_column);
+        assert(right_column);
 
         if (const auto * left_lc = typeid_cast<const ColumnLowCardinality *>(left_column))
             left_column = left_lc->getDictionary().getNestedColumn().get();
@@ -1117,7 +1091,7 @@ static void assertSameColumns(const Columns & left_all,
         if (const auto * right_lc = typeid_cast<const ColumnLowCardinality *>(right_column))
             right_column = right_lc->getDictionary().getNestedColumn().get();
 
-        chassert(typeid(*left_column).hash_code()
+        assert(typeid(*left_column).hash_code()
             == typeid(*right_column).hash_code());
 
         if (isColumnConst(*left_column))
@@ -1125,7 +1099,7 @@ static void assertSameColumns(const Columns & left_all,
             Field left_value = assert_cast<const ColumnConst &>(*left_column).getField();
             Field right_value = assert_cast<const ColumnConst &>(*right_column).getField();
 
-            chassert(left_value == right_value);
+            assert(left_value == right_value);
         }
     }
 }
@@ -1170,7 +1144,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
         for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
@@ -1195,10 +1169,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
         advancePartitionEnd();
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
-        chassert(partition_ended || partition_end == blocksEnd());
+        assert(partition_ended || partition_end == blocksEnd());
         if (partition_ended && partition_end == blocksEnd())
         {
-            chassert(input_is_finished);
+            assert(input_is_finished);
         }
 
         // After that, try to calculate window functions for each next row.
@@ -1221,8 +1195,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
             if (!frame_started)
             {
                 // Wait for more input data to find the start of frame.
-                chassert(!input_is_finished);
-                chassert(!partition_ended);
+                assert(!input_is_finished);
+                assert(!partition_ended);
                 return;
             }
 
@@ -1240,17 +1214,17 @@ void WindowTransform::appendChunk(Chunk & chunk)
             if (!frame_ended)
             {
                 // Wait for more input data to find the end of frame.
-                chassert(!input_is_finished);
-                chassert(!partition_ended);
+                assert(!input_is_finished);
+                assert(!partition_ended);
                 return;
             }
 
             // The frame can be empty sometimes, e.g. the boundaries coincide
             // or the start is after the partition end. But hopefully start is
             // not after end.
-            chassert(frame_started);
-            chassert(frame_ended);
-            chassert(frame_start <= frame_end);
+            assert(frame_started);
+            assert(frame_ended);
+            assert(frame_start <= frame_end);
 
             // Now that we know the new frame boundaries, update the aggregation
             // states. Theoretically we could do this simultaneously with moving
@@ -1304,8 +1278,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // Wait for more input data to find the end of partition.
             // Assert that we processed all the data we currently have, and that
             // we are going to receive more data.
-            chassert(partition_end == blocksEnd());
-            chassert(!input_is_finished);
+            assert(partition_end == blocksEnd());
+            assert(!input_is_finished);
             break;
         }
 
@@ -1319,7 +1293,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         frame_end = partition_start;
         prev_frame_start = partition_start;
         prev_frame_end = partition_start;
-        chassert(current_row == partition_start);
+        assert(current_row == partition_start);
         current_row_number = 1;
         peer_group_start = partition_start;
         peer_group_start_row_number = 1;
@@ -1384,12 +1358,12 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-    chassert(first_not_ready_row.block >= first_block_number);
+    assert(first_not_ready_row.block >= first_block_number);
     // The first_not_ready_row might be past-the-end if we have already
     // calculated the window functions for all input rows. That's why the
     // equality is also valid here.
-    chassert(first_not_ready_row.block <= first_block_number + blocks.size());
-    chassert(next_output_block_number >= first_block_number);
+    assert(first_not_ready_row.block <= first_block_number + blocks.size());
+    assert(next_output_block_number >= first_block_number);
 
     // Output the ready data prepared by work().
     // We inspect the calculation state and create the output chunk right here,
@@ -1423,8 +1397,8 @@ IProcessor::Status WindowTransform::prepare()
         // The input data ended at the previous prepare() + work() cycle,
         // and we don't have ready output data (checked above). We must be
         // finished.
-        chassert(next_output_block_number == first_block_number + blocks.size());
-        chassert(first_not_ready_row == blocksEnd());
+        assert(next_output_block_number == first_block_number + blocks.size());
+        assert(first_not_ready_row == blocksEnd());
 
         // FIXME do we really have to do this?
         output.finish();
@@ -1465,7 +1439,7 @@ IProcessor::Status WindowTransform::prepare()
     {
         // We won't, time to finalize the calculation in work(). We should only
         // do this once.
-        chassert(!input_is_finished);
+        assert(!input_is_finished);
         input_is_finished = true;
         return Status::Ready;
     }
@@ -1478,9 +1452,9 @@ IProcessor::Status WindowTransform::prepare()
 void WindowTransform::work()
 {
     // Exceptions should be skipped in prepare().
-    chassert(!input_data.exception);
+    assert(!input_data.exception);
 
-    chassert(has_input || input_is_finished);
+    assert(has_input || input_is_finished);
 
     try
     {
@@ -1502,7 +1476,7 @@ void WindowTransform::work()
     // than the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
-    chassert(prev_frame_start <= frame_start);
+    assert(prev_frame_start <= frame_start);
     const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
     if (first_block_number < first_used_block)
     {
@@ -1510,11 +1484,11 @@ void WindowTransform::work()
             blocks.begin() + (first_used_block - first_block_number));
         first_block_number = first_used_block;
 
-        chassert(next_output_block_number >= first_block_number);
-        chassert(frame_start.block >= first_block_number);
-        chassert(prev_frame_start.block >= first_block_number);
-        chassert(current_row.block >= first_block_number);
-        chassert(peer_group_start.block >= first_block_number);
+        assert(next_output_block_number >= first_block_number);
+        assert(frame_start.block >= first_block_number);
+        assert(prev_frame_start.block >= first_block_number);
+        assert(current_row.block >= first_block_number);
+        assert(peer_group_start.block >= first_block_number);
     }
 }
 
@@ -2242,7 +2216,7 @@ public:
         }
 
         UInt64 remaining_rows = state.current_partition_rows;
-        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : static_cast<Float64>(remaining_rows - 1);
+        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : remaining_rows - 1;
 
         while (remaining_rows > 0)
         {
@@ -2290,134 +2264,13 @@ public:
     }
 };
 
-namespace
-{
-struct CumeDistState
-{
-    RowNumber start_row;
-    UInt64 current_partition_rows = 0;
-};
-}
-
-struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistState>
-{
-public:
-    WindowFunctionCumeDist(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
-    {}
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    bool checkWindowFrameType(const WindowTransform * transform) const override
-    {
-        auto default_window_frame = getDefaultFrame();
-        if (transform->window_description.frame != default_window_frame)
-        {
-            LOG_ERROR(
-                getLogger("WindowFunctionCumeDist"),
-                "Window frame for function 'cume_dist' should be '{}'", default_window_frame->toString());
-            return false;
-        }
-        return true;
-    }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::RANGE;
-        frame.begin_type = WindowFrame::BoundaryType::Unbounded;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
-
-    void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const override
-    {
-        auto & state = getWorkspaceState(transform, function_index);
-        if (WindowFunctionHelpers::checkPartitionEnterFirstRow(transform))
-        {
-            state.current_partition_rows = 0;
-            state.start_row = transform->current_row;
-        }
-
-        insertPeerGroupEndRowNumberIntoColumn(transform, function_index);
-        state.current_partition_rows++;
-
-        if (!WindowFunctionHelpers::checkPartitionEnterLastRow(transform))
-        {
-            return;
-        }
-
-        UInt64 remaining_rows = state.current_partition_rows;
-        Float64 cume_dist_denominator = static_cast<Float64>(remaining_rows);
-
-        while (remaining_rows > 0)
-        {
-            auto block_rows_number = transform->blockRowsNumber(state.start_row);
-            auto available_block_rows = block_rows_number - state.start_row.row;
-            if (available_block_rows <= remaining_rows)
-            {
-                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
-                auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
-                for (size_t i = state.start_row.row; i < block_rows_number; ++i)
-                    data[i] = data[i] / cume_dist_denominator;
-
-                state.start_row.block++;
-                state.start_row.row = 0;
-                remaining_rows -= available_block_rows;
-            }
-            else
-            {
-                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
-                auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
-                for (size_t i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
-                {
-                    data[i] = data[i] / cume_dist_denominator;
-                }
-                state.start_row.row += remaining_rows;
-                remaining_rows = 0;
-            }
-        }
-    }
-
-
-    inline CumeDistState & getWorkspaceState(const WindowTransform * transform, size_t function_index) const
-    {
-        const auto & workspace = transform->workspaces[function_index];
-        return getState(workspace);
-    }
-
-    inline void insertPeerGroupEndRowNumberIntoColumn(const WindowTransform * transform, size_t function_index) const
-    {
-        // Calculate the peer group end row number by finding the last row in the current peer group
-        UInt64 peer_group_end_row_number = transform->current_row_number;
-        RowNumber check_row = transform->current_row;
-
-        // Advance through all rows that are peers with the current row
-        while (true)
-        {
-            RowNumber next = transform->nextRowNumber(check_row);
-            if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
-                break;
-            check_row = next;
-            peer_group_end_row_number++;
-        }
-
-        auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
-        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(peer_group_end_row_number));
-    }
-};
-
-// ClickHouse-specific lag/lead family implementation.
-/// `full_partition_default_frame` controls whether the function supplies a default window frame:
-/// - `true` (used by `lag`/`lead`): use the full-partition ROWS frame (UNBOUNDED PRECEDING .. UNBOUNDED FOLLOWING).
-/// - `false` (used by `lagInFrame`/`leadInFrame`): no default frame, so the caller-provided frame is respected.
-template <bool is_lead, bool full_partition_default_frame>
-struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
+// ClickHouse-specific variant of lag/lead that respects the window frame.
+template <bool is_lead>
+struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
 
-    WindowFunctionLagLeadImpl(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+    WindowFunctionLagLeadInFrame(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
         if (!parameters.empty())
@@ -2472,14 +2325,14 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 
         auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
         {
-            return createInternalCast({from, {}}, to, CastType::accurate, {}, nullptr);
+            return createInternalCast({from, {}}, to, CastType::accurate, {});
         };
 
         func_cast = get_cast_func();
 
     }
 
-    ColumnPtr castColumn(const Columns & columns, const VectorWithMemoryTracking<size_t> & idx) override
+    ColumnPtr castColumn(const Columns & columns, const std::vector<size_t> & idx) override
     {
         if (!func_cast)
             return nullptr;
@@ -2509,17 +2362,6 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
     }
 
     bool allocatesMemoryInArena() const override { return false; }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        if constexpr (!full_partition_default_frame)
-            return {};
-
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
@@ -2576,12 +2418,6 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         }
     }
 };
-
-template <bool is_lead>
-using WindowFunctionLagLead = WindowFunctionLagLeadImpl<is_lead, true>;
-
-template <bool is_lead>
-using WindowFunctionLagLeadInFrame = WindowFunctionLagLeadImpl<is_lead, false>;
 
 struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
@@ -2755,16 +2591,16 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 
         Float64 curr_metric = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_METRIC, transform->current_row);
         Float64 metric_diff = curr_metric - state.previous_metric;
-        Float64 result = 0;
+        Float64 result;
 
         if (ts_scale_multiplier)
         {
             const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
             const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
 
-            Float64 time_elapsed = static_cast<Float64>(curr_timestamp) - state.previous_timestamp;
-            result = (time_elapsed > 0) ? (metric_diff * static_cast<Float64>(ts_scale_multiplier) / time_elapsed  * interval_duration) : 0;
-            state.previous_timestamp = static_cast<Float64>(curr_timestamp);
+            Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
+            result = (time_elapsed > 0) ? (metric_diff * ts_scale_multiplier / time_elapsed  * interval_duration) : 0;
+            state.previous_timestamp = curr_timestamp;
         }
         else
         {
@@ -2783,7 +2619,6 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 };
 
 
-void registerWindowFunctions(AggregateFunctionFactory & factory);
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
     // Why didn't I implement lag/lead yet? Because they are a mess. I imagine
@@ -2815,34 +2650,18 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         .is_window_function = true};
 
     factory.registerFunction("rank", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            // The `RANK` window function takes no arguments per SQL standard.
-            // ClickHouse historically accepted and silently ignored arbitrary arguments,
-            // which caused user confusion (issue #49526). Reject them by default; the
-            // legacy permissive behavior is gated behind `allow_rank_dense_rank_arguments`.
-            if (!argument_types.empty() && (settings == nullptr || !(*settings)[Setting::allow_rank_dense_rank_arguments]))
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
-                    "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
-                    name, argument_types.size());
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("denseRank", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            // The `DENSE_RANK` window function takes no arguments per SQL standard.
-            // See `rank` registration above for the rationale.
-            if (!argument_types.empty() && (settings == nullptr || !(*settings)[Setting::allow_rank_dense_rank_arguments]))
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
-                    "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
-                    name, argument_types.size());
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, properties});
 
     factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2851,454 +2670,92 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, properties});
 
     factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
-
-    factory.registerFunction("cume_dist", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return std::make_shared<WindowFunctionCumeDist>(name, argument_types,
-                parameters);
-        }, {}, properties});
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("ntile", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNtile>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNthValue>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, properties});
 
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead<false>>(
+            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties});
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, properties});
 
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead<true>>(
+            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties});
 
-    FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
-Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
-    )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
-    FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
-        {"v", "Value.", {"(U)Int*", "Float*", "Decimal"}},
-        {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
-    };
-    FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
-        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns the sum of exponentially smoothed moving average values at the given point in time.", {"Float64"}};
-    FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
-    {
-        "Window function usage with visual representation",
-        R"(
-SELECT
-    value,
-    time,
-    round(exp_smooth, 3),
-    bar(exp_smooth, 0, 10, 50) AS bar
-FROM
-    (
-    SELECT
-    (number = 0) OR (number >= 25) AS value,
-    number AS time,
-    exponentialTimeDecayedSum(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
-    FROM numbers(50)
-    );
-        )",
-        R"(
-┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar───────────────────────────────────────────────┐
-│     1 │    0 │                    1 │ █████                                             │
-│     0 │    1 │                0.905 │ ████▌                                             │
-│     0 │    2 │                0.819 │ ████                                              │
-│     0 │    3 │                0.741 │ ███▋                                              │
-│     0 │    4 │                 0.67 │ ███▎                                              │
-│     0 │    5 │                0.607 │ ███                                               │
-│     0 │    6 │                0.549 │ ██▋                                               │
-│     0 │    7 │                0.497 │ ██▍                                               │
-│     0 │    8 │                0.449 │ ██▏                                               │
-│     0 │    9 │                0.407 │ ██                                                │
-│     0 │   10 │                0.368 │ █▊                                                │
-│     0 │   11 │                0.333 │ █▋                                                │
-│     0 │   12 │                0.301 │ █▌                                                │
-│     0 │   13 │                0.273 │ █▎                                                │
-│     0 │   14 │                0.247 │ █▏                                                │
-│     0 │   15 │                0.223 │ █                                                 │
-│     0 │   16 │                0.202 │ █                                                 │
-│     0 │   17 │                0.183 │ ▉                                                 │
-│     0 │   18 │                0.165 │ ▊                                                 │
-│     0 │   19 │                 0.15 │ ▋                                                 │
-│     0 │   20 │                0.135 │ ▋                                                 │
-│     0 │   21 │                0.122 │ ▌                                                 │
-│     0 │   22 │                0.111 │ ▌                                                 │
-│     0 │   23 │                  0.1 │ ▌                                                 │
-│     0 │   24 │                0.091 │ ▍                                                 │
-│     1 │   25 │                1.082 │ █████▍                                            │
-│     1 │   26 │                1.979 │ █████████▉                                        │
-│     1 │   27 │                2.791 │ █████████████▉                                    │
-│     1 │   28 │                3.525 │ █████████████████▋                                │
-│     1 │   29 │                 4.19 │ ████████████████████▉                             │
-│     1 │   30 │                4.791 │ ███████████████████████▉                          │
-│     1 │   31 │                5.335 │ ██████████████████████████▋                       │
-│     1 │   32 │                5.827 │ █████████████████████████████▏                    │
-│     1 │   33 │                6.273 │ ███████████████████████████████▎                  │
-│     1 │   34 │                6.676 │ █████████████████████████████████▍                │
-│     1 │   35 │                7.041 │ ███████████████████████████████████▏              │
-│     1 │   36 │                7.371 │ ████████████████████████████████████▊             │
-│     1 │   37 │                7.669 │ ██████████████████████████████████████▎           │
-│     1 │   38 │                7.939 │ ███████████████████████████████████████▋          │
-│     1 │   39 │                8.184 │ ████████████████████████████████████████▉         │
-│     1 │   40 │                8.405 │ ██████████████████████████████████████████        │
-│     1 │   41 │                8.605 │ ███████████████████████████████████████████       │
-│     1 │   42 │                8.786 │ ███████████████████████████████████████████▉      │
-│     1 │   43 │                 8.95 │ ████████████████████████████████████████████▊     │
-│     1 │   44 │                9.098 │ █████████████████████████████████████████████▍    │
-│     1 │   45 │                9.233 │ ██████████████████████████████████████████████▏   │
-│     1 │   46 │                9.354 │ ██████████████████████████████████████████████▊   │
-│     1 │   47 │                9.464 │ ███████████████████████████████████████████████▎  │
-│     1 │   48 │                9.563 │ ███████████████████████████████████████████████▊  │
-│     1 │   49 │                9.653 │ ████████████████████████████████████████████████▎ │
-└───────┴──────┴──────────────────────┴───────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation::IntroducedIn exponentialTimeDecayedSum_introduced_in = {21, 12};
-    FunctionDocumentation exponentialTimeDecayedSum_documentation = {exponentialTimeDecayedSum_description, exponentialTimeDecayedSum_syntax, exponentialTimeDecayedSum_arguments, exponentialTimeDecayedSum_parameters, exponentialTimeDecayedSum_returned_value, exponentialTimeDecayedSum_examples, exponentialTimeDecayedSum_introduced_in, exponentialTimeDecayedSum_category};
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedSum_documentation, properties});
+        }, properties});
 
-    FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
-Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
-    )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedMax_syntax = "exponentialTimeDecayedMax(x)(value, timeunit)";
-    FunctionDocumentation::Arguments exponentialTimeDecayedMax_arguments = {
-        {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
-        {"timeunit", "Timeunit.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
-    };
-    FunctionDocumentation::Parameters exponentialTimeDecayedMax_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedMax_returned_value = {"Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`.", {"Float64"}};
-    FunctionDocumentation::Examples exponentialTimeDecayedMax_examples = {
-    {
-        "Window function usage with visual representation",
-        R"(
-SELECT
-    value,
-    time,
-    round(exp_smooth, 3),
-    bar(exp_smooth, 0, 5, 50) AS bar
-FROM
-    (
-    SELECT
-    (number = 0) OR (number >= 25) AS value,
-    number AS time,
-    exponentialTimeDecayedMax(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
-    FROM numbers(50)
-    );
-        )",
-        R"(
-┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────┐
-│     1 │    0 │                    1 │ ██████████ │
-│     0 │    1 │                0.905 │ █████████  │
-│     0 │    2 │                0.819 │ ████████▏  │
-│     0 │    3 │                0.741 │ ███████▍   │
-│     0 │    4 │                 0.67 │ ██████▋    │
-│     0 │    5 │                0.607 │ ██████     │
-│     0 │    6 │                0.549 │ █████▍     │
-│     0 │    7 │                0.497 │ ████▉      │
-│     0 │    8 │                0.449 │ ████▍      │
-│     0 │    9 │                0.407 │ ████       │
-│     0 │   10 │                0.368 │ ███▋       │
-│     0 │   11 │                0.333 │ ███▎       │
-│     0 │   12 │                0.301 │ ███        │
-│     0 │   13 │                0.273 │ ██▋        │
-│     0 │   14 │                0.247 │ ██▍        │
-│     0 │   15 │                0.223 │ ██▏        │
-│     0 │   16 │                0.202 │ ██         │
-│     0 │   17 │                0.183 │ █▊         │
-│     0 │   18 │                0.165 │ █▋         │
-│     0 │   19 │                 0.15 │ █▍         │
-│     0 │   20 │                0.135 │ █▎         │
-│     0 │   21 │                0.122 │ █▏         │
-│     0 │   22 │                0.111 │ █          │
-│     0 │   23 │                  0.1 │ █          │
-│     0 │   24 │                0.091 │ ▉          │
-│     1 │   25 │                    1 │ ██████████ │
-│     1 │   26 │                    1 │ ██████████ │
-│     1 │   27 │                    1 │ ██████████ │
-│     1 │   28 │                    1 │ ██████████ │
-│     1 │   29 │                    1 │ ██████████ │
-│     1 │   30 │                    1 │ ██████████ │
-│     1 │   31 │                    1 │ ██████████ │
-│     1 │   32 │                    1 │ ██████████ │
-│     1 │   33 │                    1 │ ██████████ │
-│     1 │   34 │                    1 │ ██████████ │
-│     1 │   35 │                    1 │ ██████████ │
-│     1 │   36 │                    1 │ ██████████ │
-│     1 │   37 │                    1 │ ██████████ │
-│     1 │   38 │                    1 │ ██████████ │
-│     1 │   39 │                    1 │ ██████████ │
-│     1 │   40 │                    1 │ ██████████ │
-│     1 │   41 │                    1 │ ██████████ │
-│     1 │   42 │                    1 │ ██████████ │
-│     1 │   43 │                    1 │ ██████████ │
-│     1 │   44 │                    1 │ ██████████ │
-│     1 │   45 │                    1 │ ██████████ │
-│     1 │   46 │                    1 │ ██████████ │
-│     1 │   47 │                    1 │ ██████████ │
-│     1 │   48 │                    1 │ ██████████ │
-│     1 │   49 │                    1 │ ██████████ │
-└───────┴──────┴──────────────────────┴────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation::IntroducedIn exponentialTimeDecayedMax_introduced_in = {21, 12};
-    FunctionDocumentation exponentialTimeDecayedMax_documentation = {exponentialTimeDecayedMax_description, exponentialTimeDecayedMax_syntax, exponentialTimeDecayedMax_arguments, exponentialTimeDecayedMax_parameters, exponentialTimeDecayedMax_returned_value, exponentialTimeDecayedMax_examples, exponentialTimeDecayedMax_introduced_in, exponentialTimeDecayedMax_category};
     factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedMax>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedMax_documentation, properties});
+        }, properties});
 
-    FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
-Returns the cumulative exponential decay over a time series at the index `t` in time.
-    )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedCount_syntax = "exponentialTimeDecayedCount(x)(t)";
-    FunctionDocumentation::Arguments exponentialTimeDecayedCount_arguments = {
-        {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
-    };
-    FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns the cumulative exponential decay at the given point in time.", {"Float64"}};
-    FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
-    {
-        "Window function usage with visual representation",
-        R"(
-SELECT
-    value,
-    time,
-    round(exp_smooth, 3),
-    bar(exp_smooth, 0, 20, 50) AS bar
-FROM
-(
-    SELECT
-        (number % 5) = 0 AS value,
-        number AS time,
-        exponentialTimeDecayedCount(10)(time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
-    FROM numbers(50)
-)
-        )",
-        R"(
-┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────────────────────┐
-│     1 │    0 │                    1 │ ██▌                        │
-│     0 │    1 │                1.905 │ ████▊                      │
-│     0 │    2 │                2.724 │ ██████▊                    │
-│     0 │    3 │                3.464 │ ████████▋                  │
-│     0 │    4 │                4.135 │ ██████████▎                │
-│     1 │    5 │                4.741 │ ███████████▊               │
-│     0 │    6 │                 5.29 │ █████████████▏             │
-│     0 │    7 │                5.787 │ ██████████████▍            │
-│     0 │    8 │                6.236 │ ███████████████▌           │
-│     0 │    9 │                6.643 │ ████████████████▌          │
-│     1 │   10 │                 7.01 │ █████████████████▌         │
-│     0 │   11 │                7.343 │ ██████████████████▎        │
-│     0 │   12 │                7.644 │ ███████████████████        │
-│     0 │   13 │                7.917 │ ███████████████████▊       │
-│     0 │   14 │                8.164 │ ████████████████████▍      │
-│     1 │   15 │                8.387 │ ████████████████████▉      │
-│     0 │   16 │                8.589 │ █████████████████████▍     │
-│     0 │   17 │                8.771 │ █████████████████████▉     │
-│     0 │   18 │                8.937 │ ██████████████████████▎    │
-│     0 │   19 │                9.086 │ ██████████████████████▋    │
-│     1 │   20 │                9.222 │ ███████████████████████    │
-│     0 │   21 │                9.344 │ ███████████████████████▎   │
-│     0 │   22 │                9.455 │ ███████████████████████▋   │
-│     0 │   23 │                9.555 │ ███████████████████████▉   │
-│     0 │   24 │                9.646 │ ████████████████████████   │
-│     1 │   25 │                9.728 │ ████████████████████████▎  │
-│     0 │   26 │                9.802 │ ████████████████████████▌  │
-│     0 │   27 │                9.869 │ ████████████████████████▋  │
-│     0 │   28 │                 9.93 │ ████████████████████████▊  │
-│     0 │   29 │                9.985 │ ████████████████████████▉  │
-│     1 │   30 │               10.035 │ █████████████████████████  │
-│     0 │   31 │                10.08 │ █████████████████████████▏ │
-│     0 │   32 │               10.121 │ █████████████████████████▎ │
-│     0 │   33 │               10.158 │ █████████████████████████▍ │
-│     0 │   34 │               10.191 │ █████████████████████████▍ │
-│     1 │   35 │               10.221 │ █████████████████████████▌ │
-│     0 │   36 │               10.249 │ █████████████████████████▌ │
-│     0 │   37 │               10.273 │ █████████████████████████▋ │
-│     0 │   38 │               10.296 │ █████████████████████████▋ │
-│     0 │   39 │               10.316 │ █████████████████████████▊ │
-│     1 │   40 │               10.334 │ █████████████████████████▊ │
-│     0 │   41 │               10.351 │ █████████████████████████▉ │
-│     0 │   42 │               10.366 │ █████████████████████████▉ │
-│     0 │   43 │               10.379 │ █████████████████████████▉ │
-│     0 │   44 │               10.392 │ █████████████████████████▉ │
-│     1 │   45 │               10.403 │ ██████████████████████████ │
-│     0 │   46 │               10.413 │ ██████████████████████████ │
-│     0 │   47 │               10.422 │ ██████████████████████████ │
-│     0 │   48 │                10.43 │ ██████████████████████████ │
-│     0 │   49 │               10.438 │ ██████████████████████████ │
-└───────┴──────┴──────────────────────┴────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::Category exponentialTimeDecayedCount_category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation::IntroducedIn exponentialTimeDecayedCount_introduced_in = {21, 12};
-    FunctionDocumentation exponentialTimeDecayedCount_documentation = {exponentialTimeDecayedCount_description, exponentialTimeDecayedCount_syntax, exponentialTimeDecayedCount_arguments, exponentialTimeDecayedCount_parameters, exponentialTimeDecayedCount_returned_value, exponentialTimeDecayedCount_examples, exponentialTimeDecayedCount_introduced_in, exponentialTimeDecayedCount_category};
     factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedCount_documentation, properties});
+        }, properties});
 
-    FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
-Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
-    )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(x)(v, t)";
-    FunctionDocumentation::Arguments exponentialTimeDecayedAvg_arguments = {
-        {"v", "Value.", {"(U)Int*", "Float*", "Decimal"}},
-        {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
-    };
-    FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {"Returns an exponentially smoothed weighted moving average at index `t` in time.", {"Float64"}};
-    FunctionDocumentation::Examples exponentialTimeDecayedAvg_examples = {
-    {
-        "Window function usage with visual representation",
-        R"(
-SELECT
-    value,
-    time,
-    round(exp_smooth, 3),
-    bar(exp_smooth, 0, 5, 50) AS bar
-FROM
-    (
-    SELECT
-    (number = 0) OR (number >= 25) AS value,
-    number AS time,
-    exponentialTimeDecayedAvg(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
-    FROM numbers(50)
-    )
-        )",
-        R"(
-┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────┐
-│     1 │    0 │                    1 │ ██████████ │
-│     0 │    1 │                0.475 │ ████▊      │
-│     0 │    2 │                0.301 │ ███        │
-│     0 │    3 │                0.214 │ ██▏        │
-│     0 │    4 │                0.162 │ █▌         │
-│     0 │    5 │                0.128 │ █▎         │
-│     0 │    6 │                0.104 │ █          │
-│     0 │    7 │                0.086 │ ▊          │
-│     0 │    8 │                0.072 │ ▋          │
-│     0 │    9 │                0.061 │ ▌          │
-│     0 │   10 │                0.052 │ ▌          │
-│     0 │   11 │                0.045 │ ▍          │
-│     0 │   12 │                0.039 │ ▍          │
-│     0 │   13 │                0.034 │ ▎          │
-│     0 │   14 │                 0.03 │ ▎          │
-│     0 │   15 │                0.027 │ ▎          │
-│     0 │   16 │                0.024 │ ▏          │
-│     0 │   17 │                0.021 │ ▏          │
-│     0 │   18 │                0.018 │ ▏          │
-│     0 │   19 │                0.016 │ ▏          │
-│     0 │   20 │                0.015 │ ▏          │
-│     0 │   21 │                0.013 │ ▏          │
-│     0 │   22 │                0.012 │            │
-│     0 │   23 │                 0.01 │            │
-│     0 │   24 │                0.009 │            │
-│     1 │   25 │                0.111 │ █          │
-│     1 │   26 │                0.202 │ ██         │
-│     1 │   27 │                0.283 │ ██▊        │
-│     1 │   28 │                0.355 │ ███▌       │
-│     1 │   29 │                 0.42 │ ████▏      │
-│     1 │   30 │                0.477 │ ████▊      │
-│     1 │   31 │                0.529 │ █████▎     │
-│     1 │   32 │                0.576 │ █████▊     │
-│     1 │   33 │                0.618 │ ██████▏    │
-│     1 │   34 │                0.655 │ ██████▌    │
-│     1 │   35 │                0.689 │ ██████▉    │
-│     1 │   36 │                0.719 │ ███████▏   │
-│     1 │   37 │                0.747 │ ███████▍   │
-│     1 │   38 │                0.771 │ ███████▋   │
-│     1 │   39 │                0.793 │ ███████▉   │
-│     1 │   40 │                0.813 │ ████████▏  │
-│     1 │   41 │                0.831 │ ████████▎  │
-│     1 │   42 │                0.848 │ ████████▍  │
-│     1 │   43 │                0.862 │ ████████▌  │
-│     1 │   44 │                0.876 │ ████████▊  │
-│     1 │   45 │                0.888 │ ████████▉  │
-│     1 │   46 │                0.898 │ ████████▉  │
-│     1 │   47 │                0.908 │ █████████  │
-│     1 │   48 │                0.917 │ █████████▏ │
-│     1 │   49 │                0.925 │ █████████▏ │
-└───────┴──────┴──────────────────────┴────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::Category exponentialTimeDecayedAvg_category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation::IntroducedIn exponentialTimeDecayedAvg_introduced_in = {21, 12};
-    FunctionDocumentation exponentialTimeDecayedAvg_documentation = {exponentialTimeDecayedAvg_description, exponentialTimeDecayedAvg_syntax, exponentialTimeDecayedAvg_arguments, exponentialTimeDecayedAvg_parameters, exponentialTimeDecayedAvg_returned_value, exponentialTimeDecayedAvg_examples, exponentialTimeDecayedAvg_introduced_in, exponentialTimeDecayedAvg_category};
     factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
                 name, argument_types, parameters);
-        }, exponentialTimeDecayedAvg_documentation, properties});
+        }, properties});
 
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNonNegativeDerivative>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, properties});
 }
 }

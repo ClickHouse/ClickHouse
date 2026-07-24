@@ -48,8 +48,8 @@ class AggregateFunctionNothingImpl final : public IAggregateFunctionHelper<Aggre
     }
 
 public:
-    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, params, getReturnType(arguments))
+    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array &)
+        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, Array(), getReturnType(arguments))
     {
     }
 
@@ -95,7 +95,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        [[maybe_unused]] char symbol = 0;
+        [[maybe_unused]] char symbol;
         readChar(symbol, buf);
         if (symbol != '\0')
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function '{}', it should contain exactly one zero byte, while it is {}",

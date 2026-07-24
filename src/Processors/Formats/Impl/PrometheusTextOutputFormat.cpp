@@ -343,7 +343,6 @@ void PrometheusTextOutputFormat::finalizeImpl()
     flushCurrentMetric();
 }
 
-void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory)
 {
     factory.registerOutputFormat(FORMAT_NAME, [](

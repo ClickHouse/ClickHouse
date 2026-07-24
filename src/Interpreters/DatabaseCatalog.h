@@ -8,15 +8,12 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/escapeForFileName.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
 
 #include <array>
 #include <condition_variable>
-#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -37,7 +34,7 @@ class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
-using Databases = std::map<String, std::shared_ptr<IDatabase>, std::less<>>;
+using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 using DiskPtr = std::shared_ptr<IDisk>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
@@ -86,17 +83,7 @@ using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
-struct GetDatabasesOptions
-{
-    /// Include remote databases (data lake catalogs, MySQL, PostgreSQL).
-    /// These are excluded by default because listing their tables can be expensive
-    /// (network calls to remote services). Controlled by the
-    /// `show_remote_databases_in_system_tables` setting in system.tables/columns/completions.
-    bool with_remote_databases{false};
-};
-
-/// For some reason Context is required to get Storage from Database object.
-/// This must not hold the Database mutex.
+/// For some reason Context is required to get Storage from Database object
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -109,17 +96,6 @@ public:
 
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
-
-    static fs::path getMetadataDirPath() { return fs::path("metadata"); }
-    static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
-    static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }
-    static fs::path getMetadataTmpFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp"); }
-
-    static fs::path getDataDirPath() { return fs::path("data"); }
-    static fs::path getDataDirPath(const String & database_name) { return getDataDirPath() / escapeForFileName(database_name); }
-
-    static fs::path getStoreDirPath() { return fs::path("store"); }
-    static fs::path getStoreDirPath(const UUID & uuid) { return getStoreDirPath() / getPathForUUID(uuid); }
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -152,19 +128,12 @@ public:
     void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
     /// database_name must be not empty
-    DatabasePtr getDatabase(std::string_view database_name) const;
-    DatabasePtr tryGetDatabase(std::string_view database_name) const;
+    DatabasePtr getDatabase(const String & database_name) const;
+    DatabasePtr tryGetDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
-    bool isDatabaseExist(std::string_view database_name) const;
-    /// Remote databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
-    /// Listing their tables typically requires calls to a remote service (sometimes paid).
-    /// GetDatabasesOptions::with_remote_databases explicitly protects us from accidentally querying the remote service for trivial
-    /// things like autocompletion hints or system.tables / system.columns queries.
-    /// The `show_remote_databases_in_system_tables` setting allows the user to opt in.
-    /// Note: system.databases always passes with_remote_databases = true because listing a database
-    /// name is purely local metadata and never requires calls to a remote service.
-    Databases getDatabases(GetDatabasesOptions options) const;
+    bool isDatabaseExist(const String & database_name) const;
+    Databases getDatabases() const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
@@ -190,18 +159,6 @@ public:
     /// View dependencies between a source table and its view.
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
-
-    /// Detach all source-side view-dependency edges of a source table (the table is the source of one
-    /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`
-    /// to re-key these edges under the new storage id via `addSourceViewDependencies`.
-    std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);
-    void addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids);
-
-    /// Check that all dependent views of a streaming source table are ready.
-    /// Returns the list of ready views, or empty if not all are ready yet.
-    /// During server startup, returns empty to prevent streaming engines from
-    /// processing data before all MV dependencies are registered.
-    std::vector<StorageID> getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const;
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
@@ -232,9 +189,7 @@ public:
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id);
 
-    void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
-
-    bool isShuttingDown() const { return is_shutting_down.load(); }
+    void waitTableFinallyDropped(const UUID & uuid);
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
@@ -278,9 +233,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
-    bool hasRemoteDatabases() const;
-    bool isRemoteDatabase(const String & database_name) const;
+    void updateMetadataFile(const DatabasePtr & database);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -314,8 +267,8 @@ private:
 
     time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
     std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
-    TablesMarkedAsDropped getTablesToDrop();
-    void dropTablesParallel(TablesMarkedAsDropped tables);
+    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
+    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
     void rescheduleDropTableTask();
 
     void cleanupStoreDirectoryTask();
@@ -328,7 +281,6 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
-    Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

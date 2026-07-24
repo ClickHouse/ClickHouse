@@ -13,6 +13,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
@@ -27,8 +31,7 @@ namespace DB
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, "", 0) \
-    DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
-    DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
+    DECLARE(Bool, gcs_issue_compose_request, false, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, access_key_id, "", "", 0) \
@@ -42,19 +45,51 @@ namespace DB
     DECLARE(String, service_account, "", "", 0) \
     DECLARE(String, metadata_service, "", "", 0) \
     DECLARE(String, request_token_path, "", "", 0) \
-    DECLARE(String, google_adc_client_id, "", "", 0) \
-    DECLARE(String, google_adc_client_secret, "", "", 0) \
-    DECLARE(String, google_adc_refresh_token, "", "", 0) \
 
 #define CLIENT_SETTINGS_LIST(M, ALIAS) \
     CLIENT_SETTINGS(M, ALIAS) \
     AUTH_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)
+DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST)
+IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST)
+
+struct S3AuthSettingsImpl : public BaseSettings<S3AuthSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) S3AuthSettings##TYPE NAME = &S3AuthSettingsImpl ::NAME;
+
+namespace S3AuthSetting
+{
+CLIENT_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 namespace S3
 {
+
+namespace
+{
+bool setValueFromConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3AuthSettingsImpl::SettingFieldRef & field)
+{
+    if (!config.has(path))
+        return false;
+
+    auto which = field.getValue().getType();
+    if (isInt64OrUInt64FieldType(which))
+        field.setValue(config.getUInt64(path));
+    else if (which == Field::Types::String)
+        field.setValue(config.getString(path));
+    else if (which == Field::Types::Bool)
+        field.setValue(config.getBool(path));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+
+    return true;
+}
+}
 
 
 S3AuthSettings::S3AuthSettings() : impl(std::make_unique<S3AuthSettingsImpl>())
@@ -69,7 +104,7 @@ S3AuthSettings::S3AuthSettings(
     {
         auto path = fmt::format("{}.{}", config_prefix, field.getName());
 
-        bool updated = S3::setValueFromConfig(config, path, field);
+        bool updated = setValueFromConfig(config, path, field);
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -101,7 +136,14 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
 {
 }
 
-S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept = default;
+S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept
+    : headers(std::move(settings.headers))
+    , access_headers(std::move(settings.access_headers))
+    , users(std::move(settings.users))
+    , server_side_encryption_kms_config(std::move(settings.server_side_encryption_kms_config))
+    , impl(std::make_unique<S3AuthSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 S3AuthSettings::S3AuthSettings(const DB::Settings & settings) : impl(std::make_unique<S3AuthSettingsImpl>())
 {
@@ -112,7 +154,16 @@ S3AuthSettings::~S3AuthSettings() = default;
 
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept = default;
+S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept
+{
+    headers = std::move(settings.headers);
+    access_headers = std::move(settings.access_headers);
+    users = std::move(settings.users);
+    server_side_encryption_kms_config = std::move(settings.server_side_encryption_kms_config);
+    *impl = std::move(*settings.impl);
+
+    return *this;
+}
 
 bool S3AuthSettings::operator==(const S3AuthSettings & right)
 {
@@ -219,7 +270,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
     result.impl = std::make_unique<S3AuthSettingsImpl>();
     result.impl->readBinary(in);
 
-    size_t headers_size = 0;
+    size_t headers_size;
     readVarUInt(headers_size, in);
     for (size_t i = 0; i < headers_size; ++i)
     {
@@ -230,7 +281,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         result.headers.emplace_back(name, value);
     }
 
-    size_t access_headers_size = 0;
+    size_t access_headers_size;
     readVarUInt(access_headers_size, in);
     for (size_t i = 0; i < access_headers_size; ++i)
     {
@@ -240,7 +291,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         readStringBinary(value, in);
         result.access_headers.emplace_back(name, value);
     }
-    size_t users_size = 0;
+    size_t users_size;
     readVarUInt(users_size, in);
     for (size_t i = 0; i < users_size; ++i)
     {

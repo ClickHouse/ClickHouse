@@ -4,8 +4,6 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 
-#include <mutex>
-
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 

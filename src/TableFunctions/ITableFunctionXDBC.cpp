@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
@@ -16,7 +17,10 @@
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
+
+#include "config.h"
 
 
 namespace DB
@@ -187,7 +191,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     {
         helper = createBridgeHelper(
             context,
-            Poco::Timespan(context->getSettingsRef()[Setting::http_receive_timeout]),
+            context->getSettingsRef()[Setting::http_receive_timeout].value,
             connection_string,
             context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();
@@ -238,11 +242,11 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>({});
+    factory.registerFunction<TableFunctionJDBC>();
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>({});
+    factory.registerFunction<TableFunctionODBC>();
 }
 }

@@ -22,10 +22,10 @@ public:
     void setPartitionID(const ASTPtr & ast);
     void setPartitionValue(const ASTPtr & ast);
 
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    void forEachPointerToChild(std::function<void(void **)> f) override
     {
-        f(&value, nullptr);
-        f(&id, nullptr);
+        f(reinterpret_cast<void **>(&value));
+        f(reinterpret_cast<void **>(&id));
     }
 
 protected:

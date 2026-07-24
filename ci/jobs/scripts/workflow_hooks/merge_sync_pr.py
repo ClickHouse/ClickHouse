@@ -22,15 +22,13 @@ def check():
         return
 
     if not Shell.check(
-        f"gh pr ready {sync_pr_number} --repo {SYNC_REPO}", verbose=True, retries=5
+        f"gh pr ready {sync_pr_number} --repo {SYNC_REPO}", verbose=True
     ):
         print("WARNING: Failed to set Sync PR as ready")
         return
 
     if not Shell.check(
-        f"gh pr merge {sync_pr_number} --repo {SYNC_REPO} --merge",
-        verbose=True,
-        retries=5,
+        f"gh pr merge {sync_pr_number} --repo {SYNC_REPO} --merge", verbose=True
     ):
         print("WARNING: Failed to merge Sync PR")
         return

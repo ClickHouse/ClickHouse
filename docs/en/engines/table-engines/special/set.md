@@ -4,9 +4,10 @@ description: 'A data set that is always in RAM. It is intended for use on the ri
 sidebar_label: 'Set'
 sidebar_position: 60
 slug: /engines/table-engines/special/set
-title: 'Set table engine'
-doc_type: 'reference'
+title: 'Set Table Engine'
 ---
+
+# Set table engine
 
 :::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.

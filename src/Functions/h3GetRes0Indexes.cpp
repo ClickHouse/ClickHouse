@@ -2,11 +2,17 @@
 
 #if USE_H3
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
+#include <base/range.h>
 
 #include <h3api.h>
 
@@ -39,7 +45,7 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        VectorWithMemoryTracking<H3Index> res0_indexes;
+        std::vector<H3Index> res0_indexes;
         const auto cell_count = res0CellCount();
         res0_indexes.resize(cell_count);
         getRes0Cells(res0_indexes.data());
@@ -55,30 +61,7 @@ public:
 
 REGISTER_FUNCTION(H3GetRes0Indexes)
 {
-    FunctionDocumentation::Description description = R"(
-Returns an array of all the resolution 0 [H3](#h3-index) indices.
-    )";
-    FunctionDocumentation::Syntax syntax = "h3GetRes0Indexes()";
-    FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of all resolution 0 H3 indices.",
-        {"Array(UInt64)"}
-    };
-    FunctionDocumentation::Examples examples = {
-        {
-            "Get all resolution 0 H3 indices",
-            "SELECT h3GetRes0Indexes() AS indexes",
-            R"(
-┌─indexes─────────────────────────────────────┐
-│ [576495936675512319,576531121047601151,...] │
-└─────────────────────────────────────────────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3GetRes0Indexes>(documentation);
+    factory.registerFunction<FunctionH3GetRes0Indexes>();
 }
 
 }

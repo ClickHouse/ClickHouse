@@ -1,6 +1,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
 #include <Core/Settings.h>
+#include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -83,7 +84,6 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
     return result;
 }
 
-void registerDictionaryRangeHashed(DictionaryFactory & factory);
 void registerDictionaryRangeHashed(DictionaryFactory & factory)
 {
     auto create_layout_simple = [=](const std::string & full_name,

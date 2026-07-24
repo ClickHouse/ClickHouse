@@ -1,8 +1,9 @@
--- Random settings limits: index_granularity=(100, 60000); index_granularity_bytes=(10000, None)
+-- Random settings limits: index_granularity=(None, 60000)
 -- Tags: long
 
 -- test is derived from 03246_alter_from_string_to_json.sql
 
+set allow_experimental_json_type = 1;
 set max_block_size = 20000;
 
 drop table if exists test;
