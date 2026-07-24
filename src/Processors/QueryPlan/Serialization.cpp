@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_serialized_query_plan_size;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -156,9 +161,6 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     serializeSets(registry, out, flags);
 }
 
-/// Sanity cap for a hostile envelope size; far above any real plan.
-static constexpr UInt64 MAX_QUERY_PLAN_ENVELOPE_BYTES = 2ULL << 30;
-
 void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
@@ -266,12 +268,16 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
 
 QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
 {
+    /// Bounds the memory one plan can take before anything is buffered. The initiator's value
+    /// travels with the query, so every reader of this plan applies the same limit.
+    const UInt64 max_envelope_bytes = context->getSettingsRef()[Setting::max_serialized_query_plan_size];
+
     UInt64 envelope_size = 0;
     readVarUInt(envelope_size, in);
-    if (envelope_size > MAX_QUERY_PLAN_ENVELOPE_BYTES)
+    if (envelope_size > max_envelope_bytes)
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan envelope declares {} bytes which exceeds the limit of {}",
-            envelope_size, MAX_QUERY_PLAN_ENVELOPE_BYTES);
+            "Query plan envelope declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
+            envelope_size, max_envelope_bytes);
 
     String envelope;
     envelope.resize(envelope_size);
@@ -288,7 +294,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
     }
 
     ReadBufferFromMemory envelope_buffer(envelope.data(), envelope.size());
-    auto outline = readQueryPlanOutline(envelope_buffer, max_type_complexity);
+    auto outline = readQueryPlanOutline(envelope_buffer, max_type_complexity, envelope_size);
 
     /// One pass over the outline reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.

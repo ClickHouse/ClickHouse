@@ -35,7 +35,6 @@ constexpr UInt64 MAX_OUTLINE_BYTES = 64ULL << 20;
 constexpr UInt64 MAX_OUTLINE_NODES = 1ULL << 20;
 constexpr UInt64 MAX_OUTLINE_FIELD_BYTES = 16ULL << 20;
 constexpr UInt64 MAX_OUTLINE_SETTINGS_PER_NODE = 64 * 1024;
-constexpr UInt64 MAX_OUTLINE_DECLARED_PAYLOAD_BYTES = 2ULL << 30;
 
 void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
 {
@@ -98,7 +97,7 @@ String readCappedSizedBytes(ReadBuffer & in, UInt64 cap, const char * what)
     return bytes;
 }
 
-PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity)
+PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 max_payload_bytes)
 {
     PlanOutline outline;
 
@@ -134,7 +133,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity)
             node.settings.push_back(std::move(entry));
         }
 
-        node.payload_size = readCappedVarUInt(in, MAX_OUTLINE_DECLARED_PAYLOAD_BYTES, "step payload bytes");
+        node.payload_size = readCappedVarUInt(in, max_payload_bytes, "step payload bytes");
 
         /// Future outline layouts append data here; a v4 reader skips it, which is what keeps
         /// shape rendering working for plans of newer versions.
@@ -150,7 +149,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity)
         PlanOutline::SetEntry entry;
         readBinary(entry.hash, in);
         readIntBinary(entry.kind, in);
-        entry.payload_size = readCappedVarUInt(in, MAX_OUTLINE_DECLARED_PAYLOAD_BYTES, "set payload bytes");
+        entry.payload_size = readCappedVarUInt(in, max_payload_bytes, "set payload bytes");
         outline.sets.push_back(entry);
     }
 
@@ -169,7 +168,7 @@ void writeQueryPlanOutline(const PlanOutline & outline, WriteBuffer & out)
     out.write(body.str().data(), body.str().size());
 }
 
-PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity)
+PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_payload_bytes)
 {
     UInt64 outline_size = readCappedVarUInt(in, MAX_OUTLINE_BYTES, "outline bytes");
 
@@ -182,7 +181,7 @@ PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity)
     ReadBufferFromMemory body(outline_bytes.data(), outline_bytes.size());
     try
     {
-        auto outline = readOutlineBody(body, max_type_complexity);
+        auto outline = readOutlineBody(body, max_type_complexity, max_payload_bytes);
 
         if (!body.eof())
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,

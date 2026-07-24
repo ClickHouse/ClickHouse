@@ -6559,6 +6559,14 @@ Enable use of software prefetch in hash join probe phase to hide memory access l
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
+    DECLARE(UInt64, max_serialized_query_plan_size, 2_GiB, R"(
+The maximum size in bytes of a serialized query plan a server accepts from a peer or a client.
+
+A plan above this size is rejected with `CANNOT_PARSE_QUERY_PLAN` instead of being buffered, which
+bounds the memory one plan can take. Raise it only for an extreme plan that genuinely needs it, and
+raise it on the initiator: the value travels with the query, so replicas and distributed workers
+apply the same limit when they read the plan.
+)", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \

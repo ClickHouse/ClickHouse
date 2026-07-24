@@ -270,6 +270,22 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     EXPECT_EQ(plan.getSerializedData(current + 100), current_bytes);
 }
 
+TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheSetting)
+{
+    registerStepsOnce();
+    const std::string bytes = serializePlan(makeChainPlan(4));
+
+    /// A limit below the plan size rejects it instead of buffering the envelope.
+    auto limited_context = Context::createCopy(getContext().context);
+    limited_context->setSetting("max_serialized_query_plan_size", UInt64(8));
+    ReadBufferFromString limited_in(bytes);
+    EXPECT_THROW(QueryPlan::deserialize(limited_in, limited_context, /*max_type_complexity=*/0), Exception);
+
+    /// The same plan passes at the default limit, so it is the setting doing the rejecting.
+    ReadBufferFromString in(bytes);
+    EXPECT_NO_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0));
+}
+
 TEST(QueryPlanSerialization, PayloadTailIsRejectedAtAKnownStepFormat)
 {
     registerStepsOnce();
@@ -390,7 +406,7 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     auto bytes = writeOutlineToString(outline);
 
     ReadBufferFromString in(bytes);
-    auto restored = readQueryPlanOutline(in, /*max_type_complexity=*/0);
+    auto restored = readQueryPlanOutline(in, /*max_type_complexity=*/0, /*max_payload_bytes=*/bytes.size());
     EXPECT_TRUE(in.eof());
 
     ASSERT_EQ(restored.nodes.size(), 2u);
@@ -536,7 +552,7 @@ TEST(QueryPlanOutline, TruncatedOutlineIsRejected)
     {
         std::string truncated = bytes.substr(0, cut);
         ReadBufferFromString in(truncated);
-        EXPECT_ANY_THROW(readQueryPlanOutline(in, 0)) << "no exception at cut " << cut;
+        EXPECT_ANY_THROW(readQueryPlanOutline(in, 0, bytes.size())) << "no exception at cut " << cut;
     }
 }
 
@@ -559,7 +575,7 @@ TEST(QueryPlanOutline, TrailingBytesInsideFrameAreRejected)
     patched.finalize();
 
     ReadBufferFromString in(patched.str());
-    EXPECT_ANY_THROW(readQueryPlanOutline(in, 0));
+    EXPECT_ANY_THROW(readQueryPlanOutline(in, 0, bytes.size()));
 }
 
 TEST(QueryPlanOutline, ExtensionBytesAreSkippedForFutureLayouts)
@@ -570,7 +586,7 @@ TEST(QueryPlanOutline, ExtensionBytesAreSkippedForFutureLayouts)
 
     auto bytes = writeOutlineToString(outline);
     ReadBufferFromString in(bytes);
-    auto restored = readQueryPlanOutline(in, 0);
+    auto restored = readQueryPlanOutline(in, 0, bytes.size());
 
     /// A reader that does not understand the extra bytes still reconstructs the shape.
     EXPECT_EQ(restored.nodes[0].extension_bytes, "future outline fields");

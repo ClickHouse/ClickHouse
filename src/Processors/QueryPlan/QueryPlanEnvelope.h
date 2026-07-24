@@ -70,9 +70,11 @@ void writeQueryPlanOutline(const PlanOutline & outline, WriteBuffer & out);
 
 /// Reads Section A written by writeQueryPlanOutline. Bounded: never reads past outline_size,
 /// rejects trailing bytes inside the frame and any size that exceeds the declared bounds.
+/// `max_payload_bytes` caps the payload sizes a node or a set may declare; pass the size of the
+/// envelope holding them, since no payload can be larger than that.
 /// Frame-layer violations throw CANNOT_PARSE_QUERY_PLAN; errors from nested codecs (e.g. header
 /// type decoding) keep their own codes and surface at the frame boundary.
-PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity);
+PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_payload_bytes);
 
 struct QueryPlanOutlineValidationResult
 {
