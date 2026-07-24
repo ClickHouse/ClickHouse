@@ -2132,8 +2132,7 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        /// Conversion of Time64 to Time: drop the fractional part, then clamp / throw on overflow governed by
-        /// date_time_overflow_behavior, exactly like the DateTime64 -> DateTime conversion above.
+        /// Conversion of Time64 to Time: both store local seconds since midnight, so drop the fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeTime>)
         {
@@ -2149,7 +2148,7 @@ struct ConvertImpl
             const auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_from->getScale());
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                /// Round toward negative infinity, like TransformDateTime64 does for DateTime64.
+                /// Round toward negative infinity, like TransformDateTime64.
                 Int64 whole = static_cast<Int64>(vec_from[i].value / scale_mult);
                 if (vec_from[i].value < 0 && vec_from[i].value % scale_mult != 0)
                     --whole;
