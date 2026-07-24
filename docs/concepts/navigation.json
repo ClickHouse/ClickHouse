@@ -7,6 +7,7 @@
       "expanded": true,
       "group": "Fundamentals",
       "pages": [
+        "concepts/core-concepts/index",
         "concepts/core-concepts/glossary",
         "concepts/core-concepts/parts",
         "concepts/core-concepts/partitions",
@@ -14,28 +15,28 @@
         "concepts/core-concepts/primary-indexes",
         "concepts/core-concepts/query-parallelism",
         "concepts/core-concepts/academic-overview"
-      ],
-      "root": "concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
       "group": "ClickHouse concepts",
       "pages": [
+        "concepts/features/index",
         {
           "group": "Materialized views",
           "pages": [
+            "concepts/features/materialized-views/index",
             "concepts/features/materialized-views/incremental-materialized-view",
             "concepts/features/materialized-views/refreshable-materialized-view",
             "concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "concepts/features/materialized-views/index"
+          ]
         },
         {
           "group": "Dictionaries",
           "pages": [
+            "concepts/features/dictionaries/index",
             "concepts/features/dictionaries/best-practices"
-          ],
-          "root": "concepts/features/dictionaries/index"
+          ]
         },
         {
           "group": "Projections",
@@ -47,6 +48,7 @@
         {
           "group": "Performance",
           "pages": [
+            "concepts/features/performance/index",
             "concepts/features/performance/prewhere",
             "concepts/features/performance/allocation-profiling",
             "concepts/features/performance/allocation-profiling-old",
@@ -76,8 +78,7 @@
                 "concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "concepts/features/performance/index"
+          ]
         },
         {
           "group": "Operations",
@@ -102,23 +103,23 @@
             {
               "group": "Update",
               "pages": [
+                "concepts/features/operations/update/index",
                 "concepts/features/operations/update/overview",
                 "concepts/features/operations/update/on-fly-mutations",
                 "concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "concepts/features/operations/update/index"
+              ]
             },
             {
               "group": "Delete",
               "pages": [
+                "concepts/features/operations/delete/index",
                 "concepts/features/operations/delete/overview",
                 "concepts/features/operations/delete/delete-mutations",
                 "concepts/features/operations/delete/drop-partition",
                 "concepts/features/operations/delete/lightweight-delete",
                 "concepts/features/operations/delete/truncate",
                 "concepts/features/operations/delete/ttl"
-              ],
-              "root": "concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
@@ -158,19 +159,21 @@
         {
           "group": "Security and auth",
           "pages": [
+            "concepts/features/security/index",
             "concepts/features/security/access-rights",
             "concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "concepts/features/security/tls/index",
                 "concepts/features/security/tls/configuring-tls",
                 "concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "concepts/features/security/tls/index"
+              ]
             },
             {
               "group": "External authenticators",
               "pages": [
+                "concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,11 +191,9 @@
                 "concepts/features/security/external-authenticators/http",
                 "concepts/features/security/external-authenticators/kerberos",
                 "concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "concepts/features/security/index"
+          ]
         },
         {
           "group": "Backup and restore",
@@ -208,11 +209,13 @@
         {
           "group": "Interfaces",
           "pages": [
+            "concepts/features/interfaces/native-clients-interfaces-index",
             "concepts/features/interfaces/cli",
             "concepts/features/interfaces/client",
             {
               "group": "Drivers and interfaces",
               "pages": [
+                "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/jdbc",
@@ -223,8 +226,7 @@
                 "concepts/features/interfaces/ssh",
                 "concepts/features/interfaces/grpc",
                 "concepts/features/interfaces/arrowflight"
-              ],
-              "root": "concepts/features/interfaces/overview"
+              ]
             },
             "concepts/features/interfaces/cpp",
             "concepts/features/interfaces/schema-inference",
@@ -235,15 +237,16 @@
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",
-              "pages": [],
-              "root": "concepts/features/interfaces/third-party/index"
+              "pages": [
+                "concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
           "group": "Tools and utilities",
           "pages": [
+            "concepts/features/tools-and-utilities/index",
             "concepts/features/tools-and-utilities/backupview",
             "concepts/features/tools-and-utilities/clickhouse-benchmark",
             "concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +258,15 @@
             "concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "concepts/features/tools-and-utilities/odbc-bridge",
             "concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "concepts/features/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Best practices",
       "pages": [
+        "concepts/best-practices/index",
         "concepts/best-practices/choosing-a-primary-key",
         "concepts/best-practices/select-data-type",
         "concepts/best-practices/use-materialized-views",
@@ -276,9 +278,7 @@
         "concepts/best-practices/avoid-optimize-final",
         "concepts/best-practices/avoidnullablecolumns",
         "concepts/best-practices/json-type"
-      ],
-      "root": "concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "concepts/index"
+  ]
 }
