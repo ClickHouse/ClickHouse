@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -20,7 +21,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ClickPipes 経由で MySQL から ClickHouse Cloud にデータを取り込む機能は、現在パブリックベータです。
 </Info>
 
-MySQL ClickPipe は、MySQL および MariaDB データベースから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ耐障害性に優れた方法です。**一括ロード**による一回限りのインジェストと、**変更データキャプチャ (CDC (変更データキャプチャ) ) **による継続的インジェストの両方をサポートしています。
+MySQL ClickPipe は、MySQL および MariaDB データベースから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ耐障害性に優れた方法です。**バルクロード**による一回限りのインジェストと、**変更データキャプチャ (CDC (変更データキャプチャ) ) **による継続的インジェストの両方をサポートしています。
 
 MySQL ClickPipe は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムで操作することもできます。
 
@@ -64,7 +65,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
 
-3. `MySQL CDC` タイルを選択します
+3. `MySQL CDC（変更データキャプチャ）` タイルを選択します
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="MySQL を選択" size="lg" border />
 
@@ -80,6 +81,12 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="接続情報を入力" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### &#x20;(任意) TLS設定の変更
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### &#x20;(任意) SSH トンネリングを設定する
@@ -114,6 +121,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 * **Pull バッチサイズ**: 1 回の Batch で取得する行数です。これはベストエフォートの設定であり、すべてのケースで反映されるとは限りません。
 * **スナップショットのパーティションごとの行数**: 初期スナップショット中に各パーティションで取得する行数です。テーブル内の行数が非常に多い場合に、各パーティションで取得する行数を制御するのに役立ちます。
 * **スナップショットで並列に処理するテーブル数**: 初期スナップショット中に並列で取得するテーブル数です。テーブル数が多い場合に、並列に取得するテーブル数を制御するのに役立ちます。
+* **サーバー ID**: MySQL の binlog レプリケーション用のサーバー ID を設定するための任意のパラメータです。設定しない場合、ClickPipes はランダムなサーバー ID を生成しますが、これは ClickPipe のライフサイクル中に変更される可能性があります。ソース側の MySQL サーバーで ClickPipe を決定論的に識別するために使用します。
 
 <div id="configure-the-tables">
   ### テーブルを設定

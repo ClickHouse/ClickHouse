@@ -7,10 +7,12 @@ title: 'محرك الجدول MergeTree'
 doc_type: 'مرجع'
 ---
 
+{/*بداية الإنشاء التلقائي*/}
+
 import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-يُعدّ المحرّك `MergeTree` وغيره من محركات عائلة `MergeTree` (مثل `ReplacingMergeTree` و `AggregatingMergeTree` ) من أكثر محركات الجداول استخدامًا وأكثرها متانة في ClickHouse.
+يُعدّ المحرّك `MergeTree` وغيره من محركات عائلة `MergeTree` (مثل `ReplacingMergeTree` و `AggregatingMergeTree`) من أكثر محركات الجداول استخدامًا وأكثرها متانة في ClickHouse.
 
 صُمِّمت محركات الجداول من عائلة `MergeTree` لدعم معدلات عالية من إدخال البيانات وأحجام بيانات هائلة.
 وتُنشئ عمليات الإدخال أجزاءً للجدول، ثم تدمجها عملية تعمل في الخلفية مع أجزاء جدول أخرى.
@@ -19,11 +21,11 @@ import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBad
 
 * يحدّد المفتاح الأساسي للجدول ترتيب الفرز داخل كل جزء من الجدول (فهرس عنقودي). كما أن المفتاح الأساسي لا يشير إلى صفوف فردية، بل إلى كتل من 8192 صفًا تُسمى حبيبات. وهذا يجعل المفاتيح الأساسية لمجموعات البيانات الضخمة صغيرة بما يكفي لتبقى محمّلة في الذاكرة الرئيسية، مع استمرار توفير وصول سريع إلى البيانات المخزّنة على القرص.
 
-* يمكن تقسيم الجداول باستخدام تعبير partition عشوائي. ويضمن partition pruning استبعاد الأقسام من القراءة عندما يتيح الاستعلام ذلك.
+* يمكن تقسيم الجداول باستخدام تعبير تقسيم عشوائي. ويضمن تقسيم pruning استبعاد الأقسام من القراءة عندما يتيح الاستعلام ذلك.
 
 * يمكن نسخ البيانات عبر عدة عقد في cluster لتحقيق التوفّر العالي، وfailover، والترقيات من دون downtime. راجع [نسخ البيانات](/ar/reference/engines/table-engines/mergetree-family/replication).
 
-* تدعم محركات الجداول `MergeTree` أنواعًا مختلفة من الإحصاءات وطرائق sampling للمساعدة في query optimization.
+* تدعم محركات الجداول `MergeTree` أنواعًا مختلفة من الإحصاءات وطرائق أخذ العينات للمساعدة في query optimization.
 
 <Note>
   على الرغم من تشابه الاسم، فإن المحرّك [Merge](/ar/reference/engines/table-engines/special/merge) يختلف عن محركات `*MergeTree`.
@@ -511,9 +513,9 @@ bloom_filter([false_positive_rate])
 </div>
 
 <Note>
-  مع الوصول إلى مرحلة التوافر العام (GA) لفهرس `text` بدءًا من إصدار ClickHouse 26.2، لم يعد يُوصى باستخدام الفهرس `ngrambf_v1` في البحث بالنص الكامل.
+  مع الوصول إلى مرحلة التوافر العام (GA) لفهرس `text` بدءًا من إصدار ClickHouse 26.2، لم يعد يُوصى باستخدام الفهرس `ngrambf_v1` في البحث في النص الكامل.
 
-  راجع صفحة [&quot;البحث بالنص الكامل باستخدام فهارس النص&quot;](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل.
+  راجع صفحة [&quot;البحث في النص الكامل باستخدام فهارس النص&quot;](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل.
 </Note>
 
 يُخزِّن كل حبيبة فهرس [مرشح Bloom](https://en.wikipedia.org/wiki/Bloom_filter) لـ [n-grams](https://en.wikipedia.org/wiki/N-gram) الخاصة بالأعمدة المحددة.
@@ -544,7 +546,7 @@ AS
 
 CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
 AS
-(total_number_of_all_grams,  probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+(total_number_of_all_grams, probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
 
 CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
 AS
@@ -982,7 +984,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 بالإضافة إلى أجهزة التخزين الكتلية المحلية، يدعم ClickHouse أنواع التخزين التالية:
 
 * [`s3` لـ S3 وMinIO](#table_engine-mergetree-s3)
-* [`gcs` لـ GCS](/ar/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` لـ GCS](/ar/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` لـ Azure Blob Storage](/ar/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` لـ HDFS](/ar/reference/engines/table-engines/integrations/hdfs)
 * [`web` للقراءة فقط عبر الويب](/ar/concepts/features/configuration/server-config/storing-data#web-storage)
@@ -1360,14 +1362,12 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
   ## إحصاءات الأعمدة
 </div>
 
-<CloudNotSupportedBadge />
-
 يرد تعريف الإحصاءات في قسم الأعمدة ضمن استعلام `CREATE` للجداول التابعة لعائلة `*MergeTree*`:
 
 ```sql
 CREATE TABLE tab
 (
-    a Int64 STATISTICS(TDigest, Uniq),
+    a Int64 STATISTICS(tdigest, uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1377,7 +1377,7 @@ ORDER BY a
 يمكننا أيضًا تعديل الإحصاءات باستخدام تعليمات `ALTER`:
 
 ```sql
-ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
 ALTER TABLE tab DROP STATISTICS a;
 ```
 
@@ -1389,17 +1389,17 @@ ALTER TABLE tab DROP STATISTICS a;
 </div>
 
 عند تمكين `use_statistics_for_part_pruning`، يمكن استخدام الإحصاءات في تقليم الأجزاء.
-حاليًا، لا يدعم تقليم الأجزاء إلا إحصاءات `MinMax` و`Basic`. وعند تعريف مثل هذه الإحصاءات لعمود، يتتبّع ClickHouse القيمتَين الصغرى والكبرى لذلك العمود في كل جزء.
+حاليًا، لا يدعم تقليم الأجزاء إلا إحصاءات `basic` (وإحصاءات `minmax` المهملة). وعند تعريف مثل هذه الإحصاءات لعمود، يتتبّع ClickHouse القيمتَين الصغرى والكبرى لذلك العمود في كل جزء.
 يتيح تقليم الأجزاء تخطي قراءة أجزاء البيانات كاملةً عندما يتعذر على شرط التصفية في الاستعلام مطابقة أي صفوف في ذلك الجزء.
 
 **مثال:**
 
 ```sql
--- Create a table with MinMax statistics on the 'value' column
+-- Create a table with basic statistics on the 'value' column
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(MinMax)
+    value Int64 STATISTICS(basic)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1424,7 +1424,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   ### الأنواع المتاحة من إحصاءات الأعمدة
 </div>
 
-* `Basic`
+* `basic`
 
   حزمة مضغوطة من الملخصات ذات القيمة الواحدة المستمدة من عمود. وبحسب نوع العمود، تُعبَّأ العناصر التالية:
 
@@ -1432,45 +1432,50 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   * لأعمدة `String` و`FixedString`: إجمالي طول القيم غير `NULL` بالبايت (الذي يمكن اشتقاق متوسط طول السلسلة منه)؛
   * لأعمدة `Nullable` و`LowCardinality(Nullable)`: عدد قيم `NULL`، الذي يستخدمه المُحسِّن لاستبعاد صفوف `NULL` من تقديرات الانتقائية.
 
-    يمكن لإحصائية `Basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. وبالمقارنة مع `MinMax`، تعمل `Basic` أيضاً مع أعمدة `String` / `FixedString`، ويمكن تعريفها على أغلفة `Nullable` لأنواع مثل `UUID` أو `IPv6` فقط لتتبّع عدد قيم `NULL`.
+    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. وبالمقارنة مع `minmax`، تعمل `basic` أيضاً مع أعمدة `String` / `FixedString`، ويمكن تعريفها على أغلفة `Nullable` لأنواع مثل `UUID` أو `IPv6` فقط لتتبّع عدد قيم `NULL`.
 
-    البنية: `basic`
+* `minmax` (مهمل)
 
-* `MinMax`
+<Note>
+  إحصاءات `minmax` مهملة ولم يعد بالإمكان إنشاؤها (`CREATE TABLE ... STATISTICS(minmax)` و`ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` تُرجع خطأ). تظل الجداول والأجزاء الحالية التي تحتوي على إحصاءات `minmax` تعمل. استخدم إحصاءات `basic` بدلاً منها.
+</Note>
 
-  القيمة الدنيا والقيمة القصوى للعمود، مما يتيح تقدير انتقائية مرشحات النطاق على الأعمدة الرقمية.
+* `tdigest`
 
-  البنية: `minmax`
+<Warning>
+  إحصاءات النوع `tdigest` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
+</Warning>
 
-* `TDigest`
+هياكل [TDigest](https://github.com/tdunning/t-digest) التقريبية التي تتيح حساب النسب المئوية التقريبية (مثل المئين التسعين) للأعمدة الرقمية.
 
-  هياكل [TDigest](https://github.com/tdunning/t-digest) التقريبية التي تتيح حساب النسب المئوية التقريبية (مثل المئين التسعين) للأعمدة الرقمية.
+* `uniq`
 
-  البنية: `tdigest`
+  هياكل [BJKST](https://people.iith.ac.in/aravind/Files-CS5120/pc-lec14-BJKST.pdf) التقريبية التي توفّر تقديراً لعدد القيم المميزة التي يحتويها العمود. وتستخدم داخلياً [`uniq`](/ar/reference/functions/aggregate-functions/uniq).
 
-* `Uniq`
+* `uniq_v2`
 
-  هياكل [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) التقريبية التي توفّر تقديراً لعدد القيم المميزة التي يحتويها العمود.
+  مشابه لـ `uniq`، لكنه يستخدم داخلياً [`uniqCombined`](/ar/reference/functions/aggregate-functions/uniqCombined)`(12)` (وهو أحد أشكال [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). يستهلك ذاكرة أقل من `uniq` ويمكن بناؤه بسرعة أكبر.
 
-  البنية: `uniq`
+* `countmin`
 
-* `CountMin`
+<Warning>
+  إحصاءات النوع `countmin` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
+</Warning>
 
-  هياكل [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) التقريبية التي توفّر عدّاً تقريبياً لتكرار كل قيمة في العمود.
-
-  البنية `countmin`
+هياكل [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) التقريبية التي توفّر عدّاً تقريبياً لتكرار كل قيمة في العمود.
 
 <div id="supported-data-types">
   ### أنواع البيانات المدعومة
 </div>
 
-|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
-| -------- | -------------------------------------------------- | ---- | --------------------- |
-| Basic    | ✔                                                  | ✔    | ✔                     |
-| CountMin | ✔                                                  | ✔    | ✔                     |
-| MinMax   | ✔                                                  | ✔    | ✗                     |
-| TDigest  | ✔                                                  | ✗    | ✗                     |
-| Uniq     | ✔                                                  | ✔    | ✔                     |
+|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+| ----------- | -------------------------------------------------- | ---- | --------------------- |
+| basic       | ✔                                                  | ✔    | ✔                     |
+| countmin    | ✔                                                  | ✔    | ✔                     |
+| minmax      | ✔                                                  | ✔    | ✗                     |
+| tdigest     | ✔                                                  | ✗    | ✗                     |
+| uniq        | ✔                                                  | ✔    | ✔                     |
+| uniq&#95;v2 | ✔                                                  | ✔    | ✔                     |
 
 كل ما سبق يقبل أيضًا مغلّفات `Nullable` و`LowCardinality(Nullable)` للأنواع المدرجة. ويمكن أيضًا تعريف `Basic` على مغلّفات `Nullable` لأنواع مثل `UUID` أو `IPv6` فقط لتتبّع عدد قيم NULL.
 
@@ -1478,15 +1483,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   ### العمليات المدعومة
 </div>
 
-|          | مرشحات المساواة (==) | مرشحات النطاق (`>, >=, <, <=`) |
-| -------- | -------------------- | ------------------------------ |
-| Basic    | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
-| CountMin | ✔                    | ✗                              |
-| MinMax   | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
-| TDigest  | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
-| Uniq     | ✔                    | ✗                              |
+|             | مرشحات المساواة (==) | مرشحات النطاق (`>, >=, <, <=`) |
+| ----------- | -------------------- | ------------------------------ |
+| basic       | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
+| countmin    | ✔                    | ✗                              |
+| minmax      | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
+| tdigest     | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
+| uniq        | ✔                    | ✗                              |
+| uniq&#95;v2 | ✔                    | ✗                              |
 
-بالنسبة إلى `Basic` على الأعمدة `String` / `FixedString`، لا يسجّل هذا الإحصاء إلا
+بالنسبة إلى `basic` على الأعمدة `String` / `FixedString`، لا يسجّل هذا الإحصاء إلا
 إجمالي طول البايتات للقيم غير `NULL` (ويُستخدم لتقدير متوسط طول السلسلة النصية) وعدد قيم `NULL`؛
 ولا يُعتمد عليه في مرشحات النطاق أو تقليم الأجزاء.
 
@@ -1530,3 +1536,5 @@ ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 ```
+
+{/*AUTOGENERATED_END*/}

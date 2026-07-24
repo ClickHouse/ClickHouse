@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/pt-BR/clickpipes/_changing_tls_settings.mdx';
 
 Você pode usar o ClickPipes para fazer a ingestão de dados do seu banco de dados Postgres de origem no ClickHouse Cloud. O banco de dados Postgres de origem pode ser hospedado no local ou na nuvem, incluindo Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase e outros.
 
@@ -89,6 +90,12 @@ Você pode usar o AWS Private Link para se conectar ao seu banco de dados Postgr
 quiser manter a transferência de dados privada.
 Você pode seguir o [guia de configuração para configurar a conexão](/pt-BR/integrations/clickpipes/aws-privatelink).
 
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Alterando as configurações de TLS
+</div>
+
+<ChangingTLSSettings />
+
 <div id="optional-setting-up-ssh-tunneling">
   #### (Opcional) Configuração do tunelamento SSH
 </div>
@@ -144,6 +151,10 @@ Você pode configurar as Configurações avançadas, se necessário. Veja abaixo
 <Warning>
   Se você estiver definindo no ClickHouse uma chave de ordenação diferente da chave primária do Postgres, não se esqueça de ler todas as [considerações](/pt-BR/integrations/clickpipes/postgres/ordering-keys) sobre isso
 </Warning>
+
+8. Além disso, você pode fornecer uma expressão personalizada `PARTITION BY <expr>` para controlar o [particionamento da tabela ClickHouse](/partitions) de destino.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Particionar por" size="lg" border />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Revise as permissões e inicie o ClickPipe

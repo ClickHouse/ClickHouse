@@ -19,6 +19,8 @@ Private Service Connect (PSC)는 소비자가 가상 프라이빗 클라우드(V
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Private Service Connect 개요" border />
 
 <Warning>
+  GCP Private Service Connect는 GCP VPC에서 ClickHouse Cloud로 시작되는 연결만 지원합니다. [비공개 데이터베이스](#connecting-to-a-remote-database)와 같이 ClickHouse Cloud에서 VPC 내 서비스로 시작되는 연결에는 사용할 수 없습니다.
+
   기본적으로 PSC 연결이 승인되고 설정되었더라도 ClickHouse 서비스는 Private Service Connect 연결을 통해 사용할 수 없습니다. 아래 [단계](#add-endpoint-id-to-services-allow-list)를 완료하여 인스턴스 수준에서 PSC ID를 허용 목록에 명시적으로 추가해야 합니다.
 </Warning>
 
@@ -36,7 +38,7 @@ Private Service Connect (PSC)는 소비자가 가상 프라이빗 클라우드(V
 1. Private Service Connect용 GCP 서비스 어태치먼트를 가져옵니다.
 2. 서비스 엔드포인트를 생성합니다.
 3. &quot;Endpoint ID&quot;를 ClickHouse Cloud 서비스에 추가합니다.
-4. &quot;Endpoint ID&quot;를 ClickHouse 서비스 허용 목록에 추가합니다.
+4. &quot;Endpoint ID&quot;를 ClickHouse 서비스 허용 목록에 추가합니다。
 
 <div id="attention">
   ## 주의
@@ -236,7 +238,7 @@ output "psc_connection_id" {
   ## ClickHouse Cloud 조직에 Endpoint ID를 추가
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### 옵션 1: ClickHouse Cloud 콘솔
 </div>
 
@@ -303,7 +305,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 Private Service Connect를 통해 사용할 각 인스턴스의 허용 목록에 Endpoint ID를 추가해야 합니다.
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### 옵션 1: ClickHouse Cloud 콘솔
 </div>
 
@@ -471,13 +473,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
   ### 원격 데이터베이스에 연결하기
 </div>
 
-ClickHouse Cloud에서 [MySQL](/ko/reference/functions/table-functions/mysql) 또는 [PostgreSQL](/ko/reference/functions/table-functions/postgresql) 테이블 함수를 사용해 GCP에 호스팅된 데이터베이스에 연결하려는 경우를 가정해 보겠습니다. GCP PSC는 이 연결을 안전하게 설정하는 용도로는 사용할 수 없습니다. PSC는 단방향 연결이기 때문입니다. 즉, 내부 네트워크 또는 GCP VPC에서 ClickHouse Cloud로 안전하게 연결할 수는 있지만, ClickHouse Cloud에서 내부 네트워크로 연결할 수는 없습니다.
-
 [GCP Private Service Connect documentation](https://cloud.google.com/vpc/docs/private-service-connect)에 따르면 다음과 같습니다.
 
 > 서비스 지향 설계: 프로듀서 서비스는 컨슈머 VPC 네트워크에 단일 IP 주소를 노출하는 로드 밸런서를 통해 게시됩니다. 프로듀서 서비스에 액세스하는 컨슈머 트래픽은 단방향이며, 피어링된 전체 VPC 네트워크에 액세스하는 것이 아니라 서비스 IP 주소에만 액세스할 수 있습니다.
 
-이렇게 하려면 ClickHouse Cloud에서 내부/프라이빗 데이터베이스 서비스로의 연결을 허용하도록 GCP VPC 방화벽 규칙을 구성하십시오. [ClickHouse Cloud 리전의 기본 egress IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)와 [사용 가능한 고정 IP 주소](https://api.clickhouse.cloud/static-ips.json)도 함께 확인하십시오.
+ClickHouse Cloud에서 [MySQL](/ko/reference/functions/table-functions/mysql) 또는 [PostgreSQL](/ko/reference/functions/table-functions/postgresql) 테이블 함수를 GCP VPC에 호스팅된 데이터베이스에 연결하려면, ClickHouse Cloud의 연결을 허용하도록 GCP VPC 방화벽 규칙을 구성하십시오. [ClickHouse Cloud 리전의 기본 egress IP 주소](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)와 [사용 가능한 고정 IP 주소](https://api.clickhouse.cloud/static-ips.json)도 함께 확인하십시오.
 
 <div id="more-information">
   ## 추가 정보

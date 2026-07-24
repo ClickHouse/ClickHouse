@@ -2163,10 +2163,10 @@ void ReadFromMergeTree::buildIndexes(
     const auto & filter_dag = *filter_dag_ptr;
 
     {
-        auto key_condition_factory = [query_context, primary_key_column_names, primary_key_expression = primary_key.expression](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{wrapped, query_context, primary_key_column_names, primary_key_expression, /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+            return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));

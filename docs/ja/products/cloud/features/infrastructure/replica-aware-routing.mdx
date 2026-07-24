@@ -1,8 +1,8 @@
 ---
 title: 'レプリカ対応ルーティング'
 slug: /manage/replica-aware-routing
-description: 'レプリカ対応ルーティングで cache の再利用率を高める方法'
-keywords: ['クラウド', 'スティッキーエンドポイント', 'スティッキー', 'エンドポイント', 'スティッキールーティング', 'ルーティング', 'レプリカ対応ルーティング', 'session_id']
+description: '一時テーブル、セッション、cacheを再利用できるよう、関連するリクエストを同じClickHouse Cloudレプリカにルーティングします'
+keywords: ['cloud', 'スティッキーエンドポイント', 'sticky', 'エンドポイント', 'スティッキールーティング', 'ルーティング', 'レプリカ対応ルーティング', 'session_id', 'セッションアフィニティ', '一時テーブル']
 doc_type: 'guide'
 noindex: true
 ---
@@ -11,27 +11,57 @@ import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/Pri
 
 <PrivatePreviewBadge />
 
-レプリカ対応ルーティング (sticky sessions、sticky routing、または session affinity とも呼ばれます) は、関連するリクエストを一貫して同じ ClickHouse レプリカにルーティングすることで、cache を再利用できる可能性を高めます。これはベストエフォートであり、分離を保証するものではありません。
+レプリカ対応ルーティング (sticky sessions、スティッキールーティング、session affinity とも呼ばれます) は、関連するリクエストを同じ ClickHouse レプリカにルーティングします。[一時テーブル](/sql-reference/statements/create/table#temporary-tables) や [名前付きセッション状態](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) にクエリをまたいでアクセスできるようにしておく必要がある場合、または関連するクエリで同じレプリカのローカル cache を再利用したい場合に使用します。
+
+これはベストエフォート型の仕組みであり、分離を保証するものではありません。スケーリング、アップグレード、再起動により、特定の `session_id` がどのレプリカに割り当てられるかが変わることがあります。
 
 <Warning>
-  **プロトコルのサポート — HTTP/HTTPS のみ**
+  **HTTPインターフェイスが必要です**
 
-  レプリカ対応ルーティングは、**HTTP/HTTPS インターフェイス** 上のプロキシ レイヤーで適用され、`session_id` クエリパラメータを使用します (以下を参照)。これは**ネイティブプロトコルでは利用できません** (ネイティブポート。たとえば、デフォルトのネイティブモードで使用する `clickhouse-go` ドライバー)。ネイティブプロトコルの client からスティッキールーティングが必要な場合は、代わりにそのワークロード を HTTP インターフェイス 経由で接続してください — `clickhouse-go` (v2) では、接続で `Protocol: clickhouse.HTTP` を設定します。
+  レプリカ対応ルーティングは、[HTTP/HTTPS インターフェイス](/interfaces/http) 上のプロキシ層で `session_id` クエリパラメータ (下記参照) を使用して適用されます。これは **ネイティブプロトコルでは利用できません** (ネイティブポート。たとえば、デフォルトのネイティブモードで動作する [clickhouse-go](/integrations/go) ドライバー) 。ネイティブプロトコルのクライアントは HTTP に切り替え、各リクエストで `session_id` を渡す必要があります。clickhouse-go (v2) の場合は、`Protocol: clickhouse.HTTP` を設定し、[setting](/ja/integrations/language-clients/go/database-sql-api#sessions) として `session_id` を渡します。ドライバーはこれを、プロキシがハッシュ化に使用する URL のクエリパラメータとして送信します。
 </Warning>
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* ご利用のサービスには **2 つ以上のレプリカ** が必要です。単一レプリカのサービスでは、固定先となるレプリカがありません。
+* **稼働中** のサービス。アイドル状態のサービスを起動すると、`session_id` に対応するレプリカが変わることがあります。
+* この機能が **GA** になると、**Enterprise** ではデフォルトで利用可能になります。
+* 標準の ClickHouse Cloud サービスでサポートされています。[BYOC](/cloud/reference/byoc/overview) は現時点ではサポートされていません。
+
+<div id="configuring-replica-aware-routing">
+  ## レプリカ対応ルーティングの設定
+</div>
+
+[サポート](https://clickhouse.com/support/program)チケットを作成し、HTTP ベースのスティッキーなレプリカルーティングを有効にするよう依頼してください。サービス ID と、必要な理由 (一時テーブル、セッションの状態、または cache の再利用) を記載してください。有効化後は、HTTPS リクエストに `?session_id=` を付けて送信してください。再起動は不要です。
 
 <div id="http-based-routing">
   ## HTTP ベースのルーティング (`session_id`)
 </div>
 
-ワークロードを特定のレプリカに固定するには、HTTPS インターフェイスで `session_id` クエリパラメータを設定します。プロキシはリクエストをパースし、`session_id` に対してコンシステントハッシュを使用してレプリカを選択するため、同じ `session_id` を持つすべてのリクエストは、クラスターのトポロジが変わるまで同じサーバーにルーティングされます。
+ワークロードを特定のレプリカに固定するには、[HTTPS インターフェイス](/interfaces/http) で `session_id` クエリパラメータを設定します。プロキシは `session_id` に対してコンシステントハッシュを使用してレプリカを選択するため、同じ `session_id` を持つすべてのリクエストは、クラスターのトポロジが変わるまで同じサーバーにルーティングされます。
+
+既存のサービスホスト名を使用します。特別なスティッキーホスト名や DNS の変更は必要ありません。
 
 ```bash
 echo 'SELECT hostName()' | curl \
-  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
   'https://<host>:8443/?session_id=my-workload-1' -d @-
 ```
 
 `session_id=my-workload-1` を含むすべてのリクエストは、同じレプリカに振り分けられます。異なる `session_id` の値はそれぞれ独立してハッシュ化され、同じレプリカに振り分けられることもあれば、別のレプリカに振り分けられることもあります。マッピング自体には一貫性がありますが、特定の値がどのレプリカにマッピングされるかを選ぶことはできません。
+
+`session_id` には任意の文字列を指定できます (アプリケーション名、ユーザー ID、またはワークロードラベル) 。`session_id` を付けないリクエストでは、通常の負荷分散が維持されます。
+
+クエリパラメータを追加できる任意の HTTP クライアントが利用でき、`curl`、[clickhouse-connect](/integrations/python)、JDBC/ODBC などが含まれます。`clickhouse-go` (v2) では、前述のとおり HTTP モードを使用してください。
+
+<div id="check-which-replica">
+  ### どのレプリカに接続されているかを確認する
+</div>
+
+同じ`session_id`を使って、上記の`SELECT hostName()`の例をもう一度実行します。同じホスト名が返されるはずです。`session_id`が異なると、別のレプリカに割り当てられる場合があります。
 
 <div id="subdomain-based-routing-deprecated">
   ## サブドメインベースのルーティング (非推奨)
@@ -40,7 +70,7 @@ echo 'SELECT hostName()' | curl \
 <Danger>
   **非推奨**
 
-  以下のサブドメインベースの仕組みは**非推奨**であり、新しいサービスでは現在有効になっていません。スケーラビリティに欠けるためです (sticky エンドポイントごとに専用の TLS 証明書が必要になります) 。代わりに [HTTP ベースの `session_id` メソッド](#http-based-routing) を使用してください。
+  このサブドメインベースの仕組みは**非推奨**になりつつあり、新しいサービスでは今後有効にならなくなります。スケーラビリティに欠けるためです (sticky エンドポイントごとに専用の TLS 証明書が必要になります) 。代わりに [HTTP ベースの `session_id` メソッド](#http-based-routing) を使用してください。すでに sticky サブドメインを使用している場合は、`session_id` ルーティングを有効にするために [support](https://clickhouse.com/support/program) に連絡してください。これは破壊的変更であり、移行が必要になります。
 </Danger>
 
 以前は、レプリカ対応ルーティングを有効にすると、サービスのホスト名に対してワイルドカードサブドメインを利用できました。ホスト名が `abcxyz123.us-west-2.aws.clickhouse.cloud` のサービスでは、`*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` に一致する任意のホスト名 (例: `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) は、Envoy によって特定のレプリカに一貫してハッシュされました。元のホスト名では引き続き、デフォルトのルーティングアルゴリズムである `LEAST_CONNECTION` による負荷分散が使用されました。
@@ -50,25 +80,37 @@ echo 'SELECT hostName()' | curl \
 </div>
 
 <div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### レプリカ対応ルーティングは分離を保証しません
+  ### サービス変更時にはスティッキー性が崩れることがあります
 </div>
 
-サービスに何らかの変化が生じると、たとえばサーバーポッドの再起動 (バージョンアップ、クラッシュ、垂直スケーリング) や、サーバーのスケールアウト／スケールインによって、ルーティングのハッシュリングが乱れます。その結果、同じ `session_id` を共有するリクエストが別のサーバーポッドに振り分けられることがあります。
+サービスに何らかの中断が発生すると、ルーティングのハッシュリングが変化します。これには、サーバーポッドの再起動 (バージョンのアップグレード、クラッシュ、垂直スケーリング) や、スケールアウト/スケールインが含まれます。その結果、同じ `session_id` を共有するリクエストが別のサーバーポッドに振り分けられる場合があります。一時テーブルやセッションレベルの設定に依存している場合は、再マップ後にそれらを再作成できるようにしておいてください。
+
+<div id="not-workload-isolation">
+  ### レプリカ対応ルーティングはワークロードの分離ではありません
+</div>
+
+スティッキールーティングで制御できるのは、どのレプリカがリクエストを処理するかだけです。そのレプリカは、引き続きほかのトラフィックも処理する可能性があります。専用のコンピュートが必要な場合は、[コンピュート-コンピュート分離](/cloud/reference/warehouses)を使用してください。
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
-  ### プライベートリンクでは、レプリカ対応ルーティングはそのままでは機能しません
+  ### プライベートリンクと非推奨のサブドメイン方式
 </div>
 
-非推奨のサブドメイン方式を使用する場合、新しいホスト名パターンで名前解決を機能させるには、お客様が DNS エントリを手動で追加する必要があります。設定を誤ると、サーバー負荷の偏りが生じる可能性があります。
+HTTP `session_id` ルーティングは、通常のサービスホスト名で[プライベートネットワーキング](/cloud/security/connectivity/private-networking)を使用する場合は動作します。追加の DNS エントリは必要ありません。
+
+一方、非推奨のサブドメイン方式では動作しません。`*.sticky.*` ホスト名パターン用の DNS を追加する必要があり、設定を誤るとレプリカ間で負荷が偏る可能性があります。
 
 <div id="replica-aware-routing-requires-http">
   ### レプリカ対応ルーティングには HTTP プロトコルが必要です
 </div>
 
-スティッキールーティングは `session_id` クエリパラメータをキーにしていますが、これは HTTP/HTTPS インターフェイスにしか存在しません。ネイティブバイナリプロトコルには、プロキシがハッシュのキーとして使えるこの種のパラメータがないため、ネイティブプロトコルではレプリカ対応ルーティングを利用できません。この機能を使うには、ネイティブプロトコルを使うクライアントは該当するワークロードを HTTP インターフェイスに移す必要があります。
+スティッキールーティングは `session_id` クエリパラメータをキーにしていますが、これは HTTP/HTTPS インターフェイスにしか存在しません。ネイティブバイナリプロトコルには、プロキシがハッシュのキーとして使えるこの種のパラメータがないため、ネイティブプロトコルではレプリカ対応ルーティングを利用できません。現在、この機能を使うには、ネイティブプロトコルを使うクライアントは該当するワークロードを HTTP インターフェイスに移す必要があります。
 
-<div id="configuring-replica-aware-routing">
-  ## レプリカ対応ルーティングの設定
+<div id="troubleshooting">
+  ## トラブルシューティング
 </div>
 
-レプリカ対応ルーティングを有効にするには、[弊社サポートチーム](https://clickhouse.com/support/program)までお問い合わせください。
+**同じ `session_id` でも、クエリが引き続き別のレプリカに送られる**
+
+* `session_id` が HTTPヘッダーではなく、URL のクエリパラメータ (`?session_id=...`) になっていることを確認してください。
+* 有効化後、少し待ってください。反映されるまで 1 分ほどかかる場合があります。
+* サービスが最近スケールまたは再起動したかどうかを確認してください。トポロジーの変更後に再マッピングが発生するのは想定どおりです。`SELECT hostName()` を使って新しいマッピングを確認してください。
