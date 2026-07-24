@@ -1288,3 +1288,79 @@ def test_real_public_database_wins_over_alias(started_cluster):
     finally:
         node.query("DROP DATABASE IF EXISTS public SYNC")
         node.query("DROP TABLE IF EXISTS default.pub_probe SYNC")
+
+
+def test_copy_quoted_column_names(started_cluster):
+    # A quoted column in a `COPY` column list must stay a single exact identifier when the statement is
+    # rewritten into ClickHouse SQL (`INSERT INTO ... (...)` / `SELECT ... FROM ...`): dropping the quoting
+    # would turn `"a.b"` into a compound reference and `"select"` into a keyword. pqxx's `stream_to` always
+    # emits a quoted column list, so this is the normal self-connect insert path, in both directions.
+    node.query("DROP TABLE IF EXISTS test_copy_quoted_cols SYNC")
+    node.query(
+        "CREATE TABLE test_copy_quoted_cols (`a.b` UInt32, `select` String) ENGINE = MergeTree ORDER BY `a.b`"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.copy_expert(
+            'COPY test_copy_quoted_cols ("a.b", "select") FROM STDIN WITH (FORMAT csv)',
+            io.StringIO("1,one\n2,two\n"),
+        )
+        out = io.StringIO()
+        cur.copy_expert(
+            'COPY test_copy_quoted_cols ("a.b", "select") TO STDOUT WITH (FORMAT csv)', out
+        )
+    finally:
+        conn.close()
+
+    assert (
+        node.query("SELECT `a.b`, `select` FROM test_copy_quoted_cols ORDER BY `a.b`")
+        == "1\tone\n2\ttwo\n"
+    )
+    assert sorted(out.getvalue().splitlines()) == ['1,"one"', '2,"two"']
+    node.query("DROP TABLE test_copy_quoted_cols SYNC")
+
+
+def test_catalog_refresh_per_statement(started_cluster):
+    # The catalog OID refresh must run against each statement that actually executes, not against the outer
+    # simple-query message text: the SQL behind `EXECUTE s` is resolved from the prepared statement, and in a
+    # semicolon-separated multi-statement message a table created by an earlier statement must already be
+    # visible to a later catalog read within the same message.
+    node.query("DROP TABLE IF EXISTS refresh_prepare_probe SYNC")
+    node.query("DROP TABLE IF EXISTS refresh_multi_probe SYNC")
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # `PREPARE` the catalog read while the table does not exist yet; the outer `EXECUTE` text contains
+        # no `pg_`, so only a refresh against the resolved prepared SQL makes the new table visible.
+        cur.execute(
+            "PREPARE refresh_probe_stmt AS "
+            "SELECT relname FROM pg_class WHERE relname = 'refresh_prepare_probe'"
+        )
+        node.query(
+            "CREATE TABLE refresh_prepare_probe (x UInt32) ENGINE = MergeTree ORDER BY x"
+        )
+        cur.execute("EXECUTE refresh_probe_stmt")
+        rows = cur.fetchall()
+        # The table may legitimately appear more than once (a real-namespace row and a `public` alias row).
+        assert rows and all(row[0] == "refresh_prepare_probe" for row in rows)
+
+        # DDL followed by a catalog read in one simple-query message: the refresh has to happen per split
+        # statement, after the `CREATE TABLE` ran, not once up front where the table does not exist yet.
+        cur.execute(
+            "CREATE TABLE refresh_multi_probe (x UInt32) ENGINE = MergeTree ORDER BY x; "
+            "SELECT relname FROM pg_class WHERE relname = 'refresh_multi_probe'"
+        )
+        rows = cur.fetchall()
+        assert rows and all(row[0] == "refresh_multi_probe" for row in rows)
+    finally:
+        conn.close()
+        node.query("DROP TABLE IF EXISTS refresh_prepare_probe SYNC")
+        node.query("DROP TABLE IF EXISTS refresh_multi_probe SYNC")
