@@ -317,6 +317,85 @@ def test_determine_merge_base_uses_pr_head_not_git_head(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# get_submodule_state_changes: the fail-close guard against a bugfix PR that
+# changes submodule state. The before-worktree hardlinks submodule working
+# trees from the primary checkout (at PR-head revisions), so a changed gitlink
+# or `.gitmodules` would make the "before" binary silently build against the
+# wrong submodule content — the guard must detect it from the raw diff.
+# --------------------------------------------------------------------------
+def _run_submodule_state_changes(monkeypatch, raw_diff):
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    calls = []
+
+    def fake_get_output(cmd, **kwargs):
+        calls.append(cmd)
+        return raw_diff
+
+    monkeypatch.setattr(job.Shell, "get_output", staticmethod(fake_get_output))
+    changed = job.get_submodule_state_changes("mergebase123", "prhead456")
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    # `diff.ignoreSubmodules=all` in the environment would otherwise silently
+    # drop every gitlink change and the guard would never fire.
+    assert "--ignore-submodules=none" in cmd
+    assert "mergebase123" in cmd and "prhead456" in cmd
+    return changed
+
+
+def test_submodule_state_changes_detects_gitlink_bump(monkeypatch):
+    raw_diff = (
+        ":100644 100644 1111111 2222222 M\tsrc/Common/tests/gtest_foo.cpp\n"
+        ":160000 160000 3333333 4444444 M\tcontrib/zstd\n"
+    )
+    assert _run_submodule_state_changes(monkeypatch, raw_diff) == ["contrib/zstd"]
+
+
+def test_submodule_state_changes_detects_added_and_removed_gitlinks(monkeypatch):
+    # An added submodule has old_mode 000000, a removed one new_mode 000000 —
+    # 160000 appears on only one side, and both must still be caught.
+    raw_diff = (
+        ":000000 160000 0000000 5555555 A\tcontrib/new-lib\n"
+        ":160000 000000 6666666 0000000 D\tcontrib/old-lib\n"
+    )
+    assert _run_submodule_state_changes(monkeypatch, raw_diff) == [
+        "contrib/new-lib",
+        "contrib/old-lib",
+    ]
+
+
+def test_submodule_state_changes_detects_gitmodules_only_edit(monkeypatch):
+    raw_diff = ":100644 100644 7777777 8888888 M\t.gitmodules\n"
+    assert _run_submodule_state_changes(monkeypatch, raw_diff) == [".gitmodules"]
+
+
+def test_submodule_state_changes_clean_diff(monkeypatch):
+    # Regular file changes only — no gitlinks, no `.gitmodules` — must not trip
+    # the guard, or every bugfix PR would fail close.
+    raw_diff = (
+        ":100644 100644 1111111 2222222 M\tsrc/Common/tests/gtest_foo.cpp\n"
+        ":100644 100644 3333333 4444444 M\tsrc/Common/Foo.cpp\n"
+    )
+    assert _run_submodule_state_changes(monkeypatch, raw_diff) == []
+
+
+def test_submodule_state_changes_empty_diff(monkeypatch):
+    assert _run_submodule_state_changes(monkeypatch, "") == []
+
+
+def test_submodule_state_changes_ignores_malformed_lines(monkeypatch):
+    # Non-raw output lines (or a truncated raw entry) must be skipped, not crash
+    # or produce bogus paths.
+    raw_diff = (
+        "warning: some noise from git\n"
+        ":160000\tcontrib/truncated-meta\n"
+        ":160000 160000 3333333 4444444 M\tcontrib/zstd\n"
+    )
+    assert _run_submodule_state_changes(monkeypatch, raw_diff) == ["contrib/zstd"]
+
+
+# --------------------------------------------------------------------------
 # before_run_started_a_test: the "[ RUN ]"-marker guard. A clean before-run
 # that executed no touched test (marker absent) must NOT be treated as a
 # refutation — `unit_tests_dbms` is built from `gtest*.cpp` only, so a touched
