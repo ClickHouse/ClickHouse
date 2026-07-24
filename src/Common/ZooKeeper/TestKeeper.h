@@ -159,6 +159,8 @@ private:
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
 
+    int64_t last_ttl_cleanup_ms = 0;
+
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
 
