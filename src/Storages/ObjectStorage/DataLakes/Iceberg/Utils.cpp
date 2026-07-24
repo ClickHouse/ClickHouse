@@ -51,6 +51,7 @@ namespace DB::ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int PATH_ACCESS_DENIED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -758,8 +759,20 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
             }
             auto prefix_storage_path = configuration_ptr->getPathForRead().path;
-            if (!explicit_metadata_path.starts_with(prefix_storage_path))
-                explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
+            if (explicit_metadata_path.starts_with(prefix_storage_path))
+            {
+                /// Already table-prefixed: normalize and validate containment, so that
+                /// embedded `..` cannot escape the table directory.
+                auto normalized = std::filesystem::path(explicit_metadata_path).lexically_normal().string();
+                if (!normalized.starts_with(std::filesystem::path(prefix_storage_path).lexically_normal().string()))
+                    throw Exception(
+                        ErrorCodes::PATH_ACCESS_DENIED,
+                        "Explicit metadata file path `{}` should be inside the table directory `{}`",
+                        explicit_metadata_path, prefix_storage_path);
+                explicit_metadata_path = std::move(normalized);
+            }
+            else
+                explicit_metadata_path = resolvePathInsideTable(prefix_storage_path, explicit_metadata_path);
             return getMetadataFileAndVersion(explicit_metadata_path);
         }
         catch (const std::exception & ex)
