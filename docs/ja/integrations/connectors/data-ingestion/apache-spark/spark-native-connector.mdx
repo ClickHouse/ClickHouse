@@ -104,17 +104,7 @@ ClickHouse Spark コネクタは、プロジェクトのビルドファイル (M
     </dependency>
     ```
 
-    SNAPSHOT バージョンを使用する場合は、次のリポジトリを追加します。
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    SNAPSHOT バージョンを使用するには、Maven で Sonatype の [SNAPSHOT リリースを利用するための手順](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) に従ってください。
   </Tab>
 
   <Tab title="Gradle">
@@ -125,13 +115,7 @@ ClickHouse Spark コネクタは、プロジェクトのビルドファイル (M
     }
     ```
 
-    SNAPSHOT バージョンを使用する場合は、次のリポジトリを追加します。
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    SNAPSHOT バージョンを使用するには、Gradle で Sonatype の [SNAPSHOT リリースを利用するための手順](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) に従ってください。
   </Tab>
 
   <Tab title="SBT">
@@ -172,8 +156,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 
 利用可能なリリース済み JAR ファイルはすべて
 [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-で入手でき、日次ビルドの SNAPSHOT JAR ファイルはすべて [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/)
 で入手できます。
+日次ビルドの SNAPSHOT JAR ファイルは、上記で設定した Sonatype snapshots repository を通じて利用できます。
 
 <Warning>
   コネクタは [clickhouse-http](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client)

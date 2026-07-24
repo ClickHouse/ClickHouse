@@ -25,13 +25,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Нажмите **Replicate data in ClickHouse**, чтобы начать настройку ClickPipe.
 
 <Steps>
-  <Step>
-    ## Настройте сервис репликации
-
+  <Step title="Настройте сервис репликации" id="configure-replication-service">
     Заполните параметры репликации:
 
     * **Integration name**: имя этого ClickPipe
-    * **сервис ClickHouse**: выберите существующий сервис ClickHouse Cloud или создайте новый
+    * **ClickHouse service**: выберите существующий сервис ClickHouse или создайте новый
     * **Postgres database**: исходная база данных, из которой будет выполняться репликация
     * **Replication method**: выберите один из вариантов:
       * **Initial load + CDC**: импортировать существующие данные и поддерживать таблицы в актуальном состоянии по мере появления новых изменений (рекомендуется)
@@ -43,9 +41,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Нажмите **Next**, чтобы продолжить.
   </Step>
 
-  <Step>
-    ## Настройте параметры репликации
-
+  <Step title="Настройте параметры репликации" id="replication-settings">
     Точно настройте параметры репликации данных:
 
     * **Sync interval (seconds)**: как часто изменения подтягиваются из Postgres (по умолчанию: 60)
@@ -59,14 +55,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Нажмите **Next**, чтобы продолжить.
   </Step>
 
-  <Step>
-    ## Выберите таблицы для репликации
-
+  <Step title="Выберите таблицы для репликации" id="select-tables">
     Выберите целевую базу данных и укажите, какие таблицы нужно реплицировать:
 
     * **Destination database**: выберите существующую базу данных ClickHouse или создайте новую
     * **Prefix default destination table names with schema name**: добавляет имя схемы Postgres в качестве префикса, чтобы избежать конфликтов имён
-    * **Preserve NULL values from source**: сохраняет значения NULL вместо преобразования в значения по умолчанию
+    * **Preserve NULL values from source**: сохраняет значения NULL вместо преобразования в значения по умолчанию для типа. Этот параметр применяется ко всем таблицам в пайпе и не может быть изменён после создания пайпа.
     * **Remove deleted rows during merges**: для таблиц [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) физически удаляет помеченные как удалённые строки во время фоновых слияний
 
     Раскройте схемы и выберите отдельные таблицы для репликации. Вы также можете настроить имена целевых таблиц и параметры столбцов.
@@ -76,9 +70,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Нажмите **Replicate data to ClickHouse**, чтобы запустить репликацию.
   </Step>
 
-  <Step>
-    ## Отслеживайте ClickPipe
-
+  <Step title="Отслеживайте ClickPipe" id="monitor-clickpipe">
     После запуска ClickPipe он появится в том же меню. Создание начального снимка всех данных может занять некоторое время в зависимости от размера ваших таблиц.
 
     <Image img="/images/managed-postgres/integration-running.webp" alt="Список Интеграция с ClickHouse с работающим ClickPipe, его целевым сервисом и статусом" size="md" border />

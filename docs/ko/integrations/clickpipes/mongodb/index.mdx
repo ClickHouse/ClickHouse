@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -24,7 +25,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ClickHouse Cloud 콘솔과 문서에서는 MongoDB의 &quot;table&quot;과 &quot;collection&quot;을 같은 의미로 혼용합니다.
 </Note>
 
-ClickPipes를 사용하면 MongoDB 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 소스 MongoDB 데이터베이스는 온프레미스 환경에서 호스팅할 수도 있고, MongoDB Atlas와 같은 서비스를 사용해 클라우드에서 호스팅할 수도 있습니다.
+ClickPipes를 사용하면 MongoDB 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 원본 MongoDB 데이터베이스는 온프레미스 환경에서 호스팅할 수도 있고, MongoDB Atlas와 같은 서비스를 사용해 클라우드에서 호스팅할 수도 있습니다.
 
 MongoDB ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관리할 수 있으며, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi)와 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포하고 관리할 수 있습니다.
 
@@ -73,6 +74,12 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="연결 정보 입력" size="lg" border />
 
+<div id="optional-changing-tls-settings">
+  #### (선택 사항) TLS 설정 변경하기
+</div>
+
+<ChangingTLSSettings />
+
 <div id="optional-set-up-ssh-tunneling">
   #### (선택 사항) SSH 터널링 설정
 </div>
@@ -113,7 +120,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
    <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="대상 데이터베이스 선택" size="lg" border />
 
-6. 소스 MongoDB 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 테이블 이름을 변경할 수도 있습니다.
+6. 원본 MongoDB 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 테이블 이름을 변경할 수도 있습니다.
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### 권한을 검토하고 ClickPipe를 시작합니다

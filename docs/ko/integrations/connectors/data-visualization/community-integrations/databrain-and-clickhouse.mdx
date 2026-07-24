@@ -34,72 +34,66 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
   ## Databrain을 ClickHouse에 연결하는 단계
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. 연결 정보 확인하기
-</div>
+<Steps>
+  <Step title="연결 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Databrain IP 주소 허용(필요한 경우)" id="2-allow-databrain-ip-addresses">
+    ClickHouse 인스턴스에서 IP filtering이 활성화되어 있으면 Databrain의 IP 주소를 허용 목록에 추가해야 합니다.
 
-<div id="2-allow-databrain-ip-addresses">
-  ### 2. Databrain IP 주소 허용(필요한 경우)
-</div>
+    ClickHouse Cloud 사용자의 경우:
 
-ClickHouse 인스턴스에서 IP 필터링이 활성화되어 있으면 Databrain의 IP 주소를 허용 목록에 추가해야 합니다.
+    1. ClickHouse Cloud 콘솔에서 서비스로 이동합니다
+    2. **설정** → **Security**로 이동합니다
+    3. Databrain의 IP 주소를 허용 목록에 추가합니다
 
-ClickHouse Cloud 사용자의 경우:
+    <Tip>
+      허용 목록에 추가해야 하는 최신 IP 주소 목록은 [Databrain의 IP 허용 목록 문서](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)를 참조하십시오.
+    </Tip>
+  </Step>
 
-1. ClickHouse Cloud 콘솔에서 해당 서비스로 이동합니다
-2. **설정** → **보안**으로 이동합니다
-3. Databrain의 IP 주소를 허용 목록에 추가합니다
+  <Step title="Databrain에서 ClickHouse를 데이터 소스로 추가하기" id="3-add-clickhouse-as-a-data-source">
+    1. Databrain 계정에 로그인한 후 데이터 소스를 추가할 워크스페이스로 이동합니다.
 
-<Tip>
-  허용 목록에 추가해야 하는 최신 IP 주소 목록은 [Databrain의 IP 허용 목록 문서](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)를 참조하십시오.
-</Tip>
+    2. 탐색 메뉴에서 **Data Sources**를 클릭합니다.
 
-<div id="3-add-clickhouse-as-a-data-source">
-  ### 3. Databrain에서 ClickHouse를 데이터 소스로 추가하기
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrain 데이터 소스 메뉴" border />
 
-1. Databrain 계정에 로그인한 후 데이터 소스를 추가할 워크스페이스로 이동합니다.
+    3. **Add a Data Source** 또는 **데이터 소스 연결**을 클릭합니다.
 
-2. 탐색 메뉴에서 **Data Sources**를 클릭합니다.
+    4. 사용 가능한 커넥터 목록에서 **ClickHouse**를 선택합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrain 데이터 소스 메뉴" border />
+    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouse 옵션이 표시된 Databrain 커넥터 선택 화면" border />
 
-3. **Add a Data Source** 또는 **데이터 소스 연결**을 클릭합니다.
+    5. 연결 정보를 입력합니다:
+       * **Destination Name**: 이 연결을 식별할 수 있는 이름을 입력합니다(예: &quot;Production ClickHouse&quot; 또는 &quot;Analytics DB&quot;)
+       * **Host**: ClickHouse 호스트 URL을 입력합니다(예: `https://your-instance.region.aws.clickhouse.cloud`)
+       * **Port**: `8443`을 입력합니다(ClickHouse의 기본 HTTPS 포트)
+       * **Username**: ClickHouse 사용자 이름을 입력합니다
+       * **Password**: ClickHouse 비밀번호를 입력합니다
 
-4. 사용 가능한 커넥터 목록에서 **ClickHouse**를 선택합니다.
+    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="구성 필드가 있는 Databrain ClickHouse 연결 양식" border />
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouse 옵션이 표시된 Databrain 커넥터 선택 화면" border />
+    6. Databrain이 ClickHouse 인스턴스에 연결할 수 있는지 확인하려면 **Test Connection**을 클릭합니다.
 
-5. 연결 정보를 입력합니다:
-   * **Destination Name**: 이 연결을 식별할 수 있는 이름을 입력합니다(예: &quot;Production ClickHouse&quot; 또는 &quot;Analytics DB&quot;)
-   * **Host**: ClickHouse 호스트 URL을 입력합니다(예: `https://your-instance.region.aws.clickhouse.cloud`)
-   * **Port**: `8443`을 입력합니다(ClickHouse의 기본 HTTPS 포트)
-   * **Username**: ClickHouse 사용자 이름을 입력합니다
-   * **Password**: ClickHouse 비밀번호를 입력합니다
+    7. 연결이 성공하면 **Save** 또는 **Connect**를 클릭하여 데이터 소스를 추가합니다.
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="구성 필드가 있는 Databrain ClickHouse 연결 양식" border />
+  <Step title="사용자 권한 구성" id="4-configure-user-permissions">
+    연결에 사용하는 ClickHouse 사용자에게 필요한 권한이 있는지 확인합니다:
 
-6. Databrain이 ClickHouse 인스턴스에 연결할 수 있는지 확인하려면 **Test Connection**을 클릭합니다.
+    ```sql
+    -- 스키마 정보를 읽기 위한 권한 부여
+    GRANT SELECT ON information_schema.* TO your_databrain_user;
 
-7. 연결이 성공하면 **Save** 또는 **Connect**를 클릭하여 데이터 소스를 추가합니다.
+    -- 데이터베이스 및 테이블에 대한 읽기 권한 부여
+    GRANT SELECT ON your_database.* TO your_databrain_user;
+    ```
 
-<div id="4-configure-user-permissions">
-  ### 4. 사용자 권한 설정
-</div>
-
-연결에 사용할 ClickHouse 사용자에게 필요한 권한이 부여되어 있는지 확인하십시오:
-
-```sql
--- 스키마 정보 읽기 권한 부여
-GRANT SELECT ON information_schema.* TO your_databrain_user;
-
--- 데이터베이스 및 테이블 읽기 권한 부여
-GRANT SELECT ON your_database.* TO your_databrain_user;
-```
-
-`your_databrain_user` 및 `your_database`를 실제 사용자 이름과 데이터베이스 이름으로 바꾸십시오.
+    `your_databrain_user` 및 `your_database`를 실제 사용자 이름과 데이터베이스 이름으로 바꾸십시오.
+  </Step>
+</Steps>
 
 <div id="using-databrain-with-clickhouse">
   ## ClickHouse에서 Databrain 사용하기
@@ -195,5 +189,5 @@ Databrain 기능과 강력한 분석을 구축하는 방법에 대한 자세한 
 
 * [Databrain 문서](https://docs.usedatabrain.com/)
 * [ClickHouse Integration 가이드](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
-* [대시보드 만들기](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
-* [메트릭 만들기](https://docs.usedatabrain.com/guides/metrics/create-metrics)
+* [대시보드 만들기](https://docs.usedatabrain.com/getting-started/core-concepts/dashboards)
+* [메트릭 만들기](https://docs.usedatabrain.com/getting-started/core-concepts/metrics)

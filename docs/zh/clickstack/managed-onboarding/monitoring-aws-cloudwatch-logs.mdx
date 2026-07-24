@@ -22,9 +22,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up your OpenTelemetry Collector](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)) ，也可以通过上游 OpenTelemetry Helm 图表在 Kubernetes 中部署为 **Helm release**，并使用 ClickStack collector 镜像 (参见 [Deploying the collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector)) 。**请确保你已记录其 OTLP 端点** 以及部署时设置的 `OTLP_AUTH_TOKEN`。
 
 <Steps>
-  <Step>
-    ## 准备前置条件
-
+  <Step title="准备前置条件" id="gather-prerequisites">
     你需要：
 
     * 一个 **AWS 账户**，其中包含一个或多个 CloudWatch 日志组，以及具有下述 IAM 权限的凭证。
@@ -33,9 +31,7 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
     * 你在 ClickStack collector 上设置的 `OTLP_AUTH_TOKEN` 值。如果你没有对其进行保护，可以从下面的配置中删除 `authorization` 请求头。
   </Step>
 
-  <Step>
-    ## 配置 AWS 凭证
-
+  <Step title="配置 AWS 凭证" id="configure-aws">
     receiver 会从标准环境变量中读取 AWS 凭证。请在将运行采集器的主机上导出这些变量。
 
     **对于 AWS SSO 用户：**
@@ -83,9 +79,7 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
     </Info>
   </Step>
 
-  <Step>
-    ## 配置 CloudWatch receiver
-
+  <Step title="配置 CloudWatch receiver" id="configure-receiver">
     导出 ClickStack collector 的端点和身份验证令牌，然后创建 `otel-collector-config.yaml`。
 
     <Info>
@@ -220,9 +214,7 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
     </Info>
   </Step>
 
-  <Step>
-    ## 启动 receiver collector
-
+  <Step title="启动 receiver collector" id="start-collector">
     在 `otel-collector-config.yaml` 同级目录下创建一个 `docker-compose.yaml`。`extra_hosts` 条目可让容器通过 `host.docker.internal` 访问运行在同一主机上的 ClickStack collector；长格式的绑定挂载会在配置文件缺失时显式报错，而不是静默创建一个空目录：
 
     ```shell
@@ -262,9 +254,7 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
     ```
   </Step>
 
-  <Step>
-    ## 在 ClickStack UI 中确认
-
+  <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud)中打开你的服务，然后从左侧菜单中选择 **ClickStack**。
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="启动 ClickStack" border />
@@ -296,9 +286,7 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
     * 确认 `OTLP_AUTH_TOKEN` 与你在 ClickStack collector 上设置的值一致。
   </Step>
 
-  <Step>
-    ## 导入 CloudWatch 仪表盘 (可选)
-
+  <Step title="导入 CloudWatch 仪表盘 (可选)" id="import-dashboard">
     可下载一个预置仪表盘，其中包含日志量、严重级别细分和错误分布。
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">下载 `cloudwatch-logs-dashboard.json`</TrackedLink>，然后在 ClickStack UI 中进入 **仪表盘**，点击 **导入**。
@@ -310,9 +298,7 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
     <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="完成导入对话框" />
   </Step>
 
-  <Step>
-    ## 延伸阅读
-
+  <Step title="延伸阅读" id="further-reading">
     * [AWS CloudWatch 日志集成参考](/zh/clickstack/integration-examples/cloudwatch)，了解演示数据集、完整的故障排查以及调优选项。
     * [保护 collector 的安全](/zh/clickstack/ingesting-data/collector#securing-the-collector)，包括为 OTLP 端点启用 TLS，以及使用遵循最小权限原则的摄取用户。
     * 在 collector 中对事件进行[处理、筛选和富化](/zh/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)。
