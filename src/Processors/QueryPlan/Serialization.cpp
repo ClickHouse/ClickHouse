@@ -70,9 +70,20 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
+/// The version a plan is written with for a peer that supports up to `max_supported_version`.
+/// v4+ peers accept streams by the content's needed-to-read version, so they all get the writer's
+/// own version (one byte string serves a whole mixed v4+ fleet); only pre-skeleton peers need the
+/// stream clamped down to what they can parse.
+static UInt64 effectiveSerializationVersion(size_t max_supported_version)
+{
+    if (max_supported_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
+        return DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    return std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+}
+
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
-    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    UInt64 version = effectiveSerializationVersion(max_supported_version);
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -377,13 +388,6 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
             "Query plan envelope has {} trailing bytes after the sets section", sets_buffer.available());
 
     return res;
-}
-
-/// The stream is written at min(max_supported_version, current), so cache entries are keyed by
-/// the version that actually goes on the wire.
-static UInt64 effectiveSerializationVersion(size_t max_supported_version)
-{
-    return std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 }
 
 void QueryPlan::ensureSerialized(size_t max_supported_version) const
