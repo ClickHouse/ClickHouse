@@ -119,13 +119,17 @@ class Git:
         Creates (force, so reruns are idempotent) the local annotated tag with
         the given tagger identity and no GPG signing, then pushes it with
         `Git.push` (App token) using the explicit `refs/tags/...` refspec.
+
+        The local tag is created even on a dry run (only the push is skipped):
+        later release steps resolve the tag locally (e.g. `changelog.py` runs
+        `git rev-parse <tag>`), so a dry run that skipped the local tag would
+        fail on a tag the real run would have created.
         """
         Shell.check(
             f"git -c user.name={shlex.quote(user_name)}"
             f" -c user.email={shlex.quote(user_email)} -c commit.gpgsign=false"
             f" tag -f -a -m {shlex.quote(message)}"
             f" {shlex.quote(tag)} {shlex.quote(commit)}",
-            dry_run=dry_run,
             strict=True,
             verbose=True,
         )
