@@ -350,6 +350,16 @@ void generateManifestFile(
     chassert(
         per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
         "per_file_entry_lineage size does not match number of data files");
+
+    /// The value and type tuples must have exactly one entry per partition column;
+    if (partition_values.size() != partition_columns.size() || partition_types.size() != partition_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest partition arity mismatch: {} partition columns but {} values and {} types",
+            partition_columns.size(),
+            partition_values.size(),
+            partition_types.size());
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
