@@ -54,6 +54,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ProfileEvents.h>
 
 namespace CurrentMetrics

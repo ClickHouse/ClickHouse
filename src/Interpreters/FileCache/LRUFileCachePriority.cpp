@@ -790,7 +790,7 @@ void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
 
     const size_t entry_size = entry_ptr->size;
     if (entry_size)
-        cache_priority->subTrackedUsage(*entry_ptr, entry_size, 1);
+        LRUFileCachePriority::subTrackedUsage(*entry_ptr, entry_size, 1);
 
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
@@ -825,7 +825,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry_ptr->toString());
 
-    cache_priority->addTrackedUsage(*entry_ptr, size, elements);
+    LRUFileCachePriority::addTrackedUsage(*entry_ptr, size, elements);
 
     cache_priority->state->add(size, elements, lock);
     entry_ptr->size += size;
@@ -848,7 +848,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              size, entry_ptr->toString());
 
     const bool became_empty = entry_ptr->size == size;
-    cache_priority->subTrackedUsage(*entry_ptr, size, became_empty ? 1 : 0);
+    LRUFileCachePriority::subTrackedUsage(*entry_ptr, size, became_empty ? 1 : 0);
     cache_priority->state->sub(size, /* elements */became_empty ? 1 : 0);
     entry_ptr->size -= size;
 }
