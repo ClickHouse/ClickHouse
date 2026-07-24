@@ -37,6 +37,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     Int64 content_offset,
     Int64 content_size_in_bytes,
     const IcebergPathFromMetadata & expected_data_file,
+    UInt64 expected_cardinality,
     ContextPtr context,
     LoggerPtr log,
     bool disable_filesystem_cache)
@@ -47,7 +48,8 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
         read_settings.enable_filesystem_cache = false;
 
     auto read_buffer = createReadBuffer(puffin_object, object_storage, context, log, read_settings);
-    auto deleted_positions = readDeletionVectorFromPuffin(*read_buffer, content_offset, content_size_in_bytes);
+    auto deleted_positions = readDeletionVectorFromPuffin(
+        *read_buffer, content_offset, content_size_in_bytes, expected_cardinality);
 
     if (deleted_positions.empty())
         return nullptr;
@@ -75,6 +77,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     Int64 content_size_in_bytes,
     const IcebergPathFromMetadata & expected_data_file,
     const std::optional<IcebergPathFromMetadata> & referenced_data_file,
+    Int64 expected_cardinality,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -87,12 +90,30 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             expected_data_file.serialize());
     }
 
+    if (expected_cardinality < 0)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Deletion vector record_count {} must be non-negative",
+            expected_cardinality);
+    }
+
+    const UInt64 expected_cardinality_u64 = static_cast<UInt64>(expected_cardinality);
+
     const bool use_cache = context->getSettingsRef()[Setting::use_puffin_files_cache];
     if (!use_cache)
     {
         LOG_TRACE(log, "Not using Puffin files cache for '{}', because the setting use_puffin_files_cache is false", puffin_path);
         return loadDeletionVectorUncached(
-            object_storage, puffin_path, content_offset, content_size_in_bytes, expected_data_file, context, log, false);
+            object_storage,
+            puffin_path,
+            content_offset,
+            content_size_in_bytes,
+            expected_data_file,
+            expected_cardinality_u64,
+            context,
+            log,
+            false);
     }
 
     RelativePathWithMetadata puffin_object{puffin_path};
@@ -110,14 +131,30 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     {
         LOG_TRACE(log, "Not using Puffin files cache for '{}', because etag is empty", puffin_path);
         return loadDeletionVectorUncached(
-            object_storage, puffin_path, content_offset, content_size_in_bytes, expected_data_file, context, log, false);
+            object_storage,
+            puffin_path,
+            content_offset,
+            content_size_in_bytes,
+            expected_data_file,
+            expected_cardinality_u64,
+            context,
+            log,
+            false);
     }
 
     auto cache = context->getPuffinFilesCache();
     return cache->getOrSetDeletionVector(*cache_key, [&]()
     {
         return loadDeletionVectorUncached(
-            object_storage, puffin_path, content_offset, content_size_in_bytes, expected_data_file, context, log, true);
+            object_storage,
+            puffin_path,
+            content_offset,
+            content_size_in_bytes,
+            expected_data_file,
+            expected_cardinality_u64,
+            context,
+            log,
+            true);
     });
 }
 

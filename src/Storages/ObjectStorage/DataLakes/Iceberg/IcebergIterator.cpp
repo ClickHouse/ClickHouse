@@ -413,6 +413,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 parsed_entry->content_size_in_bytes.value(),
                 data_file_path,
                 referenced_data_file,
+                parsed_entry->record_count,
                 local_context,
                 logger);
 

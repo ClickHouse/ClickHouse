@@ -19,6 +19,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     Int64 content_size_in_bytes,
     const IcebergPathFromMetadata & expected_data_file,
     const std::optional<IcebergPathFromMetadata> & referenced_data_file,
+    Int64 expected_cardinality,
     ContextPtr context,
     LoggerPtr log);
 
