@@ -8,10 +8,6 @@ doc_type: 'مرجع'
 
 import DeprecatedBadge from "/snippets/ar/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
-<div id="functions-for-working-with-uuids">
-  # دوال للتعامل مع UUIDs
-</div>
-
 <div id="uuidv7-generation">
   ## توليد UUIDv7
 </div>
@@ -267,53 +263,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<div id="dateTime64ToSnowflake">
-  ## dateTime64ToSnowflake
-</div>
-
-أُضيفت في: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  هذه الدالة مُهملة، ولا يمكن استخدامها إلا إذا كان الإعداد [`allow_deprecated_snowflake_conversion_functions`](/ar/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) مُمكّنًا.
-  ستُزال هذه الدالة في وقت ما مستقبلًا.
-
-  يُرجى استخدام الدالة [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID) بدلًا منها.
-</Warning>
-
-تحوّل [DateTime64](/ar/reference/data-types/datetime64) إلى أول [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) عند الوقت المحدد.
-
-**البنية**
-
-```sql
-dateTime64ToSnowflake(value)
-```
-
-**المعاملات**
-
-* `value` — تاريخ يتضمن وقتًا. [`DateTime64`](/ar/reference/data-types/datetime64)
-
-**القيمة المُعادة**
-
-تعيد قيمة الإدخال بعد تحويلها إلى أول Snowflake ID عند ذلك الوقت. [`Int64`](/ar/reference/data-types/int-uint)
-
-**أمثلة**
-
-**مثال على الاستخدام**
-
-```sql title=Query
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-```response title=Response
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dateTime64ToSnowflakeID">
@@ -349,51 +300,6 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 
 ```response title=Response
 6832626394434895872
-```
-
-<div id="dateTimeToSnowflake">
-  ## dateTimeToSnowflake
-</div>
-
-أُضيفت في: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  هذه الدالة مهملة، ولا يمكن استخدامها إلا إذا كان الإعداد [`allow_deprecated_snowflake_conversion_functions`](/ar/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) مُمكّنًا.
-  ستُزال هذه الدالة في وقت ما مستقبلًا.
-
-  يُرجى استخدام الدالة [dateTimeToSnowflakeID](#dateTimeToSnowflakeID) بدلًا منها.
-</Warning>
-
-تحوّل قيمة [DateTime](/ar/reference/data-types/datetime) إلى أول [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) عند الوقت المحدد.
-
-**الصيغة**
-
-```sql
-dateTimeToSnowflake(value)
-```
-
-**المعاملات**
-
-* `value` — تاريخ ووقت. [`DateTime`](/ar/reference/data-types/datetime)
-
-**القيمة المُعادة**
-
-تعيد قيمة الإدخال على شكل أول Snowflake ID عند ذلك الوقت. [`Int64`](/ar/reference/data-types/int-uint)
-
-**أمثلة**
-
-**مثال على الاستخدام**
-
-```sql title=Query
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-```response title=Response
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -445,6 +351,10 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
   اعتبارًا من سبتمبر 2025، لا تزال معرّفات UUID من الإصدار 7 في حالة مسودة، وقد تتغير بنيتها في المستقبل.
 </Note>
 
+<Note>
+  هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -469,8 +379,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **عدة معرّفات UUID للطابع الزمني نفسه**
@@ -499,7 +409,11 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 
 تضمن الدالة `generateSnowflakeID` أن يزداد حقل العداد داخل الطابع الزمني زيادةً رتيبة عبر جميع استدعاءات الدالة في الخيوط والاستعلامات التي تعمل بالتوازي.
 
-راجع قسم [&quot;توليد معرّف Snowflake&quot;](#snowflake-id-generation) للاطلاع على تفاصيل التنفيذ.
+راجع قسم [&quot;إنشاء معرّف Snowflake&quot;](#snowflake-id-generation) للاطلاع على تفاصيل التنفيذ.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصياغة**
 
@@ -509,7 +423,7 @@ generateSnowflakeID([expr, [machine_id]])
 
 **الوسائط**
 
-* `expr` — [تعبير](/ar/reference/syntax#expressions) عشوائي يُستخدم لتجاوز [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) إذا جرى استدعاء الدالة عدة مرات ضمن استعلام. لا تؤثر قيمة التعبير على معرّف Snowflake المُعاد. اختياري. - `machine_id` — معرّف جهاز، وتُستخدم أقل 10 بتات منه. [Int64](/ar/reference/data-types/int-uint). اختياري.
+* `expr` — [تعبير](/ar/reference/syntax#expressions) اعتباطي يُستخدم لتجاوز [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) إذا جرى استدعاء الدالة عدة مرات ضمن استعلام. لا تؤثر قيمة التعبير على معرّف Snowflake المُعاد. اختياري. - `machine_id` — معرّف جهاز، وتُستخدم أقل 10 بتات منه. [Int64](/ar/reference/data-types/int-uint). اختياري.
 
 **القيمة المعادة**
 
@@ -567,6 +481,10 @@ SELECT generateSnowflakeID('expr', 1);
 
 يُنشئ [UUID](/ar/reference/data-types/uuid) من [الإصدار الرابع](https://tools.ietf.org/html/rfc4122#section-4.4).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -575,7 +493,7 @@ generateUUIDv4([expr])
 
 **الوسيطات**
 
-* `expr` — اختياري. أي تعبير يُستخدم لتجاوز [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استدعاء الدالة عدة مرات في استعلام. لا تؤثر قيمة هذا التعبير في UUID المُعاد.
+* `expr` — اختياري. تعبير اعتباطي يُستخدم لتجاوز [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استدعاء الدالة عدة مرات في استعلام. لا تؤثر قيمة هذا التعبير في UUID المُعاد.
 
 **القيمة المُعادة**
 
@@ -621,6 +539,10 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 <Note>
   اعتبارًا من سبتمبر 2025، لا تزال معرّفات UUID من الإصدار 7 في حالة مسودة، وقد تتغير بنيتها في المستقبل.
+</Note>
+
+<Note>
+  هذه الدالة غير حتمية: قد تُعيد نتائج مختلفة للوسيطات نفسها.
 </Note>
 
 **الصياغة**
@@ -741,98 +663,6 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 └─────────────────────┘
 ```
 
-<div id="snowflakeToDateTime">
-  ## snowflakeToDateTime
-</div>
-
-أُضيفت في: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  هذه الدالة مهملة، ولا يمكن استخدامها إلا إذا كان الإعداد [`allow_deprecated_snowflake_conversion_functions`](/ar/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) مفعّلًا.
-  ستُزال الدالة في مرحلة ما مستقبلًا.
-
-  يُرجى استخدام الدالة [`snowflakeIDToDateTime`](#snowflakeIDToDateTime) بدلًا منها.
-</Warning>
-
-تستخرج مكوّن الطابع الزمني من [معرّف Snowflake](https://en.wikipedia.org/wiki/Snowflake_ID) بتنسيق [DateTime](/ar/reference/data-types/datetime).
-
-**الصيغة**
-
-```sql
-snowflakeToDateTime(value[, time_zone])
-```
-
-**الوسائط**
-
-* `value` — معرّف Snowflake. [`Int64`](/ar/reference/data-types/int-uint)
-* `time_zone` — اختياري. [المنطقة الزمنية](/ar/reference/settings/server-settings/settings#timezone). تفسّر الدالة `time_string` وفقًا للمنطقة الزمنية. [`String`](/ar/reference/data-types/string)
-
-**القيمة المُعادة**
-
-تعيد مكوّن الطابع الزمني لـ `value`. [`DateTime`](/ar/reference/data-types/datetime)
-
-**أمثلة**
-
-**مثال على الاستخدام**
-
-```sql title=Query
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-<div id="snowflakeToDateTime64">
-  ## snowflakeToDateTime64
-</div>
-
-طُرحت في: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  هذه الدالة متقادمة ولا يمكن استخدامها إلا إذا كان الإعداد [`allow_deprecated_snowflake_conversion_functions`](/ar/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) مفعّلًا.
-  ستُزال هذه الدالة في وقت ما مستقبلًا.
-
-  يُرجى استخدام الدالة [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64) بدلًا منها.
-</Warning>
-
-تستخرج مكوّن الطابع الزمني من [معرّف Snowflake](https://en.wikipedia.org/wiki/Snowflake_ID) بتنسيق [DateTime64](/ar/reference/data-types/datetime64).
-
-**البنية**
-
-```sql
-snowflakeToDateTime64(value[, time_zone])
-```
-
-**الوسيطات**
-
-* `value` — معرّف Snowflake. [`Int64`](/ar/reference/data-types/int-uint)
-* `time_zone` — اختياري. [المنطقة الزمنية](/ar/reference/settings/server-settings/settings#timezone). تُحلِّل الدالة `time_string` وفقًا للمنطقة الزمنية. [`String`](/ar/reference/data-types/string)
-
-**القيمة المُعادة**
-
-تعيد الدالة مكوّن الطابع الزمني في `value`. [`DateTime64(3)`](/ar/reference/data-types/datetime64)
-
-**أمثلة**
-
-**مثال على الاستخدام**
-
-```sql title=Query
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
 <div id="toUUIDOrDefault">
   ## toUUIDOrDefault
 </div>
@@ -868,8 +698,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **يُرجِع التحويل الفاشل قيمة UUID الافتراضية**
@@ -880,8 +710,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrNull">

@@ -33,7 +33,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 所有性能测试均使用计算能力相同的客户端 VM 进行。为确保比较公平，该 VM 与 PostgreSQL 数据库部署在同一区域和同一可用区。
 
 <div id="test1">
-  ### 测试 1：IO 密集型——读+写 (500 GB 数据集)
+  ### 测试 1：IO 密集型 - 读+写 (500 GB 数据集)
 </div>
 
 <Image img="/images/managed-postgres/benchmarks/io-intensive-readwrite.webp" alt="IO 密集型读+写基准测试结果" size="md" border />
@@ -46,7 +46,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * **TPS 提升 345%** (快 4.5 倍)
 
-**分析**：混合读写工作负载最能体现 NVMe 存储的显著性能优势，也代表了**快速增长的 AI 驱动型工作负载中最贴近真实的场景**——这类场景既需要高吞吐的数据摄取，也需要低延迟读取。**由 ClickHouse 托管的 Postgres 在更高并发下达到 19.8K TPS**，表明 NVMe 存储在负载升高时依然能够有效扩展。这比 **RDS 和 Aurora 快 4.3-4.5 倍**。网络附加存储方案在写密集型操作中明显吃力，RDS 和 Aurora 的 TPS 即使在已预配容量、Aurora 甚至启用 IO Optimized 配置的情况下，最高也只有 4.4K-4.6K。
+**分析**：混合读写工作负载最能体现 NVMe 存储的显著性能优势，也代表了**快速增长的 AI 驱动型工作负载中最贴近真实的场景**——这类场景既需要高吞吐的数据摄取，也需要低延迟读取。**由 ClickHouse 托管的 Postgres 在更高并发下达到 19.8K TPS**，表明 NVMe 存储在高负载下依然能够有效扩展。这比 **RDS 和 Aurora 快 4.3-4.5 倍**。网络附加存储方案在写密集型操作中表现吃力；即使已经预配容量，且 Aurora 还启用了 IO Optimized 配置，RDS 和 Aurora 的 TPS 最高也只有 4.4K-4.6K。
 
 <div id="test1-setup">
   #### 测试设置
@@ -219,4 +219,4 @@ Postgres by ClickHouse 非常适合以下应用：
 * [PeerDB：Postgres 托管服务对比](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
 * [pgbench 文档](https://www.postgresql.org/docs/current/pgbench.html)
 * [Managed Postgres 概览](/zh/products/managed-postgres/overview)
-* [扩缩容你的 Postgres 实例](/zh/products/managed-postgres/scaling)
+* [对 Postgres 实例进行扩缩容](/zh/products/managed-postgres/scaling)
