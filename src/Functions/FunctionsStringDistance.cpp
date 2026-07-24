@@ -798,9 +798,9 @@ inline double jaroFinishScore(int matches, int trans2, int s1_len, int s2_len)
     return (1.0 / 3.0) * (m / s1_len + m / s2_len + (m - t) / m);
 }
 
-double jaroSmall(const unsigned char * s1, int s1_len,
-                 const unsigned char * s2, int s2_len,
-                 int max_range)
+static double jaroSmall(const unsigned char * s1, int s1_len,
+                        const unsigned char * s2, int s2_len,
+                        int max_range)
 {
     alignas(32) unsigned char buf[64] = {};
     memcpy(buf, s2, s2_len);
@@ -855,9 +855,9 @@ inline UInt64 jaroBits64At(const UInt64 * bits, int bit_off)
     return lo | hi;
 }
 
-double jaroScan(const unsigned char * s1, int s1_len,
-                const unsigned char * s2, int s2_len,
-                int max_range)
+static double jaroScan(const unsigned char * s1, int s1_len,
+                       const unsigned char * s2, int s2_len,
+                       int max_range)
 {
     const int s2_words = (s2_len + 63) / 64;
     /// One sentinel word past the end so jaroBits64At can load [word + 1].
