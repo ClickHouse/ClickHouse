@@ -1,6 +1,6 @@
 -- Tests the query-plan pass that short-circuits the read of a JOIN input side that can never
--- contribute a row (a constant-false ON condition, or an already-empty input). Issue #110225:
--- the non-contributing side must not be read. The JoinStep is kept in place, so join validation
+-- contribute a row when the ON condition folds to a constant false. Issue #110225: the
+-- non-contributing side must not be read. The JoinStep is kept in place, so join validation
 -- still runs and results are unchanged.
 
 SET enable_analyzer = 1;
@@ -45,6 +45,18 @@ SELECT count() FROM (
     LEFT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y
 ) WHERE explain ILIKE '%ReadNothing%';
 
+SELECT 'LEFT SEMI JOIN ON false -> both inputs become empty sources';
+SELECT count() = 2 FROM (
+    EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
+    LEFT SEMI JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
+) WHERE explain ILIKE '%ReadNothing%';
+
+SELECT 'RIGHT SEMI JOIN ON false -> both inputs become empty sources';
+SELECT count() = 2 FROM (
+    EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
+    RIGHT SEMI JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
+) WHERE explain ILIKE '%ReadNothing%';
+
 SELECT 'The setting = 0 disables the optimization (no ReadNothing)';
 SELECT count() FROM (
     EXPLAIN SELECT * FROM (SELECT number AS x FROM numbers(10)) a
@@ -73,12 +85,13 @@ WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
 ORDER BY log_comment;
 
--- Result checks: short-circuit must not change results (compare against the pass disabled).
--- Pin join_use_nulls for the exact-output rows below (CI randomizes it, and it changes the
--- null-side value from 0 to NULL); the two rows that exercise join_use_nulls = 1 set it locally.
+-- Result checks: the short-circuit must not change results (each constant-false join returns
+-- exactly the rows below). Pin join_use_nulls for the exact-output rows (CI randomizes it, and it
+-- changes the null-side value from 0 to NULL); the two rows that exercise join_use_nulls = 1 set
+-- it locally.
 SET join_use_nulls = 0;
 
-SELECT 'Results are unchanged (each pair prints one line = optimized result)';
+SELECT 'Results are unchanged';
 SELECT 'INNER', a.x, b.y FROM (SELECT number AS x FROM numbers(5)) a
     INNER JOIN (SELECT number AS y FROM numbers(3)) b ON a.x = b.y AND 1 = 2 ORDER BY a.x, b.y;
 SELECT 'LEFT', a.x, b.y FROM (SELECT number AS x FROM numbers(5)) a
@@ -107,3 +120,14 @@ CREATE TABLE mt (key1 UInt64, key2 UInt64, key3 UInt64) ENGINE = MergeTree ORDER
 CREATE TABLE sj (key2 UInt64, key1 UInt64, key3 UInt64, attr UInt64) ENGINE = Join(ALL, INNER, key3, key2, key1);
 SELECT 'StorageJoin ON 0 still validates';
 SELECT * FROM mt ALL INNER JOIN sj ON 0; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,INVALID_JOIN_ON_EXPRESSION }
+
+-- The pass is skipped for distributed plans (ReadNothingStep is not serializable to remote
+-- workers), so a constant-false join still executes instead of failing with SUPPORT_IS_DISABLED.
+-- Use a populated table: an empty MergeTree already yields a non-serializable ReadNothing at
+-- planning time, independently of this optimization.
+CREATE TABLE dist (k UInt64) ENGINE = MergeTree ORDER BY k AS SELECT number FROM numbers(10);
+SELECT 'Distributed plan is not broken by the short-circuit';
+-- make_distributed_plan is incompatible with parallel replicas, which CI randomizes; pin them off.
+SELECT count() FROM dist a INNER JOIN dist b ON a.k = b.k AND 1 = 2
+    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;

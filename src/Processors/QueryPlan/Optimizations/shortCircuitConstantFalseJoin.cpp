@@ -24,25 +24,16 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
     return false;
 }
 
-/// Short-circuit the read of an input side that can never contribute a row when the JOIN ON
-/// condition folds to a constant false (e.g. `ON 1 = 2`, `ON NULL`, or `ON a.x = b.y AND a.t = 'A'
-/// AND a.t = 'B'`). No pair of rows can match, so a side whose unmatched rows are dropped (a
-/// non-"preserved" side) contributes nothing and does not need to be read. Such an input is
-/// replaced with an empty `ReadNothingStep` of the same header, so the non-contributing table is
-/// never scanned. For example:
-///   - `INNER/CROSS/SEMI`: neither side is preserved, so both inputs are emptied and the (empty)
-///     result is produced without reading either table.
-///   - `LEFT ALL/ANY/ANTI`: the left side is preserved, so only the right input is emptied; the
-///     join then emits every left row with NULL/default right columns as before.
-///   - `FULL`: both sides are preserved, so neither input can be dropped.
-///
-/// The `JoinStepLogical` is deliberately kept in place (never replaced by an empty source): the
-/// logical-to-physical conversion still runs and performs join validation (StorageJoin key checks,
-/// ASOF/`INVALID_JOIN_ON_EXPRESSION`, etc.), so an invalid join keeps throwing exactly as before.
-/// This runs before `splitFilter`/`pushDownFilter` lower the constant-false condition onto an
-/// input, so the condition is still visible on the `JoinStepLogical` here.
-size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
+/// When the JOIN ON condition folds to a constant false, replace each non-preserved input side
+/// with an empty `ReadNothingStep` so it is not read. The `JoinStepLogical` is kept in place, so
+/// logical-to-physical conversion still validates the join (an invalid join keeps throwing).
+/// Must run before `splitFilter`/`pushDownFilter`, which lower the constant off the join step.
+size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
+    /// `ReadNothingStep` is not serializable to remote workers, so skip distributed plans.
+    if (settings.make_distributed_plan)
+        return 0;
+
     auto * join = typeid_cast<JoinStepLogical *>(parent_node->step.get());
     if (!join || parent_node->children.size() != 2)
         return 0;
