@@ -405,6 +405,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     data_file_path);
             }
 
+            Iceberg::requireParquetDataFileForRowDeletes(object_info->info.file_format, "Deletion vectors");
+
             const auto & parsed_entry = deletion_vector->parsed_entry;
             auto excluded_rows = Iceberg::loadDeletionVector(
                 object_storage,

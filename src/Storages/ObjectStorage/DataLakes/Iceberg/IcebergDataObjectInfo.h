@@ -11,11 +11,17 @@
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
+#include <string_view>
+
 
 namespace DB::Iceberg
 {
 
 String computePartitionId(const Row & partition_key_value);
+
+/// Position deletes and deletion vectors need file-relative row numbers (`ChunkInfoRowNumbers`),
+/// which Parquet readers emit. Reject other data-file formats early with NOT_IMPLEMENTED.
+void requireParquetDataFileForRowDeletes(const String & file_format, std::string_view feature_name);
 
 
 struct IcebergObjectSerializableInfo

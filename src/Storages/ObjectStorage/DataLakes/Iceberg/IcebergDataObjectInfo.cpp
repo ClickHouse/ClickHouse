@@ -16,6 +16,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/String.h>
 
 namespace DB::ErrorCodes
 {
@@ -25,6 +26,23 @@ extern const int UNKNOWN_PROTOCOL;
 
 
 using namespace DB::Iceberg;
+
+namespace DB::Iceberg
+{
+
+void requireParquetDataFileForRowDeletes(const String & file_format, std::string_view feature_name)
+{
+    if (Poco::toUpper(file_format) != "PARQUET")
+    {
+        throw Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "{} are only supported for data files of Parquet format in Iceberg, but got {}",
+            feature_name,
+            file_format);
+    }
+}
+
+}
 
 namespace DB
 {
@@ -98,13 +116,7 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
 {
-    if (Poco::toUpper(info.file_format) != "PARQUET")
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
-            info.file_format);
-    }
+    Iceberg::requireParquetDataFileForRowDeletes(info.file_format, "Position deletes");
     info.position_deletes_objects.emplace_back(
         resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
         position_delete_object->sequence_number);
