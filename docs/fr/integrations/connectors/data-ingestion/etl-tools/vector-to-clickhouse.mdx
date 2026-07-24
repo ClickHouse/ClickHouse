@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Vector'
 slug: /integrations/vector
-description: 'Comment acheminer en continu un fichier de logs vers ClickHouse avec Vector'
+description: 'Comment acheminer en continu un fichier de log vers ClickHouse avec Vector'
 title: 'Intégrer Vector à ClickHouse'
 show_related_blogs: true
 doc_type: 'guide'
@@ -22,7 +22,7 @@ Pouvoir analyser vos logs en temps réel est essentiel pour les applications en 
 ClickHouse excelle dans le stockage et l’analyse des logs grâce à son excellente compression (jusqu’à [170x](https://clickhouse.com/blog/log-compression-170x) pour les logs)
 et à sa capacité à agréger rapidement de grandes quantités de données.
 
-Ce guide vous montre comment utiliser le pipeline de données populaire [Vector](https://vector.dev/docs/about/what-is-vector/) pour lire en continu un fichier de log Nginx et l’envoyer vers ClickHouse.
+Ce guide vous montre comment utiliser le pipeline de données populaire [Vector](https://vector.dev/docs/introduction/) pour lire en continu un fichier de log Nginx et l’envoyer vers ClickHouse.
 Les étapes ci-dessous sont similaires pour la lecture en continu de tout type de fichier de log.
 
 **Prérequis :**
@@ -31,9 +31,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
 * Vous avez installé Vector
 
 <Steps>
-  <Step>
-    ## Créer une base de données et une table
-
+  <Step title="Créer une base de données et une table" id="1-create-a-database-and-table">
     Définissez une table pour stocker les événements de logs :
 
     1. Commencez par créer une base de données nommée `nginxdb` :
@@ -57,9 +55,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     </Note>
   </Step>
 
-  <Step>
-    ## Configurer Nginx
-
+  <Step title="Configurer Nginx" id="2--configure-nginx">
     Dans cette étape, vous allez voir comment configurer la journalisation de Nginx.
 
     1. La directive `access_log` suivante envoie les logs vers `/var/log/nginx/my_access.log` au format **combined**.
@@ -88,9 +84,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     ```
   </Step>
 
-  <Step>
-    ## Configurer Vector
-
+  <Step title="Configurer Vector" id="3-configure-vector">
     Vector collecte, transforme et achemine les logs, les métriques et les traces (appelés **sources**) vers de nombreux fournisseurs différents (appelés **sinks**), avec une compatibilité native avec ClickHouse.
     Les sources et les sinks sont définis dans un fichier de configuration nommé **vector.toml**.
 
@@ -122,9 +116,7 @@ Les étapes ci-dessous sont similaires pour la lecture en continu de tout type d
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Afficher les logs ClickHouse sous forme de tableau" />
   </Step>
 
-  <Step>
-    ## Analyser les journaux
-
+  <Step title="Analyser les journaux" id="4-parse-the-logs">
     Avoir les logs dans ClickHouse est une bonne chose, mais stocker chaque événement sous forme d&#39;une chaîne unique ne permet pas une analyse approfondie des données.
     Nous allons maintenant voir comment parser les événements de log à l&#39;aide d&#39;une [vue matérialisée](/fr/concepts/features/materialized-views/incremental-materialized-view).
 

@@ -8,10 +8,6 @@ doc_type: 'référence'
 
 import DeprecatedBadge from "/snippets/fr/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
-<div id="functions-for-working-with-uuids">
-  # Fonctions pour manipuler les UUIDs
-</div>
-
 <div id="uuidv7-generation">
   ## Génération des UUIDv7
 </div>
@@ -267,53 +263,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<div id="dateTime64ToSnowflake">
-  ## dateTime64ToSnowflake
-</div>
-
-Introduit dans : v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Cette fonction est dépréciée et ne peut être utilisée que si le paramètre [`allow_deprecated_snowflake_conversion_functions`](/fr/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) est activé.
-  Elle sera supprimée ultérieurement.
-
-  Veuillez utiliser la fonction [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID) à la place.
-</Warning>
-
-Convertit un [DateTime64](/fr/reference/data-types/datetime64) en premier [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) correspondant à l&#39;instant indiqué.
-
-**Syntaxe**
-
-```sql
-dateTime64ToSnowflake(value)
-```
-
-**Arguments**
-
-* `value` — Date et heure. [`DateTime64`](/fr/reference/data-types/datetime64)
-
-**Valeur renvoyée**
-
-Renvoie la valeur d’entrée convertie en premier Snowflake ID correspondant à cet instant. [`Int64`](/fr/reference/data-types/int-uint)
-
-**Exemples**
-
-**Exemple d&#39;utilisation**
-
-```sql title=Query
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-```response title=Response
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dateTime64ToSnowflakeID">
@@ -349,51 +300,6 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 
 ```response title=Response
 6832626394434895872
-```
-
-<div id="dateTimeToSnowflake">
-  ## dateTimeToSnowflake
-</div>
-
-Introduit dans : v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Cette fonction est dépréciée et ne peut être utilisée que si le paramètre [`allow_deprecated_snowflake_conversion_functions`](/fr/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) est activé.
-  Cette fonction sera supprimée ultérieurement.
-
-  Veuillez utiliser la fonction [dateTimeToSnowflakeID](#dateTimeToSnowflakeID) à la place.
-</Warning>
-
-Convertit une valeur [DateTime](/fr/reference/data-types/datetime) en premier [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) à l’instant donné.
-
-**Syntaxe**
-
-```sql
-dateTimeToSnowflake(value)
-```
-
-**Arguments**
-
-* `value` — Date et heure. [`DateTime`](/fr/reference/data-types/datetime)
-
-**Valeur renvoyée**
-
-Renvoie la valeur d’entrée sous forme du premier Snowflake ID à cet instant. [`Int64`](/fr/reference/data-types/int-uint)
-
-**Exemples**
-
-**Exemple d’utilisation**
-
-```sql title=Query
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-```response title=Response
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -439,10 +345,14 @@ Introduit dans : v25.8.0
 
 Convertit une valeur [DateTime](/fr/reference/data-types/datetime) en [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) pour l’instant donné.
 
-Voir la section [&quot;génération d’UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties de concurrence.
+Voir la section [&quot;Génération des UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties de concurrence.
 
 <Note>
-  En septembre 2025, les UUID version 7 sont encore à l’état de brouillon et leur structure pourrait évoluer à l’avenir.
+  En septembre 2025, les UUID de version 7 sont encore à l’état de brouillon et leur structure pourrait évoluer à l’avenir.
+</Note>
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -469,8 +379,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **plusieurs UUID pour un même horodatage**
@@ -499,7 +409,11 @@ Génère un [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
 La fonction `generateSnowflakeID` garantit que le champ compteur d’un horodatage s’incrémente de manière monotone sur l’ensemble des invocations de la fonction dans des threads et des requêtes exécutés de manière concurrente.
 
-Voir la section [&quot;Génération de Snowflake ID&quot;](#snowflake-id-generation) pour plus de détails sur l’implémentation.
+Voir la section [&quot;Génération des Snowflake IDs&quot;](#snowflake-id-generation) pour plus de détails sur l’implémentation.
+
+<Note>
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -509,7 +423,7 @@ generateSnowflakeID([expr, [machine_id]])
 
 **Arguments**
 
-* `expr` — Une [expression](/fr/reference/syntax#expressions) arbitraire utilisée pour contourner l’[élimination des sous-expressions communes](/fr/reference/functions/regular-functions/overview#common-subexpression-elimination) si la fonction est appelée plusieurs fois dans une requête. La valeur de l’expression n’a aucun effet sur le Snowflake ID renvoyé. Facultatif. - `machine_id` — Un ID de machine ; les 10 bits de poids faible sont utilisés. [Int64](/fr/reference/data-types/int-uint). Facultatif.
+* `expr` — Une [expression](/fr/reference/syntax#expressions) arbitraire utilisée pour contourner l’[élimination des sous-expressions communes](/fr/reference/functions/regular-functions/overview#common-subexpression-elimination) si la fonction est appelée plusieurs fois dans une requête. La valeur de l’expression n’a aucun effet sur le Snowflake ID renvoyé. Facultatif. - `machine_id` — Un identifiant de machine ; les 10 bits de poids faible sont utilisés. [Int64](/fr/reference/data-types/int-uint). Facultatif.
 
 **Valeur renvoyée**
 
@@ -547,7 +461,7 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 └────────────────────────┴────────────────────────┘
 ```
 
-**Avec une expression et un ID de machine**
+**Avec une expression et un identifiant de machine**
 
 ```sql title=Query
 SELECT generateSnowflakeID('expr', 1);
@@ -566,6 +480,10 @@ SELECT generateSnowflakeID('expr', 1);
 Introduite dans : v1.1.0
 
 Génère un [UUID](/fr/reference/data-types/uuid) de [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+
+<Note>
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -617,10 +535,14 @@ Introduit dans : v24.5.0
 
 Génère un [UUID](/fr/reference/data-types/uuid) de [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
 
-Voir la section [&quot;Génération d’UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties en cas de génération concurrente.
+Voir la section [&quot;Génération des UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties en cas de génération concurrente.
 
 <Note>
   En septembre 2025, les UUID de version 7 sont encore à l’état de projet, et leur structure pourrait évoluer à l’avenir.
+</Note>
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -653,7 +575,7 @@ SELECT generateUUIDv7(number) FROM numbers(3);
 └──────────────────────────────────────┘
 ```
 
-**Élimination de sous-expressions communes**
+**Élimination des sous-expressions communes**
 
 ```sql title=Query
 SELECT generateUUIDv7(1), generateUUIDv7(1);
@@ -741,98 +663,6 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 └─────────────────────┘
 ```
 
-<div id="snowflakeToDateTime">
-  ## snowflakeToDateTime
-</div>
-
-Introduit dans : v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Cette fonction est obsolète et ne peut être utilisée que si le paramètre [`allow_deprecated_snowflake_conversion_functions`](/fr/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) est activé.
-  Cette fonction sera supprimée dans une future version.
-
-  Veuillez utiliser la fonction [`snowflakeIDToDateTime`](#snowflakeIDToDateTime) à la place.
-</Warning>
-
-Extrait le composant d’horodatage d’un [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) au format [DateTime](/fr/reference/data-types/datetime).
-
-**Syntaxe**
-
-```sql
-snowflakeToDateTime(value[, time_zone])
-```
-
-**Arguments**
-
-* `value` — Snowflake ID. [`Int64`](/fr/reference/data-types/int-uint)
-* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings#timezone). La fonction interprète `time_string` en fonction du fuseau horaire. [`String`](/fr/reference/data-types/string)
-
-**Valeur renvoyée**
-
-Renvoie le composant d’horodatage de `value`. [`DateTime`](/fr/reference/data-types/datetime)
-
-**Exemples**
-
-**Exemple d’utilisation**
-
-```sql title=Query
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-<div id="snowflakeToDateTime64">
-  ## snowflakeToDateTime64
-</div>
-
-Introduit dans : v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Cette fonction est obsolète et ne peut être utilisée que si le paramètre [`allow_deprecated_snowflake_conversion_functions`](/fr/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions) est activé.
-  Cette fonction sera supprimée à l&#39;avenir.
-
-  Veuillez utiliser la fonction [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64) à la place.
-</Warning>
-
-Extrait le composant d’horodatage d&#39;un [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) au format [DateTime64](/fr/reference/data-types/datetime64).
-
-**Syntaxe**
-
-```sql
-snowflakeToDateTime64(value[, time_zone])
-```
-
-**Arguments**
-
-* `value` — Snowflake ID. [`Int64`](/fr/reference/data-types/int-uint)
-* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings#timezone). La fonction interprète `time_string` en fonction du fuseau horaire. [`String`](/fr/reference/data-types/string)
-
-**Valeur renvoyée**
-
-Renvoie le composant d’horodatage de `value`. [`DateTime64(3)`](/fr/reference/data-types/datetime64)
-
-**Exemples**
-
-**Exemple d’utilisation**
-
-```sql title=Query
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
 <div id="toUUIDOrDefault">
   ## toUUIDOrDefault
 </div>
@@ -868,8 +698,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **En cas d’échec de conversion, renvoie l’UUID par défaut**
@@ -880,8 +710,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrNull">

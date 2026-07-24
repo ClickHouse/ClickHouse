@@ -24,9 +24,7 @@ import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx"
 <a href="https://www.airbyte.com/" target="_blank">Airbyte</a> est une plateforme open source d’intégration de données. Elle permet de créer des pipelines de données <a href="https://airbyte.com/blog/why-the-future-of-etl-is-not-elt-but-el" target="_blank">ELT</a> et est fournie avec plus de 140 connecteurs prêts à l’emploi. Ce tutoriel pas à pas montre comment configurer ClickHouse comme destination dans Airbyte et charger un jeu de données d’exemple.
 
 <Steps>
-  <Step>
-    ## Télécharger et exécuter Airbyte
-
+  <Step title="Télécharger et exécuter Airbyte" id="1-download-and-run-airbyte">
     1. Airbyte s’exécute sur Docker et utilise `docker-compose`. Assurez-vous de télécharger et d’installer les dernières versions de Docker.
 
     2. Déployez Airbyte en clonant le dépôt GitHub officiel et en exécutant `docker-compose up` dans le terminal de votre choix :
@@ -42,13 +40,11 @@ import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx"
        <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="Bannière Airbyte" />
 
     <Note>
-      Vous pouvez également vous inscrire et utiliser <a href="https://docs.airbyte.com/deploying-airbyte/on-cloud" target="_blank">Airbyte Cloud</a>
+      Vous pouvez également vous inscrire et utiliser <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
     </Note>
   </Step>
 
-  <Step>
-    ## Ajouter ClickHouse comme destination
-
+  <Step title="Ajouter ClickHouse comme destination" id="2-add-clickhouse-as-a-destination">
     Dans cette section, nous allons voir comment ajouter une instance ClickHouse comme destination.
 
     1. Démarrez votre serveur ClickHouse (Airbyte est compatible avec ClickHouse version `21.8.10.19` ou ultérieure) ou connectez-vous à votre compte cloud ClickHouse :
@@ -78,9 +74,7 @@ import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx"
     </Note>
   </Step>
 
-  <Step>
-    ## Ajouter un jeu de données comme source
-
+  <Step title="Ajouter un jeu de données comme source" id="3-add-a-dataset-as-a-source">
     Le jeu de données d’exemple que nous utiliserons est le <a href="/fr/get-started/sample-datasets/nyc-taxi" target="_blank">jeu de données des taxis de New York</a> (sur <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a>). Pour ce tutoriel, nous utiliserons un sous-ensemble de ce jeu de données correspondant au mois de janvier 2022.
 
     1. Dans Airbyte, sélectionnez la page &quot;Sources&quot; et ajoutez une nouvelle source de type fichier.
@@ -98,9 +92,7 @@ import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx"
     3. Félicitations ! Vous avez maintenant ajouté une source de type fichier dans Airbyte.
   </Step>
 
-  <Step>
-    ## Créer une connexion et charger le jeu de données dans ClickHouse
-
+  <Step title="Créer une connexion et charger le jeu de données dans ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. Dans Airbyte, ouvrez la page &quot;Connexions&quot; et ajoutez une nouvelle connexion
 
     <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="Ajouter une connexion dans Airbyte" />

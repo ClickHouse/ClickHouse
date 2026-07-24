@@ -25,38 +25,41 @@ SAML インテグレーションを有効にすると、新規ユーザーに割
 
 IdP での管理者権限、自身のドメインの DNS 設定に TXT レコードを追加する権限、そして ClickHouse Cloud 組織での **Admin** ロールが必要です。ログイン手順を簡略化するため、SAML 接続に加えて、**組織への直接リンク**を設定することをおすすめします。この設定方法は IdP ごとに異なります。お使いの IdP での設定方法については、このまま読み進めてください。
 
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+SAML SSO を設定すると、ユーザーはサービスプロバイダー開始型のフローでサインインします。
+
+1. ユーザーは `https://console.clickhouse.cloud` にアクセスし、メールアドレスを入力します (または、組織の直接リンクを使用します) 。
+2. ClickHouse Cloud は認証のため、ユーザーをアイデンティティプロバイダーにリダイレクトします。
+3. 認証が成功すると、アイデンティティプロバイダーはユーザーを ClickHouse Cloud にリダイレクトします。
+4. その後、ユーザーは ClickHouse Cloud にサインインし、初回ログイン時にアカウントがジャストインタイムでプロビジョニングされ、設定したデフォルトロールが割り当てられます。
+
+このガイドの残りでは、一回限りの設定について説明します。
+
 <div id="how-to-configure-your-idp">
   ## IdP の設定方法
 </div>
 
-<div id="steps">
-  ### 手順
-</div>
-
 <Steps>
-  <Step>
-    ### 組織設定にアクセスする
-
+  <Step title="組織設定にアクセスする" id="access-organization-settings">
     左下にある組織名をクリックし、[Organization details] を選択します。
   </Step>
 
-  <Step>
-    ### SAMLシングルサインオンを有効にする
-
+  <Step title="SAMLシングルサインオンを有効にする" id="enable-saml-sso">
     `Enable SAML single sign-on` の横にあるトグルをクリックします。セットアップ中にこの画面を何度か参照するため、このまま開いておいてください。
 
     <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="SAMLセットアップを開始" force />
   </Step>
 
-  <Step>
-    ### ID プロバイダーにアプリケーションを作成する
-
+  <Step title="ID プロバイダーにアプリケーションを作成する" id="create-idp-application">
     ID プロバイダー内にアプリケーションを作成し、`Enable SAML single sign-on` 画面に表示される値を ID プロバイダーの設定にコピーしてください。この手順の詳細については、以下の該当する ID プロバイダーの説明を参照してください。
 
-    * [Okta SAML を設定する](#configure-okta-saml)
-    * [Google SAML を設定する](#configure-google-saml)
-    * [Azure (Microsoft) SAML を設定する](#configure-azure-microsoft-saml)
-    * [Duo SAML を設定する](#configure-duo-saml)
+    * [Okta](#okta)
+    * [Google](#google)
+    * [Azure (Microsoft)](#azure)
+    * [Duo](#duo)
 
     <Tip>
       ClickHouse は IdP 主導のサインインをサポートしていません。ユーザーが ClickHouse Cloud に簡単にアクセスできるように、このサインイン URL 形式を使ってユーザー用のブックマークを設定してください: `https://console.clickhouse.cloud/?connection={orgId}`。ここで `{orgID}` は、Organization details ページにある Organization ID です。
@@ -65,43 +68,33 @@ IdP での管理者権限、自身のドメインの DNS 設定に TXT レコー
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="ID プロバイダーのアプリケーションを作成する" force />
   </Step>
 
-  <Step>
-    ### メタデータURLをSAML設定に追加する
-
+  <Step title="メタデータURLをSAML設定に追加する" id="add-metadata-url">
     SAMLプロバイダから`Metadata URL`を取得します。ClickHouse Cloudに戻り、`Next: Provide metadata URL`をクリックして、URLをテキストボックスに貼り付けます。
 
     <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="メタデータURLを追加" force />
   </Step>
 
-  <Step>
-    ### ドメイン検証コードを取得する
-
+  <Step title="ドメイン検証コードを取得する" id="get-domain-verification-code">
     `Next: Verify your domains` をクリックします。テキストボックスにドメインを入力し、`Check domain` をクリックします。DNS プロバイダで TXT レコードに追加するためのランダムな検証コードが生成されます。
 
     <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="検証するドメインを追加" force />
   </Step>
 
-  <Step>
-    ### ドメインを確認する
-
+  <Step title="ドメインを確認する" id="verify-your-domain">
     DNSプロバイダーでTXTレコードを作成します。`TXT record name` を、DNSプロバイダー側のTXTレコードのNameフィールドにコピーします。`Value` を、DNSプロバイダー側のContentフィールドにコピーします。`Verify and Finish` をクリックして、手順を完了します。
 
     <Note>
-      DNSレコードの更新と確認が完了するまで、数分かかる場合があります。設定ページを離れても、最初からやり直すことなく、後で戻って手順を完了できます。
+      DNSレコードの更新と確認が完了するまで、数分かかる場合があります。設定ページを離れても、最初からやり直すことなく、後で戻って手順を完了できます。検証値は、最初に生成されてから48時間有効です。
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="ドメインを確認する" force />
   </Step>
 
-  <Step>
-    ### デフォルトのロールとセッションタイムアウトを更新
-
+  <Step title="デフォルトのロールとセッションタイムアウトを更新" id="update-defaults">
     SAML の設定が完了したら、すべてのユーザーにログイン時に割り当てるデフォルトのロールを設定し、セッションタイムアウトも調整できます。割り当て可能なシステムロールの一覧については、[Console のロールと権限](/ja/products/cloud/reference/security/console-roles)を参照してください。
   </Step>
 
-  <Step>
-    ### 管理者ユーザーを設定する
-
+  <Step title="管理者ユーザーを設定する" id="configure-your-admin-user">
     <Note>
       別の認証方式で設定されたユーザーは、組織内の管理者が削除するまで保持されます。
     </Note>
@@ -126,252 +119,250 @@ IdP での管理者権限、自身のドメインの DNS 設定に TXT レコー
     </Tip>
   </Step>
 
-  <Step>
-    ### 他の認証方式を削除する
-
+  <Step title="他の認証方式を削除する" id="remove-other-auth-methods">
     インテグレーションを完了するには、SAML 以外の方式を使用しているユーザーをすべて削除し、アクセスを identity provider connection に由来するユーザーのみに制限します。
   </Step>
 </Steps>
 
-<div id="configure-okta-saml">
-  ### Okta SAML を設定する
+<div id="configure-idp">
+  ### アイデンティティプロバイダーを設定する
 </div>
 
-ClickHouse 組織ごとに、Okta で 2 つの App Integration を設定します。1 つは SAML アプリ、もう 1 つは直接リンクを登録するためのブックマークです。
+<Tabs>
+  <Tab title="Okta" id="okta">
+    Okta では、ClickHouse の各組織ごとに 2 つの App Integration を設定します。1 つは SAML アプリ、もう 1 つは 直接リンク を保持するためのブックマークです。
 
-<Accordion title="1. アクセス管理用のグループを作成する">
-  1. **Administrator** として Okta インスタンスにログインします。
+    #### アクセス管理用のグループを作成する
 
-  2. 左側の **Groups** を選択します。
+    1. **Administrator** として Okta インスタンスにログインします。
+    2. 左側で **Groups** を選択します。
+    3. **Add group** をクリックします。
+    4. グループの名前と説明を入力します。このグループは、SAML アプリと関連するブックマークアプリの間でユーザーを一致させるために使用します。
+    5. **Save** をクリックします。
+    6. 作成したグループ名をクリックします。
+    7. **Assign people** をクリックし、この ClickHouse 組織へのアクセスを許可するユーザーを割り当てます。
 
-  3. **Add group** をクリックします。
+    #### ユーザーがシームレスにログインできるようにブックマークアプリを作成する
 
-  4. グループ名と説明を入力します。このグループは、SAML アプリと関連するブックマークアプリの間でユーザーを一致させるために使用します。
+    1. 左側で **Applications** を選択し、次に **Applications** サブ見出しを選択します。
+    2. **Browse App Catalog** をクリックします。
+    3. **Bookmark App** を検索して選択します。
+    4. **Add integration** をクリックします。
+    5. アプリのラベルを選択します。
+    6. URL に `https://console.clickhouse.cloud/?connection={organizationid}` を入力します
+    7. **Assignments** タブに移動し、上で作成したグループを追加します。
 
-  5. **Save** をクリックします。
+    #### 接続を有効にするための SAML アプリを作成する
 
-  6. 作成したグループ名をクリックします。
+    1. 左側で **Applications** を選択し、次に **Applications** サブ見出しを選択します。
 
-  7. **Assign people** をクリックし、この ClickHouse 組織へのアクセスを許可するユーザーを割り当てます。
-</Accordion>
+    2. **Create App Integration** をクリックします。
 
-<Accordion title="2. ユーザーがシームレスにログインできるようにブックマークアプリを作成する">
-  1. 左側の **Applications** を選択し、次に **Applications** サブ見出しを選択します。
+    3. SAML 2.0 を選択し、**Next** をクリックします。
 
-  2. **Browse App Catalog** をクリックします。
+    4. アプリケーション名を入力し、**Don&#39;t display application icon to users** の横にあるチェックボックスをオンにしてから **Next** をクリックします。
 
-  3. **Bookmark App** を検索して選択します。
+    5. 次の値を使用して SAML 設定画面を入力します。
 
-  4. **Add integration** をクリックします。
+       | フィールド                          | 値                                          |
+       | ------------------------------ | ------------------------------------------ |
+       | Single Sign On URL             | コンソールから Single Sign-On URL をコピーします         |
+       | Audience URI (SP Entity ID)    | コンソールから Service Provider Entity ID をコピーします |
+       | Default RelayState             | 空欄のままにします                                  |
+       | Name ID format                 | Unspecified                                |
+       | Application username           | Email                                      |
+       | Update application username on | Create and update                          |
 
-  5. アプリのラベルを選択します。
+    6. 次の Attribute Statement を入力します。
 
-  6. URL に `https://console.clickhouse.cloud/?connection={organizationid}` を入力します
+       | Name  | Name format | Value      |
+       | ----- | ----------- | ---------- |
+       | email | Basic       | user.email |
 
-  7. **Assignments** タブに移動し、上で作成したグループを追加します。
-</Accordion>
+    7. **Next** をクリックします。
 
-<Accordion title="3. 接続を有効にするための SAML アプリを作成する">
-  1. 左側の **Applications** を選択し、次に **Applications** サブ見出しを選択します。
+    8. Feedback 画面で必要な情報を入力し、**Finish** をクリックします。
 
-  2. **Create App Integration** をクリックします。
+    9. **Assignments** タブに移動し、上で作成したグループを追加します。
 
-  3. SAML 2.0 を選択し、**Next** をクリックします。
+    10. 新しいアプリの **Sign On** タブで、**Copy metadata URL** ボタンをクリックします。
 
-  4. アプリケーション名を入力し、**Don&#39;t display application icon to users** の横にあるチェックボックスをオンにしてから、**Next** をクリックします。
+    11. [Add the metadata URL to your SAML configuration](#add-metadata-url) に戻り、手順を続けます。
+  </Tab>
 
-  5. 次の値を使用して SAML 設定画面を入力します。
+  <Tab title="Google" id="google">
+    multi-org SSO を使用する場合は、組織ごとに Google で 1 つの SAML アプリを設定し、ユーザーにはブックマーク用に直接リンク (`https://console.clickhouse.cloud/?connection={organizationId}`) を提供する必要があります。
 
-     | Field                          | Value                                   |
-     | ------------------------------ | --------------------------------------- |
-     | Single Sign On URL             | コンソールから Single Sign-On URL をコピー         |
-     | Audience URI (SP Entity ID)    | コンソールから Service Provider Entity ID をコピー |
-     | Default RelayState             | 空欄のままにする                                |
-     | Name ID format                 | Unspecified                             |
-     | Application username           | Email                                   |
-     | Update application username on | Create and update                       |
+    #### Google のウェブアプリを作成する
 
-  6. 次の Attribute Statement を入力します。
+    1. Google Admin console (admin.google.com) に移動します。
 
-     | Name  | Name format | Value      |
-     | ----- | ----------- | ---------- |
-     | email | Basic       | user.email |
+       <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML App" force />
 
-  7. **Next** をクリックします。
+    2. **Apps** をクリックし、左側の **Web and mobile apps** をクリックします。
 
-  8. **Feedback** 画面で必要な情報を入力し、**Finish** をクリックします。
+    3. 上部メニューの **Add app** をクリックし、**Add custom SAML app** を選択します。
 
-  9. **Assignments** タブに移動し、上で作成したグループを追加します。
+    4. アプリ名を入力し、**Continue** をクリックします。
 
-  10. 新しいアプリの **Sign On** タブで、**Copy metadata URL** ボタンをクリックします。
+    5. メタデータ URL をコピーして、控えておきます。
 
-  11. [metadata URL を SAML 設定に追加する](#add-metadata-url) に戻って、手順を続けます。
-</Accordion>
+    6. 以下の ACS URL と Entity ID を入力します。
 
-<div id="configure-google-saml">
-  ### Google SAML を設定する
+       | Field     | Value                                      |
+       | --------- | ------------------------------------------ |
+       | ACS URL   | コンソールから Single Sign-On URL をコピーします         |
+       | Entity ID | コンソールから Service Provider Entity ID をコピーします |
+
+    7. **Signed response** のチェックボックスをオンにします。
+
+    8. Name ID Format には **EMAIL** を選択し、Name ID は **Basic Information &gt; Primary email** のままにします。
+
+    9. **Continue** をクリックします。
+
+    10. 次の Attribute mapping を入力します。
+
+        | Field             | Value         |
+        | ----------------- | ------------- |
+        | Basic information | Primary email |
+        | App attributes    | email         |
+
+    11. **Finish** をクリックします。
+
+    12. アプリを有効にするには、まず全員に対して **OFF** をクリックし、設定を全員に対して **ON** に変更します。画面左側のオプションを選択すれば、アクセスをグループまたは組織単位に制限することもできます。
+
+    13. 続行するには、[SAML 設定にメタデータ URL を追加する](#add-metadata-url) に戻ります。
+  </Tab>
+
+  <Tab title="Azure（Microsoft）" id="azure">
+    Azure (Microsoft) SAML は、Azure Active Directory (AD) または Microsoft Entra と呼ばれることもあります。
+
+    #### Azure エンタープライズ アプリケーションを作成する
+
+    各組織に対して、それぞれ別個のサインオン URL を持つ 1 つのアプリケーション インテグレーションを設定します。
+
+    1. Microsoft Entra 管理センターにログインします。
+
+    2. 左側の **Applications &gt; Enterprise applications** に移動します。
+
+    3. 上部メニューの **New application** をクリックします。
+
+    4. 上部メニューの **Create your own application** をクリックします。
+
+    5. 名前を入力し、**Integrate any other application you don&#39;t find in the gallery (Non-gallery)** を選択して、**Create** をクリックします。
+
+       <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Azure Non-Gallery App" force />
+
+    6. 左側の **Users and groups** をクリックし、ユーザーを割り当てます。
+
+    7. 左側の **Single sign-on** をクリックします。
+
+    8. **SAML** をクリックします。
+
+    9. 次の設定を使用して、Basic SAML Configuration 画面を設定します。
+
+       | フィールド                                      | 値                                                               |
+       | ------------------------------------------ | --------------------------------------------------------------- |
+       | 識別子 (Entity ID)                            | コンソールから Service Provider Entity ID をコピー                         |
+       | Reply URL (Assertion Consumer Service URL) | コンソールから Single Sign-On URL をコピー                                 |
+       | Sign on URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
+       | Relay State                                | 空欄                                                              |
+       | Logout URL                                 | 空欄                                                              |
+
+    10. Attributes &amp; Claims で、以下を追加 (A) または更新 (U) します。
+
+        | クレーム名                                | フォーマット        | ソース属性     |
+        | ------------------------------------ | ------------- | --------- |
+        | (U) Unique User Identifier (Name ID) | Email address | user.mail |
+        | (A) email                            | Basic         | user.mail |
+        | (U) /identity/claims/name            | Omitted       | user.mail |
+
+        <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="Attributes and Claims" force />
+
+    11. metadata URL をコピーし、[Add the metadata URL to your SAML configuration](#add-metadata-url) に戻って手順を続けます。
+  </Tab>
+
+  <Tab title="Duo" id="duo">
+    #### Duo 用の汎用 SAML サービスプロバイダを作成する
+
+    1. [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic) の手順に従ってください。
+
+    2. 次の Bridge Attribute のマッピングを使用します。
+
+       | Bridge Attribute | ClickHouse Attribute |
+       | :--------------- | :------------------- |
+       | Email Address    | email                |
+
+    3. 次の値を使用して、Duo の Cloud Application を更新します。
+
+       | Field                                | Value                                                           |
+       | :----------------------------------- | :-------------------------------------------------------------- |
+       | Entity ID                            | コンソールから Service Provider Entity ID をコピーします                      |
+       | Assertion Consumer Service (ACS) URL | コンソールから Single Sign-On URL をコピーします                              |
+       | Service Provider Login URL           | `https://console.clickhouse.cloud/?connection={organizationid}` |
+
+    4. metadata URL をコピーし、[Add the metadata URL to your SAML configuration](#add-metadata-url) に戻って設定を続けます。
+  </Tab>
+</Tabs>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
 </div>
 
-組織ごとに Google で SAML アプリを 1 つ設定します。multi-org SSO を使用する場合は、ユーザーがブックマークできるよう、直接リンク (`https://console.clickhouse.cloud/?connection={organizationId}`) を案内する必要があります。
+<AccordionGroup>
+  <Accordion title="システムの設定ミス、またはサービス障害の可能性があります">
+    **原因:** サポートされていない identity-provider-initiated login を使用しています。
 
-<Accordion title="Google Web App を作成する">
-  1. Google Admin console (admin.google.com) に移動します。
+    **対処:** 直接リンク `https://console.clickhouse.cloud/?connection={organizationid}` を使用してください。これをユーザーの既定のログイン方法にするには、上記の アイデンティティプロバイダー の手順に従って設定してください。
+  </Accordion>
 
-  <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML App" force />
+  <Accordion title="アイデンティティプロバイダー に移動した後、ログインページに戻される">
+    **原因:** アイデンティティプロバイダー でメール属性のマッピングが設定されていません。
 
-  2. **Apps** をクリックし、左側の **Web and mobile apps** をクリックします。
+    **対処:** 上記の アイデンティティプロバイダー の手順に従ってユーザーのメール属性を設定し、再度ログインしてください。
+  </Accordion>
 
-  3. 上部メニューの **Add app** をクリックし、**Add custom SAML app** を選択します。
+  <Accordion title="ユーザーがこのアプリケーションに割り当てられていない">
+    **原因:** そのユーザーが アイデンティティプロバイダー 内の ClickHouse アプリケーションに割り当てられていません。
 
-  4. アプリ名を入力し、**Continue** をクリックします。
+    **対処:** アイデンティティプロバイダー でそのユーザーをアプリケーションに割り当ててから、再度ログインしてください。
+  </Accordion>
 
-  5. metadata URL をコピーして保存します。
+  <Accordion title="複数の SAML 組織がある場合でも、常に同じ組織に移動してしまう">
+    **原因:** 最初の組織にまだログインしたままです。
 
-  6. 以下の ACS URL と Entity ID を入力します。
+    **対処:** ログアウトしてから、別の組織にログインしてください。
+  </Accordion>
 
-     | フィールド     | 値                                       |
-     | --------- | --------------------------------------- |
-     | ACS URL   | コンソールから Single Sign-On URL をコピー         |
-     | Entity ID | コンソールから Service Provider Entity ID をコピー |
+  <Accordion title="URL に一時的に access denied と表示される">
+    **原因:** メールドメインが設定済みのドメインと一致していません。
 
-  7. **Signed response** のチェックボックスをオンにします。
+    **対処:** このエラーの解決については、サポートにお問い合わせください。
+  </Accordion>
+</AccordionGroup>
 
-  8. Name ID Format には **EMAIL** を選択し、Name ID は **Basic Information &gt; Primary email.** のままにします。
-
-  9. **Continue** をクリックします。
-
-  10. 次の Attribute mapping を入力します。
-
-  | フィールド             | 値             |
-  | ----------------- | ------------- |
-  | Basic information | Primary email |
-  | App attributes    | email         |
-
-  13. **Finish** をクリックします。
-
-  14. アプリを有効にするには、全員に対する **OFF** をクリックし、設定を全員に対して **ON** に変更します。画面左側のオプションを選択すると、アクセスをグループまたは組織単位に制限することもできます。
-
-  15. [metadata URL を SAML 設定に追加する](#add-metadata-url) に戻って、手順を続けてください。
-</Accordion>
-
-<div id="configure-azure-microsoft-saml">
-  ### Azure (Microsoft) SAML を設定する
+<div id="faq">
+  ## よくある質問
 </div>
 
-Azure (Microsoft) SAML は、Azure Active Directory (AD) または Microsoft Entra と呼ばれることもあります。
+<AccordionGroup>
+  <Accordion title="ClickHouse Cloud は identity-provider-initiated サインインをサポートしていますか？">
+    いいえ。サービスプロバイダー開始型 フローのみに対応しています。ユーザーは `https://console.clickhouse.cloud` にアクセスしてメールアドレスを入力し、アイデンティティプロバイダー にリダイレクトされます。ユーザーが URL を覚えなくて済むよう、ブックマークまたは直接リンク (`https://console.clickhouse.cloud/?connection={organizationid}`) を設定してください。
+  </Accordion>
 
-<Accordion title="Azure Enterprise Application を作成する">
-  組織ごとに異なるサインオン URL を使用して、1つのアプリケーションインテグレーションを設定します。
+  <Accordion title="複数の組織で SAML SSO を使うにはどうすればよいですか？">
+    ClickHouse Cloud は、組織ごとに個別の connection を設定することで、複数組織での SSO をサポートしています。各組織へのログインには直接リンク (`https://console.clickhouse.cloud/?connection={organizationid}`) を使用し、別の組織にログインする前に現在の組織からログアウトしてください。ユーザーが `https://console.clickhouse.cloud` でメールアドレスを入力した際に、該当ドメインのユーザーを自動的に組織へ振り分けないようにしたい場合は、その動作を無効にするようサポートチケットを起票してください。
+  </Accordion>
 
-  1. Microsoft Entra 管理センターにサインインします。
+  <Accordion title="同じユーザーに対して複数のアカウントが表示されるのはなぜですか？">
+    ClickHouse Cloud では、SSO アカウントと非 SSO アカウントは自動的に関連付けられないため、両方の方法でサインインしたユーザーは、同じメールアドレスであってもユーザー一覧に複数回表示されることがあります。
+  </Accordion>
+</AccordionGroup>
 
-  2. 左側の **Applications &gt; Enterprise** applications に移動します。
-
-  3. 上部メニューで **New application** をクリックします。
-
-  4. 上部メニューで **Create your own application** をクリックします。
-
-  5. 名前を入力し、**Integrate any other application you don&#39;t find in the gallery (Non-gallery)** を選択して、**Create** をクリックします。
-
-     <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Azure Non-Gallery App" force />
-
-  6. 左側の **Users and groups** をクリックし、ユーザーを割り当てます。
-
-  7. 左側の **Single sign-on** をクリックします。
-
-  8. **SAML** をクリックします。
-
-  9. 以下の設定を使用して、Basic SAML Configuration 画面に入力します。
-
-     | フィールド                                      | 値                                                               |
-     | ------------------------------------------ | --------------------------------------------------------------- |
-     | Identifier (Entity ID)                     | コンソールから Service Provider Entity ID をコピーします                      |
-     | Reply URL (Assertion Consumer Service URL) | コンソールから Single Sign-On URL をコピーします                              |
-     | Sign on URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
-     | Relay State                                | 空欄                                                              |
-     | Logout URL                                 | 空欄                                                              |
-
-  10. Attributes &amp; Claims で、以下を追加 (A) または更新 (U) します。
-
-      | Claim name                           | Format        | Source attribute |
-      | ------------------------------------ | ------------- | ---------------- |
-      | (U) Unique User Identifier (Name ID) | Email address | user.mail        |
-      | (A) email                            | Basic         | user.mail        |
-      | (U) /identity/claims/name            | Omitted       | user.mail        |
-
-      <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="Attributes and Claims" force />
-
-  11. metadata URL をコピーし、[metadata URL を SAML 設定に追加する](#add-metadata-url) に戻って手順を続けます。
-</Accordion>
-
-<div id="configure-duo-saml">
-  ### Duo SAML を設定する
+<div id="next-steps">
+  ## 次のステップ
 </div>
 
-<Accordion title="Duo 用の汎用 SAML Service Provider を作成する">
-  1. [汎用 SAML Service Providers 向け Duo Single Sign-On](https://duo.com/docs/sso-generic) の手順に従ってください。
-
-  2. 次の Bridge Attribute マッピングを使用します。
-
-     | Bridge Attribute | ClickHouse Attribute |
-     | :--------------- | :------------------- |
-     | Email Address    | email                |
-
-  3. 次の値を使用して、Duo の Cloud Application を更新します。
-
-     | フィールド                                | 値                                                               |
-     | :----------------------------------- | :-------------------------------------------------------------- |
-     | Entity ID                            | コンソールから Service Provider Entity ID をコピーします                      |
-     | Assertion Consumer Service (ACS) URL | コンソールから Single Sign-On URL をコピーします                              |
-     | Service Provider Login URL           | `https://console.clickhouse.cloud/?connection={organizationid}` |
-
-  4. metadata URL をコピーし、[metadata URL を SAML 設定に追加する](#add-metadata-url) に戻って設定を続行します。
-</Accordion>
-
-<div id="how-it-works">
-  ## 仕組み
-</div>
-
-<div id="user-management-with-saml-sso">
-  ### SAML SSO を使用したユーザー管理
-</div>
-
-ユーザー権限の管理や、SAML 接続のみにアクセスを制限する方法の詳細については、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users)を参照してください。
-
-<div id="service-provider-initiated-sso">
-  ### サービスプロバイダー開始型 SSO
-</div>
-
-サービスプロバイダー開始型 SSO のみをサポートしています。これは、ユーザーが `https://console.clickhouse.cloud` にアクセスしてメールアドレスを入力すると、authentication のために IdP にリダイレクトされることを意味します。お使いの IdP ですでに認証済みのユーザーは、ログインページでメールアドレスを入力しなくても、直接リンクを使って自動的に組織へログインできます。
-
-<div id="multi-org-sso">
-  ### Multi-org SSO
-</div>
-
-ClickHouse Cloud は、各組織に個別の接続を提供することで、複数組織向けの SSO をサポートしています。各組織にログインするには、直接リンク (`https://console.clickhouse.cloud/?connection={organizationid}`) を使用してください。別の組織にログインする前に、現在の組織から必ずログアウトしてください。
-
-<Note>
-  会社のドメインを持つユーザーが https://console.clickhouse.cloud でメールアドレスを入力した際に特定の組織へ誘導されないようにするには、この動作を無効にするよう、SSO 設定を手動で更新するサポートリクエストを送信してください。
-</Note>
-
-<div id="additional-information">
-  ## 追加情報
-</div>
-
-認証において、当社はセキュリティを最優先にしています。そのため、SSO の実装では、あらかじめご理解いただきたい点がいくつかあります。
-
-* **サービスプロバイダー開始型の認証フローのみをサポートしています。** ユーザーは `https://console.clickhouse.cloud` にアクセスし、メールアドレスを入力してから、アイデンティティプロバイダーにリダイレクトされる必要があります。ユーザーが URL を覚える必要がないよう、利便性のためにブックマーク用アプリまたはショートカットを追加する手順も用意しています。
-
-* **SSO アカウントと非 SSO アカウントは自動的にはリンクされません。** 同じメールアドレスを使用していても、ClickHouse のユーザー一覧には同一ユーザーのアカウントが複数表示される場合があります。
-
-<div id="troubleshooting-common-issues">
-  ## よくある問題のトラブルシューティング
-</div>
-
-| エラー                                                                   | 原因                                                    | 解決策                                                                                                                                                 |
-| :-------------------------------------------------------------------- | :---------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- |
-| システムの設定不備、またはサービス停止の可能性があります                                          | アイデンティティプロバイダー起点のログイン                                 | このエラーを解決するには、直接リンク `https://console.clickhouse.cloud/?connection={organizationid}` を使用してください。これをユーザーのデフォルトのログイン方法にするには、上記のアイデンティティプロバイダーの手順に従ってください |
-| アイデンティティプロバイダーにリダイレクトされた後、再びログインページに戻される                              | アイデンティティプロバイダーでメール属性のマッピングが設定されていません                  | 上記のアイデンティティプロバイダーの手順に従ってユーザーのメール属性を設定し、再度ログインしてください                                                                                                 |
-| ユーザーがこのアプリケーションに割り当てられていません                                           | ユーザーがアイデンティティプロバイダー内の ClickHouse アプリケーションに割り当てられていません | アイデンティティプロバイダーでユーザーをアプリケーションに割り当て、再度ログインしてください                                                                                                      |
-| 複数の ClickHouse 組織を SAML SSO と連携している場合、どのリンクやタイルを使用しても常に同じ組織にログインしてしまう | 最初の組織にログインしたままになっています                                 | ログアウトしてから、別の組織にログインしてください                                                                                                                           |
-| URL に一瞬 `access denied` と表示される                                        | メールアドレスのドメインが、設定されているドメインと一致していません                    | このエラーの解決については、サポートにお問い合わせください                                                                                                                       |
+* [クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — ユーザー権限を管理し、アクセスを SAML 接続のみに制限します。
+* [SCIM provisioning](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) — ユーザーとグループのプロビジョニングを自動化します (プライベートプレビュー) 。
+* [Console roles and permissions](/ja/products/cloud/reference/security/console-roles) — デフォルトの SAML ロールとして割り当て可能なロールを確認できます。

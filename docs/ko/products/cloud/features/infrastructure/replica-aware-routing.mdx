@@ -1,8 +1,8 @@
 ---
 title: 'Replica-aware 라우팅'
 slug: /manage/replica-aware-routing
-description: '캐시 재사용률을 높이기 위해 Replica-aware 라우팅을 사용하는 방법'
-keywords: ['클라우드', '스티키 엔드포인트', '스티키', '엔드포인트', '스티키 라우팅', '라우팅', 'Replica-aware 라우팅', 'session_id']
+description: '임시 테이블, 세션, 캐시 재사용을 위해 관련 요청을 동일한 ClickHouse Cloud 레플리카로 전달합니다'
+keywords: ['클라우드', 'sticky 엔드포인트', 'sticky', '엔드포인트', '스티키 라우팅', '라우팅', 'Replica-aware 라우팅', 'session_id', '세션 어피니티', '임시 테이블']
 doc_type: 'guide'
 noindex: true
 ---
@@ -11,27 +11,57 @@ import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/Pri
 
 <PrivatePreviewBadge />
 
-Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 일관되게 동일한 ClickHouse 레플리카로 라우팅하여 캐시 재사용 가능성을 높입니다. 이는 best-effort 방식이며 격리를 보장하지는 않습니다.
+Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 session affinity라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. [임시 테이블](/ko/sql-reference/statements/create/table#temporary-tables) 또는 [이름이 지정된 세션 상태](/ko/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)가 여러 쿼리에서 계속 접근 가능해야 하거나, 관련 쿼리가 동일한 레플리카의 로컬 캐시를 재사용하도록 하려는 경우 사용하십시오.
+
+이 기능은 최선의 노력(best-effort) 방식으로 동작하며 격리를 보장하지는 않습니다. 스케일링, 업그레이드, 재시작이 발생하면 특정 `session_id`가 연결되는 레플리카가 다시 매핑될 수 있습니다.
 
 <Warning>
-  **프로토콜 지원 — HTTP/HTTPS만 지원**
+  **HTTP 인터페이스 필요**
 
-  Replica-aware 라우팅은 **HTTP/HTTPS 인터페이스** 위의 프록시 계층에서 `session_id` 쿼리 매개변수를 사용해 적용됩니다(아래 참조). 이는 **네이티브 프로토콜에서는 사용할 수 없습니다**(네이티브 포트, 예: 기본 네이티브 모드의 `clickhouse-go` 드라이버). 네이티브 프로토콜 클라이언트에서 스티키 라우팅이 필요하다면 해당 워크로드를 대신 HTTP 인터페이스를 통해 연결하십시오. `clickhouse-go`(v2)의 경우 연결 설정에서 `Protocol: clickhouse.HTTP`를 지정하십시오.
+  Replica-aware 라우팅은 프록시 계층에서 [HTTP/HTTPS 인터페이스](/ko/interfaces/http)를 통해 `session_id` 쿼리 매개변수(아래 참조)를 사용해 적용됩니다. 이 기능은 **네이티브 프로토콜에서는 사용할 수 없습니다**(네이티브 포트, 예: 기본 네이티브 모드의 [clickhouse-go](/ko/integrations/go) 드라이버). 네이티브 프로토콜 클라이언트는 HTTP로 전환하고 각 요청에 `session_id`를 전달해야 합니다. clickhouse-go(v2)의 경우 `Protocol: clickhouse.HTTP`로 설정하고 [setting](/ko/integrations/language-clients/go/database-sql-api#sessions)으로 `session_id`를 전달하십시오. 드라이버는 이를 프록시가 해시 기준으로 사용하는 URL 쿼리 매개변수로 전송합니다.
 </Warning>
 
-<div id="http-based-routing">
-  ## HTTP 기반 라우팅 (`session_id`)
+<div id="prerequisites">
+  ## 사전 요구 사항
 </div>
 
-워크로드를 특정 레플리카에 고정하려면 HTTPS 인터페이스에서 `session_id` 쿼리 매개변수를 설정합니다. 프록시는 요청을 파싱하고 `session_id`에 일관 해싱을 적용해 레플리카를 선택하므로, 동일한 `session_id`를 사용하는 모든 요청은 클러스터 토폴로지가 변경되기 전까지 동일한 서버로 라우팅됩니다.
+* 서비스에는 **2개 이상의 레플리카**가 필요합니다. 레플리카가 1개뿐인 서비스에서는 고정할 대상이 없습니다.
+* **실행 중인** 서비스가 필요합니다. 유휴 상태의 서비스를 다시 깨우면 `session_id`가 매핑되는 레플리카가 바뀔 수 있습니다.
+* 이 기능이 **일반 제공**되면 기본적으로 **Enterprise**에서 사용할 수 있습니다.
+* 표준 ClickHouse Cloud 서비스에서 지원됩니다. [BYOC](/ko/cloud/reference/byoc/overview)는 아직 지원되지 않습니다.
+
+<div id="configuring-replica-aware-routing">
+  ## Replica-aware 라우팅 구성하기
+</div>
+
+[지원](https://clickhouse.com/support/program) 티켓을 열어 HTTP 기반 sticky 레플리카 라우팅을 활성화해 달라고 요청하십시오. 서비스 ID와 이 기능이 필요한 이유(임시 테이블, 세션 상태 또는 캐시 재사용)를 함께 포함하십시오. 활성화되면 HTTPS 요청에 `?session_id=`를 추가하여 보내십시오. 재시작은 필요하지 않습니다.
+
+<div id="http-based-routing">
+  ## HTTP 기반 라우팅 (session_id)
+</div>
+
+워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/interfaces/http)에서 `session_id` 쿼리 매개변수를 설정합니다. 프록시는 해당 값에 일관 해싱을 적용해 레플리카를 선택하므로, 동일한 `session_id`를 사용하는 모든 요청은 클러스터 토폴로지가 변경되기 전까지 동일한 서버로 라우팅됩니다.
+
+기존 서비스 호스트명을 사용합니다. 별도의 sticky 호스트명이나 DNS 변경은 필요하지 않습니다.
 
 ```bash
 echo 'SELECT hostName()' | curl \
-  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
   'https://<host>:8443/?session_id=my-workload-1' -d @-
 ```
 
 `session_id=my-workload-1`를 포함한 모든 요청은 동일한 레플리카로 전달됩니다. 다른 `session_id` 값은 독립적으로 해시되므로 동일한 레플리카로 전달될 수도 있고 다른 레플리카로 전달될 수도 있습니다. 즉, 매핑은 일관되지만 특정 값이 어떤 레플리카에 매핑되는지는 선택할 수 없습니다.
+
+`session_id`는 임의로 선택할 수 있는 문자열입니다(애플리케이션 이름, 사용자 ID 또는 워크로드 레이블). `session_id`가 없는 요청에는 일반적인 load balancing이 적용됩니다.
+
+쿼리 매개변수를 추가할 수 있는 모든 HTTP 클라이언트를 사용할 수 있으며, 여기에는 `curl`, [clickhouse-connect](/ko/integrations/python), JDBC/ODBC 등이 포함됩니다. `clickhouse-go` (v2)의 경우 위에서 설명한 대로 HTTP mode를 사용하십시오.
+
+<div id="check-which-replica">
+  ### 어느 레플리카에 연결되었는지 확인
+</div>
+
+위의 `SELECT hostName()` 예시를 동일한 `session_id`로 다시 실행하세요. 같은 호스트명이 반환되어야 합니다. `session_id`가 다르면 다른 레플리카에 매핑될 수 있습니다.
 
 <div id="subdomain-based-routing-deprecated">
   ## 하위 도메인 기반 라우팅(지원 중단됨)
@@ -40,7 +70,7 @@ echo 'SELECT hostName()' | curl \
 <Danger>
   **지원 중단됨**
 
-  아래의 하위 도메인 기반 메커니즘은 **지원 중단**되었으며, 새로운 서비스에서는 더 이상 활성화되지 않습니다. 이 방식은 확장성이 없습니다(각 sticky endpoint마다 자체 TLS 인증서가 필요합니다). 대신 [HTTP 기반 `session_id` 메서드](#http-based-routing)를 사용하십시오.
+  하위 도메인 기반 메커니즘은 현재 **지원 중단**되고 있으며, 새로운 서비스에서는 더 이상 활성화되지 않습니다. 이 방식은 확장성이 없습니다(각 sticky endpoint마다 자체 TLS 인증서가 필요합니다). 대신 [HTTP 기반 `session_id` 메서드](#http-based-routing)를 사용하십시오. 이미 sticky 하위 도메인을 사용 중이라면 `session_id` 라우팅을 활성화하려면 [지원](https://clickhouse.com/support/program)에 문의하십시오. 이는 호환성이 깨지는 변경 사항이며 마이그레이션이 필요합니다.
 </Danger>
 
 이전에는 Replica-aware 라우팅을 활성화하면 서비스 호스트명에 와일드카드 하위 도메인을 추가로 사용할 수 있었습니다. 호스트명이 `abcxyz123.us-west-2.aws.clickhouse.cloud`인 서비스의 경우, `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`(예: `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`)와 일치하는 모든 호스트명은 Envoy가 해시를 사용해 일관되게 특정 레플리카로 라우팅했습니다. 원래 호스트명은 기본 라우팅 알고리즘인 `LEAST_CONNECTION` load balancing을 계속 사용했습니다.
@@ -50,25 +80,37 @@ echo 'SELECT hostName()' | curl \
 </div>
 
 <div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### Replica-aware 라우팅은 격리를 보장하지 않습니다
+  ### 서비스 변경 중에는 고정 연결이 깨질 수 있습니다
 </div>
 
-서비스에 어떤 형태로든 변경이나 중단이 발생하면(예: 버전 업그레이드, 크래시, 수직 스케일링 등의 이유로 서버 파드가 재시작되거나 서버가 스케일 아웃/인되는 경우) 라우팅 해시 링이 변경됩니다. 그러면 동일한 `session_id`를 공유하는 요청이 다른 서버 파드로 라우팅될 수 있습니다.
+서비스에 변경이나 중단이 발생하면 라우팅 hash ring이 바뀝니다. 여기에는 서버 파드 재시작(버전 업그레이드, 크래시, 수직 스케일링)과 스케일 아웃 또는 스케일 인이 포함됩니다. 그러면 동일한 `session_id`를 공유하는 요청이 다른 서버 파드로 전달될 수 있습니다. 임시 테이블이나 세션 수준 설정에 의존하는 경우, 리매핑 후 이를 다시 생성할 수 있도록 준비하십시오.
+
+<div id="not-workload-isolation">
+  ### Replica-aware 라우팅은 워크로드 격리가 아닙니다
+</div>
+
+스티키 라우팅은 *어느 레플리카가* 요청을 처리할지만 제어합니다. 해당 레플리카는 여전히 다른 트래픽도 처리할 수 있습니다. 전용 컴퓨트가 필요하면 [컴퓨트-컴퓨트 분리](/ko/cloud/reference/warehouses)를 사용하십시오.
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
-  ### Replica-aware 라우팅은 Private Link에서 별도 설정 없이 바로 작동하지 않습니다
+  ### Private Link 및 지원 중단된 하위 도메인 방식
 </div>
 
-더 이상 권장되지 않는 하위 도메인 메서드를 사용할 경우, 고객은 새로운 호스트명 패턴에 대해 이름 해석이 동작하도록 DNS 레코드를 수동으로 추가해야 합니다. 이를 잘못 구성하면 서버 부하가 불균형해질 수 있습니다.
+HTTP `session_id` 라우팅은 일반 서비스 호스트명에서 [프라이빗 네트워킹](/ko/cloud/security/connectivity/private-networking)과 함께 작동합니다. 추가 DNS 항목은 필요하지 않습니다.
+
+하지만 지원 중단된 하위 도메인 방식은 그렇지 않습니다. `*.sticky.*` 호스트명 패턴에 대한 DNS를 추가해야 하며, 설정이 올바르지 않으면 레플리카 간 부하가 불균형하게 분산될 수 있습니다.
 
 <div id="replica-aware-routing-requires-http">
   ### Replica-aware 라우팅에는 HTTP 프로토콜이 필요합니다
 </div>
 
-Sticky 라우팅은 `session_id` 쿼리 매개변수를 기준으로 하며, 이 매개변수는 HTTP/HTTPS 인터페이스에만 존재합니다. 네이티브 바이너리 프로토콜에는 프록시가 해시에 사용할 수 있는 이러한 매개변수가 없으므로, 네이티브 프로토콜을 통해서는 Replica-aware 라우팅을 사용할 수 없습니다. 네이티브 프로토콜을 사용하는 클라이언트는 이 기능을 사용하려면 관련 워크로드를 HTTP 인터페이스로 옮겨야 합니다.
+스티키 라우팅은 `session_id` 쿼리 매개변수를 기준으로 하며, 이 매개변수는 HTTP/HTTPS 인터페이스에만 존재합니다. 네이티브 바이너리 프로토콜에는 프록시가 해시에 사용할 수 있는 이러한 매개변수가 없으므로, 네이티브 프로토콜을 통해서는 Replica-aware 라우팅을 사용할 수 없습니다. 현재 네이티브 프로토콜을 사용하는 클라이언트는 이 기능을 사용하려면 관련 워크로드를 HTTP 인터페이스로 옮겨야 합니다.
 
-<div id="configuring-replica-aware-routing">
-  ## Replica-aware 라우팅 설정
+<div id="troubleshooting">
+  ## 문제 해결
 </div>
 
-Replica-aware 라우팅을 활성화하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.
+**같은 `session_id`인데도 쿼리가 계속 다른 레플리카로 전달되는 경우**
+
+* `session_id`가 HTTP 헤더가 아니라 URL 쿼리 매개변수(`?session_id=...`)인지 확인하십시오.
+* 활성화한 직후에는 잠시 기다리십시오. 적용되기까지 1분 이내가 걸릴 수 있습니다.
+* 서비스가 최근에 확장되었거나 재시작되었는지 확인하십시오. 토폴로지가 변경되면 재매핑이 발생하는 것이 정상입니다. 새 매핑은 `SELECT hostName()`으로 확인하십시오.

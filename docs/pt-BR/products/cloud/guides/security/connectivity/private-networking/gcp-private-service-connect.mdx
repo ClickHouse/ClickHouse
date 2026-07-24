@@ -19,6 +19,8 @@ Os provedores de serviços disponibilizam seus aplicativos aos consumidores cria
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Visão geral do Private Service Connect" border />
 
 <Warning>
+  O Private Service Connect do GCP oferece suporte apenas a conexões iniciadas da sua VPC do GCP para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VPC, como um [banco de dados privado](#connecting-to-a-remote-database).
+
   Por padrão, um serviço do ClickHouse não fica disponível por uma conexão do Private Service, mesmo que a conexão PSC seja aprovada e estabelecida; é necessário adicionar explicitamente o ID do PSC à lista de permissões no nível da instância, concluindo o [passo](#add-endpoint-id-to-services-allow-list) abaixo.
 </Warning>
 
@@ -371,7 +373,7 @@ Cada serviço com o Private Service Connect habilitado tem um endpoint público 
   #### Opção 1: ClickHouse Cloud console
 </div>
 
-No console do ClickHouse Cloud, navegue até **Configurações**. Clique no botão **Configurar endpoint privado**. No painel lateral aberto, copie o **Nome DNS**.
+No console do ClickHouse Cloud, navegue até **Settings**. Clique no botão **Set up private endpoint**. No painel lateral aberto, copie o **DNS name**.
 
 <Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="lg" alt="Nome DNS do endpoint privado" border />
 
@@ -471,13 +473,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
   ### Como se conectar a um banco de dados remoto
 </div>
 
-Digamos que você esteja tentando usar as funções de tabela [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud e se conectar ao seu banco de dados hospedado no GCP. O GCP PSC não pode ser usado para viabilizar essa conexão com segurança. O PSC é uma conexão unidirecional, de mão única. Ele permite que sua rede interna ou VPC do GCP se conecte com segurança ao ClickHouse Cloud, mas não permite que o ClickHouse Cloud se conecte à sua rede interna.
-
 De acordo com a [documentação do GCP Private Service Connect](https://cloud.google.com/vpc/docs/private-service-connect):
 
 > Design orientado a serviços: os serviços do produtor são publicados por meio de balanceadores de carga que expõem um único endereço IP para a rede VPC do consumidor. O tráfego do consumidor que acessa os serviços do produtor é unidirecional e só pode acessar o endereço IP do serviço, em vez de ter acesso a toda uma rede VPC emparelhada.
 
-Para fazer isso, configure as regras de firewall da VPC do GCP para permitir conexões do ClickHouse Cloud com seu serviço de banco de dados interno/privado. Verifique os [endereços IP de saída padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).
+Para conectar as funções de tabela [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud a um banco de dados hospedado na sua VPC do GCP, configure as regras de firewall da sua VPC do GCP para permitir conexões vindas do ClickHouse Cloud. Verifique os [endereços IP de saída padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).
 
 <div id="more-information">
   ## Mais informações
