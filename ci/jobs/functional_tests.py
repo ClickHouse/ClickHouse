@@ -264,6 +264,52 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     return False
 
 
+def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
+    """Fold a build type's fatal-log rows into its per-test result for bugfix
+    validation, treating a master-HEAD server crash as a reproduction.
+
+    A sanitizer assert / fatal in the master-HEAD server log (the
+    `BLOCKER`-labelled rows of `check_fatal_messages_in_logs`) means the server
+    crashed while running only the changed tests. With
+    `-fno-sanitize-recover=all` a reproduced UBSan bug kills the server
+    outright, which aborts the runner (`StopTesting`, exit code 2) and poisons
+    the per-test rows with `ERROR` - so a crash-manifesting bugfix could never
+    validate. That abort IS the bug reproducing, not an infra failure:
+    downgrade the runner-level `ERROR` and the per-row `ERROR`s it caused to
+    `FAIL`, which the inverter then flips into a successful reproduction. A run
+    that ends in `ERROR` without a fatal in the server logs (genuine infra
+    failure) is preserved as inconclusive (#105789). OOM kills are excluded:
+    the dmesg OOM row carries no `BLOCKER` label.
+
+    Capture the runner-level `ERROR` before `extend_sub_results`, which
+    recomputes the aggregate status from child rows only and would otherwise
+    erase a runner-level `ERROR` set by `FTResultsProcessor` (e.g.
+    `not s.success_finish`) when the parsed rows are all `OK`/`FAIL`; restore
+    it so `invert_bugfix_validation_status` still sees the error and does not
+    flip a harness-level termination into green.
+
+    Returns whether a crash reproduction was detected.
+    """
+    runner_level_error = result.is_error()
+    crash_repro = any(
+        r.status == Result.Status.FAIL and r.has_label(Result.Label.BLOCKER)
+        for r in fatals
+    )
+    if crash_repro:
+        print(
+            "The master-HEAD server crashed with a sanitizer/fatal failure "
+            "while running the changed tests - treating the resulting runner "
+            "abort / per-test errors as the bug reproducing."
+        )
+        for r in result.results:
+            if r.status == Result.Status.ERROR:
+                r.status = Result.Status.FAIL
+    result.extend_sub_results(fatals)
+    if runner_level_error and not crash_repro:
+        result.status = Result.Status.ERROR
+    return crash_repro
+
+
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
@@ -990,16 +1036,7 @@ def main():
             first_bt_fatals = CH.check_fatal_messages_in_logs()
             for r in first_bt_fatals:
                 r.set_label(build_types[0])
-            # `extend_sub_results` recomputes the aggregate status from child
-            # rows only, which would erase a runner-level `ERROR` set by
-            # `FTResultsProcessor` (e.g. `not s.success_finish`) when the
-            # parsed rows are all `OK`/`FAIL`. Restore it so that
-            # `invert_bugfix_validation_status` still sees the error and
-            # does not flip a harness-level termination into green.
-            runner_level_error = test_result.is_error()
-            test_result.extend_sub_results(first_bt_fatals)
-            if runner_level_error:
-                test_result.status = Result.Status.ERROR
+            reconcile_bugfix_crash_repro(test_result, first_bt_fatals)
 
             if test_result.is_ok():
                 for bugfix_bt in build_types[1:]:
@@ -1140,18 +1177,17 @@ def main():
                         runner_exit_code=bt_runner_exit_code
                     )
 
-                    # Check fatal messages for this build type
+                    # Check fatal messages for this build type. As with the
+                    # first build type, a `BLOCKER` fatal is the bug crashing
+                    # the master binary, not infra: reuse the same downgrade so
+                    # a crash-only repro on a later build type
+                    # (amd_tsan / amd_msan / amd_debug) is counted as a
+                    # reproduction instead of being restored to `ERROR` and
+                    # preserved as inconclusive by the inverter.
                     bt_fatals = CH.check_fatal_messages_in_logs()
                     for r in bt_fatals:
                         r.set_label(bugfix_bt)
-                    # As with the first build type above: keep a runner-level
-                    # `ERROR` from being recomputed away by
-                    # `extend_sub_results` before it is copied into
-                    # `test_result.status` and checked by the inverter.
-                    bt_runner_level_error = bt_result.is_error()
-                    bt_result.extend_sub_results(bt_fatals)
-                    if bt_runner_level_error:
-                        bt_result.status = Result.Status.ERROR
+                    reconcile_bugfix_crash_repro(bt_result, bt_fatals)
 
                     for r in bt_result.results:
                         r.set_label(bugfix_bt)

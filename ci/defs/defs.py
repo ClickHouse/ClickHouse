@@ -6,6 +6,8 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
+GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
+
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
@@ -411,6 +413,12 @@ class JobNames:
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
+    # Unit-test (gtest) bugfix validation. Unlike the functional/integration
+    # validators above, this is a single AMD-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
+    # aggregation in `new_tests_check.py`.
+    BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
