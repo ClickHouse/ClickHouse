@@ -17,13 +17,16 @@ namespace DB
 {
 
 /// Convention for fibers spawned on the server-wide Silk scheduler: the
-/// fiber's parameters struct MUST begin with this header. The global
-/// fiber-switch hooks read it via `FiberScheduler::getFiberParameters` on
-/// every fiber to attach/detach the submitter's `ThreadGroup` on the OS
-/// thread the fiber borrows (memory accounting, per-user throttling).
+/// fiber's parameters struct MUST begin with this header. It is the swap slot
+/// the global fiber-switch hooks blind-cast to via `FiberScheduler::getFiberParameters`
+/// on every fiber switch: one `std::swap` with `DB::current_thread` serves as both the
+/// suspend and the resume hook (swap is its own inverse), parking the fiber's own
+/// `ThreadStatus *` here while it isn't running and restoring the borrowing OS thread's
+/// own `current_thread` meanwhile. The fiber's `ThreadStatus` itself is created and
+/// attached to its submitter's `ThreadGroup` by the spawn site, not by this header.
 struct SilkFiberJobHeader
 {
-    ThreadGroupPtr thread_group;
+    ThreadStatus * saved_current_thread = nullptr;
 };
 
 namespace SilkFiberCategory

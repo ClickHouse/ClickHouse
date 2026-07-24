@@ -4,6 +4,7 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <optional>
 #include <boost/core/noncopyable.hpp>
 #include <Common/setThreadName.h>
 
@@ -38,7 +39,7 @@ public:
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and thread name and restores them in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, std::optional<ThreadName> thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:

@@ -24,9 +24,9 @@ public:
     void SetUp() override
     {
         silk::initialize();
-        /// Reuse the server's options (stack size + the ThreadGroup fiber-switch
-        /// hooks) so the hooks get exercised by the existing gtests instead of only
-        /// running against a bare `Options` that never wires them.
+        /// Reuse the server's options (stack size + the current_thread-swapping
+        /// fiber-switch hooks) so the hooks get exercised by the existing gtests
+        /// instead of only running against a bare `Options` that never wires them.
         silk::FiberScheduler::Options options = makeServerSilkSchedulerOptions();
         silk::FiberScheduler::initialize(&options);
     }
