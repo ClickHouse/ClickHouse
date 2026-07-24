@@ -1,13 +1,13 @@
--- Default (26.7+): an unquoted integer for DateTime64 is a Unix timestamp in seconds
+-- Default (26.8+): an unquoted integer for DateTime64 is a Unix timestamp in seconds
 2023-12-23 20:37:33.000
 2023-12-23 20:37:33.000
--- Setting compatibility to 26.6 restores the pre-26.7 raw scaled value (ticks)
+-- Setting compatibility to 26.7 restores the pre-26.8 raw scaled value (ticks)
 1970-01-20 17:09:23.853
 1970-01-20 17:09:23.853
 -- The explicit input setting has the same effect as the compatibility rollback
 1970-01-20 17:09:23.853
 1970-01-20 17:09:23.853
--- Values: a fractional number falls back to SQL expression evaluation (seconds) regardless of the setting, as before 26.7
+-- Values: a fractional number falls back to SQL expression evaluation (seconds) regardless of the setting, as before 26.8
 2023-12-23 20:37:33.035
 2023-12-23 20:37:33
 2023-12-23 20:37:33.035

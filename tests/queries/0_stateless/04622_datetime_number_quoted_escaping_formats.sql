@@ -1,4 +1,4 @@
--- The 26.7 change of reading an unquoted number for a `DateTime`/`DateTime64` column as a Unix
+-- The 26.8 change of reading an unquoted number for a `DateTime`/`DateTime64` column as a Unix
 -- timestamp in seconds applies to every input path that parses fields with the `Quoted` escaping
 -- rule, not only to the `Values` format: `MySQLDump` and the `Template`/`CustomSeparated`/`Regexp`
 -- formats configured with `Quoted` field escaping route through the same quoted serializer.

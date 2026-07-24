@@ -724,7 +724,7 @@ public:
             {
                 /// A negative integer is a pre-epoch Unix timestamp; the final clamp below brings it into the
                 /// `DateTime` range (the epoch), matching the row input serializer, rather than rejecting it.
-                /// With `read_datetime_number_as_raw_value` (pre-26.7) a negative integer is rejected as before.
+                /// With `read_datetime_number_as_raw_value` (pre-26.8) a negative integer is rejected as before.
                 if (format_settings.read_datetime_number_as_raw_value && element.getInt64() < 0)
                 {
                     error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
@@ -953,7 +953,7 @@ public:
                 return false;
 
             /// An unquoted number is a Unix timestamp in seconds (with optional sub-second precision), scaled to
-            /// the column precision. With `read_datetime_number_as_raw_value` (pre-26.7) an integer is instead the
+            /// the column precision. With `read_datetime_number_as_raw_value` (pre-26.8) an integer is instead the
             /// raw scaled value (ticks); a fractional number was always seconds.
             switch (element.type())
             {

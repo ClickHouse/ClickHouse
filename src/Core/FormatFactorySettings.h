@@ -767,14 +767,14 @@ Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw und
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
 
 Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
-consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.6'`) to
-restore the behavior of versions up to and including 26.6, where a bare unquoted integer fed to a `DateTime64`
+consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.7'`) to
+restore the behavior of versions up to and including 26.7, where a bare unquoted integer fed to a `DateTime64`
 column was interpreted as the raw scaled value (ticks). The legacy path accepts only such a bare integer:
 with the setting enabled, a number with a fractional or exponent part is rejected by the row input paths
-(as before 26.7), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
-seconds for `DateTime64` and rejected for `DateTime` (also as before 26.7). In the `Values` format itself,
+(as before 26.8), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
+seconds for `DateTime64` and rejected for `DateTime` (also as before 26.8). In the `Values` format itself,
 a number the streaming parser rejects then falls back to SQL expression evaluation and is read as seconds,
-both before 26.7 and with this setting enabled — so the `Values` behavior for a fractional number is the
+both before 26.8 and with this setting enabled — so the `Values` behavior for a fractional number is the
 same in every configuration.
 
 This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path

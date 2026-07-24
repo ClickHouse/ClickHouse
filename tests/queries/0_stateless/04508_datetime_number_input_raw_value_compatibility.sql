@@ -1,4 +1,4 @@
--- The `input_format_read_datetime_number_as_raw_value` compatibility setting restores the pre-26.7
+-- The `input_format_read_datetime_number_as_raw_value` compatibility setting restores the pre-26.8
 -- behavior of reading an unquoted number for a `DateTime64` column as the raw scaled value (ticks).
 -- It also gates the `JSONExtract` / typed `JSON` DOM path.
 -- https://github.com/ClickHouse/ClickHouse/pull/108091
@@ -8,12 +8,12 @@ SET session_timezone = 'UTC';
 -- The `compatibility` setting is checked first, while the input setting is still at its default:
 -- `compatibility` does not override a setting the user has changed explicitly.
 
-SELECT '-- Default (26.7+): an unquoted integer for DateTime64 is a Unix timestamp in seconds';
+SELECT '-- Default (26.8+): an unquoted integer for DateTime64 is a Unix timestamp in seconds';
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853}');
 SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853)');
 
-SELECT '-- Setting compatibility to 26.6 restores the pre-26.7 raw scaled value (ticks)';
-SET compatibility = '26.6';
+SELECT '-- Setting compatibility to 26.7 restores the pre-26.8 raw scaled value (ticks)';
+SET compatibility = '26.7';
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853}');
 SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853)');
 SET compatibility = '';
@@ -24,7 +24,7 @@ SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853}');
 SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853)');
 SET input_format_read_datetime_number_as_raw_value = 0;
 
-SELECT '-- Values: a fractional number falls back to SQL expression evaluation (seconds) regardless of the setting, as before 26.7';
+SELECT '-- Values: a fractional number falls back to SQL expression evaluation (seconds) regardless of the setting, as before 26.8';
 SELECT t FROM format(Values, 't DateTime64(3)', '(1703363853.035)');
 SELECT t FROM format(Values, 't DateTime', '(1703363853.7)');
 SET input_format_read_datetime_number_as_raw_value = 1;
