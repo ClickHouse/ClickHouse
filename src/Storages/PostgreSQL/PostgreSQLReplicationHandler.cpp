@@ -86,6 +86,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_teardown_after_shutdown[];
+    extern const char materialized_postgresql_pause_before_register_replica[];
 }
 
 class TemporaryReplicationSlot
@@ -775,7 +776,10 @@ void PostgreSQLReplicationHandler::shutdown()
     cleanup_task->deactivate();
 
     LOG_TRACE(log, "Resetting consumer");
-    consumer.reset(); /// Clear shared pointers to inner storages.
+    {
+        std::lock_guard lock(consumer_ptr_mutex);
+        consumer.reset(); /// Clear shared pointers to inner storages.
+    }
 
     /// Release the ephemeral leader node so a peer can take over promptly (rather than waiting for the
     /// Keeper session to expire). Reset the node before its backing session.
@@ -1074,16 +1078,19 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
     /// (Apart from the case, when shutdownFinal is called).
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
-    consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
-            getContext(),
-            std::move(tmp_connection),
-            replication_slot,
-            publication_name,
-            start_lsn,
-            max_block_size,
-            schema_as_a_part_of_table_name,
-            nested_storages,
-            (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+    {
+        std::lock_guard lock(consumer_ptr_mutex);
+        consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
+                getContext(),
+                std::move(tmp_connection),
+                replication_slot,
+                publication_name,
+                start_lsn,
+                max_block_size,
+                schema_as_a_part_of_table_name,
+                nested_storages,
+                (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+    }
 
     replication_handler_initialized = true;
 
@@ -1478,7 +1485,10 @@ void PostgreSQLReplicationHandler::coordinationFunc()
             LOG_WARNING(log, "Keeper session expired, releasing replication leadership");
             is_active_worker.store(false);
             consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
-            consumer.reset();
+            {
+                std::lock_guard lock(consumer_ptr_mutex);
+                consumer.reset();
+            }
             leader_node.reset();
             coordination_zookeeper.reset();
         }
@@ -1550,6 +1560,17 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// finish creating the remaining tables (it skips the ones that already exist).
     ensureCoordinatedNamingCompatible();
     ensureCoordinatedTableSetCompatible();
+
+    /// Holds the startup inside the window between the advisory teardown-token check (in
+    /// ensureCoordinatedNamingCompatible above) and the registration, so a test can win the teardown fence
+    /// on a peer in between and verify that the registration's own atomic token probe refuses to join.
+    fiu_do_on(FailPoints::materialized_postgresql_pause_before_register_replica,
+    {
+        LOG_INFO(log, "Pausing before registering the replica until failpoint "
+                 "materialized_postgresql_pause_before_register_replica is disabled");
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_register_replica);
+    });
+
     registerReplicaInKeeper();
     try
     {
@@ -1715,24 +1736,82 @@ void PostgreSQLReplicationHandler::registerReplicaInKeeper()
     /// later last-replica teardown removes the shared slot/publication/snapshot_completed marker around a
     /// replica that still holds data. Re-registering an own node (server restart, ATTACH, teardown re-register)
     /// stays idempotent because the owner identity is stable.
+    ///
+    /// The registration is also where the <keeper_path>/teardown ownership token becomes an authoritative
+    /// fence. The token check in ensureCoordinatedNamingCompatible alone is only advisory: between that check
+    /// and this registration, the last replica of the previous setup can still win the teardown fence in
+    /// unregisterReplicaAndCheckLast (winning requires /replicas to be empty, and this replica has not
+    /// registered yet) - and would then still be entitled to drop the shared PostgreSQL slot/publication by
+    /// name while this replica goes on to create nested tables and, once elected, fresh shared objects for
+    /// the new setup. So the token's absence is asserted ATOMICALLY with the registration, in one Keeper
+    /// multi-request: a create+remove pair on the token path (which fails with ZNODEEXISTS exactly when the
+    /// token exists, and nets to nothing when it does not) together with the creation of the registration
+    /// node. Once the registration node exists the teardown fence can no longer be won (removing the
+    /// non-empty /replicas parent fails with ZNOTEMPTY), closing the race completely.
     auto zookeeper = getContext()->getZooKeeper();
     const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
-    zookeeper->createAncestors(replica_path);
-    const auto code = zookeeper->tryCreate(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent);
-    if (code == Coordination::Error::ZNODEEXISTS)
+    const String teardown_path = coordination_keeper_path + "/teardown";
+
+    while (true)
     {
-        const String registered_owner = zookeeper->get(replica_path);
-        if (registered_owner != coordination_replica_owner)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "A replica named '{}' is already registered in the coordinated MaterializedPostgreSQL setup at "
-                "Keeper path '{}'. materialized_postgresql_replica_name must resolve to a distinct value on "
-                "every replica; use a distinct value (for example the {{replica}} macro). If this registration "
-                "is a leftover of an incompletely dropped setup, remove the Keeper node manually",
-                coordination_replica_name, coordination_keeper_path);
+        zookeeper->createAncestors(replica_path);
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(teardown_path, "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeRemoveRequest(teardown_path, -1));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent));
+        Coordination::Responses responses;
+        const auto code = zookeeper->tryMulti(ops, responses);
+
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_DEBUG(log, "Registered replica '{}' at {}", coordination_replica_name, replica_path);
+            return;
+        }
+
+        const size_t failed_op = zkutil::getFailedOpIndex(code, responses);
+
+        if (failed_op == 0 && code == Coordination::Error::ZNODEEXISTS)
+        {
+            /// A teardown token appeared after ensureCoordinatedNamingCompatible checked for it: the last
+            /// replica of the previous setup won the teardown fence concurrently. Refuse to join; the startup
+            /// task retries and re-enters through ensureCoordinatedNamingCompatible, which keeps refusing a
+            /// foreign token until the teardown finishes (and reclaims this replica's own token).
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' has concurrently begun being "
+                "torn down by the drop of its last replica. Will retry once the teardown has finished. If the "
+                "tearing-down server died before completing it, remove the leftover node '{}' manually after "
+                "dropping the leftover replication slot and publication in PostgreSQL",
+                coordination_keeper_path, teardown_path);
+        }
+
+        if (failed_op == 2 && code == Coordination::Error::ZNODEEXISTS)
+        {
+            const String registered_owner = zookeeper->get(replica_path);
+            if (registered_owner != coordination_replica_owner)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "A replica named '{}' is already registered in the coordinated MaterializedPostgreSQL setup at "
+                    "Keeper path '{}'. materialized_postgresql_replica_name must resolve to a distinct value on "
+                    "every replica; use a distinct value (for example the {{replica}} macro). If this registration "
+                    "is a leftover of an incompletely dropped setup, remove the Keeper node manually",
+                    coordination_replica_name, coordination_keeper_path);
+            /// This replica's own node already exists (server restart, ATTACH, startup retry) - it is
+            /// registered, and while its node exists the teardown fence cannot be won, so no token re-check
+            /// is needed.
+            LOG_DEBUG(log, "Replica '{}' is already registered at {}", coordination_replica_name, replica_path);
+            return;
+        }
+
+        if (failed_op == 2 && code == Coordination::Error::ZNONODE)
+        {
+            /// The /replicas parent vanished between createAncestors and the multi-request: a concurrent
+            /// last-replica teardown just won the fence and removed it. Retry - the next iteration fails on
+            /// the token probe above (or succeeds if the teardown has already finished).
+            continue;
+        }
+
+        throw zkutil::KeeperMultiException(code, ops, responses);
     }
-    else if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, replica_path);
-    LOG_DEBUG(log, "Registered replica '{}' at {}", coordination_replica_name, replica_path);
 }
 
 
@@ -2227,19 +2306,32 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 
 void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 {
-    /// The consumer may not exist yet: a coordinated standby builds the handler at startup but creates
-    /// the consumer only after winning the leader election, and a plain database keeps an uninitialized
-    /// handler while the background startup task is retrying. Store the new value in the handler, so the
-    /// consumer created later starts with it instead of the value captured at construction time.
+    /// The consumer may not exist: a coordinated standby builds the handler at startup but creates the
+    /// consumer only after winning the leader election - and a former leader that lost the election has had
+    /// its consumer destroyed again by coordinationFunc - while a plain database keeps an uninitialized
+    /// handler while the background startup task is retrying. Store the new value in the handler first, so
+    /// the consumer created later (e.g. on the next takeover) starts with it instead of the value captured
+    /// at construction time.
     if (setting.name == "materialized_postgresql_max_block_size")
         max_block_size = setting.value.safeGet<UInt64>();
 
-    if (!replication_handler_initialized)
-        return;
-
+    /// Push the change into the live consumer only if one exists right now. `replication_handler_initialized`
+    /// is not a sufficient proxy for that: it stays set when a demoted leader's consumer is destroyed on
+    /// leader loss, so gating on it alone would throw from getConsumer on every former-leader standby.
+    /// Deactivating the consumer task first serializes with an in-flight consume() iteration; the task is
+    /// re-armed only when a consumer exists (on a standby it belongs to the active worker and must stay
+    /// dormant until the coordination task re-arms it on election).
     consumer_task->deactivate();
-    getConsumer()->setSetting(setting);
-    consumer_task->activateAndSchedule();
+    ConsumerPtr current_consumer;
+    {
+        std::lock_guard lock(consumer_ptr_mutex);
+        current_consumer = consumer;
+    }
+    if (current_consumer)
+    {
+        current_consumer->setSetting(setting);
+        consumer_task->activateAndSchedule();
+    }
 }
 
 

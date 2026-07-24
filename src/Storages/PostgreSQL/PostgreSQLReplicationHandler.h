@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 
 namespace zkutil
@@ -313,7 +314,13 @@ private:
     const String legacy_publication_name;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
+    /// The pointer itself is guarded by `consumer_ptr_mutex` wherever a foreign thread may touch it:
+    /// it is assigned by startSynchronization and destroyed by coordinationFunc (leader loss) and
+    /// shutdown - all serialized through the background tasks - while setSetting reads it from the
+    /// ALTER DATABASE thread. Uses of the pointee via getConsumer stay lock-free: they run inside the
+    /// consumer task, which every destroying path deactivates first.
     ConsumerPtr consumer;
+    std::mutex consumer_ptr_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;
     BackgroundSchedulePoolTaskHolder consumer_task;

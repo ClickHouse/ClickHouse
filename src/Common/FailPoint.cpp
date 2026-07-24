@@ -43,6 +43,7 @@ static struct InitFiu
     REGULAR(materialized_postgresql_fail_nested_table_drop) \
     REGULAR(materialized_postgresql_fail_database_startup) \
     PAUSEABLE(materialized_postgresql_pause_after_stop_replication) \
+    PAUSEABLE(materialized_postgresql_pause_before_register_replica) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(connection_stale_on_establish) \

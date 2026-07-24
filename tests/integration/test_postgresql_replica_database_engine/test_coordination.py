@@ -5,6 +5,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
+from helpers.network import PartitionManager
 from helpers.postgres_utility import (
     PostgresManager,
     check_tables_are_synchronized,
@@ -1995,3 +1996,133 @@ def test_plain_refused_drop_rearms_startup_task(started_cluster):
     instance.query("DROP DATABASE test_database SYNC")
     assert not replication_slot_exists()
     assert not publication_exists()
+
+
+def test_registration_is_fenced_against_concurrent_teardown_token(started_cluster):
+    # The teardown-token check in `ensureCoordinatedNamingCompatible` alone is only advisory: between that
+    # check and the registration, the last replica of a previous setup can still win the teardown fence
+    # (winning requires <keeper_path>/replicas to be empty, and this replica has not registered yet), and
+    # would then still be entitled to drop the shared PostgreSQL slot/publication by name around the
+    # joiner's fresh setup. The registration therefore asserts the token's absence atomically, in the same
+    # Keeper multi-request that creates the registration node. Hold the startup exactly inside that window
+    # with a pauseable failpoint, win the fence there (inject a foreign token), and verify the registration
+    # refuses to join instead of proceeding.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    fence_keeper_path = "/clickhouse/mat_pg/1/register_fence_test"
+    settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        f"materialized_postgresql_keeper_path = '{fence_keeper_path}'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    pause_line = "Pausing before registering the replica"
+    refused_line = "has concurrently begun being torn down"
+    pause_baseline = int(instance.count_in_log(pause_line))
+    refused_baseline = int(instance.count_in_log(refused_line))
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_pause_before_register_replica"
+        )
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        # The background startup has passed the advisory token check (no token existed) and is now held
+        # right before the registration.
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline, timeout=60)
+
+        # The last replica of a previous setup wins the teardown fence in this window.
+        zk.create(
+            fence_keeper_path + "/teardown",
+            b"dead-server-uuid|dead-database-uuid",
+            makepath=True,
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_pause_before_register_replica"
+        )
+
+        # The released startup must fail the registration on the atomic token probe (and keep being
+        # refused by the advisory check on every retry), leaving no registration and no nested table.
+        wait_for_new_log_occurrence(instance, refused_line, refused_baseline, timeout=60)
+        assert zk.get_children(fence_keeper_path + "/replicas") == []
+        assert (
+            "test_table" not in instance.query("SHOW TABLES FROM test_database").split()
+        )
+
+        # Once the pending teardown has finished (the token is gone), the retrying startup joins and
+        # replicates.
+        zk.delete(fence_keeper_path + "/teardown")
+        check_tables_are_synchronized(instance, "test_table")
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_pause_before_register_replica"
+        )
+        pg_manager.drop_materialized_db()
+        if zk.exists(fence_keeper_path):
+            zk.delete(fence_keeper_path, recursive=True)
+        zk.stop()
+
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
+def test_alter_mutable_setting_on_demoted_leader(started_cluster):
+    # A former leader that loses its Keeper session is demoted back to standby: `coordinationFunc`
+    # destroys its consumer, but the handler stays initialized. `ALTER DATABASE ... MODIFY SETTING` of a
+    # mutable setting must be accepted in that state too (stored for the consumer built on the next
+    # takeover) - gating the live update on `replication_handler_initialized` alone would throw
+    # "Consumer not initialized" on every former-leader standby.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    leader_name = wait_for_leader(instance)
+    leader_node = instance if leader_name == "coord_instance1" else instance2
+    standby_node = instance2 if leader_name == "coord_instance1" else instance
+    standby_name = (
+        "coord_instance2" if leader_name == "coord_instance1" else "coord_instance1"
+    )
+
+    # Demote the leader by cutting it off from Keeper until its session expires; the standby takes over.
+    demotion_line = "Keeper session expired, releasing replication leadership"
+    demotion_baseline = int(leader_node.count_in_log(demotion_line))
+    pm = PartitionManager()
+    try:
+        pm.drop_instance_zk_connections(leader_node)
+        wait_for_new_log_occurrence(
+            leader_node, demotion_line, demotion_baseline, timeout=120
+        )
+        wait_for_leader(standby_node, expected=standby_name)
+    finally:
+        pm.heal_all()
+
+    # The demoted node is now a standby whose handler is initialized but has no consumer. The ALTER must
+    # be accepted and stored.
+    leader_node.query(
+        "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_max_block_size = 12345"
+    )
+    assert "materialized_postgresql_max_block_size = 12345" in leader_node.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    # The demoted node takes over again and consumes with the altered setting.
+    standby_node.stop_clickhouse()
+    wait_for_leader(leader_node, expected=leader_name)
+    leader_node.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(leader_node, "test_table")
+    assert int(leader_node.query("SELECT count() FROM test_database.test_table")) == 200
+
+    standby_node.start_clickhouse()
+    check_tables_are_synchronized(standby_node, "test_table")
