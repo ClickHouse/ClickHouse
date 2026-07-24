@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import os
+import random
 import re
 import shlex
 import tempfile
@@ -670,93 +671,134 @@ class GH:
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
             --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
-        output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
 
-        try:
-            comments = json.loads(output) if output else []
-        except json.JSONDecodeError as e:
-            print(
-                f"ERROR: Failed to parse gh comments JSON: {e}. Treating as no existing comments."
-            )
-            comments = []
-
-        comment_to_update = None
-        id_to_update = None
-        for tag, body in comment_tags_and_bodies.items():
-            start_tag = TAG_COMMENT_START.format(TAG=tag)
-            end_tag = TAG_COMMENT_END.format(TAG=tag)
-            if not comment_to_update:
-                for comment in comments:
-                    if start_tag in comment["body"] and end_tag in comment["body"]:
-                        comment_to_update = comment
-                        id_to_update = comment["id"]
-                        if verbose:
-                            print(f"Found comment to update [{id_to_update}]")
-                        break
-            else:
-                if (
-                    start_tag not in comment_to_update["body"]
-                    or end_tag not in comment_to_update["body"]
-                ):
-                    print(
-                        f"WARNING: Comment [{id_to_update}] has no tag [{tag}] - will append"
-                    )
-
-        body = "" if not comment_to_update else comment_to_update["body"]
-        for tag, tag_body in comment_tags_and_bodies.items():
-            start_tag = TAG_COMMENT_START.format(TAG=tag)
-            end_tag = TAG_COMMENT_END.format(TAG=tag)
-            if not comment_to_update:
-                body += f"{start_tag}\n{tag_body}\n{end_tag}\n"
-            else:
-                if start_tag in body and end_tag in body:
-                    rex = re.compile(
-                        f"{re.escape(start_tag)}.*{re.escape(end_tag)}", re.DOTALL
-                    )
-                    replacement = f"{start_tag}\n{tag_body}\n{end_tag}"
-                    body, _ = rex.subn(lambda _: replacement, body)
-                    if verbose:
-                        print(
-                            f"Updated existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
-                        )
-                else:
-                    body = body.removesuffix("\n") + "\n"
-                    body += f"{start_tag}\n{tag_body}\n{end_tag}\n"
-                    if verbose:
-                        print(
-                            f"Appended existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
-                        )
-
-        # Create temp file for body to avoid shell escaping issues
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".txt", encoding="utf-8"
-        ) as temp_file:
-            temp_file.write(body)
-            temp_file_path = temp_file.name
-
+        MAX_RACE_RETRIES = 5
         res = None
-        if id_to_update:
-            cmd = f'gh api -X PATCH \
-                    -H "Accept: application/vnd.github.v3+json" \
-                    "/repos/{repo}/issues/comments/{id_to_update}" \
-                    -F body=@{temp_file_path}'
-            if verbose:
-                print(f"Update existing comments [{id_to_update}]")
-            res = cls.do_command_with_retries(cmd)
-        else:
-            if not only_update:
-                # Pass --repo so gh does not probe git remotes (Docker mounts can hit
-                # "detected dubious ownership" and fail comment creation).
-                cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
-                print("Create new comment")
-                res = cls.do_command_with_retries(cmd)
-            else:
-                print(
-                    f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
-                )
 
-        # Clean up temp file
-        os.unlink(temp_file_path)
+        for attempt in range(MAX_RACE_RETRIES):
+            output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
+            try:
+                comments = json.loads(output) if output else []
+            except json.JSONDecodeError as e:
+                print(
+                    f"ERROR: Failed to parse gh comments JSON: {e}. Treating as no existing comments."
+                )
+                comments = []
+
+            comment_to_update = None
+            id_to_update = None
+            for tag, body in comment_tags_and_bodies.items():
+                start_tag = TAG_COMMENT_START.format(TAG=tag)
+                end_tag = TAG_COMMENT_END.format(TAG=tag)
+                if not comment_to_update:
+                    for comment in comments:
+                        if start_tag in comment["body"] and end_tag in comment["body"]:
+                            comment_to_update = comment
+                            id_to_update = comment["id"]
+                            if verbose:
+                                print(f"Found comment to update [{id_to_update}]")
+                            break
+                else:
+                    if (
+                        start_tag not in comment_to_update["body"]
+                        or end_tag not in comment_to_update["body"]
+                    ):
+                        print(
+                            f"WARNING: Comment [{id_to_update}] has no tag [{tag}] - will append"
+                        )
+
+            body = "" if not comment_to_update else comment_to_update["body"]
+            for tag, tag_body in comment_tags_and_bodies.items():
+                start_tag = TAG_COMMENT_START.format(TAG=tag)
+                end_tag = TAG_COMMENT_END.format(TAG=tag)
+                if not comment_to_update:
+                    body += f"{start_tag}\n{tag_body}\n{end_tag}\n"
+                else:
+                    if start_tag in body and end_tag in body:
+                        rex = re.compile(
+                            f"{re.escape(start_tag)}.*{re.escape(end_tag)}", re.DOTALL
+                        )
+                        replacement = f"{start_tag}\n{tag_body}\n{end_tag}"
+                        body, _ = rex.subn(lambda _: replacement, body)
+                        if verbose:
+                            print(
+                                f"Updated existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
+                            )
+                    else:
+                        body = body.removesuffix("\n") + "\n"
+                        body += f"{start_tag}\n{tag_body}\n{end_tag}\n"
+                        if verbose:
+                            print(
+                                f"Appended existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
+                            )
+
+            # Create temp file for body to avoid shell escaping issues
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".txt", encoding="utf-8"
+            ) as temp_file:
+                temp_file.write(body)
+                temp_file_path = temp_file.name
+
+            try:
+                if id_to_update:
+                    cmd = f'gh api -X PATCH \
+                            -H "Accept: application/vnd.github.v3+json" \
+                            "/repos/{repo}/issues/comments/{id_to_update}" \
+                            -F body=@{temp_file_path}'
+                    if verbose:
+                        print(f"Update existing comments [{id_to_update}]")
+                    res = cls.do_command_with_retries(cmd)
+                else:
+                    if not only_update:
+                        # Pass --repo so gh does not probe git remotes (Docker mounts can hit
+                        # "detected dubious ownership" and fail comment creation).
+                        cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
+                        print("Create new comment")
+                        res = cls.do_command_with_retries(cmd)
+                    else:
+                        print(
+                            f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
+                        )
+                        break
+            finally:
+                os.unlink(temp_file_path)
+
+            if not res:
+                break  # genuine write failure, do_command_with_retries already retried
+
+            if not id_to_update:
+                break  # new comment created, no concurrent update possible
+
+            # Wait before re-reading: a concurrent job that read the comment
+            # posts its (stale) version so we can detect the clobber below.
+            time.sleep(4)
+
+            # Verify that our non-empty tags survived a potential concurrent write.
+            # If another job raced and overwrote the comment between our read and
+            # write, our tags will be missing from the current body.  Re-read,
+            # re-apply, and write again.
+            verify_cmd = (
+                f'gh api -H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/issues/comments/{id_to_update}" --jq ".body"'
+            )
+            current_body = cls.get_output_with_retries(verify_cmd, verbose=False)
+            race_detected = any(
+                tag_body
+                and f"{TAG_COMMENT_START.format(TAG=tag)}\n{tag_body}\n{TAG_COMMENT_END.format(TAG=tag)}"
+                not in current_body
+                for tag, tag_body in comment_tags_and_bodies.items()
+            )
+            if not race_detected:
+                break
+
+            if attempt < MAX_RACE_RETRIES - 1:
+                delay = random.uniform(0.5, 2.0) * (2**attempt)
+                print(
+                    f"WARNING: Race condition on comment update "
+                    f"(attempt {attempt + 1}/{MAX_RACE_RETRIES}), "
+                    f"retrying in {delay:.1f}s"
+                )
+                time.sleep(delay)
 
         return res
 
