@@ -105,17 +105,7 @@ ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **Tabl
     </dependency>
     ```
 
-    如果要使用 SNAPSHOT 版本，请添加以下 repository。
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    要使用 SNAPSHOT 版本，请参阅 Sonatype 的[通过 Maven 使用 SNAPSHOT 发行版说明](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project)。
   </Tab>
 
   <Tab title="Gradle">
@@ -126,13 +116,7 @@ ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **Tabl
     }
     ```
 
-    如果要使用 SNAPSHOT 版本，请添加以下 repository：
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    要使用 SNAPSHOT 版本，请参阅 Sonatype 的[通过 Gradle 使用 SNAPSHOT 发行版说明](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project)。
   </Tab>
 
   <Tab title="SBT">
@@ -172,9 +156,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 您可以在 [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-中找到所有已发布的 JAR 文件，
-并在 [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/)
-中找到所有每日构建的 SNAPSHOT JAR 文件。
+中找到所有已发布的 JAR 文件。
+每日构建的 SNAPSHOT JAR 文件可通过上方配置的 Sonatype snapshots 仓库获取。
 
 <Warning>
   务必包含带有 &quot;all&quot; classifier 的 [clickhouse-jdbc JAR](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)，

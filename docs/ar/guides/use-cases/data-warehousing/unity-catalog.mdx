@@ -15,7 +15,11 @@ import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يدعم ClickHouse التكامل مع عدة كتالوجات (Unity وGlue وPolaris وغيرها). يوضح هذا الدليل الخطوات اللازمة للاستعلام عن بياناتك المُدارة في Databricks باستخدام ClickHouse و[Unity Catalog](https://www.databricks.com/product/unity-catalog).
 
-يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. وباستخدام ClickHouse، يمكنك الاستعلام عن جداول Unity Catalog بصيغتَي Delta وIceberg.
+يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. وباستخدام ClickHouse، يمكنك الاستعلام عن جداول Delta وIceberg في Unity Catalog التي تستخدم مواقع تخزين خارجية.
+
+<Note>
+  لا يوفر Unity Catalog ميزة [credential vending](https://docs.databricks.com/aws/en/external-access/credential-vending) لجداول Delta Lake أو Iceberg المخزّنة على [Databricks managed storage](https://docs.databricks.com/aws/en/data-governance/unity-catalog/managed-versus-external). يعتمد ClickHouse على credential vending لقراءة بيانات الجداول من Unity Catalog.
+</Note>
 
 <Note>
   نظرًا إلى أن هذه الميزة تجريبية، ستحتاج إلى تفعيلها باستخدام:
@@ -60,7 +64,7 @@ SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type 
   ### قراءة جداول Iceberg
 </div>
 
-للوصول إلى جداول Iceberg المُدارة:
+للوصول إلى جداول Iceberg الخارجية:
 
 ```sql
 CREATE DATABASE unity
