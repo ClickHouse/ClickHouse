@@ -74,14 +74,17 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects the user
     /// `field_id` settings at write time in that case. The format settings are frozen here at table
     /// definition time, so accepting these settings would produce a table whose every `INSERT`
-    /// fails — reject the definition up front instead. The check runs whenever the definition is
-    /// freshly supplied by the user: a `CREATE` query, but also a full-definition
+    /// fails — reject the definition up front instead. The check runs only when the definition is
+    /// freshly supplied by the user: a `CREATE` query, or a full-definition
     /// `ATTACH TABLE t (...) ENGINE = ...` query, which introduces a new definition just like
-    /// `CREATE` does. Loading a definition that already lives in this server's metadata — server
-    /// startup, replica recovery, a short `ATTACH TABLE t`, the tables attached by
-    /// `ATTACH DATABASE` (`attach_short_syntax`) — is exempt, so existing tables always load.
-    const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
-    if (!loading_from_existing_metadata && configuration->isIcebergConfiguration() && format_settings
+    /// `CREATE` does. Replaying a definition that was already accepted once — server startup
+    /// (`FORCE_ATTACH` / `FORCE_RESTORE`), replicated or `ON CLUSTER` DDL replay and `RESTORE`
+    /// from backup (`SECONDARY_CREATE`), a short `ATTACH TABLE t`, the tables attached by
+    /// `ATTACH DATABASE` (`attach_short_syntax`) — is exempt, so existing tables always load;
+    /// the write-time guard in `ParquetBlockOutputFormat` still protects such legacy tables.
+    const bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+    if (fresh_user_definition && configuration->isIcebergConfiguration() && format_settings
         && (!format_settings->parquet.column_field_ids.empty() || format_settings->parquet.auto_assign_field_ids))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
