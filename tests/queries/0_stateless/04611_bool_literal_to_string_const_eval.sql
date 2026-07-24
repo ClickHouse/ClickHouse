@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- ^^ creates a SQL UDF (a global object); no-parallel avoids a name clash when the flaky check runs
+-- many copies of this test concurrently.
+
 -- { echo }
 
 -- Constant `Bool` literals evaluated through the `Field`-returning `evaluateConstantExpression`
