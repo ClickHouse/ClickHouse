@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Looker'
 slug: /integrations/looker
-keywords: ['clickhouse', 'looker', 'conectar', 'integrar', 'ui']
-description: 'Looker é uma plataforma corporativa para BI, aplicações de dados e análises embutidas que ajuda a explorar e compartilhar insights em tempo real.'
+keywords: ['clickhouse', 'looker', 'conectar', 'integrar', 'UI']
+description: 'Looker é uma plataforma corporativa para BI, aplicativos de dados e analytics embutido que ajuda você a explorar e compartilhar insights em tempo real.'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -19,44 +19,42 @@ import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.j
 
 O Looker pode se conectar ao ClickHouse Cloud ou a uma implantação on-premise por meio da fonte de dados oficial do ClickHouse.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúna os detalhes de conexão
-</div>
+<Steps>
+  <Step title="Reúna seus detalhes de conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Crie uma fonte de dados do ClickHouse" id="2-create-a-clickhouse-data-source">
+    Navegue até Admin -&gt; Database -&gt; Connections e clique no botão &quot;Add Connection&quot; no canto superior direito.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. Crie uma fonte de dados do ClickHouse
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Adicionando uma nova conexão na interface de gerenciamento de banco de dados do Looker" border />
 
-Navegue até Admin -&gt; Database -&gt; Connections e clique no botão &quot;Add Connection&quot; no canto superior direito.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Adicionando uma nova conexão na interface de gerenciamento de banco de dados do Looker" border />
+    Escolha um nome para sua fonte de dados e selecione `ClickHouse` no menu suspenso de dialeto. Insira suas credenciais no formulário.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Informando suas credenciais do ClickHouse no formulário de conexão do Looker" border />
 
-Escolha um nome para sua fonte de dados e selecione `ClickHouse` no menu suspenso de dialeto. Insira suas credenciais no formulário.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Informando suas credenciais do ClickHouse no formulário de conexão do Looker" border />
+    Se você estiver usando ClickHouse Cloud ou se a sua implantação exigir SSL, certifique-se de que o SSL esteja ativado nas configurações adicionais.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Ativando SSL para a conexão com o ClickHouse nas configurações do Looker" border />
 
-Se você estiver usando ClickHouse Cloud ou se a sua implantação exigir SSL, certifique-se de que o SSL esteja ativado nas configurações adicionais.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Ativando SSL para a conexão com o ClickHouse nas configurações do Looker" border />
+    Primeiro, teste a conexão e, quando isso for concluído, conecte-se à sua nova fonte de dados do ClickHouse.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Testando e conectando-se à fonte de dados do ClickHouse" border />
 
-Primeiro, teste a conexão e, quando isso for concluído, conecte-se à sua nova fonte de dados do ClickHouse.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Testando e conectando-se à fonte de dados do ClickHouse" border />
-
-<br />
-
-Agora você já deve conseguir vincular a fonte de dados do ClickHouse ao seu projeto do Looker.
+    Agora você já deve conseguir vincular a fonte de dados do ClickHouse ao seu projeto do Looker.
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. Limitações conhecidas
+  ## Limitações conhecidas
 </div>
 
 1. Os seguintes tipos de dados são tratados como strings por padrão:

@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -69,10 +70,10 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="MySQL 선택" size="lg" border />
 
 <div id="add-your-source-mysql-database-connection">
-  ### 소스 MySQL 데이터베이스 연결 추가
+  ### 원본 MySQL 데이터베이스 연결 추가
 </div>
 
-4. 사전 준비 단계에서 구성한 소스 MySQL 데이터베이스의 연결 정보를 입력합니다.
+4. 사전 준비 단계에서 구성한 원본 MySQL 데이터베이스의 연결 정보를 입력합니다.
 
 <Info>
   연결 정보를 추가하기 전에 방화벽 규칙에서 ClickPipes IP 주소를 허용 목록에 추가했는지 확인하십시오. 다음 페이지에서 [ClickPipes IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 확인할 수 있습니다.
@@ -80,6 +81,12 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="연결 정보 입력" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (선택 사항) TLS 설정 변경하기
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (선택 사항) SSH 터널링 설정하기
@@ -114,6 +121,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 * **Pull batch size**: 단일 batch에서 가져올 행 수입니다. 이 설정은 best effort 기준으로 적용되므로, 모든 경우에 항상 반영되지는 않을 수 있습니다.
 * **Snapshot number of rows per partition**: 초기 스냅샷 중 각 파티션에서 가져올 행 수입니다. 테이블의 행 수가 많을 때 각 파티션에서 가져오는 행 수를 제어하는 데 유용합니다.
 * **Snapshot number of tables in parallel**: 초기 스냅샷 중 병렬로 가져올 테이블 수입니다. 테이블 수가 많을 때 병렬로 가져오는 테이블 수를 제어하는 데 유용합니다.
+* **Server ID**: MySQL binlog 복제를 위한 server ID를 설정하는 선택적 매개변수입니다. 설정하지 않으면 ClickPipes가 ClickPipe 수명 주기 동안 변경될 수 있는 임의의 server ID를 생성합니다. 원본 MySQL server 측에서 ClickPipe를 안정적으로 식별할 때 사용하십시오.
 
 <div id="configure-the-tables">
   ### 테이블 구성

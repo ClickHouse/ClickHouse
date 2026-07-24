@@ -106,17 +106,7 @@ Ambos enfoques garantizan que el conector de ClickHouse esté disponible en su e
     </dependency>
     ```
 
-    Agregue el siguiente repositorio si desea usar la versión SNAPSHOT.
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    Para usar una versión SNAPSHOT, siga las [instrucciones de Sonatype para consumir versiones SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) con Maven.
   </Tab>
 
   <Tab title="Gradle">
@@ -127,13 +117,7 @@ Ambos enfoques garantizan que el conector de ClickHouse esté disponible en su e
     }
     ```
 
-    Agregue el siguiente repositorio si desea usar la versión SNAPSHOT:
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    Para usar una versión SNAPSHOT, siga las [instrucciones de Sonatype para consumir versiones SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) con Gradle.
   </Tab>
 
   <Tab title="SBT">
@@ -175,8 +159,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 Puedes encontrar todos los archivos JAR publicados disponibles
-en el [repositorio central de Maven](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-y todos los archivos JAR SNAPSHOT de compilación diaria en el [repositorio de snapshots OSS de Sonatype](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+en el [repositorio central de Maven](https://repo1.maven.org/maven2/com/clickhouse/spark/).
+Los archivos JAR SNAPSHOT de compilación diaria están disponibles a través del repositorio de snapshots de Sonatype configurado anteriormente.
 
 <Warning>
   Es fundamental incluir el [JAR de clickhouse-jdbc](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)

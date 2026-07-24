@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 
 ClickPipes を使用すると、ソースの Postgres データベースから ClickHouse Cloud にデータを取り込めます。ソースの Postgres データベースは、オンプレミス環境のほか、Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase などのクラウド環境でもホストできます。
 
@@ -64,7 +65,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
 
-3. `Postgres CDC` タイルを選択します。
+3. `Postgres CDC` (変更データキャプチャ) タイルを選択します。
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Postgres を選択" size="lg" border />
 
@@ -87,6 +88,12 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 ソースの Postgres データベースが AWS でホストされている場合は、AWS プライベートリンクを使用して接続できます。データ転送を非公開のままにしたい場合に便利です。
 [接続を設定するためのセットアップガイド](/ja/integrations/clickpipes/aws-privatelink)を参照してください。
+
+<div id="optional-changing-tls-settings">
+  #### &#x20;(任意) TLS設定の変更
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-setting-up-ssh-tunneling">
   #### &#x20;(任意) SSH トンネリングを設定する
@@ -143,6 +150,10 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 <Warning>
   ClickHouse で、Postgres の主キーとは異なる ordering key を定義する場合は、関連する[注意事項](/ja/integrations/clickpipes/postgres/ordering-keys)を必ず確認してください
 </Warning>
+
+8. さらに、宛先の [ClickHouse テーブルのパーティション化](/partitions)を制御するために、カスタムの `PARTITION BY <expr>` 式を指定できます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### 権限を確認して ClickPipe を開始する

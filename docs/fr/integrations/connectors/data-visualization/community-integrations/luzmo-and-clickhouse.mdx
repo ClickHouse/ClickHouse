@@ -1,9 +1,9 @@
 ---
 sidebarTitle: 'Luzmo'
 slug: /integrations/luzmo
-keywords: ['ClickHouse', 'Luzmo', 'connecter', 'intégrer', 'UI', 'embarqué']
-description: 'Luzmo est une plateforme d’analytique embarquée dotée d’une intégration ClickHouse native, conçue spécifiquement pour les applications logicielles et SaaS.'
-title: 'Intégration de Luzmo à ClickHouse'
+keywords: ['clickhouse', 'Luzmo', 'connect', 'integrate', 'ui', 'embedded']
+description: 'Luzmo est une plateforme d’analytics embarquée dotée d’une intégration ClickHouse native, conçue spécialement pour les applications logicielles et SaaS.'
+title: 'Intégration de Luzmo avec ClickHouse'
 sidebar: 'integrations'
 doc_type: 'guide'
 integration:
@@ -17,36 +17,34 @@ import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-<div id="1-setup-a-clickhouse-connection">
-  ## 1. Configurer une connexion à ClickHouse
-</div>
+<Steps>
+  <Step title="Configurer une connexion à ClickHouse" id="1-setup-a-clickhouse-connection">
+    Pour établir une connexion à ClickHouse, accédez à la **page Connections**, sélectionnez **New Connection**, puis choisissez ClickHouse dans la fenêtre modale **New Connection**.
 
-Pour établir une connexion à ClickHouse, accédez à la **page Connections**, sélectionnez **New Connection**, puis choisissez ClickHouse dans la fenêtre modale **New Connection**.
+    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Interface Luzmo affichant la boîte de dialogue Create a New Connection avec ClickHouse sélectionné" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Interface Luzmo affichant la boîte de dialogue Create a New Connection avec ClickHouse sélectionné" border />
+    Vous devrez renseigner un **host**, un **username** et un **password** :
 
-Vous devrez renseigner un **host**, un **username** et un **password** :
+    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Formulaire de configuration de connexion Luzmo affichant les champs pour le host, le username et le password de ClickHouse" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Formulaire de configuration de connexion Luzmo affichant les champs pour le host, le username et le password de ClickHouse" border />
+    * **Host** : il s’agit du host sur lequel votre base de données ClickHouse est exposée. Notez que seul `https` est autorisé ici afin de transférer les données de façon sécurisée. La structure attendue pour l’URL du host est la suivante : `https://url-to-clickhouse-db:port/database`
+      Par défaut, le plugin se connecte à la base de données &#39;default&#39; sur le port 443. En indiquant une base de données après le &#39;/&#39;, vous pouvez définir la base de données à laquelle vous connecter.
+    * **Username** : le username qui sera utilisé pour se connecter à votre cluster ClickHouse.
+    * **Password** : le password permettant de se connecter à votre cluster ClickHouse
 
-* **Host** : il s’agit du host sur lequel votre base de données ClickHouse est exposée. Notez que seul `https` est autorisé ici afin de transférer les données de façon sécurisée. La structure attendue pour l’URL du host est la suivante : `https://url-to-clickhouse-db:port/database`
-  Par défaut, le plugin se connecte à la base de données &#39;default&#39; sur le port 443. En indiquant une base de données après le &#39;/&#39;, vous pouvez définir la base de données à laquelle vous connecter.
-* **Username** : le username qui sera utilisé pour se connecter à votre cluster ClickHouse.
-* **Password** : le password permettant de se connecter à votre cluster ClickHouse
+    Consultez les exemples de notre documentation développeur pour savoir comment [créer une connexion à ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) via notre API.
+  </Step>
 
-Consultez les exemples de notre documentation développeur pour savoir comment [créer une connexion à ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) via notre API.
+  <Step title="Ajouter des datasets" id="2-add-datasets">
+    Une fois ClickHouse connecté, vous pouvez ajouter des datasets comme expliqué [ici](https://academy.luzmo.com/article/ldx3iltg). Vous pouvez sélectionner un ou plusieurs datasets disponibles dans ClickHouse et les [lier](https://academy.luzmo.com/article/gkrx48x5) dans Luzmo afin qu’ils puissent être utilisés ensemble dans un dashboard. N’oubliez pas non plus de consulter cet article sur la [préparation de vos données pour l’analytics](https://academy.luzmo.com/article/u492qov0).
 
-<div id="2-add-datasets">
-  ## 2. Ajouter des jeux de données
-</div>
+    Pour savoir comment ajouter des datasets à l’aide de notre API, veuillez consulter [cet exemple dans notre documentation développeur](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
 
-Une fois votre instance ClickHouse connectée, vous pouvez ajouter des jeux de données comme expliqué [ici](https://academy.luzmo.com/article/ldx3iltg). Vous pouvez sélectionner un ou plusieurs jeux de données disponibles dans ClickHouse et les [lier](https://academy.luzmo.com/article/gkrx48x5) dans Luzmo afin de pouvoir les utiliser ensemble dans un tableau de bord. Pensez également à consulter cet article sur la [préparation de vos données pour l’analyse](https://academy.luzmo.com/article/u492qov0).
+    Vous pouvez désormais utiliser vos datasets pour créer de superbes dashboards (embedded), ou même alimenter un AI Data Analyst ([Luzmo IQ](https://luzmo.com/iq)) capable de répondre aux questions de vos clients.
 
-Pour savoir comment ajouter des jeux de données à l’aide de notre API, consultez [cet exemple dans notre documentation développeur](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
-
-Vous pouvez désormais utiliser vos jeux de données pour créer de superbes tableaux de bord (intégrés), ou même alimenter un analyste de données IA ([Luzmo IQ](https://luzmo.com/iq)) capable de répondre aux questions de vos clients.
-
-<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Exemple de tableau de bord Luzmo montrant plusieurs visualisations de données issues de ClickHouse" border />
+    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Exemple de dashboard Luzmo affichant plusieurs visualisations de données provenant de ClickHouse" border />
+  </Step>
+</Steps>
 
 <div id="usage-notes">
   ## Notes d’utilisation
