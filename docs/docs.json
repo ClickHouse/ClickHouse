@@ -196,6 +196,9 @@
   },
   "scripts": [
     {
+      "src": "/_site/customizations/settings-legacy-redirect.js"
+    },
+    {
       "src": "/_site/customizations/galaxy.js"
     },
     {
