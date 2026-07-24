@@ -30,7 +30,7 @@ bool checkedSub(std::atomic<size_t> & value, size_t delta) noexcept
 
 void FileCacheUsageCounters::add(size_t size_delta, size_t elements_delta) noexcept
 {
-    if (!valid.load(std::memory_order_acquire))
+    if (!valid.load(std::memory_order_relaxed))
         return;
 
     size.fetch_add(size_delta, std::memory_order_relaxed);
@@ -39,11 +39,11 @@ void FileCacheUsageCounters::add(size_t size_delta, size_t elements_delta) noexc
 
 void FileCacheUsageCounters::sub(size_t size_delta, size_t elements_delta) noexcept
 {
-    if (!valid.load(std::memory_order_acquire))
+    if (!valid.load(std::memory_order_relaxed))
         return;
 
     if (!checkedSub(size, size_delta) || !checkedSub(elements, elements_delta))
-        valid.store(false, std::memory_order_release);
+        valid.store(false, std::memory_order_relaxed);
 }
 
 FileCacheUsageCountersHandle::FileCacheUsageCountersHandle(FileCacheUsageCounters * counters_) noexcept
@@ -88,7 +88,7 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
     for (auto it = usage_by_user.begin(); it != usage_by_user.end();)
     {
         const auto & [user_id, usage] = *it;
-        if (!usage->valid.load(std::memory_order_acquire))
+        if (!usage->valid.load(std::memory_order_relaxed))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
 
         const size_t entry_references = usage->entry_references.load(std::memory_order_acquire);
