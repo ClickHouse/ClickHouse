@@ -17,6 +17,11 @@
 
 namespace Poco { class Logger; }
 
+namespace CurrentMetrics
+{
+extern const Metric CacheFileSegments;
+}
+
 namespace DB
 {
 
@@ -61,8 +66,7 @@ public:
         bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        Priority::IteratorPtr queue_iterator_ = nullptr,
-        bool size_in_filename_ = false);
+        Priority::IteratorPtr queue_iterator_ = nullptr);
 
     ~FileSegment();
 
@@ -109,11 +113,6 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
-    /// Whether the segment's file on disk currently has its size encoded in the name
-    /// (`<offset>_<size>`). True once a regular segment is fully downloaded (or was loaded
-    /// from such a file on startup); false while still downloading or for legacy files.
-    bool hasSizeInFileName() const { return size_in_filename; }
-
     String getPath() const;
 
     int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
@@ -136,6 +135,8 @@ public:
     time_t getFinishedDownloadTime() const;
 
     size_t getHitsCount() const { return hits_count; }
+
+    size_t getRefCount() const { return ref_count; }
 
     size_t getCurrentWriteOffset() const;
 
@@ -209,16 +210,11 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    ///
-    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
-    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
-    /// ahead past what the read will consume.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr,
-        size_t reserve_hint = 0);
+        FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -247,14 +243,7 @@ public:
     bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
 
 private:
-    struct DownloadState;
-
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
-    DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
-    void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
-
-    /// In release builds returns a single shared logger; in debug builds a per-segment one.
-    const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
@@ -267,11 +256,6 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
-
-    /// Rename a fully downloaded regular segment's file from `<offset>` to `<offset>_<size>`,
-    /// so that startup metadata loading can read the size from the name instead of `stat`-ing
-    /// each file. No-op for ephemeral segments or if the size is already encoded.
-    void renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &);
     void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &, bool force_shrink_to_downloaded_size);
 
     void assertNotDetached() const;
@@ -294,50 +278,34 @@ private:
     const bool is_unbound;
     const bool background_download_enabled;
 
-    /// Whether the on-disk file is named `<offset>_<size>` (size encoded) rather than `<offset>`.
-    /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
-    /// fully downloaded; reads in `getPath` are lock-free and safe because of this.
-    std::atomic<bool> size_in_filename;
-
     std::atomic<State> download_state;
+    DownloaderId downloader_id; /// The one who prepares the download
     time_t download_finished_time = 0;
+
+    RemoteFileReaderPtr remote_file_reader;
+    LocalCacheWriterPtr cache_writer;
 
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-
-    /// State needed only while a segment is being downloaded. Created lazily when a downloader
-    /// is assigned and freed once the segment reaches a terminal state (DOWNLOADED/DETACHED),
-    /// so an already-cached file segment (the common case) does not pay for it.
-    /// Created/reset under `segment_guard`.
-    struct DownloadState
-    {
-        DownloaderId downloader_id; /// The one who prepares the download.
-        RemoteFileReaderPtr remote_file_reader;
-        LocalCacheWriterPtr cache_writer;
-        /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
-        mutable std::mutex write_mutex;
-    };
-    std::unique_ptr<DownloadState> download_data;
+    mutable std::mutex write_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
-    /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
-    std::atomic_flag increasing_priority;
+    std::mutex increase_priority_mutex;
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Per-segment logger with a unique name; only in debug/sanitizer builds.
-    /// In release all segments share one logger (see getLog()), so it is not stored per segment.
     LoggerPtr log;
-#endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
+    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 

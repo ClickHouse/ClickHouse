@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FilesystemImpl final : public IFunction
+class FilesystemImpl : public IFunction
 {
 public:
     using GetFunc = UInt64 (*)(const DiskPtr &);

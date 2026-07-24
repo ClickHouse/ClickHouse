@@ -8,8 +8,6 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -20,7 +18,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = VectorWithMemoryTracking<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -43,7 +41,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
+using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -317,54 +315,17 @@ public:
             || which == Types::Decimal256;
     }
 
-    /// Whether values of the type are single scalar values with a plain value comparison, as opposed
-    /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
-    /// different types are ordered by type index rather than by value) and opaque values
-    /// (AggregateFunctionState, CustomType).
-    static bool isScalar(Types::Which which)
-    {
-        switch (which)
-        {
-            case Types::Null:
-            case Types::UInt64:
-            case Types::Int64:
-            case Types::Float64:
-            case Types::UInt128:
-            case Types::Int128:
-            case Types::String:
-            case Types::Decimal32:
-            case Types::Decimal64:
-            case Types::Decimal128:
-            case Types::Decimal256:
-            case Types::UInt256:
-            case Types::Int256:
-            case Types::UUID:
-            case Types::Bool:
-            case Types::IPv4:
-            case Types::IPv6:
-                return true;
-            case Types::Array:
-            case Types::Tuple:
-            case Types::Map:
-            case Types::Object:
-            case Types::CustomType:
-            case Types::AggregateFunctionState:
-                return false;
-        }
-        UNREACHABLE();
-    }
-
     Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
       */
-    Field(const Field & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `create` before any read; zero-initializing it would clear the whole buffer on every construction of this very hot object
+    Field(const Field & rhs)
     {
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(Field && rhs) noexcept
     {
         create(std::move(rhs));
     }
@@ -385,7 +346,7 @@ public:
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
 
     template <typename CharT>
-    Field(const CharT * data, size_t size) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(const CharT * data, size_t size)
     {
         create(data, size);
     }
@@ -560,9 +521,9 @@ private:
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
-        > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
+        > storage;
 
-    Types::Which which{};
+    Types::Which which;
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.
@@ -803,7 +764,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
-Field::Field(T && rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `createConcrete` before any read
+Field::Field(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));

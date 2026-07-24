@@ -458,7 +458,7 @@ public:
     {
         Cell::State::read(rb);
         destroyElements();
-        size_t m_size = 0;
+        size_t m_size;
         DB::readVarUInt(m_size, rb);
         this->setSize(m_size);
         free();
@@ -479,7 +479,7 @@ public:
     {
         Cell::State::readText(rb);
         destroyElements();
-        size_t m_size = 0;
+        size_t m_size;
         DB::readText(m_size, rb);
         this->setSize(m_size);
         free();

@@ -9,7 +9,7 @@ namespace DB
 {
 
 template <typename Type>
-class SerializationEnum final : public SerializationNumber<Type>
+class SerializationEnum : public SerializationNumber<Type>
 {
 private:
     using typename SerializationNumber<Type>::FieldType;
@@ -63,9 +63,7 @@ public:
     {
         FieldType x;
         readText(x, istr);
-        /// Validate that value exists (throws if not found)
-        ref_enum_values.getNameForValue(x);
-        return x;
+        return ref_enum_values.findByValue(x)->first;
     }
 
     bool tryReadValue(ReadBuffer & istr, FieldType & x) const

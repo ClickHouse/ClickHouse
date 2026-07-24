@@ -14,7 +14,7 @@ namespace DB
 ///   - Input 2 (false branch): data port, used when signal does not fire.
 ///
 /// The selected input is forwarded to the output; the other data input is closed.
-class InputSelectorTransform final : public IProcessor
+class InputSelectorTransform : public IProcessor
 {
 public:
     explicit InputSelectorTransform(const Block & header);
