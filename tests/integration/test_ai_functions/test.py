@@ -165,6 +165,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_tool_use AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/tool_use', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -394,6 +401,18 @@ def test_generate_anthropic_max_tokens_throw(started_cluster):
         settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_classify_anthropic_structured_output(started_cluster):
+    """Anthropic structured output is a forced tool call, returned with `stop_reason="tool_use"`.
+    That is a completed response and must NOT be rejected as incomplete (regression guard: rejecting
+    `tool_use` broke every Anthropic `aiClassify`/`aiExtract` call)."""
+    result = instance.query(
+        "SELECT aiClassify('I love it', ['positive', 'negative', 'neutral'], "
+        "map('credentials', 'ai_anthropic_tool_use'))",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "positive"
 
 
 def last_request():

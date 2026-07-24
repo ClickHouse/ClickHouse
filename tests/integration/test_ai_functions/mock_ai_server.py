@@ -35,6 +35,8 @@ Endpoints:
       a complete answer that must NOT be rejected as truncated.
   POST /v1/anthropic/max_tokens      — Anthropic-shaped HTTP 200 with `stop_reason="max_tokens"`,
       a truncated answer that must be rejected.
+  POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
+      successful structured-output (forced tool call) response that must NOT be rejected.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
       the url table function (and so the AI functions) retries.
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
@@ -113,6 +115,26 @@ def make_anthropic_response(content, stop_reason="end_turn", input_tokens=10, ou
     return {
         "content": [{"type": "text", "text": content}],
         "stop_reason": stop_reason,
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+    }
+
+
+def make_anthropic_tool_use_response(body, input_tokens=10, output_tokens=5):
+    """Anthropic-shaped structured-output success: a forced `tool_use` block with
+    `stop_reason="tool_use"`. This is a completed response (`AnthropicProvider` parses the tool
+    input into the result), not a truncation — used to guard against rejecting it as incomplete.
+
+    The tool input is derived from the request's `tools[0].input_schema`, mirroring
+    `build_structured_response` so `aiClassify`/`aiExtract` post-processing produces a stable value.
+    """
+    data = json.loads(body)
+    tools = data.get("tools", [])
+    input_schema = tools[0].get("input_schema", {}) if tools else {}
+    user_msg = extract_user_message(body)
+    tool_input = json.loads(build_structured_response({"schema": input_schema}, user_msg))
+    return {
+        "content": [{"type": "tool_use", "name": "structured_output", "input": tool_input}],
+        "stop_reason": "tool_use",
         "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
     }
 
@@ -258,6 +280,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # rejected.
             user_msg = extract_user_message(body)
             self._send_json(200, make_anthropic_response(user_msg, stop_reason="max_tokens"))
+            return
+
+        if parsed.path == "/v1/anthropic/tool_use":
+            # Anthropic-shaped 200 with `stop_reason="tool_use"`: a successful structured-output
+            # response (forced tool call). Must NOT be rejected as incomplete.
+            self._send_json(200, make_anthropic_tool_use_response(body))
             return
 
         if parsed.path == "/v1/error":

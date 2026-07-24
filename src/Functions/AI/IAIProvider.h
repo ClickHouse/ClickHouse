@@ -70,10 +70,10 @@ struct AIRequest
 /// native vocabulary onto these values.
 enum class FinishReason : UInt8
 {
-    Complete, /// Full answer produced: a natural end, or a caller-supplied stop sequence was hit.
+    Complete, /// Full answer produced: natural end, a stop sequence, or Anthropic structured-output `tool_use`.
     Truncated, /// Output was cut off by a token limit (`max_tokens` / `length` / context window exceeded).
     ContentFilter, /// The provider withheld or filtered the content.
-    ToolCall, /// The model wants to call a tool. Not expected — text functions send no tools.
+    ToolCall, /// A tool-interaction signal we cannot consume as a final answer (e.g. OpenAI `tool_calls`, Anthropic `pause_turn`).
     Unknown, /// Unrecognized finish reason, potentially new reason introduced in API update.
 };
 
