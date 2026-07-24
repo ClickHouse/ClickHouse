@@ -6,7 +6,6 @@
 #include <base/cgroupsv2.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <Common/OSThreadNiceValue.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -33,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
 }
 
 #if defined(OS_LINUX)
@@ -178,9 +178,7 @@ std::optional<std::string> getCgroupsV1Path()
     return {default_cgroups_mount / "memory"};
 }
 
-}
-
-std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroupsPath()
+std::pair<std::string, ICgroupsReader::CgroupsVersion> getCgroupsPath()
 {
     auto v2_path = getCgroupsV2PathContainingFile("memory.current");
     if (v2_path.has_value())
@@ -191,6 +189,8 @@ std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroup
         return {*v1_path, ICgroupsReader::CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
+}
+
 }
 
 std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path)
@@ -224,27 +224,31 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
 /// Also, different tick rates are used because not all options are equally fast
 MemoryWorker::MemoryWorker(
-    MemoryWorkerConfig config,
+    uint64_t period_ms_,
+    [[maybe_unused]] double purge_dirty_pages_threshold_ratio_,
+    bool correct_tracker_,
+    bool use_cgroup,
     std::shared_ptr<PageCache> page_cache_)
     : log(getLogger("MemoryWorker"))
-    , rss_update_period_ms(config.rss_update_period_ms)
-    , correct_tracker(config.correct_tracker)
-    , purge_total_memory_threshold_ratio(config.purge_total_memory_threshold_ratio)
-    , purge_dirty_pages_threshold_ratio(config.purge_dirty_pages_threshold_ratio)
+    , period_ms(period_ms_)
+    , correct_tracker(correct_tracker_)
     , page_cache(page_cache_)
 {
 #if USE_JEMALLOC
+    purge_dirty_pages_threshold_ratio = purge_dirty_pages_threshold_ratio_;
     page_size = pagesize_mib.getValue();
+#else
+    purge_dirty_pages_threshold_ratio = 0;
 #endif
 
-    if (config.use_cgroup)
+    if (use_cgroup)
     {
 #if defined(OS_LINUX)
         try
         {
             static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-            const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
+            const auto [cgroup_path, version] = getCgroupsPath();
             LOG_INFO(
                 getLogger("CgroupsReader"),
                 "Will create cgroup reader from '{}' (cgroups version: {})",
@@ -253,8 +257,8 @@ MemoryWorker::MemoryWorker(
 
             cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
             source = MemoryUsageSource::Cgroups;
-            if (rss_update_period_ms == 0)
-                rss_update_period_ms = cgroups_memory_usage_tick_ms;
+            if (period_ms == 0)
+                period_ms = cgroups_memory_usage_tick_ms;
 
             return;
         }
@@ -269,8 +273,8 @@ MemoryWorker::MemoryWorker(
     static constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
 
     source = MemoryUsageSource::Jemalloc;
-    if (rss_update_period_ms == 0)
-        rss_update_period_ms = jemalloc_memory_usage_tick_ms;
+    if (period_ms == 0)
+        period_ms = jemalloc_memory_usage_tick_ms;
 #endif
 }
 
@@ -284,119 +288,93 @@ void MemoryWorker::start()
     if (source == MemoryUsageSource::None)
         return;
 
-    const std::string purge_dirty_pages_info = purge_dirty_pages_threshold_ratio > 0 || purge_total_memory_threshold_ratio > 0
-        ? fmt::format(
-              "enabled (total memory threshold ratio: {}, dirty pages threshold ratio: {}, page size: {})",
-              purge_total_memory_threshold_ratio,
-              purge_dirty_pages_threshold_ratio,
-              page_size)
+    const std::string purge_dirty_pages_info = purge_dirty_pages_threshold_ratio > 0
+        ? fmt::format("enabled (threshold ratio: {}, page size: {})", purge_dirty_pages_threshold_ratio, page_size)
         : "disabled";
 
     LOG_INFO(
         log,
         "Starting background memory thread with period of {}ms, using {} as source, purging dirty pages {}",
-        rss_update_period_ms,
+        period_ms,
         sourceToString(source),
         purge_dirty_pages_info);
 
-    update_resident_memory_thread = ThreadFromGlobalPool([this] { updateResidentMemoryThread(); });
-
-#if USE_JEMALLOC
-    purge_dirty_pages_thread = ThreadFromGlobalPool([this] { purgeDirtyPagesThread(); });
-#endif
+    background_thread = ThreadFromGlobalPool([this] { backgroundThread(); });
 }
 
 MemoryWorker::~MemoryWorker()
 {
     {
-        std::scoped_lock lock(rss_update_mutex, purge_dirty_pages_mutex);
+        std::unique_lock lock(mutex);
         shutdown = true;
     }
+    cv.notify_all();
 
-    rss_update_cv.notify_all();
-    purge_dirty_pages_cv.notify_all();
-
-    if (update_resident_memory_thread.joinable())
-        update_resident_memory_thread.join();
-
-#if USE_JEMALLOC
-    if (purge_dirty_pages_thread.joinable())
-        purge_dirty_pages_thread.join();
-#endif
+    if (background_thread.joinable())
+        background_thread.join();
 }
 
-uint64_t MemoryWorker::getMemoryUsage(bool log_error)
+uint64_t MemoryWorker::getMemoryUsage()
 {
     switch (source)
     {
         case MemoryUsageSource::Cgroups:
-        {
-            if (cgroups_reader != nullptr)
-                return cgroups_reader->readMemoryUsage();
-            [[fallthrough]];
-        }
+            return cgroups_reader != nullptr ? cgroups_reader->readMemoryUsage() : 0;
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
             return resident_mib.getValue();
 #else
-            [[fallthrough]];
+            return 0;
 #endif
         case MemoryUsageSource::None:
-        {
-            if (log_error)
-                LOG_ERROR(getLogger("MemoryWorker"), "Trying to fetch memory usage while no memory source can be used");
-            return 0;
-        }
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Trying to fetch memory usage while no memory source can be used");
     }
 }
 
-void MemoryWorker::updateResidentMemoryThread()
+void MemoryWorker::backgroundThread()
 {
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
-    /// Set the biggest priority for this thread to avoid drift
-    /// under the CPU starvation.
-    OSThreadNiceValue::set(-20);
-
-    std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
+    std::chrono::milliseconds chrono_period_ms{period_ms};
     [[maybe_unused]] bool first_run = true;
-    std::unique_lock rss_update_lock(rss_update_mutex);
+    std::unique_lock lock(mutex);
 
     while (true)
     {
-        rss_update_cv.wait_for(rss_update_lock, chrono_period_ms, [this] { return shutdown; });
+        cv.wait_for(lock, chrono_period_ms, [this] { return shutdown; });
         if (shutdown)
             return;
 
         Stopwatch total_watch;
 
-        Int64 resident = getMemoryUsage(first_run);
+        Int64 resident = getMemoryUsage();
         MemoryTracker::updateRSS(resident);
 
         if (page_cache)
             page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
+
         const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
-        const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
-        const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
 
-        const bool needs_purge = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(resident) > purge_total_memory_threshold)
+        const bool needs_purge = resident > memory_tracker_limit
             || (purge_dirty_pages_threshold_ratio > 0
-                && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
+                && pdirty_mib.getValue() * page_size > memory_tracker_limit * purge_dirty_pages_threshold_ratio);
 
-        bool is_purge_enabled = false;
-        if (needs_purge && purge_dirty_pages.compare_exchange_strong(is_purge_enabled, true, std::memory_order_relaxed))
+        if (needs_purge)
         {
-            purge_dirty_pages_cv.notify_all();
+            Stopwatch purge_watch;
+            purge_mib.run();
+            ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+            ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }
 
         /// update MemoryTracker with `allocated` information from jemalloc when:
         ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
         ///  - MemoryTracker stores a negative value
         ///  - `correct_tracker` is set to true
-        if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
+        if (unlikely(first_run || total_memory_tracker.get() < 0))
             MemoryTracker::updateAllocated(resident, /*log_change=*/true);
         else if (correct_tracker)
             MemoryTracker::updateAllocated(resident, /*log_change=*/false);
@@ -406,7 +384,7 @@ void MemoryWorker::updateResidentMemoryThread()
         /// resident memory can be much larger than the actual allocated memory
         /// so we rather ignore the potential difference caused by allocated memory
         /// before MemoryTracker initialization
-        if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
+        if (unlikely(total_memory_tracker.get() < 0) || correct_tracker)
             MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #endif
 
@@ -414,36 +392,6 @@ void MemoryWorker::updateResidentMemoryThread()
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
         first_run = false;
     }
-}
-
-void MemoryWorker::purgeDirtyPagesThread()
-{
-#if USE_JEMALLOC
-    /// Instead of having completely separate logic for purging dirty pages,
-    /// we rely on the main thread to notify us when we need to purge dirty pages.
-    /// We do it to avoid reading RSS value in both threads. Even though they are fairly
-    /// fast, they are still not free.
-    /// So we keep the work of reading current RSS in one thread which allows us to keep the low period time for it.
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
-
-    std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
-
-    while (true)
-    {
-        purge_dirty_pages_cv.wait(purge_dirty_pages_lock, [this] { return shutdown || purge_dirty_pages.load(std::memory_order_relaxed); });
-        if (shutdown)
-            return;
-
-        bool is_purge_enabled = true;
-        if (!purge_dirty_pages.compare_exchange_strong(is_purge_enabled, false, std::memory_order_relaxed))
-            continue;
-
-        Stopwatch purge_watch;
-        purge_mib.run();
-        ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
-        ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
-    }
-#endif
 }
 
 }

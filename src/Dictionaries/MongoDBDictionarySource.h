@@ -5,7 +5,6 @@
 #if USE_MONGODB
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <QueryPipeline/BlockIO.h>
 
 #include <Core/Block.h>
 #include <Storages/StorageMongoDB.h>
@@ -30,18 +29,18 @@ public:
 
     ~MongoDBDictionarySource() override;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for MongoDBDictionarySource");
     }
 
     bool supportsSelectiveLoad() const override { return true; }
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     /// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }

@@ -8,11 +8,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric NamedCollection;
-}
-
 namespace DB
 {
 
@@ -23,7 +18,6 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
 }
-
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
 {
@@ -249,7 +243,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     if (metadata_storage->isReplicated())
     {
-        update_task = context->getSchedulePool().createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
+        update_task = context->getSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }
@@ -322,7 +316,6 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
 
     metadata_storage->remove(query.collection_name);
     remove(query.collection_name, lock);
-    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 }
 
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)
@@ -387,34 +380,34 @@ void NamedCollectionFactory::updateFunc()
 
     while (!shutdown_called.load())
     {
-        try
+        if (metadata_storage->waitUpdate())
         {
-            if (metadata_storage->waitUpdate())
+            try
             {
                 reloadFromSQL();
             }
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (Coordination::isHardwareError(e.code))
+            catch (const Coordination::Exception & e)
             {
-                LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
-                        DB::getCurrentExceptionMessage(true));
+                if (Coordination::isHardwareError(e.code))
+                {
+                    LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
+                            DB::getCurrentExceptionMessage(true));
 
-                sleepForSeconds(1);
+                    sleepForSeconds(1);
+                }
+                else
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
+                }
+                continue;
             }
-            else
+            catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
                 chassert(false);
+                continue;
             }
-            continue;
-        }
-        catch (...)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-            chassert(false);
-            continue;
         }
     }
 

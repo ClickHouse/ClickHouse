@@ -14,10 +14,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Priority.h>
 #include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Logger.h>
-#include <Common/AsyncLoader_fwd.h>
 
 
 namespace Poco { class Logger; }

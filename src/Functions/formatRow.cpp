@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Port.h>
 
 #include <memory>
 #include <ranges>
@@ -154,103 +155,8 @@ private:
 
 REGISTER_FUNCTION(FormatRow)
 {
-    /// formatRow documentation
-    FunctionDocumentation::Description formatRow_description = R"(
-Converts arbitrary expressions into a string via given format.
-
-:::note
-If the format contains a suffix/prefix, it will be written in each row.
-Only row-based formats are supported in this function.
-:::
-    )";
-    FunctionDocumentation::Syntax formatRow_syntax = "formatRow(format, x, y, ...)";
-    FunctionDocumentation::Arguments formatRow_arguments =
-    {
-        {"format", "Text format. For example, CSV, TSV.", {"String"}},
-        {"x, y, ...", "Expressions.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue formatRow_returned_value = {"A formatted string. (for text formats it's usually terminated with the new line character).", {"String"}};
-    FunctionDocumentation::Examples formatRow_examples =
-    {
-    {
-        "Basic usage",
-        R"(
-SELECT formatRow('CSV', number, 'good')
-FROM numbers(3)
-        )",
-        R"(
-┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"
-                         │
-│ 1,"good"
-                         │
-│ 2,"good"
-                         │
-└──────────────────────────────────┘
-        )"
-    },
-    {
-        "With custom format",
-        R"(
-SELECT formatRow('CustomSeparated', number, 'good')
-FROM numbers(3)
-SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
-        )",
-        R"(
-┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>
-0    good
-<suffix>                   │
-│ <prefix>
-1    good
-<suffix>                   │
-│ <prefix>
-2    good
-<suffix>                   │
-└──────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn formatRow_introduced_in = {20, 7};
-    FunctionDocumentation::Category formatRow_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation formatRow_documentation = {formatRow_description, formatRow_syntax, formatRow_arguments, {}, formatRow_returned_value, formatRow_examples, formatRow_introduced_in, formatRow_category};
-
-    /// formatRowNoNewline documentation
-    FunctionDocumentation::Description formatRowNoNewline_description = R"(
-Same as [`formatRow`](#formatRow), but trims the newline character of each row.
-
-Converts arbitrary expressions into a string via given format, but removes any trailing newline characters from the result.
-    )";
-    FunctionDocumentation::Syntax formatRowNoNewline_syntax = "formatRowNoNewline(format, x, y, ...)";
-    FunctionDocumentation::Arguments formatRowNoNewline_arguments =
-    {
-        {"format", "Text format. For example, CSV, TSV.", {"String"}},
-        {"x, y, ...", "Expressions.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue formatRowNoNewline_returned_value = {"Returns a formatted string with newlines removed.", {"String"}};
-    FunctionDocumentation::Examples formatRowNoNewline_examples =
-    {
-    {
-        "Basic usage",
-        R"(
-SELECT formatRowNoNewline('CSV', number, 'good')
-FROM numbers(3)
-        )",
-        R"(
-┌─formatRowNoNewline('CSV', number, 'good')─┐
-│ 0,"good"                                  │
-│ 1,"good"                                  │
-│ 2,"good"                                  │
-└───────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn formatRowNoNewline_introduced_in = {20, 7};
-    FunctionDocumentation::Category formatRowNoNewline_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation formatRowNoNewline_documentation = {formatRowNoNewline_description, formatRowNoNewline_syntax, formatRowNoNewline_arguments, {}, formatRowNoNewline_returned_value, formatRowNoNewline_examples, formatRowNoNewline_introduced_in, formatRowNoNewline_category};
-
-    factory.registerFunction<FormatRowOverloadResolver<false>>(formatRow_documentation);
-    factory.registerFunction<FormatRowOverloadResolver<true>>(formatRowNoNewline_documentation);
+    factory.registerFunction<FormatRowOverloadResolver<true>>();
+    factory.registerFunction<FormatRowOverloadResolver<false>>();
 }
 
 }

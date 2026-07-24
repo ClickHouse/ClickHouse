@@ -5,7 +5,7 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 # Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
     OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
     COMMAND_ERROR_IS_FATAL ANY
     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -63,7 +63,7 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-elseif (NOT ARCH_S390X AND NOT OS_FREEBSD AND NOT OS_SUNOS)
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 else ()
     message(STATUS "Using linker: <default>")

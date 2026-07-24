@@ -295,14 +295,14 @@ def test_list_tables(started_cluster):
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
         ).strip()
     )
     node.restart_clickhouse()
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
         ).strip()
     )
 
@@ -354,7 +354,7 @@ def test_select(started_cluster):
         )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
     assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
 
 
@@ -382,6 +382,7 @@ def test_hide_sensitive_info(started_cluster):
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
 
 
 def test_select_after_rename(started_cluster):
@@ -577,141 +578,3 @@ def test_drop_table(started_cluster):
 
     drop_clickhouse_glue_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0
-
-
-def test_system_tables(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_system_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    namespaces_to_create = [
-        root_namespace,
-        f"{root_namespace}_A",
-        f"{root_namespace}_B",
-        f"{root_namespace}_C",
-    ]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    for namespace in namespaces_to_create:
-        catalog.create_namespace(namespace)
-        assert len(catalog.list_tables(namespace)) == 0
-
-    for namespace in namespaces_to_create:
-        table = create_table(catalog, namespace, table_name)
-
-        num_rows = 10
-        df = generate_arrow_data(num_rows)
-        table.append(df)
-
-        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
-        assert expected == node.query(
-            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
-        )
-
-        assert num_rows == int(
-            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
-        )
-
-    assert CATALOG_NAME in node.query("SHOW DATABASES")
-    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
-    # system.tables
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
-
-    # system.iceberg_history - always displays irrespective of show_data_lake_catalogs_in_system_tables
-    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 4
-
-    # system.databases
-    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 1
-    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}'").strip()) == 0
-
-    # system.columns
-    assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 24
-    assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
-
-    # system.completions
-    assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}') SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) != 0
-    assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}')").strip()) == 0
-
-
-def test_table_without_metadata_location(started_cluster):
-    """
-    Test that ClickHouse can read Iceberg tables from Glue when 'metadata_location' is not present in Glue parameters.
-    Glue's Location field is used to deduce the metadata location.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_no_metadata_location_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    # Use unique database name to avoid interference with other tests (as we are playing with Glue metadata here)
-    db_name = f"db_{test_ref.replace('-', '_')}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-
-    schema = Schema(
-        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
-    )
-    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
-
-    data = [
-        {"id": "row1", "value": 1.5},
-        {"id": "row2", "value": 2.5},
-        {"id": "row3", "value": 3.5},
-    ]
-    df = pa.Table.from_pylist(data)
-    table.append(df)
-
-    glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
-    )
-
-    table_response = glue_client.get_table(
-        DatabaseName=root_namespace,
-        Name=table_name
-    )
-    table_info = table_response["Table"]
-
-    # Verify metadata_location exists before we remove it
-    assert "metadata_location" in table_info.get("Parameters", {}), "Test setup failed: metadata_location should exist initially"
-
-    # Remove metadata_location from parameters but keep other parameters
-    new_parameters = {k: v for k, v in table_info.get("Parameters", {}).items() if k != "metadata_location"}
-    glue_client.update_table(
-        DatabaseName=root_namespace,
-        TableInput={
-            "Name": table_name,
-            "StorageDescriptor": table_info["StorageDescriptor"],
-            "Parameters": new_parameters,
-            "TableType": table_info.get("TableType", "EXTERNAL_TABLE"),
-        }
-    )
-
-    # Verify metadata_location was removed
-    updated_table = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)
-    assert "metadata_location" not in updated_table["Table"].get("Parameters", {}), "Failed to remove metadata_location"
-    assert updated_table["Table"]["StorageDescriptor"]["Location"], "Location should still be present"
-
-    create_clickhouse_glue_database(started_cluster, node, db_name)
-
-    # Verify SHOW TABLES FROM works
-    tables_result = node.query(f"SHOW TABLES FROM {db_name} LIKE '%{table_name}%'")
-    assert table_name in tables_result, f"Table {table_name} not found in SHOW TABLES: {tables_result}"
-
-    # Query should work even without metadata_location in Glue
-    result = node.query(f"SELECT id, value FROM {db_name}.`{root_namespace}.{table_name}` ORDER BY id")
-    assert result == "row1\t1.5\nrow2\t2.5\nrow3\t3.5\n", f"Unexpected result: {result}"
-
-    # Also verify SHOW CREATE TABLE works
-    create_table_result = node.query(f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`")
-    assert "Iceberg" in create_table_result, f"Expected Iceberg engine in: {create_table_result}"
-
-    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

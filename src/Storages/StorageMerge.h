@@ -140,8 +140,6 @@ private:
 
     ColumnSizeByName getColumnSizes() const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
-
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();

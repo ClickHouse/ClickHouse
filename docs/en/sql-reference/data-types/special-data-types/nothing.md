@@ -4,7 +4,6 @@ sidebar_label: 'Nothing'
 sidebar_position: 60
 slug: /sql-reference/data-types/special-data-types/nothing
 title: 'Nothing'
-doc_type: 'reference'
 ---
 
 # Nothing

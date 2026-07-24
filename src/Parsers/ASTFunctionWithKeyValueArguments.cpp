@@ -16,7 +16,7 @@ String ASTPair::getID(char) const
 
 ASTPtr ASTPair::clone() const
 {
-    auto res = make_intrusive<ASTPair>(*this);
+    auto res = std::make_shared<ASTPair>(*this);
     res->children.clear();
     res->set(res->second, second->clone());
     return res;
@@ -80,7 +80,7 @@ String ASTFunctionWithKeyValueArguments::getID(char delim) const
 
 ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 {
-    auto res = make_intrusive<ASTFunctionWithKeyValueArguments>(*this);
+    auto res = std::make_shared<ASTFunctionWithKeyValueArguments>(*this);
     res->children.clear();
 
     if (elements)

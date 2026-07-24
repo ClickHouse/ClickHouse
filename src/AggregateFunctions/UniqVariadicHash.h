@@ -46,15 +46,15 @@ struct UniqVariadicHash<false, false>
         const IColumn ** columns_end = column + num_args;
 
         {
-            auto value = (*column)->getDataAt(row_num);
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            StringRef value = (*column)->getDataAt(row_num);
+            hash = CityHash_v1_0_2::CityHash64(value.data, value.size);
             ++column;
         }
 
         while (column < columns_end)
         {
-            auto value = (*column)->getDataAt(row_num);
-            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data(), value.size()), hash));
+            StringRef value = (*column)->getDataAt(row_num);
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data, value.size), hash));
             ++column;
         }
 
@@ -78,15 +78,15 @@ struct UniqVariadicHash<false, true>
         const auto * columns_end = column + num_args;
 
         {
-            auto value = column->get()->getDataAt(row_num);
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            StringRef value = column->get()->getDataAt(row_num);
+            hash = CityHash_v1_0_2::CityHash64(value.data, value.size);
             ++column;
         }
 
         while (column < columns_end)
         {
-            auto value = column->get()->getDataAt(row_num);
-            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data(), value.size()), hash));
+            StringRef value = column->get()->getDataAt(row_num);
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data, value.size), hash));
             ++column;
         }
 

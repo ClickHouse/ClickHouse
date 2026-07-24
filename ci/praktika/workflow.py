@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 from . import Artifact, Job
 from .docker import Docker
@@ -52,12 +52,6 @@ class Workflow:
         enable_dockers_manifest_merge: bool = False
         # If latest tag shpuld be added for merged docker manifest, enable with .enable_dockers_manifest_merge
         set_latest_for_docker_merged_manifest: bool = False
-        # if enabled, Finish job will fetch open gh issues and match failed tests with them
-        enable_open_issues_check: bool = False
-        # If enabled, CI events will be accumulated and stored, allowing users to subscribe to notifications via the Slack Praktika app
-        enable_slack_feed: bool = False
-        # Job aliases for easy job reference with `praktika run job_alias --test TEST_NAME` in local environment
-        job_aliases: Dict[str, str] = field(default_factory=dict)
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -81,11 +75,6 @@ class Workflow:
             return jobs[0]
 
         def find_jobs(self, name, lazy=False):
-            if self.job_aliases and name in self.job_aliases:
-                print(
-                    f"NOTE: job alias [{name}] refers to job [{self.job_aliases[name]}]"
-                )
-                name = self.job_aliases[name]
             name = str(name)
             res = []
             for job in self.jobs:

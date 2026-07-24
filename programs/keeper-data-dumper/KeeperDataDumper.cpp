@@ -47,9 +47,9 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
         for (const auto & child : value.getChildren())
         {
             if (key == "/")
-                keys.push(key + std::string{child});
+                keys.push(key + child.toString());
             else
-                keys.push(key + "/" + std::string{child});
+                keys.push(key + "/" + child.toString());
         }
     }
     std::cout << std::flush;

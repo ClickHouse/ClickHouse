@@ -10,7 +10,6 @@
 #include <Parsers/FieldFromAST.h>
 
 #include <Core/Names.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -145,7 +144,7 @@ protected:
             map.push_back(std::move(tuple));
         }
 
-        node = make_intrusive<ASTLiteral>(std::move(map));
+        node = std::make_shared<ASTLiteral>(std::move(map));
         return true;
     }
 };
@@ -229,7 +228,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
@@ -239,14 +238,11 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;
 
-    have_eq = s_eq.ignore(pos, expected);
-
-    if (!enable_shorthand_syntax && !have_eq)
+    if (!s_eq.ignore(pos, expected))
         return false;
 
     tryGetIdentifierNameInto(node, name);
@@ -254,9 +250,6 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     /// Parameter
     if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
     {
-        if (!have_eq)
-            return false;
-
         name = name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (name.empty())
@@ -271,42 +264,23 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         return true;
     }
 
-    if (have_eq)
+    /// Default
+    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
     {
-        /// Default
-        if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
-        {
-            default_settings = name;
-            return true;
-        }
-
-        /// Setting
-        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
-        {
-            change.name = name;
-            change.value = createFieldFromAST(function_ast);
-
-            return true;
-        }
-
-        if (!value_p.parse(pos, node, expected))
-            return false;
+        default_settings = name;
+        return true;
     }
-    else
+
+    /// Setting
+    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        try
-        {
-            Field type_test = Settings::castValueUtil(name, true);
-            if (type_test.getType() == Field::Types::Which::Bool)
-                node = make_intrusive<ASTLiteral>(Field(true));
-            else
-                return false;
-        }
-        catch (...)
-        {
-            return false;
-        }
+        change.name = name;
+        change.value = createFieldFromAST(function_ast);
+
+        return true;
     }
+    if (!value_p.parse(pos, node, expected))
+        return false;
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
@@ -344,7 +318,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String name_of_default_setting;
         Parameter parameter;
 
-        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, shorthand_syntax))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected))
             return false;
 
         if (!parameter.first.empty())
@@ -355,7 +329,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             changes.push_back(std::move(setting));
     }
 
-    auto query = make_intrusive<ASTSetQuery>();
+    auto query = std::make_shared<ASTSetQuery>();
     node = query;
 
     query->is_standalone = !parse_only_internals;

@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB
 {
@@ -23,21 +21,6 @@ void ReadFromLocalParallelReplicaStep::initializePipeline(QueryPipelineBuilder &
 
 QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
 {
-    chassert(query_plan);
-
-    auto qp = std::move(query_plan);
-    query_plan.reset();
-    return qp;
+    return std::move(query_plan);
 }
-
-void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
-{
-    output_header = std::make_shared<const Block>(
-        FilterTransform::transformHeader(*output_header, &filter.actions, filter.column_name, filter.do_remove_column));
-
-    auto filter_step = std::make_unique<FilterStep>(
-        query_plan->getCurrentHeader(), std::move(filter.actions), std::move(filter.column_name), filter.do_remove_column);
-    query_plan->addStep(std::move(filter_step));
-}
-
 }

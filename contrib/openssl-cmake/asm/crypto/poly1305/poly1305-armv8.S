@@ -40,14 +40,10 @@ poly1305_init:
 
 	tst	w17,#ARMV7_NEON
 
-	adrp	x12,poly1305_blocks
-	add	x12,x12,#:lo12:.Lpoly1305_blocks
-	adrp	x7,poly1305_blocks_neon
-	add	x7,x7,#:lo12:.Lpoly1305_blocks_neon
-	adrp	x13,poly1305_emit
-	add	x13,x13,#:lo12:.Lpoly1305_emit
-	adrp	x8,poly1305_emit_neon
-	add	x8,x8,#:lo12:.Lpoly1305_emit_neon
+	adr	x12,.Lpoly1305_blocks
+	adr	x7,.Lpoly1305_blocks_neon
+	adr	x13,.Lpoly1305_emit
+	adr	x8,.Lpoly1305_emit_neon
 
 	csel	x12,x12,x7,eq
 	csel	x13,x13,x8,eq
@@ -377,8 +373,7 @@ poly1305_blocks_neon:
 	ldr	x30,[sp,#8]
 
 	add	x16,x1,#32
-	adrp	x17,.Lzeros
-	add	x17,x17,#:lo12:.Lzeros
+	adr	x17,.Lzeros
 	subs	x2,x2,#64
 	csel	x16,x17,x16,lo
 
@@ -390,8 +385,7 @@ poly1305_blocks_neon:
 .align	4
 .Leven_neon:
 	add	x16,x1,#32
-	adrp	x17,.Lzeros
-	add	x17,x17,#:lo12:.Lzeros
+	adr	x17,.Lzeros
 	subs	x2,x2,#64
 	csel	x16,x17,x16,lo
 
@@ -873,8 +867,6 @@ poly1305_emit_neon:
 
 	ret
 .size	poly1305_emit_neon,.-poly1305_emit_neon
-
-.section	.rodata
 
 .align	5
 .Lzeros:

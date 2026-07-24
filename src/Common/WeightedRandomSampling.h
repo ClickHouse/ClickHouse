@@ -5,7 +5,6 @@
 #include <Common/thread_local_rng.h>
 
 #include <base/defines.h>
-#include <base/sort.h>
 
 
 namespace DB
@@ -43,7 +42,7 @@ std::vector<typename Container::const_iterator> pickWeightedRandom(const Contain
     }
 
     /// Sort in descending order to pickup top k
-    ::partial_sort(
+    std::partial_sort(
         keys.begin(), keys.begin() + count, keys.end(), [](const auto & lhs, const auto & rhs) { return lhs.second > rhs.second; });
 
     std::vector<Iterator> selected;

@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTObjectTypedPathArgument::clone() const
 {
-    auto res = make_intrusive<ASTObjectTypedPathArgument>(*this);
+    auto res = std::make_shared<ASTObjectTypedPathArgument>(*this);
     res->children.clear();
 
     if (type)
@@ -36,7 +36,7 @@ void ASTObjectTypedPathArgument::formatImpl(
 
 ASTPtr ASTObjectTypeArgument::clone() const
 {
-    auto res = make_intrusive<ASTObjectTypeArgument>(*this);
+    auto res = std::make_shared<ASTObjectTypeArgument>(*this);
     res->children.clear();
 
     if (path_with_type)

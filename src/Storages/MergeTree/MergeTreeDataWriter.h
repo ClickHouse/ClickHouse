@@ -10,7 +10,6 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -19,9 +18,6 @@
 
 namespace DB
 {
-
-class DeduplicationInfo;
-using DeduplicationInfoPtr = std::shared_ptr<DeduplicationInfo>;
 
 void buildScatterSelector(
     const ColumnRawPtrs & columns,
@@ -66,7 +62,7 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.

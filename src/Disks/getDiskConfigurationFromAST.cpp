@@ -113,10 +113,10 @@ ASTs convertDiskConfigurationToAST(const Poco::Util::AbstractConfiguration & con
     for (const auto & key : keys)
     {
         result.push_back(
-            makeASTOperator(
+            makeASTFunction(
                 "equals",
-                make_intrusive<ASTIdentifier>(key),
-                make_intrusive<ASTLiteral>(configuration.getString(config_path + "." + key))));
+                std::make_shared<ASTIdentifier>(key),
+                std::make_shared<ASTLiteral>(configuration.getString(config_path + "." + key))));
     }
 
     return result;

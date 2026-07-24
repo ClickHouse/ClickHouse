@@ -31,11 +31,7 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's TimeSeriesSelector but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "TimeSeriesSelector"; }
 
     StorageID time_series_storage_id = StorageID::createEmpty();
     PrometheusQueryTree instant_selector;

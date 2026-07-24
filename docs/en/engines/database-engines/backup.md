@@ -5,12 +5,11 @@ sidebar_label: 'Backup'
 sidebar_position: 60
 slug: /engines/database-engines/backup
 title: 'Backup'
-doc_type: 'reference'
 ---
 
 # Backup
 
-Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
+Database backup allows to instantly attach table/database from [backups](../../operations/backup) in read-only mode.
 
 Database backup works with both incremental and non-incremental backups.
 
@@ -21,7 +20,7 @@ CREATE DATABASE backup_database
 ENGINE = Backup('database_name_inside_backup', 'backup_destination')
 ```
 
-Backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk) like `Disk`, `S3`, `File`.
+Backup destination can be any valid backup [destination](../../operations/backup#configure-a-backup-destination) like `Disk`, `S3`, `File`.
 
 With `Disk` backup destination, query to create database from backup looks like this:
 

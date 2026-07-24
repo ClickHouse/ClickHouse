@@ -45,6 +45,7 @@ extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
+extern const int SYNTAX_ERROR;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -84,28 +85,16 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
             auto & column = *column_ptr;
 
             /// There's no optimization for right side const columns. Remove constness if any.
-            column.column = column.column->convertToFullColumnIfConst();
-            auto actual_column = column.column;
-            /// We support replicated columns on the right side.
-            const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
-            if (replicated_column)
-                actual_column = replicated_column->getNestedColumn();
-            /// Sparse columns are not supported on the right side.
-            actual_column = recursiveRemoveSparse(actual_column);
+            column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
 
-            if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
+            if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
             {
-                actual_column = actual_column->convertToFullColumnIfLowCardinality();
+                column.column = column.column->convertToFullColumnIfLowCardinality();
                 column.type = removeLowCardinality(column.type);
             }
 
-            column.column = actual_column;
-
             if (sample_column.column->isNullable())
                 JoinCommon::convertColumnToNullable(column);
-
-            if (replicated_column)
-                column.column = ColumnReplicated::create(column.column, replicated_column->getIndexesColumn());
         }
     }
 
@@ -151,18 +140,9 @@ HashJoin::HashJoin(
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
-    , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
-    , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
-    if (joined_block_split_single_row && max_joined_block_rows == 0)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Setting `joined_block_split_single_row` is set to true, but `max_joined_block_rows` is 0 (no limit). "
-            "Set max_joined_block_rows > 0 or use `max_joined_block_bytes` with default `max_joined_block_rows` (by default equals to block size).");
-    }
-
     for (auto & column : right_sample_block)
     {
         if (!column.column)
@@ -231,7 +211,7 @@ HashJoin::HashJoin(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Wrong ASOF JOIN type. Only ASOF and LEFT ASOF joins are supported");
 
             if (key_columns.size() <= 1)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join with hash algorithm needs at least one equi-join column");
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "ASOF join needs at least one equi-join column");
 
             size_t asof_size;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
@@ -276,29 +256,25 @@ HashJoin::HashJoin(
 
 size_t HashJoin::ScatteredColumns::allocatedBytes() const
 {
-    if (columns_info.columns.empty())
+    if (columns.empty())
         return 0;
 
-    size_t rows = columns_info.columns.front()->size();
+    size_t rows = columns.front()->size();
     if (rows == 0)
         return 0;
 
     size_t res = 0;
-    for (const auto & column : columns_info.columns)
+    for (const auto & column : columns)
         res += column->allocatedBytes();
     return res * selector.size() / rows;
 }
 
 size_t HashJoin::NullMapHolder::allocatedBytes() const
 {
-    if (!column)
-        return 0;
     size_t rows = column->size();
     if (rows == 0)
         return 0;
-    if (rows < selector_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The column size is smaller than the cached size");
-    return column->allocatedBytes() * selector_rows / rows;
+    return column->allocatedBytes() * columns->selector.size() / rows;
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -447,7 +423,7 @@ bool HashJoin::empty() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    return (isInnerOrRight(getKind()) || isCrossOrComma(getKind())) && data->rows_to_join == 0;
+    return isInnerOrRight(getKind()) && data->empty;
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -460,7 +436,7 @@ size_t HashJoin::getTotalRowCount() const
     if (data->type == Type::CROSS)
     {
         for (const auto & columns : data->columns)
-            res += columns.columns_info.columns.at(0)->size();
+            res += columns.columns.at(0)->size();
     }
     else
     {
@@ -677,7 +653,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        all_key_columns[column_name] = removeSpecialRepresentations(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
@@ -707,7 +683,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         if (storage_join_lock)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
-        assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
+        assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
 
         size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
         size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
@@ -722,11 +698,14 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         }
 
         doDebugAsserts();
-        data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns()), std::move(selector));
+        data->columns.emplace_back(block_to_save.getColumns(), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
+
+        if (rows)
+            data->empty = false;
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
@@ -752,26 +731,22 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            bool has_right_not_joined = false;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
-                ///  - build mask in the source block row space
-                ///  - set bits only for rows that belong to THIS slot (by selector)
-                not_joined_map = ColumnUInt8::create(block.rows(), static_cast<UInt8>(0));
-                const auto & sel = stored_columns->selector;
-
-                auto mark_if_needed = [&](size_t row)
+                /// Save rows that do not hold conditions
+                not_joined_map = ColumnUInt8::create(rows, 0);
+                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
                 {
-                    if (!join_mask_col.isRowFiltered(row))
-                        return; // ON condition passed -> not "non-joined"
-                    if (save_nullmap && (*null_map)[row])
-                        return; // already covered by null-keys map
-                    not_joined_map->getData()[row] = 1;
-                    has_right_not_joined = true;
-                };
+                    /// Condition hold, do not save row
+                    if (!join_mask_col.isRowFiltered(i))
+                        continue;
 
-                for (size_t r : sel)
-                    mark_if_needed(r);
+                    /// NULL key will be saved anyway because, do not save twice
+                    if (save_nullmap && (*null_map)[i])
+                        continue;
+
+                    not_joined_map->getData()[i] = 1;
+                }
             }
 
             bool is_inserted = false;
@@ -790,7 +765,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             map,
                             key_columns,
                             key_sizes[onexpr_idx],
-                            &stored_columns->columns_info,
+                            &stored_columns->columns,
                             stored_columns->selector,
                             null_map,
                             join_mask_col,
@@ -799,20 +774,20 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->selector);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns, stored_columns->selector);
                     });
             }
 
             if (!flag_per_row && save_nullmap && is_inserted)
             {
-                auto & h = data->nullmaps.emplace_back(stored_columns, null_map_holder);
-                data->nullmaps_allocated_size += h.allocatedBytes();
+                data->nullmaps.emplace_back(stored_columns, null_map_holder);
+                data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
+            if (!flag_per_row && not_joined_map && is_inserted)
             {
-                auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
-                data->nullmaps_allocated_size += h.allocatedBytes();
+                data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
+                data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
             if (!flag_per_row && !is_inserted)
@@ -875,7 +850,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
         size_t old_size = stored_columns.allocatedBytes();
 
-        for (auto & column : stored_columns.columns_info.columns)
+        for (auto & column : stored_columns.columns)
             column = column->cloneResized(column->size());
 
         size_t new_size = stored_columns.allocatedBytes();
@@ -976,9 +951,9 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
         if (enough_data())
             break;
 
-        auto process_right_block = [&](const ColumnsInfo & columns_info)
+        auto process_right_block = [&](const Columns & columns)
         {
-            size_t rows_right = columns_info.columns.at(0)->size();
+            size_t rows_right = columns.at(0)->size();
             rows_added += rows_right;
 
             for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
@@ -986,16 +961,8 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
             for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
             {
-                if (const auto * replicated_column_right = columns_info.replicated_columns[col_num])
-                {
-                    for (size_t row = 0; row != rows_right; ++row)
-                        dst_columns[num_existing_columns + col_num]->insertFrom(*replicated_column_right->getNestedColumn(), replicated_column_right->getIndexes().getIndexAt(row));
-                }
-                else
-                {
-                    const IColumn & column_right = *columns_info.columns[col_num];
-                    dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
-                }
+                const IColumn & column_right = *columns[col_num];
+                dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
             }
 
             if (join.max_joined_block_bytes)
@@ -1019,17 +986,17 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
             /// The following statement cannot be substituted with `process_right_block(!have_compressed ? block_right : block_right.decompress())`
             /// because it will lead to copying of `block_right` even if its branch is taken (because common type of `block_right` and `block_right.decompress()` is `Block`).
             if (!join.have_compressed)
-                process_right_block(scattered_columns.columns_info);
+                process_right_block(scattered_columns.columns);
             else
             {
-                chassert(scattered_columns.selector.size() == scattered_columns.columns_info.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
+                chassert(scattered_columns.selector.size() == scattered_columns.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
 
                 Columns new_columns;
-                new_columns.reserve(scattered_columns.columns_info.columns.size());
-                for (const auto & column : scattered_columns.columns_info.columns)
+                new_columns.reserve(scattered_columns.columns.size());
+                for (const auto & column : scattered_columns.columns)
                     new_columns.emplace_back(column->decompress());
 
-                process_right_block(ColumnsInfo(std::move(new_columns)));
+                process_right_block(new_columns);
             }
         }
 
@@ -1053,7 +1020,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
                     break;
                 }
 
-                process_right_block(ColumnsInfo(block_right.getColumns()));
+                process_right_block(block_right.getColumns());
             }
         }
 
@@ -1083,10 +1050,9 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     if (right_table_keys.columns() != num_keys)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of join_keys and number of right table key columns for function joinGet{} don't match: passed {}, should be equal to {}",
+            "Number of arguments for function joinGet{} doesn't match: passed, should be equal to {}",
             toString(or_null ? "OrNull" : ""),
-            toString(num_keys),
-            toString(right_table_keys.columns()));
+            toString(num_keys));
 
     for (size_t i = 0; i < num_keys; ++i)
     {
@@ -1217,7 +1183,8 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1285,55 +1252,6 @@ HashJoin::~HashJoin()
         getTotalRowCount());
 }
 
-bool HashJoin::hasNonJoinedRows()
-{
-    if (has_non_joined_rows_checked)
-        return has_non_joined_rows;
-
-    if (!isRightOrFull(kind))
-        return false;
-
-    if (!needUsedFlagsForPerRightTableRow(table_join))
-        return false;
-
-    /// if the hash table is empty, we have no non-joined rows
-    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
-        return false;
-
-    updateNonJoinedRowsStatus();
-    return has_non_joined_rows;
-}
-
-void HashJoin::updateNonJoinedRowsStatus()
-{
-    if (has_non_joined_rows_checked)
-        return;
-
-    bool found_non_joined = false;
-    if (!empty())
-    {
-        // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
-        if (!data->nullmaps.empty())
-            found_non_joined = true;
-        // 2) Used flags present:
-        //    - If per-row flags are required (mixed ON / multiple disjuncts / RIGHT|FULL), conservatively assume non-joined rows exist
-        //    - For single disjunct with per-offset flags, check allOffsetFlagsSet
-        //    - Otherwise assume non-joined rows may exist
-        else if (used_flags)
-        {
-            if (needUsedFlagsForPerRightTableRow(table_join))
-                found_non_joined = true;
-            else if (table_join->oneDisjunct())
-                found_non_joined = !used_flags->allOffsetFlagsSet();
-            else
-                found_non_joined = true;
-        }
-    }
-
-    has_non_joined_rows = found_non_joined;
-    has_non_joined_rows_checked = true;
-}
-
 template <typename Mapped>
 struct AdderNonJoined
 {
@@ -1350,10 +1268,8 @@ struct AdderNonJoined
         {
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                if (const auto * replicated_column = mapped.columns_info->replicated_columns[j])
-                    columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
-                else
-                    columns_right[j]->insertFrom(*mapped.columns_info->columns[j], mapped.row_num);
+                const auto & mapped_column = (*mapped.columns)[j];
+                columns_right[j]->insertFrom(*mapped_column, mapped.row_num);
             }
 
             ++rows_added;
@@ -1364,10 +1280,8 @@ struct AdderNonJoined
             {
                 for (size_t j = 0; j < columns_right.size(); ++j)
                 {
-                    if (const auto * replicated_column = it->columns_info->replicated_columns[j])
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(it->row_num));
-                    else
-                        columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
+                    const auto & mapped_column = (*it->columns)[j];
+                    columns_right[j]->insertFrom(*mapped_column, it->row_num);
                 }
 
                 ++rows_added;
@@ -1439,20 +1353,11 @@ private:
         size_t rows_added = 0;
         for (; block_it != end; ++block_it)
         {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns_info.columns.at(0)->size() - current_block_start);
+            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns.at(0)->size() - current_block_start);
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                if (const auto * replicated_column = block_it->columns_info.replicated_columns[j])
-                {
-                    size_t current_block_end = current_block_start + rows_from_block;
-                    for (size_t row = current_block_start; row < current_block_end; ++row)
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                }
-                else
-                {
-                    const auto & col = block_it->columns_info.columns[j];
-                    columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
-                }
+                const auto & col = block_it->columns[j];
+                columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
             }
             rows_added += rows_from_block;
 
@@ -1460,7 +1365,7 @@ private:
             {
                 /// How many rows have been read
                 current_block_start += rows_from_block;
-                if (block_it->columns_info.columns.at(0)->size() <= current_block_start)
+                if (block_it->columns.at(0)->size() <= current_block_start)
                 {
                     /// current block was fully read
                     ++block_it;
@@ -1503,19 +1408,17 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns_info.columns.at(0)->size();
+                size_t rows = mapped_block.columns.at(0)->size();
 
                 for (size_t row = 0; row < rows; ++row)
                 {
-                    if (!parent.isUsed(&mapped_block.columns_info.columns, row))
+                    if (!parent.isUsed(&mapped_block.columns, row))
                     {
-                        for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
+                        for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
-                            if (const auto * replicated_column = mapped_block.columns_info.replicated_columns[column])
-                                columns_keys_and_right[column]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                            else
-                                columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
+                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns[colnum], row);
                         }
+
                         ++rows_added;
                     }
                 }
@@ -1535,11 +1438,11 @@ private:
 
             for (; it != end; ++it)
             {
+                const Mapped & mapped = it->getMapped();
+
                 size_t offset = map.offsetInternal(it.getPtr());
                 if (parent.isUsed(offset))
                     continue;
-
-                const Mapped & mapped = it->getMapped();
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
@@ -1567,18 +1470,13 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns_info.columns.at(0)->size();
+            size_t rows = columns->columns.at(0)->size();
             for (size_t row = 0; row < rows; ++row)
             {
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                    {
-                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
-                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                        else
-                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
-                    }
+                        columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
                     ++rows_added;
                 }
             }
@@ -1658,7 +1556,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     {
         BlocksList result;
         for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(columns.columns_info.columns));
+            result.emplace_back(sample_block.cloneWithColumns(columns.columns));
         return result;
     };
 
@@ -1694,7 +1592,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         for (size_t i = 0; i < positions.size(); ++i)
         {
             auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = saved_columns.columns_info.columns[positions[i]];
+            column.column = saved_columns.columns[positions[i]];
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
@@ -1740,7 +1638,6 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
         || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any || strictness == JoinStrictness::Anti)
             && (isLeft(kind) || isRight(kind)))
         || (strictness == JoinStrictness::Any && (isInner(kind)));
-
     if (!is_supported)
     {
         throw Exception(
@@ -1788,38 +1685,29 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             if (!it.ok())
                 return;
 
-            if (columns_list.empty() || columns_list.back().columns_info.columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
+            if (columns_list.empty() || columns_list.back().columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
             {
                 Columns columns;
-                columns.reserve(it->columns_info->columns.size());
-                for (const auto & col : (*it)->columns_info->columns)
+                columns.reserve(it->columns->size());
+                for (const auto & col : *(*it)->columns)
                     columns.push_back(col->cloneEmpty());
-                columns_list.emplace_back(ColumnsInfo(std::move(columns)), ScatteredBlock::Selector());
+                columns_list.emplace_back(std::move(columns), ScatteredBlock::Selector());
             }
 
-            auto & columns_info = columns_list.back().columns_info;
-            size_t start_row = columns_info.columns.at(0)->size();
+            auto & columns = columns_list.back().columns;
+            size_t start_row = columns.at(0)->size();
             for (; it.ok(); ++it)
             {
-                for (size_t i = 0; i < columns_info.columns.size(); ++i)
+                for (size_t i = 0; i < columns.size(); ++i)
                 {
-                    auto & col = columns_info.columns[i]->assumeMutableRef();
-                    /// Check if we insert into non replicated column from a replicated column.
-                    if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
-                    {
-                        const auto * src_replicated_column = it->columns_info->replicated_columns[i];
-                        col.insertFrom(*src_replicated_column->getNestedColumn(), src_replicated_column->getIndexes().getIndexAt(it->row_num));
-                    }
-                    else
-                    {
-                        col.insertFrom(*(it->columns_info->columns[i]), it->row_num);
-                    }
+                    auto & col = columns[i]->assumeMutableRef();
+                    col.insertFrom(*((*it->columns)[i]), it->row_num);
                 }
             }
-            size_t new_rows = columns_info.columns.at(0)->size();
+            size_t new_rows = columns.at(0)->size();
             if (new_rows > start_row)
             {
-                RowRefList new_rows_ref(&columns_info, start_row, new_rows - start_row);
+                RowRefList new_rows_ref(&columns, start_row, new_rows - start_row);
                 rows_ref = std::move(new_rows_ref);
             }
         };
@@ -1846,7 +1734,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         size_t new_blocks_allocated_size = 0;
         for (auto & columns : data->columns)
         {
-            columns.selector = ScatteredBlock::Selector(columns.columns_info.columns.at(0)->size());
+            columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;
@@ -1876,23 +1764,12 @@ void HashJoin::tryRerangeRightTableData()
         return;
 
     /// We should not rerange the right table on such conditions:
-    /// 1. The right table is already reranged by key, or it is empty.
-    /// 2. The join clauses size is greater than 1, for example:
-    ///    `...join on a.key1=b.key1 or a.key2=b.key2`.
-    ///    We cannot rerange the right table on different sets of keys.
-    /// 3. The number of right table rows exceeds the threshold, which may
-    ///    results in a significant cost for reranging and performance degradation.
-    /// 4. The keys of the right table are very sparse, which may result in
-    ///    insignificant performance improvement after reranging by key.
-    if (!data
-        || data->sorted
-        || data->columns.empty()
-        || data->maps.size() > 1
-        || data->rows_to_join > table_join->sortRightMaximumTableRows()
-        || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
-    {
+    /// 1. the right table is already reranged by key or it is empty.
+    /// 2. the join clauses size is greater than 1, like `...join on a.key1=b.key1 or a.key2=b.key2`, we can not rerange the right table on different set of keys.
+    /// 3. the number of right table rows exceed the threshold, which may result in a significant cost for reranging and lead to performance degradation.
+    /// 4. the keys of right table is very sparse, which may result in insignificant performance improvement after reranging by key.
+    if (!data || data->sorted || data->columns.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightMaximumTableRows() ||  data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
         return;
-    }
 
     if (data->keys_to_join == 0)
         data->keys_to_join = getTotalRowCount();
@@ -1940,8 +1817,5 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
-    updateNonJoinedRowsStatus();
-
-    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 }

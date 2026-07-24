@@ -30,7 +30,6 @@ namespace DB
 struct Settings;
 struct TimeoutSetter;
 
-class JWTProvider;
 class Connection;
 struct ConnectionParameters;
 struct ClusterFunctionReadTaskResponse;
@@ -65,12 +64,7 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        const String & tls_sni_override_,
-        const String & bind_host_
-#if USE_JWT_CPP && USE_SSL
-        , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
-#endif
-    );
+        const String & bind_host_);
 
     ~Connection() override;
 
@@ -201,7 +195,6 @@ private:
     String quota_key;
 #if USE_JWT_CPP && USE_SSL
     String jwt;
-    std::shared_ptr<JWTProvider> jwt_provider;
 #endif
 
     /// For inter-server authorization
@@ -234,7 +227,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
-    UInt64 worker_cluster_function_protocol_version = 0;
+    UInt64 server_cluster_function_protocol_version = 0;
     UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
@@ -248,7 +241,6 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
-    String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
@@ -326,7 +318,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    String receiveTableColumns();
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -334,7 +326,6 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
-    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();

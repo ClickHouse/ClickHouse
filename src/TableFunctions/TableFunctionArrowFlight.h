@@ -4,7 +4,6 @@
 
 #if USE_ARROWFLIGHT
 #include <Storages/StorageArrowFlight.h>
-#include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <TableFunctions/ITableFunction.h>
 
 namespace DB
@@ -13,7 +12,7 @@ namespace DB
 class TableFunctionArrowFlight : public ITableFunction
 {
 public:
-    static constexpr auto name = "arrowFlight";
+    static constexpr auto name = "arrowflight";
     String getName() const override { return name; }
 
 private:
@@ -25,13 +24,12 @@ private:
         bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return "ArrowFlight"; }
-    const String & getFunctionURI() const override { return config.host; }
+    const String & getFunctionURI() const override { return configuration.host; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    StorageArrowFlight::Configuration config;
-    std::shared_ptr<ArrowFlightConnection> connection;
+    StorageArrowFlight::Configuration configuration;
 };
 
 }

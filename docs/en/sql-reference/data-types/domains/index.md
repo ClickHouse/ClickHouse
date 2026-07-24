@@ -5,7 +5,6 @@ sidebar_label: 'Domains'
 sidebar_position: 56
 slug: /sql-reference/data-types/domains/
 title: 'Domains'
-doc_type: 'reference'
 ---
 
 # Domains

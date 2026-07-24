@@ -10,12 +10,14 @@ public:
     MemoryTrackerDebugBlockerInThread();
     ~MemoryTrackerDebugBlockerInThread();
 
+    static constexpr bool isEnabled() { return true; }
     static bool isBlocked();
 };
 #else
 struct MemoryTrackerDebugBlockerInThread
 {
 public:
+    static constexpr bool isEnabled() { return false; }
     static constexpr bool isBlocked() { return true; }
 };
 #endif

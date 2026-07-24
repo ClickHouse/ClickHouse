@@ -25,7 +25,7 @@ struct FirstSignificantSubdomainCustomLookup
     {
     }
 
-    TLDType operator()(std::string_view host) const
+    TLDType operator()(StringRef host) const
     {
         return tld_list.lookup(host);
     }

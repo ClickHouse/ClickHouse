@@ -162,7 +162,7 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         return false;
 
     assert(full_names.size() == 1);
-    auto result = make_intrusive<ASTRowPolicyName>();
+    auto result = std::make_shared<ASTRowPolicyName>();
     result->full_name = std::move(full_names.front());
     result->cluster = std::move(cluster);
     node = result;
@@ -196,7 +196,7 @@ bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
         return false;
 
-    auto result = make_intrusive<ASTRowPolicyNames>();
+    auto result = std::make_shared<ASTRowPolicyNames>();
     result->full_names = std::move(full_names);
     result->cluster = std::move(cluster);
     node = result;

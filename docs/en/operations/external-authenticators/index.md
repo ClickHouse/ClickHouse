@@ -5,7 +5,6 @@ sidebar_label: 'External User Authenticators and Directories'
 sidebar_position: 48
 slug: /operations/external-authenticators/
 title: 'External User Authenticators and Directories'
-doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

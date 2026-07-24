@@ -16,7 +16,6 @@ node: ClickHouseInstance = cluster.add_instance(
     stay_alive=True,
     main_configs=[],
     with_zookeeper=True,
-    cpu_limit=15
 )
 
 

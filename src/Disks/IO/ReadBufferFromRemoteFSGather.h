@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>

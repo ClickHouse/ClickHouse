@@ -1,5 +1,4 @@
 import logging
-import time
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -729,16 +728,11 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    # Wait for auto-close to take effect (connections may still be closing under TSAN)
-    for _ in range(20):
-        count = int(
-            node2.query(
-                f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
-            )
+    count = int(
+        node2.query(
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
         )
-        if count <= 2:
-            break
-        time.sleep(0.5)
+    )
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
@@ -896,22 +890,6 @@ def test_postgres_datetime(started_cluster):
 
     result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime64)")
     assert result == "2025-01-02 03:04:05.678900\n"
-
-
-def test_postgres_reading_clone(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_clone")
-    cursor.execute("CREATE TABLE test_clone AS (SELECT number FROM generate_series(0, 99) AS number)")
-
-    node1.query("DROP TABLE IF EXISTS test_clone")
-    node1.query(
-        f"CREATE TABLE test_clone ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_clone', 'postgres', '{pg_pass}')"
-    )
-
-    result = node1.query(
-        "SELECT count() FROM (SELECT (SELECT tx.number) = 1 as x FROM test_clone AS tx) WHERE x SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0"
-    )
-    assert result.strip() == "1"
 
 
 if __name__ == "__main__":

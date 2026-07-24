@@ -52,7 +52,7 @@ select count() from testXC;
 system flush logs system.query_log;
 
 select
-    if(peak_threads_usage >= 10, 1, peak_threads_usage),
+    peak_threads_usage,
     Settings['max_threads'] as max_threads,
     Settings['max_insert_threads'] as max_insert_threads,
     Settings['parallel_view_processing'] as parallel_view_processing,

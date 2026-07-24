@@ -806,12 +806,14 @@ void writeText(const Null & x, WriteBuffer & buf)
         writeText("NULL", buf);
 }
 
-String fieldToString(const Field & x)
+String toString(const Field & x)
 {
     return Field::dispatch(
         [] (const auto & value)
         {
-            return toString(value);
+            // Use explicit type to prevent implicit construction of Field and
+            // infinite recursion into toString<Field>.
+            return toString<decltype(value)>(value);
         },
         x);
 }

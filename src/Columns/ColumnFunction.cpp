@@ -6,7 +6,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -93,31 +92,25 @@ void ColumnFunction::get(size_t n, Field & res) const
         res_tuple.push_back((*captured_columns[i].column)[n]);
 }
 
-DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) const
 {
     size_t size = captured_columns.size();
 
-    if (options.notFull(name_buf))
-    {
-        if (size > 1)
-            name_buf << "(";
-        else
-            name_buf << "tuple(";
-    }
+    String value_name {size > 1 ? "(" : "tuple("};
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = captured_columns[i].column->getValueNameAndTypeImpl(name_buf, n, options);
+        const auto & [value, type] = captured_columns[i].column->getValueNameAndType(n);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << ")";
+    value_name += ")";
 
-    return std::make_shared<DataTypeTuple>(element_types);
+    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
 }
 
 
@@ -190,21 +183,6 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-void ColumnFunction::filter(const Filter & filt)
-{
-    if (elements_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
-                        filt.size(), elements_size);
-
-    for (auto & column : captured_columns)
-        column.column->assumeMutable()->filter(filt);
-
-    if (captured_columns.empty())
-        elements_size = countBytesInFilter(filt);
-    else
-        elements_size = captured_columns.front().column->size();
-}
-
 void ColumnFunction::expand(const Filter & mask, bool inverted)
 {
     for (auto & column : captured_columns)
@@ -240,7 +218,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         column.column = column.column->index(indexes, limit);
 
     return ColumnFunction::create(
-        limit == 0 ? indexes.size() : limit,
+        limit,
         function,
         capture,
         is_short_circuit_argument,
@@ -248,7 +226,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
+std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
@@ -264,13 +242,13 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
     for (size_t capture = 0; capture < captured_columns.size(); ++capture)
     {
         auto parts = captured_columns[capture].column->scatter(num_columns, selector);
-        for (size_t part = 0; part < num_columns; ++part)
+        for (IColumn::ColumnIndex part = 0; part < num_columns; ++part)
             captures[part][capture].column = std::move(parts[part]);
     }
 
     std::vector<MutableColumnPtr> columns;
     columns.reserve(num_columns);
-    for (size_t part = 0; part < num_columns; ++part)
+    for (IColumn::ColumnIndex part = 0; part < num_columns; ++part)
     {
         auto & capture = captures[part];
         size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
@@ -337,7 +315,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
     auto captured_column = column;
-    captured_column.column = captured_column.column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
     captured_columns.push_back(std::move(captured_column));
 }
 

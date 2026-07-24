@@ -49,7 +49,7 @@ TEST(ColumnUnique, InsertRange)
 
     for (size_t i = 0; i < mod_to; ++i)
     {
-        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1));
+        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1).toString());
     }
 }
 
@@ -94,12 +94,12 @@ TEST(ColumnUnique, InsertRangeWithOverflow)
 
     for (size_t i = 0; i < max_val; ++i)
     {
-        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1));
+        ASSERT_EQ(std::to_string(i), nested->getDataAt(i + 1).toString());
     }
 
     for (size_t i = 0; i < mod_to - max_val; ++i)
     {
-        ASSERT_EQ(std::to_string(max_val + i), add_keys->getDataAt(i));
+        ASSERT_EQ(std::to_string(max_val + i), add_keys->getDataAt(i).toString());
     }
 }
 
@@ -119,7 +119,7 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         for (size_t i = 0; i < num_values; ++i)
         {
             auto ref = column_unique_pattern->serializeValueIntoArena(idx->getUInt(i), arena, pos, nullptr);
-            ReadBufferFromString in(ref);
+            ReadBufferFromString in({ref.data, ref.size});
             column_unique->uniqueDeserializeAndInsertFromArena(in, nullptr);
             ASSERT_TRUE(in.eof()) << "Deserialized data has different sizes at position " << i;
 

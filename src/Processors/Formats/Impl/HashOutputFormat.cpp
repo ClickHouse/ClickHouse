@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -22,9 +23,11 @@ String HashOutputFormat::getName() const
 
 void HashOutputFormat::consume(Chunk chunk)
 {
-    for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
-        for (const auto & column : chunk.getColumns())
+    for (const auto & column : chunk.getColumns())
+    {
+        for (size_t i = 0; i < column->size(); ++i)
             column->updateHashWithValue(i, hash);
+    }
 }
 
 void HashOutputFormat::finalizeImpl()

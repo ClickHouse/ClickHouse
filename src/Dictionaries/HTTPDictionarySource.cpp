@@ -86,7 +86,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-BlockIO HTTPDictionarySource::loadAll()
+QueryPipeline HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
 
@@ -99,12 +99,11 @@ BlockIO HTTPDictionarySource::loadAll()
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadUpdatedAll()
+QueryPipeline HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -118,12 +117,10 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -149,12 +146,10 @@ BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -180,9 +175,7 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::v
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
 bool HTTPDictionarySource::isModified() const

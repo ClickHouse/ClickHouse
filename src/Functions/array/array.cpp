@@ -181,9 +181,9 @@ private:
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
-                cur_out_offset += ref.size();
+                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
+                cur_out_offset += ref.size;
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
@@ -214,8 +214,8 @@ private:
         {
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
+                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data, n);
                 curr_out_offset += n;
             }
         }
@@ -253,8 +253,7 @@ private:
         const size_t tuple_size = concrete_out_data->tupleSize();
         if (tuple_size == 0)
         {
-            /// Tuple() has no subcolumns to fill. Create `columns.size()` elements per row to match array offsets
-            out_data.insertManyDefaults(columns.size() * input_rows_count);
+            out_data.insertManyDefaults(columns.size());
         }
         else
         {
@@ -325,7 +324,7 @@ There is no supertype for types Int32, DateTime, Int8 ...
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArray>(documentation);
 }

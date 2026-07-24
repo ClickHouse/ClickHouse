@@ -2,16 +2,15 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Common/escapeForFileName.h>
 
 #include <numeric>
 
 namespace DB
 {
-
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace ErrorCodes
 {
@@ -19,35 +18,17 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-String getIndexFileName(const String & index_name, bool escape_filename)
-{
-    if (escape_filename)
-        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
-    return INDEX_FILE_PREFIX + index_name;
-}
-
-String IMergeTreeIndex::getFileName() const
-{
-    return getIndexFileName(index.name, index.escape_filenames);
-}
-
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat
+IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
     if (checksums.files.contains(relative_path_prefix + ".idx"))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-
-    return {0 /*unknown*/, {}};
-}
-
-void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
-{
-    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    serializeBinary(stream->compressed_hashing);
+        return {1, ".idx"};
+    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -62,11 +43,6 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
-void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
-{
-    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    deserializeBinary(*stream->getDataBuffer(), state.version);
-}
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
     const IndexDescription & index) const
@@ -98,33 +74,29 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescripti
     return result;
 }
 
-void MergeTreeIndexFactory::implicitValidation(const IndexDescription & index)
-{
-    if (index.expression->hasArrayJoin())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
-
-    try
-    {
-        index.expression->assertDeterministic();
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("for secondary index '{}'", index.name));
-        throw;
-    }
-
-    for (const auto & elem : index.sample_block)
-        if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
-}
-
-
 void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
     if (!attach)
-        implicitValidation(index);
+    {
+        if (index.expression->hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
+
+        try
+        {
+            index.expression->assertDeterministic();
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("for secondary index '{}'", index.name));
+            throw;
+        }
+
+        for (const auto & elem : index.sample_block)
+            if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
+    }
 
     auto it = validators.find(index.type);
     if (it == validators.end())
@@ -161,9 +133,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("sparse_grams", bloomFilterIndexTextCreator);
-    registerValidator("sparse_grams", bloomFilterIndexTextValidator);
-
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
@@ -175,8 +144,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-    registerCreator("text", textIndexCreator);
-    registerValidator("text", textIndexValidator);
+    registerCreator("text", ginIndexCreator);
+    registerValidator("text", ginIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

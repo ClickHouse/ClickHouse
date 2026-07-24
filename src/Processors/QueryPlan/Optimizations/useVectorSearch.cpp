@@ -386,7 +386,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
             if (need_cast)
-                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
+                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance");
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
@@ -410,21 +410,20 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
                 filter_expression.removeUnusedActions();
 
                 /// Update the node with new Step
-                QueryPlanStepPtr new_step;
+                auto step_description = filter_or_prewhere_node->step->getStepDescription();
                 if (prewhere_expression_step)
-                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
+                    filter_or_prewhere_node->step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
                 else
-                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-                new_step->setStepDescription(*filter_or_prewhere_node->step);
-               filter_or_prewhere_node->step = std::move(new_step);
+                    filter_or_prewhere_node->step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+               filter_or_prewhere_node->step->setStepDescription(step_description);
             }
         }
 
         /// Update the node with new Step
-        auto new_step = std::make_unique<ExpressionStep>(
+        auto step_description = expression_node->step->getStepDescription();
+        expression_node->step = std::make_unique<ExpressionStep>(
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
-        new_step->setStepDescription(*expression_node->step);
-        expression_node->step = std::move(new_step);
+        expression_node->step->setStepDescription(step_description);
     }
 
     return true;

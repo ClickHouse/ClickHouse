@@ -409,13 +409,12 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, date_time_input_format={}, input_format_try_infer_variants={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, date_time_input_format={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
         settings.max_bytes_to_read_for_schema_inference,
         settings.schema_inference_make_columns_nullable,
-        settings.date_time_input_format,
-        settings.try_infer_variant);
+        settings.date_time_input_format);
 }
 
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
@@ -458,7 +457,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, "
                 "read_numbers_as_strings={}, "
-                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, "
+                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}, "
                 "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
@@ -468,6 +467,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
+                settings.json.allow_deprecated_object_type,
                 settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
             break;
         default:

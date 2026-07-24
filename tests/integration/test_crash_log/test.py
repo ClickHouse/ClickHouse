@@ -20,7 +20,7 @@ def started_node():
         cluster.start()
         yield node
     finally:
-        cluster.shutdown(ignore_fatal=True)
+        cluster.shutdown()
 
 
 def send_signal(started_node, signal):

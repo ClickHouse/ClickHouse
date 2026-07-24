@@ -100,12 +100,14 @@ void CurrentMemoryTracker::check()
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
-    return allocImpl(size, /*throw_if_memory_exceeded=*/ true);
+    bool throw_if_memory_exceeded = true;
+    return allocImpl(size, throw_if_memory_exceeded);
 }
 
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
-    return allocImpl(size, /*throw_if_memory_exceeded=*/ false);
+    bool throw_if_memory_exceeded = false;
+    return allocImpl(size, throw_if_memory_exceeded);
 }
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)

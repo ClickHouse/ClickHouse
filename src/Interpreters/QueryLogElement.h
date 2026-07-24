@@ -103,8 +103,6 @@ struct QueryLogElement
     std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
 
-    bool is_internal;
-
     TransactionID tid;
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;

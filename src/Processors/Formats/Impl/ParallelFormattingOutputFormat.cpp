@@ -129,7 +129,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR);
+        ThreadGroupSwitcher switcher(thread_group, "Collector");
 
         try
         {
@@ -194,7 +194,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER);
+        ThreadGroupSwitcher switcher(thread_group, "Formatter");
 
         try
         {

@@ -17,6 +17,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = std::vector<Float64>;
 
@@ -38,23 +43,19 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
         size_t right = left;
         while (right < size && values[indexes[left]] == values[indexes[right]])
             ++right;
-        auto adjusted = (static_cast<Float64>(left) + static_cast<Float64>(right) + 1.) / 2.;
+        auto adjusted = (left + right + 1.) / 2.;
         auto count_equal = right - left;
 
-        tie_numenator += std::pow(count_equal, 3) - static_cast<Float64>(count_equal);
+        /// Scipy implementation throws exception in this case too.
+        if (count_equal == size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All numbers in both samples are identical");
+
+        tie_numenator += std::pow(count_equal, 3) - count_equal;
         for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;
         left = right;
     }
-
-    // Protect against division by zero if all values are identical
-    Float64 tie_correction = 1.0;
-    if (size > 1)
-    {
-        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - static_cast<Float64>(size)));
-    }
-
-    return {out, tie_correction};
+    return {out, 1 - (tie_numenator / (std::pow(size, 3) - size))};
 }
 
 

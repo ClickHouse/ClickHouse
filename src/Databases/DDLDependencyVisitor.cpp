@@ -207,6 +207,7 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
+            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 
@@ -245,15 +246,6 @@ namespace
             /// Distributed(cluster_name, db_name, table_name, ...)
             if (table_engine.name == "Distributed")
                 visitDistributedTableEngine(table_engine);
-
-            /// Alias(table_name) or Alias(db_name, table_name)
-            if (table_engine.name == "Alias" && table_engine.arguments)
-            {
-                if (table_engine.arguments->children.size() == 1)
-                    addQualifiedNameFromArgument(table_engine, 0);
-                else
-                    addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
-            }
         }
 
         /// Distributed(cluster_name, database_name, table_name, ...)

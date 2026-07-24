@@ -3,12 +3,10 @@
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
-#include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
-#include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
@@ -21,14 +19,11 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
-#include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
@@ -75,7 +70,6 @@
 #include <cassert>
 #include <exception>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 #include <iterator>
 
@@ -89,6 +83,26 @@ namespace ProfileEvents
     extern const Event InsertedBytes;
 }
 
+namespace fmt
+{
+    template <>
+    struct formatter<DB::InsertDependenciesBuilder::StorageIDPrivate>
+    {
+        static constexpr auto parse(format_parse_context & ctx)
+        {
+            return ctx.begin();
+        }
+
+        template <typename FormatContext>
+        auto format(const DB::StorageID & storage_id, FormatContext & ctx) const
+        {
+            if (storage_id)
+                return fmt::format_to(ctx.out(), "{}", storage_id.getFullTableName());
+            return fmt::format_to(ctx.out(), "{}", "<empty>");
+        }
+    };
+}
+
 
 namespace DB
 {
@@ -97,8 +111,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsBool insert_deduplicate;
-    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -118,8 +130,6 @@ namespace Setting
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool use_async_executor_for_materialized_views;
     extern const SettingsBool materialized_views_ignore_errors;
-    extern const SettingsBool materialized_views_squash_parallel_inserts;
-    extern const SettingsBool parallel_view_processing;
 }
 
 namespace MergeTreeSetting
@@ -186,28 +196,28 @@ public:
     };
 
 private:
-    using MapIdViewExceptions = std::unordered_map<StorageIDMaybeEmpty, ViewErrors, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdViewExceptions = std::map<InsertDependenciesBuilder::StorageIDPrivate, ViewErrors>;
     MapIdViewExceptions view_errors;
 
 public:
     SetOnce<std::exception_ptr> global_exception;
 
-    void init(const StorageIDMaybeEmpty & view_id)
+    void init(const InsertDependenciesBuilder::StorageIDPrivate & view_id)
     {
         view_errors.try_emplace(view_id);
     }
 
-    const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
+    const ViewErrors & getErrors(const InsertDependenciesBuilder::StorageIDPrivate & view_id) const
     {
         return view_errors.at(view_id);
     }
 
-    ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id)
+    ViewErrors & getErrors(const InsertDependenciesBuilder::StorageIDPrivate & view_id)
     {
         return view_errors.at(view_id);
     }
 
-    std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
+    std::exception_ptr getFinalError(const InsertDependenciesBuilder::StorageIDPrivate & view_id, bool ignore_global) const
     {
         const auto & errors = getErrors(view_id);
         if (auto e = errors.current_exception.get())
@@ -241,6 +251,35 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return ptr;
     }
 }
+
+
+class PushingToLiveViewSink final : public SinkToStorage
+{
+public:
+    PushingToLiveViewSink(SharedHeader header, StorageLiveView & live_view_, ContextPtr context_)
+        : SinkToStorage(header)
+        , live_view(live_view_)
+        , context(std::move(context_))
+    {
+    }
+
+    String getName() const override { return "PushingToLiveViewSink"; }
+    void consume(Chunk & chunk) override
+    {
+        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
+        live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
+
+        if (auto process = context->getProcessListElement())
+            process->updateProgressIn(local_progress);
+
+        ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+        ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
+    }
+
+private:
+    StorageLiveView & live_view;
+    ContextPtr context;
+};
 
 
 class PushingToWindowViewSink final : public SinkToStorage
@@ -487,7 +526,7 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
     {
-        auto sign_column_check_constraint = make_intrusive<ASTConstraintDeclaration>();
+        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
         sign_column_check_constraint->name = "_implicit_sign_column_constraint";
         sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
 
@@ -495,9 +534,9 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
         valid_values_array.emplace_back(-1);
         valid_values_array.emplace_back(1);
 
-        auto valid_values_ast = make_intrusive<ASTLiteral>(std::move(valid_values_array));
-        auto sign_column_ast = make_intrusive<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
-        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTOperator("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
+        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
 
         auto constraints_ast = constraints.getConstraints();
         constraints_ast.push_back(std::move(sign_column_check_constraint));
@@ -589,6 +628,7 @@ private:
         }
     };
 
+
     QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
     {
         /// We create a table with the same name as original table and the same alias columns,
@@ -653,8 +693,7 @@ private:
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
-                ActionsDAG::MatchColumnsMode::Name,
-                local_context);
+                ActionsDAG::MatchColumnsMode::Name);
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
@@ -693,9 +732,16 @@ private:
 
         pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
 
-        pipeline.addTransform(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(pipeline.getSharedHeader()));
-
-        pipeline.addTransform(std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(view_id, pipeline.getSharedHeader()));
+        if (context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views])
+        {
+            String materialize_view_id = view_id.hasUUID() ? toString(view_id.uuid) : view_id.getFullNameNotQuoted();
+            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewIDTransform>(std::move(materialize_view_id), pipeline.getSharedHeader()));
+            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(pipeline.getSharedHeader()));
+        }
+        else
+        {
+            pipeline.addTransform(std::make_shared<DeduplicationToken::ResetTokenTransform>(pipeline.getSharedHeader()));
+        }
 
         return QueryPipelineBuilder::getPipeline(std::move(pipeline));
     }
@@ -706,7 +752,7 @@ private:
 
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
-    bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
+    bool async_insert_, bool skip_destination_table_,
     ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
@@ -723,172 +769,14 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
 
-    deduplicate_blocks = async_insert ? settings[Setting::async_insert_deduplicate] : settings[Setting::insert_deduplicate];
-    deduplicate_blocks_in_dependent_materialized_views = deduplicate_blocks && settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
+    deduplicate_blocks_in_dependent_materialized_views = settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
-    /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
-    /// if deduplication for MVs is enabled
-    /// TODO: for sync insert we could squash at the first level
-    squash_parallel_inserts = !deduplicate_blocks_in_dependent_materialized_views && settings[Setting::materialized_views_squash_parallel_inserts];
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
 
     LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
         init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
-
-    auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
-        { return isView(storage.first) || storage.second->supportsParallelInsert();});
-    if (all_sinks_support_parallel_insert && (settings[Setting::parallel_view_processing] || !isViewsInvolved()))
-        sink_stream_size = max_insert_threads;
-}
-
-namespace
-{
-
-struct SquashingTransformContext
-{
-    size_t num_squashing_transforms = 0;
-    bool squashing_transform_added = false;
-    OutputPorts::iterator output_it;
-    InputPorts::iterator input_it;
-};
-
-}
-
-std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
-{
-    LOG_DEBUG(
-        logger,
-        "createChainWithDependenciesForAllStreams called, sink_stream_size={}, squash_parallel_inserts={} deduplicate_blocks={} deduplicate_blocks_in_dependent_materialized_views={}",
-        sink_stream_size, squash_parallel_inserts, deduplicate_blocks, deduplicate_blocks_in_dependent_materialized_views);
-
-    std::vector<Chain> insert_chains;
-    std::vector<SquashingProcessorsMap> squashing_processor_maps;
-    std::unordered_map<
-        StorageIDMaybeEmpty,
-        SquashingTransformContext,
-        StorageID::DatabaseAndTableNameHash,
-        StorageID::DatabaseAndTableNameEqual>
-        views_to_squashing_context;
-
-    insert_chains.reserve(sink_stream_size);
-
-    if (squash_parallel_inserts)
-        squashing_processor_maps.reserve(sink_stream_size);
-
-    bool has_squashing_transforms = false;
-    for (size_t i = 0; i < sink_stream_size; ++i)
-    {
-        insert_chains.emplace_back(createChainWithDependencies());
-        if (squash_parallel_inserts)
-        {
-            /// Collect total amount of squashing transforms for each destination table so we can create
-            /// shrink/expand processors with enough input/output ports.
-            /// Collect all squashing processors for each chain so we don't need to recreate same chain for each destination table.
-            for (const auto & [view_id, apply_squashing_processors] : squashing_processors)
-            {
-                has_squashing_transforms |= !apply_squashing_processors.empty();
-                views_to_squashing_context[view_id].num_squashing_transforms += apply_squashing_processors.size();
-            }
-            squashing_processor_maps.emplace_back(std::move(squashing_processors));
-        }
-    }
-
-    if (!squash_parallel_inserts || !has_squashing_transforms)
-        return insert_chains;
-
-    /// We need to extract processors from chain and modify it.
-    /// For each destination table we do the following:
-    ///   - In first chain with it, we will add new chain of processors consisting of
-    ///     shrink processor -> PlanSquashingTransform -> expand processor
-    ///     We also connect the output and input ports of shrink and expand processors.
-    ///   - For every other chain with the same destination table we won't add new processors,
-    ///     we will connect processors created in first chain using the input and output port
-    ///     of shrink and expand processors.
-    /// We can create the chains only after processing all other chains because all ports need to be connected.
-    std::vector<std::pair<std::list<ProcessorPtr>, QueryPlanResourceHolder>> result_data;
-    result_data.reserve(insert_chains.size());
-
-    for (auto && [chain, squashing_processors_for_chain] : std::views::zip(insert_chains, squashing_processor_maps))
-    {
-        auto resources = chain.detachResources();
-        auto processor_list = std::move(chain.getProcessors());
-
-        for (const auto & [view_id, apply_squashing_processors] : squashing_processors_for_chain)
-        {
-            auto & squashing_context = views_to_squashing_context.at(view_id);
-            std::list<ProcessorPtr> squashing_processors_list;
-            /// First time we saw this destination table.
-            /// Add required processors, connect it and store it's output and input port iterator so other
-            /// chains with the same destination table can use it.
-            if (!squashing_context.squashing_transform_added)
-            {
-                const auto & output_header = output_headers.at(view_id);
-                const auto & inner_storage = storages.at(view_id);
-                auto insert_context = insert_contexts.at(view_id);
-                bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
-                const auto & settings = insert_context->getSettingsRef();
-
-                if (squashing_context.num_squashing_transforms > 1)
-                {
-                    squashing_processors_list.emplace_back(
-                        std::make_shared<ResizeProcessor>(output_header, squashing_context.num_squashing_transforms, 1));
-                }
-
-                auto & plan_squashing_transform = squashing_processors_list.emplace_back(
-                    std::make_shared<PlanSquashingTransform>(
-                        output_header,
-                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
-
-                if (squashing_context.num_squashing_transforms > 1)
-                {
-                    auto & shrink_processor = squashing_processors_list.front();
-                    auto & expand_processor = squashing_processors_list.emplace_back(
-                        std::make_shared<ResizeProcessor>(output_header, 1, squashing_context.num_squashing_transforms));
-
-                    connect(shrink_processor->getOutputs().front(), plan_squashing_transform->getInputs().front());
-                    connect(plan_squashing_transform->getOutputs().front(), expand_processor->getInputs().front());
-                }
-
-                squashing_context.output_it = squashing_processors_list.back()->getOutputs().begin();
-                squashing_context.input_it = squashing_processors_list.front()->getInputs().begin();
-            }
-
-            for (const auto & apply_squashing_processor_it : apply_squashing_processors)
-            {
-                auto before_squashing_processor_it = std::prev(apply_squashing_processor_it);
-                connect((*before_squashing_processor_it)->getOutputs().front(), *squashing_context.input_it, true);
-                ++squashing_context.input_it;
-
-                connect(*squashing_context.output_it, (*apply_squashing_processor_it)->getInputs().front(), true);
-                ++squashing_context.output_it;
-
-                if (!std::exchange(squashing_context.squashing_transform_added, true))
-                {
-                    chassert(!squashing_processors_list.empty());
-                    processor_list.splice(apply_squashing_processor_it, std::move(squashing_processors_list));
-                    squashing_processors_list.clear();
-                }
-            }
-        }
-
-        result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
-    }
-
-    std::vector<Chain> result_chains;
-    result_chains.reserve(result_data.size());
-
-    for (auto & [processor_list, resources] : result_data)
-    {
-        auto & chain = result_chains.emplace_back(std::move(processor_list));
-        chain.attachResources(std::move(resources));
-        chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
-        chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
-    }
-
-    return result_chains;
 }
 
 
@@ -948,13 +836,12 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     return {select_context, insert_context};
 }
 
-
 String InsertDependenciesBuilder::debugTree() const
 {
     WriteBufferFromOwnString output_buffer;
 
     DependencyPath path;
-    std::function<void(StorageIDMaybeEmpty)> visit = [&](StorageIDMaybeEmpty id)
+    std::function<void(StorageIDPrivate)> visit = [&](StorageIDPrivate id)
     {
         path.pushBack(id);
         SCOPE_EXIT({
@@ -980,7 +867,6 @@ String InsertDependenciesBuilder::debugTree() const
     visit(root_view);
     return output_buffer.str();
 }
-
 
 String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
 {
@@ -1021,7 +907,6 @@ String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
     output_buffer << "}\n";
     return output_buffer.str();
 }
-
 
 bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
@@ -1068,7 +953,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     metadata_snapshots[current] = metadata;
     storage_locks[current] = std::move(lock);
 
-    auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
+    auto set_defaults_for_root_view = [&] (const StorageIDPrivate & root_view_, const StorageIDPrivate & inner_table_)
     {
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
@@ -1097,7 +982,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
             return true;
         }
 
-        StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
+        StorageIDPrivate select_table_id = metadata->getSelectQuery().select_table_id;
         if (select_table_id != parent)
         {
             /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
@@ -1123,6 +1008,38 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         if (init_context->hasQueryContext())
             init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+
+        return true;
+    }
+    else if (auto * live_view = dynamic_cast<StorageLiveView *>(init_storage.get()))
+    {
+        if (current == init_table_id)
+        {
+            set_defaults_for_root_view(init_table_id, init_table_id);
+            view_types[init_table_id] = QueryViewsLogElement::ViewType::LIVE;
+            return true;
+        }
+
+        inner_tables[current] = current;
+        select_queries[current] = live_view->getInnerQuery();
+        input_headers[current] = output_headers.at(path.parent(2));
+        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
+        view_types[current] = QueryViewsLogElement::ViewType::LIVE;
+        views_error_registry->init(current);
+
+        auto parent_select_context = select_contexts.at(path.parent(2));
+        auto view_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
+        view_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+        select_contexts[current] = view_context;
+        insert_contexts[current] = view_context;
+
+        if (init_context->hasQueryContext())
+        {
+            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
+            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+        }
+
+        dependent_views[path.parent(2)].push_back(current);
 
         return true;
     }
@@ -1200,7 +1117,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 {
     DependencyPath path;
 
-    std::function<void(StorageIDMaybeEmpty)> expand = [&] (StorageIDMaybeEmpty id)
+    std::function<void(StorageIDPrivate)> expand = [&] (StorageIDPrivate id)
     {
         path.pushBack(id);
         SCOPE_EXIT({
@@ -1264,7 +1181,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 }
 
 
-Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
 {
     chassert(view_id != init_table_id);
 
@@ -1277,12 +1194,22 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     auto inner_storage = storages.at(inner_table_id);
     auto output_header = output_headers.at(view_id);
 
-    if (squash_parallel_inserts)
+    bool no_squash = false;
+    bool should_add_squashing = InterpreterInsertQuery::shouldAddSquashingForStorage(inner_storage, insert_context) && !no_squash && !async_insert;
+    if (should_add_squashing)
     {
-        result.addSource(std::make_shared<ApplySquashingTransform>(output_header));
-        squashing_processors[view_id].push_back(result.getProcessors().begin());
+        bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
+        const auto & settings = insert_context->getSettingsRef();
+
+        result.addSource(std::make_shared<SquashingTransform>(
+            output_header,
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
     }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", output_header));
+#endif
 
     auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
@@ -1322,11 +1249,15 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
         result.addSource(std::move(executing_inner_query));
     }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
+#endif
+
     return result;
 }
 
 
-Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
 {
     chassert(!skip_destination_table);
     chassert(view_id == root_view);
@@ -1362,7 +1293,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
 }
 
 
-Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
 {
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
@@ -1373,9 +1304,6 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     IInterpreter::checkStorageSupportsTransactionsIfNeeded(inner_storage, insert_context);
 
     Chain result;
-
-    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
-    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header));
 
     /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
@@ -1390,7 +1318,13 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
-    if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
+    if (auto * live_view = dynamic_cast<StorageLiveView *>(inner_storage.get()))
+    {
+        auto sink = std::make_shared<PushingToLiveViewSink>(input_headers.at(view_id), *live_view, insert_context);
+        sink->setRuntimeData(thread_groups.at(view_id));
+        result.addSink(std::move(sink));
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
@@ -1408,11 +1342,16 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
         result.addSink(std::move(sink));
     }
 
+    const auto & settings = insert_context->getSettingsRef();
+
+    if (isViewsInvolved() && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
+        result.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result.getOutputSharedHeader()));
+
     return result;
 }
 
 
-Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) const
+Chain InsertDependenciesBuilder::createPostSink(StorageIDPrivate view_id) const
 {
     const auto & dependent_views_ids = dependent_views.at(view_id);
     if (dependent_views_ids.empty())
@@ -1453,9 +1392,8 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
         connect(chain.getOutputPort(), *in);
         ++in;
         ++out;
-        processors.splice(processors.end(), std::move(chain.getProcessors()));
+        processors.splice(processors.end(), Chain::getProcessors(std::move(chain)));
     }
-    view_chains.clear();
 
     processors.emplace_front(std::move(copying_data));
     processors.emplace_back(std::move(finalizing_views));
@@ -1499,7 +1437,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
     const auto & view_type = view_types.at(view_id);
     const auto & inner_table_id = inner_tables.at(view_id);
 
-    UInt64 elapsed_ms = thread_group->getGroupElapsedMs();
+    UInt64 elapsed_ms = thread_group->getThreadsTotalElapsedMs();
 
     UInt64 min_query_duration = settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
     if (min_query_duration && elapsed_ms <= min_query_duration)
@@ -1557,11 +1495,11 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
 }
 
 
-void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDMaybeEmpty id)
+void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDPrivate id)
 {
     if (visited.contains(id))
         throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} are pointing to {}.", path.front(), debugInfo(), id);
+            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} ara pointing to the {}.", path.front(), debugInfo(), id);
 
     path.push_back(id);
     visited.insert(id);
@@ -1593,13 +1531,43 @@ QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(s
 }
 
 
+InsertDependenciesBuilder::StorageIDPrivate::StorageIDPrivate()
+    : StorageIDPrivate(StorageID::createEmpty())
+{
+}
+
+
+InsertDependenciesBuilder::StorageIDPrivate::StorageIDPrivate(const StorageID & other) // NOLINT this is an implicit c-tor
+    : StorageID(other)
+{
+}
+
+
+bool InsertDependenciesBuilder::StorageIDPrivate::operator<(const StorageIDPrivate & other) const
+{
+    return std::tie(uuid, database_name, table_name) < std::tie(other.uuid, other.database_name, other.table_name);
+}
+
+
+bool InsertDependenciesBuilder::StorageIDPrivate::operator==(const StorageIDPrivate & other) const
+{
+    if (empty() && other.empty())
+        return true;
+    if (empty())
+        return false;
+    if (other.empty())
+        return false;
+    return StorageID::operator==(other);
+}
+
+
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
     return isView(init_table_id) || !dependent_views.at(root_view).empty();
 }
 
 
-StorageIDMaybeEmpty InsertDependenciesBuilder::DependencyPath::parent(size_t inheritance) const
+InsertDependenciesBuilder::StorageIDPrivate InsertDependenciesBuilder::DependencyPath::parent(size_t inheritance) const
 {
     if (path.size() > inheritance)
     {
@@ -1607,67 +1575,12 @@ StorageIDMaybeEmpty InsertDependenciesBuilder::DependencyPath::parent(size_t inh
         std::advance(it, inheritance);
         return *it;
     }
-    return StorageIDMaybeEmpty{};
+    return InsertDependenciesBuilder::StorageIDPrivate{};
 }
 
 
-bool InsertDependenciesBuilder::isView(StorageIDMaybeEmpty id) const
+bool InsertDependenciesBuilder::isView(StorageIDPrivate id) const
 {
     return inner_tables.contains(id);
 }
-
-
-Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const
-{
-    chassert(!path.empty());
-
-    LOG_DEBUG(logger, "Creating retry chain for path {}, partition <{}> starting from {}", fmt::join(path, "/"), partition, start_from);
-
-    Chain result;
-
-    auto it = std::find(path.begin(), path.end(), start_from);
-    chassert(it != path.end());
-
-    if (!skip_destination_table && it == path.begin())
-    {
-        const auto & view_id = path.front();
-        chassert(isView(view_id));
-
-        result = Chain::concat(std::move(result), createPreSink(view_id));
-        ++it;
-    }
-
-    for (; it != path.end(); ++it)
-    {
-        // build nodes only for views in path
-        if (!isView(*it))
-            continue;
-
-        const auto & view_id = *it;
-        chassert(isView(view_id));
-
-        result = Chain::concat(std::move(result), createSelect(view_id));
-    }
-
-    const auto & view_id = path.back();
-
-    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
-    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(output_headers.at(view_id)));
-
-    result.addSink(
-        std::make_shared<SelectPartitionTransform>(
-        partition,
-        metadata_snapshots.at(inner_tables.at(view_id)),
-        insert_contexts.at(view_id),
-        output_headers.at(view_id)));
-
-    return result;
-}
-
-
-Chain InsertDependenciesBuilder::createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const
-{
-    return createRetry(info.visited_views, info.original_block_view_id, partition_id);
-}
-
 }

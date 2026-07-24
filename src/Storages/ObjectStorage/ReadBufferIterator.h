@@ -10,6 +10,8 @@ namespace DB
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
 public:
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,

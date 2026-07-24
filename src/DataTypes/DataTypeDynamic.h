@@ -54,8 +54,5 @@ private:
     size_t max_dynamic_types;
 };
 
-/// Returns true if provided type is Dynamic or has Dynamic type as a nested type.
-bool hasDynamicType(const DataTypePtr & type);
-
 }
 

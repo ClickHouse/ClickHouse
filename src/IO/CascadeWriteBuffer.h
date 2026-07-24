@@ -1,9 +1,7 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
-
 #include <functional>
-#include <vector>
+#include <IO/WriteBuffer.h>
 
 
 namespace DB

@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -10,13 +9,13 @@ namespace DB
 
 void AsyncReadCounters::dumpToMapColumn(IColumn * column) const
 {
-    if (!column)
+    auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
+    if (!column_map)
         return;
-    auto & column_map = typeid_cast<DB::ColumnMap &>(*column);
 
-    auto & offsets = column_map.getNestedColumn().getOffsets();
-    auto & tuple_column = column_map.getNestedData();
-    auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & offsets = column_map->getNestedColumn().getOffsets();
+    auto & tuple_column = column_map->getNestedData();
+    auto & key_column = tuple_column.getColumn(0);
     auto & value_column = typeid_cast<ColumnUInt64 &>(tuple_column.getColumn(1));
 
     size_t size = 0;
@@ -24,7 +23,7 @@ void AsyncReadCounters::dumpToMapColumn(IColumn * column) const
     {
         if (value)
         {
-            key_column.insertData(key.data(), key.size());
+            key_column.insertData(key);
             value_column.insert(value);
             ++size;
         }

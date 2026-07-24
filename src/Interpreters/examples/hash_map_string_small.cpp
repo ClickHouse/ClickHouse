@@ -16,11 +16,12 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
 
-struct SmallStringView
+struct SmallStringRef
 {
     size_t size = 0;
 
@@ -37,7 +38,7 @@ struct SmallStringView
         return isSmall() ? data_small : data_big;
     }
 
-    SmallStringView(const char * data_, size_t size_)
+    SmallStringRef(const char * data_, size_t size_)
     {
         size = size_;
 
@@ -47,15 +48,15 @@ struct SmallStringView
             data_big = data_;
     }
 
-    SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
-    explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
-    SmallStringView() = default;
+    SmallStringRef(const unsigned char * data_, size_t size_) : SmallStringRef(reinterpret_cast<const char *>(data_), size_) {}
+    explicit SmallStringRef(const std::string & s) : SmallStringRef(s.data(), s.size()) {}
+    SmallStringRef() = default;
 
     std::string toString() const { return std::string(data(), size); }
 };
 
 
-inline bool operator==(SmallStringView lhs, SmallStringView rhs)
+inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -74,18 +75,18 @@ inline bool operator==(SmallStringView lhs, SmallStringView rhs)
 namespace ZeroTraits
 {
     template <>
-    inline bool check<SmallStringView>(SmallStringView x) { return x.size == 0; }
+    inline bool check<SmallStringRef>(SmallStringRef x) { return x.size == 0; }
 
     template <>
-    inline void set<SmallStringView>(SmallStringView & x) { x.size = 0; }
+    inline void set<SmallStringRef>(SmallStringRef & x) { x.size = 0; }
 }
 
 template <>
-struct DefaultHash<SmallStringView>
+struct DefaultHash<SmallStringRef>
 {
-    size_t operator() (SmallStringView x) const
+    size_t operator() (SmallStringRef x) const
     {
-        return DefaultHash<std::string_view>()(std::string_view(x.data(), x.size));
+        return DefaultHash<StringRef>()(StringRef(x.data(), x.size));
     }
 };
 
@@ -105,9 +106,9 @@ int main(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
-    std::vector<std::string_view> data(n);
+    std::vector<StringRef> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(SmallStringView) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(SmallStringRef) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
     {
         Stopwatch watch;
@@ -118,14 +119,14 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -133,7 +134,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        using Map = HashMapWithSavedHash<std::string_view, Value>;
+        using Map = HashMapWithSavedHash<StringRef, Value>;
 
         Map map;
         Map::LookupResult it;
@@ -149,9 +150,9 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
-            << "HashMap (std::string_view). Size: " << map.size()
+            << "HashMap (StringRef). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -162,7 +163,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        using Map = HashMapWithSavedHash<SmallStringView, Value>;
+        using Map = HashMapWithSavedHash<SmallStringRef, Value>;
 
         Map map;
         Map::LookupResult it;
@@ -170,7 +171,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < n; ++i)
         {
-            map.emplace(SmallStringView(data[i].data(), data[i].size()), it, inserted);
+            map.emplace(SmallStringRef(data[i].data, data[i].size), it, inserted);
             if (inserted)
                 it->getMapped() = 0;
             ++it->getMapped();
@@ -178,9 +179,9 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
-            << "HashMap (SmallStringView). Size: " << map.size()
+            << "HashMap (SmallStringRef). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif

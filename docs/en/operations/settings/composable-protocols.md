@@ -5,7 +5,6 @@ sidebar_label: 'Composable protocols'
 sidebar_position: 64
 slug: /operations/settings/composable-protocols
 title: 'Composable protocols'
-doc_type: 'reference'
 ---
 
 # Composable protocols

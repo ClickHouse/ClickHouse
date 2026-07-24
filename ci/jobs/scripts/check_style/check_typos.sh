@@ -12,4 +12,4 @@ codespell \
     --quiet-level 2 \
     "$ROOT_PATH"/{src,base,programs,utils} \
     $@ | grep -P '.' \
-    && echo -e "\nFound some typos in the code.\nSee ci/jobs/scripts/check_style/codespell-ignore-*.list if you want to add a line or word exception."
+    && echo -e "\nFound some typos in code.\nSee the files utils/check-style/codespell* if you want to add an exception."

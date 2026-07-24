@@ -4,7 +4,6 @@ sidebar_label: 'odbc'
 sidebar_position: 150
 slug: /sql-reference/table-functions/odbc
 title: 'odbc'
-doc_type: 'reference'
 ---
 
 # odbc Table Function

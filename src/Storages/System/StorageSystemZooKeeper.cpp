@@ -125,28 +125,16 @@ struct ZkNodeCache
 
 class ZooKeeperSink : public SinkToStorage
 {
-    ContextPtr context;
-    std::unordered_map<String, zkutil::ZooKeeperPtr> zookeepers;
-    std::unordered_map<String, ZkNodeCache> caches;
+    zkutil::ZooKeeperPtr zookeeper;
+
+    ZkNodeCache cache;
 
 public:
-    ZooKeeperSink(SharedHeader header, ContextPtr context_)
-        : SinkToStorage(header), context(context_)
+    ZooKeeperSink(SharedHeader header, ContextPtr context)
+        : SinkToStorage(header), zookeeper(context->getZooKeeper())
     {}
 
     String getName() const override { return "ZooKeeperSink"; }
-
-    zkutil::ZooKeeperPtr getZooKeeper(const String & zookeeper_name)
-    {
-        auto it = zookeepers.find(zookeeper_name);
-        if (it == zookeepers.end() || it->second->expired())
-        {
-            auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
-            zookeepers[zookeeper_name] = zookeeper;
-            return zookeeper;
-        }
-        return it->second;
-    }
 
     void consume(Chunk & chunk) override
     {
@@ -155,15 +143,13 @@ public:
         ColumnPtr name_column = block.getByName("name").column;
         ColumnPtr value_column = block.getByName("value").column;
         ColumnPtr path_column = block.getByName("path").column;
-        ColumnPtr zookeeper_name_column = block.getByName("zookeeperName").column;
 
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name{name_column->getDataAt(i)};
-            String value{value_column->getDataAt(i)};
-            String path{path_column->getDataAt(i)};
-            String zookeeper_name{zookeeper_name_column->getDataAt(i)};
+            String name = name_column->getDataAt(i).toString();
+            String value = value_column->getDataAt(i).toString();
+            String path = path_column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
             if (name.contains('/'))
@@ -186,27 +172,18 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of `name` length and `path` length should not exceed PATH_MAX");
             }
 
-            if (zookeeper_name.empty())
-                zookeeper_name = zkutil::DEFAULT_ZOOKEEPER_NAME;
-
             std::vector<String> path_vec;
             boost::split(path_vec, path, boost::is_any_of("/"));
             path_vec.push_back(name);
-            auto zookeeper = getZooKeeper(zookeeper_name);
-            auto & cache = caches[zookeeper_name];
             cache.insert(path_vec, zookeeper, value, 0);
         }
     }
 
     void onFinish() override
     {
-        for (auto & [zookeeper_name, cache] : caches)
-        {
-            Coordination::Requests requests;
-            auto zookeeper = getZooKeeper(zookeeper_name);
-            cache.generateRequests(requests);
-            zookeeper->multi(requests);
-        }
+        Coordination::Requests requests;
+        cache.generateRequests(requests);
+        zookeeper->multi(requests);
     }
 };
 
@@ -342,10 +319,7 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
         description.modify(name, [&](ColumnDescription & column)
         {
             /// We only allow column `name`, `path`, `value` to insert.
-            if (column.name != "name"
-                && column.name != "path"
-                && column.name != "value"
-                && column.name != "zookeeperName")
+            if (column.name != "name" && column.name != "path" && column.name != "value")
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
         });
     }
@@ -385,6 +359,11 @@ static bool isPathNode(const ActionsDAG::Node * node)
 
 static void extractNameImpl(const ActionsDAG::Node & node, String & res, ContextPtr context)
 {
+    /// Only one name is allowed
+    if (!res.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
+
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return;
 
@@ -419,12 +398,7 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
             return;
 
         /// Only inserted if the key doesn't exists already
-        auto candidate = value->column->getDataAt(0);
-        /// Only one name is allowed
-        if (!res.empty() && res != candidate)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
-        res = candidate;
+        res = value->column->getDataAt(0).toString();
     }
 }
 
@@ -480,7 +454,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
 
         for (size_t row = 0; row < size; ++row)
             /// Only inserted if the key doesn't exists already
-            res.insert({std::string{values->getDataAt(row)}, ZkPathType::Exact});
+            res.insert({values->getDataAt(row).toString(), ZkPathType::Exact});
     }
     else if (function_name == "equals")
     {
@@ -501,7 +475,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         /// Only inserted if the key doesn't exists already
-        res.insert({std::string{value->column->getDataAt(0)}, ZkPathType::Exact});
+        res.insert({value->column->getDataAt(0).toString(), ZkPathType::Exact});
     }
     else if (allow_unrestricted && function_name == "like")
     {
@@ -518,7 +492,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (value->column->size() != 1)
             return;
 
-        String pattern{value->column->getDataAt(0)};
+        String pattern = value->column->getDataAt(0).toString();
         bool has_metasymbol = false;
         String prefix{}; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)

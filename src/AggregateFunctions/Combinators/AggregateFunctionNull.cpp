@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 
 

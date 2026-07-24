@@ -5,7 +5,6 @@ sidebar_label: 'mongodb'
 sidebar_position: 135
 slug: /sql-reference/table-functions/mongodb
 title: 'mongodb'
-doc_type: 'reference'
 ---
 
 # mongodb Table Function

@@ -12,7 +12,6 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
     const String & column_name,
     const std::vector<ISerialization::SubstreamData> & subcolumns_data,
     const std::vector<String> & substreams_in_serialization_order,
-    ISerialization::EnumerateStreamsSettings & enumerate_settings,
-    const ISerialization::StreamFileNameSettings & stream_file_name_settings);
+    ISerialization::EnumerateStreamsSettings & enumerate_settings);
 
 }

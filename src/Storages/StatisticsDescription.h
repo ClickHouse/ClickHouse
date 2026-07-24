@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 #include <base/types.h>
 
@@ -21,13 +22,13 @@ enum class StatisticsType : UInt8
 struct SingleStatisticsDescription
 {
     StatisticsType type;
+
     ASTPtr ast;
-    bool is_implicit = false;
 
     String getTypeName() const;
 
     SingleStatisticsDescription() = delete;
-    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
+    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_);
 
     SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
@@ -45,8 +46,6 @@ struct ColumnStatisticsDescription
 
     bool empty() const;
 
-    bool hasExplicitStatistics() const;
-
     bool contains(const String & stat_type) const;
 
     void merge(const ColumnStatisticsDescription & other, const String & column_name, DataTypePtr column_type, bool if_not_exists);
@@ -57,17 +56,13 @@ struct ColumnStatisticsDescription
 
     ASTPtr getAST() const;
 
-    String getNameForLogs() const;
-
     /// get a vector of <column name, statistics desc> pair
     static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static ColumnStatisticsDescription fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type);
+    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type);
 
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;
     DataTypePtr data_type;
 };
-
-StatisticsType stringToStatisticsType(String type);
 
 }

@@ -23,12 +23,6 @@
 
 #include <boost/algorithm/string/join.hpp>
 
-// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
-// Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
-#ifdef FS
-#  undef FS
-#endif
-
 namespace DB
 {
 

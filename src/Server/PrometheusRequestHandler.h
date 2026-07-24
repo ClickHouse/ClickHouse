@@ -46,7 +46,6 @@ private:
     class ExposeMetricsImpl;
     class RemoteWriteImpl;
     class RemoteReadImpl;
-    class QueryAPIImpl;
     std::unique_ptr<Impl> impl;
 
     String http_method;

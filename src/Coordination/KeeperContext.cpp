@@ -53,9 +53,6 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
         KeeperFeatureFlag::REMOVE_RECURSIVE,
         KeeperFeatureFlag::MULTI_WATCHES,
-        KeeperFeatureFlag::CHECK_STAT,
-        KeeperFeatureFlag::PERSISTENT_WATCHES,
-        KeeperFeatureFlag::TRY_REMOVE,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)
@@ -637,18 +634,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
-        case Coordination::OpNum::CheckStat:
-            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
-        case Coordination::OpNum::Create2:
-            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
-        case Coordination::OpNum::TryRemove:
-            return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
-        case Coordination::OpNum::SetWatch:
-        case Coordination::OpNum::SetWatch2:
-        case Coordination::OpNum::AddWatch:
-        case Coordination::OpNum::CheckWatch:
-        case Coordination::OpNum::RemoveWatch:
-            return feature_flags.isEnabled(KeeperFeatureFlag::PERSISTENT_WATCHES);
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:

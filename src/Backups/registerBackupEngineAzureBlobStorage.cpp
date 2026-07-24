@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -27,11 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -127,7 +121,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {

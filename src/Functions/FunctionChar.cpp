@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -121,7 +122,7 @@ has the value of the corresponding argument. Accepts multiple arguments of numer
 If the value of the argument is out of range of the `UInt8` data type, then it is converted
 to `UInt8` with potential rounding and overflow.
         )";
-    FunctionDocumentation::Syntax syntax = "char(num1[, num2[, ...]])";
+    FunctionDocumentation::Syntax syntax = "char(num1[, num2[, ...]]);";
     FunctionDocumentation::Arguments arguments = {
         {"num1[, num2[, num3 ...]]", "Numerical arguments interpreted as integers.", {"(U)Int8/16/32/64", "Float*"}}
     };
@@ -152,7 +153,7 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionChar>(documentation, FunctionFactory::Case::Insensitive);
 }

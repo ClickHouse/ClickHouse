@@ -83,7 +83,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
-            ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of a new line")
         ;
 
         Settings cmd_settings;
@@ -94,26 +93,25 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         po::notify(options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;
             return 1;
         }
 
-        bool hilite = options.contains("hilite");
-        bool oneline = options.contains("oneline");
-        bool quiet = options.contains("quiet");
-        bool multiple = options.contains("multiquery");
+        bool hilite = options.count("hilite");
+        bool oneline = options.count("oneline");
+        bool quiet = options.count("quiet");
+        bool multiple = options.count("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        bool obfuscate = options.contains("obfuscate");
-        bool backslash = options.contains("backslash");
-        bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
+        bool obfuscate = options.count("obfuscate");
+        bool backslash = options.count("backslash");
+        bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
-        bool semicolon_inline = options.contains("semicolons_inline");
 
         std::function<void(std::string_view)> comments_callback;
-        if (options.contains("comments"))
+        if (options.count("comments"))
             comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
 
         SharedContextHolder shared_context = Context::createShared();
@@ -155,7 +153,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         String query;
 
-        if (options.contains("query"))
+        if (options.count("query"))
         {
             query = options["query"].as<std::string>();
         }
@@ -171,7 +169,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             WordSet used_nouns;
             SipHash hash_func;
 
-            if (options.contains("seed"))
+            if (options.count("seed"))
             {
                 hash_func.update(options["seed"].as<std::string>());
             }
@@ -307,7 +305,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                         if (multiple && !insert_query_payload)
                         {
-                            if (oneline || !has_multiple_lines || semicolon_inline)
+                            if (oneline || !has_multiple_lines)
                                 std::cout << ";\n";
                             else
                                 std::cout << "\n;\n";

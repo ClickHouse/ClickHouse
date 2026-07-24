@@ -1,4 +1,4 @@
-if (OS_LINUX OR OS_DARWIN OR OS_FREEBSD)
+if (OS_LINUX OR OS_DARWIN)
     option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
 else ()
     option(ENABLE_ICU "Enable ICU" 0)

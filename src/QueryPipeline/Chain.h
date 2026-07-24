@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Core/Block_fwd.h>
 
 #include <memory>
 
@@ -55,7 +54,7 @@ public:
     const SharedHeader & getOutputSharedHeader() const;
 
     const std::list<ProcessorPtr> & getProcessors() const { return processors; }
-    std::list<ProcessorPtr> & getProcessors() { return processors; }
+    static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }

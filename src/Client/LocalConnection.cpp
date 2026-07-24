@@ -16,7 +16,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
-#include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -35,9 +34,6 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -46,7 +42,7 @@ namespace Setting
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsFloatAuto evaluation_time;
 }
 
 namespace ErrorCodes
@@ -144,9 +140,7 @@ void LocalConnection::sendQuery(
         query_context = session->makeQueryContext(*client_info);
     else
         query_context = session->makeQueryContext();
-
     query_context->setCurrentQueryId(query_id);
-    query_context->setClientInterface(ClientInfo::Interface::LOCAL);
 
     if (send_progress)
     {
@@ -212,7 +206,7 @@ void LocalConnection::sendQuery(
         else if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::evaluation_time]});
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -245,16 +239,7 @@ void LocalConnection::sendQuery(
         }
 
         chassert(in, "ReadBuffer should be initialized");
-
-        auto source = context->getInputFormat(
-            current_format,
-            *in,
-            sample,
-            settings[Setting::max_insert_block_size],
-            std::nullopt,
-            settings[Setting::max_insert_block_size_bytes],
-            settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();
@@ -301,10 +286,14 @@ void LocalConnection::sendQuery(
                 state->block = state->pushing_executor->getHeader();
             }
 
+            const auto & table_id = query_context->getInsertionTable();
             if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
-                if (query_context->hasInsertionTableColumnsDescription())
-                    state->columns_description = query_context->getInsertionTableColumnsDescription();
+                if (!table_id.empty())
+                {
+                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    state->columns_description = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+                }
             }
         }
         else if (state->io.pipeline.pulling())
@@ -704,7 +693,9 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
+                /// Send external table name (empty name is the main table)
+                /// (see TCPHandler::sendTableColumns)
+                packet.multistring_message = {"", state->columns_description->toString()};
             }
 
             if (state->block)
@@ -741,15 +732,11 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & name,
-    UInt64 & version_major, UInt64 & version_minor,
-    UInt64 & version_patch, UInt64 & revision)
+    const ConnectionTimeouts & /* timeouts */, String & /* name */,
+    UInt64 & /* version_major */, UInt64 & /* version_minor */,
+    UInt64 & /* version_patch */, UInt64 & /* revision */)
 {
-    name = std::string(VERSION_NAME);
-    version_major = VERSION_MAJOR;
-    version_minor = VERSION_MINOR;
-    version_patch = VERSION_PATCH;
-    revision = DBMS_TCP_PROTOCOL_VERSION;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)

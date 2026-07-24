@@ -12,7 +12,7 @@ ALTER TABLE t_delete_empty_part DELETE WHERE a = 2 OR b < 500;
 
 SELECT count() FROM t_delete_empty_part;
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     part_name,

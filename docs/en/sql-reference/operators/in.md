@@ -3,7 +3,6 @@ description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and
   NOT IN operators which are covered separately'
 slug: /sql-reference/operators/in
 title: 'IN Operators'
-doc_type: 'reference'
 ---
 
 # IN Operators
@@ -27,7 +26,7 @@ The right side of the operator can be a set of constant expressions, a set of tu
 
 ClickHouse allows types to differ in the left and the right parts of the `IN` subquery. 
 In this case, it converts the right side value to the type of the left side, as 
-if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accurateCastOrNull) function were applied to the right side. 
+if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function were applied to the right side. 
 
 This means that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion 
 cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).

@@ -1,10 +1,9 @@
 ---
-description: 'Page describing usage recommendations for open-source ClickHouse'
-sidebar_label: 'OSS usage recommendations'
+description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
+sidebar_label: 'Usage Recommendations'
 sidebar_position: 58
 slug: /operations/tips
-title: 'OSS usage recommendations'
-doc_type: 'guide'
+title: 'Usage Recommendations'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
@@ -52,7 +51,6 @@ When using ClickHouse with less than 16GB of RAM, we recommend the following:
 - Lower the `max_block_size` to `8192`. Values as low as `1024` can still be practical.
 - Lower `max_download_threads` to `1`.
 - Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
-- disable writing in log tables, as it keeps the background merge task reserving RAM to perform merges of log tables. Disable `asynchronous_metric_log`, `metric_log`, `text_log`, `trace_log`.
 
 Additional notes:
 - To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`

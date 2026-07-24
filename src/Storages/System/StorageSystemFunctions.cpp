@@ -1,14 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 
@@ -59,7 +61,7 @@ namespace
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory>)
+        if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             if (factory.isAlias(name))
             {
@@ -70,7 +72,6 @@ namespace
                 res_columns[10]->insertDefault();
                 res_columns[11]->insertDefault();
                 res_columns[12]->insertDefault();
-                res_columns[13]->insertDefault();
             }
             else
             {
@@ -78,11 +79,10 @@ namespace
                 res_columns[6]->insert(documentation.description);
                 res_columns[7]->insert(documentation.syntaxAsString());
                 res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.parametersAsString());
-                res_columns[10]->insert(documentation.returnedValueAsString());
-                res_columns[11]->insert(documentation.examplesAsString());
-                res_columns[12]->insert(documentation.introducedInAsString());
-                res_columns[13]->insert(documentation.categoryAsString());
+                res_columns[9]->insert(documentation.returnedValueAsString());
+                res_columns[10]->insert(documentation.examplesAsString());
+                res_columns[11]->insert(documentation.introducedInAsString());
+                res_columns[12]->insert(documentation.categoryAsString());
             }
         }
         else
@@ -94,7 +94,6 @@ namespace
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
             res_columns[12]->insertDefault();
-            res_columns[13]->insertDefault();
         }
     }
 }
@@ -121,8 +120,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsValues()), "Obsolete."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
-        {"arguments", std::make_shared<DataTypeString>(), "The function arguments."},
-        {"parameters", std::make_shared<DataTypeString>(), "The function parameters (only for aggregate function)."},
+        {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
@@ -150,10 +148,10 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        ASTPtr ast;
+        String create_query;
         try
         {
-            ast = user_defined_sql_functions_factory.get(function_name);
+            create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
         }
         catch (const Exception & e)
         {
@@ -162,9 +160,6 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             else
                 throw;
         }
-        String create_query;
-        if (ast)
-            create_query = format({context, *ast});
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

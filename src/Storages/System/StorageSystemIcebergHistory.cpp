@@ -93,7 +93,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases();
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table

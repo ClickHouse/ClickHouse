@@ -19,7 +19,6 @@ jobs:
     name: "Config Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,13 +27,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -55,11 +53,10 @@ jobs:
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
     needs: [config_workflow]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -68,13 +65,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -95,11 +91,10 @@ jobs:
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -108,13 +103,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -135,11 +129,10 @@ jobs:
   style_check:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
     name: "Style check"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -148,13 +141,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -173,13 +165,12 @@ jobs:
           fi
 
   fast_test:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0') }}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -188,13 +179,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -213,13 +203,12 @@ jobs:
           fi
 
   build_amd_binary:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -228,13 +217,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -255,11 +243,10 @@ jobs:
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_binary]
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -268,13 +255,12 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}

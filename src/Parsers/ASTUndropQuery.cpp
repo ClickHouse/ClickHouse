@@ -13,7 +13,7 @@ String ASTUndropQuery::getID(char delim) const
 
 ASTPtr ASTUndropQuery::clone() const
 {
-    auto res = make_intrusive<ASTUndropQuery>(*this);
+    auto res = std::make_shared<ASTUndropQuery>(*this);
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;

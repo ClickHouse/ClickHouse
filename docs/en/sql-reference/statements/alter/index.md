@@ -4,7 +4,6 @@ sidebar_label: 'ALTER'
 sidebar_position: 35
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
-doc_type: 'reference'
 ---
 
 # ALTER
@@ -33,6 +32,7 @@ These `ALTER` statements manipulate views:
 | Statement                                                                           | Description                                                                          |
 |-------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
 | [ALTER TABLE ... MODIFY QUERY](/sql-reference/statements/alter/view.md)     | Modifies a [Materialized view](/sql-reference/statements/create/view) structure.                                       |
+| [ALTER LIVE VIEW](/sql-reference/statements/alter/view#alter-live-view-statement) | Refreshes a [Live view](/sql-reference/statements/create/view.md/#live-view).|
 
 These `ALTER` statements modify entities related to role-based access control:
 

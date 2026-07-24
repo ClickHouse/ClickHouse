@@ -29,7 +29,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTUseQuery>(*this);
+        auto res = std::make_shared<ASTUseQuery>(*this);
         res->children.clear();
         if (database)
             res->set(res->database, database->clone());

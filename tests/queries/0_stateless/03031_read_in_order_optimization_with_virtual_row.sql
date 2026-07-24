@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas
 -- ^ because we are using query_log
--- add_minmax_index_for_numeric_columns=0: Different read rows
 
 SET read_in_order_use_virtual_row = 1;
 SET use_query_condition_cache = 0;
@@ -17,8 +16,7 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY (x, y, z)
 SETTINGS index_granularity = 8192,
-index_granularity_bytes = 10485760,
-add_minmax_index_for_numeric_columns=0;
+index_granularity_bytes = 10485760;
 
 SYSTEM STOP MERGES t;
 
