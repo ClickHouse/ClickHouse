@@ -319,6 +319,55 @@ test_params_cohere_wiki_20m_rabitq = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
 }
 
+# turboquant quantized codec variants: same mechanism as the rabitq runs above (no HNSW
+# index; Array(BFloat16) column with a CODEC(Quantized('turboquant', <dim>)) companion
+# stream; searches run with vector_search_use_quantized_codes = 1). The shortlist is
+# rescored against the full-precision BFloat16 values using a fetch multiplier of 5.
+test_params_hackernews_10m_turboquant = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: "turboquant",
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # no rescoring (shortlist == LIMIT)
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,  # concurrency test not needed for quantized codec runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+}
+
+test_params_cohere_wiki_20m_turboquant = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: "turboquant",
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # no rescoring (shortlist == LIMIT)
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,  # only check recall for 1000 query vectors
+    RECALL_K: 10,
+    # Let's have more than 1 part for this dataset (7 - 9 parts)
+    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
+    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    CONCURRENCY_TEST: False,  # concurrency test not needed for quantized codec runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
+}
+
 # QBit(Int8) 1-bit search variant: no HNSW index and no CODEC. The vector column is
 # stored as QBit(Int8, <dimension>) holding quantizeBFloat16ToInt8 codes, and every
 # search ranks candidates with cosineDistanceTransposedQuantized(vec, query, 1) - i.e.
@@ -1128,15 +1177,25 @@ TESTS_TO_RUN = [
     #     dataset_cohere_wiki_20m,
     #     test_params_cohere_wiki_20m_rabitq,
     # ),
+    # (
+    #     "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m_qbit_int8_1bit,
+    # ),
+    # (
+    #     "Test using the hackernews dataset with QBit(Int8) 1-bit search",
+    #     dataset_hackernews_openai,
+    #     test_params_hackernews_10m_qbit_int8_1bit,
+    # ),
     (
-        "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
-        dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m_qbit_int8_1bit,
+        "Test using the hackernews dataset with turboquant quantized codec",
+        dataset_hackernews_openai,
+        test_params_hackernews_10m_turboquant,
     ),
     (
-        "Test using the hackernews dataset with QBit(Int8) 1-bit search",
-        dataset_hackernews_openai,
-        test_params_hackernews_10m_qbit_int8_1bit,
+        "Test using the cohere wiki dataset with turboquant quantized codec",
+        dataset_cohere_wiki_20m,
+        test_params_cohere_wiki_20m_turboquant,
     ),
 ]
 
