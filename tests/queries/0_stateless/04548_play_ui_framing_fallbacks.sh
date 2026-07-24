@@ -194,6 +194,15 @@ echo "$page" | grep -q -F 'host.peak = Math.max(host.peak, value);' && echo 'pea
 echo "$page" | grep -q -F "exception_carrier = 'event: exception\ndata: ' + JSON.stringify({ exception: display_error });" && echo 'transport catch keeps event-stream framing: OK'
 echo "$page" | grep -q -F "? JSON.stringify({ packet: 'exception', exception: display_error })" && echo 'transport catch keeps ndjson framing: OK'
 echo "$page" | grep -q -F 'try { dispatchEventStreamBlock(block, handleEvent); }' && echo 'replay skips broken frames: OK'
+# A table whose query failed mid-stream is finalized the same way on every failure path - the live
+# framed and non-framed branches and both restore paths (single result and "Run all") route through
+# one shared `finalizeFailedTable`: partial rows get the same totals/coloring/transpose/layout under
+# the error, and a header-only failure hides its empty table without wiping the already-rendered
+# error and streamed logs (unlike `clear`). Browser-only rendering, checked by the shared method's
+# presence and its call sites (live sites defer the measuring passes for a background tab).
+echo "$page" | grep -q -F 'finalizeFailedTable(measureNow)' && echo 'failed-table finalization shared: OK'
+[ "$(echo "$page" | grep -c -F 'finalizeFailedTable(tab.id === activeTabId);')" -eq 2 ] && echo 'live failures finalize the table: OK'
+[ "$(echo "$page" | grep -c -F 'el.finalizeFailedTable(true);')" -eq 2 ] && echo 'restored failures finalize the table: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.

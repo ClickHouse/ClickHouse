@@ -198,6 +198,7 @@ function makeElement(tag) {
         refreshColumnColor() {},
         transposeIfNeeded() {},
         _changeTableLayout() {},
+        finalizeFailedTable() {},
         start() {},
         finish() {},
         updateProgress() {},

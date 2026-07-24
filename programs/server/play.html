@@ -4456,6 +4456,37 @@ class QueryResultElement extends HTMLElement
         if (this._pendingChangeLayout) { this._pendingChangeLayout = false; this._changeTableLayout(); }
     }
 
+    /// Finish a table whose query failed mid-stream, the same way on every failure path (the live
+    /// mid-stream failure branches in `postImpl` and the snapshot-restore paths): keep any partial
+    /// rows that arrived and finish their totals/coloring/transpose/layout so they look consistent
+    /// under the error; when nothing but a header (or nothing at all) arrived, hide the empty table
+    /// so only the error shows. Unlike `clear`, the empty case must not wipe the rest of the
+    /// element: a framed stream has already rendered the exception (`renderError`) and the server
+    /// logs by the time the failure is finalized, and both must survive. `measureNow` says whether
+    /// the panel is visible: the transpose/layout passes measure widths (a hidden panel measures 0),
+    /// so a background tab defers them (see `applyDeferredLayout`).
+    finalizeFailedTable(measureNow)
+    {
+        if (this.rowCount > 0)
+        {
+            /// Render totals before coloring, so the totals row is colored too.
+            this.renderTotals();
+            this.applyColumnColors();
+            if (measureNow) { this.transposeIfNeeded(); this._changeTableLayout(); }
+            else { this._pendingTranspose = true; this._pendingChangeLayout = true; }
+        }
+        else
+        {
+            this._clearElement(this._dataTable);
+            this._dataTable.classList.remove('fixed');
+            this._dataTable.classList.remove('single-value');
+            this._dataDiv.classList.remove('fixed');
+            this._header = {};
+            this._totals = null;
+            this._extremes = {};
+        }
+    }
+
     _changeTableLayout()
     {
         const table = this._dataTable;
@@ -8213,6 +8244,13 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// the logs, and the exception are all shown.
             if (res.exception) {
                 is_error = true;
+                /// The exception packet was already rendered by the stream handler; finish the
+                /// partial table (or hide an empty, header-only one) the same way the non-framed
+                /// mid-stream failure below does, so the failed framed table shows finalized
+                /// totals/coloring/layout under the error instead of a half-rendered (or empty)
+                /// table — and so the snapshot-restore paths, which apply the same finalization,
+                /// reopen the tab in the same state the live run showed.
+                if (is_table) targetResultEl.finalizeFailedTable(tab.id === activeTabId);
                 return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
             }
         } else if (format == default_format) {
@@ -8318,14 +8356,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// but a header arrived, hide the empty table so only the error shows. The partial table
             /// still needs its layout pass (deferred while the tab is hidden).
             if (stream_exception !== null) {
-                if (targetResultEl.rowCount > 0) {
-                    targetResultEl.renderTotals();
-                    targetResultEl.applyColumnColors();
-                    if (tab.id === activeTabId) { targetResultEl.transposeIfNeeded(); targetResultEl._changeTableLayout(); }
-                    else { targetResultEl._pendingTranspose = true; targetResultEl._pendingChangeLayout = true; }
-                } else {
-                    targetResultEl.clear();
-                }
+                targetResultEl.finalizeFailedTable(tab.id === activeTabId);
                 targetResultEl.renderError(stream_exception);
                 display_error = stream_exception;
                 return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, exception_carrier };
@@ -9334,9 +9365,17 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
             }
             if (matToken !== tab.reqNum) return true;
         } else if (!raw_text && !base64) {
-            el.renderTotals();
-            el.applyColumnColors();
-            el.transposeIfNeeded();
+            /// A failed statement mirrors the live failure path for a framed table (`postImpl`):
+            /// the same finalize-or-clear invariant, so a header-only failure hides its empty
+            /// table instead of leaving it above the replayed error. A successful statement
+            /// finishes like the live success path (no single-query layout pass; see `postMulti`).
+            if (!snap.ok || snap.error) {
+                el.finalizeFailedTable(true);
+            } else {
+                el.renderTotals();
+                el.applyColumnColors();
+                el.transposeIfNeeded();
+            }
         }
         return true;
     }
@@ -9663,6 +9702,11 @@ async function materializeResult(tab) {
         if (base64) { if (!rendered_image) is_raw = true; }
         else if (raw_text) is_raw = true; else is_table = true;
         if (!result.ok) {
+            /// Mirror the live failure path for a framed table (`postImpl`): the replayed partial
+            /// rows get the same totals/coloring/transpose/layout finalization, and a header-only
+            /// failure hides its empty table so only the replayed error (and logs) show — instead
+            /// of the tab reopening with a half-rendered or empty table above the error.
+            if (is_table) el.finalizeFailedTable(true);
             tab.logoVisible = false;
             tab.progressPhase = 'error';
             tab.failed = true;

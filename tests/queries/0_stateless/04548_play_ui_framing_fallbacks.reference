@@ -33,6 +33,9 @@ peak gauge keeps the maximum: OK
 transport catch keeps event-stream framing: OK
 transport catch keeps ndjson framing: OK
 replay skips broken frames: OK
+failed-table finalization shared: OK
+live failures finalize the table: OK
+restored failures finalize the table: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream
