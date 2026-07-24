@@ -17,7 +17,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
+
+/// Format version 2 appended the "author" field. Entries of both versions are readable;
+/// new entries are always written with the latest format version.
+static constexpr UInt64 MUTATION_ENTRY_FORMAT_VERSION = 2;
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
 {
@@ -62,7 +67,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 1\n"
+        *out << "format version: " << MUTATION_ENTRY_FORMAT_VERSION << "\n"
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
@@ -131,7 +136,10 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
 
-    *buf >> "format version: 1\n";
+    UInt64 format_version = 0;
+    *buf >> "format version: " >> format_version >> "\n";
+    if (format_version < 1 || format_version > MUTATION_ENTRY_FORMAT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown mutation entry format version: {}", format_version);
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";

@@ -9,9 +9,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FORMAT_VERSION;
+}
+
+/// Format version 2 appended the "author" field. Entries of both versions are readable;
+/// new entries are always written with the latest format version.
+static constexpr UInt64 REPLICATED_MUTATION_ENTRY_FORMAT_VERSION = 2;
+
 void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
-    out << "format version: 1\n"
+    out << "format version: " << REPLICATED_MUTATION_ENTRY_FORMAT_VERSION << "\n"
         << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << "\n"
         << "block numbers count: " << block_numbers.size() << "\n";
@@ -35,7 +44,10 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 {
-    in >> "format version: 1\n";
+    UInt64 format_version = 0;
+    in >> "format version: " >> format_version >> "\n";
+    if (format_version < 1 || format_version > REPLICATED_MUTATION_ENTRY_FORMAT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown replicated mutation entry format version: {}", format_version);
 
     LocalDateTime create_time_dt;
     in >> "create time: " >> create_time_dt >> "\n";
@@ -60,7 +72,7 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
     if (checkString("\nalter version: ", in))
         in >> alter_version;
 
-    if (checkString("\nauthor: ", in))
+    if (format_version >= 2 && checkString("\nauthor: ", in))
         readEscapedStringUntilEOL(author, in);
 }
 
