@@ -1,35 +1,31 @@
 ---
-description: 'ユーザー定義関数（UDFs）に関するドキュメント'
+description: 'ユーザー定義関数 (UDFs) に関するドキュメント'
 sidebarTitle: 'UDF'
 slug: /sql-reference/functions/udf
-title: 'ユーザー定義関数（UDFs）'
+title: 'ユーザー定義関数 (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<div id="udfs-user-defined-functions">
-  # UDFs ユーザー定義関数
-</div>
 
 ClickHouse は、いくつかの種類のユーザー定義関数 (UDFs) をサポートしています。
 
 * [実行可能 UDF](#executable-user-defined-functions) は、外部プログラムやスクリプト (Python、Bash など) を起動し、STDIN / STDOUT を介してデータのブロックをストリーミングします。ClickHouse を再コンパイルすることなく、既存のコードやツールを統合するために使用できます。インプロセスの選択肢と比べると呼び出しごとのオーバーヘッドは大きく、より重いロジックや別のランタイムが必要な場合に適しています。
 * [SQL UDFs](#sql-user-defined-functions) は、`CREATE FUNCTION` を使って SQL のみで定義されます。これらはクエリプランにインライン展開されるため (プロセス境界はありません) 、軽量で、式ロジックの再利用や複雑な計算カラムの簡略化に適しています。
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) は、WebAssembly にコンパイルされたコードを、サーバープロセス内のサンドボックスで実行します。外部の実行可能ファイルよりも呼び出しごとのオーバーヘッドが低く、ネイティブ拡張機能よりも優れた分離性を備えているため、WASM をターゲットにできる言語 (例: C/C++/Rust) で記述されたカスタムアルゴリズムに適しています。
+* [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) では、オペレーターが提供する &quot;ドライバー&quot; により、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたコードスニペットを、関数作成時に実行可能 UDF に変換できます (たとえばコンパイルして)。これは実行可能 UDF をベースとしており、サーバー側のドライバー設定が必要です。
 
 <div id="executable-user-defined-functions">
   ## 実行可能ユーザー定義関数
 </div>
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 <Note>
-  この機能は、ClickHouse Cloud でプライベートプレビューとして提供されています。
-  利用するには、https://clickhouse.cloud/support から ClickHouse Support にお問い合わせください。
+  ClickHouse Cloud では、実行可能 UDF はパブリックベータとして提供されており、Cloud コンソールの UI から作成します。Cloud 固有のワークフローについては、[Cloud でのユーザー定義関数](/ja/products/cloud/features/sql-console-features/user-defined-functions) を参照してください。
 </Note>
 
 ClickHouse は、データ処理のために任意の外部実行可能プログラムまたはスクリプトを呼び出すことができます。
@@ -526,6 +522,144 @@ SELECT my_function(10, 20);
 </div>
 
 詳細については、[WebAssembly ユーザー定義関数](/ja/reference/functions/regular-functions/wasm_udf) のドキュメントを参照してください。
+
+<div id="driver-based-executable-user-defined-functions">
+  ## ドライバーベースの実行可能なユーザー定義関数
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<Note>
+  これは実験的な機能であり、将来のリリースで後方互換性のない変更が加えられる可能性があります。[`allow_experimental_executable_udf_drivers`](/ja/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers) サーバー設定で有効にしてください。
+</Note>
+
+*ドライバー* は、ユーザーのコードスニペットを実行可能な [実行可能 UDF](#executable-user-defined-functions) に変換する、オペレーター提供のアダプターです。関数を `ENGINE = DriverName(...)` で作成すると、ClickHouse はドライバーの `create_command` を実行し、関数シグネチャとコードのボディを渡します。ドライバーはボディをコンパイルするか、別の方法で処理し、実行可能 UDF の設定を出力します。その後、ClickHouse はその設定を保存して読み込みます。
+
+これにより管理者は、サーバーの設定ファイルやファイルシステムへのアクセスを与えることなく、任意の言語 (たとえば、サンドボックス化されたコンテナー内でコンパイルされる C) で関数を定義できる、安全かつ限定的な手段をユーザーに提供できます。利用可能なドライバーのセットは、オペレーターが完全に制御します。
+
+<div id="enabling-drivers">
+  ### ドライバーの有効化
+</div>
+
+ドライバーベースの実行可能 UDF は、デフォルトで無効になっています。有効にするには、次の手順を実行します。
+
+1. server configuration で Experimental のゲートを設定します。
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. `user_defined_executable_function_drivers_config` に 1 つ以上の ドライバー設定 file を指定します (glob を使用可能) 。必要に応じて、生成された実行可能 UDF の configuration が保存されるディレクトリである [`dynamic_user_defined_executable_functions_path`](/ja/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) も設定します。
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+ドライバー registry は server の起動時に読み込まれ、`SYSTEM RELOAD CONFIG` で更新されるため、server を再起動せずにドライバーを追加、変更、削除できます。
+
+<div id="driver-configuration">
+  ### ドライバー設定
+</div>
+
+ドライバーは、最上位要素として `<driver>` を持つ XML (または YAML) ファイルで記述します。サポートされるフィールドは次のとおりです。
+
+| Field              | Description                                                                                                 | Required |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | -------- |
+| `name`             | `CREATE FUNCTION ... ENGINE = <name>(...)` で使用するドライバー名です。                                                   | はい       |
+| `create_command`   | コードスニペットから UDF を作成する際に呼び出されるプログラムのパスです。相対パスは、ドライバー設定ファイルを基準に解決されます。                                         | はい       |
+| `drop_command`     | このドライバーに基づく関数が削除されたときに呼び出されるプログラムのパスです。                                                                     | いいえ      |
+| `engine_arguments` | `ENGINE = DriverName(...)` 内で使用できる引数を宣言します。各子要素は引数名で、`<required>true</required>` という子要素を追加すると、その引数は必須になります。 | いいえ      |
+| `env`              | ドライバーコマンドの呼び出し時にエクスポートされる環境変数です。                                                                            | いいえ      |
+
+ドライバー設定の例:
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+<div id="driver-invocation-contract">
+  #### ドライバー呼び出し契約
+</div>
+
+`CREATE FUNCTION` を実行すると、設定された `env` 変数がセットされた状態で `create_command` が呼び出され、次の引数が渡されます。
+
+* `--name <function_name>`
+* `--return <return_type>` (`RETURNS` 句がある場合)
+* `--args <signature>` (`ARGUMENTS` 句がある場合) 。ここで、signature は宣言された引数の一覧で、たとえば `x UInt8, y DateTime` です
+* `ENGINE = DriverName(key = value)` で指定された、宣言済みの各 engine 引数について `--<key> <value>`
+
+ユーザー code のボディ (`AS` の後のテキスト) は、コマンドの標準入力に送られます。コマンドは、実行可能 UDF の configuration を標準出力に出力する必要があります。フォーマットは自動検出され、`<` で始まる出力は XML、それ以外は YAML として扱われます。生成された configuration 内で定義される関数名は、作成する関数名と一致している必要があります。`create_command` がゼロ以外の status で終了した場合、ステートメントは終了コードとドライバーの標準エラーを含む例外とともに失敗します。
+
+`drop_command` は、存在する場合、関数が削除されるときに同じ方法で呼び出されます (stdin に code のボディは渡されません) 。
+
+<div id="creating-a-function-with-a-driver">
+  ### function の作成
+</div>
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+ClickHouse はドライバーの `create_command` を実行し、生成された設定を [`dynamic_user_defined_executable_functions_path`](/ja/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) に書き込みます。すると、既存の実行可能 UDF ローダーがそれを検出します。その後、その関数は他の関数と同様に呼び出せます。
+
+<div id="dropping-a-function-with-a-driver">
+  ### 関数の削除
+</div>
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`DROP FUNCTION` は、ドライバーの `drop_command` (存在する場合) を呼び出し、生成された動的設定と関数ごとの作業ディレクトリを削除し、実行可能 UDF ローダーを再読み込みして、永続化されたクエリを削除します。
+
+<div id="driver-persistence-and-restart">
+  ### 永続化と再起動
+</div>
+
+元のクエリは、ユーザー定義 SQL オブジェクトディレクトリに `ATTACH FUNCTION ...` ステートメントとして永続化されるため、サーバーを再起動しても関数は保持されます。起動時には、[`dynamic_user_defined_executable_functions_path`](/ja/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) 内の生成済み構成が、ドライバーを再実行することなく直接読み込まれます。永続化された `ATTACH FUNCTION` に対応する生成済み構成がない場合 (たとえば動的ディレクトリが失われた場合) 、それを再作成するためにドライバーが再実行されます。
+
+<div id="driver-limitations">
+  ### 制限事項
+</div>
+
+* この機能は実験的で、`allow_experimental_executable_udf_drivers` を有効にした場合にのみ利用できます。
+* ドライバーベースの関数は、レプリケーション対応のユーザー定義関数ストレージ (`ON CLUSTER` および `<user_defined_zookeeper_path>`) ではサポートされていません。レプリケートされるのは生成されたアーティファクトではなく、元のクエリだけであるためです。
+* バックアップされたドライバーベースの関数を `RESTORE` すると、クエリ自体は保持されますが、ドライバーは再実行されません。生成された設定は、その後の再起動時の復旧によって実体化されます。
+
+<div id="example-c-drivers">
+  ### 例: C ドライバー
+</div>
+
+ソースツリーには、C の関数本体をコンパイルして実行する概念実証用ドライバーが `programs/server/user_defined_executable_function_drivers_config.d/` 配下に含まれています。これらはあくまで例であり、**パッケージには含まれず、インストールもされません**。
+
+* `DockerC` - サンドボックス化された Docker コンテナー内でコードをコンパイルして実行し (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges` に加えて、メモリ/CPU/PID 制限も適用) 、`executable_pool` UDF を生成します。
+* `GVisorC` - コンパイル済みバイナリーを [gVisor](https://gvisor.dev/) の `runsc` ランタイム上で実行するバリアントです。
+* `UnsafeC` - サンドボックスを使用せず、ホスト上でコードを直接コンパイルして実行します。名前のとおり分離は行われないため、信頼できる環境とテスト用途でのみ使用することを想定しています。
+
+これらのサンプルドライバーは出発点として用意されています。信頼できないユーザーに公開する前に、利用環境に合わせてサンドボックス化の内容を確認し、強化してください。
 
 <div id="related-content">
   ## 関連コンテンツ

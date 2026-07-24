@@ -626,9 +626,9 @@ Para instâncias agent responsáveis por enviar eventos a um gateway e apenas de
 | 10k/segundo  | 1 CPU, 1GiB                     |
 
 <div id="schema-choice">
-  ## Escolha de esquema: Map vs JSON
+  ## Escolha do schema: Map vs JSON
 </div>
 
-O collector do ClickStack cria tabelas que armazenam atributos em colunas `Map(LowCardinality(String), String)` por padrão. Esse é o esquema recomendado para workloads de observabilidade. Um esquema do tipo `JSON` está disponível em beta para avaliação em workloads com um conjunto pequeno e estável de chaves de atributo.
+O ClickStack collector cria tabelas que armazenam atributos em colunas `Map(LowCardinality(String), String)` por padrão. Este é o schema recomendado para workloads de observabilidade. Um schema do tipo `JSON` está disponível em beta para avaliação em workloads com um conjunto pequeno e estável de chaves de atributo.
 
-Para ver a comparação completa, quando cada um é mais apropriado, as variáveis de ambiente necessárias para habilitar o esquema do tipo JSON e o passo a passo da migração, consulte [Map vs JSON type](/pt-BR/clickstack/ingesting-data/schema/map-vs-json).
+Para ver a comparação completa, em quais casos cada um é mais adequado, as variáveis de ambiente necessárias para habilitar o schema do tipo JSON e o passo a passo da migração, consulte [Map vs tipo JSON](/pt-BR/clickstack/ingesting-data/schema/map-vs-json).

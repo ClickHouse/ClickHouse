@@ -191,6 +191,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
 이 계층 구조가 어떻게 취급되는지에 대한 예시는 다음과 같습니다.
 
 * `ALTER` 권한에는 다른 모든 `ALTER*` 권한이 포함됩니다.
-* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT` 및 `ALTER DROP CONSTRAINT` 권한이 포함됩니다.
+* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT`, `ALTER MODIFY CONSTRAINT` 권한이 포함됩니다.
 
 권한은 서로 다른 수준에서 적용됩니다. 각 수준을 알면 해당 권한에 사용할 수 있는 구문을 파악할 수 있습니다.
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`. 수준: `GROUP`. 별칭: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. 수준: `TABLE`. 별칭: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. 수준: `TABLE`. 별칭: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. 수준: `TABLE`. 별칭: `MODIFY CONSTRAINT`
   * `ALTER TTL`. 수준: `TABLE`. 별칭: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. 수준: `TABLE`. 별칭: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. 수준: `TABLE`. 별칭: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 이 계층이 적용되는 방식의 예시는 다음과 같습니다:
 
 * `ALTER` 권한에는 다른 모든 `ALTER*` 권한이 포함됩니다.
-* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT` 및 `ALTER DROP CONSTRAINT` 권한이 포함됩니다.
+* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` 및 `ALTER MODIFY CONSTRAINT` 권한이 포함됩니다.
 
 **참고**
 
@@ -629,7 +632,7 @@ GRANT CLUSTER ON *.* TO <username>
     * `SYSTEM DROP UNCOMPRESSED CACHE`. 수준: `GLOBAL`. 별칭: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   * `SYSTEM RELOAD`. 수준: `GROUP`
     * `SYSTEM RELOAD CONFIG`. 수준: `GLOBAL`. 별칭: `RELOAD CONFIG`
-    * `SYSTEM RELOAD DICTIONARY`. 수준: `GLOBAL`. 별칭: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+    * `SYSTEM RELOAD DICTIONARY`. 수준: `GLOBAL`. 별칭: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`, `SYSTEM UNLOAD DICTIONARY`, `SYSTEM UNLOAD DICTIONARIES`, `UNLOAD DICTIONARY`, `UNLOAD DICTIONARIES`
       * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. 수준: `GLOBAL`. 별칭: `RELOAD EMBEDDED DICTIONARIES`
   * `SYSTEM MERGES`. 수준: `TABLE`. 별칭: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
   * `SYSTEM TTL MERGES`. 수준: `TABLE`. 별칭: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
@@ -644,6 +647,8 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM FLUSH`. 수준: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. 수준: `TABLE`. 별칭: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. 수준: `GLOBAL`. 별칭: `FLUSH LOGS`
+
+`SYSTEM UNLOAD DICTIONARY` 및 `SYSTEM UNLOAD DICTIONARIES` 명령은 `SYSTEM RELOAD DICTIONARY` 권한을 재사용하므로, `SYSTEM RELOAD DICTIONARY` 권한이 있는 사용자는 딕셔너리의 로드도 해제할 수 있습니다.
 
 `SYSTEM RELOAD DICTIONARY ON *.*` 권한이 있으면 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 권한도 암묵적으로 부여됩니다.
 
@@ -777,9 +782,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### dictGet
 </div>
 
-* `dictGet`. 별칭: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+* `dictGet`. 별칭: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-사용자가 [dictGet](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ko/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictIsIn](/ko/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 함수를 실행할 수 있게 합니다.
+사용자가 [dictGet](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ko/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictGetRoot](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetRoot), [dictGetChildren](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetChildren), [dictGetDescendants](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetDescendants), [dictIsIn](/ko/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 함수를 실행할 수 있게 합니다.
 
 권한 수준: `DICTIONARY`.
 

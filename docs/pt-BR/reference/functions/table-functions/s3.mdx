@@ -9,6 +9,8 @@ title: 'função de tabela S3'
 doc_type: 'reference'
 ---
 
+{/*INÍCIO_AUTOGERADO*/}
+
 import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
@@ -51,8 +53,8 @@ A função de tabela `s3` aceita os seguintes parâmetros simples:
 | `headers`                               | O parâmetro é opcional. Permite passar cabeçalhos na requisição ao S3. Informe-os no formato `headers(key=value)`, por exemplo `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                            |
 | `partition_strategy`                    | O parâmetro é opcional. Valores aceitos: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no caminho, que é substituído pela chave de partição. `hive` não permite caracteres curinga, presume que o caminho é a raiz da tabela e gera diretórios particionados no estilo Hive com IDs Snowflake como nomes de arquivo e o formato do arquivo como extensão. O padrão é a configuração `file_like_engine_default_partition_strategy` (`wildcard` em configurações `compatibility` anteriores à `26.6`, `hive` caso contrário). |
 | `partition_columns_in_data_file`        | O parâmetro é opcional. Usado apenas com a estratégia de particionamento `hive`. Informa ao ClickHouse se deve esperar que as colunas de partição sejam gravadas no arquivo de dados. O padrão é `false`.                                                                                                                                                                                                                                                                                                                                 |
-| `extra_credentials`                     | O parâmetro é opcional. Usado para passar um `role_arn` para acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.                                                                                                                                                                                                                                                                                                       |
-| `storage_class_name`                    | O parâmetro é opcional. Valores aceitos: `STANDARD` ou `INTELLIGENT_TIERING`. Permite especificar o [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). O padrão é `STANDARD`.                                                                                                                                                                                                                                                                                                                  |
+| `extra_credentials`                     | O parâmetro é opcional. Usado para passar um `role_arn` para acesso baseado em funções no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.                                                                                                                                                                                                                                                                                                      |
+| `storage_class_name`                    | O parâmetro é opcional. Valores aceitos: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Há suporte apenas a storage classes do S3 que permitem recuperação imediata (classes de arquivamento como `GLACIER` e `DEEP_ARCHIVE` não são compatíveis). Permite especificar o [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). O padrão é `STANDARD`.                                                                     |
 
 <Info>
   **GCS**
@@ -265,7 +267,7 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 Compatível apenas com consultas `INSERT`.
 
-`wildcard`: substitui o curinga `{_partition_id}` no caminho do arquivo pela chave de partição correspondente. É selecionada por padrão apenas em configurações de `compatibility` anteriores à `26.6`; caso contrário, o padrão é `hive` (consulte a configuração `file_like_engine_default_partition_strategy`).
+`wildcard`: substitui o curinga `{_partition_id}` no caminho do arquivo pela chave de partição correspondente. É selecionada por padrão apenas em configurações de `compatibility` anteriores à `26.6`. Quando `compatibility` está definida como `26.6` ou posterior, ou quando os padrões atuais se aplicam, o padrão é `hive`, portanto caminhos que contêm `{_partition_id}` devem definir explicitamente `partition_strategy='wildcard'` (consulte a configuração `file_like_engine_default_partition_strategy`).
 
 `hive` implementa o particionamento no estilo Hive para leituras &amp; gravações. Gera arquivos usando o seguinte formato: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -289,7 +291,7 @@ SELECT _path, * FROM s3(s3_conn, filename='t_03363_function/**.parquet');
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    s3('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32')
+    s3('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES ('x', 2, 3), ('x', 4, 5), ('y', 11, 12), ('y', 13, 14), ('z', 21, 22), ('z', 23, 24);
 ```
 
@@ -299,7 +301,7 @@ Como resultado, os dados são gravados em três arquivos: `file_x.csv`, `file_y.
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    s3('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32')
+    s3('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES (1, 2, 3), (1, 4, 5), (10, 11, 12), (10, 13, 14), (20, 21, 22), (20, 23, 24);
 ```
 
@@ -466,8 +468,9 @@ SELECT
 FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 
-## Relacionados           
+## Related           
 
-- [Motor S3](/reference/engines/table-engines/integrations/s3)
-- [Integrando S3 com ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
+- [S3 engine](/reference/engines/table-engines/integrations/s3)
+- [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
+{/*AUTOGENERATED_END*/}
 ```
