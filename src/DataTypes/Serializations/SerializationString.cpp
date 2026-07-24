@@ -674,6 +674,10 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
+/// The caller must have validated every `sizes[start .. start + rows)` entry with
+/// `checkStringSizeFromSizeStream` before calling this (the single caller pre-validates the whole
+/// requested slice up front so a mid-range corrupt size cannot leave committed offsets without matching
+/// chars). No bound check here keeps the hot path free of a redundant per-row branch.
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
@@ -683,9 +687,7 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 
     for (size_t i = 0; i < rows; ++i)
     {
-        const UInt64 size = sizes[start + i];
-        checkStringSizeFromSizeStream(size);
-        prev_offset += size;
+        prev_offset += sizes[start + i];
         offsets.push_back(prev_offset);
     }
 }
