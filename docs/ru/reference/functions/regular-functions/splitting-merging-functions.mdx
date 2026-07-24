@@ -140,6 +140,74 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+<div id="naiveBayesNgrams">
+  ## naiveBayesNgrams
+</div>
+
+Добавленный в: v26.7.0
+
+Разбивает текст на n-граммы, используя ту же токенизацию, что и словарь Naive Bayes (структура [`NAIVE_BAYES`](/ru/reference/statements/create/dictionary/layouts/naive-bayes)): режим `byte`, `codepoint` или `token`, с необязательным дополнением границ. Используйте эту функцию, чтобы построить предагрегированные обучающие данные `(ngram, class_id, count)`, которые использует такой словарь, — так обучающие n-граммы будут в точности совпадать с тем, что [`naiveBayesClassifier`](/ru/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) создаёт при выполнении запроса.
+
+**Синтаксис**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**Аргументы**
+
+* `text` — Текст для разбиения на n-граммы. [`String`](/ru/reference/data-types/string)
+* `n` — Размер n-граммы, от 1 до 1024. [`const UInt`](/ru/reference/data-types/int-uint)
+* `mode` — Режим токенизации: &#39;byte&#39;, &#39;codepoint&#39; или &#39;token&#39;. [`const String`](/ru/reference/data-types/string)
+* `start_token` — Необязательно. Граничный токен, добавляемый в начало входного текста (n-1) раз; число для &#39;byte&#39;/&#39;codepoint&#39;, литерал для &#39;token&#39;. Пустое значение означает отсутствие дополнения. [`const String`](/ru/reference/data-types/string)
+* `end_token` — Необязательно. Граничный токен, добавляемый в конец входного текста (n-1) раз. [`const String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+N-граммы входного текста. [`Array(String)`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Биграммы токенов**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**Биграммы токенов с дополнением на границах**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**Байтовые биграммы с дополнением по краям (результат показан в шестнадцатеричном виде)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**Биграммы кодовых точек с дополнением по краям (результат показан в шестнадцатеричном виде)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 <div id="ngrams">
   ## ngrams
 </div>
@@ -279,7 +347,7 @@ SELECT reverseBySeparator('abcde', '')
 Пустые подстроки могут появляться, если разделитель находится в начале или в конце строки, либо если подряд встречается несколько разделителей.
 
 <Note>
-  Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
+  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаясяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
 </Note>
 
 Пустые подстроки могут появляться в следующих случаях:
@@ -327,7 +395,7 @@ SELECT splitByChar(',', '1,2,3,abcde');
 Разбивает строку по пробельным символам и знакам пунктуации на массив подстрок.
 
 <Note>
-  Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, включается ли оставшаяся часть строки в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
+  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, включается ли оставшаяся часть строки в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
 </Note>
 
 **Синтаксис**
@@ -374,7 +442,7 @@ SELECT splitByNonAlpha('user@domain.com');
 * исходная строка пуста, а регулярное выражение не пусто.
 
 <Note>
-  Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если argument `max_substrings > 0`.
+  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если argument `max_substrings > 0`.
 </Note>
 
 **Синтаксис**

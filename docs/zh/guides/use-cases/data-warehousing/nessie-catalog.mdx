@@ -50,7 +50,7 @@ Nessie 是一个面向数据湖的开源事务目录，提供：
   ### 配置本地 Nessie Catalog
 </div>
 
-你可以使用官方的 [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/)，它提供了一个包含 Nessie、内存版本存储以及用于对象存储的 MinIO 在内的完整环境。
+你可以使用官方的 [Nessie docker-compose setup](https://projectnessie.org/guides/)，它提供了一个包含 Nessie、内存版本存储以及用于对象存储的 MinIO 在内的完整环境。
 
 **步骤 1：** 创建一个新文件夹来运行此示例，然后创建一个名为 `docker-compose.yml` 的文件，内容如下：
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # 确保 root 权限
+    user: '0:0'  # Ensures root permissions
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # 挂载数据集文件夹
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
     networks:
       - iceberg_net
     environment:

@@ -23,9 +23,9 @@ import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge
 
 ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백업을 조합해 하나의 백업 체인을 구성합니다. 체인은 전체 백업으로 시작되며, 이후 예약된 여러 시점에 걸쳐 증분 백업이 수행되어 연속된 백업 시퀀스가 만들어집니다. 백업 체인이 일정 길이에 도달하면 새 체인이 시작됩니다. 필요할 경우 이 백업 체인 전체를 사용해 데이터를 새 서비스로 복원할 수 있습니다. 특정 체인에 포함된 모든 백업이 서비스에 설정된 보존 기간(보존에 대한 자세한 내용은 아래 참고)을 지나면 해당 체인은 폐기됩니다.
 
-아래 이미지에서 실선 사각형은 전체 백업을, 점선 사각형은 증분 백업을 나타냅니다. 사각형들을 둘러싼 실선 사각형은 보존 기간과 최종 사용자에게 표시되어 백업 복원에 사용할 수 있는 백업 범위를 나타냅니다. 아래 시나리오에서는 백업이 24시간마다 수행되며 2일 동안 보존됩니다.
+아래 스크린샷에서 실선 사각형은 전체 백업을, 점선 사각형은 체인에 포함된 증분 백업을 나타냅니다.
 
-1일 차에는 백업 체인을 시작하기 위해 전체 백업이 수행됩니다. 2일 차에는 증분 백업이 수행되며, 전체 백업과 증분 백업 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 백업 1개와 증분 백업 6개가 있으며, 이 중 가장 최근의 증분 백업 2개가 사용자에게 표시됩니다. 8일 차에는 새 전체 백업이 수행되고, 9일 차에는 새 체인에 백업 2개가 쌓이면 이전 체인이 폐기됩니다.
+1일 차에는 백업 체인을 시작하기 위해 전체 백업이 수행됩니다. 2일 차에는 증분 백업이 수행되며, 전체 백업과 증분 백업 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 백업 1개와 증분 백업 6개가 있으며, 모두 표시되고 복원에 사용할 수 있습니다. 8일 차에는 새 전체 백업이 수행되고, 9일 차에는 새 체인에 백업 2개가 쌓이면 이전 체인이 폐기됩니다.
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud의 백업 체인 예시" />
 
@@ -87,21 +87,17 @@ AWS, GCP, Azure 객체 스토리지에 전체 백업 및 증분 백업을 수행
   ### Backup 옵션
 </div>
 
-자체 클라우드 계정으로 백업을 내보내는 방법은 두 가지입니다.
+자체 클라우드 계정으로 백업을 내보내는 방법은 두 가지입니다:
 
 <Steps>
-  <Step>
-    ##### Cloud Console UI를 통해
-
+  <Step title="Cloud Console UI를 통해" id="via-ui">
     외부 백업은 [UI에서 구성할 수 있습니다](/ko/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
     기본적으로 백업은 [기본 백업 정책](/ko/products/cloud/features/backups/overview#default-backup-policy)에 지정된 대로 매일 수행됩니다.
-    또한 자체 클라우드 계정으로 내보내는 [구성 가능한](/ko/products/cloud/guides/backups/configurable-backups) 백업도 지원하므로, 사용자 지정 일정을 설정할 수 있습니다.
+    또한 자체 클라우드 계정으로 내보내는 [설정 가능한](/ko/products/cloud/guides/backups/configurable-backups) 백업도 지원하므로, 사용자 지정 일정을 설정할 수 있습니다.
     버킷으로 내보내는 모든 백업은 이전 또는 이후의 다른 백업과 연결되지 않은 전체 백업이라는 점에 유의하십시오.
   </Step>
 
-  <Step>
-    ##### SQL 명령 사용
-
+  <Step title="SQL 명령 사용" id="using-commands">
     [SQL 명령](/ko/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands)을 사용하여 버킷으로 백업을 내보낼 수 있습니다.
   </Step>
 </Steps>

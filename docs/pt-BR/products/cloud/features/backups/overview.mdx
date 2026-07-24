@@ -23,9 +23,9 @@ Isso minimiza o tempo de indisponibilidade e evita a perda permanente de dados c
 
 Os backups do ClickHouse Cloud são uma combinação de backups &quot;completos&quot; e &quot;incrementais&quot; que formam uma cadeia de backups. A cadeia começa com um backup completo, e os backups incrementais são feitos ao longo dos períodos programados seguintes para criar uma sequência de backups. Quando uma cadeia de backups atinge determinado tamanho, uma nova cadeia é iniciada. Toda essa cadeia de backups pode então ser usada para restaurar dados em um novo serviço, se necessário. Quando todos os backups incluídos em uma determinada cadeia ultrapassam o período de retenção definido para o serviço (mais sobre retenção abaixo), a cadeia é descartada.
 
-Na captura de tela abaixo, os quadrados com linha contínua mostram os backups completos, e os quadrados com linha pontilhada mostram os backups incrementais. O retângulo de linha contínua ao redor dos quadrados indica o período de retenção e os backups visíveis ao usuário final, que podem ser usados para restauração. No cenário abaixo, os backups são feitos a cada 24 horas e ficam retidos por 2 dias.
+Na captura de tela abaixo, os quadrados com linha contínua mostram os backups completos, e os quadrados com linha pontilhada mostram os backups incrementais que fazem parte da cadeia.
 
-No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2, um backup incremental é feito, e tanto os backups completos quanto os incrementais ficam disponíveis para restauração. Até o Dia 7, temos um backup completo e seis backups incrementais na cadeia, com os dois backups incrementais mais recentes visíveis para o usuário. No Dia 8, fazemos um novo backup completo e, no Dia 9, assim que temos dois backups na nova cadeia, a cadeia anterior é descartada.
+No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2, um backup incremental é feito, e tanto os backups completos quanto os incrementais ficam disponíveis para restauração. Até o Dia 7, temos um backup completo e seis backups incrementais na cadeia, todos visíveis e disponíveis para restauração. No Dia 8, fazemos um novo backup completo e, no Dia 9, assim que temos dois backups na nova cadeia, a cadeia anterior é descartada.
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemplo de cadeia de backups no ClickHouse Cloud" />
 
@@ -86,21 +86,17 @@ Consulte [&quot;Exportar backups para sua própria conta Cloud&quot;](/pt-BR/pro
   ### Opções de backup
 </div>
 
-Para exportar backups para sua própria conta na nuvem, você tem duas opções:
+Para exportar backups para sua própria conta Cloud, você tem duas opções:
 
 <Steps>
-  <Step>
-    ##### Pela UI do Cloud Console
-
+  <Step title="Pela UI do Cloud Console" id="via-ui">
     Os backups externos podem ser [configurados na UI](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
     Por padrão, os backups serão realizados diariamente (conforme especificado na [política de backup padrão](/pt-BR/products/cloud/features/backups/overview#default-backup-policy)).
-    No entanto, também oferecemos backups [configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups) para sua própria conta na nuvem, o que permite definir um agendamento personalizado.
+    No entanto, também oferecemos backups [configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups) para sua própria conta Cloud, o que permite definir um agendamento personalizado.
     É importante observar que todos os backups no seu bucket são backups completos, independentes de quaisquer backups anteriores ou futuros.
   </Step>
 
-  <Step>
-    ##### Usando comandos SQL
-
+  <Step title="Usando comandos SQL" id="using-commands">
     Você pode usar [comandos SQL](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands) para exportar backups para seu bucket.
   </Step>
 </Steps>

@@ -116,22 +116,22 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
   ## Connecter QuickSight à ClickHouse
 </div>
 
-Tout d&#39;abord, rendez-vous sur [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), accédez à Datasets, puis cliquez sur &quot;New dataset&quot; :
+Commencez par vous rendre sur [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), ouvrez Datasets et cliquez sur &quot;New dataset&quot; :
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Tableau de bord Amazon QuickSight affichant le bouton New dataset dans la section Datasets" border />
 
 <br />
 
-Recherchez le connecteur MySQL officiel fourni avec QuickSight (simplement nommé **MySQL**) :
+Recherchez le connecteur MySQL officiel fourni avec QuickSight (nommé simplement **MySQL**) :
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Écran de sélection de la source de données QuickSight avec MySQL mis en évidence dans les résultats de recherche" border />
 
 <br />
 
-Indiquez vos informations de connexion. Veuillez noter que le port de l&#39;interface MySQL est 9004 par défaut,
-mais qu&#39;il peut être différent selon la configuration du serveur.
+Renseignez vos informations de connexion. Notez que le port de l&#39;interface MySQL est 9004 par défaut,
+et qu&#39;il peut varier selon la configuration de votre serveur.
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulaire de configuration de connexion MySQL QuickSight avec les champs hostname, port, base de données et identifiants" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulaire de configuration de la connexion MySQL dans QuickSight avec les champs hostname, port, database et identifiants" border />
 
 <br />
 
@@ -141,19 +141,19 @@ Vous avez maintenant deux possibilités pour récupérer les données depuis Cli
 
 <br />
 
-Vous pouvez également saisir une requête SQL personnalisée pour récupérer vos données :
+Vous pouvez également saisir une custom SQL pour récupérer vos données :
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Éditeur de requête SQL personnalisée QuickSight pour récupérer des données depuis ClickHouse" border />
 
 <br />
 
-En cliquant sur &quot;Edit/Preview data&quot;, vous devriez pouvoir voir la structure de la table détectée ou ajuster votre requête SQL personnalisée, si c&#39;est le mode d&#39;accès que vous avez choisi :
+En cliquant sur &quot;Edit/Preview data&quot;, vous devriez pouvoir consulter la structure de la table détectée automatiquement ou ajuster votre custom SQL, si c&#39;est le mode d&#39;accès que vous avez choisi pour les données :
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Aperçu des données QuickSight affichant la structure de la table avec des colonnes et des exemples de données" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Aperçu des données QuickSight affichant la structure de la table avec les colonnes et des données d'exemple" border />
 
 <br />
 
-Assurez-vous que le mode &quot;Direct Query&quot; est sélectionné dans le coin inférieur gauche de l&#39;interface utilisateur :
+Assurez-vous que le mode &quot;Direct Query&quot; est sélectionné dans le coin inférieur gauche de l&#39;UI :
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Interface QuickSight avec l'option du mode Direct Query mise en évidence dans le coin inférieur" border />
 
