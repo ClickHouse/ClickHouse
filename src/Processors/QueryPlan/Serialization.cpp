@@ -176,8 +176,6 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
         skeleton_node.step_description = node->step->getStepDescription();
 
         const auto * info = step_registry.getStepSerializationInfo(skeleton_node.step_name);
-        skeleton_node.step_format_version = info ? info->max_step_format_version : 1;
-
         skeleton_node.has_output_header = node->step->hasOutputHeader();
         if (skeleton_node.has_output_header)
             skeleton_node.header = node->step->getOutputHeader();
@@ -189,9 +187,13 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
         WriteBufferFromOwnString payload;
         IQueryPlanStep::Serialization ctx{payload, registry};
         ctx.version = flags.version;
+        ctx.step_format_version = info ? info->max_step_format_version : 1;
         node->step->serialize(ctx);
         payload.finalize();
 
+        /// The step may have emitted an older payload form and lowered the context value; the
+        /// skeleton must advertise the format of the bytes actually written.
+        skeleton_node.step_format_version = ctx.step_format_version;
         skeleton_node.payload_size = payload.str().size();
         skeleton.nodes.push_back(std::move(skeleton_node));
         payloads.push_back(payload.str());

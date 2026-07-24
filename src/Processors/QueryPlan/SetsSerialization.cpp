@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_PARSE_QUERY_PLAN;
 }
 
 namespace Setting
@@ -45,8 +46,9 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
-/// Sanity cap for a hostile set payload; checked before the columns vector is allocated.
+/// Sanity caps for a hostile set payload; checked before allocation.
 static constexpr UInt64 MAX_SET_COLUMNS = 1'000'000;
+static constexpr UInt64 MAX_SET_STORAGE_NAME_BYTES = 16ULL << 20;
 
 static void checkSetColumnsCount(UInt64 num_columns, const PreparedSets::Hash & hash)
 {
@@ -265,7 +267,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
         /// Check against the remaining buffer before allocating: a hostile size must not cause a
         /// huge allocation only for readStrict to throw afterwards.
         if (entry.payload_size > in.available())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Serialized set {}_{} declares {} payload bytes but only {} remain",
                 entry.hash.low64, entry.hash.high64, entry.payload_size, in.available());
 
@@ -277,7 +279,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
         if (entry.kind == UInt8(SetSerializationKind::StorageSet))
         {
             String storage_name;
-            readStringBinary(storage_name, body);
+            readStringBinary(storage_name, body, MAX_SET_STORAGE_NAME_BYTES);
             res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{entry.hash, std::move(columns)}, std::move(storage_name)});
         }
         else if (entry.kind == UInt8(SetSerializationKind::TupleValues))
@@ -319,7 +321,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
                 entry.hash.low64, entry.hash.high64, int(entry.kind));
 
         if (!body.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Serialized set {}_{} did not consume its payload frame ({} bytes left)",
                 entry.hash.low64, entry.hash.high64, body.available());
     }
@@ -359,7 +361,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
             String storage_name;
-            readStringBinary(storage_name, in);
+            readStringBinary(storage_name, in, MAX_SET_STORAGE_NAME_BYTES);
             res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{hash, std::move(columns)}, std::move(storage_name)});
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))

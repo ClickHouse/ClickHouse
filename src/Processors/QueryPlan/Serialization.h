@@ -25,6 +25,12 @@ struct IQueryPlanStep::Serialization
 
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// v4 skeleton streams: the payload format version this step is writing. Preset by the
+    /// framework to the step's registered maximum; a step that emits an older payload form
+    /// (e.g. toward an older stream version) must lower it, otherwise the skeleton would
+    /// advertise a format the bytes do not have and newer readers would misparse them.
+    UInt64 step_format_version = 1;
 };
 
 struct SerializedSetsRegistry;

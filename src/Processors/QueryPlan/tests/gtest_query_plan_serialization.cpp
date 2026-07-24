@@ -364,7 +364,7 @@ TEST(QueryPlanSkeleton, TruncatedSkeletonIsRejected)
     auto bytes = writeSkeletonToString(makeTestSkeleton());
 
     /// Truncation at every byte boundary must throw, never crash or misread.
-    for (size_t cut = 0; cut + 1 < bytes.size(); ++cut)
+    for (size_t cut = 0; cut < bytes.size(); ++cut)
     {
         std::string truncated = bytes.substr(0, cut);
         ReadBufferFromString in(truncated);
