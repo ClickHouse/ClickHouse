@@ -38,7 +38,7 @@ TEST(PuffinDeletionVectorBounds, RejectsOffsetPlusLengthOverflow)
 
     try
     {
-        readDeletionVectorFromPuffin(file, 60, 10);
+        readDeletionVectorFromPuffin(file, 60, 12);
         FAIL() << "Expected exception";
     }
     catch (const Exception & e)
