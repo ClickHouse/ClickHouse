@@ -43,9 +43,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 * レイヤーを追加する権限を持つ Lambda 実行ロール
 
 <Steps>
-  <Step>
-    #### 適切な Rotel Lambda Extension レイヤーを選択する
-
+  <Step title="適切な Rotel Lambda Extension レイヤーを選択する" id="choose-layer">
     Lambda のランタイムアーキテクチャに合った Lambda レイヤーを選択します。`{version}` フィールド
     は、デプロイ先の AWS リージョンによって異なります。お使いのリージョンに対応する最新のバージョン番号については、[releases](https://github.com/streamfold/rotel-lambda-extension/releases)
     ページを確認してください。
@@ -65,9 +63,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
     * sa-east-1
   </Step>
 
-  <Step>
-    #### Rotel レイヤーを Lambda 関数に追加する
-
+  <Step title="Rotel レイヤーを Lambda 関数に追加する" id="add-layer">
     *これらの例では、`{arch}`、`{region}`、`{version}` を上記の該当する値に置き換えてください。*
 
     ##### Option 1: AWS コンソール
@@ -97,15 +93,13 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... その他の設定 ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
   </Step>
 
-  <Step>
-    #### 拡張機能を ClickStack にエクスポートするよう設定する
-
+  <Step title="拡張機能を ClickStack にエクスポートするよう設定する" id="configure-extension">
     Rotel Lambda Extension は環境変数を使って設定します。OTLP エクスポーターのエンドポイントがご利用の ClickStack インスタンスを指すように設定する必要があります。これらの例では、AWS Lambda 関数から ClickStack インスタンスにアクセスできることを前提としています。
 
     ##### 基本設定 (環境変数)
@@ -113,13 +107,13 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
     以下の環境変数を Lambda 関数に追加します。
 
     ```bash
-    # 必須: ClickStack OTLPエンドポイント
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # オプション: 認証ヘッダー
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # オプション: サービス名（デフォルトはラムダ関数名）
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
@@ -203,9 +197,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
     </Note>
   </Step>
 
-  <Step>
-    #### インテグレーションをテストする
-
+  <Step title="インテグレーションをテストする" id="test-integration">
     ログが ClickStack に送信されていることを確認するため、Lambda 関数を呼び出します。
 
     ```bash
@@ -222,9 +214,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
     ```
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verify-logs">
     設定が完了したら、HyperDX (ClickStack の UI) にログインし、ログが取り込まれていることを確認します。
 
     <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda ログビュー" />
@@ -248,22 +238,18 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 デフォルトでは、AWS Lambda はすべてのログを CloudWatch Logs に送信します。これは大規模運用ではコストがかさむ可能性があります。ログが ClickStack に流れていることを確認したら、コスト削減のために CloudWatch Logs へのログ出力を無効にできます。
 
 <Steps>
-  <Step>
-    #### 実行ロールから CloudWatch 関連の権限を削除する
-
+  <Step title="実行ロールから CloudWatch 関連の権限を削除する" id="remove-permissions">
     1. AWS Console を開き、**AWS Lambda** に移動します
     2. 対象の Lambda 関数に移動します
     3. **Configuration** → **Permissions** を選択します
     4. 実行ロール名をクリックして IAM コンソールを開きます
-    5. ロールを編集し、`logs:*` アクションを削除します
+    5. ロールを編集し、`logs:*` アクションを削除します:
        * カスタムポリシーを使用している場合は、`logs:CreateLogGroup`、`logs:CreateLogStream`、`logs:PutLogEvents` を削除するように編集します
        * AWS マネージドポリシー `AWSLambdaBasicExecutionRole` を使用している場合は、そのポリシーをロールから削除します
     6. ロールを保存します
   </Step>
 
-  <Step>
-    #### CloudWatch のログ出力が無効になっていることを確認する
-
+  <Step title="CloudWatch へのログ出力が無効になっていることを確認する" id="verify-disabled">
     関数を再度呼び出し、次のことを確認します。
 
     1. CloudWatch に新しいログストリームが作成されない
@@ -287,9 +273,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 Rotel Lambda Extension は OpenTelemetry の自動インストルメンテーションレイヤーとシームレスに連携し、ログに加えて分散トレースとメトリクスを収集します。
 
 <Steps>
-  <Step>
-    #### 使用する言語のインストルメンテーションレイヤーを選択する
-
+  <Step title="使用する言語のインストルメンテーションレイヤーを選択する" id="choose-instrumentation">
     AWS では、複数の言語向けに OpenTelemetry の自動インストルメンテーションレイヤーが提供されています。
 
     | Language | Layer ARN Pattern                                                                     |
@@ -301,9 +285,7 @@ Rotel Lambda Extension は OpenTelemetry の自動インストルメンテーシ
     最新バージョンは [AWS OpenTelemetry Lambdaリポジトリ](https://github.com/aws-observability/aws-otel-lambda) で確認できます。
   </Step>
 
-  <Step>
-    #### 両方のレイヤーを関数に追加する
-
+  <Step title="両方のレイヤーを関数に追加する" id="add-both-layers">
     Rotel 拡張レイヤーとインストルメンテーションレイヤーの **両方** を追加します。
 
     ```bash
@@ -315,9 +297,7 @@ Rotel Lambda Extension は OpenTelemetry の自動インストルメンテーシ
     ```
   </Step>
 
-  <Step>
-    #### 自動インストルメンテーションを設定する
-
+  <Step title="自動インストルメンテーションを設定する" id="configure-instrumentation">
     自動インストルメンテーションを有効にするには、環境変数 `AWS_LAMBDA_EXEC_WRAPPER` を設定します。
 
     **For Node.js:**
@@ -339,9 +319,7 @@ Rotel Lambda Extension は OpenTelemetry の自動インストルメンテーシ
     ```
   </Step>
 
-  <Step>
-    #### HyperDX でトレースを確認する
-
+  <Step title="HyperDX でトレースを確認する" id="verify-traces">
     関数を実行した後:
 
     1. HyperDX の **Traces** ビューを開きます

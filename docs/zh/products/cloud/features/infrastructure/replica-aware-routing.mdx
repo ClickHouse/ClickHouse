@@ -1,8 +1,8 @@
 ---
 title: '副本感知路由'
 slug: /manage/replica-aware-routing
-description: '如何使用副本感知路由提高缓存复用率'
-keywords: ['云', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'session_id']
+description: '将相关请求路由到同一个 ClickHouse Cloud 副本，以便复用临时表、会话和缓存'
+keywords: ['云', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'session_id', '会话亲和性', '临时表']
 doc_type: 'guide'
 noindex: true
 ---
@@ -11,27 +11,57 @@ import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/Pri
 
 <PrivatePreviewBadge />
 
-副本感知路由 (也称为 sticky sessions、sticky routing 或 session affinity) 通过持续将相关请求路由到同一个 ClickHouse 副本，提高缓存复用的概率。它采用尽力而为的方式，并不保证隔离性。
+副本感知路由 (也称为 sticky sessions、粘性路由 或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。如果你需要让[临时表](/zh/sql-reference/statements/create/table#temporary-tables)或[具名会话状态](/zh/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)在多次查询之间持续可用，或者希望相关查询复用同一副本的本地缓存，就可以使用它。
+
+这是一种尽力而为的机制，不保证隔离性。扩缩容、升级和重启都可能改变给定 `session_id` 最终会落到哪个副本。
 
 <Warning>
-  **协议支持 —— 仅限 HTTP/HTTPS**
+  **需要 HTTP 接口支持**
 
-  副本感知路由是在代理层通过 **HTTP/HTTPS 接口** 实现的，使用 `session_id` 查询参数 (见下文) 。它**不支持原生协议** (native 端口，例如以默认 native 模式运行的 `clickhouse-go` driver) 。如果你需要从原生协议 client 使用粘性路由，请改为让该 workload 通过 HTTP 接口连接——对于 `clickhouse-go` (v2)，请在 connection 上设置 `Protocol: clickhouse.HTTP`。
+  副本感知路由在代理层基于 [HTTP/HTTPS 接口](/zh/interfaces/http) 生效，使用的是 `session_id` 查询参数 (见下文) 。它**不适用于 原生协议** (native 端口，例如默认使用 native 模式的 [clickhouse-go](/zh/integrations/go) 驱动) 。使用 原生协议 的客户端必须切换到 HTTP，并在每个请求中传递 `session_id`。对于 clickhouse-go (v2) ，请设置 `Protocol: clickhouse.HTTP`，并将 `session_id` 作为[设置项](/zh/integrations/language-clients/go/database-sql-api#sessions)传递。驱动会将其作为代理进行哈希计算的 URL 查询参数发送出去。
 </Warning>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你的服务需要有 **2 个或更多副本**。如果服务只有单个副本，就没有可固定到的副本。
+* 服务必须处于**运行中**状态。唤醒空闲服务可能会改变 `session_id` 映射到的副本。
+* 该功能在进入 GA 后，**Enterprise** 默认可用。
+* 此功能适用于标准 ClickHouse Cloud 服务。[BYOC](/zh/cloud/reference/byoc/overview) 暂不支持。
+
+<div id="configuring-replica-aware-routing">
+  ## 配置副本感知路由
+</div>
+
+提交一个 [support](https://clickhouse.com/support/program) 工单，申请启用基于 HTTP 的粘性副本路由。请附上你的 service ID 以及需要启用它的原因 (临时表、会话状态或缓存复用) 。启用后，开始在 HTTPS 请求中附带 `?session_id=`。无需重启。
 
 <div id="http-based-routing">
   ## 基于 HTTP 的路由 (session_id)
 </div>
 
-要将工作负载固定到某个副本，请在 HTTPS 接口上设置 `session_id` 查询参数。代理会解析该请求，并基于 `session_id` 使用一致性哈希来选择副本，因此所有使用相同 `session_id` 的请求都会被路由到同一台服务器——直到集群拓扑发生变化。
+要将工作负载固定到某个副本，请在 [HTTPS 接口](/zh/interfaces/http) 上设置 `session_id` 查询参数。代理会对该值使用一致性哈希来选择副本，因此所有使用相同 `session_id` 的请求都会被发送到同一台服务器，直到集群拓扑发生变化。
+
+你可以使用现有的服务主机名。无需使用特殊的粘性主机名，也无需更改 DNS。
 
 ```bash
 echo 'SELECT hostName()' | curl \
-  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
   'https://<host>:8443/?session_id=my-workload-1' -d @-
 ```
 
-每个携带 `session_id=my-workload-1` 的请求都会落到同一个副本上。不同的 `session_id` 值会分别进行哈希，可能落到同一个副本，也可能落到不同的副本——这种映射关系是固定的，但你无法选择某个给定值会映射到*哪个*副本。
+每个携带 `session_id=my-workload-1` 的请求都会落到同一个副本上。不同的 `session_id` 值会分别进行哈希，可能落到同一个副本，也可能落到不同的副本。这种映射关系是固定的，但你无法选择某个给定值会映射到*哪个*副本。
+
+`session_id` 可以是你选择的任意字符串 (应用名称、用户 ID 或工作负载标签) 。没有 `session_id` 的请求会保持正常的负载均衡。
+
+任何能够添加查询参数的 HTTP 客户端都可以，包括 `curl`、[clickhouse-connect](/zh/integrations/python)、JDBC/ODBC 等。对于 `clickhouse-go` (v2) ，请按上文所述使用 HTTP 模式。
+
+<div id="check-which-replica">
+  ### 检查你访问的是哪个副本
+</div>
+
+使用相同的 `session_id`，再次运行上面的 `SELECT hostName()` 示例。你应该会得到相同的主机名。不同的 `session_id` 可能会映射到不同的副本。
 
 <div id="subdomain-based-routing-deprecated">
   ## 基于子域名的路由 (已弃用)
@@ -40,7 +70,7 @@ echo 'SELECT hostName()' | curl \
 <Danger>
   **已弃用**
 
-  下述基于子域名的机制**已弃用**，并且在新服务中默认不再启用。这种方式无法很好地扩展 (每个粘性端点都需要单独的 TLS 证书) 。请改用[基于 HTTP 的 `session_id` 方法](#http-based-routing)。
+  下述基于子域名的机制**已弃用**，并且在新服务中默认不再启用。这种方式无法很好地扩展 (每个粘性端点都需要单独的 TLS 证书) 。请改用[基于 HTTP 的 `session_id` 方法](#http-based-routing)。如果您已经在使用粘性子域名，请联系[支持团队](https://clickhouse.com/support/program) 以启用 `session_id` 路由。这是一项破坏性变更，需要进行迁移。
 </Danger>
 
 此前，启用副本感知路由后，可以在服务主机名下使用通配符子域名。对于主机名为 `abcxyz123.us-west-2.aws.clickhouse.cloud` 的服务，任何匹配 `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` 的主机名 (例如 `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) 都会由 Envoy 通过哈希一致地路由到某个固定副本。原始主机名则继续使用 `LEAST_CONNECTION` 负载均衡，即默认的路由算法。
@@ -50,25 +80,37 @@ echo 'SELECT hostName()' | curl \
 </div>
 
 <div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### 副本感知路由 不保证隔离
+  ### 服务变更期间粘性可能失效
 </div>
 
-服务一旦发生任何变动——例如 server pod (容器组) 重启 (版本升级、崩溃、垂直扩缩容等) ，或扩容 / 缩容——都会改变路由哈希环。这会导致具有相同 `session_id` 的请求落到不同的 server pod (容器组) 上。
+服务发生任何中断都会改变路由哈希环。这包括 server pod (容器组) 重启 (版本升级、崩溃、垂直扩缩容) ，以及横向扩容或缩容。这样一来，共享同一 `session_id` 的请求可能会被路由到不同的 server pod (容器组) 。如果你依赖临时表或会话级设置，请准备在重新映射后重新创建它们。
+
+<div id="not-workload-isolation">
+  ### 副本感知路由不是工作负载隔离
+</div>
+
+粘性路由只决定请求由*哪个*副本来处理，但该副本仍可能同时承载其他流量。若需专用计算资源，请使用[计算资源分离](/zh/cloud/reference/warehouses)。
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
-  ### 副本感知路由 与 Private Link 搭配时无法直接开箱即用
+  ### Private Link 和已弃用的子域名方法
 </div>
 
-使用已弃用的子域名方法时，客户需要手动添加一条 DNS 记录，才能让新的主机名模式正常解析。如果配置不当，可能会导致服务器负载不均衡。
+HTTP `session_id` 路由在常规服务主机名上可与[私有网络连接](/zh/cloud/security/connectivity/private-networking)配合使用，无需额外添加 DNS 记录。
+
+但已弃用的子域名方法不支持：你必须为 `*.sticky.*` 主机名模式添加 DNS，且如果配置不当，会导致各副本之间的负载分配不均。
 
 <div id="replica-aware-routing-requires-http">
   ### 副本感知路由要求使用 HTTP 协议
 </div>
 
-粘性路由基于 `session_id` 查询参数，而该参数仅存在于 HTTP/HTTPS 接口中。原生二进制协议不携带这类可供代理计算哈希的参数，因此原生协议无法使用副本感知路由。原生协议客户端若要使用此功能，必须将相关工作负载迁移到 HTTP 接口。
+粘性路由基于 `session_id` 查询参数，而该参数仅存在于 HTTP/HTTPS 接口中。原生二进制协议不携带这类可供代理计算哈希的参数，因此原生协议无法使用副本感知路由。如今，原生协议客户端若要使用此功能，必须将相关工作负载迁移到 HTTP 接口。
 
-<div id="configuring-replica-aware-routing">
-  ## 配置 副本感知路由
+<div id="troubleshooting">
+  ## 故障排查
 </div>
 
-如需启用 副本感知路由，请联系[我们的支持团队](https://clickhouse.com/support/program)。
+**相同 `session_id` 的查询仍然被路由到不同的副本**
+
+* 确认 `session_id` 是 URL 查询参数 (`?session_id=...`) ，而不是 HTTP 请求头。
+* 启用后请稍等片刻，通常不到一分钟即可生效。
+* 检查服务最近是否发生过扩缩容或重启；拓扑变化后出现重新映射属于预期行为。使用 `SELECT hostName()` 查看新的映射关系。

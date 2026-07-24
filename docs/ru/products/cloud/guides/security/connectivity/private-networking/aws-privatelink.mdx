@@ -13,6 +13,10 @@ import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge
 
 Вы можете использовать [AWS PrivateLink](https://aws.amazon.com/privatelink/), чтобы установить безопасное подключение между VPC, сервисами AWS, вашими системами в собственной инфраструктуре и ClickHouse Cloud, не передавая трафик через публичный Интернет. В этом документе описаны шаги по подключению к ClickHouse Cloud с помощью AWS PrivateLink.
 
+<Warning>
+  AWS PrivateLink поддерживает только подключения, инициированные из вашего AWS VPC к ClickHouse Cloud. Его нельзя использовать для подключений, инициированных из ClickHouse Cloud к сервисам в вашем VPC, таким как [private database](#connecting-to-a-remote-database).
+</Warning>
+
 Чтобы ограничить доступ к вашим сервисам ClickHouse Cloud только адресами AWS PrivateLink, следуйте инструкциям ClickHouse Cloud по [IP Access Lists](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 <Note>
@@ -55,7 +59,7 @@ import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge
 1. Получите Endpoint &quot;Service name&quot;.
 2. Создайте AWS Endpoint.
 3. Добавьте &quot;Endpoint ID&quot; в организацию ClickHouse Cloud.
-4. Добавьте &quot;Endpoint ID&quot; в список разрешённых сервиса ClickHouse.
+4. Добавьте &quot;Endpoint ID&quot; в список разрешённых для сервиса ClickHouse.
 
 Примеры Terraform можно найти [здесь](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/).
 
@@ -326,7 +330,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
   ##### Вариант 1: консоль ClickHouse Cloud
 </div>
 
-В консоли ClickHouse Cloud перейдите в раздел **Настройки**. Нажмите кнопку **Set up private endpoint**. На открывшейся выдвижной панели скопируйте **имя DNS**.
+В консоли ClickHouse Cloud перейдите в раздел **Настройки**. Нажмите кнопку **Set up private endpoint**. На открывшейся выдвижной панели скопируйте **DNS-имя**.
 
 <Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="DNS-имя частной конечной точки" border />
 
@@ -419,10 +423,8 @@ jq .result.privateEndpointIds
   ### Подключение к удалённой базе данных
 </div>
 
-Предположим, вы хотите использовать табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud и подключиться к своей базе данных, размещённой в VPC Amazon Web Services (AWS). AWS PrivateLink нельзя использовать для безопасной организации такого подключения. PrivateLink — это одностороннее, однонаправленное подключение. Он позволяет вашей внутренней сети или Amazon VPC безопасно подключаться к ClickHouse Cloud, но не позволяет ClickHouse Cloud подключаться к вашей внутренней сети.
-
 Согласно [документации AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-> Используйте AWS PrivateLink, если у вас настроена клиент-серверная архитектура и вы хотите предоставить одной или нескольким VPC-потребителям однонаправленный доступ к определённому сервису или набору экземпляров в VPC поставщика сервиса. Только клиенты в VPC-потребителе могут инициировать подключение к сервису в VPC поставщика сервиса.
+> Используйте AWS PrivateLink, если у вас есть клиент-серверная архитектура и вы хотите предоставить одной или нескольким VPC-потребителям однонаправленный доступ к определённому сервису или набору экземпляров в VPC поставщика сервиса. Только клиенты в VPC-потребителе могут инициировать подключение к сервису в VPC поставщика сервиса.
 
-Для этого настройте свои группы безопасности AWS так, чтобы разрешить подключения из ClickHouse Cloud к вашему внутреннему/приватному сервису базы данных. Проверьте [исходящие IP-адреса по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
+Чтобы подключить табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud к базе данных, размещённой в вашей AWS VPC, настройте группы безопасности AWS так, чтобы разрешить подключения из ClickHouse Cloud. См. [IP-адреса egress по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
