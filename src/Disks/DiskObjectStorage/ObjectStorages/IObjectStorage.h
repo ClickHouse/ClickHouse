@@ -268,6 +268,14 @@ public:
     /// delimiter walk, which uses only '/' and continuation tokens, stays available).
     virtual bool supportsListingKeyspaceSplit() const { return false; }
 
+    /// The page size that list requests actually use when the caller passes `max_keys = 0`
+    /// ("use the storage-configured default", see `iterate` and `listObjectsSingleLevel`).
+    /// Callers that size buffers or budgets from a possibly-zero page-size setting must resolve
+    /// the zero through this, or the derived bound collapses to nothing while every response
+    /// still carries a full page. The base value matches the standard maximum page size of the
+    /// common object storages (S3, GCS, Azure) and the defaults of the corresponding settings.
+    virtual size_t getListObjectsDefaultPageSize() const { return 1000; }
+
     /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
     /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
     /// under the prefix together with the immediate sub-"directories" (common prefixes).

@@ -120,6 +120,9 @@ public:
     /// splitting of flat directories must be disabled for them (they keep the hierarchical delimiter walk).
     bool supportsListingKeyspaceSplit() const override { return !client.get()->isS3ExpressBucket(); }
 
+    /// The same fallback `iterate` and `listObjectsSingleLevel` apply to `max_keys = 0`.
+    size_t getListObjectsDefaultPageSize() const override;
+
     ObjectStorageListResult listObjectsSingleLevel(
         const std::string & path_prefix,
         const std::string & delimiter,

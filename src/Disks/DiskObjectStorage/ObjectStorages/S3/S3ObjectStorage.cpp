@@ -350,6 +350,11 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after);
 }
 
+size_t S3ObjectStorage::getListObjectsDefaultPageSize() const
+{
+    return s3_settings.get()->request_settings[S3RequestSetting::list_object_keys_size];
+}
+
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     auto settings_ptr = s3_settings.get();

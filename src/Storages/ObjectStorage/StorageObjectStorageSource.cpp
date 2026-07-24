@@ -1584,11 +1584,18 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         {
             LOG_DEBUG(log, "Listing {} in parallel with {} threads", key_with_globs.path, parallelism);
 
+            /// The request path treats `list_object_keys_size = 0` as "use the storage-configured
+            /// default page size", so resolve the zero the same way before it sizes the buffered-key
+            /// cap below: deriving the cap from the raw zero would collapse it to a single key while
+            /// every listed page still carries a full default-sized batch, blocking the workers on the
+            /// count budget and serializing the parallel listing.
+            const size_t page_size = list_object_keys_size ? list_object_keys_size : object_storage->getListObjectsDefaultPageSize();
+
             /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
-            auto list_level = [storage = object_storage, list_object_keys_size, with_tags]
+            auto list_level = [storage = object_storage, page_size, with_tags]
                 (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
             {
-                return storage->listObjectsSingleLevel(prefix, delimiter, list_object_keys_size, with_tags, start_after, continuation_token);
+                return storage->listObjectsSingleLevel(prefix, delimiter, page_size, with_tags, start_after, continuation_token);
             };
 
             /// The flat keyspace-split probe only checks whether any key exists past a boundary, so it lists a
@@ -1615,7 +1622,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
                 key_prefix,
                 parallelism,
-                /* max_buffered_keys */ list_object_keys_size * parallelism * 2,
+                /* max_buffered_keys */ page_size * parallelism * 2,
                 std::move(list_level),
                 std::move(probe_level),
                 makeShouldDescendPredicate(key_with_globs.path),
