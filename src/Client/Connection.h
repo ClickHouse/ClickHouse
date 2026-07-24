@@ -158,7 +158,7 @@ public:
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
-    void sendScalarsData(Scalars & data);
+    void sendScalarsData(Scalars & data) override;
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);

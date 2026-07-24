@@ -33,17 +33,15 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 专用用户需要对你要查询的表以及 `system` 表 (用于 schema 检测) 拥有 `SELECT` 权限。
 
 ```sql
--- 示例：授予对特定数据库的读取权限
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- 授予对系统元数据的访问权限
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step>
-    ## 收集连接信息
-
+  <Step title="收集连接信息" id="step-1-gather-connection-details">
     要通过 HTTP(S) 连接到 ClickHouse，你需要准备以下信息：
 
     | **Parameter**     | **Description**                                                            |
@@ -59,9 +57,7 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="ClickHouse Cloud 控制台中 Connect 按钮的位置" border />
   </Step>
 
-  <Step>
-    ## 配置网络访问
-
+  <Step title="配置网络访问" id="step-2-configure-network-access">
     由于 Holistics 是云端应用，其服务器必须能够访问你的数据库。你有两个选项：
 
     1. **Direct Connection (推荐) ：** 在你的防火墙或 ClickHouse Cloud IP Access List 中将 Holistics 的 IP 地址加入白名单。你可以在 [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting) 中查看 IP 列表。
@@ -71,12 +67,10 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **Reverse SSH Tunnel：** 如果你的数据库位于私有网络 (VPC) 中且无法对公网开放，请使用 [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel)。
   </Step>
 
-  <Step>
-    ## 在 Holistics 中添加数据源
+  <Step title="在 Holistics 中添加数据源" id="step-3-add-data-source-in-holistics">
+    1. 在 Holistics 中，前往 **Settings → 数据源**。
 
-    1. 在 Holistics 中，前往 **Settings → Data Sources**。
-
-       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="在 Holistics 设置中前往 Data Sources" border />
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="在 Holistics 设置中前往 数据源" border />
 
     2. 点击 **New Data Source**，然后选择 **ClickHouse**。
 

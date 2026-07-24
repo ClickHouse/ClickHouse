@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Looker'
 slug: /integrations/looker
-keywords: ['ClickHouse', 'Looker', 'الاتصال', 'التكامل', 'UI']
-description: 'Looker هي منصة مؤسسية لذكاء الأعمال (BI) وتطبيقات البيانات والتحليلات المضمّنة، وتساعدك على استكشاف الرؤى ومشاركتها في الوقت الفعلي.'
+keywords: ['clickhouse', 'looker', 'اتصال', 'تكامل', 'واجهة المستخدم']
+description: 'Looker هو منصة مؤسسية لذكاء الأعمال وتطبيقات البيانات والتحليلات المضمّنة، تساعدك على استكشاف الرؤى ومشاركتها في الوقت الفعلي.'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -17,46 +17,44 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-يمكن لـ Looker الاتصال بـ ClickHouse Cloud أو بنشر داخل البنية التحتية المحلية عبر مصدر بيانات ClickHouse الرسمي.
+يمكن لـ Looker الاتصال بـ ClickHouse Cloud أو بعملية نشر محلية عبر مصدر بيانات ClickHouse الرسمي.
 
-<div id="1-gather-your-connection-details">
-  ## 1. اجمع تفاصيل الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="أنشئ مصدر بيانات ClickHouse" id="2-create-a-clickhouse-data-source">
+    انتقل إلى Admin -&gt; Database -&gt; Connections وانقر على زر &quot;Add Connection&quot; في الزاوية العلوية اليمنى.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. أنشئ مصدر بيانات ClickHouse
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="إضافة اتصال جديد في واجهة إدارة قواعد البيانات في Looker" border />
 
-انتقل إلى Admin -&gt; Database -&gt; Connections وانقر على زر &quot;Add Connection&quot; في الزاوية العلوية اليمنى.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="إضافة اتصال جديد في واجهة Looker لإدارة قواعد البيانات" border />
+    اختر اسمًا لمصدر البيانات، وحدد `ClickHouse` من القائمة المنسدلة الخاصة بلهجة SQL. ثم أدخل بيانات الاعتماد في النموذج.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="تحديد بيانات اعتماد ClickHouse في نموذج اتصال Looker" border />
 
-اختر اسمًا لمصدر البيانات، وحدد `ClickHouse` من القائمة المنسدلة الخاصة بلهجة SQL. ثم أدخل بيانات الاعتماد في النموذج.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="تحديد بيانات اعتماد ClickHouse في نموذج اتصال Looker" border />
+    إذا كنت تستخدم ClickHouse Cloud أو كان النشر لديك يتطلب SSL، فتأكد من تمكين SSL ضمن الإعدادات الإضافية.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="تمكين SSL لاتصال ClickHouse في إعدادات Looker" border />
 
-إذا كنت تستخدم ClickHouse Cloud أو كان إعداد النشر لديك يتطلب SSL، فتأكد من تمكين SSL ضمن الإعدادات الإضافية.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="تمكين SSL لاتصال ClickHouse في إعدادات Looker" border />
+    اختبر الاتصال أولًا، ثم بعد اكتمال الاختبار اتصل بمصدر بيانات ClickHouse الجديد.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="اختبار الاتصال والاتصال بمصدر بيانات ClickHouse" border />
 
-اختبر الاتصال أولًا، ثم بعد اكتمال الاختبار اتصل بمصدر بيانات ClickHouse الجديد.
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="اختبار الاتصال والاتصال بمصدر بيانات ClickHouse" border />
-
-<br />
-
-يمكنك الآن ربط مصدر بيانات ClickHouse بمشروع Looker الخاص بك.
+    يمكنك الآن إرفاق ClickHouse Datasource بمشروع Looker الخاص بك.
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. القيود المعروفة
+  ## القيود المعروفة
 </div>
 
 1. تُعامَل أنواع البيانات التالية كسلاسل نصية افتراضيًا:

@@ -9,7 +9,7 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
@@ -17,7 +17,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-تُعد <a href="https://www.streamkap.com/" target="_blank">Streamkap</a> منصة لتكامل البيانات في الوقت الفعلي، متخصصة في بث CDC (التقاط بيانات التغيير) ومعالجة التدفقات. وهي مبنية على مكدس عالي الإنتاجية وقابل للتوسع باستخدام Apache Kafka وApache Flink وDebezium، وتُقدَّم كخدمة مُدارة بالكامل ضمن نماذج نشر SaaS أو BYOC (Bring your own Cloud).
+تُعد <a href="https://streamkap.com/" target="_blank">Streamkap</a> منصة لتكامل البيانات في الوقت الفعلي، متخصصة في بث CDC (التقاط بيانات التغيير) ومعالجة التدفقات. وهي مبنية على مكدس عالي الإنتاجية وقابل للتوسع باستخدام Apache Kafka وApache Flink وDebezium، وتُقدَّم كخدمة مُدارة بالكامل ضمن نماذج نشر SaaS أو BYOC (Bring your own Cloud).
 
 تتيح لك Streamkap بث كل عمليات الإدراج والتحديث والحذف من قواعد البيانات المصدر مثل PostgreSQL وMySQL وSQL Server وMongoDB و<a href="https://streamkap.com/connectors" target="_blank">المزيد</a> مباشرةً إلى ClickHouse بزمن استجابة في حدود المللي ثانية.
 
@@ -49,52 +49,46 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">حساب Streamkap</a>.
-* تفاصيل الاتصال بعنقود ClickHouse الخاص بك: اسم المضيف، والمنفذ، واسم المستخدم، وكلمة المرور.
-* قاعدة بيانات مصدر (مثل PostgreSQL أو SQL Server) مُعدّة للسماح باستخدام CDC. يمكنك العثور على أدلة إعداد مفصلة في وثائق Streamkap.
+* تفاصيل الاتصال بعنقود ClickHouse لديك: Hostname وPort وUsername وPassword.
+* قاعدة بيانات مصدر (مثل PostgreSQL أو SQL Server) مُعَدَّة للسماح باستخدام CDC. يمكنك العثور على أدلة إعداد تفصيلية في وثائق Streamkap.
 
-<div id="configure-clickhouse-source">
-  ### الخطوة 1: تكوين المصدر في Streamkap
-</div>
+<Steps>
+  <Step title="تكوين المصدر في Streamkap" id="configure-clickhouse-source">
+    1. سجّل الدخول إلى حساب Streamkap الخاص بك.
+    2. في الشريط الجانبي، انتقل إلى **Connectors** وحدِّد علامة التبويب **Sources**.
+    3. انقر على **+ Add** وحدِّد نوع قاعدة البيانات المصدر (على سبيل المثال، SQL Server RDS).
+    4. املأ تفاصيل الاتصال، بما في ذلك نقطة النهاية والمنفذ واسم قاعدة البيانات وبيانات اعتماد المستخدم.
+    5. احفظ الموصّل.
+  </Step>
 
-1. سجّل الدخول إلى حسابك في Streamkap.
-2. من الشريط الجانبي، انتقل إلى **Connectors** ثم اختر علامة التبويب **Sources**.
-3. انقر على **+ Add** وحدّد نوع قاعدة البيانات المصدر (مثل SQL Server RDS).
-4. أدخل بيانات الاتصال، بما في ذلك نقطة النهاية والمنفذ واسم قاعدة البيانات وبيانات اعتماد المستخدم.
-5. احفظ الموصّل.
+  <Step title="تكوين وجهة ClickHouse" id="configure-clickhouse-dest">
+    1. في قسم **Connectors**، حدِّد علامة التبويب **Destinations**.
+    2. انقر على **+ Add** واختر **ClickHouse** من القائمة.
+    3. أدخل تفاصيل الاتصال الخاصة بخدمة ClickHouse:
+       * **Hostname:** اسم المضيف لمثيل ClickHouse لديك (على سبيل المثال، `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port:** منفذ HTTPS الآمن، وعادةً ما يكون `8443`
+       * **Username and Password:** بيانات اعتماد مستخدم ClickHouse لديك
+       * **Database:** اسم قاعدة البيانات الهدف في ClickHouse
+    4. احفظ الوجهة.
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### الخطوة 2: تكوين وجهة ClickHouse
-</div>
+  <Step title="إنشاء مسار البيانات وتشغيله" id="run-pipeline">
+    1. انتقل إلى **Pipelines** في الشريط الجانبي وانقر على **+ Create**.
+    2. حدِّد المصدر والوجهة اللذين قمت بتكوينهما للتو.
+    3. اختر المخططات والجداول التي ترغب في بثها.
+    4. امنح مسار البيانات اسمًا وانقر على **Save**.
 
-1. في قسم **Connectors**، حدِّد علامة التبويب **Destinations**.
-2. انقر على **+ Add** واختر **ClickHouse** من القائمة.
-3. أدخل تفاصيل الاتصال الخاصة بخدمة ClickHouse:
-   * **Hostname:** اسم المضيف لمثيل ClickHouse لديك (على سبيل المثال، `abc123.us-west-2.aws.clickhouse.cloud`)
-   * **Port:** منفذ HTTPS الآمن، وعادةً ما يكون `8443`
-   * **Username and Password:** بيانات اعتماد مستخدم ClickHouse لديك
-   * **Database:** اسم قاعدة البيانات الهدف في ClickHouse
-4. احفظ الوجهة.
+    بمجرد إنشائه، سيصبح مسار البيانات نشطًا. سيأخذ Streamkap أولًا لقطة من البيانات الموجودة، ثم يبدأ في بث أي تغييرات جديدة عند حدوثها.
+  </Step>
 
-<div id="run-pipeline">
-  ### الخطوة 3: إنشاء مسار بيانات وتشغيله
-</div>
+  <Step title="التحقق من البيانات في ClickHouse" id="verify-data-clickhoouse">
+    اتصل بعنقود ClickHouse لديك وشغّل استعلامًا لرؤية البيانات وهي تصل إلى الجدول الهدف.
 
-1. انتقل إلى **Pipelines** في الشريط الجانبي وانقر على **+ Create**.
-2. حدِّد الـSource والوجهة اللذين أعددتهما للتو.
-3. اختر المخططات والجداول التي تريد بثها.
-4. سمِّ مسار بيانات ثم انقر على **Save**.
-
-بمجرد إنشائه، سيصبح مسار بيانات نشطًا. سيأخذ Streamkap أولًا لقطة من البيانات الحالية، ثم يبدأ ببث أي تغييرات جديدة فور حدوثها.
-
-<div id="verify-data-clickhoouse">
-  ### الخطوة 4: التحقّق من البيانات في ClickHouse
-</div>
-
-اتصل بعنقود ClickHouse لديك ونفّذ استعلامًا للاطّلاع على البيانات التي تصل إلى الجدول الهدف.
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
   ## آلية العمل مع ClickHouse

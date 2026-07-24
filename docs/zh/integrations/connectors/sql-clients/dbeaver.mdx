@@ -8,7 +8,7 @@ integration:
   - support_level: 'partner'
   - category: 'sql_client'
   - website: 'https://github.com/dbeaver/dbeaver'
-keywords: ['DBeaver', '数据库管理工具', 'SQL 客户端', 'JDBC 连接', '跨平台']
+keywords: ['DBeaver', '数据库管理', 'SQL 客户端', 'JDBC 连接', '跨平台']
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
@@ -17,75 +17,69 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-DBeaver 有多个版本可供选择。本指南使用的是 [DBeaver Community](https://dbeaver.io/)。有关不同版本及其功能，请参见[此处](https://dbeaver.com/edition/)。DBeaver 通过 JDBC 连接到 ClickHouse。
+DBeaver 提供多个版本。本指南使用的是 [DBeaver Community](https://dbeaver.io/)。请在[此处](https://dbeaver.com/edition/)查看不同版本及其能力。DBeaver 使用 JDBC 连接到 ClickHouse。
 
 <Note>
   为了更好地支持 ClickHouse 中的 `Nullable` 列，请使用 DBeaver 23.1.0 或更高版本。
 </Note>
 
-<div id="1-gather-your-clickhouse-details">
-  ## 1. 获取 ClickHouse 连接信息
-</div>
+<Steps>
+  <Step title="收集你的 ClickHouse 详细信息" id="1-gather-your-clickhouse-details">
+    DBeaver 使用基于 HTTP(S) 的 JDBC 连接到 ClickHouse；你需要：
 
-DBeaver 使用基于 HTTP(S) 的 JDBC 连接 ClickHouse；你需要准备以下信息：
+    * 端点
+    * 端口号
+    * 用户名
+    * 密码
+  </Step>
 
-* 端点
-* 端口号
-* 用户名
-* 密码
+  <Step title="下载 DBeaver" id="2-download-dbeaver">
+    DBeaver 可从 https://dbeaver.io/download/ 下载
+  </Step>
 
-<div id="2-download-dbeaver">
-  ## 2. 下载 DBeaver
-</div>
+  <Step title="添加数据库" id="3-add-a-database">
+    * 通过 **Database &gt; New Database Connection** 菜单，或点击 **Database Navigator** 中的 **New Database Connection** 图标，打开 **Connect to a database** 对话框：
 
-DBeaver 可在 https://dbeaver.io/download/ 下载。
+    <Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="添加新数据库" />
 
-<div id="3-add-a-database">
-  ## 3. 添加数据库
-</div>
+    * 选择 **Analytical**，然后选择 **ClickHouse**：
 
-* 通过 **Database &gt; New Database Connection** 菜单，或点击 **Database Navigator** 中的 **New Database Connection** 图标，打开 **Connect to a database** 对话框：
+    * 构建 JDBC URL。在 **Main** 选项卡中设置 Host、Port、Username、Password 和 Database：
 
-<Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="添加新数据库" />
+    <Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="设置主机名、端口、用户名、密码和数据库名称" />
 
-* 选择 **Analytical**，然后选择 **ClickHouse**：
+    * 默认情况下，**SSL &gt; Use SSL** 属性未启用；如果要连接到 ClickHouse Cloud 或在 HTTP 端口上要求使用 SSL 的 server，请启用 **SSL &gt; Use SSL**：
 
-* 构建 JDBC URL。在 **Main** 选项卡中设置 Host、Port、Username、Password 和 Database：
+    <Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="根据需要启用 SSL" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="设置主机名、端口、用户名、密码和数据库名称" />
+    * 测试连接：
 
-* 默认情况下，**SSL &gt; Use SSL** 属性未启用；如果要连接到 ClickHouse Cloud 或在 HTTP 端口上要求使用 SSL 的 server，请启用 **SSL &gt; Use SSL**：
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="测试连接" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="根据需要启用 SSL" />
+    如果 DBeaver 检测到尚未安装 ClickHouse driver，它会提示你下载：
 
-* 测试连接：
+    <Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="下载 ClickHouse driver" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="测试连接" />
+    * 下载 driver 后，再次 **Test** 连接：
 
-如果 DBeaver 检测到尚未安装 ClickHouse driver，它会提示你下载：
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="测试连接" />
+  </Step>
 
-<Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="下载 ClickHouse driver" />
+  <Step title="查询 ClickHouse" id="4-query-clickhouse">
+    打开查询编辑器并运行查询。
 
-* 下载 driver 后，再次 **Test** 连接：
+    * 右键点击你的连接，选择 **SQL Editor &gt; Open SQL Script** 以打开查询编辑器：
 
-<Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="测试连接" />
+    <Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="打开 SQL 编辑器" />
 
-<div id="4-query-clickhouse">
-  ## 4. 查询 ClickHouse
-</div>
+    * 针对 `system.query_log` 的示例查询：
 
-打开查询编辑器并运行查询。
-
-* 右键单击你的连接，然后选择 **SQL Editor &gt; Open SQL Script** 打开查询编辑器：
-
-<Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="打开 SQL 编辑器" />
-
-* 针对 `system.query_log` 的查询示例：
-
-<Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="示例查询" />
+    <Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="示例查询" />
+  </Step>
+</Steps>
 
 <div id="next-steps">
   ## 后续步骤
 </div>
 
-请参阅 [DBeaver wiki](https://github.com/dbeaver/dbeaver/wiki) 了解 DBeaver 的功能，并参阅 [ClickHouse documentation](/zh/) 了解 ClickHouse 的功能。
+请参阅 [DBeaver wiki](https://github.com/dbeaver/dbeaver/wiki) 了解 DBeaver 的功能，并参阅 [ClickHouse 文档](/zh/) 了解 ClickHouse 的功能。
