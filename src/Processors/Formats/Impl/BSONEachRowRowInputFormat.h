@@ -112,6 +112,11 @@ public:
     /// A BSON `Int32` element is read straight into an `IPv4` column (see `readAndInsertIPv4`).
     bool readsNumericValueIntoIPv4Column() const override { return true; }
 
+    /// A BSON `Double` element is accepted only into a `Float*` column (`readAndInsertDouble`
+    /// rejects every other element type), and the integer element types are rejected for the
+    /// `Float*` columns in turn (`readAndInsertInteger` handles only the integer-backed ones).
+    bool storesTypedNumericValues() const override { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

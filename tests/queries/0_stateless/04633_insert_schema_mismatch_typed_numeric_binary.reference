@@ -1,0 +1,14 @@
+-- BSONEachRow: a double value for a UInt8 column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: a double value for a Float32 column is valid (no false positive)
+explanation missing
+-- BSONEachRow: an int32 value for a Float64 column is a genuine structure mismatch
+explanation present
+-- BSONEachRow: an int32 value for a UInt8 column is valid (no false positive)
+explanation missing
+-- MsgPack: a float64 value for a UInt8 column is a genuine structure mismatch
+explanation present
+-- MsgPack: a float64 value for a Float64 column is valid (no false positive)
+explanation missing
+-- MsgPack: an integer value for a Float64 column is a genuine structure mismatch
+explanation present

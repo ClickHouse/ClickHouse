@@ -101,6 +101,11 @@ public:
     /// `TypeIndex::IPv4` arm).
     bool readsNumericValueIntoIPv4Column() const override { return true; }
 
+    /// A MessagePack float is accepted only into the matching `Float*` column (`insertFloat32` /
+    /// `insertFloat64`), and an integer is rejected for the `Float*` columns in turn
+    /// (`insertInteger` has no floating-point arm).
+    bool storesTypedNumericValues() const override { return true; }
+
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object, size_t depth);

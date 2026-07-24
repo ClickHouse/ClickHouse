@@ -81,6 +81,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_any_value_into_string_column = true;
     bool format_maps_columns_by_name = false;
     bool format_reads_numeric_into_ipv4 = false;
+    bool format_stores_typed_numeric_values = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -110,6 +111,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
+        format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -298,6 +300,27 @@ String getInsertDataSchemaMismatchDescription(
                 return true;
             }
             return format_reads_any_value_into_string_column || which_inferred.isString();
+        }
+
+        /// The binary formats that store typed values (`BSONEachRow`, `MsgPack`) keep the on-wire
+        /// numeric kind, and their parsers do not convert it across the integer / floating-point
+        /// family boundary: a stored double is accepted only into a `Float*` column
+        /// (`BSONEachRowRowInputFormat::readAndInsertDouble`, `MsgPackRowInputFormat::insertFloat64`
+        /// reject everything else — `UInt8`, `DateTime`, `Enum`, `Decimal`, ...), and a stored
+        /// integer is rejected for a `Float*` column in turn. So there — unlike in the text / JSON
+        /// formats the supertype rule below is written for, where any numeric token is re-parsed by
+        /// the destination's deserializer — an inferred floating-point type is a reliable structure
+        /// mismatch for every non-floating-point destination and vice versa. Checked before the
+        /// supertype rule, which would otherwise wrongly treat e.g. `Float64` into `UInt8` as
+        /// compatible. Integer-to-integer (and integer into the other integer-backed destinations —
+        /// dates, `Enum`, ...) stays with the loose rules below: those parsers accept any stored
+        /// integer kind there.
+        if (format_stores_typed_numeric_values && inferred_is_numeric)
+        {
+            if (which_inferred.isFloat())
+                return which_expected.isFloat();
+            if (which_expected.isFloat())
+                return false;
         }
 
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)

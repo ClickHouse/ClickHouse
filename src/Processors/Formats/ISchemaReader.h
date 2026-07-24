@@ -108,6 +108,18 @@ public:
     /// mismatch regardless of this capability.)
     virtual bool readsNumericValueIntoIPv4Column() const { return false; }
 
+    /// True when the format stores numeric values with their on-wire numeric kind and the parser does
+    /// not convert them across the integer / floating-point family boundary. The text / JSON parsers
+    /// re-parse a numeric token with the deserializer of the destination type, so any numeric token
+    /// fits any numeric column there — but the binary formats that store typed values do not: a
+    /// `BSONEachRow` `Double` is accepted only into a `Float*` column (`readAndInsertDouble`) and an
+    /// integer only into integer-backed columns, and `MsgPack` floats likewise are accepted only into
+    /// the `Float*` columns (`insertFloat32` / `insertFloat64`) while its integers are rejected for
+    /// them. A caller comparing an inferred schema against an expected one uses this to know that an
+    /// inferred floating-point type is a genuine structure mismatch for a non-floating-point
+    /// destination (and vice versa) in such formats.
+    virtual bool storesTypedNumericValues() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
