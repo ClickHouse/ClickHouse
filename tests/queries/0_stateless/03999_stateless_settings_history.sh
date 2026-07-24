@@ -43,28 +43,39 @@ $CLICKHOUSE_LOCAL --query "
             SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name
             FROM system.settings_changes WHERE type = 'MergeTree'
         ),
-        -- For every documented setting, the new_value recorded at its HIGHEST version is what
-        -- the current default is expected to be. If they differ, a default was changed in code
-        -- without recording it in SettingsChangesHistory.cpp, so the compatibility setting restores a wrong value.
+        -- For every documented setting, the value the current default is expected to equal is
+        -- the new_value of the LAST entry applied by the compatibility mechanism: entries are
+        -- applied in ascending version order and, within a version, in vector order (the order
+        -- they appear in the block). A setting may legitimately appear more than once in the
+        -- same block, so ties on version are broken by the entry index - argMax over the tuple
+        -- (version, index) reproduces the effective 'latest' value deterministically. If it
+        -- differs from the current default, a default was changed in code without recording it
+        -- in SettingsChangesHistory.cpp, so the compatibility setting restores a wrong value.
         session_expected_default AS
         (
-            SELECT name, argMax(new_value, vnum) AS expected
+            SELECT name, argMax(new_value, (vnum, idx)) AS expected
             FROM
             (
                 SELECT c.1 AS name, c.3 AS new_value,
-                    splitByChar('.', version)[1]::UInt64 * 1000 + splitByChar('.', version)[2]::UInt64 AS vnum
-                FROM system.settings_changes ARRAY JOIN changes AS c WHERE type = 'Session'
+                    splitByChar('.', version)[1]::UInt64 * 1000 + splitByChar('.', version)[2]::UInt64 AS vnum,
+                    idx
+                FROM system.settings_changes
+                ARRAY JOIN changes AS c, arrayEnumerate(changes) AS idx
+                WHERE type = 'Session'
             )
             GROUP BY name
         ),
         mergetree_expected_default AS
         (
-            SELECT name, argMax(new_value, vnum) AS expected
+            SELECT name, argMax(new_value, (vnum, idx)) AS expected
             FROM
             (
                 SELECT c.1 AS name, c.3 AS new_value,
-                    splitByChar('.', version)[1]::UInt64 * 1000 + splitByChar('.', version)[2]::UInt64 AS vnum
-                FROM system.settings_changes ARRAY JOIN changes AS c WHERE type = 'MergeTree'
+                    splitByChar('.', version)[1]::UInt64 * 1000 + splitByChar('.', version)[2]::UInt64 AS vnum,
+                    idx
+                FROM system.settings_changes
+                ARRAY JOIN changes AS c, arrayEnumerate(changes) AS idx
+                WHERE type = 'MergeTree'
             )
             GROUP BY name
         )
