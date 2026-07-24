@@ -1,6 +1,5 @@
 <test>
-    <!-- Comparisons derived by optimize_and_compare_chain must not cost per-row evaluation:
-         they are wrapped in indexHint and only participate in index analysis. -->
+    <!-- Derived compare-chain conjuncts must cost nothing per row. -->
 
     <create_query>
         CREATE TABLE t_chain_derived ENGINE = MergeTree ORDER BY tuple() AS
@@ -14,13 +13,10 @@
         FROM numbers_mt(10000000)
     </create_query>
 
-    <!-- Filter tax: the three derived string comparisons share a 100-byte prefix with the
-         constant, so as plain conditions they would each scan it per row. -->
+    <!-- Filter tax: three derived string comparisons sharing a 100-byte prefix with the constant. -->
     <query>SELECT count() FROM t_chain_derived WHERE s1 &lt; s2 AND s2 &lt; s3 AND s3 &lt; s4 AND s4 &lt; repeat('p', 100) || 'z'</query>
 
-    <!-- PREWHERE hoist: the derived comparison on the cheap column set {x} must not drag the
-         expensive expression into PREWHERE, where it would run on every row instead of the
-         one percent selected by b &lt; 'z'. -->
+    <!-- PREWHERE hoist: the derived comparison must not drag the expensive expression into PREWHERE. -->
     <query>SELECT count() FROM t_chain_derived WHERE hex(sipHash64(repeat(x, 200))) &lt; b AND b &lt; 'z'</query>
 
     <drop_query>DROP TABLE IF EXISTS t_chain_derived</drop_query>

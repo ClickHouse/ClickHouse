@@ -58,14 +58,12 @@ TEST(OptimizeAndCompareChain, compare)
     // miscellaneous
     test_f("c > 0 AND c < 5", "(c > 0) AND (c < 5)");
     test_f("a = b AND b = c AND c = 5", "(a = b) AND (b = c) AND (c = 5) AND indexHint(b = 5) AND indexHint(a = 5)");
-    /// The weaker derived `c < 6` is appended before `c < 5` prunes it inside the filter map;
-    /// the later pruning pass does not look inside `indexHint`, so the redundant hint stays.
+    /// The redundant weaker hint stays: the pruning pass does not look inside `indexHint`.
     test_f("c < b AND a < 5 AND b < 6 AND b < 5", "(c < b) AND (a < 5) AND (b < 5) AND indexHint(c < 6) AND indexHint(c < 5)");
-    /// `b > 0` used to be dropped as implied by the plain derived `b > 3`; a hint does not imply it.
+    /// A hint does not imply `b > 0` away, unlike the plain derived `b > 3` before.
     test_f("a = b AND a > 3 AND b > 0", "(a = b) AND (a > 3) AND (b > 0) AND indexHint(b > 3)");
     test_f("(3 < a AND a < 5) AND b < a AND c > a", "((3 < a) AND (a < 5)) AND (b < a) AND (c > a) AND indexHint(b < 5) AND indexHint(c > 3)");
 
-    /// A derived comparison that contradicts an existing condition is appended as a plain
-    /// condition (not a hint), so the pruning pass folds the whole AND to `false`.
+    /// A contradicting derived comparison is added plain, so the AND still folds to `false`.
     test_f("a < b AND b < 5 AND a > 10", "false");
 }

@@ -2281,8 +2281,7 @@ private:
             /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
             if (andCompareChainHashBudgetExceeded())
                 return;
-            /// A derived conjunct may already sit in the AND wrapped in `indexHint` (see below);
-            /// track the inner comparison so a repeated visit stays idempotent.
+            /// Derived conjuncts sit in the AND wrapped in `indexHint`; compare by the inner node.
             const auto * argument_function = argument->as<FunctionNode>();
             if (argument_function && argument_function->getFunctionName() == "indexHint"
                 && argument_function->getArguments().getNodes().size() == 1)
@@ -2344,12 +2343,8 @@ private:
                             }
                             else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
                             {
-                                /// A derived conjunct never filters rows beyond the original chain, so as a
-                                /// plain condition it only costs per-row evaluation, and PREWHERE can even
-                                /// hoist an expensive derived expression to run on every row. Wrap it in
-                                /// `indexHint`: index analysis still sees the comparison and prunes, while
-                                /// execution treats it as constant `1`. Contradictions stay plain (branch
-                                /// above) so the next pass folds the AND to `false`.
+                                /// A derived conjunct filters nothing beyond the original chain, so add it
+                                /// as `indexHint`: index analysis still prunes by it, execution skips it.
                                 auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                 index_hint_node->getArguments().getNodes().push_back(and_node);
                                 index_hint_node->resolveAsFunction(

@@ -1,5 +1,5 @@
--- Comparisons derived by `optimize_and_compare_chain` are wrapped in `indexHint`: they still
--- prune the read set through index analysis but cost nothing per row and stay out of PREWHERE.
+-- Comparisons derived by `optimize_and_compare_chain` are wrapped in `indexHint`:
+-- they still prune the read set but cost nothing per row.
 
 SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
@@ -29,8 +29,7 @@ SELECT 'results';
 SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain = 1;
 SELECT count() FROM t_chain_hint WHERE a < b AND b < 1000 SETTINGS optimize_and_compare_chain = 0;
 
--- A derived comparison that contradicts an existing condition is added as a plain condition,
--- so the whole AND still folds to `false`.
+-- A contradicting derived comparison is added plain, so the AND still folds to `false`.
 SELECT 'contradiction';
 SELECT count() FROM t_chain_hint WHERE a < b AND b < 5 AND a > 10;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a < b AND b < 5 AND a > 10)
