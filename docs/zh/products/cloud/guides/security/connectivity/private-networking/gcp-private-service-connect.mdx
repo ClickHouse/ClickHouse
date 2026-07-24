@@ -19,6 +19,8 @@ Private Service Connect (PSC) 是 Google Cloud 的一项网络功能，可让消
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Private Service Connect 概览" border />
 
 <Warning>
+  GCP Private Service Connect 仅支持从你的 GCP VPC 发起并连接到 ClickHouse Cloud。它不能用于从 ClickHouse Cloud 发起并连接到你 VPC 中的服务，例如[私有数据库](#connecting-to-a-remote-database)。
+
   默认情况下，即使 PSC connection 已获批准并建立，ClickHouse 服务也无法通过 Private Service connection 访问；你需要完成下方的[步骤](#add-endpoint-id-to-services-allow-list)，在 实例 级别将 PSC ID 明确添加到 允许列表 中。
 </Warning>
 
@@ -94,7 +96,7 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
   ### 选项 1：ClickHouse Cloud 控制台
 </div>
 
-在 ClickHouse Cloud 控制台中，打开要通过 Private Service Connect 连接的服务，然后打开 **设置** 菜单。点击 **设置专用终结点** 按钮。记下 **服务名称** (`endpointServiceId`) 和 **DNS 名称** (`privateDnsHostname`) ，后续步骤中会用到它们。
+在 ClickHouse Cloud 控制台中，打开要通过 Private Service Connect 连接的服务，然后打开 **设置** 菜单。点击 **设置专用终结点** 按钮。记下 **服务名称** (`endpointServiceId`) 和 **DNS 名称** (`privateDnsHostname`)，后续步骤中会用到它们。
 
 <Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="专用终结点" border />
 
@@ -471,13 +473,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
   ### 连接到远程数据库
 </div>
 
-假设你想在 ClickHouse Cloud 中使用 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数，并连接到托管在 GCP 上的数据库。GCP PSC 不能用于安全地建立这种连接。PSC 是一种单向连接。它允许你的内部网络或 GCP VPC 安全地连接到 ClickHouse Cloud，但不允许 ClickHouse Cloud 连接回你的内部网络。
-
 根据 [GCP Private Service Connect 文档](https://cloud.google.com/vpc/docs/private-service-connect)：
 
 > 面向服务的设计：生产者服务通过负载均衡器发布，向消费者 VPC 网络公开单个 IP 地址。访问生产者服务的消费者流量是单向的，只能访问该服务的 IP 地址，而不能访问整个对等互连的 VPC 网络。
 
-要实现这一点，请配置 GCP VPC 防火墙规则，允许 ClickHouse Cloud 连接到你的内部/私有数据库服务。请查看 [ClickHouse Cloud 各区域的默认出站 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)以及[可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。
+要将 ClickHouse Cloud 中的 [MySQL](/zh/reference/functions/table-functions/mysql) 或 [PostgreSQL](/zh/reference/functions/table-functions/postgresql) 表函数连接到托管在你的 GCP VPC 中的数据库，请配置 GCP VPC 防火墙规则，允许来自 ClickHouse Cloud 的连接。请查看 [ClickHouse Cloud 各区域的默认出站 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)以及[可用的静态 IP 地址](https://api.clickhouse.cloud/static-ips.json)。
 
 <div id="more-information">
   ## 更多信息

@@ -20,41 +20,31 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
 カスタムロールには、組織、サービス、データベースの権限を組み合わせて含めることができます。権限は、すべてのサービスとデータベース、またはその一部に適用できます。
 
 <Steps>
-  <Step>
-    ### 組織設定にアクセスし、`Users and roles` を選択する
-
+  <Step title="組織設定にアクセスし、`Users and roles` を選択する" id="users-and-roles-1">
     サービスページで、組織名を選択します。ポップアップメニューから `Users and roles` を選択します。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### `Roles` タブを選択する
-
+  <Step title={<>`Roles` タブを選択する</>} id="roles-tab">
     画面上部中央の `Roles` タブを選択します。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 右上の `Create new role` を選択する
-
+  <Step title={<>右上の <code>Create new role</code> を選択する</>} id="create-new-role">
     画面右上の `Create new role` ボタンを選択します。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### ロールに名前を付ける
-
+  <Step title="ロールに名前を付ける" id="name-the-role">
     わかりやすいロール名を入力します。この名前は、ユーザーや API キーにロールを割り当てる際に表示されます。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### `Allow` をクリックし、権限のスコープを選択する
-
+  <Step title={<>`Allow` をクリックし、権限のスコープを選択する</>} id="scope-permissions">
     `Allow` ボタンをクリックし、Organization、Service、Database の権限から選択します。すべての権限の説明については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles) を参照してください。
 
     <Tip>
@@ -70,9 +60,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### 新しいロールを確認する
-
+  <Step title="新しいロールを確認する" id="review-role">
     作成を確定する前に、新しいロールに割り当てた権限を確認します。完了したら `Create role` をクリックします。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />

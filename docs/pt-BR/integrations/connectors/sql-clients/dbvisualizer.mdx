@@ -18,50 +18,46 @@ import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMainta
 <CommunityMaintainedBadge />
 
 <div id="start-or-download-dbvisualizer">
-  ## Abra ou baixe o DbVisualizer
+  ## Inicie ou baixe o DbVisualizer
 </div>
 
 O DbVisualizer está disponível em https://www.dbvis.com/download/
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúna os detalhes de conexão
-</div>
+<Steps>
+  <Step title="Reúna seus detalhes de conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Gerenciamento integrado do driver JDBC" id="2-built-in-jdbc-driver-management">
+    O DbVisualizer inclui os drivers JDBC mais atualizados para o ClickHouse. Ele tem gerenciamento completo de driver JDBC integrado, apontando para os lançamentos mais recentes, bem como para versões históricas dos drivers.
 
-<div id="2-built-in-jdbc-driver-management">
-  ## 2. Gerenciamento integrado de drivers JDBC
-</div>
+    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Interface do gerenciador de drivers do DbVisualizer mostrando a configuração do ClickHouse JDBC driver" />
+  </Step>
 
-O DbVisualizer já inclui os drivers JDBC mais atualizados para o ClickHouse. Ele oferece gerenciamento completo de drivers JDBC integrado à ferramenta, apontando para os lançamentos mais recentes e também para versões anteriores dos drivers.
+  <Step title="Conecte-se ao ClickHouse" id="3-connect-to-clickhouse">
+    Para se conectar a um banco de dados no DbVisualizer, primeiro você precisa criar e configurar uma conexão de banco de dados.
 
-<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Interface do gerenciador de drivers do DbVisualizer mostrando a configuração do driver JDBC do ClickHouse" />
+    1. Crie uma nova conexão em **Database-&gt;Create Database Connection** e selecione um driver para seu banco de dados no menu pop-up.
 
-<div id="3-connect-to-clickhouse">
-  ## 3. Conecte-se ao ClickHouse
-</div>
+    2. Uma aba **Object View** para a nova conexão será aberta.
 
-Para se conectar a um banco de dados no DbVisualizer, primeiro você precisa criar e configurar uma conexão de banco de dados.
+    3. Insira um nome para a conexão no campo **Name** e, opcionalmente, uma descrição no campo **Notes**.
 
-1. Crie uma nova conexão em **Database-&gt;Create Database Connection** e selecione um driver para seu banco de dados no menu pop-up.
+    4. Deixe **Database Type** como **Auto Detect**.
 
-2. Uma aba **Object View** para a nova conexão será aberta.
+    5. Se o driver selecionado em **Driver Type** estiver marcado com uma marca de verificação verde, ele estará pronto para uso. Caso contrário, talvez seja necessário configurar o driver no **Driver Manager**.
 
-3. Insira um nome para a conexão no campo **Name** e, opcionalmente, uma descrição no campo **Notes**.
+    6. Insira as informações sobre o servidor do banco de dados nos campos restantes.
 
-4. Deixe **Database Type** como **Auto Detect**.
+    7. Verifique se é possível estabelecer uma conexão de rede com o endereço e a porta especificados clicando no botão **Ping Server**.
 
-5. Se o driver selecionado em **Driver Type** estiver marcado com uma marca de verificação verde, ele estará pronto para uso. Caso contrário, talvez seja necessário configurar o driver no **Driver Manager**.
+    8. Se o resultado de **Ping Server** mostrar que o servidor está acessível, clique em **Connect** para se conectar ao servidor do banco de dados.
 
-6. Insira as informações sobre o servidor do banco de dados nos campos restantes.
-
-7. Verifique se é possível estabelecer uma conexão de rede com o endereço e a porta especificados clicando no botão **Ping Server**.
-
-8. Se o resultado de **Ping Server** mostrar que o servidor está acessível, clique em **Connect** para se conectar ao servidor do banco de dados.
-
-<Tip>
-Consulte [Corrigindo problemas de conexão](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) para ver algumas dicas caso você tenha problemas para se conectar ao banco de dados.
-</Tip>
+    <Tip>
+      Consulte [Corrigindo problemas de conexão](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) para ver algumas dicas caso você tenha problemas para se conectar ao banco de dados.
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Saiba mais

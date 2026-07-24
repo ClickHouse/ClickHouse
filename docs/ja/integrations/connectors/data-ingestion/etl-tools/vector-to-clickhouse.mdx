@@ -22,7 +22,7 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
 ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhouse.com/blog/log-compression-170x))
 と大量のデータを高速に集計できる性能により、ログデータの保存と分析に優れています。
 
-このガイドでは、一般的なデータパイプラインである [Vector](https://vector.dev/docs/about/what-is-vector/) を使用して、Nginx のログファイルを tail し、ClickHouse に送信する方法を紹介します。
+このガイドでは、一般的なデータパイプラインである [Vector](https://vector.dev/docs/introduction/) を使用して、Nginx のログファイルを tail し、ClickHouse に送信する方法を紹介します。
 以下の手順は、どの種類のログファイルを tail する場合でもほぼ同様です。
 
 **前提条件:**
@@ -31,9 +31,7 @@ ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhous
 * Vector がインストールされていること
 
 <Steps>
-  <Step>
-    ## データベースとテーブルを作成する
-
+  <Step title="データベースとテーブルを作成する" id="1-create-a-database-and-table">
     ログイベントを保存するためのテーブルを定義します。
 
     1. まず、`nginxdb` という名前の新しいデータベースを作成します。
@@ -57,9 +55,7 @@ ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhous
     </Note>
   </Step>
 
-  <Step>
-    ## Nginx を設定する
-
+  <Step title="Nginx を設定する" id="2--configure-nginx">
     このステップでは、Nginx のログ出力を設定する方法を説明します。
 
     1. 次の `access_log` プロパティは、ログを **combined** フォーマットで `/var/log/nginx/my_access.log` に出力します。
@@ -88,9 +84,7 @@ ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhous
     ```
   </Step>
 
-  <Step>
-    ## Vector を設定する
-
+  <Step title="Vector を設定する" id="3-configure-vector">
     Vector は、ログ、メトリクス、トレース (**ソース** と呼ばれます) を収集・変換・ルーティングし、ClickHouse を含むさまざまなベンダー (**シンク** と呼ばれます) に送信します。
     ソースとシンクは、**vector.toml** という設定ファイルで定義します。
 
@@ -122,9 +116,7 @@ ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhous
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="ClickHouseのログをテーブル形式で表示" />
   </Step>
 
-  <Step>
-    ## ログの解析
-
+  <Step title="ログの解析" id="4-parse-the-logs">
     ClickHouse にログを保存できるのは便利ですが、各イベントを単一の文字列として格納するだけでは、データ分析に活用できる情報が限られてしまいます。
     次に、[materialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) を使用してログイベントをパースする方法を説明します。
 
