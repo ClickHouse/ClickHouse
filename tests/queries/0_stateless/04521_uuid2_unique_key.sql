@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
 -- `UNIQUE KEY` tables with `UUID2` key columns.
 -- `UUID2` reuses `ColumnVector<UUID>` storage, so a `UUID2` column reports the physical `UUID`
 -- column type to the order-preserving UNIQUE KEY encoder (`UniqueKeyEncoding::appendColumn`
