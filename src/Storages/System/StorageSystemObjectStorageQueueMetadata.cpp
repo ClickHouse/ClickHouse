@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,6 +12,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/assert_cast.h>
@@ -49,6 +51,12 @@ template <ObjectStorageType type>
 StorageSystemObjectStorageQueueMetadata<type>::StorageSystemObjectStorageQueueMetadata(const StorageID & table_id_)
     : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
+}
+
+template <ObjectStorageType type>
+Block StorageSystemObjectStorageQueueMetadata<type>::getFilterSampleBlock() const
+{
+    return {{{}, std::make_shared<DataTypeString>(), "zookeeper_path"}};
 }
 
 namespace
@@ -249,7 +257,7 @@ NodeContents readProcessedPointers(
 
 template <ObjectStorageType type>
 void StorageSystemObjectStorageQueueMetadata<type>::fillData(
-    MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     /// Source column indexes.
     enum Column : size_t
@@ -265,14 +273,33 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
     };
 
     auto log = getLogger(name);
+
+    const auto snapshot = ObjectStorageQueueMetadataFactory::instance().getAll();
+
+    /// Push the `zookeeper_path` filter down before doing any Keeper I/O, so a
+    /// targeted query does not probe (and potentially fail on) unrelated queues -
+    /// e.g. `WHERE zookeeper_path = '/healthy'` must not touch a broken one.
+    MutableColumnPtr zookeeper_path_col = ColumnString::create();
+    for (const auto & [zookeeper_path, metadata] : snapshot)
+    {
+        if (type == metadata->getType())
+            zookeeper_path_col->insert(zookeeper_path);
+    }
+
+    Block filtered_block{{std::move(zookeeper_path_col), std::make_shared<DataTypeString>(), "zookeeper_path"}};
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+    if (!filtered_block.rows())
+        return;
+    const ColumnPtr filtered_paths = filtered_block.getByName("zookeeper_path").column;
+
     /// All Keeper requests below must run with a component set, otherwise
     /// `Coordination::ZooKeeper::pushRequest` throws a logical error.
     auto component_guard = Coordination::setCurrentComponent("StorageSystemObjectStorageQueueMetadata::fillData");
 
-    for (const auto & [zookeeper_path, metadata] : ObjectStorageQueueMetadataFactory::instance().getAll())
+    for (size_t row = 0; row < filtered_paths->size(); ++row)
     {
-        if (type != metadata->getType())
-            continue;
+        const auto zookeeper_path = (*filtered_paths)[row].safeGet<String>();
+        const auto & metadata = snapshot.at(zookeeper_path);
 
         /// `zookeeper_path` is the factory key, which for auxiliary Keepers is
         /// prefixed with "<keeper>:". It is used only for display. Keeper reads

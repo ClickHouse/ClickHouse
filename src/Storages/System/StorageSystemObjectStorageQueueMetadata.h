@@ -22,6 +22,10 @@ public:
 protected:
     bool supportsColumnsMask() const override { return true; }
 
+    /// `zookeeper_path` is filterable so a targeted query does not touch (and
+    /// potentially fail on) unrelated, possibly unhealthy, queues in Keeper.
+    Block getFilterSampleBlock() const override;
+
     void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
