@@ -52,7 +52,7 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
 
 DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in)
 {
-    int protocol_version = 0;
+    int protocol_version;
     readVarInt(protocol_version, in);
     if (protocol_version > DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION || protocol_version <= 0)
         throw Exception(
@@ -62,7 +62,7 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
             DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
     if (protocol_version == 1)
     {
-        int type = 0;
+        int type;
         readVarInt(type, in);
         if (type == ICEBERG_TABLE_STATE_SNAPSHOT)
         {

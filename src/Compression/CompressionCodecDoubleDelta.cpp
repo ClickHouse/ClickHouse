@@ -4,7 +4,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
@@ -25,9 +26,6 @@ class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
-
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class StorageFile final : public IStorage
 {
@@ -81,10 +79,6 @@ public:
     explicit StorageFile(CommonArguments args);
 
     std::string getName() const override { return "File"; }
-
-    /// The concrete data format resolved for this table (after schema/format inference).
-    /// Used by the unified `URL` engine to persist the delegate's inferred format.
-    const String & getFormatName() const { return format_name; }
 
     void read(
         QueryPlan & query_plan,
@@ -221,7 +215,7 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
-class StorageFileSource final : public ISource, WithContext
+class StorageFileSource : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -294,7 +288,7 @@ private:
 
     Chunk generate() override;
 
-    void onFinish() override;
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -311,13 +305,7 @@ private:
     /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
     /// for in-place rewrites within the same wall-clock second.
     std::optional<String> current_file_cache_version;
-    /// Whether `current_file_cache_version` can be trusted as a rewrite-proof version
-    /// token: filesystem timestamps are coarser than the wall clock, so the token only
-    /// proves a rewrite once the last modification is comfortably in the past (see the
-    /// settle check in `generate`). The query condition cache skips data based on the
-    /// token, so it must fail close and stay bypassed while this is false.
-    bool current_file_version_settled = false;
-    struct stat current_archive_stat{};
+    struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;

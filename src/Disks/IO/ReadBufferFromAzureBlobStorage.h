@@ -59,9 +59,6 @@ public:
 
     bool supportsReadAt() override { return true; }
 
-    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
-    bool supportsExternalBufferMode() const override { return use_external_buffer; }
-
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
     ObjectMetadata getObjectMetadataFromTheLastRequest() const;
@@ -89,7 +86,7 @@ private:
     off_t read_until_position = 0;
 
     off_t offset = 0;
-    size_t total_size{};
+    size_t total_size;
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

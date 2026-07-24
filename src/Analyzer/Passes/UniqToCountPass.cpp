@@ -42,7 +42,7 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
         const auto & projection_columns = query_node->getProjectionColumns();
         const auto & projection_nodes = query_node->getProjection().getNodes();
 
-        chassert(projection_columns.size() == projection_nodes.size());
+        assert(projection_columns.size() == projection_nodes.size());
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
