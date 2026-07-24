@@ -44,6 +44,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
+            {"cross_to_inner_join_rewrite", 2, 1, "Fix settings history drift: record the actual default value change (issue #111750)."},
+            {"extract_key_value_pairs_max_pairs_per_row", 0, 1000, "Fix settings history drift: record the actual default value change (issue #111750)."},
+            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 100, 10, "Fix settings history drift: record the actual default value change (issue #111750)."},
+            {"rewrite_count_distinct_if_with_count_distinct_implementation", 1, 0, "Fix settings history drift: record the actual default value change (issue #111750)."}
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -352,7 +356,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
             {"use_skip_indexes_on_data_read", false, false, "Default enable"},
-            {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
