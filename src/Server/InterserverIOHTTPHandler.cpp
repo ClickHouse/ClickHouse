@@ -32,9 +32,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Extract the `endpoint` query parameter from the request URI. Unlike the `HTMLForm` used in
-/// `processQuery`, this does not read the request body, so it is safe to call before the body is
-/// consumed. All interserver clients pass `endpoint` as a URI query parameter.
+/// Read the `endpoint` query parameter from the URI without consuming the request body.
 String getEndpointNameFromURI(const HTTPServerRequest & request)
 {
     const Poco::URI uri(request.getURI());
@@ -48,12 +46,9 @@ String getEndpointNameFromURI(const HTTPServerRequest & request)
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
-    /// A `Bearer` credential is a per-endpoint credential, not a server-wide interserver one.
-    /// Defer it to the target endpoint's `authenticate` only when that endpoint opts into bearer
-    /// authentication. Otherwise fall through to the shared credential check below, so an
-    /// unsupported bearer request is rejected exactly as any other non-Basic scheme was before
-    /// this hook existed: before the endpoint is resolved, and without disclosing endpoint
-    /// existence or endpoint-specific authentication results.
+    /// Defer a `Bearer` credential to the target endpoint only if it opts in via `acceptsBearerAuth`.
+    /// Otherwise fall through to the shared check and reject it before the endpoint is resolved, so
+    /// an unauthenticated caller cannot probe endpoint existence through the response.
     if (request.hasCredentials())
     {
         String scheme;
