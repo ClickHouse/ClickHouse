@@ -1275,7 +1275,7 @@ def _settings_explorer_component(pages, family=None):
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
-            className="shrink-0 rounded p-1 text-gray-500 hover:text-gray-900 focus:outline-0 focus-visible:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-[#fdff75] dark:focus-visible:text-[#fdff75]"
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border-0 bg-transparent px-1 py-0.5 font-sans text-xs font-medium text-gray-600 hover:text-gray-900 focus:outline-0 focus-visible:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-[#fdff75] dark:focus-visible:text-[#fdff75]"
           >
             <svg
               aria-hidden="true"
@@ -1285,12 +1285,13 @@ def _settings_explorer_component(pages, family=None):
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="h-4 w-4"
+              className="h-3 w-3"
             >
               {allGroupsExpanded
                 ? <path d="m6 9 6 6 6-6" />
                 : <path d="m15 18-6-6 6-6" />}
             </svg>
+            <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? filteredEntries.map((entry, index) => renderGroup(
