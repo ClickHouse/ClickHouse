@@ -38,6 +38,22 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, bool)
     size_t rows = join->getTotalRowCount();
     size_t bytes = join->getTotalByteCount();
 
+    /// With `enable_join_in_memory_compression`, compression must get its chance before the join is
+    /// abandoned for the disk-based MergeJoin, the same way it precedes external spilling in
+    /// SpillingHashJoin: `addBlockToJoin(block, false)` above skips HashJoin's own shrink pass, so
+    /// without this the switch decision would always see the uncompressed build size and the setting
+    /// would be silently ineffective under `join_algorithm = 'auto'`. One attempt is enough: if the
+    /// stored blocks compress, HashJoin keeps them compressed (and ignores further shrink calls);
+    /// if they do not compress below the limit, re-running the pass on every subsequent insert
+    /// would only burn CPU on the same data.
+    if (!limits.softCheck(rows, bytes) && !compression_attempted && table_join->enableJoinInMemoryCompression())
+    {
+        compression_attempted = true;
+        assert_cast<HashJoin &>(*join).shrinkStoredBlocksToFit(bytes, /*force_optimize=*/true);
+        rows = join->getTotalRowCount();
+        bytes = join->getTotalByteCount();
+    }
+
     if (!limits.softCheck(rows, bytes))
         return switchJoin();
 

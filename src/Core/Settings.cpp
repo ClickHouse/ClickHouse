@@ -3650,6 +3650,8 @@ For `hash` and `parallel_hash`, compression kicks in adaptively, using the same 
 
 For standalone `grace_hash`, compression is applied as a one-time compaction of the active in-memory bucket when it reaches `max_bytes_in_join`, just before that bucket would otherwise be rehashed or spilled to disk. The `max_memory_usage` trigger does not apply to a `grace_hash` bucket, and blocks inserted into the bucket after it has been compacted are not compressed again.
 
+For `auto` without automatic external spilling configured, which starts with `hash` and switches to the disk-based `partial_merge` when the join limits (`max_rows_in_join` / `max_bytes_in_join`) are exceeded, compression is applied as a one-time pass at the point the switch would otherwise happen: a build side that compresses back below the limits stays in the in-memory hash join, and only if it grows past them again (or does not compress enough) does the join switch to `partial_merge`. (With external spilling configured, `auto` uses the spilling `hash`/`parallel_hash` path described above instead.)
+
 This trades probe-time CPU (right-side blocks must be decompressed on the fly) for lower peak memory, allowing larger joins to run in memory before reaching an out-of-memory condition or spilling to disk. Decompressed data is not kept around: each output batch decompresses the distinct stored blocks it references (each at most once per batch), holds them only while that batch is materialized, and releases them as soon as it is finished. That per-batch working set is accounted by the query memory tracker as usual.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(

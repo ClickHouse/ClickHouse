@@ -99,6 +99,9 @@ private:
     JoinPtr join;
     SizeLimits limits;
     bool switched;
+    /// Whether the one-shot in-memory compression pass (`enable_join_in_memory_compression`) was
+    /// already tried before switching to the disk-based join. See addBlockToJoin.
+    bool compression_attempted = false;
     mutable std::mutex switch_mutex;
     std::shared_ptr<TableJoin> table_join;
     const Block right_sample_block;
