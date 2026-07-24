@@ -37,6 +37,11 @@ public:
     /// Number of in-place plan extensions -- one per `extendPlan`.
     UInt64 extensionCount() const { return ex.stats.get(ReaderExecutor::Stats::PlanExtensions); }
 
+    /// Prefetch churn counters: cancels (revoked before the worker ran) and
+    /// discarded-running (revoke lost the race; the worker's fetch is wasted).
+    UInt64 prefetchCancelledCount() const { return ex.stats.get(ReaderExecutor::Stats::PrefetchCancelled); }
+    UInt64 prefetchDiscardedCount() const { return ex.stats.get(ReaderExecutor::Stats::PrefetchDiscardedRunning); }
+
     size_t retrieveCount() const { return ex.read_plan.schedule.retrieves.size(); }
 
     /// The serve map (runs / per-job progress).

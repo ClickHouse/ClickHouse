@@ -533,6 +533,53 @@ TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
     EXPECT_GE(ext, 2 * epochs - 2) << "extensions must carry the crossings between rebuilds";
 }
 
+/// The REUSE gate: seeks landing inside the live plan span keep the plan and
+/// stop the teardown churn - the compact-merge ping-pong pattern (two column
+/// streams alternating within one plan) runs on ONE observation with zero
+/// prefetch cancels, and every served byte still matches the source.
+TEST_F(ResidencyEquivalence, InPlanSeeksReusePlan)
+{
+    auto fc = makeFileCache("reuse_gate");
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makeDiskProvider(fc));
+
+    /// Merge-like geometry: the stream separation sits UNDER the bridge bound
+    /// (`min_bytes_for_seek`), as a compact merge's column streams sit under the
+    /// production 2 MiB - these are the seeks the plan absorbs.
+    auto options = makeOptions();
+    options.min_bytes_for_seek = PLAN_WINDOW;
+
+    auto src = std::make_shared<MemBoundedSource>(data);
+    ReaderExecutor executor(src, objects, std::move(caches), std::move(options));
+    executor.setReadExtent(FILE_SIZE);
+
+    /// Two interleaved streams inside one plan span [0, PLAN_WINDOW).
+    const size_t stream_b = PLAN_WINDOW / 2;
+    std::vector<size_t> pattern;
+    for (size_t step = 0; step + ALIGNMENT <= stream_b; step += ALIGNMENT)
+    {
+        pattern.push_back(step);
+        pattern.push_back(stream_b + step);
+    }
+    ASSERT_GE(pattern.size(), 6u);
+
+    for (const size_t pos : pattern)
+    {
+        if (static_cast<size_t>(executor.getPosition()) != pos)
+            executor.seek(pos);
+        auto chain = executor.readNextWindow();
+        ASSERT_FALSE(chain.empty()) << "pos " << pos;
+        String got;
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+        EXPECT_EQ(got, content.substr(pos, got.size())) << "pos " << pos;
+    }
+
+    EXPECT_EQ(inspect(executor).observationCount(), 1u) << "in-plan seeks must reuse the plan";
+    EXPECT_EQ(inspect(executor).prefetchCancelledCount(), 0u) << "in-plan seeks must not cancel prefetches";
+    EXPECT_EQ(inspect(executor).prefetchDiscardedCount(), 0u) << "in-plan seeks must not discard running prefetches";
+}
+
 /// Randomized layout matrix: deterministic pseudo-randomness on purpose.
 TEST_F(ResidencyEquivalence, RandomizedTwoTierMatrix)
 {

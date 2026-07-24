@@ -393,6 +393,37 @@ void ReaderExecutor::seek(size_t new_position)
         return;
     }
 
+    /// REUSE: a NEAR target inside the live plan span changes only the cursor - the
+    /// plan, the held buffers, the bank and the lane epoch all stay (a backward
+    /// target re-serves committed cells, which the serve reads ahead-cursor-blind).
+    /// NEAR inherits the connection-bridge policy: a jump the open connection would
+    /// bridge (`min_bytes_for_seek`) is a jump the plan absorbs - the interleaved
+    /// column-stream pattern of a compact merge. A FAR in-plan jump restarts
+    /// instead: the connection reopens at the target anyway, and a fresh plan
+    /// derives its fill cells from the new cursor rather than pumping the old
+    /// whole-gap job (and its fuller cells) across the distance. The machine is
+    /// left untouched wherever it is: a swing back into its window serves as a
+    /// prefetch hit, and the serve's pump interrupt-collects it lazily - and
+    /// partially - only when it actually blocks a needed job. An eager
+    /// collect-on-seek here costs a completed-then-relaunched fetch per swing.
+    /// The estimators still see the jump: they model the consumer, not the plan.
+    const size_t cur_physical = toPhys(position);
+    const size_t seek_distance
+        = new_physical >= cur_physical ? new_physical - cur_physical : cur_physical - new_physical;
+    if (const auto & g = read_plan.geometry();
+        g && g->plan_end > g->plan_start && new_physical >= g->plan_start && new_physical < g->plan_end
+        && seek_distance <= min_bytes_for_seek)
+    {
+        LOG_TRACE(log, "seek: target within plan (physical [{}, {})), reusing plan",
+            g->plan_start, g->plan_end);
+        fetch_tracker.recordSeek(new_physical);
+        consume_tracker.recordSeek(new_physical);
+        position = new_position;
+        reached_eof = false;
+        prefetch();
+        return;
+    }
+
     cancelMachine(/*cancelled=*/true);
     /// Feed the seek to both estimators; it resets their frontier, so the post-seek
     /// plan's predicted reads feed from here.
@@ -408,9 +439,9 @@ void ReaderExecutor::seek(size_t new_position)
     /// A jumped position invalidates the plan epoch: bytes banked AHEAD of the old cursor
     /// would, after the jump, sit disjoint from the new one. Drop the plan AND the lane's
     /// epoch state here - by ownership, not by trusting the next replan to reset it (the
-    /// executor can go idle at EOF holding a stale bank otherwise). (The fast path above
-    /// keeps the plan, the cursor, and the bank for any target inside the in-flight window -
-    /// a backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
+    /// executor can go idle at EOF holding a stale bank otherwise). (The fast paths above
+    /// keep the plan, the cursor, and the bank for a target inside the in-flight window
+    /// or inside the live plan span - RESTART is only for a target outside both.)
     read_plan = {};
     fill_lane.resetEpoch();
 
