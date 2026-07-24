@@ -53,9 +53,9 @@ import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupporte
    * اختر **DBFS** أو **Workspace** → ثم انتقل إلى ملف JAR الذي رفعته
    * انقر على **Install**
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="علامة التبويب Libraries في Databricks" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="علامة التبويب Libraries في Databricks" />
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="تثبيت المكتبة من وحدة تخزين مساحة العمل" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="تثبيت المكتبة من وحدة تخزين مساحة العمل" />
 
 4. أعد تشغيل العنقود لتحميل المكتبة
 
@@ -78,7 +78,7 @@ databricks libraries install \
   ### الخيار 3: إحداثيات Maven (موصى به)
 </div>
 
-1. انتقل إلى مساحة عمل Databricks الخاصة بك:
+1. انتقل إلى مساحة العمل الخاصة بـ Databricks:
    * انتقل إلى **Compute** → اختر العنقود الخاص بك
    * انقر على علامة التبويب **Libraries**
    * انقر على **Install New**
@@ -90,7 +90,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="إعداد مكتبات Maven في Databricks" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="إعداد مكتبات Maven في Databricks" />
 
 3. انقر على **تثبيت** ثم أعد تشغيل العنقود لتحميل المكتبة
 
@@ -331,9 +331,9 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 </Tabs>
 
 <div id="related">
-  ## وثائق ذات صلة
+  ## الوثائق ذات الصلة
 </div>
 
 * [دليل Spark Native Connector](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - الوثائق الكاملة للموصل
-* [وثائق واجهة برمجة تطبيقات TableProvider](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - تفاصيل الوصول المستند إلى التنسيق
+* [وثائق واجهة برمجة تطبيقات TableProvider](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - تفاصيل الوصول القائم على التنسيق
 * [وثائق واجهة برمجة تطبيقات Catalog](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - تفاصيل الوصول القائم على الكتالوج

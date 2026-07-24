@@ -34,72 +34,66 @@ Este guia mostrará as etapas para conectar o Databrain à sua instância do Cli
   ## Etapas para conectar o Databrain ao ClickHouse
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. Reúna suas informações de conexão
-</div>
+<Steps>
+  <Step title="Reúna os detalhes da sua conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Permita os endereços IP do Databrain (se necessário)" id="2-allow-databrain-ip-addresses">
+    Se a sua instância do ClickHouse tiver filtragem por IP habilitada, você precisará adicionar os endereços IP do Databrain à lista de permissões.
 
-<div id="2-allow-databrain-ip-addresses">
-  ### 2. Permita os endereços IP da Databrain (se necessário)
-</div>
+    Para usuários do ClickHouse Cloud:
 
-Se a sua instância do ClickHouse tiver a filtragem de IP ativada, você precisará adicionar os endereços IP da Databrain à lista de permissões.
+    1. Acesse seu serviço no console do ClickHouse Cloud
+    2. Vá para **Settings** → **Security**
+    3. Adicione os endereços IP do Databrain à lista de permissões
 
-Para usuários do ClickHouse Cloud:
+    <Tip>
+      Consulte a [documentação do Databrain sobre lista de permissões de IP](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip) para ver a lista atual de endereços IP que precisam ser adicionados à lista de permissões.
+    </Tip>
+  </Step>
 
-1. Acesse seu serviço no console do ClickHouse Cloud
-2. Vá para **Settings** → **Security**
-3. Adicione os endereços IP da Databrain à lista de permissões
+  <Step title="Adicione o ClickHouse como fonte de dados no Databrain" id="3-add-clickhouse-as-a-data-source">
+    1. Faça login na sua conta do Databrain e acesse o workspace em que você deseja adicionar a fonte de dados.
 
-<Tip>
-  Consulte a [documentação da Databrain sobre whitelisting de IP](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip) para ver a lista atual de endereços IP que devem ser adicionados à lista de permissões.
-</Tip>
+    2. Clique em **Data Sources** no menu de navegação.
 
-<div id="3-add-clickhouse-as-a-data-source">
-  ### 3. Adicione o ClickHouse como fonte de dados no Databrain
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Menu de fontes de dados do Databrain" border />
 
-1. Faça login na sua conta do Databrain e acesse o workspace em que você deseja adicionar a fonte de dados.
+    3. Clique em **Add a Data Source** ou **Connect Data Source**.
 
-2. Clique em **Data Sources** no menu de navegação.
+    4. Selecione **ClickHouse** na lista de conectores disponíveis.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Menu de fontes de dados do Databrain" border />
+    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="Tela de seleção de conectores do Databrain mostrando a opção ClickHouse" border />
 
-3. Clique em **Add a Data Source** ou **Connect Data Source**.
+    5. Preencha os detalhes da conexão:
+       * **Destination Name**: Insira um nome descritivo para esta conexão (por exemplo, &quot;ClickHouse de produção&quot; ou &quot;Analytics DB&quot;)
+       * **Host**: Insira a URL do host do seu ClickHouse (por exemplo, `https://your-instance.region.aws.clickhouse.cloud`)
+       * **Port**: Insira `8443` (porta HTTPS padrão do ClickHouse)
+       * **Username**: Insira seu nome de usuário do ClickHouse
+       * **Password**: Insira sua senha do ClickHouse
 
-4. Selecione **ClickHouse** na lista de conectores disponíveis.
+    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Formulário de conexão do ClickHouse no Databrain com campos de configuração" border />
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="Tela de seleção de conectores do Databrain mostrando a opção ClickHouse" border />
+    6. Clique em **Test Connection** para verificar se o Databrain consegue se conectar à sua instância do ClickHouse.
 
-5. Preencha os detalhes da conexão:
-   * **Destination Name**: Insira um nome descritivo para esta conexão (por exemplo, &quot;ClickHouse de produção&quot; ou &quot;Analytics DB&quot;)
-   * **Host**: Insira a URL do host do seu ClickHouse (por exemplo, `https://your-instance.region.aws.clickhouse.cloud`)
-   * **Port**: Insira `8443` (porta HTTPS padrão do ClickHouse)
-   * **Username**: Insira seu nome de usuário do ClickHouse
-   * **Password**: Insira sua senha do ClickHouse
+    7. Quando a conexão for bem-sucedida, clique em **Save** ou **Connect** para adicionar a fonte de dados.
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Formulário de conexão do ClickHouse no Databrain com campos de configuração" border />
+  <Step title="Configure as permissões do usuário" id="4-configure-user-permissions">
+    Certifique-se de que o usuário do ClickHouse com o qual você está se conectando tenha as permissões necessárias:
 
-6. Clique em **Test Connection** para verificar se o Databrain consegue se conectar à sua instância do ClickHouse.
+    ```sql
+    -- Conceda permissões para ler informações de schema
+    GRANT SELECT ON information_schema.* TO your_databrain_user;
 
-7. Quando a conexão for bem-sucedida, clique em **Save** ou **Connect** para adicionar a fonte de dados.
+    -- Conceda acesso de leitura ao seu banco de dados e às suas tabelas
+    GRANT SELECT ON your_database.* TO your_databrain_user;
+    ```
 
-<div id="4-configure-user-permissions">
-  ### 4. Configure as permissões do usuário
-</div>
-
-Certifique-se de que o usuário do ClickHouse com o qual você está se conectando tenha as permissões necessárias:
-
-```sql
--- Conceder permissões para ler informações de schema
-GRANT SELECT ON information_schema.* TO your_databrain_user;
-
--- Conceder acesso de leitura ao seu banco de dados e tabelas
-GRANT SELECT ON your_database.* TO your_databrain_user;
-```
-
-Substitua `your_databrain_user` e `your_database` pelo seu nome de usuário e pelo nome real do seu banco de dados.
+    Substitua `your_databrain_user` e `your_database` pelo seu nome de usuário e pelo nome do seu banco de dados.
+  </Step>
+</Steps>
 
 <div id="using-databrain-with-clickhouse">
   ## Como usar o Databrain com ClickHouse
@@ -195,5 +189,5 @@ Para mais informações sobre os recursos do Databrain e como criar análises av
 
 * [Documentação do Databrain](https://docs.usedatabrain.com/)
 * [Guia do ClickHouse Integration](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
-* [Criar dashboards](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
-* [Criar métricas](https://docs.usedatabrain.com/guides/metrics/create-metrics)
+* [Criar dashboards](https://docs.usedatabrain.com/getting-started/core-concepts/dashboards)
+* [Criar métricas](https://docs.usedatabrain.com/getting-started/core-concepts/metrics)

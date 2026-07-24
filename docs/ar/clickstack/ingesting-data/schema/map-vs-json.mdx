@@ -113,13 +113,9 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 للترحيل من [المخططات الافتراضية المستندة إلى Map](/ar/clickstack/ingesting-data/schemas)، اتبع الخطوات التالية:
 
 <Steps>
-  <Step>
-    ### أوقف OTel المجمّع
-  </Step>
+  <Step title="أوقف OTel المجمّع" id="stop-the-collector" />
 
-  <Step>
-    ### أعد تسمية الجداول الحالية وحدّث المصادر
-
+  <Step title="أعد تسمية الجداول الحالية وحدّث المصادر" id="rename-existing-tables-sources">
     أعد تسمية الجداول الحالية وحدّث مصادر البيانات في HyperDX.
 
     على سبيل المثال:
@@ -130,23 +126,17 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     ```
   </Step>
 
-  <Step>
-    ### انشر OTel المجمّع
-
+  <Step title="انشر OTel المجمّع" id="deploy-the-collector">
     انشر OTel المجمّع مع تعيين `OTEL_AGENT_FEATURE_GATE_ARG`.
   </Step>
 
-  <Step>
-    ### أعد تشغيل حاوية HyperDX مع دعم مخطط JSON
-
+  <Step title="أعد تشغيل حاوية HyperDX مع دعم مخطط JSON" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step>
-    ### أنشئ مصادر بيانات جديدة
-
+  <Step title="أنشئ مصادر بيانات جديدة" id="create-new-data-sources">
     أنشئ مصادر بيانات جديدة في HyperDX تشير إلى جداول JSON.
   </Step>
 </Steps>

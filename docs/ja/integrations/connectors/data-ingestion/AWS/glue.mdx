@@ -88,7 +88,7 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
           .config("spark.sql.catalog.clickhouse.user", "default")
           .config("spark.sql.catalog.clickhouse.password", "<your-password>")
           .config("spark.sql.catalog.clickhouse.database", "default")
-          // ClickHouse Cloud の場合
+          // for ClickHouse cloud
           .config("spark.sql.catalog.clickhouse.option.ssl", "true")
           .config("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
           .getOrCreate
@@ -121,10 +121,10 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
           .schema(schema)
           .csv(url)
 
-        // ClickHouse に書き込む
+        // Write to ClickHouse
         df.writeTo("clickhouse.default.cell_towers").append()
 
-        // ClickHouse から読み込む
+        // Read from ClickHouse
         val dfRead = spark.sql("select * from clickhouse.default.cell_towers")
         Job.commit()
       }
@@ -161,18 +161,18 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
     spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
     spark.conf.set("spark.clickhouse.write.format", "json")
     spark.conf.set("spark.clickhouse.read.format", "arrow")
-    # ClickHouse Cloud の場合
+    # for ClickHouse cloud
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", "true")
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
 
-    # DataFrame を作成する
+    # Create DataFrame
     data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
     df = spark.createDataFrame(data)
 
-    # DataFrame を ClickHouse に書き込む
+    # Write DataFrame to ClickHouse
     df.writeTo("clickhouse.default.example_table").append()
 
-    # ClickHouse から DataFrame を読み込む
+    # Read DataFrame from ClickHouse
     df_read = spark.sql("select * from clickhouse.default.example_table")
     logger.info(str(df.take(10)))
 
@@ -181,4 +181,3 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
   </Tab>
 </Tabs>
 
-詳細は、[Spark のドキュメント](/ja/integrations/connectors/data-ingestion/apache-spark/index)をご覧ください。
