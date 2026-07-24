@@ -7,6 +7,9 @@
 -- commit. The trivial count optimization must derive the count from the manifest list
 -- row counts (which are authoritative) instead of trusting the summary hint.
 
+-- The corrupted summary makes the server log an expected warning; keep it out of stderr.
+SET send_logs_level = 'fatal';
+
 -- Trivial count enabled (default): must return the real row count, not 100.
 SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test');
 

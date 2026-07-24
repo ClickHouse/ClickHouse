@@ -219,7 +219,9 @@ ManifestFileCacheKeys getManifestList(
 
             /// Row counts are required in v2+ manifest lists and optional in v1.
             /// They let totalRows() compute an exact count without opening manifest files.
-            /// Negative values violate the spec, treat them as absent.
+            /// Negative or null values in v2+ violate the spec; treat them as absent, which
+            /// makes totalRows() distrust the snapshot summary of the same writer and fall
+            /// through to the manifest scan (the summary shortcut is v1-only there).
             std::optional<UInt64> added_rows_count;
             std::optional<UInt64> existing_rows_count;
             if (manifest_list_deserializer.hasPath(f_added_rows_count))

@@ -1164,12 +1164,15 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return static_cast<size_t>(manifest_list_rows);
     }
 
-    /// The summary hint is only trusted when the snapshot has no delete manifests: it is
-    /// maintained incrementally by writers just like `total-records`, so a corrupted commit
-    /// poisons it the same way, and with delete manifests present the manifest scan below
-    /// is the only source that derives both data and position-delete rows from the actual
-    /// manifests instead of writer-provided hints.
-    if (!has_delete_manifests && summary_total_rows.has_value())
+    /// Reaching this point means some manifest list row counts are missing or the snapshot
+    /// has delete manifests. The summary hint may only be used as a last resort in format v1,
+    /// where the row counts in the manifest list are legitimately optional. In format v2+
+    /// they are required, so their absence means the metadata is malformed and the summary
+    /// (produced by the same writer) must not be trusted either -- fall through to the
+    /// manifest scan, which derives the counts from the manifest files themselves.
+    /// Snapshots with delete manifests never use the summary: it is maintained incrementally
+    /// by writers just like `total-records`, so a corrupted commit poisons it the same way.
+    if (!has_delete_manifests && persistent_components.format_version < 2 && summary_total_rows.has_value())
     {
         ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
         return summary_total_rows;
@@ -1180,6 +1183,14 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+
+        /// Equality deletes remove an unknown number of rows: the record count of an equality
+        /// delete file is the number of delete predicates, not the number of data rows they
+        /// match, so no metadata can produce an exact count. Bail out to a real scan, which
+        /// applies the equality delete transformers and counts the surviving rows.
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            return {};
+
         auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
         auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
         if (!data_count.has_value() || !position_deletes_count.has_value())
