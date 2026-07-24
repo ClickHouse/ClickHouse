@@ -101,17 +101,25 @@ namespace
 /// `i` is a zero-based index; the returned ordinal is one-based ("1st" for i == 0).
 String withOrdinalEnding(size_t i)
 {
-    switch (i)
+    const size_t n = i + 1;
+
+    /// 11th, 12th and 13th, unlike 21st, 22nd and 23rd.
+    if (n % 100 / 10 != 1)
     {
-        case 0:
-            return "1st";
-        case 1:
-            return "2nd";
-        case 2:
-            return "3rd";
-        default:
-            return std::to_string(i + 1) + "th";
+        switch (n % 10)
+        {
+            case 1:
+                return std::to_string(n) + "st";
+            case 2:
+                return std::to_string(n) + "nd";
+            case 3:
+                return std::to_string(n) + "rd";
+            default:
+                break;
+        }
     }
+
+    return std::to_string(n) + "th";
 }
 
 void validateArgumentsImpl(
