@@ -62,7 +62,6 @@ namespace DB::Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool use_hedged_requests;
-    extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
 
 namespace ProfileEvents
@@ -126,32 +125,15 @@ GetPriorityForLoadBalancing::Func replicaIndexPriorityFunc()
     return [](size_t i) { return Priority{static_cast<Int64>(i)}; };
 }
 
-Scalars buildPartsScalars(const std::vector<std::string_view> & parts)
+std::string buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
+                                   const OptionalVectorSearchParameters & vector_search_parameters,
+                                   const std::vector<std::string_view> & parts)
 {
-    auto column_string = ColumnString::create();
-    for (const auto & part : parts)
-        column_string->insertData(part.data(), part.length());
-    auto column_offsets = ColumnUInt64::create(1, parts.size());
-    auto column_array = ColumnArray::create(std::move(column_string), std::move(column_offsets));
+    std::string query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, ['{}']",
+        storage_id.uuid,
+        filter.value_or("true"),
+        fmt::join(parts, "','"));
 
-    Block block{
-        {std::move(column_array), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "parts"},
-    };
-    return Scalars{{"parts", std::move(block)}};
-}
-
-std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
-    const OptionalVectorSearchParameters & vector_search_parameters,
-    const std::vector<std::string_view> & parts)
-{
-    static constexpr size_t DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT = 30;
-    bool inline_parts = parts.size() < DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT;
-
-    std::string query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}", storage_id.uuid, filter.value_or("true"));
-    if (inline_parts)
-        query += fmt::format(", ['{}']", fmt::join(parts, "','"));
-    else
-        query += fmt::format(", __getScalar('parts')");
     if (vector_search_parameters)
     {
         query += fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
@@ -159,13 +141,9 @@ std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage
                         vector_search_parameters->limit, vector_search_parameters->reference_vector,
                         vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances);
     }
+
     query += ")";
-
-    Scalars scalars;
-    if (!inline_parts)
-        scalars = buildPartsScalars(parts);
-
-    return std::make_pair(std::move(scalars), std::move(query));
+    return query;
 }
 
 SharedHeader indexAnalysisSampleBlock()
@@ -208,10 +186,10 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logge
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
                                                      const std::vector<std::string_view> & parts, Connection & connection)
 {
-    auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
+    auto query = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
     auto sample_block = indexAnalysisSampleBlock();
 
-    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(connection, query, sample_block, context, ThrottlerPtr{}, scalars, external_tables);
+    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(connection, query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
     remote_query_executor->setLogger(logger);
     auto remote_source = std::make_shared<RemoteSource>(std::move(remote_query_executor), false, false, false);
     QueryPipeline pipeline(std::move(remote_source));
@@ -623,8 +601,8 @@ private:
                 continue;
 
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
-            auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
-            auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, scalars, external_tables);
+            auto query = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
+            auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, Scalars{}, external_tables);
             executor->setLogger(logger);
 
             LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {}: {}",
@@ -717,7 +695,7 @@ private:
 
         while (!readers_epoll.empty())
         {
-            epoll_event event{};
+            epoll_event event;
             event.data.fd = -1;
             readers_epoll.getManyReady(1, &event, -1);
 
@@ -883,11 +861,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DistributedIndexAnalysisMicroseconds);
 
-    auto context_copy = Context::createCopy(context);
-    /// Disable parallel replicas to avoid O(N^2) spawned queries when the predicate has a subquery,
-    /// because each replica would independently spawn parallel replicas for the subquery.
-    context_copy->setSetting("enable_parallel_replicas", false);
-
     DistributedIndexAnalyzer analyzer(
         storage_id,
         filter_actions_dag,
@@ -896,7 +869,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         parts_with_ranges,
         vector_search_parameters,
         std::move(local_index_analysis_callback),
-        std::move(context_copy));
+        std::move(context));
 
     return analyzer.run();
 }

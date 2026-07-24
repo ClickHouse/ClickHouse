@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -72,7 +71,7 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
         first = false;
 
 
-        settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+        settings.out << column;
     }
     settings.out << '\n';
 }
@@ -108,20 +107,15 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr ArrayJoinStep::clone() const
-{
-    return std::make_unique<ArrayJoinStep>(*this);
-}
-
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;
@@ -139,7 +133,6 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_lazy_columns_replication]);
 }
 
-void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);

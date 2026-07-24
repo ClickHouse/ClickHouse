@@ -1,5 +1,6 @@
 import logging
 import time
+from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -761,7 +762,7 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
     data_lines = data.strip().split("\n")
     data_lines.sort()
     expected_data.sort()
-    assert data_lines == expected_data, "Data mismatch"
+    assert data_lines == expected_data, f"Data mismatch"
 
     # Check bucket distribution in ZooKeeper
     zk = started_cluster.get_kazoo_client("zoo1")

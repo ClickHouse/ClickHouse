@@ -117,8 +117,8 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     bool deserialize_prefixes)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
-        ? settings.read_settings.remote_fs_settings.prefetch
-        : settings.read_settings.local_fs_settings.prefetch;
+        ? settings.read_settings.remote_fs_prefetch
+        : settings.read_settings.local_fs_prefetch;
 
     if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
         return;
@@ -307,8 +307,7 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1,
-        settings.use_streaming_marks_compression);
+        /*num_columns_in_mark=*/ 1);
 
     auto stream_settings = settings;
     stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
@@ -355,7 +354,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
                 ErrorCodes::LOGICAL_ERROR,
                 "Stream {} for column {} with type {} is not found",
                 ISerialization::getFileNameForStream(
-                    name_and_type.name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
+                    name_and_type.type->getName(), substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
                     name_and_type.name,
                     name_and_type.type->getName());
         }
@@ -415,22 +414,6 @@ void MergeTreeReaderWide::deserializePrefix(
 
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
         };
-        deserialize_settings.seek_to_start_callback = [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name)
-                return;
-
-            if (from_mark != 0)
-                prefetched_streams.erase(*stream_name);
-
-            auto it = streams.find(*stream_name);
-            if (it == streams.end())
-                it = addStream(substream_path, *stream_name);
-
-            it->second->adjustRightMark(current_task_last_mark);
-            it->second->seekToStart();
-        };
         /// Add streams for newly discovered dynamic subcolumns to start async marks loading beforehand if needed.
         deserialize_settings.dynamic_subcolumns_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -449,37 +432,6 @@ void MergeTreeReaderWide::deserializePrefix(
                 streams.erase(*stream_name);
         };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
-        deserialize_settings.has_uniform_marks_callback =
-            [&](const ISerialization::SubstreamPath & substream_path,
-                size_t max_transitions) -> bool
-        {
-            /// Wide parts with a final mark have a trailing position after the
-            /// suffix, so a single per-part dictionary shows up as <= 2 distinct
-            /// positions in the dictionary stream (data mark + final mark).
-            /// Without a final mark, the same check must be stricter: a true
-            /// single-dictionary part has only one distinct position, while a part
-            /// with one dictionary in the main stream and another in the suffix can
-            /// still look like "2 positions".
-            /// This is only a necessary condition; `SerializationLowCardinality`
-            /// still checks the `DictionaryKeys` stream reaches EOF after the
-            /// first dictionary.
-            const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
-            const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
-                ? max_transitions
-                : max_transitions - 1;
-
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                name_and_type, substream_path, ".bin",
-                data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name)
-                return false;
-
-            auto it = streams.find(*stream_name);
-            if (it == streams.end())
-                return false;
-
-            return it->second->hasAtMostNDistinctMarks(allowed_distinct_marks);
-        };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
@@ -634,25 +586,6 @@ void MergeTreeReaderWide::readData(
             return;
 
         streams[*stream_name]->seekToMark(mark);
-    };
-
-    /// Seek a substream's stream to the current granule's mark. Needed by serializations that read a
-    /// value not implied by the ongoing range position (e.g. a per-part value broadcast to every
-    /// granule): the data getter above seeks only conditionally (skipped on prefetch/continue_reading),
-    /// so such a stream can be left at a sibling substream's offset. With `read_without_marks` the
-    /// whole part is one range read from the start and the stream has no marks to seek to, so skip it.
-    deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
-    {
-        if (read_without_marks)
-            return;
-
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        if (!stream_name)
-            return;
-
-        auto it = streams.find(*stream_name);
-        if (it != streams.end())
-            it->second->seekToMark(from_mark);
     };
 
     deserialize_settings.get_avg_value_size_hint_callback

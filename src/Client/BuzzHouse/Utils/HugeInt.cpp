@@ -53,7 +53,7 @@ static bool positiveHugeintIsBitSet(HugeInt lhs, uint8_t bit_position)
 static HugeInt positiveHugeintLeftShift(HugeInt lhs, uint32_t amount)
 {
     chassert(amount > 0 && amount < 64);
-    HugeInt result{};
+    HugeInt result;
     result.lower = lhs.lower << amount;
     result.upper = static_cast<int64_t>((static_cast<uint64_t>(lhs.upper) << amount) + (lhs.lower >> (64 - amount)));
     return result;
@@ -66,7 +66,7 @@ static HugeInt divModPositive(HugeInt lhs, uint64_t rhs, uint64_t & remainder)
     /// https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     /// Initialize the result and remainder to 0
-    HugeInt div_result{};
+    HugeInt div_result;
     div_result.lower = 0;
     div_result.upper = 0;
     remainder = 0;
@@ -99,12 +99,12 @@ static HugeInt divModPositive(HugeInt lhs, uint64_t rhs, uint64_t & remainder)
     return div_result;
 }
 
-static int sign(HugeInt n)
+int sign(HugeInt n)
 {
     return ((n > HugeInt(0)) - (n < HugeInt(0)));
 }
 
-static HugeInt abs(HugeInt n)
+HugeInt abs(HugeInt n)
 {
     chassert(n != NumericLimits<HugeInt>::minimum());
     return (n * static_cast<HugeInt>(sign(n)));
@@ -170,7 +170,7 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
     /// https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     /// Initialize the result and remainder to 0
-    HugeInt div_result{};
+    HugeInt div_result;
     div_result.lower = 0;
     div_result.upper = 0;
     remainder.lower = 0;
@@ -209,13 +209,13 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
 
 static HugeInt divide(HugeInt lhs, HugeInt rhs)
 {
-    HugeInt remainder{};
+    HugeInt remainder;
     return divMod(lhs, rhs, remainder);
 }
 
 static HugeInt modulo(HugeInt lhs, HugeInt rhs)
 {
-    HugeInt remainder{};
+    HugeInt remainder;
     /// Here it is interested in the remainder only
     const auto u = divMod(lhs, rhs, remainder);
     UNUSED(u);
@@ -224,7 +224,7 @@ static HugeInt modulo(HugeInt lhs, HugeInt rhs)
 
 static HugeInt multiply(HugeInt lhs, HugeInt rhs)
 {
-    HugeInt result{};
+    HugeInt result;
     bool lhs_negative = lhs.upper < 0;
     bool rhs_negative = rhs.upper < 0;
     if (lhs_negative)
@@ -239,7 +239,7 @@ static HugeInt multiply(HugeInt lhs, HugeInt rhs)
 #if ((__GNUC__ >= 5) || defined(__clang__)) && defined(__SIZEOF_INT128__)
     __uint128_t left = __uint128_t(lhs.lower) + (__uint128_t(lhs.upper) << 64);
     __uint128_t right = __uint128_t(rhs.lower) + (__uint128_t(rhs.upper) << 64);
-    __uint128_t result_i128 = {};
+    __uint128_t result_i128;
     result_i128 = left * right;
     uint64_t upper = uint64_t(result_i128 >> 64);
     result.upper = int64_t(upper);
@@ -305,7 +305,7 @@ static HugeInt multiply(HugeInt lhs, HugeInt rhs)
 template <class DST>
 HugeInt hugeintConvertInteger(DST input)
 {
-    HugeInt result{};
+    HugeInt result;
     result.lower = static_cast<uint64_t>(input);
     result.upper = (input < 0) * -1;
     return result;
@@ -400,7 +400,7 @@ HugeInt HugeInt::operator-() const
 
 HugeInt HugeInt::operator>>(const HugeInt & rhs) const
 {
-    HugeInt result{};
+    HugeInt result;
     uint64_t shift = rhs.lower;
     if (rhs.upper != 0 || shift >= 128)
     {
@@ -436,7 +436,7 @@ HugeInt HugeInt::operator<<(const HugeInt & rhs) const
     {
         return HugeInt(0);
     }
-    HugeInt result{};
+    HugeInt result;
     uint64_t shift = rhs.lower;
     if (rhs.upper != 0 || shift >= 128)
     {
@@ -469,7 +469,7 @@ HugeInt HugeInt::operator<<(const HugeInt & rhs) const
 
 HugeInt HugeInt::operator&(const HugeInt & rhs) const
 {
-    HugeInt result{};
+    HugeInt result;
     result.lower = lower & rhs.lower;
     result.upper = upper & rhs.upper;
     return result;
@@ -477,7 +477,7 @@ HugeInt HugeInt::operator&(const HugeInt & rhs) const
 
 HugeInt HugeInt::operator|(const HugeInt & rhs) const
 {
-    HugeInt result{};
+    HugeInt result;
     result.lower = lower | rhs.lower;
     result.upper = upper | rhs.upper;
     return result;
@@ -485,7 +485,7 @@ HugeInt HugeInt::operator|(const HugeInt & rhs) const
 
 HugeInt HugeInt::operator^(const HugeInt & rhs) const
 {
-    HugeInt result{};
+    HugeInt result;
     result.lower = lower ^ rhs.lower;
     result.upper = upper ^ rhs.upper;
     return result;
@@ -493,7 +493,7 @@ HugeInt HugeInt::operator^(const HugeInt & rhs) const
 
 HugeInt HugeInt::operator~() const
 {
-    HugeInt result{};
+    HugeInt result;
     result.lower = ~lower;
     result.upper = ~upper;
     return result;
@@ -567,7 +567,7 @@ String HugeInt::toString() const
 {
     String res;
     String prefix;
-    uint64_t remainder = {};
+    uint64_t remainder;
     HugeInt input = *this;
 
     if (input == NumericLimits<HugeInt>::minimum())
