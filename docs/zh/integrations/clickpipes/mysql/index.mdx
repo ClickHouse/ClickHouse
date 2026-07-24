@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/zh/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/zh/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -81,6 +82,12 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="填写连接信息" size="lg" border />
 
+<div id="optional-changing-tls-settings">
+  #### &#x20;(可选) 修改 TLS 设置
+</div>
+
+<ChangingTLSSettings />
+
 <div id="optional-set-up-ssh-tunneling">
   #### &#x20;(可选) 设置 SSH 隧道
 </div>
@@ -114,6 +121,7 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 * **拉取批次大小**：单个批次中拉取的行数。这是一个尽力而为的设置，因此在某些情况下可能不会严格生效。
 * **快照每个分区的行数**：指初始快照期间每个分区中将拉取的行数。当您的表中有大量行，并希望控制每个分区拉取的行数时，此设置会很有用。
 * **快照并行表数量**：指初始快照期间并行拉取的表数量。当您有大量表，并希望控制并行拉取的表数量时，此设置会很有用。
+* **Server ID**：用于设置 MySQL binlog 复制的服务器 ID 的可选参数。若未设置，ClickPipes 将生成一个随机服务器 ID，并且该 ID 在 ClickPipe 生命周期内可能发生变化。您可以使用它在源端 MySQL 服务器上以确定性方式标识您的 ClickPipe。
 
 <div id="configure-the-tables">
   ### 配置表

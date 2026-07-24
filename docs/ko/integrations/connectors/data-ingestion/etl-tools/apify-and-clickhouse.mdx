@@ -35,25 +35,19 @@ import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 </div>
 
 <Steps>
-  <Step>
-    ### ClickHouse 연결 정보를 확인하세요
-
+  <Step title="ClickHouse 연결 정보를 확인하세요" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ### Apify 사전 요구 사항
-
+  <Step title="Apify 사전 요구 사항" id="2-apify-prerequisites">
     추가로 다음이 필요합니다:
 
-    * [Apify 계정](https://console.apify.com/sign-up) (무료 tier 사용 가능)
+    * [Apify 계정](https://console.apify.com/sign-up) (무료 tier 사용 가능).
     * [Apify API token](https://docs.apify.com/platform/integrations/api#api-token) — [Apify Console](https://console.apify.com/)의 **Settings &gt; Integrations**에서 확인할 수 있습니다.
-    * 로컬에 설치된 Node.js 18+ (JavaScript 예시용)
+    * 로컬에 설치된 Node.js 18+ (JavaScript 예시용).
   </Step>
 
-  <Step>
-    ### 종속성 설치
-
+  <Step title="종속성 설치" id="3-install-dependencies">
     Apify JavaScript client와 ClickHouse JavaScript client를 설치합니다:
 
     ```bash
@@ -65,9 +59,7 @@ import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ### ClickHouse에 대상 테이블을 생성하세요
-
+  <Step title="ClickHouse에 대상 테이블을 생성하세요" id="4-create-a-target-table">
     스크레이프한 데이터를 저장할 테이블을 생성합니다. 스키마는 사용하는 Actor에 따라 달라집니다. 이 예시에서는 제품 스크레이핑 Actor용으로 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 사용합니다:
 
     ```sql
@@ -84,9 +76,7 @@ import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
     ```
   </Step>
 
-  <Step>
-    ### Apify 데이터셋을 가져와 ClickHouse에 적재하세요
-
+  <Step title="Apify 데이터셋을 가져와 ClickHouse에 적재하세요" id="5-fetch-and-load">
     다음 스크립트는 Apify Actor 실행 결과를 가져와 ClickHouse에 삽입합니다:
 
     ```javascript
@@ -124,9 +114,7 @@ import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
     </Tip>
   </Step>
 
-  <Step>
-    ### 웹훅으로 자동화하세요
-
+  <Step title="웹훅으로 자동화하세요" id="6-automate-with-webhooks">
     스크립트를 수동으로 실행하는 대신, Actor가 완료될 때마다 데이터가 ClickHouse에 적재되도록 파이프라인을 자동화합니다:
 
     1. [Apify Console](https://console.apify.com/)에서 Actor로 이동한 다음 **Integrations** 탭을 엽니다.
@@ -163,7 +151,7 @@ ClickHouse 테이블 스키마를 Actor의 출력 필드에 맞추십시오. Act
   ### 성능
 </div>
 
-JavaScript client에서 높은 처리량으로 데이터를 삽입하려면 [성능 최적화를 위한 팁](/ko/integrations/language-clients/js#tips-for-performance-optimizations)을 따르십시오. 행을 한 번에 하나씩 삽입하는 대신 여러 행을 묶어 더 큰 단위로 삽입하고, 클라이언트 측 배칭이 실용적이지 않은 경우 [async inserts](/ko/concepts/features/operations/insert/asyncinserts)를 고려하십시오.
+JavaScript client에서 높은 처리량으로 데이터를 삽입하려면 [성능 최적화를 위한 팁](/ko/integrations/language-clients/js/index#tips-for-performance-optimizations)을 따르십시오. 행을 한 번에 하나씩 삽입하는 대신 여러 행을 묶어 더 큰 단위로 삽입하고, 클라이언트 측 배칭이 실용적이지 않은 경우 [async inserts](/ko/concepts/features/operations/insert/asyncinserts)를 고려하십시오.
 
 <div id="security">
   ### 보안
@@ -181,4 +169,4 @@ JavaScript client에서 높은 처리량으로 데이터를 삽입하려면 [성
 * [Apify Python client](https://docs.apify.com/api/client/python)
 * [Apify Store (즉시 사용 가능한 Actor)](https://apify.com/store)
 * [Apify 통합 개요](https://docs.apify.com/platform/integrations)
-* [ClickHouse JavaScript client](/ko/integrations/language-clients/js)
+* [ClickHouse JavaScript client](/ko/integrations/language-clients/js/index)
