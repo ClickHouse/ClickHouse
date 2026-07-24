@@ -52,6 +52,43 @@ UPDATED_DYNAMIC_CONFIG = """
 </clickhouse>
 """
 
+SNAPSHOT_VERSION_9_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <write_snapshot_version>9</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+SNAPSHOT_VERSION_INVALID_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <write_snapshot_version>3</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+
+def wait_for_setting(node, name, expected):
+    """Poll the 'conf' 4-letter command until the setting reaches the expected
+    value (the config reloader picks up file changes with a small delay)."""
+    settings = {}
+    for _ in range(30):
+        time.sleep(1)
+        settings = get_coordination_settings(node)
+        if settings.get(name) == expected:
+            return settings
+    assert False, (
+        f"{name} did not change to {expected} after config reload; "
+        f"current value: {settings.get(name)}"
+    )
+
 
 def test_dynamic_settings_hot_reload(started_cluster):
     """Verify that settings marked as HOT_RELOAD are updated after config
@@ -126,3 +163,71 @@ def test_max_request_size_hot_reload(started_cluster):
                 "SELECT number::String, '/test_max_req', repeat('x', 3000) "
                 "FROM numbers(100)"
             )
+
+
+def get_log_info(node):
+    """Query the 'lgif' 4-letter command and return the fields as a dict."""
+    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="lgif")
+    result = {}
+    for line in data.split("\n"):
+        parts = line.split("\t")
+        if len(parts) == 2:
+            result[parts[0]] = int(parts[1])
+    return result
+
+
+def test_write_snapshot_version_hot_reload(started_cluster):
+    """Hot-reload write_snapshot_version and verify that a snapshot created
+    afterwards is written successfully with the new version."""
+
+    keeper_utils.wait_until_connected(cluster, node)
+
+    settings = get_coordination_settings(node)
+    assert settings["write_snapshot_version"] == "6"
+
+    with node.with_replace_config(DYNAMIC_CONFIG_PATH, SNAPSHOT_VERSION_9_CONFIG, reload_after=True):
+        wait_for_setting(node, "write_snapshot_version", "9")
+
+        # Advance the committed log index past any previously created snapshot,
+        # so that 'csnp' writes a fresh snapshot file (with the new version).
+        node.query(
+            "INSERT INTO system.zookeeper (name, path, value) "
+            "VALUES ('snap_ver_reload', '/test_snap_ver', 'x')"
+        )
+
+        snapshot_idx = int(keeper_utils.send_4lw_cmd(cluster, node, cmd="csnp"))
+        assert snapshot_idx > 0
+
+        for _ in range(30):
+            if get_log_info(node).get("last_snapshot_idx", 0) >= snapshot_idx:
+                break
+            time.sleep(1)
+        else:
+            assert False, (
+                f"snapshot for log index {snapshot_idx} was not created; "
+                f"log info: {get_log_info(node)}"
+            )
+
+        assert node.grep_in_log(f"Created persistent snapshot {snapshot_idx}")
+
+
+def test_write_snapshot_version_invalid_value_rejected(started_cluster):
+    """An invalid write_snapshot_version must be rejected at config reload
+    time, keeping the previous value in effect."""
+
+    keeper_utils.wait_until_connected(cluster, node)
+
+    settings = get_coordination_settings(node)
+    assert settings["write_snapshot_version"] == "6"
+
+    with node.with_replace_config(DYNAMIC_CONFIG_PATH, SNAPSHOT_VERSION_INVALID_CONFIG, reload_after=True):
+        node.wait_for_log_line("Unsupported write snapshot version 3")
+
+        settings = get_coordination_settings(node)
+        assert settings["write_snapshot_version"] == "6"
+
+        # Keeper must remain fully operational after the rejected reload.
+        node.query(
+            "INSERT INTO system.zookeeper (name, path, value) "
+            "VALUES ('after_bad_reload', '/test_snap_ver', 'x')"
+        )

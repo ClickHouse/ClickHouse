@@ -296,11 +296,32 @@ const KeeperFeatureFlags & KeeperContext::getFeatureFlags() const
 
 SnapshotVersion KeeperContext::getWriteSnapshotVersion() const
 {
-    const uint64_t version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+    const auto & settings = getCoordinationSettings();
+    validateCoordinationSettings(settings);
+    return static_cast<SnapshotVersion>(settings[CoordinationSetting::write_snapshot_version].value);
+}
+
+void KeeperContext::validateCoordinationSettings(const CoordinationSettings & settings) const
+{
+    const uint64_t version = settings[CoordinationSetting::write_snapshot_version];
     if (version < SnapshotVersion::V6 || version > MAX_SUPPORTED_SNAPSHOT_VERSION)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported write snapshot version {} (must be between {} and {})",
             version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
-    return static_cast<SnapshotVersion>(version);
+
+    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
+    /// V8. Enabling CREATE_TTL with an older write version would silently turn
+    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && version < SnapshotVersion::V8)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
+            "Bump write_snapshot_version after every replica has been upgraded.",
+            static_cast<int>(SnapshotVersion::V8), version);
+
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER) && version < SnapshotVersion::V9)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Feature flag CREATE_CONTAINER requires write_snapshot_version >= {}, but it is set to {}. "
+            "Bump write_snapshot_version after every replica has been upgraded.",
+            static_cast<int>(SnapshotVersion::V9), version);
 }
 
 void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
@@ -448,18 +469,10 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     }
 
-    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
-    /// V8. Enabling CREATE_TTL with an older write version would silently turn
-    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    validateCoordinationSettings(getCoordinationSettings());
+
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
     {
-        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
-        if (write_version < SnapshotVersion::V8)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
-                "Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<int>(SnapshotVersion::V8), write_version);
-
         const auto ttl_gc_period_ms = getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
         if (ttl_gc_period_ms <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -468,13 +481,6 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER))
     {
-        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
-        if (write_version < SnapshotVersion::V9)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Feature flag CREATE_CONTAINER requires write_snapshot_version >= {}, but it is set to {}. "
-                "Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<int>(SnapshotVersion::V9), write_version);
-
         const auto container_gc_period_ms = getCoordinationSettings()[CoordinationSetting::container_gc_period_ms].totalMilliseconds();
         if (container_gc_period_ms <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -513,6 +519,11 @@ void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
 {
     auto merged = std::make_shared<CoordinationSettings>(*fixed_settings);
     merged->updateHotReloadableSettings(*new_settings);
+
+    /// Reject invalid values at reload time; otherwise the error would surface
+    /// only during the next snapshot creation. The config reloader logs the
+    /// exception and the previous settings stay in effect.
+    validateCoordinationSettings(*merged);
 
     std::lock_guard lock(settings_mutex);
     merged->version = next_coordination_settings_version++;

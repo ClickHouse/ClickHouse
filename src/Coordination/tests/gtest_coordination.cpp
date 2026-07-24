@@ -8,6 +8,7 @@
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/Types.h>
@@ -29,6 +30,11 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <sstream>
+
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 write_snapshot_version;
+}
 
 TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
 {
@@ -61,6 +67,29 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "<max_requests_batch_size>1</max_requests_batch_size>"
              "<max_requests_append_size>1</max_requests_append_size>"
              "</coordination_settings></keeper_server></clickhouse>"));
+}
+
+TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
+{
+    auto ctx = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V6);
+
+    /// write_snapshot_version is hot-reloadable: a valid update takes effect.
+    auto updated = std::make_shared<DB::CoordinationSettings>();
+    (*updated)[DB::CoordinationSetting::write_snapshot_version] = 9;
+    ctx->updateSettings(updated);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    /// An out-of-range update is rejected and the previous value stays in effect.
+    auto too_old = std::make_shared<DB::CoordinationSettings>();
+    (*too_old)[DB::CoordinationSetting::write_snapshot_version] = 3;
+    EXPECT_THROW(ctx->updateSettings(too_old), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    auto too_new = std::make_shared<DB::CoordinationSettings>();
+    (*too_new)[DB::CoordinationSetting::write_snapshot_version] = DB::MAX_SUPPORTED_SNAPSHOT_VERSION + 1;
+    EXPECT_THROW(ctx->updateSettings(too_new), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 }
 
 TEST_P(CoordinationTest, RaftServerConfigParse)
