@@ -1,0 +1,15 @@
+-- SELECT with a CTE scalar as the URL
+0	0	0
+1	2	3
+4	5	6
+7	8	9
+-- CREATE TABLE ... AS SELECT with a CTE scalar as the URL
+0	0	0
+1	2	3
+4	5	6
+7	8	9
+-- CREATE TABLE ... AS SELECT with an inline scalar as the URL
+0	0	0
+1	2	3
+4	5	6
+7	8	9

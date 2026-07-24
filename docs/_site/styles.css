@@ -2491,22 +2491,31 @@ html:not(.dark) .ch-logo-invert {
     }
 }
 
-/* On wide viewports, doc pages spread their content out: content-area centers
-   via mx-auto while content-side-layout (TOC / API request+response panels) sticks
-   to the right edge, leaving a big gap between them. Cap #content-container at
-   the exact width of content (768) + gap (32) + side-layout (448) + 32px x 2
-   padding = 1312px, and center it. The footer mirrors the same horizontal range
-   so its left and right edges line up with the content block. */
-@media (min-width: 1616px) {
+/* On wide viewports, give the article more room while keeping it aligned with
+   content-side-layout (TOC / API request+response panels). Cap #content-container
+   at the exact width of content (960) + gap (32) + side-layout (448) + 32px x 2
+   padding = 1504px, and center it. The 1824px breakpoint accommodates the
+   sidebar (304), the capped container (1504), and a desktop scrollbar, so the
+   layout cannot overflow when it takes effect. The footer mirrors the same
+   horizontal range so its edges line up with the content block. */
+@media (min-width: 1824px) {
+    html:not([data-page-mode="custom"]) #content-area {
+        max-width: 60rem !important;
+    }
+
     html:not([data-page-mode="custom"]) #content-container {
-        max-width: 1312px !important;
-        margin-left: max(19rem, calc((100vw - 1312px) / 2)) !important;
+        max-width: 1504px !important;
+        margin-left: max(19rem, calc((100vw - 1504px) / 2)) !important;
         margin-right: auto !important;
     }
 
     html:not([data-page-mode="custom"]) #ch-custom-footer {
-        padding-left: max(calc(19rem + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
-        padding-right: min(calc(100vw - 19rem - 1312px + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
+        padding-left: max(calc(19rem + 2rem), calc((100vw - 1504px) / 2 + 2rem)) !important;
+        padding-right: min(calc(100vw - 19rem - 1504px + 2rem), calc((100vw - 1504px) / 2 + 2rem)) !important;
+    }
+
+    html:not([data-page-mode="custom"]) #ch-custom-footer [data-inner] {
+        max-width: 1440px !important;
     }
 }
 
