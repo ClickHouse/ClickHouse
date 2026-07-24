@@ -313,7 +313,7 @@ Possible values:
 The maximum number of threads process indices.
 )", 0) \
     DECLARE(MaxThreads, max_threads, 0, R"(
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/operations/settings/settings#max_distributed_connections) parameter).
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/reference/settings/session-settings/max-distributed#max_distributed_connections) parameter).
 
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
 For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with `WHERE` and pre-aggregate for `GROUP BY` in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
@@ -795,7 +795,7 @@ For more information, see the section "Extreme values".
 )", IMPORTANT) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
@@ -1619,7 +1619,7 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -1628,7 +1628,7 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_bytes_to_use_cache, (192 * 10 * 1024 * 1024), R"(
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -2099,7 +2099,7 @@ Priority of the query. 1 - the highest, higher value - lower priority; 0 - do no
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query_log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../reference/settings/server-settings/settings/query#query_log) server configuration parameter.
 
 Example:
 
@@ -2205,7 +2205,7 @@ Possible values:
 
 **See Also**
 
-- [max_concurrent_queries](/operations/server-configuration-parameters/settings#max_concurrent_queries)
+- [max_concurrent_queries](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
 
 Cloud default value: `1000`.
 )", 0) \
@@ -3232,8 +3232,8 @@ Possible values:
 
 Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the
 block level. This means that amount of returned rows is greater than
-[`max_result_rows`](/operations/settings/settings#max_result_rows), multiple of [`max_block_size`](/operations/settings/settings#max_block_size)
-and depends on [`max_threads`](/operations/settings/settings#max_threads).
+[`max_result_rows`](/reference/settings/session-settings/max-result#max_result_rows), multiple of [`max_block_size`](/reference/settings/session-settings/max#max_block_size)
+and depends on [`max_threads`](/reference/settings/session-settings/max-threads#max_threads).
 
 **Example**
 
@@ -3257,7 +3257,7 @@ The maximum query execution time in seconds.
 
 The `max_execution_time` parameter can be a bit tricky to understand.
 It operates based on interpolation relative to the current query execution speed
-(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)).
+(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)).
 
 ClickHouse will interrupt a query if the projected execution time exceeds the
 specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
@@ -3316,22 +3316,22 @@ source data ran out.
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
 Minimal execution speed in rows per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+[`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
 expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed, 0, R"(
 The maximum number of execution rows per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+[`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
 expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(UInt64, min_execution_speed_bytes, 0, R"(
 The minimum number of execution bytes per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+[`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
 expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed_bytes, 0, R"(
 The maximum number of execution bytes per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+[`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
 expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
@@ -3340,7 +3340,7 @@ after the specified time in seconds has expired.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
 Maximum query estimate execution time in seconds. Checked on every data block
-when [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
 expires.
 )", 0) \
     \
@@ -3500,9 +3500,9 @@ operations and the [Join](/engines/table-engines/special/join) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every
 intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
 that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
+throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
 
 Possible values:
 
@@ -3518,9 +3518,9 @@ operations and the [Join table engine](/engines/table-engines/special/join).
 
 If a query contains multiple joins, ClickHouse checks this setting for every
 intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
 that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
+throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
 
 Possible values:
 
@@ -3530,15 +3530,15 @@ Possible values:
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
 Defines what action ClickHouse performs when a join reaches any of the following limits:
 
-- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
-- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
+- [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
+- [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
 This setting is honored only by the `hash` and `parallel_hash`
-[`join_algorithm`](/operations/settings/settings#join_algorithm) values. Other
+[`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values. Other
 algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
 limits differently — by spilling to disk, re-partitioning, or switching
 strategy — see
-[`join_algorithm`](/operations/settings/settings#join_algorithm).
+[`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
 Possible values:
 
@@ -3583,7 +3583,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -3749,8 +3749,8 @@ from `String` and `Array` arguments:
 - `argMin`
 - `argMax`
 
-Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
-and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
+Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/reference/settings/session-settings/max-memory-usage#max_memory_usage_for_user)
+and [`max_server_memory_usage`](/reference/settings/server-settings/settings/max-server-memory-usage#max_server_memory_usage).
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the global level.
@@ -3763,7 +3763,7 @@ The maximum amount of RAM to use for running a user's queries on a single server
 
 By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
-Also see the description of [`max_memory_usage`](/operations/settings/settings#max_memory_usage).
+Also see the description of [`max_memory_usage`](/reference/settings/session-settings/max-memory-usage#max_memory_usage).
 
 For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
 
@@ -3959,7 +3959,7 @@ Log query settings into the query_log and OpenTelemetry span log.
     DECLARE(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](/reference/settings/server-settings/settings/query#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -3975,7 +3975,7 @@ log_query_threads=1
     DECLARE(Bool, log_query_views, true, R"(
 Setting up query views logging.
 
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](/operations/server-configuration-parameters/settings#query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](/reference/settings/server-settings/settings/query#query_views_log) server configuration parameter.
 
 Example:
 
@@ -4015,7 +4015,7 @@ Result:
     DECLARE(Int64, query_metric_log_interval, -1, R"(
 The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
 
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/operations/server-configuration-parameters/settings#query_metric_log) or default to 1000 if not present.
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/reference/settings/server-settings/settings/query#query_metric_log) or default to 1000 if not present.
 
 To disable the collection of a single query, set `query_metric_log_interval` to 0.
 
@@ -4409,7 +4409,7 @@ Possible values:
 - `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
 
 :::tip
-This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/operations/settings/settings#max_partitions_per_insert_block).
+This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/reference/settings/session-settings/max-partitions#max_partitions_per_insert_block).
 :::
 )", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
@@ -4423,7 +4423,7 @@ Possible values:
 - `-1` - unlimited (default)
 
 :::note
-You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
+You can also specify the MergeTree setting [`max_partitions_to_read`](/reference/settings/session-settings/max-partitions#max_partitions_to_read) in tables' setting.
 :::
 )", 0) \
     DECLARE(Bool, check_query_single_value_result, false, R"(
@@ -4505,7 +4505,7 @@ Restriction on deleting tables in query time. The value `0` means that you can d
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/reference/settings/server-settings/settings/max-table#max_table_size_to_drop)
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
@@ -4514,7 +4514,7 @@ Restriction on dropping partitions in query time. The value `0` means that you c
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/reference/settings/server-settings/settings/max#max_partition_size_to_drop)
 :::
 )", 0) \
     \

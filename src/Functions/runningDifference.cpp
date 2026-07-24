@@ -16,7 +16,7 @@ Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
 It is advised to use [window functions](/sql-reference/window-functions) instead.
 
-You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
+You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.

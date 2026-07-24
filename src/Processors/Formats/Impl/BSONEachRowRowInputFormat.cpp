@@ -1239,8 +1239,8 @@ BSON is a binary format that does not display in a human-readable form on the te
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|
-| [`output_format_bson_string_as_string`](../../operations/settings/settings-formats.md/#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
-| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](../../operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
+| [`output_format_bson_string_as_string`](../../reference/settings/formats/output-format#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](../../reference/settings/formats/input-format#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
 )DOCS_MD"});
 }
 

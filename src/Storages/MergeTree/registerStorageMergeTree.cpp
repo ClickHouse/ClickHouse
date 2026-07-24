@@ -1389,7 +1389,7 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/operations/settings/merge-tree-settings/#allow_nullable_key) setting. The [NULLS_LAST](/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/reference/settings/merge-tree-settings/allow#allow_nullable_key) setting. The [NULLS_LAST](/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting a primary key {#selecting-a-primary-key}
 
@@ -1412,9 +1412,9 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/operations/settings/settings#max_insert_threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads).
 
-To select data in the initial order, use [single-threaded](/operations/settings/settings.md/#max_threads) `SELECT` queries.
+To select data in the initial order, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries.
 
 ### Choosing a primary key that differs from the sorting key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -1469,7 +1469,7 @@ In the example below, the index can't be used.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](/operations/settings/settings.md/#force_index_by_date) and [force_primary_key](/operations/settings/settings#force_primary_key).
+To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](/reference/settings/session-settings/force#force_index_by_date) and [force_primary_key](/reference/settings/session-settings/force#force_primary_key).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
@@ -1817,7 +1817,7 @@ For example:
 Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 :::note
-When you are implementing projections you should also consider the [force_optimize_projection](/operations/settings/settings#force_optimize_projection) setting.
+When you are implementing projections you should also consider the [force_optimize_projection](/reference/settings/session-settings/force-optimize#force_optimize_projection) setting.
 :::
 
 Projections are not supported in the `SELECT` statements with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
@@ -2059,7 +2059,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 **See Also**
 
-- [ttl_only_drop_parts](/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
+- [ttl_only_drop_parts](/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) setting
 
 ## Disk types {#disk-types}
 
@@ -2086,7 +2086,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 ### Terms {#terms}
 
 - Disk — Block device mounted to the filesystem.
-- Default disk — Disk that stores the path specified in the [path](/operations/server-configuration-parameters/settings.md/#path) server setting.
+- Default disk — Disk that stores the path specified in the [path](/reference/settings/server-settings/settings/other#path) server setting.
 - Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 - Storage policy — Set of volumes and the rules for moving data between them.
 
@@ -2249,7 +2249,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`.
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
-The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
+The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/reference/settings/server-settings/settings/background#background_move_pool_size) setting.
 
 ### Details {#details}
 
@@ -2277,7 +2277,7 @@ Moving data does not interfere with data replication. Therefore, different stora
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/operations/settings/merge-tree-settings.md/#min_bytes_to_rebalance_partition_over_jbod) setting.
+User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod) setting.
 
 ## Using external storage for data storage {#table_engine-mergetree-s3}
 
@@ -3877,7 +3877,7 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 
 ## Rollup configuration {#rollup-configuration}
 
-The settings for rollup are defined by the [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
+The settings for rollup are defined by the [graphite_rollup](../../../reference/settings/server-settings/settings/graphite#graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
 Rollup configuration structure:
 
@@ -4348,7 +4348,7 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 ClickHouse uses [ClickHouse Keeper](/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
 
-To use replication, set parameters in the [zookeeper](/operations/server-configuration-parameters/settings#zookeeper) server configuration section.
+To use replication, set parameters in the [zookeeper](/reference/settings/server-settings/settings/zookeeper#zookeeper) server configuration section.
 
 :::note
 Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
@@ -4413,21 +4413,21 @@ You can specify any existing ZooKeeper cluster and the system will use a directo
 
 If ZooKeeper is not set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
 
-ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
+ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/reference/settings/session-settings/other#fallback_to_stale_replicas_for_distributed_queries).
 
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it does not create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, from our experience this has not proven necessary based on production clusters with approximately 300 servers.
 
-Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size) setting.
+Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size) setting.
 
-`ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/operations/server-configuration-parameters/settings#background_fetches_pool_size) setting which can be tuned with a server restart.
+`ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/reference/settings/server-settings/settings/background#background_fetches_pool_size) setting which can be tuned with a server restart.
 
 By default, an INSERT query waits for confirmation of writing the data from only one replica. If the data was successfully written to only one replica and the server with this replica ceases to exist, the stored data will be lost. To enable getting confirmation of data writes from multiple replicas, use the `insert_quorum` option.
 
 Each block of data is written atomically. The INSERT query is divided into blocks up to `max_insert_block_size = 1048576` rows. In other words, if the `INSERT` query has less than 1048576 rows, it is made atomically.
 
-Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application does not know if the data was written to the DB, so the `INSERT` query can simply be repeated. It does not matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](/operations/server-configuration-parameters/settings.md/#merge_tree) server settings.
+Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application does not know if the data was written to the DB, so the `INSERT` query can simply be repeated. It does not matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](/reference/settings/server-settings/settings/merge#merge_tree) server settings.
 
 During replication, only the source data to insert is transferred over the network. Further data transformation (merging) is coordinated and performed on all the replicas in the same way. This minimizes network usage, which means that replication works well when replicas reside in different datacenters. (Note that duplicating data in different datacenters is the main goal of replication.)
 
@@ -4485,7 +4485,7 @@ CREATE TABLE table_name
 
 </details>
 
-As the example shows, these parameters can contain substitutions in `{}`. The substituted values are taken from the [macros](/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
+As the example shows, these parameters can contain substitutions in `{}`. The substituted values are taken from the [macros](/reference/settings/server-settings/settings/other#macros) section of the configuration file.
 
 Example:
 
@@ -4636,11 +4636,11 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 
 **See Also**
 
-- [background_schedule_pool_size](/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
-- [background_fetches_pool_size](/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
-- [execute_merges_on_single_replica_time_threshold](/operations/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
-- [max_replicated_fetches_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
-- [max_replicated_sends_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
+- [background_schedule_pool_size](/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size)
+- [background_fetches_pool_size](/reference/settings/server-settings/settings/background#background_fetches_pool_size)
+- [execute_merges_on_single_replica_time_threshold](/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold)
+- [max_replicated_fetches_network_bandwidth](/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+- [max_replicated_sends_network_bandwidth](/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
 )DOCS_MD",
         .syntax = "ENGINE = ReplicatedMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"MergeTree"}});

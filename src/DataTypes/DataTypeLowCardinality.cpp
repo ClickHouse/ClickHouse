@@ -190,7 +190,7 @@ LowCardinality(data_type)
 
 **Parameters**
 
-- `data_type` — [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), and numbers excepting [Decimal](../../sql-reference/data-types/decimal.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
+- `data_type` — [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), and numbers excepting [Decimal](../../sql-reference/data-types/decimal.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) setting description.
 
 ## Description {#description}
 
@@ -218,11 +218,11 @@ ORDER BY id
 
 Settings:
 
-- [low_cardinality_max_dictionary_size](../../operations/settings/settings.md#low_cardinality_max_dictionary_size)
-- [low_cardinality_use_single_dictionary_for_part](../../operations/settings/settings.md#low_cardinality_use_single_dictionary_for_part)
-- [low_cardinality_allow_in_native_format](../../operations/settings/settings.md#low_cardinality_allow_in_native_format)
-- [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types)
-- [output_format_arrow_low_cardinality_as_dictionary](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+- [low_cardinality_max_dictionary_size](../../reference/settings/session-settings/low-cardinality#low_cardinality_max_dictionary_size)
+- [low_cardinality_use_single_dictionary_for_part](../../reference/settings/session-settings/low-cardinality#low_cardinality_use_single_dictionary_for_part)
+- [low_cardinality_allow_in_native_format](../../reference/settings/session-settings/low-cardinality#low_cardinality_allow_in_native_format)
+- [allow_suspicious_low_cardinality_types](../../reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types)
+- [output_format_arrow_low_cardinality_as_dictionary](/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary)
 
 Functions:
 

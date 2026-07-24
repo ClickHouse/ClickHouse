@@ -196,7 +196,7 @@ The YTsaurus table engine allows you to import data from a YTsaurus cluster.
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus table engine
-using setting [`allow_experimental_ytsaurus_table_engine`](/operations/settings/settings#allow_experimental_ytsaurus_table_engine).
+using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine).
 
 You can do so using:
 
