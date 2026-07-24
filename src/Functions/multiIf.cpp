@@ -138,6 +138,7 @@ public:
         size_t const_branches_count = 0;
         size_t string_branches_count = 0;
         size_t nullable_string_branches_count = 0;
+        size_t non_null_string_value_branches_count = 0;
         size_t only_null_branches_count = 0;
         size_t const_conditions_count = 0;
         size_t conditions_count = 0;
@@ -178,9 +179,14 @@ public:
             /// `Variant(..., LowCardinality(String), ...)` with `use_variant_as_common_type`),
             /// diverging from `if`, whose default implementation strips it.
             const auto branch_type = removeLowCardinality(arg.type);
-            const_branches_count += arg.column && isColumnConst(*arg.column);
-            string_branches_count += isString(branch_type);
-            nullable_string_branches_count += branch_type->isNullable() && isString(removeNullable(branch_type));
+            const bool is_const_branch = arg.column && isColumnConst(*arg.column);
+            const bool is_string_branch = isString(branch_type);
+            const bool is_nullable_string_branch = branch_type->isNullable() && isString(removeNullable(branch_type));
+            const_branches_count += is_const_branch;
+            string_branches_count += is_string_branch;
+            nullable_string_branches_count += is_nullable_string_branch;
+            non_null_string_value_branches_count
+                += is_string_branch || (is_nullable_string_branch && is_const_branch && !arg.column->isNullAt(0));
             only_null_branches_count += branch_type->onlyNull();
             types_of_branches.emplace_back(branch_type);
         });
@@ -197,11 +203,13 @@ public:
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             /// A mix of (possibly nullable) string branches and only-NULL branches.
-            /// Require at least one actual string branch: a mix of only-NULL branches without any
-            /// string (e.g. `CASE WHEN ... THEN NULL ... END`) must keep its `Nullable(Nothing)`
-            /// common type instead of being turned into `LowCardinality(Nullable(String))`.
+            /// Require at least one constant branch whose value is a non-NULL string: a mix of only-NULL
+            /// branches without any string (e.g. `CASE WHEN ... THEN NULL ... END`) must keep its
+            /// `Nullable(Nothing)` common type, and a typed all-NULL case (every `Nullable(String)`
+            /// branch holding a NULL constant) must keep plain `Nullable(String)` - there is no
+            /// dictionary-compression benefit when no actual string value exists.
             else if (
-                (string_branches_count + nullable_string_branches_count) > 0
+                non_null_string_value_branches_count > 0
                 && (only_null_branches_count + string_branches_count + nullable_string_branches_count) == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }

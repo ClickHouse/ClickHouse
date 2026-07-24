@@ -1407,14 +1407,19 @@ public:
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             // Still, might be a mix of (possibly nullable) strings and NULLs, e.g. `if(cond, 'a', NULL)`
             // or `if(cond, CAST('a' AS Nullable(String)), CAST('b' AS Nullable(String)))`.
-            // Require at least one actual string branch: `if(cond, NULL, NULL)` must keep `Nullable(Nothing)`.
+            // Require at least one constant branch whose value is a non-NULL string: `if(cond, NULL, NULL)`
+            // must keep `Nullable(Nothing)`, and a typed all-NULL case like
+            // `if(cond, CAST(NULL AS Nullable(String)), NULL)` must keep plain `Nullable(String)` -
+            // there is no dictionary-compression benefit when no actual string value exists.
             auto const is_nullable_string1 = arguments[1].type->isNullable() && isString(removeNullable(arguments[1].type));
             auto const is_nullable_string2 = arguments[2].type->isNullable() && isString(removeNullable(arguments[2].type));
             auto const is_string_like1 = is_string1 || is_nullable_string1;
             auto const is_string_like2 = is_string2 || is_nullable_string2;
             auto const is_null1 = arguments[1].type->onlyNull();
             auto const is_null2 = arguments[2].type->onlyNull();
-            if ((is_string_like1 || is_null1) && (is_string_like2 || is_null2) && (is_string_like1 || is_string_like2))
+            auto const has_string_value1 = is_string1 || (is_nullable_string1 && !arguments[1].column->isNullAt(0));
+            auto const has_string_value2 = is_string2 || (is_nullable_string2 && !arguments[2].column->isNullAt(0));
+            if ((is_string_like1 || is_null1) && (is_string_like2 || is_null2) && (has_string_value1 || has_string_value2))
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 

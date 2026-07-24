@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <mutex>
 #include <base/bit_cast.h>
 
@@ -913,12 +914,27 @@ namespace
 
             const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
 
-            auto wrap_in_low_cardinality = [](DataTypePtr ret)
+            auto wrap_in_low_cardinality = [&](DataTypePtr ret)
             {
                 if (isString(ret))
                     return std::make_shared<DataTypeLowCardinality>(ret)->getPtr();
                 if (isString(removeNullable(ret)))
-                    return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()))->getPtr();
+                {
+                    /// Require at least one non-NULL string among the constant mapped values and the
+                    /// default: a typed all-NULL case like
+                    /// `transform(x, [1], [CAST(NULL AS Nullable(String))], CAST(NULL AS Nullable(String)))`
+                    /// must keep plain `Nullable(String)` - there is no dictionary-compression benefit
+                    /// when no actual string value exists.
+                    bool has_string_value = !arguments[3].column->isNullAt(0);
+                    if (!has_string_value && arguments[2].column && isColumnConst(*arguments[2].column))
+                    {
+                        const auto & array_to_values = (*arguments[2].column)[0].safeGet<Array>();
+                        has_string_value = std::any_of(
+                            array_to_values.begin(), array_to_values.end(), [](const Field & value) { return !value.isNull(); });
+                    }
+                    if (has_string_value)
+                        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()))->getPtr();
+                }
                 return ret;
             };
 
