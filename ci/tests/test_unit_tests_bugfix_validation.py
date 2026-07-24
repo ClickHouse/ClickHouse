@@ -317,11 +317,15 @@ def test_determine_merge_base_uses_pr_head_not_git_head(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# get_submodule_state_changes: the fail-close guard against a bugfix PR that
-# changes submodule state. The before-worktree hardlinks submodule working
-# trees from the primary checkout (at PR-head revisions), so a changed gitlink
-# or `.gitmodules` would make the "before" binary silently build against the
-# wrong submodule content — the guard must detect it from the raw diff.
+# get_submodule_state_changes: the fail-close guard against submodule state
+# differing between the merge-base and the checkout. The before-worktree
+# hardlinks submodule working trees from the primary checkout, whose
+# submodules are at the checkout `HEAD`'s recorded revisions (normally the
+# synthetic base+PR merge ref) — so both a PR-side gitlink/`.gitmodules` edit
+# and a base-only submodule bump after the branch split would make the
+# "before" binary silently build against the wrong submodule content. The
+# guard must detect any such difference from the raw diff of the two commits
+# it is given (main() passes merge-base and `git rev-parse HEAD`).
 # --------------------------------------------------------------------------
 def _run_submodule_state_changes(monkeypatch, raw_diff):
     import ci.jobs.unit_tests_bugfix_validation_job as job
@@ -333,14 +337,16 @@ def _run_submodule_state_changes(monkeypatch, raw_diff):
         return raw_diff
 
     monkeypatch.setattr(job.Shell, "get_output", staticmethod(fake_get_output))
-    changed = job.get_submodule_state_changes("mergebase123", "prhead456")
+    changed = job.get_submodule_state_changes("mergebase123", "checkouthead456")
 
     assert len(calls) == 1
     cmd = calls[0]
     # `diff.ignoreSubmodules=all` in the environment would otherwise silently
     # drop every gitlink change and the guard would never fire.
     assert "--ignore-submodules=none" in cmd
-    assert "mergebase123" in cmd and "prhead456" in cmd
+    # The diff endpoints are exactly the two commits the caller chose — the
+    # merge-base and the checkout whose submodule trees are actually copied.
+    assert "mergebase123" in cmd and "checkouthead456" in cmd
     return changed
 
 
@@ -393,6 +399,59 @@ def test_submodule_state_changes_ignores_malformed_lines(monkeypatch):
         ":160000 160000 3333333 4444444 M\tcontrib/zstd\n"
     )
     assert _run_submodule_state_changes(monkeypatch, raw_diff) == ["contrib/zstd"]
+
+
+def test_main_guard_compares_merge_base_against_checkout_head(monkeypatch):
+    """main() must pass the checkout `HEAD` — the commit whose submodule working trees
+    are actually hardlinked into the before-worktree — to the fail-close guard, NOT the
+    PR head. Diffing merge-base vs the PR head misses a base-only submodule bump after
+    the branch split (the PR's own diff is clean), yet `ensure_primary_submodules`
+    checks out the base-tip revision and the hardlink step copies it into the
+    merge-base worktree, so the before-binary would build against the wrong contrib
+    sources and could report a false reproduction/refutation.
+    """
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    class _Info:
+        pr_labels = ["pr-bugfix"]
+        sha = "prheadsha777"
+        base_branch = "master"
+        is_local_run = False
+
+        def get_changed_files(self):
+            return []
+
+    guard_calls = []
+    finalized = []
+
+    monkeypatch.setattr(job, "Info", _Info)
+    monkeypatch.setattr(
+        job, "get_changed_unit_test_files", lambda info: ["src/X/tests/gtest_a.cpp"]
+    )
+    monkeypatch.setattr(job, "derive_test_suites", lambda files: ["SuiteA"])
+    monkeypatch.setattr(job, "gitmodules_shape_violation", lambda: None)
+    monkeypatch.setattr(job, "determine_merge_base", lambda info: "mergebase123")
+    # HEAD resolves to the synthetic merge-ref commit, different from the PR head.
+    monkeypatch.setattr(
+        job.Shell,
+        "get_output",
+        staticmethod(lambda cmd, **kw: "mergerefhead999" if "rev-parse HEAD" in cmd else ""),
+    )
+
+    def fake_guard(merge_base, checkout_sha):
+        guard_calls.append((merge_base, checkout_sha))
+        # Report a base-side drift so main() stops at the guard (fail close).
+        return ["contrib/zstd"]
+
+    monkeypatch.setattr(job, "get_submodule_state_changes", fake_guard)
+    monkeypatch.setattr(
+        job, "finalize", lambda results, info_lines: finalized.append(info_lines)
+    )
+
+    job.main()
+
+    assert guard_calls == [("mergebase123", "mergerefhead999")]
+    assert finalized and "inconclusive" in finalized[0]
 
 
 # --------------------------------------------------------------------------

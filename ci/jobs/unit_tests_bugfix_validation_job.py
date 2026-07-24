@@ -209,23 +209,27 @@ def gitmodules_shape_violation():
     return None
 
 
-def get_submodule_state_changes(merge_base, pr_sha):
-    """Paths whose submodule state differs between the merge-base and the PR head.
+def get_submodule_state_changes(merge_base, checkout_sha):
+    """Paths whose submodule state differs between the merge-base and the checkout.
 
     Returns the list of changed submodule gitlinks (mode 160000 entries in either tree)
     plus `.gitmodules` itself if it changed. The before-worktree is populated by
-    hardlinking submodule working trees from the primary checkout, which is at the PR's
-    submodule revisions — content-correct only while the PR does not touch submodule
-    state. If it does, the "before" binary would silently build against PR-head
-    submodule content (or miss a merge-base-only submodule entirely), so the caller
-    must fail close instead of validating against the wrong code.
+    hardlinking submodule working trees from the primary checkout, whose submodules are
+    checked out at `checkout_sha`'s recorded revisions — in this workflow that is `HEAD`,
+    normally GitHub's synthetic base+PR merge ref. That content is correct for the
+    merge-base build only while no submodule state differs between the two commits. A
+    difference can come from the PR itself (a gitlink or `.gitmodules` edit) or from the
+    base branch moving a submodule after the branch split — comparing against the PR
+    head instead of the checkout would miss the latter, and the "before" binary would
+    silently build merge-base sources against base-tip submodule content. Either way
+    the caller must fail close instead of validating against the wrong code.
     """
     # `--ignore-submodules=none` is essential: a `diff.ignoreSubmodules=all` config (set
     # in some environments) would otherwise silently drop every gitlink change from the
     # diff and this guard would never fire.
     diff = Shell.get_output(
         "git diff --raw --ignore-submodules=none "
-        f"{shlex.quote(merge_base)} {shlex.quote(pr_sha)}"
+        f"{shlex.quote(merge_base)} {shlex.quote(checkout_sha)}"
     )
     changed = []
     for line in diff.splitlines():
@@ -281,9 +285,10 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
 
     Submodule working trees are populated by hardlinking from the primary checkout
     (fast, no network) so the build sees contrib sources.  This is content-correct
-    whenever the PR did not bump submodule pointers, which is the normal case for a
-    unit-test bugfix — main() fails close (via get_submodule_state_changes) before
-    calling this when the PR changes any gitlink or `.gitmodules`.  Returns True iff
+    whenever the checkout's submodule state equals the merge-base's, which is the
+    normal case for a unit-test bugfix — main() fails close (via
+    get_submodule_state_changes, merge-base vs the checkout `HEAD`) before calling
+    this when any gitlink or `.gitmodules` differs.  Returns True iff
     every submodule the primary checkout has was hardlinked into the worktree
     non-empty — the caller must fail close otherwise.
     """
@@ -564,12 +569,20 @@ def main():
         )
         return
 
-    # Fail close if the PR changes submodule state (any gitlink or `.gitmodules`): the
-    # before-worktree's submodules are hardlinked from the primary checkout, which is at
-    # the PR-head revisions, so the "before" binary would be built against the PR's
-    # submodule content (or miss a merge-base-only submodule entirely) — the validator
-    # could report a false reproduction or refutation. Inconclusive (ERROR), not a pass.
-    submodule_changes = get_submodule_state_changes(merge_base, pr_sha)
+    # Fail close if submodule state (any gitlink or `.gitmodules`) differs between the
+    # merge-base and the checkout `HEAD`: the before-worktree's submodules are
+    # hardlinked from the primary checkout, whose submodules are at HEAD's recorded
+    # revisions (normally the synthetic base+PR merge ref). Comparing against HEAD —
+    # not the PR head — also catches a base-only submodule bump after the branch split,
+    # which would otherwise leak base-tip contrib sources into the merge-base build.
+    # Either way the "before" binary would be built against the wrong submodule content
+    # (or miss a merge-base-only submodule entirely) and the validator could report a
+    # false reproduction or refutation. Inconclusive (ERROR), not a pass.
+    checkout_head = Shell.get_output("git rev-parse HEAD").strip()
+    assert (
+        checkout_head
+    ), "Failed to resolve the checkout HEAD; cannot verify submodule state"
+    submodule_changes = get_submodule_state_changes(merge_base, checkout_head)
     if submodule_changes:
         finalize(
             [
@@ -577,19 +590,20 @@ def main():
                     name="Bugfix validation (unit tests)",
                     status=Result.Status.ERROR,
                     info=(
-                        "The PR changes submodule state ("
-                        + ", ".join(submodule_changes)
-                        + "), but the before-worktree can only be populated with the "
-                        "primary checkout's (PR-head) submodule content, not the "
-                        "merge-base's. Building the before-binary would validate "
-                        "against the wrong submodule code, so this is inconclusive — "
-                        "NOT a reproduction or a refutation."
+                        "Submodule state differs between the merge-base and the "
+                        "checkout (" + ", ".join(submodule_changes) + ") — either the "
+                        "PR changes submodule state, or the base branch moved a "
+                        "submodule after the branch split. The before-worktree can "
+                        "only be populated with the primary checkout's submodule "
+                        "content, not the merge-base's, so building the before-binary "
+                        "would validate against the wrong submodule code. This is "
+                        "inconclusive — NOT a reproduction or a refutation."
                     ),
                 )
             ],
-            "Bugfix validation inconclusive: the PR changes submodule pointers or "
-            "`.gitmodules`, and the before-worktree cannot be populated at the "
-            "merge-base submodule revisions.",
+            "Bugfix validation inconclusive: submodule state differs between the "
+            "merge-base and the checkout, and the before-worktree cannot be populated "
+            "at the merge-base submodule revisions.",
         )
         return
 
