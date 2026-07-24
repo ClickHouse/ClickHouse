@@ -84,7 +84,13 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-Postgres 서비스의 생명주기를 살펴보겠습니다.
+Postgres 서비스의 수명 주기를 살펴보겠습니다.
+
+<Warning>
+  **2026년 7월 31일부터 자격 증명 가리기 적용**
+
+  **2026년 7월 31일**부터 API 응답에는 더 이상 `password` 및 `connectionString` 속성이 포함되지 않습니다. 이 속성은 요청에 비밀번호가 포함되지 않은 경우에만 [create](#create) 응답과 [password reset] 응답에 표시됩니다. 자격 증명은 [create](#create) 응답에서 확보하는 것이 좋습니다. Terraform으로 서비스를 관리하는 경우 2026년 7월 31일 이전에 provider를 **v3.21.0 이상**으로 업그레이드하십시오([Terraform 참고](/ko/products/managed-postgres/terraform) 참조).
+</Warning>
 
 <div id="create">
   ### 생성
@@ -113,12 +119,13 @@ create_data='{
 ```
 
 이제 이 데이터를 사용해 새 인스턴스를 생성하세요. 이때는 Content-Type
-헤더가 필요합니다:
+헤더가 필요합니다. 반환되는 자격 증명을 확인할 수 있도록 응답을 저장하세요:
 
 ```bash
-curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data" | jq
+    -d "$create_data")
+echo "$pg_created" | jq
 ```
 
 성공하면 새 인스턴스를 생성하고, 연결 정보를 포함한 해당 인스턴스 정보를 반환합니다:
@@ -160,7 +167,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-출력은 생성 시 반환된 JSON과 비슷하지만, `state`를 잘 확인하십시오. 값이 `running`으로 바뀌면
+출력은 생성 시 반환된 JSON과 비슷하지만(단, 2026년 7월 31일 이후에는 `password` 및 `connectionString` 속성이 제외됨), `state`를 잘 확인하십시오. 값이 `running`으로 바뀌면
 서버가 준비된 것입니다:
 
 ```bash
@@ -173,15 +180,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-이제 `connectionString` 속성을 사용해 예를 들어
+이제 생성 응답에서 저장한 `connectionString` 속성을 사용해 예를 들어
 [psql]로 연결할 수 있습니다:
 
 ```bash
-$ psql "$(
-    curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
-    | jq -r .result.connectionString
-)"
+$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -379,7 +382,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ### 느린 쿼리 패턴 조회
 </div>
 
-목록 응답의 `queryId`를 [느린 패턴 API]에 전달하면 해당
+목록 응답의 `queryId`를 [slow patterns API]에 전달하면 해당
 패턴의 집계된 메트릭과 가장 최근의 개별 실행 정보를 함께 조회할 수 있습니다.
 패턴을 식별하는 `db_name`, `db_user`, `db_operation`은
 필수입니다:
@@ -396,7 +399,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 `recentExecutions` 배열이 포함됩니다. 각 실행에는 실행별 전체 카운터,
 즉 공유 및 임시 블록 I/O, CPU 사용자 및 시스템 시간, 병렬 workers,
 JIT, WAL이 포함되며, 이는 콘솔의
-[detail flyout]에서 세분화해 보여주는 것과 동일한 카운터입니다:
+[상세 플라이아웃]에서 세분화해 보여주는 것과 동일한 카운터입니다:
 
 ```json
 {
@@ -442,23 +445,25 @@ JIT, WAL이 포함되며, 이는 콘솔의
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "API Key 관리"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "ClickHouse Cloud용 OpenAPI 사양: Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "ClickHouse Cloud API 참조: Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "조직의 Postgres 서비스 목록 조회"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "조직의 Postgres 서비스 목록 조회"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "새 Postgres 서비스 생성"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "새 Postgres 서비스 생성"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs: psql — PostgreSQL 대화형 터미널"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "PostgreSQL 서비스 업데이트"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "PostgreSQL 서비스 업데이트"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs: 서버 구성"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Postgres 서비스 구성 업데이트"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Postgres 서비스 구성 대체"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "PostgreSQL 서비스 삭제"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "PostgreSQL 서비스 삭제"
+
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres 서비스 슈퍼유저 비밀번호 재설정"
 
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus 엔드포인트"
 
@@ -466,10 +471,10 @@ JIT, WAL이 포함되며, 이는 콘솔의
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres 쿼리 인사이트"
 
-[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "쿼리 인사이트 상세 플라이아웃"
+[상세 플라이아웃]: /products/managed-postgres/monitoring/query-insights#detail "쿼리 인사이트 상세 플라이아웃"
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "쿼리 인사이트 실행별 카운터"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Postgres 느린 쿼리 패턴 목록 조회"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "느린 쿼리 패턴 API"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "최근 실행 내역이 포함된 Postgres 느린 쿼리 패턴 조회"
+[느린 패턴 API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "최근 실행 내역이 포함된 Postgres 느린 쿼리 패턴 조회"

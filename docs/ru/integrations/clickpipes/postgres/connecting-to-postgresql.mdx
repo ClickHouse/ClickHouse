@@ -26,188 +26,184 @@ import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/Experim
 Движок таблицы `PostgreSQL` позволяет выполнять из ClickHouse операции **SELECT** и **INSERT** с данными, хранящимися на удалённом сервере PostgreSQL.
 В этой статье на примере одной таблицы показаны базовые способы интеграции.
 
-<div id="1-setting-up-postgresql">
-  ### 1. Настройка PostgreSQL
-</div>
+<Steps>
+  <Step title="Настройка PostgreSQL" id="1-setting-up-postgresql">
+    1. В `postgresql.conf` добавьте следующую запись, чтобы PostgreSQL принимал подключения по сетевым интерфейсам:
 
-1. В `postgresql.conf` добавьте следующую запись, чтобы PostgreSQL прослушивал сетевые интерфейсы:
+    ```text
+    listen_addresses = '*'
+    ```
 
-```text
-  listen_addresses = '*'
-```
+    2. Создайте пользователя для подключения из ClickHouse. Для демонстрации в этом примере предоставляются полные права суперпользователя.
 
-2. Создайте пользователя для подключения из ClickHouse. Для демонстрации в этом примере предоставляются полные права суперпользователя.
+    ```sql
+    CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
+    ```
 
-```sql
-  CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
-```
+    3. Создайте новую базу данных в PostgreSQL:
 
-3. Создайте новую базу данных в PostgreSQL:
+    ```sql
+    CREATE DATABASE db_in_psg;
+    ```
 
-```sql
-  CREATE DATABASE db_in_psg;
-```
+    4. Создайте новую таблицу:
 
-4. Создайте новую таблицу:
+    ```sql
+    CREATE TABLE table1 (
+        id         integer primary key,
+        column1    varchar(10)
+    );
+    ```
 
-```sql
-  CREATE TABLE table1 (
-      id         integer primary key,
-      column1    varchar(10)
-  );
-```
+    5. Добавим несколько строк для тестирования:
 
-5. Давайте добавим несколько строк для проверки:
+    ```sql
+    INSERT INTO table1
+      (id, column1)
+    VALUES
+      (1, 'abc'),
+      (2, 'def');
+    ```
 
-```sql
-  INSERT INTO table1
-    (id, column1)
-  VALUES
-    (1, 'abc'),
-    (2, 'def');
-```
+    6. Чтобы настроить PostgreSQL так, чтобы новая база данных принимала подключения от нового пользователя для репликации, добавьте следующую запись в файл `pg_hba.conf`. Обновите строку адреса, указав либо подсеть, либо IP-адрес вашего сервера PostgreSQL:
 
-6. Чтобы настроить PostgreSQL так, чтобы новая база данных принимала подключения нового пользователя для репликации, добавьте следующую запись в файл `pg_hba.conf`. В строке адреса укажите подсеть или IP-адрес вашего сервера PostgreSQL:
+    ```text
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    host    db_in_psg             clickhouse_user 192.168.1.0/24          password
+    ```
 
-```text
-  # TYPE  DATABASE        USER            ADDRESS                 METHOD
-  host    db_in_psg             clickhouse_user 192.168.1.0/24          password
-```
+    7. Перезагрузите конфигурационный файл `pg_hba.conf` (скорректируйте эту команду в зависимости от вашей версии):
 
-7. Перезагрузите конфигурационный файл `pg_hba.conf` (скорректируйте эту команду в зависимости от вашей версии):
+    ```text
+    /usr/pgsql-12/bin/pg_ctl reload
+    ```
 
-```text
-  /usr/pgsql-12/bin/pg_ctl reload
-```
+    8. Убедитесь, что новый `clickhouse_user` может войти:
 
-8. Убедитесь, что новый `clickhouse_user` может войти:
+    ```text
+    psql -U clickhouse_user -W -d db_in_psg -h <your_postgresql_host>
+    ```
 
-```text
-  psql -U clickhouse_user -W -d db_in_psg -h <your_postgresql_host>
-```
+    <Note>
+      Если вы используете эту возможность в ClickHouse Cloud, вам может потребоваться разрешить доступ к вашему экземпляру PostgreSQL с IP-адресов ClickHouse Cloud.
+      Подробные сведения об исходящем трафике см. в ClickHouse [Cloud Endpoints API](/ru/products/cloud/guides/sql-console/query-endpoints).
+    </Note>
+  </Step>
 
-<Note>
-  Если вы используете эту возможность в ClickHouse Cloud, вам может потребоваться разрешить IP-адресам ClickHouse Cloud доступ к вашему экземпляру PostgreSQL.
-  Сведения об исходящем трафике см. в ClickHouse [Cloud Endpoints API](/ru/products/cloud/guides/sql-console/query-endpoints).
-</Note>
+  <Step title="Создайте таблицу в ClickHouse" id="2-define-a-table-in-clickhouse">
+    1. Войдите в клиент `clickhouse-client`:
 
-<div id="2-define-a-table-in-clickhouse">
-  ### 2. Создайте таблицу в ClickHouse
-</div>
+    ```bash
+    clickhouse-client --user default --password ClickHouse123!
+    ```
 
-1. Войдите в `clickhouse-client`:
+    2. Давайте создадим новую базу данных:
 
-```bash
-  clickhouse-client --user default --password ClickHouse123!
-```
+    ```sql
+    CREATE DATABASE db_in_ch;
+    ```
 
-2. Создадим новую базу данных:
+    3. Создайте таблицу, использующую движок `PostgreSQL`:
 
-```sql
-  CREATE DATABASE db_in_ch;
-```
+    ```sql
+    CREATE TABLE db_in_ch.table1
+    (
+        id UInt64,
+        column1 String
+    )
+    ENGINE = PostgreSQL('postgres-host.domain.com:5432', 'db_in_psg', 'table1', 'clickhouse_user', 'ClickHouse_123');
+    ```
 
-3. Создайте таблицу, использующую движок `PostgreSQL`:
+    Минимально необходимые параметры:
 
-```sql
-  CREATE TABLE db_in_ch.table1
-  (
-      id UInt64,
-      column1 String
-  )
-  ENGINE = PostgreSQL('postgres-host.domain.com:5432', 'db_in_psg', 'table1', 'clickhouse_user', 'ClickHouse_123');
-```
+    | parameter | Description                                 | example                       |
+    | --------- | ------------------------------------------- | ----------------------------- |
+    | host:port | имя хоста или IP-адрес и порт               | postgres-host.domain.com:5432 |
+    | database  | имя базы данных PostgreSQL                  | db&#95;in&#95;psg             |
+    | user      | имя пользователя для подключения к Postgres | clickhouse&#95;user           |
+    | password  | пароль для подключения к Postgres           | ClickHouse&#95;123            |
 
-Минимально необходимые параметры:
+    <Note>
+      Полный список параметров см. на [странице документации о движке таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql).
+    </Note>
+  </Step>
 
-| параметр  | Описание                                      | пример                        |
-| --------- | --------------------------------------------- | ----------------------------- |
-| host:port | имя хоста или IP-адрес и порт                 | postgres-host.domain.com:5432 |
-| database  | имя базы данных PostgreSQL                    | db&#95;in&#95;psg             |
-| user      | имя пользователя для подключения к PostgreSQL | clickhouse&#95;user           |
-| password  | пароль для подключения к PostgreSQL           | ClickHouse&#95;123            |
+  <Step title="Проверьте интеграцию" id="3-test-the-integration">
+    1. В ClickHouse просмотрите первые строки:
 
-<Note>
-  Полный список параметров см. на странице документации [движка таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql).
-</Note>
+    ```sql
+    SELECT * FROM db_in_ch.table1
+    ```
 
-<div id="3-test-the-integration">
-  ### 3 Проверьте интеграцию
-</div>
+    Таблица ClickHouse должна автоматически заполниться двумя строками, которые уже были в таблице PostgreSQL:
 
-1. В ClickHouse просмотрите первые строки:
+    ```response
+    Query id: 34193d31-fe21-44ac-a182-36aaefbd78bf
 
-```sql
-  SELECT * FROM db_in_ch.table1
-```
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ def     │
+    └────┴─────────┘
+    ```
 
-Таблица ClickHouse должна автоматически заполниться двумя строками, которые уже были в таблице PostgreSQL:
+    2. Вернувшись в PostgreSQL, добавьте в таблицу пару строк:
 
-```response
-  Query id: 34193d31-fe21-44ac-a182-36aaefbd78bf
+    ```sql
+    INSERT INTO table1
+      (id, column1)
+    VALUES
+      (3, 'ghi'),
+      (4, 'jkl');
+    ```
 
-  ┌─id─┬─column1─┐
-  │  1 │ abc     │
-  │  2 │ def     │
-  └────┴─────────┘
-```
+    4. Эти две новые строки должны появиться в таблице ClickHouse:
 
-2. Вернувшись в PostgreSQL, добавьте в таблицу пару строк:
+    ```sql
+    SELECT * FROM db_in_ch.table1
+    ```
 
-```sql
-  INSERT INTO table1
-    (id, column1)
-  VALUES
-    (3, 'ghi'),
-    (4, 'jkl');
-```
+    Ответ должен быть следующим:
 
-4. Эти две новые строки должны появиться в таблице ClickHouse:
+    ```response
+    Query id: 86fa2c62-d320-4e47-b564-47ebf3d5d27b
 
-```sql
-  SELECT * FROM db_in_ch.table1
-```
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ def     │
+    │  3 │ ghi     │
+    │  4 │ jkl     │
+    └────┴─────────┘
+    ```
 
-Ответ должен быть следующим:
+    5. Посмотрим, что произойдет, если добавить строки в таблицу ClickHouse:
 
-```response
-  Query id: 86fa2c62-d320-4e47-b564-47ebf3d5d27b
+    ```sql
+    INSERT INTO db_in_ch.table1
+      (id, column1)
+    VALUES
+      (5, 'mno'),
+      (6, 'pqr');
+    ```
 
-  ┌─id─┬─column1─┐
-  │  1 │ abc     │
-  │  2 │ def     │
-  │  3 │ ghi     │
-  │  4 │ jkl     │
-  └────┴─────────┘
-```
+    6. Строки, добавленные в ClickHouse, должны появиться в таблице PostgreSQL:
 
-5. Посмотрим, что произойдет, если добавить строки в таблицу ClickHouse:
+    ```sql
+    db_in_psg=# SELECT * FROM table1;
+    id | column1
+    ----+---------
+      1 | abc
+      2 | def
+      3 | ghi
+      4 | jkl
+      5 | mno
+      6 | pqr
+    (6 rows)
+    ```
 
-```sql
-  INSERT INTO db_in_ch.table1
-    (id, column1)
-  VALUES
-    (5, 'mno'),
-    (6, 'pqr');
-```
-
-6. Строки, добавленные в ClickHouse, должны появиться в таблице PostgreSQL:
-
-```sql
-  db_in_psg=# SELECT * FROM table1;
-  id | column1
-  ----+---------
-    1 | abc
-    2 | def
-    3 | ghi
-    4 | jkl
-    5 | mno
-    6 | pqr
-  (6 rows)
-```
-
-В этом примере показана базовая интеграция между PostgreSQL и ClickHouse с использованием движка таблицы `PostrgeSQL`.
-Дополнительные возможности, такие как указание схем, выборка только части столбцов и подключение к нескольким репликам, описаны на [странице документации о движке таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql). Также ознакомьтесь со статьёй в блоге [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres).
+    В этом примере показана базовая интеграция между PostgreSQL и ClickHouse с использованием движка таблицы `PostrgeSQL`.
+    Дополнительные возможности, такие как указание схем, выборка только части столбцов и подключение к нескольким репликам, описаны на [странице документации о движке таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql). Также ознакомьтесь со статьёй в блоге [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres).
+  </Step>
+</Steps>
 
 <div id="using-the-materializedpostgresql-database-engine">
   ## Использование движка базы данных MaterializedPostgreSQL
@@ -222,186 +218,180 @@ import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/Experim
 
 ***В следующих процедурах используются PostgreSQL CLI (`psql`) и ClickHouse CLI (`clickhouse-client`). Сервер PostgreSQL установлен на Linux. Ниже приведены минимальные настройки, если PostgreSQL используется в новой тестовой установке***
 
-<div id="1-in-postgresql">
-  ### 1. В PostgreSQL
-</div>
+<Steps>
+  <Step title="В PostgreSQL" id="1-in-postgresql">
+    1. В `postgresql.conf` задайте минимальные уровни прослушивания, уровень WAL для репликации и слоты репликации:
 
-1. В `postgresql.conf` задайте минимальные уровни прослушивания, уровень WAL для репликации и слоты репликации:
+    добавьте следующие параметры:
 
-добавьте следующие параметры:
+    ```text
+    listen_addresses = '*'
+    max_replication_slots = 10
+    wal_level = logical
+    ```
 
-```text
-listen_addresses = '*'
-max_replication_slots = 10
-wal_level = logical
-```
+    **Для ClickHouse требуется уровень wal не ниже `logical` и как минимум `2` слота репликации*
 
-**Для ClickHouse требуется уровень wal не ниже `logical` и как минимум `2` слота репликации*
+    2. Используя учетную запись администратора, создайте пользователя для подключения из ClickHouse:
 
-2. Используя учетную запись администратора, создайте пользователя для подключения из ClickHouse:
+    ```sql
+    CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
+    ```
 
-```sql
-CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
-```
+    **для демонстрации были предоставлены полные права суперпользователя.*
 
-**для демонстрации были предоставлены полные права суперпользователя.*
+    3. создайте новую базу данных:
 
-3. создайте новую базу данных:
+    ```sql
+    CREATE DATABASE db1;
+    ```
 
-```sql
-CREATE DATABASE db1;
-```
+    4. подключитесь к новой базе данных через `psql`:
 
-4. подключитесь к новой базе данных через `psql`:
+    ```text
+    \connect db1
+    ```
 
-```text
-\connect db1
-```
+    5. Создайте новую таблицу:
 
-5. Создайте новую таблицу:
+    ```sql
+    CREATE TABLE table1 (
+        id         integer primary key,
+        column1    varchar(10)
+    );
+    ```
 
-```sql
-CREATE TABLE table1 (
-    id         integer primary key,
-    column1    varchar(10)
-);
-```
+    6. добавьте исходные строки:
 
-6. добавьте исходные строки:
+    ```sql
+    INSERT INTO table1
+    (id, column1)
+    VALUES
+    (1, 'abc'),
+    (2, 'def');
+    ```
 
-```sql
-INSERT INTO table1
-(id, column1)
-VALUES
-(1, 'abc'),
-(2, 'def');
-```
+    7. Настройте PostgreSQL так, чтобы разрешить новому пользователю подключаться к новой базе данных для репликации. Ниже приведена минимальная запись, которую нужно добавить в файл `pg_hba.conf`:
 
-7. Настройте PostgreSQL так, чтобы разрешить новому пользователю подключаться к новой базе данных для репликации. Ниже приведена минимальная запись, которую нужно добавить в файл `pg_hba.conf`:
+    ```text
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    host    db1             clickhouse_user 192.168.1.0/24          password
+    ```
 
-```text
-# TYPE  DATABASE        USER            ADDRESS                 METHOD
-host    db1             clickhouse_user 192.168.1.0/24          password
-```
+    **в демонстрационных целях здесь используется метод аутентификации с паролем в открытом виде. обновите строку address, указав либо подсеть, либо адрес сервера в соответствии с документацией PostgreSQL*
 
-**в демонстрационных целях здесь используется метод аутентификации с паролем в открытом виде. обновите строку address, указав либо подсеть, либо адрес сервера в соответствии с документацией PostgreSQL*
+    8. перезагрузите конфигурацию `pg_hba.conf`, например так (при необходимости скорректируйте для своей версии):
 
-8. перезагрузите конфигурацию `pg_hba.conf`, например так (при необходимости скорректируйте для своей версии):
+    ```text
+    /usr/pgsql-12/bin/pg_ctl reload
+    ```
 
-```text
-/usr/pgsql-12/bin/pg_ctl reload
-```
+    9. Проверьте вход под новым `clickhouse_user`:
 
-9. Проверьте вход под новым `clickhouse_user`:
+    ```text
+     psql -U clickhouse_user -W -d db1 -h <your_postgresql_host>
+    ```
+  </Step>
 
-```text
- psql -U clickhouse_user -W -d db1 -h <your_postgresql_host>
-```
+  <Step title="В ClickHouse" id="2-in-clickhouse">
+    1. войдите в ClickHouse CLI
 
-<div id="2-in-clickhouse">
-  ### 2. В ClickHouse
-</div>
+    ```bash
+    clickhouse-client --user default --password ClickHouse123!
+    ```
 
-1. войдите в ClickHouse CLI
+    2. Включите экспериментальную возможность PostgreSQL для движка базы данных:
 
-```bash
-clickhouse-client --user default --password ClickHouse123!
-```
+    ```sql
+    SET allow_experimental_database_materialized_postgresql=1
+    ```
 
-2. Включите экспериментальную возможность PostgreSQL для движка базы данных:
+    3. Создайте новую реплицируемую базу данных и определите исходную таблицу:
 
-```sql
-SET allow_experimental_database_materialized_postgresql=1
-```
+    ```sql
+    CREATE DATABASE db1_postgres
+    ENGINE = MaterializedPostgreSQL('postgres-host.domain.com:5432', 'db1', 'clickhouse_user', 'ClickHouse_123')
+    SETTINGS materialized_postgresql_tables_list = 'table1';
+    ```
 
-3. Создайте новую базу данных для репликации и исходную таблицу:
+    минимальные параметры:
 
-```sql
-CREATE DATABASE db1_postgres
-ENGINE = MaterializedPostgreSQL('postgres-host.domain.com:5432', 'db1', 'clickhouse_user', 'ClickHouse_123')
-SETTINGS materialized_postgresql_tables_list = 'table1';
-```
+    | параметр  | Описание                                      | пример                                                             |
+    | --------- | --------------------------------------------- | ------------------------------------------------------------------ |
+    | host:port | имя хоста или IP-адрес и порт                 | postgres-host.domain.com:5432                                      |
+    | database  | имя базы данных PostgreSQL                    | db1                                                                |
+    | user      | имя пользователя для подключения к PostgreSQL | clickhouse&#95;user                                                |
+    | password  | пароль для подключения к PostgreSQL           | ClickHouse&#95;123                                                 |
+    | settings  | дополнительные настройки для движка           | materialized&#95;postgresql&#95;tables&#95;list = &#39;table1&#39; |
 
-минимальные параметры:
+    <Info>
+      Полное руководство по движку баз данных PostgreSQL см. здесь: https://clickhouse.com/docs/engines/database-engines/materialized-postgresql/#settings
+    </Info>
 
-| параметр  | описание                                    | пример                                                             |
-| --------- | ------------------------------------------- | ------------------------------------------------------------------ |
-| host:port | имя хоста или IP-адрес и порт               | postgres-host.domain.com:5432                                      |
-| database  | имя базы данных PostgreSQL                  | db1                                                                |
-| user      | имя пользователя для подключения к Postgres | clickhouse&#95;user                                                |
-| password  | пароль для подключения к Postgres           | ClickHouse&#95;123                                                 |
-| settings  | дополнительные настройки движка             | materialized&#95;postgresql&#95;tables&#95;list = &#39;table1&#39; |
+    4. Убедитесь, что в исходной таблице есть данные:
 
-<Info>
-  Полное руководство по движку базы данных PostgreSQL см. здесь: https://clickhouse.com/docs/engines/database-engines/materialized-postgresql/#settings
-</Info>
+    ```sql
+    ch_env_2 :) select * from db1_postgres.table1;
 
-4. Убедитесь, что в исходной таблице есть данные:
+    SELECT *
+    FROM db1_postgres.table1
+    ```
 
-```sql
-ch_env_2 :) select * from db1_postgres.table1;
+    ```response
+    Query id: df2381ac-4e30-4535-b22e-8be3894aaafc
 
-SELECT *
-FROM db1_postgres.table1
-```
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    └────┴─────────┘
+    ┌─id─┬─column1─┐
+    │  2 │ def     │
+    └────┴─────────┘
+    ```
+  </Step>
 
-```response
-Query id: df2381ac-4e30-4535-b22e-8be3894aaafc
+  <Step title="Проверка базовой репликации" id="3-test-basic-replication">
+    1. В PostgreSQL добавьте новые строки:
 
-┌─id─┬─column1─┐
-│  1 │ abc     │
-└────┴─────────┘
-┌─id─┬─column1─┐
-│  2 │ def     │
-└────┴─────────┘
-```
+    ```sql
+    INSERT INTO table1
+    (id, column1)
+    VALUES
+    (3, 'ghi'),
+    (4, 'jkl');
+    ```
 
-<div id="3-test-basic-replication">
-  ### 3. Проверьте базовую репликацию
-</div>
+    2. В ClickHouse убедитесь, что новые строки отображаются:
 
-1. В PostgreSQL добавьте новые строки:
+    ```sql
+    ch_env_2 :) select * from db1_postgres.table1;
 
-```sql
-INSERT INTO table1
-(id, column1)
-VALUES
-(3, 'ghi'),
-(4, 'jkl');
-```
+    SELECT *
+    FROM db1_postgres.table1
+    ```
 
-2. В ClickHouse убедитесь, что новые строки отображаются:
+    ```response
+    Query id: b0729816-3917-44d3-8d1a-fed912fb59ce
 
-```sql
-ch_env_2 :) select * from db1_postgres.table1;
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    └────┴─────────┘
+    ┌─id─┬─column1─┐
+    │  4 │ jkl     │
+    └────┴─────────┘
+    ┌─id─┬─column1─┐
+    │  3 │ ghi     │
+    └────┴─────────┘
+    ┌─id─┬─column1─┐
+    │  2 │ def     │
+    └────┴─────────┘
+    ```
+  </Step>
 
-SELECT *
-FROM db1_postgres.table1
-```
+  <Step title="Краткое содержание" id="4-summary">
+    Это руководство по интеграции посвящено простому примеру того, как настроить репликацию базы данных с одной таблицей, однако существуют и более продвинутые варианты, включая репликацию всей базы данных или добавление новых таблиц и схем к существующим репликациям. Хотя команды DDL для этой репликации не поддерживаются, движок можно настроить на обнаружение изменений и перезагрузку таблиц при внесении изменений в структуру.
 
-```response
-Query id: b0729816-3917-44d3-8d1a-fed912fb59ce
-
-┌─id─┬─column1─┐
-│  1 │ abc     │
-└────┴─────────┘
-┌─id─┬─column1─┐
-│  4 │ jkl     │
-└────┴─────────┘
-┌─id─┬─column1─┐
-│  3 │ ghi     │
-└────┴─────────┘
-┌─id─┬─column1─┐
-│  2 │ def     │
-└────┴─────────┘
-```
-
-<div id="4-summary">
-  ### 4. Сводка
-</div>
-
-В этом руководстве по интеграции был рассмотрен простой пример репликации базы данных с одной таблицей, однако доступны и более продвинутые варианты, включая репликацию всей базы данных или добавление новых таблиц и схем в уже существующие репликации. Хотя команды DDL для такой репликации не поддерживаются, движок можно настроить на обнаружение изменений и повторную загрузку таблиц при изменении их структуры.
-
-<Info>
-  Дополнительные возможности расширенной настройки описаны в [справочной документации](/ru/reference/engines/database-engines/materialized-postgresql).
-</Info>
+    <Info>
+      Чтобы узнать о дополнительных возможностях, доступных в расширенных вариантах, см. [справочную документацию](/ru/reference/engines/database-engines/materialized-postgresql).
+    </Info>
+  </Step>
+</Steps>

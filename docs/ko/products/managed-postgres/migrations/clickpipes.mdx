@@ -41,111 +41,103 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   마이그레이션 중 문제가 발생하면 일반적인 오류와 해결 방법은 [Managed Postgres Migrations FAQ](/ko/products/managed-postgres/migrations/faq)에서 확인하십시오.
 </Note>
 
-<div id="step-1-connect">
-  ## 1단계: 원본 데이터베이스에 연결
-</div>
+<Steps>
+  <Step title="원본 데이터베이스에 연결" id="step-1-connect">
+    [ClickHouse Cloud 콘솔](https://clickhouse.cloud)을 열고 Managed Postgres 서비스를 선택합니다.
 
-[ClickHouse Cloud 콘솔](https://clickhouse.cloud)을 열고 Managed Postgres 서비스를 선택합니다.
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 서비스 목록의 Managed Postgres 서비스 카드" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 서비스 목록의 Managed Postgres 서비스 카드" size="lg" border />
+    왼쪽 사이드바에서 **데이터 소스**를 클릭합니다.
 
-왼쪽 사이드바에서 **데이터 소스**를 클릭합니다.
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres 서비스 사이드바의 데이터 소스 항목" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres 서비스 사이드바의 데이터 소스 항목" size="lg" border />
+    **Start import**를 클릭합니다.
 
-**Start import**를 클릭합니다.
+    <Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Start import 버튼이 있는 데이터 소스 페이지" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Start import 버튼이 있는 데이터 소스 페이지" size="lg" border />
+    원본 PostgreSQL 데이터베이스의 연결 정보를 입력합니다: 호스트, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름. 원본 데이터베이스에서 필요하면 **TLS**를 활성화합니다.
 
-원본 PostgreSQL 데이터베이스의 연결 정보를 입력합니다: 호스트, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름. 원본 데이터베이스에서 필요하면 **TLS**를 활성화합니다.
+    원본 데이터베이스에 대한 비공개 연결이 필요하면 **SSH tunneling**을 선택하고 필요한 SSH 정보를 입력할 수 있습니다. 이렇게 하면 공개적으로 접근할 수 없는 데이터베이스에도 마이그레이션이 안전하게 연결할 수 있습니다.
 
-원본 데이터베이스에 대한 비공개 연결이 필요하면 **SSH tunneling**을 선택하고 필요한 SSH 정보를 입력할 수 있습니다. 이렇게 하면 공개적으로 접근할 수 없는 데이터베이스에도 마이그레이션이 안전하게 연결할 수 있습니다.
+    수집 메서드를 선택합니다:
 
-수집 메서드를 선택합니다:
+    * **초기 적재 + CDC** — 기존 데이터를 복사한 다음, 이후 변경 사항도 계속 반영하여 대상을 동기화 상태로 유지합니다.
+    * **초기 적재 only** — 한 번만 복사하고, 이후 복제는 수행하지 않습니다.
+    * **CDC only** — 초기 복사를 건너뛰고 이 시점 이후의 새 변경 사항만 복제합니다.
 
-* **Initial load + CDC** — 기존 데이터를 복사한 다음, 이후 변경 사항도 계속 반영하여 대상을 동기화 상태로 유지합니다.
-* **Initial load only** — 한 번만 복사하고, 이후 복제는 수행하지 않습니다.
-* **CDC only** — 초기 복사를 건너뛰고 이 시점 이후의 새 변경 사항만 복제합니다.
+    <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="1단계: 수집 메서드 옵션이 있는 원본 데이터베이스 연결 양식" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="1단계: 수집 메서드 옵션이 있는 원본 데이터베이스 연결 양식" size="lg" border />
+    **다음**을 클릭합니다.
+  </Step>
 
-**다음**을 클릭합니다.
+  <Step title="데이터베이스 스키마 내보내기" id="step-2-export-schema">
+    마법사에 원본 연결 정보가 미리 입력된 `pg_dump` 명령이 표시됩니다. 터미널에서 실행합니다:
 
-<div id="step-2-export-schema">
-  ## 2단계: 데이터베이스 스키마 내보내기
-</div>
+    <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="2단계: 스키마 내보내기를 위한 pg_dump 명령" size="lg" border />
 
-마법사에 원본 연결 정보가 미리 입력된 `pg_dump` 명령이 표시됩니다. 터미널에서 이를 실행하세요:
+    ```shell
+    pg_dump \
+      -h <source_host> \
+      -U <source_user> \
+      -d <source_database> \
+      --schema-only \
+      -f pg.sql
+    ```
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="2단계: 스키마 내보내기용 pg_dump 명령" size="lg" border />
+    이 명령을 실행하면 현재 디렉터리에 `pg.sql`이 생성됩니다.
 
-```shell
-pg_dump \
-  -h <source_host> \
-  -U <source_user> \
-  -d <source_database> \
-  --schema-only \
-  -f pg.sql
-```
+    <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 실행 후 터미널 출력" size="lg" border />
 
-이 명령을 실행하면 현재 작업 디렉터리에 `pg.sql` 파일이 생성됩니다.
+    **다음**을 클릭합니다.
+  </Step>
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 실행 후 터미널 출력" size="lg" border />
+  <Step title="Managed Postgres 서비스로 스키마 가져오기" id="step-3-import-schema">
+    드롭다운에서 대상 데이터베이스를 선택하거나 **Create a new database**를 클릭해 새 데이터베이스를 프로비저닝합니다.
 
-**다음**을 클릭하세요.
+    마법사에 스키마 덤프를 Managed Postgres 서비스에 적용하는 `psql` 명령이 표시됩니다. 터미널에서 실행합니다:
 
-<div id="step-3-import-schema">
-  ## 3단계: 스키마를 Managed Postgres 서비스로 가져오기
-</div>
+    <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="3단계: 스키마 가져오기를 위한 psql 명령" size="lg" border />
 
-드롭다운에서 대상 데이터베이스를 선택하거나, **Create a new database**를 클릭해 새 데이터베이스를 생성합니다.
+    ```shell
+    psql \
+      -h <target_host> \
+      -p 5432 \
+      -U <target_user> \
+      -d <target_database> \
+      -f pg.sql
+    ```
 
-마법사에서 스키마 덤프를 Managed Postgres 서비스에 적용하는 `psql` 명령을 표시합니다. 터미널에서 실행하세요:
+    <Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql 스키마 가져오기 실행 후 터미널 출력" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="3단계: 스키마 가져오기를 위한 psql 명령" size="lg" border />
+    **다음**을 클릭합니다.
+  </Step>
 
-```shell
-psql \
-  -h <target_host> \
-  -p 5432 \
-  -U <target_user> \
-  -d <target_database> \
-  -f pg.sql
-```
+  <Step title="수집 설정 구성" id="step-4-ingestion-settings">
+    논리적 복제에 사용할 publication을 지정합니다. 이 값을 비워 두면 publication이 자동으로 생성됩니다.
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql 스키마 가져오기 실행 후 터미널 출력" size="lg" border />
+    처리량을 조정하려면 **Advanced replication settings**를 펼칩니다:
 
-**다음**을 클릭하세요.
+    | 설정                                    | 기본값     | 설명                        |
+    | ------------------------------------- | ------- | ------------------------- |
+    | Sync interval (seconds)               | 10      | replication slot을 폴링하는 주기 |
+    | Parallel threads for 초기 적재     | 4       | 대량 복사 단계에 사용할 스레드 수       |
+    | Pull batch size                       | 100,000 | 복제 batch마다 가져오는 행 수       |
+    | Snapshot number of rows per partition | 100000  | 대형 테이블 snapshot의 파티션 크기   |
+    | Snapshot number of tables in parallel | 1       | 동시에 snapshot하는 테이블 수      |
 
-<div id="step-4-ingestion-settings">
-  ## Step 4: 수집 설정 구성
-</div>
+    <Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="4단계: publication 및 고급 복제 옵션이 있는 수집 설정 양식" size="lg" border />
 
-논리적 복제에 사용할 publication을 지정합니다. 비워 두면 publication이 자동으로 생성됩니다.
+    **다음**을 클릭합니다.
+  </Step>
 
-처리량을 조정하려면 **고급 복제 설정**을 펼치십시오.
+  <Step title="테이블 선택" id="step-5-select-tables">
+    복제할 테이블을 선택합니다. 테이블은 스키마별로 그룹화되어 있습니다. 개별 테이블을 선택하거나 스키마를 펼쳐 전체를 선택합니다.
 
-| 설정              | 기본값     | 설명                        |
-| --------------- | ------- | ------------------------- |
-| 동기화 인터벌(초)      | 10      | replication slot을 폴링하는 주기 |
-| 초기 적재용 병렬 스레드 수 | 4       | 대량 복사 단계에 사용하는 스레드 수      |
-| Pull 배치 크기      | 100,000 | 복제 배치마다 가져오는 행 수          |
-| 스냅샷 파티션당 행 수    | 100000  | 대형 테이블 스냅샷의 파티션 크기        |
-| 병렬 스냅샷 테이블 수    | 1       | 동시에 스냅샷하는 테이블 수           |
+    <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="5단계: Create migration 버튼이 있는 스키마별 그룹화된 테이블 선택기" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Step 4: publication 및 고급 복제 옵션이 포함된 수집 설정 양식" size="lg" border />
-
-**다음**을 클릭하십시오.
-
-<div id="step-5-select-tables">
-  ## 5단계: 테이블 선택
-</div>
-
-복제할 테이블을 선택하세요. 테이블은 스키마별로 그룹화되어 있습니다. 개별 테이블을 선택하거나 스키마를 펼쳐 전체를 선택하세요.
-
-<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="5단계: Create migration 버튼이 있는 스키마별 그룹화된 테이블 선택기" size="lg" border />
-
-**Create migration**을 클릭하세요.
+    **Create migration**을 클릭합니다.
+  </Step>
+</Steps>
 
 <div id="monitor">
   ## 마이그레이션 모니터링

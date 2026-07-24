@@ -25,9 +25,7 @@ Pour y accéder, cliquez sur **ClickHouse Integration** dans la barre latérale 
 Cliquez sur **Répliquer les données dans ClickHouse** pour commencer à configurer votre ClickPipe.
 
 <Steps>
-  <Step>
-    ## Configurer le service de réplication
-
+  <Step title="Configurer le service de réplication" id="configure-replication-service">
     Renseignez les paramètres de réplication :
 
     * **Nom de l’intégration** : Un nom pour ce ClickPipe
@@ -43,9 +41,7 @@ Cliquez sur **Répliquer les données dans ClickHouse** pour commencer à config
     Cliquez sur **Suivant** pour continuer.
   </Step>
 
-  <Step>
-    ## Configurer les paramètres de réplication
-
+  <Step title="Configurer les paramètres de réplication" id="replication-settings">
     Affinez la façon dont les données sont répliquées :
 
     * **Intervalle de synchronisation (secondes)** : Fréquence à laquelle les modifications sont récupérées depuis Postgres (par défaut : 60)
@@ -59,14 +55,12 @@ Cliquez sur **Répliquer les données dans ClickHouse** pour commencer à config
     Cliquez sur **Suivant** pour continuer.
   </Step>
 
-  <Step>
-    ## Sélectionner les tables à répliquer
-
+  <Step title="Sélectionner les tables à répliquer" id="select-tables">
     Choisissez une base de données de destination et sélectionnez les tables à répliquer :
 
     * **Base de données de destination** : Sélectionnez une base de données ClickHouse existante ou créez-en une nouvelle
     * **Préfixer les noms de table de destination par défaut avec le nom du schéma** : Ajoute le schéma Postgres comme préfixe pour éviter les conflits de noms
-    * **Préserver les valeurs NULL de la source** : Conserve les valeurs NULL au lieu de les convertir en valeurs par défaut
+    * **Préserver les valeurs NULL de la source** : Conserve les valeurs NULL au lieu de les convertir en valeurs par défaut du type. Ce paramètre s’applique à toutes les tables du pipe et ne peut pas être modifié après la création du pipe.
     * **Supprimer les lignes supprimées pendant les fusions** : Pour les tables [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree), supprime physiquement les lignes supprimées lors des merges en arrière-plan
 
     Développez les schémas et sélectionnez les tables à répliquer individuellement. Vous pouvez également personnaliser les noms des tables de destination et les paramètres des colonnes.
@@ -76,9 +70,7 @@ Cliquez sur **Répliquer les données dans ClickHouse** pour commencer à config
     Cliquez sur **Répliquer les données vers ClickHouse** pour démarrer la réplication.
   </Step>
 
-  <Step>
-    ## Suivre votre ClickPipe
-
+  <Step title="Suivre votre ClickPipe" id="monitor-clickpipe">
     Une fois le ClickPipe démarré, il apparaîtra dans ce même menu. Le snapshot initial de toutes les données peut prendre un certain temps selon la taille de vos tables.
 
     <Image img="/images/managed-postgres/integration-running.webp" alt="Liste des ClickHouse integration montrant un ClickPipe en cours d’exécution avec son service de destination et son statut" size="md" border />

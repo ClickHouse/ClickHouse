@@ -24,34 +24,26 @@ import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFe
 관리자는 한 번에 여러 사용자를 초대하고, 초대할 때 하나 이상의 역할을 할당할 수 있습니다.
 
 <Steps>
-  <Step>
-    ### organization settings로 이동하여 Users and roles를 선택합니다
-
+  <Step title="organization settings로 이동하여 Users and roles를 선택합니다" id="users-and-roles-1">
     services 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 왼쪽 상단에서 &#39;Invite members&#39;를 선택합니다
-
+  <Step title="왼쪽 상단에서 'Invite members'를 선택합니다" id="invite-members">
     왼쪽 상단의 `Invite members` 버튼을 클릭합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 새 구성원의 이메일 주소를 입력하고 역할을 할당합니다
-
+  <Step title="새 구성원의 이메일 주소를 입력하고 역할을 할당합니다" id="add-email-and-roles">
     초대 화면 상단에 이메일 주소를 입력합니다. 사용자에게 할당할 하나 이상의 역할을 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### `Send invites`를 클릭합니다
-
-    화면 하단에서 `Send invites`를 클릭합니다. 사용자는 조직에 참여할 수 있는 링크가 포함된 이메일을 받게 됩니다. 초대 수락에 대한 자세한 내용은 [내 계정 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-my-account)를 참조하십시오.
+  <Step title={<>`Send invites`를 클릭합니다</>} id="send-invites">
+    화면 하단에서 `Send invites`를 클릭합니다. 사용자는 이 이메일을 통해 조직에 참여할 수 있습니다. 초대 수락에 대한 자세한 내용은 [내 계정 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-my-account)를 참조하십시오.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
   </Step>
@@ -82,33 +74,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFe
 관리자 역할이 할당된 사용자는 언제든지 다른 사용자의 권한을 업데이트할 수 있습니다.
 
 <Steps>
-  <Step>
-    ### organization settings로 이동한 다음 Users and roles를 선택합니다
-
+  <Step title="organization settings로 이동한 다음 Users and roles를 선택합니다" id="users-and-roles-2">
     services 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 업데이트할 사용자를 선택한 다음 Edit를 선택합니다
-
+  <Step title="업데이트할 사용자를 선택한 다음 Edit를 선택합니다" id="select-user-to-update">
     액세스를 수정할 사용자의 행 끝에 있는 메뉴 항목을 선택합니다. 팝업 메뉴에서 `Edit`를 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 권한을 업데이트합니다
-
+  <Step title="권한을 업데이트합니다" id="update-permissions">
     `Roles` 상자를 클릭하여 메뉴를 펼칩니다. 확인란을 선택해 사용자 역할을 추가하거나 제거합니다. 역할과 관련 권한 목록은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)을 참조하십시오.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 변경 사항을 저장합니다
-
+  <Step title="변경 사항을 저장합니다" id="save-changes">
     탭 하단의 `Save changes` 버튼을 클릭하여 변경 사항을 저장합니다.
   </Step>
 </Steps>
