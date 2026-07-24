@@ -11910,7 +11910,19 @@ async function reconcileStartup() {
                 savedTabs.push({
                     id: r.id, title: r.title, query: r.query || '',
                     params: r.params || {}, result: r.result || null, lastSavedQuery: r.lastSavedQuery,
-                    runnableUrl: !!r.runnableUrl,
+                    /// The saved `run=1` policy bit (see `makeTab` / `saveHistory`) is honored only
+                    /// when THIS load itself carries the `run=1` directive. A plain `/play` load must
+                    /// clear it: this navigation did not ask for auto-run, so restoring the bit would
+                    /// let the trailing `syncHistory` rewrite the current URL back to `?run=1` for a
+                    /// clean run-backed tab — and the NEXT reload would then auto-execute a query
+                    /// (possibly a write / DDL statement) the user never reopened with `run=1`. In
+                    /// other words the directive stays scoped to `run=1` sessions instead of widening
+                    /// into durable workspace state; within a plain session, only a Back/Forward onto
+                    /// an entry whose URL itself carries `run=1` re-adopts the bit (entry-scoped, see
+                    /// `window.onpopstate`), and a genuine run keeps it cleared (`saveHistory` assigns
+                    /// from `run_immediately`). The cleared bit is re-persisted by the trailing save,
+                    /// so the marker erodes rather than resurfacing in a later session.
+                    runnableUrl: run_immediately && !!r.runnableUrl,
                     /// Attach fresh transient runtime state (panels/queries are materialized lazily on
                     /// first activation), seeding color modes and pinned columns from the persisted
                     /// result snapshot.

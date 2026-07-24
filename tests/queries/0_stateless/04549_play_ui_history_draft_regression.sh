@@ -401,6 +401,35 @@ async function reload()
     await drain();
 }
 
+/// Simulate opening a bare `/play` URL as a FRESH navigation (typed / bookmarked), not a reload
+/// of an existing entry: the browser starts a new history entry with a null state and no URL
+/// payload (no hash, no `tab=`, no `run=1`), so `run_immediately` is false. Persists the current
+/// workspace first, exactly like `reload`, so `reconcileStartup` restores the saved tabs.
+async function openPlain()
+{
+    await sandbox.persist();
+    sandbox.history.stack.length = 0;
+    sandbox.history.stack.push({ state: null, url: '/play' });
+    sandbox.history.idx = 0;
+    sandbox.current_url = new URL('/play', sandbox.location.origin);
+    sandbox.url_query = '';
+    sandbox.url_tab_name = null;
+    sandbox.has_url_query = false;
+    sandbox.run_immediately = false;
+    sandbox.defer_run_for_reconcile = false;
+    sandbox.deferred_run_cancelled = false;
+    sandbox.query_area.value = '';
+    sandbox.param_inputs = {};
+    sandbox.bootstrap_dirty = false;
+    sandbox.bootstrap_settled = false;
+    sandbox.postAllCalled = false;
+    sandbox.activation_num = 0;
+    sandbox.params_restore_pending_token = null;
+    sandbox.save_timer = null;
+    await sandbox.reconcileStartup();
+    await drain();
+}
+
 (async () =>
 {
     /// A keystroke does NOT touch history / the URL: after a run, typing a draft leaves the
@@ -620,7 +649,9 @@ async function reload()
     /// made its entries auto-runnable keeps `run=1` on its URL. Conversely a clean tab that only
     /// ever ran under a PLAIN load stays unstamped — the `run=1` directive of one tab never makes
     /// another tab's URLs auto-runnable. Both policy bits ride the persisted workspace
-    /// (`runnableUrl`), so they hold across the reload.
+    /// (`runnableUrl`) and this reload's URL itself carries `run=1` (the run entry's URL, which
+    /// the keystroke deliberately did not rewrite), so the restored markers are honored — a
+    /// PLAIN load clears them instead (see the plain-navigation case below).
     reset();
     sandbox.run_immediately = false;   /// tab A's run happens under a plain (no run=1) load
     await run('SELECT 10');
@@ -643,6 +674,25 @@ async function reload()
     await sandbox.switchToTab(plainTab);
     await drain();
     assert_eq('stale reload then switch: a tab never run under run=1 stays unstamped', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+
+    /// The `run=1` load directive must not outlive its own session through the persisted
+    /// workspace: after a clean run under a `?run=1` load, opening a plain `/play` (a fresh
+    /// navigation that never asked for auto-run) restores the run-backed tab but must neither
+    /// auto-run it nor let the trailing `syncHistory` rewrite the URL back to `?run=1` —
+    /// otherwise the NEXT reload would auto-execute a query (possibly a write / DDL statement)
+    /// the user never reopened with `run=1`. The restored marker is cleared, not merely hidden:
+    /// a subsequent reload of the synced URL stays a plain load too.
+    reset();
+    await run('SELECT 40');
+    assert_eq('plain load after a run=1 session: the run entry itself carries run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    await openPlain();
+    assert_eq('plain load after a run=1 session: the run-backed tab is restored', active().query, 'SELECT 40');
+    assert_eq('plain load after a run=1 session: the restored tab is not auto-run', sandbox.postAllCalled, false);
+    assert_eq('plain load after a run=1 session: the synced URL is not rewritten to run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('plain load after a run=1 session: the restored tab drops the persisted marker', active().runnableUrl, false);
+    await reload();
+    assert_eq('plain load after a run=1 session: a subsequent reload does not auto-run', sandbox.postAllCalled, false);
+    assert_eq('plain load after a run=1 session: a subsequent reload restores the query unrun', active().query, 'SELECT 40');
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
