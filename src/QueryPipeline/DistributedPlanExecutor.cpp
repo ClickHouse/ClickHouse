@@ -600,10 +600,11 @@ ExchangeLookupPtr createExchangeLookup(
 
 static String serializeQueryPlan(const QueryPlan & query_plan)
 {
-    /// Pinned below the global version: this path has no per-worker version negotiation, so
-    /// without the pin a version bump would ship bytes an older stateless worker rejects.
+    /// This path has no per-worker version negotiation. While `make_distributed_plan` stays
+    /// experimental that is acceptable: a worker too old for the plan rejects it by the leading
+    /// version (or by the plan's needed-to-read version) with a clear error, never misreads it.
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DISTRIBUTED_TASK_QUERY_PLAN_SERIALIZATION_VERSION);
+    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     return out.str();
 }
 

@@ -76,10 +76,6 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// First version with the outline-first framed envelope.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 4;
-/// The distributed task path ships plans as an opaque string with no per-worker version
-/// negotiation yet, so it stays pinned to the last pre-outline version until workers advertise
-/// their supported plan version. Bucketed (v2) and parallel-replicas (v3) features keep working.
-static constexpr auto DISTRIBUTED_TASK_QUERY_PLAN_SERIALIZATION_VERSION = 3;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
