@@ -224,12 +224,6 @@ def main():
         assert "focus:border-gray-600" in explorer
         assert "dark:border-white/30 dark:bg-white/5" in explorer
         assert "dark:placeholder:text-gray-400" in explorer
-        assert "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" in explorer
-        assert "focus-visible:outline-gray-600" in explorer
-        assert "focus-visible:outline-gray-700" in explorer
-        assert "dark:focus-visible:outline-[#fdff75]" in explorer
-        assert "focus:outline-0" not in explorer
-        assert "focus-visible:outline-0" not in explorer
         assert "dark:focus:border-[#fdff75]" in explorer
         assert "focus:ring-" not in explorer
         assert '<circle cx="11" cy="11" r="8" />' in explorer

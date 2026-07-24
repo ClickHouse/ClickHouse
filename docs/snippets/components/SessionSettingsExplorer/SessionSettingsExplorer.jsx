@@ -195,7 +195,7 @@ const SessionSettingsExplorer = () => {
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
           placeholder="Search settings, e.g. parallel replicas or %materialized%"
-          className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75] dark:focus-visible:outline-[#fdff75]"
+          className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
@@ -212,7 +212,7 @@ const SessionSettingsExplorer = () => {
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
-            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border-0 bg-transparent px-1 py-0.5 font-sans text-xs font-medium text-gray-600 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-700 focus-visible:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-[#fdff75] dark:focus-visible:outline-[#fdff75] dark:focus-visible:text-[#fdff75]"
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border-0 bg-transparent px-1 py-0.5 font-sans text-xs font-medium text-gray-600 hover:text-gray-900 focus:outline-0 focus-visible:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-[#fdff75] dark:focus-visible:text-[#fdff75]"
           >
             <svg
               aria-hidden="true"
