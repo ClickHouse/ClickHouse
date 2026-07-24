@@ -1648,7 +1648,7 @@ FROM
     SELECT
         database,
         name,
-        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+        if (uuid != toUUID('00000000-0000-0000-0000-000000000000'),
             concat('uuid:', toString(uuid)),
             concat('name:', hex(database), ':', hex(name))) AS identity
     FROM system.tables
@@ -1662,7 +1662,7 @@ FROM
 (
     SELECT
         name,
-        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+        if (uuid != toUUID('00000000-0000-0000-0000-000000000000'),
             concat('uuid:', toString(uuid)),
             concat('name:', hex(name))) AS identity
     FROM system.databases
@@ -1964,7 +1964,7 @@ FROM
 (
     SELECT
         name,
-        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+        if (uuid != toUUID('00000000-0000-0000-0000-000000000000'),
             concat('uuid:', toString(uuid)),
             concat('name:', hex(name))) AS identity
     FROM system.databases
@@ -1979,7 +1979,7 @@ FROM
     SELECT
         database,
         name,
-        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+        if (uuid != toUUID('00000000-0000-0000-0000-000000000000'),
             concat('uuid:', toString(uuid)),
             concat('name:', hex(database), ':', hex(name))) AS identity
     FROM system.tables
