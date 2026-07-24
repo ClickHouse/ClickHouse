@@ -48,7 +48,9 @@ ATTACH TABLE test_mutations_author_regular;
 DETACH TABLE test_mutations_author_replicated;
 ATTACH TABLE test_mutations_author_replicated;
 
-SELECT database, table, is_done, author FROM system.mutations
+-- Do not check `is_done` here: right after ATTACH of a replicated table the mutation state
+-- may not be recomputed yet, so `is_done` is transiently 0.
+SELECT database, table, author FROM system.mutations
 WHERE database = currentDatabase() AND table IN ('test_mutations_author_regular', 'test_mutations_author_replicated')
 ORDER BY table, mutation_id;
 
