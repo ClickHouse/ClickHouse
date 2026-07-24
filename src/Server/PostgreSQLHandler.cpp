@@ -1064,8 +1064,6 @@ void PostgreSQLHandler::processQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        prepareSystemTables(query_context, query->query);
-
         if (processExecute(query->query, query_context))
             return;
 
@@ -1084,6 +1082,12 @@ void PostgreSQLHandler::processQuery()
         {
             secret_key = dis(gen);
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+            /// Refresh the emulated catalog against each actual statement rather than the outer message text:
+            /// a semicolon-separated `CREATE TABLE t ...; SELECT oid FROM pg_class ...` must see `t` in the
+            /// catalog when the second statement runs (a single refresh before the split would happen before
+            /// `t` exists). This mirrors the extended-protocol path, which refreshes on the bound statement.
+            prepareSystemTables(query_context, sql_query);
 
             QueryScope query_scope = QueryScope::create(query_context);
 
@@ -1176,6 +1180,10 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
     }
 
     auto result_query = prepared_statements_manager.getStatement(prepare->as<ASTExecute>());
+
+    /// Refresh the emulated catalog against the resolved statement, not the outer `EXECUTE s` text:
+    /// the prepared SQL is what may actually read `pg_*` catalog objects.
+    prepareSystemTables(query_context, result_query);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);

@@ -81,19 +81,21 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     result->function_name = ast_ident->as<ASTIdentifier>()->full_name;
 
-    if (!open_bracket.ignore(pos, expected))
-        return false;
-
-    ASTPtr ast_args;
-    if (!exp_args.parse(pos, ast_args, expected))
-        return false;
-
-    for (size_t i = 0; i < ast_args->children.size(); ++i)
+    /// The parameter list is optional: PostgreSQL's `EXECUTE name` runs a prepared statement that takes
+    /// no parameters, and there are no empty parentheses in that case.
+    if (open_bracket.ignore(pos, expected))
     {
-        result->arguments.push_back(fieldToString(ast_args->children[i]->as<ASTLiteral>()->value));
+        ASTPtr ast_args;
+        if (!exp_args.parse(pos, ast_args, expected))
+            return false;
+
+        for (size_t i = 0; i < ast_args->children.size(); ++i)
+        {
+            result->arguments.push_back(fieldToString(ast_args->children[i]->as<ASTLiteral>()->value));
+        }
+        if (!close_bracket.ignore(pos, expected))
+            return false;
     }
-    if (!close_bracket.ignore(pos, expected))
-        return false;
 
     return true;
 }
