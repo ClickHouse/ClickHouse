@@ -11,7 +11,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-ClickHouse Cloud なら、パッチ適用やアップグレードを気にする必要はありません。修正、新機能、パフォーマンス向上を含むアップグレードを定期的に実施しています。ClickHouse の最新情報の一覧については、[Cloud changelog](/ja/resources/changelogs/cloud/2026)を参照してください。
+ClickHouse Cloud なら、パッチ適用やアップグレードを気にする必要はありません。修正、新機能、パフォーマンス向上を含むアップグレードを定期的に実施しています。
+
+* ClickHouse の最新情報の一覧については、[Cloud changelog](/ja/resources/changelogs/cloud/2026)を参照してください
+* バージョンのリリース時期については、[release status](/ja/resources/changelogs/cloud/release-status) ページを参照してください
 
 <Note>
   現在、&quot;make before break&quot; (MBB) と呼ぶ新しいアップグレードの仕組みを導入しています。この新しい方式では、アップグレード中に古いレプリカを削除する前に、更新済みのレプリカを追加します。これにより、実行中のワークロードへの影響を抑えた、よりシームレスなアップグレードが可能になります。
@@ -59,7 +62,7 @@ ClickHouse Cloud なら、パッチ適用やアップグレードを気にする
 
 <ScalePlanFeatureBadge feature="The fast release channel" />
 
-通常のアップグレードスケジュールに加えて、通常のリリーススケジュールより早くサービスを更新したい場合は、**Fast release** チャネルを利用できます。
+通常のアップグレードスケジュールに加えて、通常のリリーススケジュールより早くサービスを更新したい場合は、**Fast release** リリースチャネルを利用できます。
 
 具体的には、サービスは次のようになります。
 
@@ -74,7 +77,7 @@ ClickHouse Cloud なら、パッチ適用やアップグレードを気にする
 
 <br />
 
-この**Fast release**チャネルは、重要度の低い環境で新機能をテストするのに適しています。**高い可用性と信頼性が求められる本番ワークロードには推奨されません。**
+この**Fast release**リリースチャネルは、重要度の低い環境で新機能をテストするのに適しています。**高い可用性と信頼性が求められる本番ワークロードには推奨されません。**
 
 <div id="regular-release-channel">
   ### Regular リリースチャネル
@@ -116,7 +119,7 @@ Regular リリースチャネルへのアップグレードは、通常、**Fast
 
 <EnterprisePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true" />
 
-Enterprise tier のサービスでは、アップグレードの実施時間帯を設定できます。
+Enterprise ティア のサービスでは、アップグレードの実施時間帯を設定できます。
 
 アップグレードのスケジュールを指定するサービスを選択し、左側のメニューから `Settings` をクリックします。`Scheduled upgrades` までスクロールします。
 

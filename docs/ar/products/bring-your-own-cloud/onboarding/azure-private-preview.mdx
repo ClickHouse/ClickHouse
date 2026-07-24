@@ -35,23 +35,19 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
 </div>
 
 <Steps>
-  <Step>
-    ### 1. طبّق وحدة Terraform
-
+  <Step title="1. طبّق وحدة Terraform" id="apply-terraform-module">
     لبدء تهيئة BYOC على Azure، طبّق [وحدة Terraform الخاصة بـ Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) التي توفّرها ClickHouse ضمن **المستأجر والاشتراك المستهدفين** لديك.
 
     ارجع إلى وثائق الوحدة لمعرفة المتغيرات المطلوبة وخطوات التطبيق. بعد تطبيقها، تكون الوحدة قد أعدّت الهوية والأذونات اللازمة في بيئة Azure لديك.
   </Step>
 
-  <Step>
-    ### 2. قدّم المعرّفات إلى ClickHouse
-
+  <Step title="2. قدّم المعرّفات إلى ClickHouse" id="provide-ids">
     شارِك المعلومات التالية مع فريق ClickHouse:
 
     * **معرّف الاشتراك المستهدف** — اشتراك Azure الذي ستُنشأ فيه موارد BYOC
     * **معرّف المستأجر المستهدف** — مستأجر Azure AD ‏(Entra) الذي يملك ذلك الاشتراك
-    * **المنطقة** — مناطق Azure التي تريد نشر خدمات ClickHouse فيها
-    * **نطاق CIDR للشبكة الافتراضية VNet** — نطاق عناوين IP الذي تريد استخدامه لشبكة BYOC الافتراضية
+    * **المنطقة** — مناطق Azure التي تريد نشر خدمات ClickHouse فيها.
+    * **نطاق CIDR للشبكة الافتراضية VNet** — نطاق عناوين IP الذي تريد استخدامه لشبكة BYOC الافتراضية.
 
     سيستخدم فريق ClickHouse هذه المعلومات لإنشاء البنية التحتية لـ BYOC وإكمال التهيئة
   </Step>

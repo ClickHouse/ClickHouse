@@ -37,112 +37,104 @@ En esta guía crearás un dashboard en Superset con datos de una base de datos d
   Si no tienes un conjunto de datos con el que trabajar, puedes añadir uno de los conjuntos de datos de ejemplo. Esta guía utiliza el conjunto de datos [UK Price Paid](/es/get-started/sample-datasets/uk-price-paid), así que puedes elegir ese. Hay varios más en la misma categoría de la documentación.
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. Recopila los datos de conexión
-</div>
+<Steps>
+  <Step title="Reúne la información de conexión" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Instalar el controlador" id="2-install-the-driver">
+    1. Superset usa el driver `clickhouse-connect` para conectarse a ClickHouse. La información sobre `clickhouse-connect` está disponible en <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a> y puede instalarse con el siguiente comando:
 
-<div id="2-install-the-driver">
-  ## 2. Instale el controlador
-</div>
+       ```console
+       pip install clickhouse-connect
+       ```
 
-1. Superset usa el controlador `clickhouse-connect` para conectarse a ClickHouse. Encontrará más información sobre `clickhouse-connect` en <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a>, y puede instalarse con el siguiente comando:
+    <Info>
+      **Configuración de Docker Compose**
 
-   ```console
-   pip install clickhouse-connect
-   ```
+      Para instalaciones basadas en Docker, consulta la [guía de configuración de la base de datos de Superset](https://superset.apache.org/user-docs/6.0.0/configuration/databases/) para obtener instrucciones sobre cómo añadir `clickhouse-connect` a tu contenedor.
+    </Info>
 
-<Info>
-  **Configuración de Docker Compose**
+    2. Inicia (o reinicia) Superset.
+  </Step>
 
-  Para instalaciones basadas en Docker, consulte la [guía de configuración de bases de datos de Superset](https://superset.apache.org/docs/configuration/databases/#clickhouse) para obtener instrucciones sobre cómo añadir `clickhouse-connect` a su contenedor.
-</Info>
+  <Step title="Conectar Superset con ClickHouse" id="3-connect-superset-to-clickhouse">
+    1. En Superset, selecciona **Data** en el menú superior y luego **Databases** en el menú desplegable. Añade una nueva base de datos haciendo clic en el botón **+ Database**:
 
-2. Inicie (o reinicie) Superset.
+    <Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="Interfaz de Superset que muestra el menú Database con el botón + Database resaltado" border />
 
-<div id="3-connect-superset-to-clickhouse">
-  ## 3. Conectar Superset a ClickHouse
-</div>
+    <br />
 
-1. En Superset, selecciona **Data** en el menú superior y luego **Databases** en el menú desplegable. Agrega una nueva base de datos haciendo clic en el botón **+ Database**:
+    2. En el primer paso, selecciona **ClickHouse Connect** como tipo de base de datos:
 
-<Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="Interfaz de Superset que muestra el menú Database con el botón + Database resaltado" border />
+    <Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="Asistente de conexión de base de datos de Superset con la opción ClickHouse Connect seleccionada" border />
 
-<br />
+    <br />
 
-2. En el primer paso, selecciona **ClickHouse Connect** como tipo de base de datos:
+    3. En el segundo paso:
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="Asistente de conexión de base de datos de Superset que muestra la opción ClickHouse Connect seleccionada" border />
+    * Activa o desactiva SSL.
+    * Introduce la información de conexión que recopilaste anteriormente
+    * Especifica el **DISPLAY NAME**: puede ser cualquier nombre que prefieras. Si vas a conectarte a varias bases de datos de ClickHouse, haz que el nombre sea más descriptivo.
 
-<br />
+    <Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="Formulario de configuración de conexión de Superset que muestra los parámetros de la conexión de ClickHouse" border />
 
-3. En el segundo paso:
+    <br />
 
-* Activa o desactiva SSL.
-* Introduce la información de conexión que recopilaste antes.
-* Especifica el **DISPLAY NAME**: puede ser cualquier nombre que prefieras. Si te vas a conectar a varias bases de datos de ClickHouse, haz que el nombre sea más descriptivo.
+    4. Haz clic en los botones **CONNECT** y luego **FINISH** para completar el asistente de configuración; deberías ver tu base de datos en la lista de bases de datos.
+  </Step>
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="Formulario de configuración de conexión de Superset que muestra los parámetros de conexión de ClickHouse" border />
+  <Step title="Añadir un conjunto de datos" id="4-add-a-dataset">
+    1. Para interactuar con tus datos de ClickHouse en Superset, necesitas definir un ***conjunto de datos***. En el menú superior de Superset, selecciona **Data** y luego **Datasets** en el menú desplegable.
 
-<br />
+    2. Haz clic en el botón para añadir un conjunto de datos. Selecciona tu nueva base de datos como origen de datos y verás las tablas definidas en ella:
 
-4. Haz clic en los botones **CONNECT** y luego **FINISH** para completar el asistente de configuración, y deberías ver tu base de datos en la lista de bases de datos.
+    <Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="Cuadro de diálogo de creación de conjunto de datos en Superset que muestra las tablas disponibles de la base de datos ClickHouse" border />
 
-<div id="4-add-a-dataset">
-  ## 4. Añadir un conjunto de datos
-</div>
+    <br />
 
-1. Para interactuar con sus datos de ClickHouse en Superset, debe definir un ***conjunto de datos***. En el menú superior de Superset, seleccione **Data** y, a continuación, **Datasets** en el menú desplegable.
+    3. Haz clic en el botón **ADD** en la parte inferior del cuadro de diálogo y tu tabla aparecerá en la lista de conjuntos de datos. ¡Ya estás listo para crear un dashboard y analizar tus datos de ClickHouse!
+  </Step>
 
-2. Haga clic en el botón para añadir un conjunto de datos. Seleccione su nueva base de datos como origen de datos y debería ver las tablas definidas en ella:
+  <Step title="Creación de gráficos y un dashboard en Superset" id="5--creating-charts-and-a-dashboard-in-superset">
+    Si ya conoces Superset, esta sección te resultará muy familiar. Si no, bueno... es como muchas otras herramientas de visualización: empezar es rápido, pero los detalles y matices se van aprendiendo con el tiempo a medida que usas la herramienta.
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="Cuadro de diálogo de creación de conjuntos de datos de Superset que muestra las tablas disponibles de la base de datos de ClickHouse" border />
+    1. Se empieza con un dashboard. En el menú superior de Superset, selecciona **Dashboards**. Haz clic en el botón de la esquina superior derecha para añadir un nuevo dashboard. El siguiente dashboard se llama **UK property prices**:
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="Dashboard vacío de Superset llamado UK property prices, listo para añadir gráficos" border />
 
-3. Haga clic en el botón **ADD** en la parte inferior del cuadro de diálogo y su tabla aparecerá en la lista de conjuntos de datos. Ya está listo para crear un dashboard y analizar sus datos de ClickHouse.
+    <br />
 
-<div id="5--creating-charts-and-a-dashboard-in-superset">
-  ## 5.  Creación de gráficos y un dashboard en Superset
-</div>
+    2. Para crear un nuevo gráfico, selecciona **Charts** en el menú superior y haz clic en el botón para añadirlo. Verás muchas opciones. El siguiente Example muestra un gráfico **Pie Chart** usando el conjunto de datos **uk&#95;price&#95;paid** del desplegable **CHOOSE A DATASET**:
 
-Si ya conoces Superset, esta sección te resultará muy familiar. Si no, bueno... es como muchas otras herramientas de visualización: empezar es rápido, pero los detalles y matices se van aprendiendo con el tiempo a medida que usas la herramienta.
+    <Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Interfaz de creación de gráficos de Superset con el tipo de visualización Pie Chart seleccionado" border />
 
-1. Se empieza con un dashboard. En el menú superior de Superset, selecciona **Dashboards**. Haz clic en el botón de la esquina superior derecha para añadir un nuevo dashboard. El siguiente dashboard se llama **UK property prices**:
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="Dashboard vacío de Superset llamado UK property prices, listo para añadir gráficos" border />
+    3. Los gráficos circulares de Superset necesitan una **Dimension** y una **Metric**; el resto de la configuración es opcional. Puedes elegir los campos que quieras para la dimensión y la métrica; en este Example se usa el campo `district` de ClickHouse como dimensión y `AVG(price)` como métrica.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="Configuración de Dimension con el campo district seleccionado para el gráfico circular" border />
 
-2. Para crear un nuevo gráfico, selecciona **Charts** en el menú superior y haz clic en el botón para añadirlo. Verás muchas opciones. El siguiente Example muestra un gráfico **Pie Chart** usando el conjunto de datos **uk&#95;price&#95;paid** del desplegable **CHOOSE A DATASET**:
+    <Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="Configuración de Metric con la aggregate function AVG(price) para el gráfico circular" border />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Interfaz de creación de gráficos de Superset con el tipo de visualización Pie Chart seleccionado" border />
+    <br />
 
-<br />
+    5. Si prefieres los gráficos de dona a los gráficos circulares, puedes configurar esa y otras opciones en **CUSTOMIZE**:
 
-3. Los gráficos circulares de Superset necesitan una **Dimension** y una **Metric**; el resto de la configuración es opcional. Puedes elegir los campos que quieras para la dimensión y la métrica; en este Example se usa el campo `district` de ClickHouse como dimensión y `AVG(price)` como métrica.
+    <Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="Panel CUSTOMIZE con la opción de gráfico de dona y otros ajustes de configuración del gráfico circular" border />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="Configuración de Dimension con el campo district seleccionado para el gráfico circular" border />
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="Configuración de Metric con la aggregate function AVG(price) para el gráfico circular" border />
+    6. Haz clic en el botón **SAVE** para guardar el gráfico; después, selecciona **UK property prices** en el desplegable **ADD TO DASHBOARD**. Luego, **SAVE &amp; GO TO DASHBOARD** guarda el gráfico y lo añade al dashboard:
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="Cuadro de diálogo para guardar el gráfico con desplegable de selección de dashboard y botón Save & Go to Dashboard" border />
 
-5. Si prefieres los gráficos de dona a los gráficos circulares, puedes configurar esa y otras opciones en **CUSTOMIZE**:
+    <br />
 
-<Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="Panel CUSTOMIZE con la opción de gráfico de dona y otros ajustes de configuración del gráfico circular" border />
+    7. Eso es todo. Crear dashboards en Superset a partir de datos de ClickHouse abre todo un mundo de analítica de datos ultrarrápida.
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="Dashboard de Superset completado con varias visualizaciones de datos de precios inmobiliarios del Reino Unido desde ClickHouse" border />
 
-6. Haz clic en el botón **SAVE** para guardar el gráfico; después, selecciona **UK property prices** en el desplegable **ADD TO DASHBOARD**. Luego, **SAVE &amp; GO TO DASHBOARD** guarda el gráfico y lo añade al dashboard:
-
-<Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="Cuadro de diálogo para guardar el gráfico con desplegable de selección de dashboard y botón Save & Go to Dashboard" border />
-
-<br />
-
-7. Eso es todo. Crear dashboards en Superset a partir de datos de ClickHouse abre todo un mundo de analítica de datos ultrarrápida.
-
-<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="Dashboard de Superset completado con varias visualizaciones de datos de precios inmobiliarios del Reino Unido desde ClickHouse" border />
-
-<br />
+    <br />
+  </Step>
+</Steps>

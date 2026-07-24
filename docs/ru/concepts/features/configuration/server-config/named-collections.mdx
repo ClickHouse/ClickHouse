@@ -375,6 +375,8 @@ SELECT dictGet('dict', 'B', 2);
 * `username` для `user`
 * `db` для `database`.
 
+Настройки пула соединений для [движка таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` и другие настройки `postgresql_*`) также можно хранить в коллекции или передавать в виде переопределений `key = value`. Они применяются к движку таблицы `PostgreSQL`, табличной функции `postgresql` и движку базы данных `PostgreSQL`; явная секция `SETTINGS` для таблицы имеет приоритет над значениями из коллекции.
+
 Параметр `addresses_expr` используется в коллекции вместо `host:port`. Этот параметр необязателен, поскольку есть и другие необязательные параметры: `host`, `hostname`, `port`. Приоритет показан в следующем псевдокоде:
 
 ```sql
