@@ -501,15 +501,15 @@ exception:
 The `processed`, `processing`, `failed` and `processed_path` columns issue keeper requests and are fetched only when the corresponding column is selected, so selecting just the `*_nodes` counters avoids the extra keeper traffic.
 
 ```sql
-SELECT zookeeper_path, processed_nodes, processing_nodes, failed_nodes
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
 FROM system.s3_queue_metadata
 
 Row 1:
 ──────
-zookeeper_path:   /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
-processed_nodes:  128
-processing_nodes: 2
-failed_nodes:     0
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
 ```
 
 For the full list of columns see [`system.s3_queue_metadata`](/operations/system-tables/s3_queue_metadata).

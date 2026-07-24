@@ -32,14 +32,14 @@ ColumnsDescription StorageSystemObjectStorageQueueMetadata<type>::getColumnsDesc
     return ColumnsDescription
     {
         {"zookeeper_path", std::make_shared<DataTypeString>(), "Path in zookeeper to metadata"},
-        {"processed_nodes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+        {"processed_nodes_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Number of nodes in the `processed` folder in keeper. Only set for `unordered` mode: in `ordered` mode there are no per-file processed nodes (see `processed_path` instead), so the value is NULL."},
-        {"processing_nodes", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `processing` folder in keeper"},
-        {"failed_nodes", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `failed` folder in keeper"},
-        {"processed", map_string_string,
+        {"processing_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `processing` folder in keeper"},
+        {"failed_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `failed` folder in keeper"},
+        {"processed_nodes", map_string_string,
             "Contents (node name -> node data) of the `processed` folder in keeper. Only filled for `unordered` mode. Fetched only when this column is selected."},
-        {"processing", map_string_string, "Contents (node name -> node data) of the `processing` folder in keeper. Fetched only when this column is selected."},
-        {"failed", map_string_string, "Contents (node name -> node data) of the `failed` folder in keeper. Fetched only when this column is selected."},
+        {"processing_nodes", map_string_string, "Contents (node name -> node data) of the `processing` folder in keeper. Fetched only when this column is selected."},
+        {"failed_nodes", map_string_string, "Contents (node name -> node data) of the `failed` folder in keeper. Fetched only when this column is selected."},
         {"processed_path", map_string_string,
             "Last processed path per processed pointer in keeper (relative pointer path -> last processed file path). Only filled for `ordered` mode, where it covers the single, per-bucket and per-partition pointers. Fetched only when this column is selected."},
     };
@@ -54,7 +54,10 @@ StorageSystemObjectStorageQueueMetadata<type>::StorageSystemObjectStorageQueueMe
 namespace
 {
 
-void insertMap(IColumn & column, const std::vector<std::pair<String, String>> & contents)
+/// A keeper folder rendered as (node name -> node data) pairs.
+using NodeContents = std::vector<std::pair<String, String>>;
+
+void insertMap(IColumn & column, const NodeContents & contents)
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
     auto & offsets = column_map.getNestedColumn().getOffsets();
@@ -70,6 +73,178 @@ void insertMap(IColumn & column, const std::vector<std::pair<String, String>> & 
     offsets.push_back(offsets.back() + contents.size());
 }
 
+/// Read the data of `paths` in batches, to avoid building a single huge
+/// multiread request that could exceed keeper limits. `ZNONODE` is benign (a
+/// node may have been removed between listing and reading it) and leaves the
+/// entry unset; any other error is thrown so the metadata never looks
+/// incomplete.
+std::vector<std::optional<std::string>> readNodeDataBatched(
+    const ObjectStorageQueueMetadata & metadata,
+    ZooKeeperRetriesControl & zk_retries,
+    size_t batch_size,
+    const std::vector<std::string> & paths)
+{
+    std::vector<std::optional<std::string>> data(paths.size());
+    for (size_t offset = 0; offset < paths.size(); offset += batch_size)
+    {
+        const std::vector<std::string> batch(
+            paths.begin() + offset,
+            paths.begin() + std::min(offset + batch_size, paths.size()));
+
+        zkutil::ZooKeeper::MultiTryGetResponse responses;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&] { responses = metadata.getZooKeeper()->tryGet(batch); });
+
+        if (responses.size() != batch.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Got {} responses for {} requested paths",
+                responses.size(), batch.size());
+
+        for (size_t i = 0; i < batch.size(); ++i)
+        {
+            if (responses[i].error == Coordination::Error::ZOK)
+                data[offset + i] = responses[i].data;
+            else if (responses[i].error != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(responses[i].error, batch[i]);
+        }
+    }
+    return data;
+}
+
+/// Read a `processed`/`processing`/`failed` folder of per-file nodes. When only
+/// the count is needed, reading the stat is enough; the children are listed and
+/// fetched only when the contents are requested.
+void readFolder(
+    const ObjectStorageQueueMetadata & metadata,
+    ZooKeeperRetriesControl & zk_retries,
+    size_t batch_size,
+    const std::filesystem::path & base_path,
+    const std::string & folder,
+    bool need_count,
+    bool need_contents,
+    UInt64 & count_out,
+    NodeContents & contents_out)
+{
+    if (!need_count && !need_contents)
+        return;
+
+    const std::string folder_path = base_path / folder;
+    if (!need_contents)
+    {
+        Coordination::Stat stat;
+        bool exists = false;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&] { exists = metadata.getZooKeeper()->exists(folder_path, &stat); });
+        count_out = exists ? stat.numChildren : 0;
+        return;
+    }
+
+    Strings nodes;
+    Coordination::Error code = Coordination::Error::ZOK;
+    zk_retries.resetFailures();
+    zk_retries.retryLoop([&] { code = metadata.getZooKeeper()->tryGetChildren(folder_path, nodes); });
+    if (code == Coordination::Error::ZNONODE)
+        return;
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, folder_path);
+
+    count_out = nodes.size();
+
+    std::vector<std::string> node_paths;
+    node_paths.reserve(nodes.size());
+    for (const auto & node : nodes)
+        node_paths.push_back(base_path / folder / node);
+
+    const auto data = readNodeDataBatched(metadata, zk_retries, batch_size, node_paths);
+
+    contents_out.reserve(nodes.size());
+    for (size_t i = 0; i < nodes.size(); ++i)
+    {
+        if (data[i].has_value())
+            contents_out.emplace_back(nodes[i], *data[i]);
+    }
+}
+
+/// In ordered mode the `processed` folder is not a set of per-file nodes but a
+/// compact "last processed" pointer. It can be a single node, one per bucket
+/// (buckets > 1), or one per partition (HIVE/REGEX) - and any combination of
+/// the two. Collect them all as (relative pointer path -> last processed file
+/// path).
+NodeContents readProcessedPointers(
+    const ObjectStorageQueueMetadata & metadata,
+    ZooKeeperRetriesControl & zk_retries,
+    size_t batch_size,
+    const std::filesystem::path & base_path)
+{
+    std::vector<std::string> roots;
+    if (metadata.useBucketsForProcessing())
+    {
+        for (size_t bucket = 0; bucket < metadata.getBucketsNum(); ++bucket)
+            roots.push_back(base_path / "buckets" / toString(bucket) / "processed");
+    }
+    else
+    {
+        roots.push_back(base_path / "processed");
+    }
+
+    std::vector<std::string> leaf_paths;
+    /// Whether `leaf_paths[i]` stores `NodeMetadata` JSON (root and per-bucket
+    /// pointers) or a raw file path (per-partition children).
+    std::vector<UInt8> leaf_is_node_metadata;
+    const bool partitioned = metadata.getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
+    if (!partitioned)
+    {
+        leaf_paths = std::move(roots);
+        leaf_is_node_metadata.assign(leaf_paths.size(), 1);
+    }
+    else
+    {
+        /// Even with partitioning, each root node itself holds a `NodeMetadata`
+        /// pointer and may carry it before any partition child exists (e.g. for
+        /// `last_processed_path`), so read both the root and its per-partition
+        /// children.
+        for (const auto & root : roots)
+        {
+            Strings partitions;
+            Coordination::Error code = Coordination::Error::ZOK;
+            zk_retries.resetFailures();
+            zk_retries.retryLoop([&] { code = metadata.getZooKeeper()->tryGetChildren(root, partitions); });
+            if (code == Coordination::Error::ZNONODE)
+                continue;
+            if (code != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(code, root);
+
+            leaf_paths.push_back(root);
+            leaf_is_node_metadata.push_back(1);
+            for (const auto & partition : partitions)
+            {
+                leaf_paths.push_back(std::filesystem::path(root) / partition);
+                leaf_is_node_metadata.push_back(0);
+            }
+        }
+    }
+
+    if (leaf_paths.empty())
+        return {};
+
+    const auto data = readNodeDataBatched(metadata, zk_retries, batch_size, leaf_paths);
+
+    NodeContents result;
+    result.reserve(leaf_paths.size());
+    for (size_t i = 0; i < leaf_paths.size(); ++i)
+    {
+        if (!data[i].has_value() || data[i]->empty())
+            continue;
+        std::string file_path = leaf_is_node_metadata[i]
+            ? ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path
+            : *data[i];
+        auto key = std::filesystem::path(leaf_paths[i]).lexically_relative(base_path).string();
+        result.emplace_back(std::move(key), std::move(file_path));
+    }
+    return result;
+}
+
 }
 
 template <ObjectStorageType type>
@@ -80,12 +255,12 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
     enum Column : size_t
     {
         ZOOKEEPER_PATH = 0,
+        PROCESSED_NODES_COUNT,
+        PROCESSING_NODES_COUNT,
+        FAILED_NODES_COUNT,
         PROCESSED_NODES,
         PROCESSING_NODES,
         FAILED_NODES,
-        PROCESSED,
-        PROCESSING,
-        FAILED,
         PROCESSED_PATH,
     };
 
@@ -109,177 +284,23 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
 
         auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
-        /// Read the data of `paths` in batches, to avoid building a single huge
-        /// multiread request that could exceed keeper limits.
-        auto batched_get = [&](const std::vector<std::string> & paths)
-        {
-            std::vector<std::optional<std::string>> data(paths.size());
-            for (size_t offset = 0; offset < paths.size(); offset += batch_size)
-            {
-                const std::vector<std::string> batch(
-                    paths.begin() + offset,
-                    paths.begin() + std::min(offset + batch_size, paths.size()));
-
-                zkutil::ZooKeeper::MultiTryGetResponse responses;
-                zk_retries.resetFailures();
-                zk_retries.retryLoop([&] { responses = metadata->getZooKeeper()->tryGet(batch); });
-
-                if (responses.size() != batch.size())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Got {} responses for {} requested paths",
-                        responses.size(), batch.size());
-
-                for (size_t i = 0; i < batch.size(); ++i)
-                {
-                    /// `ZNONODE` is benign: a node may have been removed between
-                    /// listing and reading it, so leave the entry unset. Any other
-                    /// error means the Keeper read actually failed and must not be
-                    /// silently dropped, or the metadata would look incomplete.
-                    if (responses[i].error == Coordination::Error::ZOK)
-                        data[offset + i] = responses[i].data;
-                    else if (responses[i].error != Coordination::Error::ZNONODE)
-                        throw zkutil::KeeperException::fromPath(responses[i].error, batch[i]);
-                }
-            }
-            return data;
-        };
-
-        /// Read a `processed`/`processing`/`failed` folder of per-file nodes.
-        /// When only the count is needed, reading the stat is enough; the
-        /// children are listed and fetched only when the contents are requested.
-        auto read_folder = [&](const std::string & folder, bool need_count, bool need_contents,
-                               UInt64 & count_out, std::vector<std::pair<String, String>> & contents_out)
-        {
-            if (!need_count && !need_contents)
-                return;
-
-            const std::string folder_path = base_path / folder;
-            if (!need_contents)
-            {
-                Coordination::Stat stat;
-                bool exists = false;
-                zk_retries.resetFailures();
-                zk_retries.retryLoop([&] { exists = metadata->getZooKeeper()->exists(folder_path, &stat); });
-                count_out = exists ? stat.numChildren : 0;
-                return;
-            }
-
-            Strings nodes;
-            Coordination::Error code = Coordination::Error::ZOK;
-            zk_retries.resetFailures();
-            zk_retries.retryLoop([&] { code = metadata->getZooKeeper()->tryGetChildren(folder_path, nodes); });
-            if (code == Coordination::Error::ZNONODE)
-                return;
-            if (code != Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromPath(code, folder_path);
-
-            count_out = nodes.size();
-
-            std::vector<std::string> node_paths;
-            node_paths.reserve(nodes.size());
-            for (const auto & node : nodes)
-                node_paths.push_back(base_path / folder / node);
-
-            const auto data = batched_get(node_paths);
-
-            contents_out.reserve(nodes.size());
-            for (size_t i = 0; i < nodes.size(); ++i)
-            {
-                if (data[i].has_value())
-                    contents_out.emplace_back(nodes[i], *data[i]);
-            }
-        };
-
-        /// In ordered mode the `processed` folder is not a set of per-file nodes
-        /// but a compact "last processed" pointer. It can be a single node, one
-        /// per bucket (buckets > 1), or one per partition (HIVE/REGEX) - and any
-        /// combination of the two. Collect them all as (relative path -> last
-        /// processed file path).
-        auto read_processed_pointers = [&]() -> std::vector<std::pair<String, String>>
-        {
-            std::vector<std::string> roots;
-            if (metadata->useBucketsForProcessing())
-            {
-                for (size_t bucket = 0; bucket < metadata->getBucketsNum(); ++bucket)
-                    roots.push_back(base_path / "buckets" / toString(bucket) / "processed");
-            }
-            else
-            {
-                roots.push_back(base_path / "processed");
-            }
-
-            std::vector<std::string> leaf_paths;
-            /// Whether `leaf_paths[i]` stores `NodeMetadata` JSON (root and
-            /// per-bucket pointers) or a raw file path (per-partition children).
-            std::vector<UInt8> leaf_is_node_metadata;
-            const bool partitioned = metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
-            if (!partitioned)
-            {
-                leaf_paths = std::move(roots);
-                leaf_is_node_metadata.assign(leaf_paths.size(), 1);
-            }
-            else
-            {
-                /// Even with partitioning, each root node itself holds a
-                /// `NodeMetadata` pointer and may carry it before any partition
-                /// child exists (e.g. for `last_processed_path`), so read both
-                /// the root and its per-partition children.
-                for (const auto & root : roots)
-                {
-                    Strings partitions;
-                    Coordination::Error code = Coordination::Error::ZOK;
-                    zk_retries.resetFailures();
-                    zk_retries.retryLoop([&] { code = metadata->getZooKeeper()->tryGetChildren(root, partitions); });
-                    if (code == Coordination::Error::ZNONODE)
-                        continue;
-                    if (code != Coordination::Error::ZOK)
-                        throw zkutil::KeeperException::fromPath(code, root);
-
-                    leaf_paths.push_back(root);
-                    leaf_is_node_metadata.push_back(1);
-                    for (const auto & partition : partitions)
-                    {
-                        leaf_paths.push_back(std::filesystem::path(root) / partition);
-                        leaf_is_node_metadata.push_back(0);
-                    }
-                }
-            }
-
-            if (leaf_paths.empty())
-                return {};
-
-            const auto data = batched_get(leaf_paths);
-
-            std::vector<std::pair<String, String>> result;
-            result.reserve(leaf_paths.size());
-            for (size_t i = 0; i < leaf_paths.size(); ++i)
-            {
-                if (!data[i].has_value() || data[i]->empty())
-                    continue;
-                std::string file_path = leaf_is_node_metadata[i]
-                    ? ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path
-                    : *data[i];
-                auto key = std::filesystem::path(leaf_paths[i]).lexically_relative(base_path).string();
-                result.emplace_back(std::move(key), std::move(file_path));
-            }
-            return result;
-        };
-
         UInt64 processed_count = 0;
         UInt64 processing_count = 0;
         UInt64 failed_count = 0;
-        std::vector<std::pair<String, String>> processed_contents;
-        std::vector<std::pair<String, String>> processing_contents;
-        std::vector<std::pair<String, String>> failed_contents;
-        std::vector<std::pair<String, String>> processed_path;
+        NodeContents processed_contents;
+        NodeContents processing_contents;
+        NodeContents failed_contents;
+        NodeContents processed_path;
 
-        read_folder("processing", columns_mask[PROCESSING_NODES], columns_mask[PROCESSING], processing_count, processing_contents);
-        read_folder("failed", columns_mask[FAILED_NODES], columns_mask[FAILED], failed_count, failed_contents);
+        readFolder(*metadata, zk_retries, batch_size, base_path, "processing",
+                   columns_mask[PROCESSING_NODES_COUNT], columns_mask[PROCESSING_NODES], processing_count, processing_contents);
+        readFolder(*metadata, zk_retries, batch_size, base_path, "failed",
+                   columns_mask[FAILED_NODES_COUNT], columns_mask[FAILED_NODES], failed_count, failed_contents);
         if (unordered)
-            read_folder("processed", columns_mask[PROCESSED_NODES], columns_mask[PROCESSED], processed_count, processed_contents);
+            readFolder(*metadata, zk_retries, batch_size, base_path, "processed",
+                       columns_mask[PROCESSED_NODES_COUNT], columns_mask[PROCESSED_NODES], processed_count, processed_contents);
         else if (columns_mask[PROCESSED_PATH])
-            processed_path = read_processed_pointers();
+            processed_path = readProcessedPointers(*metadata, zk_retries, batch_size, base_path);
 
         size_t src_index = 0;
         size_t res_index = 0;
@@ -287,7 +308,7 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(zookeeper_path);
 
-        /// processed_nodes is only meaningful in unordered mode.
+        /// processed_nodes_count is only meaningful in unordered mode.
         if (columns_mask[src_index++])
         {
             if (unordered)
