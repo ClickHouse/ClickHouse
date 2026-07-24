@@ -216,7 +216,7 @@ def main():
         assert 'aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}' in explorer
         assert '<span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>' in explorer
         assert '<path d="m6 9 6 6 6-6" />' in explorer
-        assert '<path d="m15 18-6-6 6-6" />' in explorer
+        assert '<path d="m9 18 6-6-6-6" />' in explorer
         assert 'className="flex min-w-full items-center justify-between gap-4"' in explorer
         assert 'className="relative w-full"' in explorer
         assert "border-gray-500 bg-gray-50" in explorer

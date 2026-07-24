@@ -1289,7 +1289,7 @@ def _settings_explorer_component(pages, family=None):
             >
               {allGroupsExpanded
                 ? <path d="m6 9 6 6 6-6" />
-                : <path d="m15 18-6-6 6-6" />}
+                : <path d="m9 18 6-6-6-6" />}
             </svg>
             <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
