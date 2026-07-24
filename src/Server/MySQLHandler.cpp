@@ -188,7 +188,13 @@ static String showTableStatusReplacementQuery(const String & query)
         " create_options AS Create_options,"
         " table_comment AS Comment"
         " FROM INFORMATION_SCHEMA.TABLES"
-        " WHERE table_name LIKE "
+        /// MySQL scopes SHOW TABLE STATUS to the session's default database, so the translation
+        /// must constrain table_schema too, or a lookup would also return same-named tables from
+        /// other databases. The replacement is executed with the session's query context, so
+        /// currentDatabase() resolves to that session database (it also tracks later USE
+        /// statements). MySQL's "No database selected" state cannot arise here: a ClickHouse
+        /// session always has a current database (the server default when the client sent none).
+        " WHERE table_schema = currentDatabase() AND table_name LIKE "
         + quoteString(pattern));
 }
 

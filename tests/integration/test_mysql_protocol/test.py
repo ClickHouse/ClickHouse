@@ -1052,6 +1052,54 @@ def test_show_table_status_matches_information_schema(started_cluster):
         client.close()
 
 
+def test_show_table_status_scoped_to_current_database(started_cluster):
+    # MySQL scopes SHOW TABLE STATUS to the session's default database. With the same
+    # table name present in two databases, the statement must return only the row of the
+    # session's current database, and must follow USE to the other one.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("CREATE DATABASE db_status_scope_1")
+    try:
+        cursor.execute("CREATE DATABASE db_status_scope_2")
+        cursor.execute(
+            "CREATE TABLE db_status_scope_1.status_scope (a UInt8) "
+            "ENGINE = MergeTree ORDER BY a"
+        )
+        cursor.execute(
+            "CREATE TABLE db_status_scope_2.status_scope (a UInt8) ENGINE = Log"
+        )
+
+        client.select_db("db_status_scope_1")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        rows = cursor.fetchall()
+        assert len(rows) == 1, rows
+        assert rows[0]["Name"] == "status_scope"
+        assert rows[0]["Engine"] == "MergeTree"
+
+        # USE switches the session database; the same statement must now see the other table.
+        client.select_db("db_status_scope_2")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        rows = cursor.fetchall()
+        assert len(rows) == 1, rows
+        assert rows[0]["Engine"] == "Log"
+
+        # A database without a match must return an empty set even though the
+        # name matches tables elsewhere.
+        client.select_db("default")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        assert list(cursor.fetchall()) == []
+    finally:
+        cursor.execute("DROP DATABASE IF EXISTS db_status_scope_1")
+        cursor.execute("DROP DATABASE IF EXISTS db_status_scope_2")
+        client.close()
+
+
 def test_golang_client(started_cluster, golang_container):
     with open(os.path.join(SCRIPT_DIR, "golang.reference"), "rb") as fp:
         reference = fp.read()
