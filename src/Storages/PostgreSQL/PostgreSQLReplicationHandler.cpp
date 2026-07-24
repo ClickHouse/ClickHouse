@@ -2562,6 +2562,16 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "the shared publication {} ({}); differing tables: {}. The publication is authoritative in "
                             "coordinated mode, so its table set is used instead of the setting.",
                             listed_tables, doubleQuoteString(publication_name), publication_tables, diff_tables);
+
+                        /// The adopted set must also drive a later publication recreation. When the publication
+                        /// goes missing, `createPublicationIfNeeded` rebuilds `CREATE PUBLICATION` from
+                        /// `tables_list` whenever it is not empty; keeping the stale local setting there would
+                        /// make this replica recreate the shared publication with the extra (or without the
+                        /// missing) tables of its own list, silently changing the authoritative table set under
+                        /// the other replicas. Rewrite it to the adopted set - the quoting pass below then
+                        /// treats it exactly like a matching user-provided list. (Coordinated mode rejects
+                        /// column-filtered lists at construction, so no `table(col1, col2)` entry can be lost.)
+                        tables_list = fmt::format("{}", fmt::join(result_tables, ", "));
                     }
                     else
                     {
