@@ -2101,14 +2101,22 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
 
     /// Join an in-flight machine first - EXCEPT our own machine still LEADING this window:
     /// its worker commits cells progressively, so the window-bounded WAIT below lets it
-    /// land the window instead of blocking on the whole remaining lead. A FOREIGN machine (or our own past the cursor) holds the single slot the cursor
-    /// outran - free the slot.
+    /// land the window instead of blocking on the whole remaining lead. A FOREIGN machine
+    /// holds the single slot the cursor outran - free the slot by aborting it at the next
+    /// interrupt point. Our OWN machine on this job is JOINED whole instead: aborting it
+    /// mid-window chops the producer at every consumer swing of an interleaved pattern
+    /// (a compact merge's column streams), while a clean join commits/banks its window -
+    /// the swung-to bytes are read from the display and the carried connection continues
+    /// the job in offset order.
     const bool own_leading = machineFor(ri)
         && machine->physical_window.offset <= window.offset
         && window.offset < machine->physical_window.end();
     if (machine && !own_leading)
     {
-        interruptAndCollectMachine();
+        if (machineFor(ri))
+            collectInFlightInto();
+        else
+            interruptAndCollectMachine();
         return true;
     }
 
