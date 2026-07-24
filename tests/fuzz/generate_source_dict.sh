@@ -114,22 +114,29 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # as well. Arrays of names are covered too:
     #     constexpr std::array<const char *, 2> names = {"generate_series", "generateSeries"};
     # Every identifier-shaped string literal in the initializer is taken,
-    # except the compile-time name fragments collected above. Two declaration
+    # except the compile-time name fragments collected above. Three declaration
     # shapes carry no registered names and are dropped whole: map-typed lookup
     # tables (their literals are labels keyed by something else, e.g.
     # capnp_simple_type_names in src/Formats/CapnProtoSchema.cpp maps Cap'n
-    # Proto type enums to "Data" / "Interface" / "AnyPointer"), and
-    # initializers composing the name with + (their literals are fragments,
-    # e.g. std::string("L") + FuncLabel::name + "Normalize" in
+    # Proto type enums to "Data" / "Interface" / "AnyPointer"), initializers
+    # composing the name with + (their literals are fragments, e.g.
+    # std::string("L") + FuncLabel::name + "Normalize" in
     # src/Functions/vectorFunctions.cpp; the composed names live in the
-    # curated old.dict).
+    # curated old.dict), and std::string_view constants - the factory
+    # registration paths take String, which std::string_view does not
+    # implicitly convert to, so a string_view name constant is never an SQL
+    # registration; the ones in the tree name foreign entities (the
+    # AssemblyScript runtime exports "__new" / "__pin" / "__unpin" in
+    # src/Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.cpp) or hold
+    # display literals (the month_names / day_names tables of dateName in
+    # src/Functions/dateName.cpp).
     grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]+[Nn]ames?(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/Formats" \
         "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h" \
-        | { grep -zvE '\+|map<' || true; } \
+        | { grep -zvE '\+|map<|string_view' || true; } \
         | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
         | identifiers_only | grep -Fxvf "$LABEL_FRAGMENTS_FILE"
 
@@ -227,7 +234,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
             grep -rhozE --exclude-dir=Combinators \
                 '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]+[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions" \
-                | { grep -zvE '\+|map<' || true; }
+                | { grep -zvE '\+|map<|string_view' || true; }
             grep -rhozE --exclude-dir=Combinators \
                 'getName\(\)[[:space:]]*\{[[:space:]]*return[[:space:]]+"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
