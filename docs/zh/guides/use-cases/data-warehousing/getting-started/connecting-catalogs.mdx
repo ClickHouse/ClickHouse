@@ -32,11 +32,10 @@ import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) 为 Databricks 湖仓中的数据提供集中式治理。
 
-Databricks 的湖仓支持多种数据格式。借助 ClickHouse，你可以以 Delta 和 Iceberg 格式查询 Unity Catalog 中的表。
+Databricks 的湖仓支持多种数据格式。借助 ClickHouse，你可以查询使用外部存储位置的 Unity Catalog Delta 表和 Iceberg 表。
 
 <Note>
-  与 Unity Catalog 的集成支持托管表和外部表。
-  此集成当前仅支持 AWS。
+  此集成当前仅支持 AWS。不支持位于 Databricks 托管存储上的表，因为 Unity Catalog 不会为这些位置提供凭证下发。详情请参阅 [Unity Catalog reference](/zh/guides/use-cases/data-warehousing/unity-catalog)。
 </Note>
 
 <div id="configuring-unity-in-databricks">

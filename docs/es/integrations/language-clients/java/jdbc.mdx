@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   lo que será equivalente a la siguiente URL JDBC:
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -303,7 +303,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   | `Array(<Tipo primitivo>)`                  | `<Tipo primitivo>`                                 | `<Tipo primitivo de JDBC>`             |
   | `Array(<Parameterized Type>(<N>))`         | `<Tipo parametrizado>(<N>)`                        | `<tipo JDBC del tipo base>`            |
   | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                                 | `<Tipo JDBC del Type interno>`         |
-  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                           | `<tipo JDBC del Type interno>`         |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                           | `<Tipo JDBC del Type interno>`         |
   | `Array(Array(...(<Type>)))`                | `<Type>` (elemento más interno)                    | `<Tipo JDBC del elemento más interno>` |
   | `Array(Tuple(...))`                        | `Tuple(...)` (definición completa)                 | `OTHER`                                |
   | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (definición completa) | `VARCHAR`                              |
@@ -398,7 +398,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -753,7 +753,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * `net.inet.tcp.always_keepalive`: 1
   * `net.ipv4.tcp_keepalive_intvl`: 75
   * `net.ipv4.tcp_keepalive_probes`: 9
-  * `net.ipv4.tcp_keepalive_time`: 60 (Puede considerar reducir este valor desde el valor predeterminado de 300 segundos)
+  * `net.ipv4.tcp_keepalive_time`: 60 (Puede considerar reducir este valor frente al valor predeterminado de 300 segundos)
 
   2. Después de modificar los parámetros del kernel, aplique los cambios ejecutando el siguiente comando:
 
@@ -771,7 +771,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   ### Cambios principales
 
-  | Función                                      | V1 (anterior)          | V2 (nueva)                                               |
+  | Funcionalidad                                | V1 (Anterior)          | V2 (Nueva)                                               |
   | -------------------------------------------- | ---------------------- | -------------------------------------------------------- |
   | Compatibilidad con transacciones             | Compatibilidad parcial | No compatible                                            |
   | Cambio de nombre de columnas en la respuesta | Compatibilidad parcial | No compatible                                            |
@@ -779,7 +779,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   | Parámetros con nombre                        | Compatible             | No compatible (no forma parte de la especificación JDBC) |
   | Transmisión de datos con `PreparedStatement` | Compatible             | No compatible                                            |
 
-  * JDBC V2 se ha implementado para que sea más ligero y se han eliminado algunas funcionalidades.
+  * JDBC V2 se implementó para ser más ligero y se eliminaron algunas funcionalidades.
     * El streaming de datos no es compatible con JDBC V2 porque no forma parte de la especificación de JDBC ni de Java.
   * JDBC V2 requiere una configuración explícita. No hay valores predeterminados para failover.
     * El protocolo debe especificarse en la URL. No se detecta implícitamente a partir de los números de puerto.
@@ -844,10 +844,10 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Tipos de cadena**
 
-  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)  | Tipo JDBC (V1) | Clase Java (V1)  |
-  | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ---------------- |
-  | String             | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
-  | FixedString        | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)  | Tipo JDBC (V1) | Clase de Java (V1) |
+  | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ------------------ |
+  | String             | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String   |
+  | FixedString        | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String   |
 
   * `FixedString` se lee tal cual en ambas versiones. Por ejemplo, `FixedString(10)` para `'John'` se leerá como `'John\0\0\0\0\0\0\0\0\0'`.
   * Cuando se utiliza `PreparedStatement#setBytes`, se convierte en `unhex('<hex_string>')` y luego se interpreta como `String`.
@@ -869,15 +869,15 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Tipos enum**
 
-  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)  | Tipo JDBC (V1) | Clase de Java (V1) |
-  | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ------------------ |
-  | Enum               | ✅                 | VARCHAR        | java.lang.String | OTHER          | java.lang.String   |
-  | Enum8              | ✅                 | VARCHAR        | java.lang.String | OTHER          | java.lang.String   |
-  | Enum16             | ✅                 | VARCHAR        | java.lang.String | OTHER          | java.lang.String   |
+  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)  | Tipo JDBC (V1) | Clase Java (V1)  |
+  | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ---------------- |
+  | Enum               | ✅                 | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | Enum8              | ✅                 | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | Enum16             | ✅                 | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
 
   **Tipos anidados**
 
-  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2)  | Clase Java (V2)  | Tipo JDBC (V1) | Clase de Java (V1)                              |
+  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2)  | Clase Java (V2)  | Tipo JDBC (V1) | Clase Java (V1)                                 |
   | ------------------ | ----------------- | --------------- | ---------------- | -------------- | ----------------------------------------------- |
   | Array              | ❌                 | ARRAY           | java.sql.Array   | ARRAY          | Object[] o un array de tipos primitivos |
   | Tuple              | ❌                 | OTHER           | Object[] | STRUCT         | java.sql.Struct                                 |
@@ -896,7 +896,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Geo Types**
 
-  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)                                | Tipo JDBC (V1) | Clase Java (V1)                                |
+  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)                                | Tipo JDBC (V1) | Clase de Java (V1)                             |
   | ------------------ | ----------------- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
   | Point              | ✅                 | OTHER          | double[]                               | OTHER          | double[]                               |
   | Ring               | ✅                 | OTHER          | double[][]                     | OTHER          | double[][]                     |
@@ -919,7 +919,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   | IPv4                    | ✅                 | OTHER           | java.net.Inet4Address    | VARCHAR         | java.net.Inet4Address    |
   | IPv6                    | ✅                 | OTHER           | java.net.Inet6Address    | VARCHAR         | java.net.Inet6Address    |
   | Dynamic                 | ❌                 | OTHER           | java.Object              | no admitido     | no admitido              |
-  | Variant                 | ❌                 | OTHER           | java.Object              | sin soporte     | sin soporte              |
+  | Variant                 | ❌                 | OTHER           | java.Object              | compatible      | compatible               |
 
   * V1 usa `VARCHAR` para `UUID`, pero siempre devuelve un objeto `java.util.UUID`. V2 corrige esto al mapear `UUID` a `OTHER` y devuelve un objeto `java.util.UUID`.
   * V1 usa `VARCHAR` para `IPv4` e `IPv6`, pero siempre devuelve objetos `java.net.Inet4Address` y `java.net.Inet6Address`. V2 corrige esto asignando `IPv4` e `IPv6` a `OTHER` y devuelve objetos `java.net.Inet4Address` y `java.net.Inet6Address`.
