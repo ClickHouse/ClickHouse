@@ -1,8 +1,6 @@
 import json
 import re
 
-import pytest
-
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,
