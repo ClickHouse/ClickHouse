@@ -251,12 +251,57 @@ function isFailureStatus(status) {
 }
 
 /**
+ * Apply ext labels / CIDB links from a result node onto a test object.
+ * Shared by the normal leaf path and the synthesized job-level entry.
+ */
+function applyExtToTest(test, ext) {
+  if (!ext) return;
+  const byName = new Map();
+  const upsert = (name, link) => {
+    if (!name) return;
+    const prev = byName.get(name) || {};
+    byName.set(name, { name, link: link || prev.link });
+  };
+  if (Array.isArray(ext.labels)) {
+    for (const item of ext.labels) {
+      if (typeof item === 'string') upsert(item);
+      else if (item && typeof item === 'object' && item.name) upsert(item.name, item.link);
+    }
+  }
+  if (Array.isArray(ext.hlabels)) {
+    for (const item of ext.hlabels) {
+      if (Array.isArray(item) && item[0]) upsert(item[0], item[1]);
+    }
+  }
+  const cidbLinks = [], labels = [];
+  for (const { name, link } of byName.values()) {
+    if (name === 'cidb') { if (link) cidbLinks.push(link); }
+    else labels.push(link ? `${name} (${link})` : name);
+  }
+  if (cidbLinks.length > 0) test.cidbLinks = cidbLinks;
+  if (labels.length > 0) test.labels = labels;
+}
+
+/**
  * Parse test results from the JSON data
  */
 function parseTestResults(jsonData) {
   const tests = [];
 
-  if (!jsonData || !jsonData.results) {
+  if (!jsonData || !jsonData.results || jsonData.results.length === 0) {
+    // Job-level failure with no child results (e.g. status: "ERROR" for the whole job).
+    // Synthesize a single leaf so the top-level info and links are still surfaced.
+    if (jsonData && isFailureStatus(jsonData.status)) {
+      const test = {
+        name: jsonData.name || 'Job',
+        status: jsonData.status,
+        duration: jsonData.duration || 0,
+      };
+      if (jsonData.info) test.info = jsonData.info;
+      if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+      applyExtToTest(test, jsonData.ext);
+      tests.push(test);
+    }
     return tests;
   }
 
@@ -288,51 +333,8 @@ function parseTestResults(jsonData) {
           test.links = result.links;
         }
 
-        // Extract CIDB links and other labels, mirroring ci/praktika/json.html `normalizeLabels`:
-        // `ext.labels` entries are either bare strings (legacy) or {name, link} objects, and
-        // `ext.hlabels` entries are [name, link] pairs; all are merged by name (a link wins over a
-        // bare occurrence). Non-cidb labels (e.g. `issue`, `retry_ok`) mirror how CI attributes a
-        // failure: an `issue` label means CI matched a tracking issue; `retry_ok` etc. are the flags
-        // an infrastructure issue matches on via `Failure flags:`.
-        if (result.ext) {
-          const byName = new Map();
-          const upsert = (name, link) => {
-            if (!name) return;
-            const prev = byName.get(name) || {};
-            byName.set(name, { name, link: link || prev.link });
-          };
-          if (Array.isArray(result.ext.labels)) {
-            for (const item of result.ext.labels) {
-              if (typeof item === 'string') {
-                upsert(item);
-              } else if (item && typeof item === 'object' && item.name) {
-                upsert(item.name, item.link);
-              }
-            }
-          }
-          if (Array.isArray(result.ext.hlabels)) {
-            for (const item of result.ext.hlabels) {
-              if (Array.isArray(item) && item[0]) {
-                upsert(item[0], item[1]);
-              }
-            }
-          }
-          const cidbLinks = [];
-          const labels = [];
-          for (const { name, link } of byName.values()) {
-            if (name === 'cidb') {
-              if (link) cidbLinks.push(link);
-            } else {
-              labels.push(link ? `${name} (${link})` : name);
-            }
-          }
-          if (cidbLinks.length > 0) {
-            test.cidbLinks = cidbLinks;
-          }
-          if (labels.length > 0) {
-            test.labels = labels;
-          }
-        }
+        // Extract CIDB links and other labels (see applyExtToTest for format details).
+        applyExtToTest(test, result.ext);
 
         tests.push(test);
       }
@@ -481,6 +483,16 @@ function childReportUrlsForFailedJobs(topLevelUrl, jsonData) {
  * Shared by the GitHub-PR path and the direct top-level-index path.
  */
 async function renderMultiReport(ciUrls, options) {
+  // --binary only works for a single concrete build report (name_1=Build (...)).
+  // PR and top-level index URLs fan out here and never reach the binary-download block.
+  if (options.binary) {
+    process.stderr.write(
+      'Error: --binary requires a concrete build report URL, e.g.:\n' +
+      '  ...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)\n' +
+      'PR URLs and top-level index URLs do not carry binary artifacts.\n'
+    );
+    process.exit(1);
+  }
   console.log(`Fetching all reports...\n`);
   const allResults = [];
 

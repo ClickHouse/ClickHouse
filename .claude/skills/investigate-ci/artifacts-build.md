@@ -8,6 +8,7 @@
 ## What the tool already shows
 
 `fetch_ci_report.js --failed` extracts a head+tail window from `result.info`:
+
 - **Head**: the beginning of the log (or, for large logs, the point after the CI harness
   truncation marker `~~~~~ truncated N lines at the beginning ~~~~~`)
 - **Tail**: the end of the log, where `ninja: build stopped: subcommand failed` and the
@@ -29,8 +30,12 @@ curl -sL '<url>' | grep -E '^[^ ].*(error|FAILED):' | head -50
 # Compressed log
 curl -sL '<url>' | zstd -dcq | grep -E '^[^ ].*(error|FAILED):' | head -50
 
-# For clang-tidy: filter out suppressed-warning noise
-curl -sL '<url>' [| zstd -dcq] | grep -v 'Suppressed\|NOLINT\|warnings generated' \
+# For clang-tidy (plain): filter out suppressed-warning noise
+curl -sL '<url>' | grep -v 'Suppressed\|NOLINT\|warnings generated' \
+  | grep -i 'error:' | head -50
+
+# For clang-tidy (compressed):
+curl -sL '<url>' | zstd -dcq | grep -v 'Suppressed\|NOLINT\|warnings generated' \
   | grep -i 'error:' | head -50
 ```
 
