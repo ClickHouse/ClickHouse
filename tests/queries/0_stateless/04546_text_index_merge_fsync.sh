@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage
+# Tags: no-object-storage, no-random-merge-tree-settings, no-flaky-check
 # no-object-storage: object storage does not fsync files.
+# no-random-merge-tree-settings: the assertion reads the merge's per-query FileSync count; some
+#   randomized MergeTree settings perturb merge timing enough to lose that attribution (see below).
+# no-flaky-check: the FileSync-count measurement is not reproducible under the flaky check's thread
+#   fuzzer and is not suitable for rerun-based flakiness detection (see below).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,10 +13,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Regression test for the text-index merge fsync gap (issue #111269).
 # A `text` index has three streams (.idx, .dct, .pst), each with a data and a marks file, so a
 # fully synced merge fsyncs exactly six files more than the same merge without the index. The
-# fsync count is attributed to the OPTIMIZE query in system.query_log; that per-query attribution
-# is occasionally lost when the merge's IO-thread-pool fsyncs race the counter transfer (heavier
-# under the flaky check's thread fuzzer), so the delta is retried until observed like
-# 02361_fsync_profile_events.sh. A genuinely unsynced merge yields 0 on every attempt and fails.
+# count is read as the OPTIMIZE FileSync delta between the text-indexed and plain tables in
+# system.query_log. A genuinely unsynced merge yields 0 and fails.
 
 make_tables() {
     ${CLICKHOUSE_CLIENT} -m -q "
