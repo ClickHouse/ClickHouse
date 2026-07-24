@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'Apache Airflow'
+slug: /integrations/airflow
+description: 'Orchestrez les requêtes ClickHouse et les chargements de données depuis Apache Airflow à l’aide du provider ClickHouse'
+title: 'Connecter Apache Airflow à ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://airflow.apache.org/'
+keywords: ['Apache Airflow', 'orchestration', 'DAG', 'clickhouse-connect', 'SQLExecuteQueryOperator', 'ClickHouseHook', 'workflow', 'scheduler']
+---
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Airflow](https://airflow.apache.org/) est une plateforme open-source permettant de définir, d’ordonnancer et de superviser des workflows sous forme de code. Les workflows sont définis comme des graphes orientés acycliques (DAG) de tâches écrites en Python.
+
+Le provider `apache-airflow-providers-clickhousedb` connecte Airflow à ClickHouse, ce qui vous permet d’exécuter des requêtes, de créer des tables et de charger des données dans le cadre d’un DAG. Il se connecte via l’[interface HTTP](/fr/concepts/features/interfaces/http) à l’aide du client [`clickhouse-connect`](/fr/integrations/language-clients/python/index), et expose ClickHouse via le framework SQL commun d’Airflow, de sorte que l’opérateur standard `SQLExecuteQueryOperator` gère les requêtes DDL, DML et analytiques, sans nécessiter d’opérateur spécifique à ClickHouse.
+
+<div id="install-the-provider">
+  ## Installer le provider
+</div>
+
+Installez le provider dans l’environnement où s’exécutent le scheduler Airflow et les workers :
+
+```bash
+pip install apache-airflow-providers-clickhousedb
+```
+
+Le provider dépend de `apache-airflow-providers-common-sql` et de `clickhouse-connect`, qui sont installés en même temps que lui. Pour transmettre les résultats de la requête à des DataFrames pandas ou polars, installez les extras facultatifs :
+
+```bash
+pip install 'apache-airflow-providers-common-sql[pandas,polars]'
+```
+
+<div id="create-a-clickhouse-connection">
+  ## Créer une connexion à ClickHouse
+</div>
+
+Le provider enregistre un type de connexion `clickhouse`. Créez une connexion depuis l&#39;UI d&#39;Airflow, dans **Admin &gt; Connections**, ou définissez-en une via la CLI ou une variable d&#39;environnement.
+
+Dans l&#39;UI, sélectionnez **ClickHouse** comme type de connexion et renseignez les champs suivants :
+
+| Champ        | Description                                                                                                                                                                                  | Par défaut                      |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| **Host**     | Nom d&#39;hôte du serveur ClickHouse, par exemple `abc123.clickhouse.cloud`                                                                                                                  | `localhost`                     |
+| **Port**     | Port HTTP(S)                                                                                                                                                                                 | `8123` (en clair), `8443` (TLS) |
+| **Login**    | Nom d&#39;utilisateur ClickHouse                                                                                                                                                             | `default`                       |
+| **Password** | Mot de passe de l&#39;utilisateur ClickHouse                                                                                                                                                 | (vide)                          |
+| **Database** | Base de données par défaut de la connexion. Dans l&#39;UI, ce champ s&#39;appelle **Database** ; il correspond au champ `schema` lorsque vous définissez la connexion via un URI ou du JSON. | `default`                       |
+
+Pour [ClickHouse Cloud](/fr/products/cloud/getting-started/intro) ou tout cluster auto-hébergé avec TLS activé, définissez `secure` sur `true` dans le champ **Extra** et utilisez le port TLS (`8443`).
+
+<div id="extra-connection-options">
+  ### Options de connexion supplémentaires
+</div>
+
+Le provider expose des options supplémentaires sous forme de champs dédiés dans le formulaire de connexion. Si vous définissez la connexion via un URI, du JSON ou une variable d’environnement, indiquez-les plutôt comme clés dans l’objet JSON `extra`. Elles sont toutes facultatives :
+
+| clé `extra`            | Champ de l’UI                              | Par défaut | Description                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secure`               | Utiliser TLS (HTTPS)                       | `false`    | Active HTTPS/TLS.                                                                                                                                                                    |
+| `verify`               | Vérifier le certificat SSL                 | `true`     | Vérifie le certificat TLS du serveur lorsque `secure` vaut `true`. Définissez cette option sur `false` pour les certificats autosignés.                                              |
+| `connect_timeout`      | Délai d’expiration de connexion (secondes) | `10`       | Délai d’expiration de la connexion HTTP, en secondes.                                                                                                                                |
+| `send_receive_timeout` | Délai d’expiration de requête (secondes)   | `300`      | Délai d’expiration en lecture/écriture des requêtes, en secondes. Augmentez cette valeur pour les requêtes analytiques de longue durée.                                              |
+| `compress`             | Activer la compression LZ4                 | `true`     | Active la compression LZ4 des résultats.                                                                                                                                             |
+| `client_name`          | Nom du client                              | (vide)     | Libellé ajouté à l’identifiant de version d’Airflow dans le `User-Agent` de ClickHouse et dans la colonne `client_name` de [`system.query_log`](/fr/reference/system-tables/query_log). |
+| `session_settings`     | Paramètres de session (JSON)               | (vide)     | [Paramètres de session ClickHouse](/fr/reference/settings/session-settings) appliqués à chaque requête de la connexion, par exemple `{"max_execution_time": 300, "max_threads": 8}`.    |
+| `client_kwargs`        | kwargs du client (JSON)                    | (vide)     | Arguments nommés supplémentaires transmis à `clickhouse_connect.get_client()`, par exemple un `http_proxy`.                                                                          |
+
+<div id="define-a-connection-without-the-ui">
+  ### Définir une connexion sans l’UI
+</div>
+
+Configurez la connexion à l’aide d’une variable d’environnement. Le format URI inclut l’hôte, les identifiants et la base de données :
+
+```bash
+export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='clickhouse://default:password@localhost:8123/my_database'
+```
+
+Tous les éléments de l’URI doivent être codés en URL. Pour TLS, les délais d’expiration ou les paramètres de session, utilisez le format JSON, qui expose les champs **Extra** :
+
+```bash
+export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
+    "conn_type": "clickhouse",
+    "host": "abc123.clickhouse.cloud",
+    "port": 8443,
+    "login": "default",
+    "password": "secret",
+    "schema": "my_database",
+    "extra": {
+        "secure": true,
+        "session_settings": {
+            "max_execution_time": 300,
+            "max_memory_usage": 10000000000
+        }
+    }
+}'
+```
+
+Tous les hooks et les opérateurs utilisent l’identifiant de connexion `clickhouse_default`, sauf si vous en indiquez un autre.
+
+<div id="run-queries">
+  ## Exécuter des requêtes avec SQLExecuteQueryOperator
+</div>
+
+Définissez le `conn_id` de l’opérateur sur votre connexion à ClickHouse. Le DAG suivant crée une table, y insère des lignes, les relit, puis supprime la table :
+
+```python
+from datetime import datetime
+
+from airflow import DAG
+from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+
+CLICKHOUSE_CONN_ID = "clickhouse_default"
+CLICKHOUSE_TABLE = "airflow_example"
+
+with DAG(
+    dag_id="example_clickhouse",
+    start_date=datetime(2021, 1, 1),
+    default_args={"conn_id": CLICKHOUSE_CONN_ID},
+    schedule="@once",
+    catchup=False,
+) as dag:
+    create_table = SQLExecuteQueryOperator(
+        task_id="create_table",
+        sql=f"""
+            CREATE TABLE IF NOT EXISTS {CLICKHOUSE_TABLE} (
+                id   UInt32,
+                name String,
+                ts   DateTime DEFAULT now()
+            ) ENGINE = MergeTree()
+            ORDER BY id
+        """,
+    )
+
+    insert_rows = SQLExecuteQueryOperator(
+        task_id="insert_rows",
+        sql=f"""
+            INSERT INTO {CLICKHOUSE_TABLE} (id, name) VALUES
+                (1, 'Alice'),
+                (2, 'Bob'),
+                (3, 'Charlie')
+        """,
+    )
+
+    read_rows = SQLExecuteQueryOperator(
+        task_id="read_rows",
+        sql=f"SELECT id, name FROM {CLICKHOUSE_TABLE} ORDER BY id",
+        handler=fetch_all_handler,
+    )
+
+    drop_table = SQLExecuteQueryOperator(
+        task_id="drop_table",
+        sql=f"DROP TABLE IF EXISTS {CLICKHOUSE_TABLE}",
+    )
+
+    create_table >> insert_rows >> read_rows >> drop_table
+```
+
+Le résultat de la requête est récupéré avec le `handler` par défaut (`fetch_all_handler`). Pour renvoyer autre chose que l’ensemble complet des résultats, transmettez un autre `handler`, par exemple `fetch_one_handler` pour récupérer uniquement la première ligne.
+
+<div id="target-a-different-database">
+  ### Utiliser une base de données différente pour chaque tâche
+</div>
+
+Lorsqu&#39;une connexion pointe vers un cluster et que certaines tâches interrogent différentes bases de données, remplacez la base de données via `hook_params` au lieu de créer une connexion distincte :
+
+```python
+read_rows = SQLExecuteQueryOperator(
+    task_id="read_rows",
+    conn_id=CLICKHOUSE_CONN_ID,
+    sql="SELECT count() FROM events",
+    hook_params={"database": "analytics"},
+)
+```
+
+<div id="use-the-hook-directly">
+  ## Utiliser directement le hook
+</div>
+
+Pour les opérations qui ne se prêtent pas à un opérateur SQL — insertions en masse, streaming ou appels client propres à ClickHouse — utilisez `ClickHouseHook` dans une tâche Python.
+
+La méthode `bulk_insert_rows` du hook utilise le mécanisme d’insertion colonnaire natif de `clickhouse-connect`, bien plus rapide que les insertions ligne par ligne pour de grands jeux de données. Définissez `batch_size` afin de limiter le pic de mémoire sur des entrées très volumineuses :
+
+```python
+from airflow.providers.clickhousedb.hooks.clickhouse import ClickHouseHook
+
+hook = ClickHouseHook(clickhouse_conn_id="clickhouse_default")
+
+hook.bulk_insert_rows(
+    table="events",
+    rows=[("user1", "click"), ("user2", "view")],
+    column_names=["user_id", "action"],
+    batch_size=1000,
+)
+```
+
+Appelez `get_client()` pour accéder au client `clickhouse-connect` sous-jacent afin de gérer tout ce que le hook n’expose pas directement :
+
+```python
+client = hook.get_client()
+total = client.query("SELECT count() FROM events").result_rows[0][0]
+```
+
+<div id="apply-session-settings">
+  ### Appliquer les paramètres de session
+</div>
+
+Transmettez des [paramètres de session](/fr/reference/settings/session-settings) lors de l’initialisation du hook, soit directement, soit via le `hook_params` d’un opérateur. Les paramètres transmis au constructeur sont fusionnés avec les `session_settings` définis dans le champ **Extra** de la connexion, et les valeurs du constructeur prévalent en cas de conflit de clés :
+
+```python
+hook = ClickHouseHook(
+    clickhouse_conn_id="clickhouse_default",
+    session_settings={"max_execution_time": 60, "max_threads": 4},
+)
+```
+
+<div id="related-content">
+  ## Contenu associé
+</div>
+
+* [Client Python `clickhouse-connect`](/fr/integrations/language-clients/python/index)
+* [Interface HTTP de ClickHouse](/fr/concepts/features/interfaces/http)
+* [Référence des paramètres de session de ClickHouse](/fr/reference/settings/session-settings)
+* [Documentation de référence pour `apache-airflow-providers-clickhousedb`](https://airflow.apache.org/docs/apache-airflow-providers-clickhousedb/)
+* [Paquet du provider sur PyPI](https://pypi.org/project/apache-airflow-providers-clickhousedb/)

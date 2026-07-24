@@ -35,9 +35,7 @@ Actuellement, BladePipe prend en charge l’intégration de données vers ClickH
 La prise en charge d’autres sources est prévue.
 
 <Steps>
-  <Step>
-    ## Télécharger et exécuter BladePipe
-
+  <Step title="Télécharger et exécuter BladePipe" id="1-run-bladepipe">
     1. Connectez-vous à <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
 
     2. Suivez les instructions de <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Installer un Worker (Docker)</a> ou de <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Installer un Worker (binaire)</a> pour télécharger et installer un Worker BladePipe.
@@ -47,9 +45,7 @@ La prise en charge d’autres sources est prévue.
     </Note>
   </Step>
 
-  <Step>
-    ## Ajouter ClickHouse comme cible
-
+  <Step title="Ajouter ClickHouse comme cible" id="2-add-clickhouse-as-a-target">
     <Note>
       1. BladePipe prend en charge ClickHouse à partir de la version `20.12.3.3`.
       2. Pour utiliser ClickHouse comme cible, assurez-vous que l&#39;utilisateur dispose des autorisations SELECT, INSERT et des autorisations DDL courantes.
@@ -64,9 +60,7 @@ La prise en charge d’autres sources est prévue.
     3. Cliquez sur &quot;Add DataSource&quot; en bas de la page pour ajouter une instance ClickHouse.
   </Step>
 
-  <Step>
-    ## Ajouter MySQL comme source
-
+  <Step title="Ajouter MySQL comme source" id="3-add-mysql-as-a-source">
     Dans ce tutoriel, nous utilisons une instance MySQL comme source et expliquons le processus de chargement des données MySQL dans ClickHouse.
 
     <Note>
@@ -82,9 +76,7 @@ La prise en charge d’autres sources est prévue.
     3. Cliquez sur &quot;Add DataSource&quot; en bas de la page, puis une instance MySQL est ajoutée.
   </Step>
 
-  <Step>
-    ## Créer un pipeline
-
+  <Step title="Créer un pipeline" id="4-create-a-pipeline">
     1. Dans BladePipe, cliquez sur &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
 
     2. Sélectionnez les instances MySQL et ClickHouse ajoutées, puis cliquez sur &quot;Test Connection&quot; pour vérifier que BladePipe est bien connecté à ces instances. Sélectionnez ensuite les bases de données à déplacer.
@@ -103,9 +95,7 @@ La prise en charge d’autres sources est prévue.
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="Le DataJob est en cours d’exécution" />
   </Step>
 
-  <Step>
-    ## Vérifier les données
-
+  <Step title="Vérifier les données" id="5-verify-the-data">
     1. Arrêtez l’écriture des données dans l’instance MySQL et attendez que ClickHouse fusionne les données.
 
     <Note>

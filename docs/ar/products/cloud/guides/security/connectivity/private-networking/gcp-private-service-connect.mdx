@@ -19,6 +19,8 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="نظرة عامة على Private Service Connect" border />
 
 <Warning>
+  يدعم GCP Private Service Connect فقط الاتصالات التي تبدأ من شبكة GCP VPC الخاصة بك إلى ClickHouse Cloud. ولا يمكن استخدامه للاتصالات التي تبدأ من ClickHouse Cloud إلى الخدمات الموجودة في شبكة VPC الخاصة بك، مثل [قاعدة بيانات خاصة](#connecting-to-a-remote-database).
+
   بشكل افتراضي، لا تكون خدمة ClickHouse متاحة عبر اتصال Private Service Connect حتى إذا تمت الموافقة على اتصال PSC وإنشاؤه؛ يجب عليك إضافة معرّف PSC صراحةً إلى قائمة السماح على مستوى المثيل من خلال إكمال [الخطوة](#add-endpoint-id-to-services-allow-list) أدناه.
 </Warning>
 
@@ -139,17 +141,17 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 أولًا، ستُنشئ Private Service Connection.
 
 <div id="option-1-using-google-cloud-console">
-  #### الخيار 1: استخدام Google Cloud Console
+  #### الخيار 1: استخدام Google Cloud console
 </div>
 
-في Google Cloud Console، انتقل إلى **Network services -&gt; Private Service Connect**.
+في Google Cloud console، انتقل إلى **Network services -&gt; Private Service Connect**.
 
-<Image img="/images/cloud/security/gcp-psc-open.webp" size="lg" alt="افتح Private Service Connect في Google Cloud Console" border />
+<Image img="/images/cloud/security/gcp-psc-open.webp" size="lg" alt="افتح Private Service Connect في Google Cloud console" border />
 
 افتح مربع حوار إنشاء Private Service Connect بالنقر على الزر **Connect Endpoint**.
 
 * **Target**: استخدم **Published service**
-* **Target service**: استخدم `endpointServiceId`<sup>API</sup> أو `Service name`<sup>console</sup> من خطوة [الحصول على service attachment في GCP لـ Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
+* **Target service**: استخدم `endpointServiceId`<sup>واجهة برمجة تطبيقات</sup> أو `Service name`<sup>console</sup> من خطوة [الحصول على service attachment في GCP لـ Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
 * **Endpoint name**: عيّن اسمًا لـ PSC **Endpoint name**.
 * **Network/Subnetwork/IP address**: اختر الشبكة التي تريد استخدامها للاتصال. ستحتاج إلى إنشاء عنوان IP أو استخدام عنوان موجود لنقطة نهاية Private Service Connect. في مثالنا، أنشأنا مسبقًا عنوانًا بالاسم **your-ip-address** وعيّنا له عنوان IP `10.128.0.2`.
 * لجعل نقطة النهاية متاحة من أي Region، يمكنك تفعيل مربع الاختيار **Enable global access**.
@@ -371,7 +373,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
   #### الخيار 1: ClickHouse Cloud console
 </div>
 
-في ClickHouse Cloud console، انتقل إلى **Settings**. انقر على زر **إعداد نقطة نهاية خاصة**. في اللوحة المنبثقة التي تفتح، انسخ **اسم DNS**.
+في ClickHouse Cloud console، انتقل إلى **Settings**. انقر على زر **Set up private endpoint**. في اللوحة المنبثقة التي تفتح، انسخ **اسم DNS**.
 
 <Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="lg" alt="اسم DNS لنقطة النهاية الخاصة" border />
 
@@ -471,13 +473,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
   ### الاتصال بقاعدة بيانات بعيدة
 </div>
 
-لنفترض أنك تحاول استخدام دوال الجداول [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud والاتصال بقاعدة البيانات المستضافة لديك على GCP. لا يمكن استخدام GCP PSC لتمكين هذا الاتصال بشكل آمن، لأن PSC اتصال أحادي الاتجاه. فهو يتيح لشبكتك الداخلية أو لـ GCP VPC الاتصال بـ ClickHouse Cloud بشكل آمن، لكنه لا يتيح لـ ClickHouse Cloud الاتصال بشبكتك الداخلية.
-
 وفقًا لـ [وثائق GCP Private Service Connect](https://cloud.google.com/vpc/docs/private-service-connect):
 
 > تصميم موجّه للخدمات: تُنشر خدمات المنتجين عبر موازنات تحميل تعرض عنوان IP واحدًا لشبكة VPC الخاصة بالمستهلك. وتكون حركة مرور المستهلك التي تصل إلى خدمات المنتجين أحادية الاتجاه، ولا يمكنها الوصول إلا إلى عنوان IP الخاص بالخدمة بدلًا من الوصول إلى شبكة VPC مقترنة بالكامل.
 
-للقيام بذلك، قم بتهيئة قواعد جدار الحماية في GCP VPC للسماح بالاتصالات من ClickHouse Cloud إلى خدمة قاعدة البيانات الداخلية أو الخاصة لديك. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، إلى جانب [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).
+لتوصيل دوال الجداول [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud بقاعدة بيانات مستضافة في GCP VPC لديك، قم بتهيئة قواعد جدار الحماية في GCP VPC للسماح بالاتصالات من ClickHouse Cloud. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، إلى جانب [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).
 
 <div id="more-information">
   ## مزيد من المعلومات

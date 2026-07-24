@@ -33,17 +33,15 @@ ClickHouse를 Holistics에 연결하면 팀은 코드 기반 시맨틱 레이어
 전용 사용자는 쿼리할 테이블과 `system` 테이블(스키마 감지용)에 대한 `SELECT` 권한이 필요합니다.
 
 ```sql
--- 예시: 특정 데이터베이스에 읽기 권한 부여
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- 시스템 메타데이터 접근 권한 부여
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step>
-    ## 연결 정보 수집
-
+  <Step title="연결 정보 수집" id="step-1-gather-connection-details">
     HTTP(S)로 ClickHouse에 연결하려면 다음 정보가 필요합니다:
 
     | **매개변수**          | **설명**                                                                          |
@@ -59,9 +57,7 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="ClickHouse Cloud 콘솔에서 Connect 버튼 위치" border />
   </Step>
 
-  <Step>
-    ## 네트워크 액세스 구성
-
+  <Step title="네트워크 액세스 구성" id="step-2-configure-network-access">
     Holistics는 클라우드 기반 애플리케이션이므로 Holistics 서버에서 데이터베이스에 연결할 수 있어야 합니다. 사용할 수 있는 옵션은 2가지입니다:
 
     1. **직접 연결(권장):** 방화벽 또는 ClickHouse Cloud IP 액세스 목록에 Holistics&#39; IP 주소를 허용 목록에 추가하십시오. IP 목록은 [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting)에서 확인할 수 있습니다.
@@ -71,9 +67,7 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **Reverse SSH Tunnel:** 데이터베이스가 비공개 네트워크(VPC)에 있어 공개적으로 노출할 수 없는 경우 [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel)을 사용하십시오.
   </Step>
 
-  <Step>
-    ## Holistics에 데이터 소스 추가
-
+  <Step title="Holistics에 데이터 소스 추가" id="step-3-add-data-source-in-holistics">
     1. Holistics에서 **Settings → Data Sources**로 이동하십시오.
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Holistics 설정에서 Data Sources로 이동" border />

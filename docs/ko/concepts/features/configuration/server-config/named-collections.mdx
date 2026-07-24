@@ -368,13 +368,15 @@ SELECT dictGet('dict', 'B', 2);
 ```
 
 <div id="named-collections-for-accessing-postgresql-database">
-  ## PostgreSQL 데이터베이스에 액세스하기 위한 이름이 지정된 컬렉션
+  ## PostgreSQL 데이터베이스에 액세스하기 위한 명명된 컬렉션
 </div>
 
 매개변수에 대한 설명은 [postgresql](/ko/reference/functions/table-functions/postgresql)을 참조하십시오. 또한 다음과 같은 별칭이 있습니다:
 
 * `username`은 `user`의 별칭입니다
 * `db`는 `database`의 별칭입니다.
+
+[PostgreSQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/postgresql)의 연결 풀 설정(`postgresql_connection_pool_size` 및 기타 `postgresql_*` 설정)도 컬렉션에 저장하거나 `key = value` 재정의로 전달할 수 있습니다. 이는 `PostgreSQL` 테이블 엔진, `postgresql` 테이블 함수, 그리고 `PostgreSQL` 데이터베이스 엔진에 적용되며, 테이블에 명시적으로 지정된 `SETTINGS` 절은 컬렉션의 값보다 우선합니다.
 
 컬렉션에서는 `host:port` 대신 `addresses_expr` 매개변수를 사용합니다. `host`, `hostname`, `port`와 같은 다른 선택적 매개변수도 있으므로 이 매개변수는 선택 사항입니다. 다음 의사 코드는 우선순위를 설명합니다:
 

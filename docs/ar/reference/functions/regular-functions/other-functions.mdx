@@ -30,7 +30,11 @@ import DeprecatedBadge from "/snippets/ar/components/DeprecatedBadge/DeprecatedB
 
 تعيد اسم النطاق المؤهل بالكامل لخادم ClickHouse.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 FQDN()
@@ -55,9 +59,9 @@ SELECT fqdn()
 ```
 
 ```response title=Response
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
 ```
 
 <div id="MACNumToString">
@@ -174,7 +178,11 @@ SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
 إذا جرى تبديل مستخدم الجلسة باستخدام الأمر EXECUTE AS، فستُرجع هذه الدالة اسم المستخدم الأصلي الذي استُخدم للمصادقة وإنشاء الجلسة.
 الاسم البديل: authUser()
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 authenticatedUser()
@@ -284,7 +292,11 @@ ORDER BY h ASC
 يعيد رقمًا تسلسليًا يزداد باطراد لـ[الكتلة](/ar/resources/develop-contribute/introduction/architecture#block) التي تحتوي على الصف.
 ويُحدَّث رقم الكتلة المُعاد قدر الإمكان، أي قد لا يكون دقيقًا تمامًا.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 blockNumber()
@@ -343,6 +355,10 @@ FROM
 
 يعيد الحجم غير المضغوط، بالبايت، لكتلة من القيم على القرص.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -380,13 +396,17 @@ SELECT blockSerializedSize(maxState(1)) AS x;
 في ClickHouse، تُعالَج الاستعلامات على شكل [كتل](/ar/resources/develop-contribute/introduction/architecture#block) (chunks).
 تُرجِع هذه الدالة حجم الكتلة (عدد الصفوف) التي استُدعيت عليها.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 blockSize()
 ```
 
-**المعاملات**
+**الوسائط**
 
 * لا يوجد.
 
@@ -423,13 +443,17 @@ FROM system.numbers LIMIT 5
 إذا نُفِّذت في سياق جدول موزّع، فستُنشئ هذه الدالة عمودًا عاديًا بقيم مرتبطة بكل shard.
 وإلا فإنها تُنتج قيمة ثابتة.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 buildId()
 ```
 
-**المعاملات**
+**الوسائط**
 
 * لا توجد.
 
@@ -541,7 +565,13 @@ SELECT byteSize(NULL, 1, 0.3, '')
 
 راجع [تدريب النماذج وتطبيقها](https://catboost.ai/docs/features/training.html#training) لمعرفة كيفية تدريب نماذج CatBoost انطلاقًا من مجموعة بيانات تدريب.
 
-**الصيغة**
+يجب أن يكون ملف النموذج موجودًا داخل دليل [`user_files`](/ar/reference/settings/server-settings/settings#user_files_path)، كما هو الحال مع الدالة [`file`](/ar/reference/functions/regular-functions/files#file).
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
@@ -549,7 +579,7 @@ catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
 
 **الوسائط**
 
-* `path_to_model` — مسار نموذج catboost. [`const String`](/ar/reference/data-types/string)
+* `path_to_model` — مسار إلى نموذج catboost، الموجود داخل الدليل `user_files`. [`const String`](/ar/reference/data-types/string)
 * `feature` — سمة واحدة أو أكثر من سمات/وسائط النموذج. [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
@@ -561,7 +591,7 @@ catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
 **catboostEvaluate**
 
 ```sql title=Query
-SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
 ```
 
 ```response title=Response
@@ -582,8 +612,8 @@ SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, H
 يستخدم OKLab ثلاثة مكوّنات:
 
 * L: الإضاءة الإدراكية (عادةً في النطاق [0..1])
-  * a: المحور التقابلي الأخضر-الأحمر
-  * b: المحور التقابلي الأزرق-الأصفر
+* a: المحور التقابلي الأخضر-الأحمر
+* b: المحور التقابلي الأزرق-الأصفر
 
 مكوّنا a و b غير محدودين نظريًا، لكنهما عمليًا يقعان بين -0.4 و 0.4.
 صُمّم OKLab ليكون موحّدًا إدراكيًا
@@ -593,7 +623,7 @@ SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, H
 المراحل التالية:
 
 1. التحويل من OKLab إلى Linear sRGB.
-   2) التحويل من Linear sRGB إلى sRGB مُرمَّز بالغاما.
+2. التحويل من Linear sRGB إلى sRGB مُرمَّز بالغاما.
 
 تحدّد وسيطة gamma الاختيارية الأس المستخدم عند التحويل من Linear
 sRGB إلى قيم RGB مُرمَّزة بالغاما. وإذا لم تُحدَّد، فتُستخدم قيمة gamma افتراضية
@@ -656,15 +686,15 @@ SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
 
 <Note>
   **OKLCH** هو نسخة أسطوانية من فضاء الألوان OKLab.
-  إحداثياته الثلاث هي `L` (السطوع ضمن النطاق `[0...1]`)، و`C` (التشبّع `>= 0`)، و`H` (تدرّج اللون بالدرجات ضمن `[0...360]`).
+  إحداثياته الثلاث هي `L` (السطوع ضمن النطاق `[0...1]`)، و`C` (الكروما `>= 0`)، و`H` (تدرّج اللون بالدرجات ضمن `[0...360]`).
   صُمّم OKLab/OKLCH ليكون متجانسًا إدراكيًا مع بقائه منخفض الكلفة حسابيًا.
 </Note>
 
 التحويل هو معكوس [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 
 1. من OKLCH إلى OKLab.
-   2) من OKLab إلى Linear sRGB
-   3) من Linear sRGB إلى sRGB
+2. من OKLab إلى Linear sRGB
+3. من Linear sRGB إلى sRGB
 
 تُستخدم الوسيطة الثانية gamma في المرحلة الأخيرة.
 
@@ -676,7 +706,7 @@ SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
 colorOKLCHToSRGB(tuple [, gamma])
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `tuple` — قيمة من النوع `Tuple` تتألف من ثلاث قيم رقمية `L` و`C` و`H`، حيث تكون `L` ضمن النطاق `[0...1]`، و`C >= 0`، و`H` ضمن النطاق `[0...360]`. [`Tuple(Float64, Float64, Float64)`](/ar/reference/data-types/tuple)
 * `gamma` — اختياري. الأسّ المستخدم لتحويل Linear sRGB إلى sRGB مرة أخرى، وذلك بتطبيق `(x ^ (1 / gamma)) * 255` على كل قناة `x`. القيمة الافتراضية هي `2.2`. [`Float64`](/ar/reference/data-types/float)
@@ -731,15 +761,15 @@ SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
 يتكوّن التحويل من مرحلتين:
 
 1. sRGB إلى Linear sRGB
-   2) Linear sRGB إلى OKLab
+2. Linear sRGB إلى OKLab
 
-**البنية**
+**الصياغة**
 
 ```sql
 colorSRGBToOKLAB(tuple[, gamma])
 ```
 
-**المعاملات**
+**الوسائط**
 
 * `tuple` — قيمة Tuple تتكوّن من ثلاث قيم: R وG وB ضمن النطاق `[0...255]`. [`Tuple(UInt8, UInt8, UInt8)`](/ar/reference/data-types/tuple)
 * `gamma` — اختياري. الأسّ المستخدَم لجعل sRGB خطيًا عبر تطبيق `(x / 255)^gamma` على كل قناة `x`. القيمة الافتراضية هي `2.2`. [`Float64`](/ar/reference/data-types/float)
@@ -781,8 +811,8 @@ SELECT colorSRGBToOKLAB((128, 64, 32), 2.2) AS lab;
 يتكوّن التحويل من ثلاث مراحل:
 
 1. من sRGB إلى Linear sRGB
-   2) من Linear sRGB إلى OKLab
-   3) من OKLab إلى OKLCH.
+2. من Linear sRGB إلى OKLab
+3. من OKLab إلى OKLCH.
 
 للاطلاع على مراجع الألوان في فضاء OKLCH وكيف تقابل ألوانَ sRGB، يُرجى مراجعة [https://OKLCH.com/](https://OKLCH.com/).
 
@@ -825,6 +855,10 @@ SELECT colorSRGBToOKLCH((128, 64, 32), 2.2) AS lch;
 تكون هذه الدالة مفيدة بشكل خاص في سيناريوهات تصحيح الأخطاء.
 أُنشئت للتوافق مع الدالة `CONNECTION_ID` في MySQL.
 ولا تُستخدم عادةً في استعلامات الإنتاج.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -916,7 +950,11 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 يُرجع اسم قاعدة البيانات الحالية.
 ويفيد ذلك في معاملات محرك الجدول ضمن استعلامات `CREATE TABLE` عندما تحتاج إلى تحديد قاعدة البيانات.
 
-راجع أيضًا [تعليمة `SET`](/ar/reference/statements/use).
+راجع أيضًا [عبارة `SET`](/ar/reference/statements/use).
+
+<Note>
+  هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -924,7 +962,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 currentDatabase()
 ```
 
-**الأسماء البديلة**: `current_database`, `SCHEMA`, `DATABASE`
+**الأسماء البديلة**: `current_database`, `DATABASE`, `SCHEMA`
 
 **المعاملات**
 
@@ -968,6 +1006,10 @@ SELECT CURRENT_DATABASE
 
 يعيد مصفوفة من ملفات تعريف الإعدادات الخاصة بالمستخدم الحالي.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1004,6 +1046,10 @@ SELECT currentProfiles();
 
 يعيد معرّف الاستعلام الحالي.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -1039,6 +1085,10 @@ SELECT currentQueryID();
 أُضيفت في: v21.9.0
 
 تُرجِع مصفوفة بالأدوار المُعيَّنة للمستخدم الحالي.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1084,6 +1134,10 @@ SELECT currentRoles();
 
 انظر أيضًا إلى [عبارة `SET`](/ar/reference/statements/use).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1123,13 +1177,17 @@ SELECT currentSchemas(true)
 يعيد اسم المستخدم الحالي.
 في حال كان الاستعلام موزعًا، يُعاد اسم المستخدم الذي بدأ الاستعلام.
 
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 currentUser()
 ```
 
-**الأسماء البديلة**: `session_user`, `user`, `current_user`
+**الأسماء البديلة**: `session_user`, `current_user`, `user`
 
 **الوسائط**
 
@@ -1173,6 +1231,10 @@ SELECT CURRENT_USER
 
 يُرجع مصفوفة بأسماء ملفات تعريف الإعدادات الافتراضية للمستخدم الحالي.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1208,6 +1270,10 @@ SELECT defaultProfiles();
 أُضيف في: v21.9.0
 
 يُرجع مصفوفة من الأدوار الافتراضية للمستخدم الحالي.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1334,6 +1400,94 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
 └──────────────────────────────────────────┘
 ```
 
+<div id="digits">
+  ## digits
+</div>
+
+أُضيف في: v26.7.0
+
+يعيد الأرقام من العدد `n` بدءًا من الفهرس المحدد `offset`.
+يبدأ العد من 1 وفقًا للمنطق التالي:
+
+* إذا كانت قيمة `offset` هي `0`، فسيُطرَح استثناء، لأن `offset` يعتمد ترقيمًا يبدأ من 1.
+* إذا كانت قيمة `offset` سالبة، فيبدأ العد بمقدار `offset` أرقام من نهاية العدد بدلًا من بدايته.
+* إذا كانت قيمة `offset` أكبر من عدد الأرقام في `n`، فستُعاد القيمة `0`.
+
+يخضع الوسيط الاختياري `length` للمنطق التالي:
+
+* إذا كانت قيمة `length` موجبة، فهذا يعني عدد الأرقام المطلوب أخذها بدءًا من `offset`
+* إذا كانت قيمة `length` سالبة، فهذا يعني عدد الأرقام التي يجب استبعادها من يمين العدد
+
+راجع أيضًا الدالة [`substring`](/ar/reference/functions/regular-functions/string-functions#substring)، التي تنفذ العملية المناظرة على السلاسل النصية.
+
+**الصياغة**
+
+```sql
+digits(n, offset[, length])
+```
+
+**المعاملات**
+
+* `n` — العدد الذي ستُستخرج منه الأرقام. [`(U)Int8`](/ar/reference/data-types/int-uint) or [`(U)Int16`](/ar/reference/data-types/int-uint) or [`(U)Int32`](/ar/reference/data-types/int-uint) or [`(U)Int64`](/ar/reference/data-types/int-uint)
+* `offset` — موضع بداية الأرقام في `n`. [`(U)Int8`](/ar/reference/data-types/int-uint) or [`(U)Int16`](/ar/reference/data-types/int-uint) or [`(U)Int32`](/ar/reference/data-types/int-uint) or [`(U)Int64`](/ar/reference/data-types/int-uint)
+* `length` — اختياري. الطول الأقصى للأرقام. [`(U)Int8`](/ar/reference/data-types/int-uint) or [`(U)Int16`](/ar/reference/data-types/int-uint) or [`(U)Int32`](/ar/reference/data-types/int-uint) or [`(U)Int64`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+الأرقام المحددة من `n`، والمفسَّرة على أنها `UInt64`. تُرجع `0` إذا كان النطاق المحدد فارغًا. لا تُحفَظ الأصفار البادئة. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**إزاحة موجبة**
+
+```sql title=Query
+SELECT digits(1234567890, 7)
+```
+
+```response title=Response
+7890
+```
+
+**الإزاحة والطول الموجبان**
+
+```sql title=Query
+SELECT digits(1234567890, 7, 2)
+```
+
+```response title=Response
+78
+```
+
+**تُحسب الإزاحة السالبة من اليمين**
+
+```sql title=Query
+SELECT digits(1234567890, -3)
+```
+
+```response title=Response
+890
+```
+
+**الطول السالب يستبعد الأرقام من اليمين**
+
+```sql title=Query
+SELECT digits(1234567890, 3, -2)
+```
+
+```response title=Response
+345678
+```
+
+**الإزاحة التي تتجاوز النهاية تُرجِع 0**
+
+```sql title=Query
+SELECT digits(1234567890, 11)
+```
+
+```response title=Response
+0
+```
+
 <div id="displayName">
   ## displayName
 </div>
@@ -1341,6 +1495,10 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
 أُضيف في: v22.11.0
 
 يعيد قيمة `display_name` من [config](/ar/concepts/features/configuration/server-config/configuration-files)، أو الاسم المؤهل بالكامل للنطاق (FQDN) الخاص بالخادم إذا لم يتم تعيينه.
+
+<Note>
+  هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -1378,6 +1536,10 @@ SELECT displayName();
 
 يعرض وصفًا تفصيليًا للبنية الداخلية لعمود ونوع بياناته.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1414,6 +1576,10 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'));
 
 يعيد مصفوفة من أسماء ملفات تعريف الإعدادات المُمكّنة للمستخدم الحالي.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -1448,7 +1614,11 @@ SELECT enabledProfiles();
 
 أُضيفت في: v21.9.0
 
-تعيد Array من الأدوار المُمكَّنة للمستخدم الحالي.
+تعيد مصفوفة من الأدوار المُمكَّنة للمستخدم الحالي.
+
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1526,6 +1696,10 @@ SELECT errorCodeToName(252);
 
 راجع أيضًا دالة الجدول [`file`](/ar/reference/functions/table-functions/file).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -1549,9 +1723,6 @@ file(path[, default])
 INSERT INTO table SELECT file('a.txt'), file('b.txt');
 ```
 
-```response title=Response
-```
-
 <div id="filesystemAvailable">
   ## filesystemAvailable
 </div>
@@ -1560,6 +1731,10 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
 
 يعيد مقدار المساحة الحرة في نظام الملفات الذي يستضيف التخزين الدائم لقاعدة البيانات.
 تكون القيمة المعادة دائمًا أقل من إجمالي المساحة الحرة ([`filesystemUnreserved`](/ar/reference/functions/regular-functions/other-functions#filesystemUnreserved)) لأن بعض المساحة تكون محجوزة لنظام التشغيل.
+
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1598,6 +1773,10 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 تعيد سعة نظام الملفات بالبايت.
 يتطلب ذلك تهيئة [المسار](/ar/reference/settings/server-settings/settings#path) الخاص بدليل البيانات.
 
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1635,6 +1814,10 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
 تعيد إجمالي المساحة الحرة على نظام الملفات الذي يستضيف التخزين الدائم لقاعدة البيانات (وكان يُسمى سابقًا `filesystemFree`).
 انظر أيضًا [`filesystemAvailable`](#filesystemAvailable).
 
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1643,7 +1826,7 @@ filesystemUnreserved([disk_name])
 
 **الوسيطات**
 
-* `disk_name` — اختياري. اسم القرص المطلوب معرفة إجمالي المساحة الحرة فيه. إذا لم يتم تحديده، فسيُستخدم القرص الافتراضي. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
+* `disk_name` — اختياري. اسم القرص المطلوب معرفة إجمالي المساحة الحرة فيه. إذا لم يتم تحديده، فسيُستخدم القرص default. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 
 **القيمة المعادة**
 
@@ -1702,6 +1885,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
 **بالاقتران مع initializeAggregation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -2179,11 +2363,11 @@ SELECT
 ```
 
 ```response title=Response
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta─────────────────────┐
+│       100 │ 1 minute and 40 seconds        │
+│     12345 │ 205 minutes and 45 seconds     │
+│ 432546534 │ 7209108 minutes and 54 seconds │
+└───────────┴────────────────────────────────┘
 ```
 
 **باستخدام تعبير INTERVAL**
@@ -2228,9 +2412,6 @@ fuzzQuery(query)
 SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 ```
 
-```response title=Response
-```
-
 <div id="generateRandomStructure">
   ## generateRandomStructure
 </div>
@@ -2238,6 +2419,10 @@ SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 أُضيف في: v23.5.0
 
 يولّد بنية جدول عشوائية بالتنسيق `column1_name column1_type, column2_name column2_type, ...`.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -2297,13 +2482,17 @@ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCar
 يجب تهيئة الخادم لاستخدام Keeper.
 تُخزَّن السلاسل في عُقد Keeper تحت المسار، الذي يمكن تهيئته في [`series_keeper_path`](/ar/reference/settings/server-settings/settings#series_keeper_path) ضمن تهيئة الخادم.
 
-**الصياغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 generateSerialID(series_identifier[, start_value])
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `series_identifier` — معرّف السلسلة [`const String`](/ar/reference/data-types/string)
 * `start_value` — اختياري. قيمة بداية العداد. القيمة الافتراضية هي 0. ملاحظة: لا تُستخدم هذه القيمة إلا عند إنشاء سلسلة جديدة، ويجري تجاهلها إذا كانت السلسلة موجودة بالفعل [`UInt*`](/ar/reference/data-types/int-uint)
@@ -2382,21 +2571,31 @@ SELECT generateSerialID('id2', 100)
   ## getClientHTTPHeader
 </div>
 
-أُضيف في: v24.5.0
+أُضيفت في: v24.5.0
 
-تعيد قيمة ترويسة HTTP.
-إذا لم تكن هناك ترويسة بهذا الاسم، أو إذا لم يُنفَّذ الطلب الحالي عبر واجهة HTTP، فستُرجع الدالة سلسلة فارغة.
-بعض ترويسات HTTP (مثل `Authentication` و `X-ClickHouse-*`) مقيّدة.
+تجلب قيمة ترويسة HTTP.
+إذا لم تكن هذه الترويسة موجودة، أو إذا لم يُنفَّذ الطلب الحالي عبر واجهة HTTP، فستُرجِع الدالة سلسلة فارغة.
+تخضع بعض ترويسات HTTP (مثل `Authorization` و`Authentication` و`X-ClickHouse-*`) لقيود.
 
 <Info>
-  **يتطلب تمكين الإعداد `allow_get_client_http_header`**
+  **الإعداد `allow_get_client_http_header` مطلوب**
 
-  تتطلب الدالة أن يكون الإعداد `allow_get_client_http_header` مُمكّنًا.
-  لا يكون هذا الإعداد مُمكّنًا افتراضيًا لأسباب أمنية، لأن بعض الترويسات، مثل `Cookie`، قد تحتوي على معلومات حساسة.
+  تتطلب الدالة أن يكون الإعداد `allow_get_client_http_header` مفعّلًا.
+  لا يكون هذا الإعداد مفعّلًا افتراضيًا لأسباب أمنية، لأن بعض الترويسات، مثل `Cookie`، قد تحتوي على معلومات حساسة.
 </Info>
 
-تكون ترويسات HTTP في هذه الدالة حساسة لحالة الأحرف.
-إذا استُخدمت الدالة في سياق استعلام موزّع، فإنها لا تُرجع نتيجة غير فارغة إلا على العقدة المُبادِئة.
+ترويسات HTTP غير حساسة لحالة الأحرف وفقًا للوثيقة RFC 9110.
+إذا استُخدمت الدالة في سياق استعلام موزّع، فإنها لا تُرجِع قيمة غير فارغة إلا على العقدة المُبادِرة.
+
+يقرأ `getClientHTTPHeader` ترويسات الطلب الحالي، لذلك لا يُرجِع قيمة غير فارغة إلا عندما يُرسَل الاستعلام عبر واجهة HTTP.
+على سبيل المثال، مرّر الترويسة مع الطلب ثم اقرأها مجددًا عبر HTTP:
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+يعيد الأمر أعلاه `application/x-www-form-urlencoded`.
 
 **البنية**
 
@@ -2404,26 +2603,23 @@ SELECT generateSerialID('id2', 100)
 getClientHTTPHeader(name)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `name` — اسم ترويسة HTTP. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تُرجِع قيمة الترويسة. [`String`](/ar/reference/data-types/string)
+تعرض قيمة الترويسة. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
-**مثال للاستخدام**
+**مثال على الاستخدام**
 
 ```sql title=Query
-SELECT getClientHTTPHeader('Content-Type');
-```
-
-```response title=Response
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
 ```
 
 <div id="getMacro">
@@ -2436,13 +2632,17 @@ SELECT getClientHTTPHeader('Content-Type');
 تُعرَّف وحدات الماكرو في قسم [`<macros>`](/ar/reference/settings/server-settings/settings#macros) من ملف التهيئة، ويمكن استخدامها لتمييز الخوادم بأسماء مناسبة حتى لو كانت أسماء المضيفين الخاصة بها معقدة.
 إذا نُفِّذت الدالة في سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا بقيم مرتبطة بكل shard.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 getMacro(name)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `name` — اسم الماكرو المطلوب استرجاعه. [`const String`](/ar/reference/data-types/string)
 
@@ -2508,13 +2708,17 @@ SELECT getMaxTableNameLengthForDatabase('default');
 
 تُرجع القيمة الحالية لأحد إعدادات MergeTree.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 getMergeTreeSetting(setting_name)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `setting_name` — اسم الإعداد. [`String`](/ar/reference/data-types/string)
 
@@ -2544,13 +2748,17 @@ SELECT getMergeTreeSetting('index_granularity');
 
 تُرجع سلسلة نصية تحتوي على إصدار نواة نظام التشغيل.
 
-**الصياغة**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 getOSKernelVersion()
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 
@@ -2580,13 +2788,17 @@ SELECT getOSKernelVersion();
 
 يعيد رقم منفذ الخادم للبروتوكول المحدد.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 getServerPort(port_name)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `port_name` — اسم المنفذ. [`String`](/ar/reference/data-types/string)
 
@@ -2616,13 +2828,17 @@ SELECT getServerPort('tcp_port');
 
 يعيد القيمة المعينة حاليًا عند تزويده باسم إعداد الخادم.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 getServerSetting(setting_name')
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `setting_name` — اسم إعداد الخادم. [`String`](/ar/reference/data-types/string)
 
@@ -2651,6 +2867,10 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
 أُضيف في: v20.7.0
 
 يُرجع القيمة الحالية للإعداد.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -2689,9 +2909,13 @@ SELECT getSetting('enable_analyzer');
   ## getSettingOrDefault
 </div>
 
-قُدِّمت في: v24.10.0
+أُضيف في: v24.10.0
 
 تعيد القيمة الحالية لإعداد ما، أو تعيد القيمة الافتراضية المحددة في الوسيطة الثانية إذا لم يكن الإعداد معيّنًا في الملف الشخصي الحالي.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -2699,7 +2923,7 @@ SELECT getSetting('enable_analyzer');
 getSettingOrDefault(setting_name, default_value)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `setting_name` — اسم الإعداد. [`String`](/ar/reference/data-types/string)
 * `default_value` — القيمة التي ستُعاد إذا لم يتم تعيين custom&#95;setting. ويمكن أن تكون هذه القيمة من أي نوع بيانات أو Null.
@@ -2776,7 +3000,7 @@ SELECT getSizeOfEnumType(CAST('a' AS Enum8('a' = 1, 'b' = 2))) AS x;
 getSubcolumn(nested_value, subcolumn_name)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 
@@ -2788,9 +3012,6 @@ getSubcolumn(nested_value, subcolumn_name)
 
 ```sql title=Query
 SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
-```
-
-```response title=Response
 ```
 
 <div id="getTypeSerializationStreams">
@@ -2878,24 +3099,32 @@ SELECT globalVariable('max_allowed_packet')
 
 أُضيفت في: v1.1.0
 
-يتحقق مما إذا كان عمود محدد موجودًا في جدول بقاعدة بيانات.
+يتحقق مما إذا كان عمود محدد موجودًا في جدول ضمن قاعدة بيانات.
 وبالنسبة إلى العناصر ضمن بنية بيانات متداخلة، تتحقق الدالة من وجود عمود.
 أما بنية البيانات المتداخلة نفسها، فتعيد الدالة القيمة `0`.
 
-**بناء الجملة**
+<Info>
+  **امتياز `SHOW COLUMNS` مطلوب**
+
+  تتطلب الدالة امتياز `SHOW COLUMNS` على الجدول الهدف (وهو نفس الامتياز المطلوب للأمرين `DESCRIBE` و`SHOW CREATE TABLE`).
+  وبدونه يفشل الاستدعاء مع `ACCESS_DENIED` بدلًا من إرجاع `1` أو `0`، لذلك لا يمكن التحقق من أسماء الأعمدة من دون صلاحية وصول.
+</Info>
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**البنية**
 
 ```sql
-hasColumnInTable([hostname[, username[, password]],]database, table, column)
+hasColumnInTable(database, table, column)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `database` — اسم قاعدة البيانات. [`const String`](/ar/reference/data-types/string)
 * `table` — اسم الجدول. [`const String`](/ar/reference/data-types/string)
 * `column` — اسم العمود. [`const String`](/ar/reference/data-types/string)
-* `hostname` — اختياري. اسم الخادم البعيد الذي سيتم إجراء التحقق عليه. [`const String`](/ar/reference/data-types/string)
-* `username` — اختياري. اسم المستخدم للخادم البعيد. [`const String`](/ar/reference/data-types/string)
-* `password` — اختياري. كلمة المرور للخادم البعيد. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -3009,6 +3238,10 @@ SELECT highlightQuery('SELECT 1')
 إذا نُفِّذت الدالة ضمن سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا بقيم تخص كل جزء.
 وفي غير ذلك، فإنها تُنتج قيمة ثابتة.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -3017,7 +3250,7 @@ hostName()
 
 **الأسماء المستعارة**: `hostname`
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 
@@ -3263,20 +3496,24 @@ SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2025-09-15') GR
 
 أُضيف في: v1.1.0
 
-يُرجع معرّف الاستعلام الحالي الأصلي.
+يُرجع معرّف الاستعلام الحالي الأوّلي.
 يمكن استخراج المعلمات الأخرى الخاصة بالاستعلام من الحقل `initial_query_id` في [`system.query_log`](/ar/reference/system-tables/query_log).
 
 بخلاف الدالة [`queryID`](/ar/reference/functions/regular-functions/other-functions#queryID)، تُرجع `initialQueryID` النتائج نفسها على الشظايا المختلفة.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 initialQueryID()
 ```
 
-**الأسماء البديلة**: `initial_query_id`
+**الأسماء المستعارة**: `initial_query_id`
 
-**المعاملات**
+**الوسيطات**
 
 * لا شيء.
 
@@ -3306,8 +3543,12 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0
 
 قُدِّم في: v25.4.0
 
-يعيد وقت بدء الاستعلام الحالي الأصلي.
+يعيد وقت بدء الاستعلام الحالي الأوّلي.
 يعيد `initialQueryStartTime` النتائج نفسها على مختلف الشظايا.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -3317,7 +3558,7 @@ initialQueryStartTime()
 
 **الأسماء المستعارة**: `initial_query_start_time`
 
-**المعاملات**
+**الوسيطات**
 
 * لا يوجد.
 
@@ -3407,13 +3648,17 @@ SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggr
 على سبيل المثال، تُعدّ التعبيرات المبنية على [القيم الحرفية](/ar/reference/syntax#literals) تعبيرات ثابتة.
 تُستخدم هذه الدالة غالبًا لأغراض التطوير وتصحيح الأخطاء والتوضيح.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: فقد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 isConstant(x)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `x` — تعبير للتحقق منه. [`Any`](/ar/reference/data-types/index)
 
@@ -3527,6 +3772,10 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
   يدعم فقط الجداول التي أُنشئت باستخدام `ENGINE = Join(ANY, LEFT, <join_keys>)` [عبارة](/ar/reference/engines/table-engines/special/join).
 </Note>
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -3595,11 +3844,15 @@ SELECT joinGet(some_table, 'name', 1, 11);
 قُدِّمت في: v20.4.0
 
 تتيح لك استخراج البيانات من جدول بالطريقة نفسها المتبعة مع القاموس.
-تجلب البيانات من جداول Join باستخدام مفتاح join المحدد.
+تجلب البيانات من جداول Join باستخدام مفتاح الربط المحدد.
 وعلى خلاف [`joinGet`](#joinGet)، فإنها تُرجع `NULL` عندما يكون المفتاح غير موجود.
 
 <Note>
-  لا تدعم إلا الجداول المُنشأة باستخدام [تعليمة](/ar/reference/engines/table-engines/special/join) `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+  لا تدعم إلا الجداول المُنشأة باستخدام [عبارة](/ar/reference/engines/table-engines/special/join) `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+</Note>
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
 </Note>
 
 **الصياغة**
@@ -3608,9 +3861,9 @@ SELECT joinGet(some_table, 'name', 1, 11);
 joinGetOrNull(join_storage_table_name, value_column, join_keys)
 ```
 
-**المعاملات**
+**الوسيطات**
 
-* `join_storage_table_name` — معرّف يحدّد مكان إجراء البحث. يُجرى البحث عن هذا المعرّف في قاعدة البيانات `default` (راجع المعامل default&#95;database في ملف الإعدادات). لتجاوز قاعدة البيانات `default`، استخدم الاستعلام `USE database_name` أو حدِّد قاعدة البيانات والجدول باستخدام نقطة، مثل `database_name.table_name`. [`String`](/ar/reference/data-types/string)
+* `join_storage_table_name` — معرّف يحدّد مكان إجراء البحث. يُجرى البحث عن هذا المعرّف في قاعدة البيانات الافتراضية (راجع المعامل default&#95;database في ملف الإعدادات). لتجاوز قاعدة البيانات الافتراضية، استخدم الاستعلام `USE database_name` أو حدِّد قاعدة البيانات والجدول باستخدام نقطة، مثل `database_name.table_name`. [`String`](/ar/reference/data-types/string)
 * `value_column` — اسم العمود في الجدول الذي يحتوي على البيانات المطلوبة. [`const String`](/ar/reference/data-types/string)
 * `join_keys` — قائمة بمفاتيح الربط. [`Any`](/ar/reference/data-types/index)
 
@@ -3643,13 +3896,17 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
 
 تعيد هذه الدالة موضع قيمة في القاموس الخاص بعمود [LowCardinality](/ar/reference/data-types/lowcardinality). تبدأ المواضع من 1. ونظرًا لأن LowCardinality يستخدم قواميس لكل جزء، فقد تُرجِع هذه الدالة مواضع مختلفة للقيمة نفسها في أجزاء مختلفة.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
 lowCardinalityIndices(col)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `col` — عمود منخفض الكاردينالية. [`LowCardinality`](/ar/reference/data-types/lowcardinality)
 
@@ -3700,15 +3957,19 @@ SELECT s, lowCardinalityIndices(s) FROM test;
 إذا كانت الكتلة أصغر من حجم القاموس أو أكبر منه، فستُقتطع النتيجة أو تُستكمل باستخدام القيم الافتراضية.
 ونظرًا لأن LowCardinality تستخدم قواميس منفصلة لكل جزء، فقد تُرجع هذه الدالة قيم قاموس مختلفة في الأجزاء المختلفة.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 lowCardinalityKeys(col)
 ```
 
-**الوسائط**
+**الوسيطات**
 
-* `col` — عمود منخفض التعددية. [`LowCardinality`](/ar/reference/data-types/lowcardinality)
+* `col` — عمود منخفض الكاردينالية. [`LowCardinality`](/ar/reference/data-types/lowcardinality)
 
 **القيمة المُعادة**
 
@@ -3907,6 +4168,7 @@ neighbor(column, offset[, default_value])
 **مثال على الاستخدام**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
@@ -3928,6 +4190,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 **مع القيمة الافتراضية**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
@@ -4118,6 +4381,10 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 * يستبدل القيم الحرفية الرقمية والنصية بقيم عشوائية
 * يحافظ على البنية العامة للاستعلام وصياغة SQL
 * ينتج نتائج مختلفة لصفوف مختلفة
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -4502,6 +4769,10 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 
 بخلاف الدالة [`initialQueryID`](#initialQueryID)، قد تُرجع `queryID` نتائج مختلفة على المقاطع المختلفة.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -4542,6 +4813,10 @@ SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}
 
 يُرجع رقم مراجعة خادم ClickHouse الحالي.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -4578,13 +4853,17 @@ SELECT revision()
 
 يعيد رقم صف فريدًا لكل صف مُعالَج.
 
-**الصياغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 rowNumberInAllBlocks()
 ```
 
-**الوسائط**
+**المعاملات**
 
 * لا شيء.
 
@@ -4640,7 +4919,11 @@ SETTINGS max_block_size = 2
 
 يبدأ الرقم المُعاد من 0 في كل كتلة.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 rowNumberInBlock()
@@ -4703,17 +4986,17 @@ FROM
   **مهملة**
 
   يُعاد تعيين الحالة مع كل كتلة بيانات جديدة.
-  ونظرًا إلى هذا السلوك المعرّض للأخطاء، فقد أُهمِلت هذه الدالة، ويُنصح باستخدام [دوال النوافذ](/ar/reference/functions/window-functions/index) بدلًا منها.
+  ونظرًا إلى هذا السلوك المعرّض للأخطاء، فقد أُهمِلت هذه الدالة، ويُنصح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا منها.
   يمكنك استخدام الإعداد [`allow_deprecated_error_prone_window_functions`](/ar/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) للسماح باستخدام هذه الدالة.
 </Warning>
 
-**البنية**
+**الصيغة**
 
 ```sql
 runningAccumulate(agg_state[, grouping])
 ```
 
-**الوسائط**
+**المعاملات**
 
 * `agg_state` — حالة الدالة التجميعية. [`AggregateFunction`](/ar/reference/data-types/aggregatefunction)
 * `grouping` — اختياري. مفتاح التجميع. تُعاد تهيئة حالة الدالة إذا تغيّرت قيمة `grouping`. ويمكن أن يكون من أيٍّ من أنواع البيانات المدعومة التي يكون فيها عامل المساواة معرّفًا. [`Any`](/ar/reference/data-types/index)
@@ -4727,6 +5010,7 @@ runningAccumulate(agg_state[, grouping])
 **مثال على الاستخدام مع initializeAggregation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -4772,7 +5056,7 @@ FROM numbers(5);
   يُنصح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا من ذلك.
 </Warning>
 
-**البنية**
+**الصيغة**
 
 ```sql
 runningConcurrency(start, end)
@@ -4818,7 +5102,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 
   لا تُرجِع الفروق إلا داخل كتلة البيانات التي تُعالَج حاليًا.
   وبسبب هذا السلوك المعرّض للأخطاء، أُهمِلت هذه الدالة.
-  يُنصَح باستخدام [window functions](/ar/reference/functions/window-functions/index) بدلًا منها.
+  يُنصَح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا منها.
 
   يمكنك استخدام الإعداد [`allow_deprecated_error_prone_window_functions`](/ar/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) للسماح باستخدام هذه الدالة.
 </Warning>
@@ -4829,13 +5113,13 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 يرجى ملاحظة أن حجم الكتلة يؤثر في النتيجة.
 تُعاد تهيئة الحالة الداخلية للدالة `runningDifference` مع كل كتلة جديدة.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 runningDifference(x)
 ```
 
-**الوسائط**
+**المعاملات**
 
 * `x` — العمود الذي يُحسب له الفرق التراكمي. [`Any`](/ar/reference/data-types/index)
 
@@ -4848,6 +5132,23 @@ runningDifference(x)
 **مثال على الاستخدام**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
+
+CREATE TABLE events
+(
+    EventID UInt32,
+    EventDate Date,
+    EventTime DateTime
+)
+ENGINE = Memory;
+
+INSERT INTO events VALUES
+    (1106, '2025-11-24', '2025-11-24 00:00:04'),
+    (1107, '2025-11-24', '2025-11-24 00:00:05'),
+    (1108, '2025-11-24', '2025-11-24 00:00:05'),
+    (1109, '2025-11-24', '2025-11-24 00:00:09'),
+    (1110, '2025-11-24', '2025-11-24 00:00:10');
+
 SELECT
     EventID,
     EventTime,
@@ -4859,7 +5160,7 @@ FROM
         EventTime
     FROM events
     WHERE EventDate = '2025-11-24'
-    ORDER BY EventTime ASC
+    ORDER BY EventTime ASC, EventID ASC
     LIMIT 5
 );
 ```
@@ -4877,6 +5178,7 @@ FROM
 **مثال على تأثير حجم الكتلة**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifference(number + 1) AS diff
@@ -4917,7 +5219,7 @@ WHERE diff != 1;
 runningDifferenceStartingWithFirstValue(x)
 ```
 
-**الوسائط**
+**المعاملات**
 
 * `x` — العمود المراد حساب الفرق التراكمي له. [`Any`](/ar/reference/data-types/index)
 
@@ -4930,6 +5232,7 @@ runningDifferenceStartingWithFirstValue(x)
 **مثال على الاستخدام**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifferenceStartingWithFirstValue(number) AS diff
@@ -4955,13 +5258,17 @@ FROM numbers(5);
 يعيد معرّف UUID (v4) عشوائيًا وفريدًا يُولَّد عند بدء تشغيل الخادم لأول مرة.
 ويُحفَظ هذا المعرّف، أي إن تشغيل الخادم للمرة الثانية أو الثالثة أو ما بعدها يعيد معرّف UUID نفسه.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
 serverUUID()
 ```
 
-**الوسائط**
+**المعاملات**
 
 * لا توجد.
 
@@ -4992,13 +5299,17 @@ SELECT serverUUID();
 يعيد العدد الإجمالي للشظايا في الاستعلام الموزع.
 إذا لم يكن الاستعلام موزعًا، فستُعاد القيمة الثابتة `0`.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 shardCount()
 ```
 
-**الوسائط**
+**المعاملات**
 
 * لا شيء.
 
@@ -5034,7 +5345,11 @@ SELECT shardCount() FROM shard_count_example;
 تبدأ الفهارس من `1`.
 إذا لم يكن الاستعلام موزّعًا، فستُعاد قيمة ثابتة هي `0`.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 shardNum()
@@ -5046,7 +5361,7 @@ shardNum()
 
 **القيمة المُعادة**
 
-تعيد فهرس الجزء أو القيمة الثابتة `0`. [`UInt32`](/ar/reference/data-types/int-uint)
+تعيد فهرس الشظية أو القيمة الثابتة `0`. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -5128,7 +5443,7 @@ SELECT showCertificate() FORMAT LineAsString;
 sleep(seconds)
 ```
 
-**الوسائط**
+**المعاملات**
 
 * `seconds` — عدد الثواني المطلوب إيقاف تنفيذ الاستعلام مؤقتًا خلالها، بحد أقصى 3 ثوانٍ. ويمكن أن تكون قيمة ذات فاصلة عائمة لتحديد أجزاء من الثانية. [`const UInt*`](/ar/reference/data-types/int-uint) أو [`const Float*`](/ar/reference/data-types/float)
 
@@ -5166,19 +5481,19 @@ SELECT sleep(2);
 
 1. **الاختبار**: عند اختبار أداء ClickHouse أو إجراء اختبارات قياس الأداء له في ظل ظروف محددة، يمكنك استخدام `sleepEachRow()` لمحاكاة حالات التأخير أو إدخال توقفات مؤقتة لكل صف تتم معالجته.
 2. **تصحيح الأخطاء**: إذا كنت بحاجة إلى فحص حالة النظام أو تنفيذ الاستعلام لكل صف تتم معالجته، فيمكنك استخدام `sleepEachRow()` لإدخال توقفات مؤقتة، مما يتيح لك فحص المعلومات ذات الصلة أو جمعها.
-3. **المحاكاة**: في بعض الحالات، قد ترغب في محاكاة سيناريوهات واقعية تحدث فيها حالات تأخير أو توقفات مؤقتة لكل صف تتم معالجته، مثل عند التعامل مع أنظمة خارجية أو أزمنة استجابة الشبكة.
+3. **المحاكاة**: في بعض الحالات، قد ترغب في محاكاة سيناريوهات واقعية تحدث فيها حالات تأخير أو توقفات مؤقتة لكل صف تتم معالجته، مثل عند التعامل مع أنظمة خارجية أو زمن الاستجابة على الشبكة.
 
 <Warning>
   مثل الدالة `sleep()`، من المهم استخدام `sleepEachRow()` بحذر وعند الضرورة فقط، لأنه قد يؤثر بشكل كبير في الأداء العام وسرعة استجابة نظام ClickHouse، خاصة عند التعامل مع مجموعات نتائج كبيرة.
 </Warning>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 sleepEachRow(seconds)
 ```
 
-**الوسائط**
+**المعاملات**
 
 * `seconds` — عدد الثواني التي يُوقَف فيها تنفيذ الاستعلام مؤقتًا لكل صف في مجموعة النتائج، بحد أقصى 3 ثوانٍ. ويمكن أن تكون قيمة فاصلة عائمة لتحديد أجزاء من الثانية. [`const UInt*`](/ar/reference/data-types/int-uint) أو [`const Float*`](/ar/reference/data-types/float)
 
@@ -5293,8 +5608,12 @@ message MessageName
 أُضيفت في: v20.12.0
 
 تعيد رقم منفذ TCP الخاص بـ [الواجهة الأصلية](/ar/concepts/features/interfaces/tcp) الذي يستمع عليه الخادم.
-إذا نُفِّذت في سياق جدول موزّع، فستُنشئ هذه الدالة عمودًا عاديًا بقيم مرتبطة بكل جزء.
+إذا نُفِّذت في سياق جدول موزّع، فستُنشئ هذه الدالة عمودًا عاديًا بقيم مرتبطة بكل شظية.
 وإلا، فإنها تُنتج قيمة ثابتة.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -5371,7 +5690,11 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 يعيد الاسم الداخلي لنوع بيانات القيمة المحددة.
 وعلى خلاف الدالة [`toTypeName`](#toTypeName)، قد يشمل نوع البيانات المُعاد أعمدة مُغلِّفة داخلية مثل `Const` و`LowCardinality`.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: فقد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 toColumnTypeName(value)
@@ -5496,7 +5819,11 @@ SELECT tokenizeQuery('SELECT 1')
   لمزيد من المعلومات، راجع صفحة [دعم المعاملات (ACID)](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 transactionID()
@@ -5555,13 +5882,13 @@ ROLLBACK;
   لمزيد من المعلومات، راجع صفحة [دعم المعاملات (ACID)](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 transactionLatestSnapshot()
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * لا شيء.
 
@@ -5595,7 +5922,7 @@ ROLLBACK;
 
 <CloudNotSupportedBadge />
 
-تُرجع أقدم لقطة (Commit Sequence Number) مرئية لإحدى [المعاملات](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) الجارية.
+تُرجع أقدم لقطة (Commit Sequence Number) تكون مرئية لإحدى [المعاملات](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) الجارية.
 
 <Note>
   هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة الخاصة بك:
@@ -5850,6 +6177,10 @@ FROM
 إذا نُفِّذت هذه الدالة في سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا بقيم مرتبطة بكل جزء.
 أما خلاف ذلك، فتنتج قيمة ثابتة.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -5972,13 +6303,17 @@ SELECT variantType(v) FROM test;
 إذا نُفِّذت في سياق جدول موزّع، فستُنشئ هذه الدالة عمودًا عاديًا بقيم خاصة بكل جزء.
 وبخلاف ذلك، فإنها تُنتج قيمة ثابتة.
 
-**الصياغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 version()
 ```
 
-**المعاملات**
+**الوسائط**
 
 * لا شيء.
 
@@ -6046,13 +6381,17 @@ SELECT visibleWidth(NULL)
 
 تعيد مدة تشغيل جلسة ZooKeeper الحالية بالثواني.
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 zookeeperSessionUptime()
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * لا شيء.
 

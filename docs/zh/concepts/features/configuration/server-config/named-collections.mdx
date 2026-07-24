@@ -375,6 +375,8 @@ SELECT dictGet('dict', 'B', 2);
 * `username` 是 `user` 的别名
 * `db` 是 `database` 的别名。
 
+[PostgreSQL table engine](/zh/reference/engines/table-engines/integrations/postgresql) 的连接池设置 (`postgresql_connection_pool_size` 以及其他 `postgresql_*` 设置) 也可以存储在集合中，或以 `key = value` overrides 的形式传递。它们适用于 `PostgreSQL` 表引擎、`postgresql` 表函数以及 `PostgreSQL` 数据库引擎；表上的显式 `SETTINGS` clause 的优先次序高于集合中的配置值。
+
 在集合中，参数 `addresses_expr` 用于替代 `host:port`。该参数是可选的，因为还可以使用其他可选参数：`host`、`hostname`、`port`。以下伪代码说明了优先级：
 
 ```sql

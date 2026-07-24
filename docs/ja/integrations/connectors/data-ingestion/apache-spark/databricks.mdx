@@ -41,7 +41,7 @@ ClickHouse Spark コネクタは Databricks とシームレスに連携します
    clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
    ```
 
-2. JAR を Databricks のワークスペースにアップロードします。
+2. JAR を Databricks ワークスペースにアップロードします。
    * **Workspace** に移動し、目的のフォルダーを開きます
    * **Upload** をクリックし、JAR ファイルを選択します
    * JAR はワークスペースに保存されます
@@ -53,9 +53,9 @@ ClickHouse Spark コネクタは Databricks とシームレスに連携します
    * **DBFS** または **Workspace** を選択し、アップロードした JAR ファイルを指定します
    * **Install** をクリックします
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="Databricks の Libraries タブ" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks の Libraries タブ" />
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="ワークスペースボリュームからライブラリをインストール" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="ワークスペース volume からライブラリをインストールする" />
 
 4. ライブラリを読み込むため、クラスターを再起動します
 
@@ -90,7 +90,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="Databricks Maven ライブラリの設定" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven ライブラリの設定" />
 
 3. **Install** をクリックし、ライブラリを読み込むためにクラスターを再起動します
 
@@ -334,6 +334,6 @@ Databricks から ClickHouse Cloud に接続する場合は、次の設定を行
   ## 関連ドキュメント
 </div>
 
-* [Spark Native Connector Guide](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - コネクタに関する完全なドキュメント
-* [TableProvider API Documentation](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - フォーマットベースのアクセスの詳細
-* [Catalog API Documentation](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - カタログベースのアクセスの詳細
+* [Spark Native Connector ガイド](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - コネクタの包括的なドキュメント
+* [TableProvider API ドキュメント](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - フォーマットベースのアクセスの詳細
+* [Catalog API ドキュメント](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - カタログベースのアクセスの詳細
