@@ -1,4 +1,5 @@
 SET alter_sync = 2;
+SET enable_fast_modify_ttl = 1;
 
 SELECT 'Test MergeTree to modify TTL.';
 DROP TABLE IF EXISTS test_fast_ttl;

@@ -12,6 +12,7 @@
 
 SET alter_sync = 2;
 SET allow_suspicious_ttl_expressions = 1;
+SET enable_fast_modify_ttl = 1;
 
 SELECT 'Date32 TTL shortened so every row expires';
 DROP TABLE IF EXISTS t_ttl_date32;
@@ -73,6 +74,18 @@ INSERT INTO t_ttl_col SELECT number, now('UTC') - INTERVAL 100 DAY, 'x' FROM num
 ALTER TABLE t_ttl_col MODIFY TTL d + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_col;
 DROP TABLE t_ttl_col;
+
+SELECT 'Batched ALTER with another TTL change falls back and materializes the column TTL';
+DROP TABLE IF EXISTS t_ttl_batch;
+-- The `MODIFY TTL` alone would be eligible for the fast path (constant 100-day shift), but the same
+-- ALTER also adds a column TTL. The fast path only shifts the stored rows-TTL timestamps and would
+-- never materialize the new column TTL, so the batch must fall back to the full rewrite, which
+-- clears the expired `x` values.
+CREATE TABLE t_ttl_batch (id UInt32, d DateTime('UTC'), x String) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
+INSERT INTO t_ttl_batch SELECT number, now('UTC') - INTERVAL 100 DAY, 'x' FROM numbers(1000);
+ALTER TABLE t_ttl_batch MODIFY TTL d + INTERVAL 200 DAY, MODIFY COLUMN x String TTL d + INTERVAL 10 DAY;
+SELECT count(), countIf(x = '') FROM t_ttl_batch;
+DROP TABLE t_ttl_batch;
 
 SELECT 'Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows';
 DROP TABLE IF EXISTS t_ttl_stale;

@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_fast_modify_ttl;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -2116,9 +2117,9 @@ static MutationCommand createFastMaterializeTTLCommand(time_t delta)
     /// `ast_text` is what gets persisted to the replicated log / ZooKeeper for this mutation,
     /// serialized as `MATERIALIZE TTL <delta>`. This syntax is intentionally not understood by
     /// servers built without the fast `MODIFY TTL` optimization, so a mixed-version cluster cannot
-    /// process such a mutation until every replica is upgraded. This is a deliberate trade-off
-    /// (the optimization is unconditional, with no gating setting); if it proves problematic the
-    /// whole feature can be reverted.
+    /// process such a mutation until every replica is upgraded. This is why the optimization is
+    /// gated behind the `enable_fast_modify_ttl` setting, disabled by default: the user asserts
+    /// that every server that may read this mutation entry understands the format.
     command.ast_text = ast->formatWithSecretsOneLine();
     command.ttl_delta = delta;
     return command;
@@ -2166,16 +2167,37 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
             if (alter_cmd.isTTLAlter(original_metadata))
             {
                 /// FAST_MATERIALIZE_TTL cannot be executed together with other commands.
-                if (result.empty())
+                if (result.empty() && settings[Setting::enable_fast_modify_ttl])
                 {
+                    /// The fast command materializes only the rows-TTL shift of this `MODIFY TTL`
+                    /// command. In a batched ALTER, another command may change TTLs of the final
+                    /// metadata too (e.g. `MODIFY TTL ..., MODIFY COLUMN x String TTL ...`), and the
+                    /// fast path would never materialize that other TTL, so any other TTL-affecting
+                    /// command in the batch forces the regular rewrite.
+                    bool has_other_ttl_change = false;
+                    for (const auto & other_cmd : *this)
+                    {
+                        if (&other_cmd == &alter_cmd)
+                            continue;
+                        if (other_cmd.ttl || other_cmd.type == AlterCommand::MODIFY_TTL || other_cmd.type == AlterCommand::REMOVE_TTL
+                            || other_cmd.to_remove == AlterCommand::RemoveProperty::TTL)
+                        {
+                            has_other_ttl_change = true;
+                            break;
+                        }
+                    }
+
                     /// Try optimizing TTL changes for the same column.
                     /// Use `original_metadata`: `metadata` already has the new TTL applied above,
                     /// so the old TTL needed to compute the delta is only available in the original copy.
                     /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
-                    if (auto delta = tryOptimizeModifyTTL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
+                    if (!has_other_ttl_change)
                     {
-                       result.push_back(createFastMaterializeTTLCommand(*delta));
-                       break;
+                        if (auto delta = tryOptimizeModifyTTL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
+                        {
+                            result.push_back(createFastMaterializeTTLCommand(*delta));
+                            break;
+                        }
                     }
                 }
                 result.push_back(createMaterializeTTLCommand());
