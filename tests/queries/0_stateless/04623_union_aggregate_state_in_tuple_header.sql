@@ -94,3 +94,27 @@ SELECT finalizeAggregation(s) AS v FROM
     SELECT arrayReduce('quantileState(0.7)', [2]) AS s
 )
 ORDER BY v;
+
+-- Shadowing a constant aggregate-state column with a compatible constant of a different aggregate
+-- function under the same alias. The planner compares the constant values of the same-name INPUT
+-- and COLUMN nodes when finalizing an actions chain step, and the plain `Field` comparison of the
+-- aggregate states throws for different function names. Such constants must compare as different
+-- without throwing, so that the redefinition is preserved.
+SELECT finalizeAggregation(s) FROM
+(
+    SELECT arrayReduce('quantilesState(0.9)', [1]) AS s
+    FROM
+    (
+        SELECT arrayReduce('quantileState(0.5)', [1]) AS s
+    )
+);
+
+-- The same with different serialized state bytes: the outer redefinition must win.
+SELECT finalizeAggregation(s) FROM
+(
+    SELECT arrayReduce('quantilesState(0.9)', [2]) AS s
+    FROM
+    (
+        SELECT arrayReduce('quantileState(0.5)', [1]) AS s
+    )
+);
