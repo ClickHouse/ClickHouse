@@ -20,7 +20,9 @@ INSERT INTO pfsmj_prio_left  SELECT number, number FROM numbers(0, 2000);
 INSERT INTO pfsmj_prio_left  SELECT number, number FROM numbers(2000, 2000);
 INSERT INTO pfsmj_prio_right SELECT number, number * 2 FROM numbers(0, 4000);
 
--- Analyzer path (enable_analyzer = 1).
+-- Analyzer path. The default is overridden to 0 in the old-analyzer CI configuration, so pin it
+-- explicitly (`enable_analyzer` cannot be changed inside a subquery, so set it at session level).
+SET enable_analyzer = 1;
 
 -- `parallel_full_sorting_merge` selected -> sharded.
 SELECT 'analyzer parallel_only_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2

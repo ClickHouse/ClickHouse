@@ -51,7 +51,9 @@ INSERT INTO pfsmj_pkr_dim SELECT number, number * 2 FROM numbers(0, 12000);
 INSERT INTO pfsmj_pkr_dim SELECT number, number * 2 FROM numbers(6000, 12000);
 INSERT INTO pfsmj_pkr_probe SELECT number, number FROM numbers(9000);
 
--- Analyzer path (enable_analyzer = 1).
+-- Analyzer path. The default is overridden to 0 in the old-analyzer CI configuration, so pin it
+-- explicitly (`enable_analyzer` cannot be changed inside a subquery, so set it at session level).
+SET enable_analyzer = 1;
 
 -- The outer join is NOT scattered: its left side is a sorted subquery (a pre-sorted `FinishSorting` side),
 -- so the sharded rewrite must not fire.
