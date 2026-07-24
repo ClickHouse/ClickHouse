@@ -46,6 +46,33 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 SELECT name, status FROM system.dictionaries;
 ```
 
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD 字典
+</div>
+
+如果字典状态为 `LOADED`，则卸载字典 `dictionary_name` 以释放其占用的内存。
+该字典会在后续再次需要时按需重新加载。
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+可以通过查询 `system.dictionaries` 表来查看字典状态。
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+`SYSTEM UNLOAD DICTIONARIES` 查询会卸载所有状态为 `LOADED` 的字典 (参见 [`system.dictionaries`](/zh/reference/system-tables/dictionaries) 的 `status` 列) ，即所有此前已成功加载的字典。
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 <div id="reload-models">
   ## SYSTEM RELOAD MODELS
 </div>
@@ -112,6 +139,13 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 清空标记缓存。
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+清除主索引缓存。该缓存会在内存中保存 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表的主键。
+其大小由服务器级设置 [`primary_index_cache_size`](/zh/reference/settings/server-settings/settings#primary_index_cache_size) 控制。
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 清空 Parquet 元数据缓存。
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+清除已解析的 Paimon 元数据文件 (manifest 列表和 manifests) 的内存缓存。
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+清除函数 [`pointInPolygon`](/zh/reference/functions/regular-functions/geo/coordinates#pointinpolygon) 使用的预处理常量多边形缓存。已配置的大小限制 (服务器设置 `point_in_polygon_cache_size`) 保持不变，因此之后缓存仍会继续接受新条目。若要禁用该缓存，请将 `point_in_polygon_cache_size` 设为 `0`。
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-清除文本索引的头部、字典和倒排列表缓存。
+清除文本索引的标记、头部和倒排列表缓存。
 
 如果要单独清除其中某一个缓存，可以运行
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`，或
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`，或
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+清除次级 (数据跳过) 索引的标记缓存。
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+清除次级 (数据跳过) 索引的未压缩块缓存。
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+清除内存映射文件缓存。
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+清除用户态页缓存，即 ClickHouse 自有的内存缓存，用于缓存从底层存储读取的数据。
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+清空向量相似度索引缓存。
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+清除用于对外连接的 HTTP 连接池缓存。
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+清除 S3 客户端的缓存。
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+将表的标记预加载到[标记缓存](#drop-mark-cache)中。次级索引的标记也会预加载到[索引标记缓存](#drop-index-mark-cache)中。
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+将 `MergeTree` 表的主索引加载至[主索引缓存](#drop-primary-index-cache)中。
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+清除指定磁盘上的元数据缓存。
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+将 ClickHouse 文件系统缓存的内存状态与磁盘上实际存在的缓存文件进行同步，并返回每个已缓存 File 段的 `cache_name`、`path` 和已下载的 `size`。可选的缓存名称可将该操作限制为仅针对单个缓存。
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` 仅在 ClickHouse Cloud 中可用。
+</Note>
+
+删除分布式缓存。使用 `CONNECTIONS` 可仅删除与分布式缓存服务器之间的缓存连接，或者传入服务器标识符以仅针对某一台服务器。
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -196,6 +338,12 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 清除查询条件缓存。
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+清除加密头缓存。该缓存保存从加密文件开头读取的加密头，供 Experimental `use_reader_executor` 读取路径使用，以避免重复读取；其大小由服务器级设置 `encryption_header_cache_size` 配置。
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP 查询缓存

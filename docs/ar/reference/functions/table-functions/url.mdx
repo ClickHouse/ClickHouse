@@ -6,14 +6,12 @@ title: 'url'
 doc_type: 'مرجع'
 ---
 
+{/*بداية_مولدة_تلقائيًا*/}
+
 import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="url-table-function">
-  # الدالة الجدولية `url`
-</div>
-
-تنشئ الدالة `url` جدولًا من `URL` وفق `format` و`structure` المحدَّدين.
+تنشئ الدالة `url` جدولًا من `URL` وفق `format` و`structure` المحددين.
 
 يمكن استخدام الدالة `url` في استعلامات `SELECT` و`INSERT` على البيانات الموجودة في جداول [URL](/ar/reference/engines/table-engines/special/url).
 
@@ -29,12 +27,12 @@ url(URL [,format] [,structure] [,headers])
   ## المعلمات
 </div>
 
-| المعلمة     | الوصف                                                                                                                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `URL`       | عنوان خادم HTTP أو HTTPS محاط بعلامتَي اقتباس مفردتين، ويمكنه قبول طلبات `GET` أو `POST` (لاستعلامات `SELECT` أو `INSERT` على الترتيب). النوع: [String](/ar/reference/data-types/string). |
-| `format`    | [تنسيق](/ar/reference/formats/index) البيانات. النوع: [String](/ar/reference/data-types/string).                                                                                             |
-| `structure` | بنية الجدول بصيغة `'UserID UInt64, Name String'`. ويحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string).                                                         |
-| `headers`   | الرؤوس بصيغة `'headers('key1'='value1', 'key2'='value2')'`. يمكنك تعيين رؤوس لاستدعاء HTTP.                                                                                            |
+| المعلمة     | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URL`       | عنوان URL محاط بعلامتَي اقتباس مفردتين، ويحدد مخططه الواجهة الخلفية. ويكون عنوان URL من نوع `http`/`https` (أو غير المعروف) عنوان خادم يقبل طلبات `GET` أو `POST` (لاستعلامات `SELECT` أو `INSERT` على الترتيب)؛ أما المخطط المعروف غير HTTP (`file://`, `s3://`, `az://`, `hdfs://`, …) فتتم إحالته إلى table function المطابقة — راجع [التوجيه حسب مخطط URL](#scheme-dispatch). النوع: [String](/ar/reference/data-types/string). |
+| `format`    | [تنسيق](/ar/reference/formats/index) البيانات. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                       |
+| `structure` | بنية الجدول بصيغة `'UserID UInt64, Name String'`. ويحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                   |
+| `headers`   | الرؤوس بصيغة `'headers('key1'='value1', 'key2'='value2')'`. يمكنك تعيين رؤوس لاستدعاء HTTP.                                                                                                                                                                                                                                                                                                                                      |
 
 <div id="returned_value">
   ## القيمة المُعادة
@@ -60,12 +58,65 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
+<div id="scheme-dispatch">
+  ## التوجيه وفق مخطط URL
+</div>
+
+تعمل الدالة `url` كغلاف موحّد فوق دوال الجداول الأخرى الخاصة بالملفات وتخزين الكائنات: إذ تُوجِّه إلى الواجهة الخلفية المناسبة استنادًا إلى مخطط URL. يتيح لك ذلك القراءة من أي موقع مدعوم باستخدام صياغة موحّدة واحدة.
+
+| المخطط                               | يوجّه إلى                                                                          |
+| ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `http`, `https` (وأي مخطط غير معروف) | المحرك `URL` نفسه (HTTP `GET`/`POST`)                                              |
+| `file`                               | الدالة [`file`](/ar/reference/functions/table-functions/file)                         |
+| `s3`, `gs`, `gcs`, `oss`             | الدالة [`s3`](/ar/reference/functions/table-functions/s3)                             |
+| `az`, `azure`, `abfss`, `abfs`       | الدالة [`azureBlobStorage`](/ar/reference/functions/table-functions/azureBlobStorage) |
+| `hdfs`                               | الدالة [`hdfs`](/ar/reference/functions/table-functions/hdfs)                         |
+
+لا تُوجَّه إلا مخططات S3 التي يحلّها معيّن عناوين URI الخاص بـ S3 إلى endpoint فعلي من دون إعداد إضافي (`s3`، بالإضافة إلى `gs`/`gcs`/`oss`). أمّا مخططات المورّدين الأخرى المتوافقة مع S3 (`cos` و`obs` و`eos` و…) فهي خاصة بكل منطقة ولا تملك تعيين endpoint افتراضيًا، لذلك يُعامَل URL من النوع `cos://…` على أنه مخطط غير معروف ويُبلَّغ عنه كـ error؛ استخدم الدالة [`s3`](/ar/reference/functions/table-functions/s3) مباشرةً (مع تهيئة `url_scheme_mappers`) لتلك الواجهات الخلفية.
+
+بالنسبة إلى `file://`، يُحل المسار النسبي (`file://data.csv`) داخل الدليل [user&#95;files](/ar/reference/settings/server-settings/settings#user_files_path)، ويجب أن يشير المسار المطلق (`file:///home/user/data.csv`) إلى موقع داخله كالمعتاد.
+
+تعمل الوسيطات `format` و`structure` و`compression_method` وكذلك الإعداد [url&#95;base](#resolving-relative-urls) بالطريقة نفسها بغض النظر عن هدف التوجيه.
+
+```sql
+SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
+SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
+```
+
+لا يزال تمرير الـ مخطط عبر [`urlCluster`](/ar/reference/functions/table-functions/urlCluster) غير مدعوم: إذ يُرفَض أي مخطط غير `http(s)` يُمرَّر إلى `urlCluster` مع ظهور خطأ. استخدم بدلًا من ذلك دالة cluster المقابلة (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) لهذه الجهات الخلفية.
+
 <div id="globs-in-url">
   ## أنماط glob في URL
 </div>
 
 تُستخدم الأنماط داخل `{ }` لإنشاء مجموعة من الشظايا أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة والأمثلة، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
 يُستخدم المحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الوارد في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings#glob_expansion_max_elements).
+للاطلاع على بنية glob للمسار ضمن URL (مثل `*` و `{a,b}` و `{N..M}` و `**`)، راجع [أنماط glob في المسار](/ar/reference/functions/table-functions/file#globs-in-path). لاحظ أن `?` يبدأ سلسلة الاستعلام في URL، ولا يمكن استخدامه كحرف بدل في مكوّن المسار.
+
+<div id="wildcards-with-http-index-pages">
+  ## أحرف البدل مع صفحات فهرس HTTP
+</div>
+
+بالنسبة إلى `url` ومحرك الجدول `URL`، يمكن لـ ClickHouse توسيع أحرف البدل من خلال جلب صفحات فهرس HTTP ‏(HTML أو نص عادي) واستخراج عناوين URL من جسم الاستجابة. يتيح ذلك أنماطًا مثل `/**/` عندما يوفّر الخادم سردًا للدلائل.
+
+ملاحظات:
+
+* تُفسَّر عناوين URL النسبية استنادًا إلى عنوان URL لصفحة الفهرس.
+* تُوسَّع قوالب `URL` قبل جلب صفحات الفهرس، بما في ذلك توسيع الشرائح المفصولة بفواصل ونطاقات الأرقام وخيارات `|` للتبديل الاحتياطي خارج مكوّن المسار.
+* لا تُدعَم أنماط التبديل الاحتياطي `|` داخل مكوّن المسار عند توسيع صفحات فهرس HTTP.
+* يُطبَّق تطابق أحرف البدل على مكوّن المسار في عنوان URL.
+* إذا كان عنوان URL المُدرَج يحتوي بالفعل على سلسلة استعلام أو جزء مرجعي، فستكون لهما الأولوية على نظيريهما من عنوان URL المصدر. وإلا، فستُستخدم سلسلة الاستعلام والجزء المرجعي من عنوان URL المصدر.
+* يُسمح بسرد فارغ؛ أما أخطاء HTTP ‏(مثل 404) في صفحات الفهرس فتؤدي إلى ظهور استثناءات.
+* يُقيَّد الحد الأقصى لحجم صفحة الفهرس بواسطة [max&#95;http&#95;index&#95;page&#95;size](/ar/reference/settings/server-settings/settings#max_http_index_page_size).
+* يُقيَّد الحد الأقصى لعدد الدلائل المقروءة أثناء التوسيع التكراري بواسطة [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/ar/reference/settings/session-settings#url_wildcard_max_directories_to_read).
+
+مثال:
+
+```sql
+SELECT count()
+FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+```
 
 <div id="virtual-columns">
   ## الأعمدة الافتراضية
@@ -133,3 +184,5 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 </div>
 
 * [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
+
+{{/*AUTOGENERATED_END*/}}

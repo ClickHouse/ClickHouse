@@ -43,9 +43,7 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
 * Rol de ejecución de Lambda con permisos para añadir capas
 
 <Steps>
-  <Step>
-    #### Elige la capa adecuada de Rotel Lambda Extension
-
+  <Step title="Elige la capa adecuada de Rotel Lambda Extension" id="choose-layer">
     Elige la capa de Lambda que coincida con la arquitectura del entorno de ejecución de tu función Lambda. El campo `{version}`
     depende de la región de AWS en la que la estés desplegando. Consulta la página de [releases](https://github.com/streamfold/rotel-lambda-extension/releases)
     para ver los números de versión más recientes correspondientes a tu región.
@@ -65,9 +63,7 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
     * sa-east-1
   </Step>
 
-  <Step>
-    #### Añade la capa Rotel a tu función Lambda
-
+  <Step title="Añade la capa Rotel a tu función Lambda" id="add-layer">
     *En estos ejemplos, sustituye `{arch}`, `{region}` y `{version}` por los valores adecuados indicados arriba.*
 
     ##### Opción 1: Consola de AWS
@@ -97,15 +93,13 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... otra configuración ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
   </Step>
 
-  <Step>
-    #### Configura la extensión para exportar a ClickStack
-
+  <Step title="Configura la extensión para exportar a ClickStack" id="configure-extension">
     Rotel Lambda Extension se configura mediante variables de entorno. Debes configurar el endpoint del exportador OTLP para que apunte a tu instancia de ClickStack. Los ejemplos asumen que tu función de AWS Lambda puede acceder a la instancia de ClickStack.
 
     ##### Configuración básica (variables de entorno)
@@ -113,13 +107,13 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
     Agrega estas variables de entorno a tu función de Lambda:
 
     ```bash
-    # Obligatorio: endpoint OTLP de ClickStack
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # Opcional: cabeceras de autenticación
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # Opcional: nombre del servicio (por defecto, el nombre de la función Lambda)
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
@@ -181,7 +175,7 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
     }
     ```
 
-    En Parameter Store:
+    Para Parameter Store:
 
     ```json
     {
@@ -203,9 +197,7 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
     </Note>
   </Step>
 
-  <Step>
-    #### Probar la integración
-
+  <Step title="Probar la integración" id="test-integration">
     Invoca tu función Lambda para comprobar que los logs se están enviando a ClickStack:
 
     ```bash
@@ -222,9 +214,7 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
     ```
   </Step>
 
-  <Step>
-    #### Verifica los logs en HyperDX
-
+  <Step title="Verifica los logs en HyperDX" id="verify-logs">
     Una vez configurado, inicia sesión en HyperDX (la UI de ClickStack) y verifica que los logs se estén enviando:
 
     <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Vista de logs de Lambda" />
@@ -245,12 +235,10 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
   ## Deshabilitar CloudWatch Logs (optimización de costos)
 </div>
 
-De forma predeterminada, AWS Lambda envía todos los logs a CloudWatch Logs, lo que puede resultar costoso a gran escala. Una vez que hayas verificado que los logs se están enviando a ClickStack, puedes deshabilitar el envío de logs a CloudWatch para reducir costos.
+De forma predeterminada, AWS Lambda envía todos los logs a CloudWatch Logs, lo que puede resultar costoso a gran escala. Una vez que hayas verificado que los logs se están enviando a ClickStack, puedes deshabilitar el logging de CloudWatch para reducir costos.
 
 <Steps>
-  <Step>
-    #### Quitar los permisos de CloudWatch del rol de ejecución
-
+  <Step title="Quitar los permisos de CloudWatch del rol de ejecución" id="remove-permissions">
     1. Abre la consola de AWS y ve a **AWS Lambda**
     2. Ve a tu función Lambda
     3. Selecciona **Configuration** → **Permissions**
@@ -261,9 +249,7 @@ De forma predeterminada, AWS Lambda envía todos los logs a CloudWatch Logs, lo 
     6. Guarda el rol
   </Step>
 
-  <Step>
-    #### Verifica que el logging de CloudWatch esté deshabilitado
-
+  <Step title="Verifica que el logging de CloudWatch esté deshabilitado" id="verify-disabled">
     Invoca tu función de nuevo y verifica que:
 
     1. No se creen nuevos streams de logs en CloudWatch
@@ -287,9 +273,7 @@ De forma predeterminada, AWS Lambda envía todos los logs a CloudWatch Logs, lo 
 Rotel Lambda Extension funciona perfectamente con las capas de autoinstrumentación de OpenTelemetry para recopilar trazas distribuidas y métricas, además de logs.
 
 <Steps>
-  <Step>
-    #### Elige la capa de instrumentación para tu lenguaje
-
+  <Step title="Elige la capa de instrumentación para tu lenguaje" id="choose-instrumentation">
     AWS ofrece capas de autoinstrumentación de OpenTelemetry para varios lenguajes:
 
     | Lenguaje | Patrón de ARN de la capa                                                              |
@@ -301,9 +285,7 @@ Rotel Lambda Extension funciona perfectamente con las capas de autoinstrumentaci
     Consulta las versiones más recientes en el [repositorio de AWS OpenTelemetry Lambda](https://github.com/aws-observability/aws-otel-lambda).
   </Step>
 
-  <Step>
-    #### Agrega ambas capas a tu función
-
+  <Step title="Agrega ambas capas a tu función" id="add-both-layers">
     Agrega **ambas** capas: la capa de extensión de Rotel y la capa de instrumentación:
 
     ```bash
@@ -315,9 +297,7 @@ Rotel Lambda Extension funciona perfectamente con las capas de autoinstrumentaci
     ```
   </Step>
 
-  <Step>
-    #### Configura la autoinstrumentación
-
+  <Step title="Configura la autoinstrumentación" id="configure-instrumentation">
     Define la variable de entorno `AWS_LAMBDA_EXEC_WRAPPER` para habilitar la autoinstrumentación:
 
     **Para Node.js:**
@@ -339,9 +319,7 @@ Rotel Lambda Extension funciona perfectamente con las capas de autoinstrumentaci
     ```
   </Step>
 
-  <Step>
-    #### Verifica las trazas en HyperDX
-
+  <Step title="Verifica las trazas en HyperDX" id="verify-traces">
     Después de invocar tu función:
 
     1. Ve a la vista **Traces** de HyperDX
