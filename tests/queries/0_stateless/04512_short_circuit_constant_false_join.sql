@@ -127,7 +127,9 @@ SELECT * FROM mt ALL INNER JOIN sj ON 0; -- { serverError INCOMPATIBLE_TYPE_OF_J
 -- planning time, independently of this optimization.
 CREATE TABLE dist (k UInt64) ENGINE = MergeTree ORDER BY k AS SELECT number FROM numbers(10);
 SELECT 'Distributed plan is not broken by the short-circuit';
--- make_distributed_plan is incompatible with parallel replicas, which CI randomizes; pin them off.
+-- make_distributed_plan rejects parallel replicas and a non-zero max_rows_to_group_by; pin both
+-- off (the functional-test profile sets max_rows_to_group_by = 10G by default).
 SELECT count() FROM dist a INNER JOIN dist b ON a.k = b.k AND 1 = 2
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+             max_rows_to_group_by = 0;
