@@ -124,6 +124,15 @@ Because a two-part name always means `database.table`, writing
 `namespace.table` without the catalog prefix does **not** resolve inside the
 current database - use the full path or `USE catalog_name.namespace`.
 
+A namespace scope can also arrive as a connection default database: the
+client sends `catalog_name.namespace` in the handshake after a `USE`, on
+reconnect, via `--database`, or from the user's `DEFAULT DATABASE`. These
+paths are validated with the session (profile) settings, before any per-query
+settings are received, so `allow_experimental_table_namespaces` must be
+enabled in the user's profile for them; otherwise the connection fails with
+`UNKNOWN_DATABASE`. Enabling the setting only per query is enough for `USE`
+within an established connection.
+
 While a namespace is selected, statements that do not support namespace
 scoping - DDL (`CREATE`, `DROP`, `ALTER`, `RENAME`, `OPTIMIZE`, `TRUNCATE`),
 `ON CLUSTER` queries, `BACKUP`/`RESTORE`, access-control statements, `SYSTEM`
