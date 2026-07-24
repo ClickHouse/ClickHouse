@@ -130,7 +130,8 @@ Because the query doesn't specify a `FORMAT` clause, the interface sends the res
 
 ## Format settings {#format-settings}
 
-There are no user-configurable format settings.
+`PostgreSQLWire` uses the standard text-serialization settings for individual values. It has no settings specific to the
+format itself; booleans are always serialized using PostgreSQL's `t` and `f` representations.
 )DOCS_MD"});
 }
 
