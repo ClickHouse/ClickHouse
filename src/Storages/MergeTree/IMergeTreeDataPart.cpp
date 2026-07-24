@@ -1747,12 +1747,17 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// the new part (see `MutateTask`). Such a stream can only accept a codec that does not require a
     /// column type (e.g. `PCO` cannot compress typeless data at all, and `ALP` reinterprets the opaque
     /// bytes as floating-point values and rejects a blob whose size is not a multiple of the element
-    /// width). Such a codec would only fail — or silently lose data — at the first such write. The table
-    /// compression settings and the server `<compression>` selector already reject such codecs up front
-    /// with the same predicate (see `unsafeUntypedCompressionCodecReason` in `MergeTreeSettings.cpp`);
-    /// enforce the same invariant on the metadata-load path too, where an attached or pre-fix part may
-    /// still carry an unsuitable codec in `default_compression_codec.txt` (or have one detected from a
-    /// column file). Fall back to the table's normal default codec selection (the
+    /// width) and that is not lossy (`SZ3` reinterprets the bytes as floating-point values too, so on an
+    /// opaque blob it would either throw on a size that is not a multiple of the element width or
+    /// silently corrupt the data). Such a codec would only fail — or lose data — at the first such
+    /// write. The table compression settings and the server `<compression>` selector already reject
+    /// such codecs up front with the same two properties (see `getReasonUnsafeForUntypedData` in
+    /// `CompressionFactory.cpp`); enforce the same invariant on the metadata-load path too. A literal
+    /// lossy line in `default_compression_codec.txt` (e.g. `CODEC(SZ3)`) already fails the typeless
+    /// parse above and only reaches this point through `detectDefaultCompressionCodec`, which rebuilds
+    /// the codec of an attached or pre-fix part from a data file's method bytes — so the detected
+    /// codec must pass the same check as the parsed one. Fall back to the table's normal default codec
+    /// selection (the
     /// `default_compression_codec` setting, then the server `<compression>` selector — both validated
     /// or sanitized with the same predicate, so the result is always usable for untyped streams), so
     /// the bad metadata cannot reach a mutation writer. Following the normal selection matters beyond
@@ -1767,18 +1772,18 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// merge. The part is not counted as active yet while its metadata loads, so its size is also
     /// added to the active total (the last argument) to evaluate a `min_part_size_ratio` selector
     /// case as if the part were already active — e.g. a lone attached part must get ratio `1`, not `0`.
-    if (default_codec->requiresColumnTypeToCompress())
+    if (default_codec->requiresColumnTypeToCompress() || default_codec->isLossyCompression())
     {
         LOG_WARNING(
             storage.log,
             "Part {} has a default compression codec that cannot be used for untyped streams (it requires a column "
-            "type); falling back to the table's default codec.",
+            "type or is lossy); falling back to the table's default codec.",
             name);
         default_codec = storage.getCompressionCodecForPart(getBytesOnDisk(), {}, time(nullptr), getBytesOnDisk());
 
         /// The selection above never returns a codec unsafe for untyped data; this is a fail-safe for
         /// a future drift of that invariant, because such a codec would corrupt data at the next write.
-        if (default_codec->requiresColumnTypeToCompress())
+        if (default_codec->requiresColumnTypeToCompress() || default_codec->isLossyCompression())
             default_codec = CompressionCodecFactory::instance().getDefaultCodec();
     }
 }
