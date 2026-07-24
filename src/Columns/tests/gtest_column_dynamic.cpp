@@ -1,5 +1,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -1237,6 +1238,30 @@ TEST(ColumnDynamic, rollback)
         check_checkpoint(*dynamic_checkpoints[i].first, dynamic_checkpoints[i].second);
         check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), variant_checkpoints_sizes[i]);
     }
+}
+
+TEST(ColumnDynamic, InsertContainerWrappedObjectRequiresExactStorage)
+{
+    auto column = ColumnDynamic::create(254);
+    auto parameterized_type = DataTypeFactory::instance().get("Array(JSON(a UInt64))");
+    ASSERT_TRUE(column->addNewVariant(parameterized_type));
+
+    /// A raw row like `[{'b':'x'}]` infers `Array(JSON)`. `JSON(...)` variants are partitioned
+    /// by exact storage type, so the row must not reuse the `Array(JSON(a UInt64))` discriminator
+    /// even though `ColumnObject::tryInsert` would accept the value into its shared data.
+    Object object;
+    object["b"] = Field("x");
+    Array array;
+    array.push_back(object);
+    column->insert(Field(array));
+
+    const auto & variant_info = column->getVariantInfo();
+    auto parameterized_discr = variant_info.variant_name_to_discriminator.at(parameterized_type->getName());
+    ASSERT_TRUE(column->getVariantColumn().getVariantByGlobalDiscriminator(parameterized_discr).empty());
+
+    /// The row must land in its own `Array(JSON)` variant.
+    auto inferred_discr = variant_info.variant_name_to_discriminator.at("Array(JSON)");
+    ASSERT_EQ(column->getVariantColumn().getVariantByGlobalDiscriminator(inferred_discr).size(), 1);
 }
 
 TEST(ColumnDynamic, InsertRangeFrom4)

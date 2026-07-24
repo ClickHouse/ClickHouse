@@ -2,7 +2,12 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
@@ -66,6 +71,35 @@ bool canMergeTypeIntoExistingDynamicVariant(const DataTypePtr & existing_type, c
 bool canStoreTypedValueInExistingDynamicVariant(const DataTypePtr & existing_type, const DataTypePtr & inserted_type)
 {
     return areDynamicStorageTypesCompatible(existing_type, inserted_type);
+}
+
+/// `JSON(...)` variants must stay partitioned by exact storage type: reusing a variant whose
+/// storage type differs from the inserted value's type breaks `dynamicType`, serialization
+/// and subcolumn reads. `FieldToDataType` can infer `JSON` not only at the top level but
+/// also wrapped in containers (e.g. `Array(JSON)` for `[{'b':'x'}]`), so the exact-storage
+/// guard in `insert` must recurse through containers, not only check the top-level type.
+bool typeRequiresExactStorageMatch(const IDataType & type)
+{
+    if (typeid_cast<const DataTypeObject *>(&type))
+        return true;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+        return typeRequiresExactStorageMatch(*array_type->getNestedType());
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+        return typeRequiresExactStorageMatch(*map_type->getNestedType());
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return typeRequiresExactStorageMatch(*nullable_type->getNestedType());
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return typeRequiresExactStorageMatch(*low_cardinality_type->getDictionaryType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        for (const auto & element : tuple_type->getElements())
+        {
+            if (typeRequiresExactStorageMatch(*element))
+                return true;
+        }
+        return false;
+    }
+    return false;
 }
 
 }
@@ -308,7 +342,7 @@ void ColumnDynamic::insert(const Field & x)
     auto shared_variant_discr = getSharedVariantDiscriminator();
     auto field_data_type = applyVisitor(FieldToDataType(), x);
     auto field_data_type_name = field_data_type->getName();
-    const bool inserted_type_requires_exact_storage = typeid_cast<const DataTypeObject *>(field_data_type.get());
+    const bool inserted_type_requires_exact_storage = typeRequiresExactStorageMatch(*field_data_type);
     const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     /// Check if we can insert field into existing variants and avoid Variant extension.
     for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
@@ -570,7 +604,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     if (!dynamic_structure_is_fixed && getSharedVariant().empty() && max_dynamic_types < global_max_dynamic_types)
         max_dynamic_types = global_max_dynamic_types;
 
-    auto tryInsertSharedVariantValueIntoExistingVariant = [&](std::string_view value, ColumnVariant::Discriminator & local_discr, size_t & offset)
+    auto try_insert_shared_variant_value_into_existing_variant = [&](std::string_view value, ColumnVariant::Discriminator & local_discr, size_t & offset)
     {
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
@@ -668,7 +702,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                 auto value = src_shared_variant.getDataAt(src_offsets[start + i]);
                 ColumnVariant::Discriminator local_discr = shared_variant_local_discr;
                 size_t offset = 0;
-                if (tryInsertSharedVariantValueIntoExistingVariant(value, local_discr, offset))
+                if (try_insert_shared_variant_value_into_existing_variant(value, local_discr, offset))
                 {
                     /// Local discriminators were already filled in ColumnVariant::insertRangeFrom and this row should contain
                     /// shared_variant_local_discr. Change it to local discriminator of the found variant and update offsets.
@@ -794,7 +828,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                 auto value = src_shared_variant.getDataAt(src_offset);
                 ColumnVariant::Discriminator local_discr = shared_variant_local_discr;
                 size_t offset = 0;
-                if (tryInsertSharedVariantValueIntoExistingVariant(value, local_discr, offset))
+                if (try_insert_shared_variant_value_into_existing_variant(value, local_discr, offset))
                 {
                     local_discriminators.push_back(local_discr);
                     offsets.push_back(offset);
