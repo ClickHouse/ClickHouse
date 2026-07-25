@@ -140,11 +140,14 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
-DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(bool deduplication_enabled, const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const
 {
     /// An empty selector means the block was not split (single partition); with dedup off or a
     /// single token there is nothing to attribute. Every token then belongs to this partition.
-    if (disabled || row_to_partition.empty() || getCount() <= 1)
+    /// When the sink does not deduplicate at all (`deduplication_enabled` is false, e.g. the
+    /// deduplication window of the table is 0), the tokens are never registered, so there is
+    /// nothing to attribute either - and the consistency check below must not reject the insert.
+    if (disabled || !deduplication_enabled || row_to_partition.empty() || getCount() <= 1)
         return cloneSelf();
 
     /// Attributing tokens to partitions walks each token's row range over the selector, which is

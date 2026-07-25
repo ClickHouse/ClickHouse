@@ -96,7 +96,7 @@ public:
     FilterResult deduplicateSelf(bool deduplication_enabled, const std::string & partition_id, ContextPtr context) const;
     FilterResult deduplicateBlock(const std::vector<std::string> & existing_block_ids, const std::string & partition_id, ContextPtr context) const;
 
-    Ptr filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const;
+    Ptr filterToPartition(bool deduplication_enabled, const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const;
 
     std::vector<DeduplicationHash> getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const;
 
