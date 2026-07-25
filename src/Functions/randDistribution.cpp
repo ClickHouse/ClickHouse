@@ -14,6 +14,8 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
+#include <limits>
 #include <random>
 
 namespace DB
@@ -42,6 +44,46 @@ struct DistributionLimits
     UInt64 max_trials;
     Float64 max_parameter;
 };
+
+/// The distributions of the standard library are sampled with rejection loops that cannot be interrupted.
+/// For extreme enough parameters those loops never terminate, so the query ignores `max_execution_time`
+/// and `KILL QUERY` and occupies a thread until the server is restarted. Constant folding executes the
+/// function during query analysis, so even a plain `SELECT randChiSquared(1.7976931348623157e308)` hangs
+/// before a pipeline exists. The `max_rand_distribution_parameter` and `max_rand_distribution_trials`
+/// settings only bound the computation time and may be switched off with 0, therefore the bounds below,
+/// which delimit the domain where the samplers terminate at all, apply unconditionally.
+
+/// `std::gamma_distribution`, which backs the chi-squared, Student's t and Fisher's F distributions,
+/// draws candidates as `sqrt((3 * shape - 0.75) / w) * (u - 0.5)` where `w = u * (1 - u)` never exceeds
+/// 1/4. Once `12 * shape` overflows to infinity, every candidate is infinite, both acceptance criteria
+/// evaluate to NaN, and the loop spins forever. All three functions use half of their argument as their
+/// shape parameter, so `6 * argument` has to stay finite; the bound keeps a factor of two of headroom
+/// for the rounding of the intermediate products, which by itself makes the exact quotient hang.
+constexpr Float64 max_degrees_of_freedom = std::numeric_limits<Float64>::max() / 12;
+
+/// `std::binomial_distribution` derives the probability of the mode from differences of `lgamma(t + 1)`
+/// evaluated in `double`. The terms grow as `t * ln(t)`, so their cancellation loses all precision for a
+/// large number of trials; the probability then underflows to zero and the sampler walks away from the
+/// mode one trial at a time, which needs O(t) iterations. Whether it underflows or overflows depends on
+/// the rounding, so the transition is not monotonic in `t` - hangs start to appear around 10^13 for some
+/// probabilities - and the bound below stays an order of magnitude away from it. Note that the result is
+/// already a deterministic value rather than a sample well before that.
+constexpr UInt64 max_number_of_trials = 1ULL << 40;
+
+/// The settings bound the computation time and are disabled by 0; the hard bounds above always hold.
+Float64 effectiveMaxDegreesOfFreedom(const DistributionLimits & limits)
+{
+    if (limits.max_parameter > 0)
+        return std::min(limits.max_parameter, max_degrees_of_freedom);
+    return max_degrees_of_freedom;
+}
+
+UInt64 effectiveMaxNumberOfTrials(const DistributionLimits & limits)
+{
+    if (limits.max_trials > 0)
+        return std::min(limits.max_trials, max_number_of_trials);
+    return max_number_of_trials;
+}
 
 struct UniformDistribution
 {
@@ -121,7 +163,7 @@ struct ChiSquaredDistribution
     {
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
-        if (limits.max_parameter > 0 && degree_of_freedom > limits.max_parameter)
+        if (degree_of_freedom > effectiveMaxDegreesOfFreedom(limits))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: {}", getName(), degree_of_freedom);
 
         auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
@@ -140,7 +182,7 @@ struct StudentTDistribution
     {
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
-        if (limits.max_parameter > 0 && degree_of_freedom > limits.max_parameter)
+        if (degree_of_freedom > effectiveMaxDegreesOfFreedom(limits))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: {}", getName(), degree_of_freedom);
 
         auto distribution = std::student_t_distribution<>(degree_of_freedom);
@@ -159,7 +201,7 @@ struct FisherFDistribution
     {
         if (d1 <= 0 || d2 <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
-        if (limits.max_parameter > 0 && (d1 > limits.max_parameter || d2 > limits.max_parameter))
+        if (const Float64 max_parameter = effectiveMaxDegreesOfFreedom(limits); d1 > max_parameter || d2 > max_parameter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: d1={}, d2={}", getName(), d1, d2);
 
         auto distribution = std::fisher_f_distribution<>(d1, d2);
@@ -195,7 +237,7 @@ struct BinomialDistribution
     {
         if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
-        if (limits.max_trials > 0 && t > limits.max_trials)
+        if (t > effectiveMaxNumberOfTrials(limits))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
 
         auto distribution = std::binomial_distribution<UInt64>(t, p);
