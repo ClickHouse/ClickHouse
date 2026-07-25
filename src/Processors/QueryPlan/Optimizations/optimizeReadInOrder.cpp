@@ -155,9 +155,11 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
             /// Grace hash join scatters rows into buckets by hash, destroying the input order.
+            /// PartialMergeJoin re-sorts left blocks by the join key, so it does not keep the left
+            /// stream's original order either (preservesLeftBlockOrder() == false).
             /// We must not propagate read-in-order through joins that reorder rows.
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && !join_ptr->hasDelayedBlocks())
+                && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
@@ -608,17 +610,15 @@ SortingInputOrder buildInputOrderFromSortDescription(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-
-                if (next_sort_key == 0)
-                {
-                    // Disable virtual row optimization.
-                    // For example, when pk is (a,b), a = 1, order by b, virtual row should be
-                    // disabled in the following case:
-                    // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
-                    // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-
-                    can_optimize_virtual_row = false;
-                }
+                // A key column fixed by WHERE is skipped here without emitting a MatchInfo, so the
+                // matched columns after it become non-contiguous in the key. The virtual row builder
+                // and pk_header both assume the required key columns are a contiguous prefix and index
+                // them densely, so a skipped key shifts every later column onto the wrong key column
+                // (wrong value -> boundary violation, wrong type -> "Virtual row has different type").
+                // Disable virtual rows whenever a key column is skipped, e.g. pk (a,b) a=1 order by b:
+                // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
+                // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
+                can_optimize_virtual_row = false;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
