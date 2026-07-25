@@ -2575,8 +2575,9 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerFunction<TupleOrArrayFunctionDotProductTransposed>(documentation_dot_product_transposed);
 
     /// Quantized transposed distance functions. These operate on a QBit(Int8) whose codes were produced by the
-    /// quantizeBFloat16ToInt8 Lloyd-Max codec. Because the quantizer is non-linear, the codes are dequantized to their
-    /// reconstruction levels on the fly and the distance is computed against the reference (query) vector, which may be a
+    /// quantizeBFloat16ToInt8 Lloyd-Max codec. Because the quantizer is non-linear, the codes are dequantized on the fly to
+    /// prefix conditional-mean centroids (or the exact BFloat16 reconstruction at `p = 8`) and the distance is computed
+    /// against the reference (query) vector, which may be a
     /// Float array (the query, cast to Float32 -- the reconstruction precision of the dequantized codes) or a quantized Array(Int8)
     /// that is dequantized at full 8-bit precision (`p` truncates only the stored QBit).
     const String quantized_reference_note
@@ -2591,8 +2592,9 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
           "L2 distance are not.";
     const auto quantized_precision_argument = FunctionDocumentation::Argument{
         "p",
-        "Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for "
-        "faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an "
+        "Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer using "
+        "the Gaussian conditional-mean centroids of the existing Lloyd-Max prefix intervals, for faster I/O with reduced accuracy; "
+        "8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an "
         "`Array(Int8)` reference is always reconstructed at full 8-bit precision.",
         {"UInt"}};
     const auto quantized_used_dims_argument = FunctionDocumentation::Argument{
