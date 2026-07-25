@@ -8,7 +8,7 @@ keywords: ['بحيرة بيانات', 'lakehouse', 'كتالوج', 'glue', 'unit
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 في [القسم السابق](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly)، أجريتَ استعلامات على صيغ الجداول المفتوحة من خلال تمرير مسارات التخزين مباشرةً. عمليًا، تدير معظم المؤسسات البيانات الوصفية للجداول عبر **كتالوج بيانات** — وهو سجل مركزي يتتبّع مواقع الجداول، والمخططات، والأقسام. عند توصيل ClickHouse بكتالوج باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، يُعرَض الكتالوج بالكامل كقاعدة بيانات في ClickHouse. ويظهر كل جدول في الكتالوج تلقائيًا، ويمكن الاستعلام عنه باستخدام ClickHouse SQL بالكامل، من دون الحاجة إلى معرفة مسارات الجداول الفردية أو إدارة بيانات الاعتماد لكل جدول.
 
