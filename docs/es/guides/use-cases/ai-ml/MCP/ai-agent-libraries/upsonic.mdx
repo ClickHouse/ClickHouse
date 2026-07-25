@@ -28,9 +28,7 @@ En esta guía aprenderás a crear un agente de IA con [Upsonic](https://github.c
 Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instala la biblioteca `mcp-agent` ejecutando los siguientes comandos:
 
     ```python
@@ -40,9 +38,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciales
-
+  <Step title="Configurar credenciales" id="setup-credentials">
     A continuación, deberás proporcionar tu clave de API de OpenAI:
 
     ```python
@@ -67,9 +63,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
     ```
   </Step>
 
-  <Step>
-    ## Inicializar el MCP Server y el agente de Upsonic
-
+  <Step title="Inicializar el MCP Server y el agente de Upsonic" id="initialize-mcp-and-agent">
     Ahora configure el ClickHouse MCP server para que apunte al ClickHouse SQL playground,
     inicialice el agente y hágale una pregunta:
 
@@ -107,7 +101,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
         tools=[DatabaseMCP]
     )
 
-    # Ejecutar el flujo de trabajo
+    # Execute the workflow
     workflow_result = database_agent.do(task)
     print("\nMulti-MCP Workflow Result:")
     print(workflow_result)
