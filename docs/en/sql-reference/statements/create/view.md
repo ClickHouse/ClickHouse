@@ -135,7 +135,7 @@ Materialized views store data transformed by the corresponding [SELECT](../../..
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
 
-When creating a materialized view with `TO [db].[table]`, you can also use `POPULATE` to backfill the target table from the existing source data (the target table may already contain data, in which case the backfilled rows are appended).
+When creating a materialized view with `TO [db].[table]`, you can also use `POPULATE` to backfill the target table from the existing source data (the target table may already contain data, in which case the backfilled rows are appended). `POPULATE` cannot be combined with `REFRESH`: a [refreshable materialized view](#refreshable-materialized-view) is filled by its first refresh, so `POPULATE` would load the initial data twice (use `EMPTY` to skip the first refresh instead).
 
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 

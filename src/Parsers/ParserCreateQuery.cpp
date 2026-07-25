@@ -1771,6 +1771,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto comment = parseComment(pos, expected);
     try_parse_populate_or_empty();
 
+    /// The first refresh of a refreshable materialized view already fills it with data, so 'POPULATE'
+    /// would load the initial data twice (declare 'EMPTY' to skip the initial refresh instead).
+    if (is_populate && refresh_strategy)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "When creating a refreshable materialized view you can't declare 'POPULATE': "
+            "the first refresh fills the view (declare 'EMPTY' to skip it)");
+
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
         return false;
