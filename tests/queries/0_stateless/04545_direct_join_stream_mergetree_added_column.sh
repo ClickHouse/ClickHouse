@@ -43,20 +43,22 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 --join_algorithm=direct -q "
 query="SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r STREAM ON l.id = r.id"
 for _ in {1..25}; do
     # A STREAM read is continuous and never returns on its own. Run it in the background and only tear it
-    # down once it appears in `system.processes`: that registration proves the query actually reached
-    # execution (`ReadFromMergeTree::initializePipeline`, the fixed path) instead of dying in the client
+    # down once it has read at least one row, i.e. `read_rows > 0` in `system.processes`. That is the
+    # proof the executor is attached and the MergeTree read is producing rows, i.e. it entered
+    # `ReadFromMergeTree::initializePipeline` (the fixed path), rather than dying in the client
     # handshake/planning on a slow server. This is where the pre-fix binary aborts under MSan.
     qid="djs_${CLICKHOUSE_DATABASE}_$RANDOM"
     $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 --query_id="$qid" -q "$query" >/dev/null 2>&1 &
     q_pid=$!
-    # Bounded wait for the query to REGISTER in `system.processes`: that registration is the proof it
-    # reached execution (`ReadFromMergeTree::initializePipeline`, the fixed path). A probe that times out
-    # means the server is wedged or gone, so stop and let the liveness checks below fail fast.
-    registered=0
+    # Bounded wait for an execution-side signal (`read_rows > 0`), not mere `system.processes` visibility:
+    # `ProcessList::insert` makes a query visible before the executor is attached, so visibility alone does
+    # not prove the fixed read path ran. A probe that times out means the server is wedged or gone, so stop
+    # and let the liveness checks below fail fast.
+    reached=0
     q_start=$EPOCHSECONDS
     while (( EPOCHSECONDS - q_start <= 30 )); do
-        cnt=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$qid'" 2>/dev/null) || break
-        [ "$cnt" = "1" ] && { registered=1; break; }
+        rr=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT max(read_rows) FROM system.processes WHERE query_id = '$qid'" 2>/dev/null) || break
+        [ -n "$rr" ] && [ "$rr" -gt 0 ] 2>/dev/null && { reached=1; break; }
         sleep 0.1
     done
     # Deterministically stop the query now that it has run (bounded so a wedged live server cannot hang
@@ -66,9 +68,9 @@ for _ in {1..25}; do
     wait "$q_pid" 2>/dev/null
     # Stop early if the server went down (the pre-fix binary aborts under MSan).
     timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1 || break
-    # Live server but the query never registered within the wait window: this iteration proved nothing,
+    # Live server but the query never read a row within the wait window: this iteration proved nothing,
     # so fail loudly instead of falling through as a successful run.
-    [ "$registered" = "1" ] || { echo "stream query did not start"; break; }
+    [ "$reached" = "1" ] || { echo "stream query did not start"; break; }
 done
 
 # Cleanup strictness is gated on server liveness, mirroring `clickhouse-test`'s own `_cleanup_database`
