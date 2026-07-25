@@ -900,6 +900,9 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             return false;
         }
+        /// The definition must be a child of the element, otherwise AST visitors
+        /// (e.g. the query parameter substitution) will not see it.
+        elem->children.push_back(elem->definition);
 
         result->children.push_back(elem);
 
