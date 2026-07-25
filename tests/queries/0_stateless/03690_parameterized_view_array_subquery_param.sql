@@ -83,13 +83,42 @@ SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_lc(nm = (SELECT toLowCardin
 -- an inner predicate referencing the parameter name must not overwrite the collected value on the AST path
 SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_array(AccountIds = (SELECT groupArray(AccountIds) FROM pv_self WHERE AccountIds = 9))) WHERE explain LIKE '%[9]%';
 
+-- A direct (non-subquery, non-function) string literal must be text-escaped on the AST path too.
+-- A top-level string literal used to be stored as raw bytes, but `ReplaceQueryParameterVisitor`
+-- reads it back with `deserializeTextEscaped`, so a value with a tab / newline / backslash was
+-- truncated or mis-parsed and the query returned wrong rows or threw `BAD_QUERY_PARAMETER`.
+-- Exercise both AST-path entry points: legacy execution (`enable_analyzer = 0`, via
+-- `Context::executeTableFunction`) and `EXPLAIN SYNTAX`, for both `String` and `LowCardinality(String)`.
+INSERT INTO pv_lc_data VALUES (5, 'c\nd') (6, 'e\\f');
+DROP TABLE IF EXISTS pv_str_data;
+CREATE TABLE pv_str_data (id Int32, s String) ENGINE = Memory;
+INSERT INTO pv_str_data VALUES (10, 'p\tq') (11, 'r\ns') (12, 't\\u');
+DROP VIEW IF EXISTS pv_str_scalar;
+CREATE VIEW pv_str_scalar AS SELECT * FROM pv_str_data WHERE s = {ss : String};
+
+SELECT 'direct literal param, legacy analyzer';
+SET enable_analyzer = 0;
+SELECT id FROM pv_lc(nm = 'a\tb') ORDER BY id;
+SELECT id FROM pv_lc(nm = 'c\nd') ORDER BY id;
+SELECT id FROM pv_lc(nm = 'e\\f') ORDER BY id;
+SELECT id FROM pv_str_scalar(ss = 'p\tq') ORDER BY id;
+SELECT id FROM pv_str_scalar(ss = 'r\ns') ORDER BY id;
+SELECT id FROM pv_str_scalar(ss = 't\\u') ORDER BY id;
+SET enable_analyzer = 1;
+
+SELECT 'direct literal param, EXPLAIN SYNTAX';
+SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_lc(nm = 'a\tb')) WHERE explain LIKE '%a\\tb%';
+SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_str_scalar(ss = 'p\tq')) WHERE explain LIKE '%p\\tq%';
+
 DROP VIEW pv_array;
 DROP VIEW pv_str;
 DROP VIEW pv_tuple;
 DROP VIEW pv_lc;
 DROP VIEW pv_lc_arr;
+DROP VIEW pv_str_scalar;
 DROP TABLE pv_data;
 DROP TABLE pv_ids;
 DROP TABLE pv_tuple_data;
 DROP TABLE pv_lc_data;
+DROP TABLE pv_str_data;
 DROP TABLE pv_self;

@@ -4,8 +4,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
-#include <Common/FieldVisitorToString.h>
-#include <Parsers/ASTHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
@@ -62,15 +60,11 @@ private:
 
         const ASTPtr & value = expression_list->children[1];
 
-        if (const auto * literal = value->as<ASTLiteral>())
-        {
-            parameter_values[identifier->name()] = convertFieldToString(literal->value);
-            return true;
-        }
-
-        /// Serialize with the value's own data type so the result is text-escaped the way
-        /// `ReplaceQueryParameterVisitor` expects (see `QueryAnalyzer` for the analyzer counterpart).
-        if (value->as<ASTFunction>() || value->as<ASTSubquery>())
+        /// Evaluate the value to a constant and serialize it with its own data type so the result
+        /// is text-escaped the way `ReplaceQueryParameterVisitor` expects (it reads the value back
+        /// with `deserializeTextEscaped`). This mirrors the analyzer counterpart in `QueryAnalyzer`,
+        /// which likewise has no separate literal path.
+        if (value->as<ASTLiteral>() || value->as<ASTFunction>() || value->as<ASTSubquery>())
         {
             auto [field, type] = evaluateConstantExpression(value, context);
             auto column = type->createColumn();
