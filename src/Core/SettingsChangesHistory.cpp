@@ -1319,6 +1319,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
+        {
+            {"exclude_data_from_backup", false, false, "New setting to exclude a table's data (but keep its DDL) from BACKUP"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},

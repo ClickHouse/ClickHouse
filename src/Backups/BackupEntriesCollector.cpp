@@ -14,6 +14,8 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
@@ -53,6 +55,10 @@ namespace Setting
 
     /// Cloud only
     extern const SettingsBool cloud_mode;
+}
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool exclude_data_from_backup;
 }
 
 namespace ErrorCodes
@@ -893,6 +899,11 @@ bool BackupEntriesCollector::shouldBackupTableData(
 {
     if (backup_settings.structure_only)
         return false;
+    if (auto merge_tree_data = std::dynamic_pointer_cast<MergeTreeData>(storage); merge_tree_data && (*merge_tree_data->getSettings())[MergeTreeSetting::exclude_data_from_backup])
+    {
+        LOG_TRACE(log, "Skipping table data for {} (exclude_data_from_backup is enabled)", table_name.getFullName());
+        return false;
+    }
 
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
         && rmv_replace_target_ids.contains(StorageID{table_name.database, table_name.table}))
