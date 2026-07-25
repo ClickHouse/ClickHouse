@@ -32,6 +32,9 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
 | [direct](/zh/reference/statements/create/dictionary/layouts/direct)                                                              | 不在内存中存储，而是针对每个请求直接查询 source。                                    |
 | [complex&#95;key&#95;direct](/zh/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | 类似 `direct`，用于复合键。                                              |
 | [ip&#95;trie](/zh/reference/statements/create/dictionary/layouts/ip-trie)                                                        | 用于快速进行 IP 前缀查找 (基于 CIDR) 的 Trie 结构。                             |
+| [hierarchical](/zh/reference/statements/create/dictionary/layouts/hierarchical)                                                  | 支持层级结构，使用数值键描述父子关系。                                             |
+| [polygon](/zh/reference/statements/create/dictionary/layouts/polygon)                                                            | 高效执行点是否位于多边形内的查找 (反向地理编码) 。                                     |
+| [regexp&#95;tree](/zh/reference/statements/create/dictionary/layouts/regexp-tree)                                                | 将键与正则表达式树进行匹配。                                                  |
 
 <Tip>
   **推荐布局**
