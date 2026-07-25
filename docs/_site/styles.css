@@ -831,9 +831,11 @@ html:not(.dark) .pagination-prev:hover {
     font-feature-settings: "kern" 0 !important;
 }
 
-/* Tighten line-height for code blocks to match monospace table output
-   while ensuring box-drawing characters render fully */
+/* Slightly reduce the code-block font size to limit horizontal scrolling.
+   Tighten line-height to match monospace table output while ensuring
+   box-drawing characters render fully. */
 [data-component-part="code-block-root"] .font-mono {
+    font-size: 0.8125rem !important;
     line-height: 1.5 !important;
 }
 
