@@ -36,8 +36,8 @@ quantileDeterministic(level)(expr, determinator)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы данных, Date или DateTime. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
-* `determinator` — Число, хеш которого используется вместо генератора случайных чисел в алгоритме резервуарного сэмплирования, чтобы сделать результат сэмплирования детерминированным. В качестве `determinator` можно использовать любое детерминированное положительное число, например идентификатор пользователя или события. Если одно и то же значение `determinator` встречается слишком часто, функция работает некорректно. [`(U)Int*`](/ru/reference/data-types/int-uint)
+* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы данных, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Int128`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`Int256`](/ru/reference/data-types/int-uint) или [`UInt256`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `determinator` — Число, хеш которого используется вместо генератора случайных чисел в алгоритме резервуарного сэмплирования, чтобы сделать результат сэмплирования детерминированным. В качестве `determinator` можно использовать любое детерминированное положительное число, например идентификатор пользователя или события. Если одно и то же значение `determinator` встречается слишком часто, функция работает некорректно. [`UInt*`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
