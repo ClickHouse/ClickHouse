@@ -535,7 +535,7 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     auto bytes = writeOutlineToString(outline);
 
     ReadBufferFromString in(bytes);
-    auto restored = readQueryPlanOutline(in, /*max_type_complexity=*/0, /*max_payload_bytes=*/bytes.size());
+    auto restored = readQueryPlanOutline(in, /*max_type_complexity=*/0, /*max_frame_bytes=*/bytes.size());
     EXPECT_TRUE(in.eof());
 
     ASSERT_EQ(restored.nodes.size(), 2u);
