@@ -13,6 +13,9 @@ using namespace DB;
 
 static ContextMutablePtr fuzzer_context;
 
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
 extern "C" int LLVMFuzzerInitialize(const int *, char ***)
 {
     if (fuzzer_context)
