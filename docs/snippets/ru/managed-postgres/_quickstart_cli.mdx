@@ -1,0 +1,333 @@
+---
+title: Краткое руководство по CLI
+---
+
+На этой странице описаны развертывание ClickHouse Managed Postgres, загрузка данных, их репликация в ClickHouse и выполнение запросов к ним — всё из командной строки с помощью [ClickHouse CLI](/ru/products/cloud/features/cli) (`clickhousectl`) и `psql`. Команды выполняются в неинтерактивном режиме; `clickhousectl` выводит JSON при использовании `--json`.
+
+<div id="prerequisites">
+  ## Требования
+</div>
+
+Установите ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Вам также понадобятся `psql` (клиентские инструменты PostgreSQL; на macOS — `brew install libpq`) и `jq`.
+
+Для операций записи (создание, удаление) требуется [аутентификация по ключу API](/ru/products/cloud/features/admin-features/api/openapi); вход через OAuth доступен только для чтения:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Либо задайте переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Проверьте командой `clickhousectl cloud auth status`; в выводе должна быть запись с областью действия `read/write`.
+
+<div id="part-1-create-and-load">
+  ## Часть 1: Создайте Postgres и загрузите данные
+</div>
+
+<div id="create-postgres-service">
+  ### Создайте сервис Postgres
+</div>
+
+Создайте сервис и сохраните полученный ответ; пароль отображается только один раз:
+
+```bash
+clickhousectl cloud postgres create \
+  --name quickstart-pg \
+  --region us-east-1 \
+  --size c6gd.large \
+  --pg-version 18 \
+  --json > pg.json
+```
+
+В ответе указаны идентификатор сервиса, имя хоста и готовая к использованию строка подключения:
+
+```json
+{
+  "id": "3b5a3112-bf02-82d0-bd02-fbe67d5caa7a",
+  "name": "quickstart-pg",
+  "provider": "aws",
+  "region": "us-east-1",
+  "postgresVersion": "18",
+  "size": "c6gd.large",
+  "storageSize": 118,
+  "haType": "none",
+  "state": "creating",
+  "createdAt": "2026-07-22T13:21:22Z",
+  "hostname": "quickstart-pg-c1406b50.pg7dd324nz0a1qm1fqskxbjn7m.c0.us-east-1.aws.pg.clickhouse.cloud",
+  "username": "postgres",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@quickstart-pg-c1406b50.pg7dd324nz0a1qm1fqskxbjn7m.c0.us-east-1.aws.pg.clickhouse.cloud:5432/postgres?channel_binding=require",
+  "isPrimary": true,
+  "tags": []
+}
+```
+
+Получите всё, что понадобится далее в этом руководстве:
+
+```bash
+PG_ID=$(jq -r .id pg.json)
+PG_URL=$(jq -r .connectionString pg.json)
+```
+
+Если пароль потерян, сгенерируйте новый с помощью `clickhousectl cloud postgres reset-password $PG_ID --generate`.
+
+<div id="wait-for-provisioning">
+  ### Дождитесь, пока сервис будет создан
+</div>
+
+Подготовка занимает несколько минут. Проверяйте состояние, пока оно не станет `running`:
+
+```bash
+while [ "$(clickhousectl cloud postgres get "$PG_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+<div id="load-sample-data">
+  ### Загрузите пример данных
+</div>
+
+Создайте две таблицы и вставьте 1 миллион событий через `psql`:
+
+```bash
+psql "$PG_URL" <<'SQL'
+\timing
+CREATE TABLE events (
+   event_id SERIAL PRIMARY KEY,
+   event_name VARCHAR(255) NOT NULL,
+   event_type VARCHAR(100),
+   event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+   event_data JSONB,
+   user_id INT,
+   user_ip INET,
+   is_active BOOLEAN DEFAULT TRUE,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE users (
+   user_id SERIAL PRIMARY KEY,
+   name VARCHAR(100),
+   country VARCHAR(50),
+   platform VARCHAR(50)
+);
+
+INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
+SELECT
+   'Event ' || gs::text AS event_name,
+   CASE
+       WHEN random() < 0.5 THEN 'click'
+       WHEN random() < 0.75 THEN 'view'
+       WHEN random() < 0.9 THEN 'purchase'
+       WHEN random() < 0.98 THEN 'signup'
+       ELSE 'logout'
+   END AS event_type,
+   NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
+   jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
+   GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
+   ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
+FROM
+   generate_series(1, 1000000) gs;
+
+INSERT INTO users (name, country, platform)
+SELECT
+    first_names[first_idx] || ' ' || last_names[last_idx] AS name,
+    CASE
+        WHEN random() < 0.25 THEN 'India'
+        WHEN random() < 0.5 THEN 'USA'
+        WHEN random() < 0.7 THEN 'Germany'
+        WHEN random() < 0.85 THEN 'China'
+        ELSE 'Other'
+    END AS country,
+    CASE
+        WHEN random() < 0.2 THEN 'iOS'
+        WHEN random() < 0.4 THEN 'Android'
+        WHEN random() < 0.6 THEN 'Web'
+        WHEN random() < 0.75 THEN 'Windows'
+        WHEN random() < 0.9 THEN 'MacOS'
+        ELSE 'Linux'
+    END AS platform
+FROM
+    generate_series(1, 1000) AS seq
+    CROSS JOIN LATERAL (
+        SELECT
+            array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
+            array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
+            1 + (seq % 32) AS first_idx,
+            1 + ((seq / 32)::int % 32) AS last_idx
+    ) AS names;
+SQL
+```
+
+```text
+Timing is on.
+CREATE TABLE
+Time: 86.029 ms
+CREATE TABLE
+Time: 80.962 ms
+INSERT 0 1000000
+Time: 7120.357 ms (00:07.120)
+INSERT 0 1000
+Time: 84.807 ms
+```
+
+Вставка 1 млн строк выполняется примерно за 7 секунд на `c6gd.large` (самом маленьком типоразмере) благодаря NVMe-хранилищу. Проверьте это запросом; количество строк от запуска к запуску различается, потому что данные генерируются с помощью `random()`:
+
+```bash
+psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
+```
+
+<div id="part-2-replicate">
+  ## Часть 2: Репликация данных в ClickHouse
+</div>
+
+<div id="create-clickhouse-service">
+  ### Создайте сервис ClickHouse
+</div>
+
+Создайте сервис в том же регионе и сохраните ответ; пароль отображается только в ответе на создание:
+
+```bash
+clickhousectl cloud service create \
+  --name quickstart-ch \
+  --region us-east-1 \
+  --json > ch.json
+
+CH_ID=$(jq -r .service.id ch.json)
+CH_PASSWORD=$(jq -r .password ch.json)
+```
+
+Подождите, пока он не заработает; для ClickPipe требуется работающий пункт назначения:
+
+```bash
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+Чтобы использовать существующий сервис, задайте `CH_ID`, взяв его из вывода `clickhousectl cloud service list`, а в `CH_PASSWORD` укажите пароль пользователя `default`, который потребуется на этапе `pg_clickhouse`.
+
+<div id="replicate-to-clickhouse">
+  ### Реплицируйте таблицы в ClickHouse
+</div>
+
+Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста Managed Postgres. Пайп скопирует существующие строки, а затем будет поддерживать синхронизацию ClickHouse с текущими изменениями:
+
+```bash
+PG_HOST=$(jq -r .hostname pg.json)
+PG_PASSWORD=$(jq -r .password pg.json)
+
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name quickstart-sync \
+  --host "$PG_HOST" \
+  --pg-database postgres \
+  --username postgres \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.events:public_events \
+  --table-mapping public.users:public_users \
+  --json > pipe.json
+
+PIPE_ID=$(jq -r .id pipe.json)
+```
+
+Примечания:
+
+* Реплицируемые таблицы попадают в базу данных `default` сервиса ClickHouse и получают имена в соответствии с целями `--table-mapping`
+* Публикация и слот репликации создаются автоматически; публикация при этом ограничивается сопоставленными таблицами. Передайте `--publication-name`, чтобы использовать публикацию, которой вы управляете самостоятельно
+* Используйте прямое имя хоста Postgres; репликация через PgBouncer не поддерживается
+
+<div id="wait-for-pipe">
+  ### Дождитесь, пока пайп не перейдёт в состояние `Running`
+</div>
+
+Пайп проходит состояния `Provisioning`, `Setup` и (для больших таблиц) `Snapshot`, прежде чем перейти в `Running`; для первого пайпа в сервисе это занимает около 4 минут. `Failed` и `InternalError` — конечные состояния:
+
+```bash
+while :; do
+  STATE=$(clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json | jq -r .state)
+  case "$STATE" in
+    Running) break ;;
+    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; exit 1 ;;
+  esac
+  sleep 15
+done
+```
+
+<div id="query-clickhouse">
+  ### Выполните запрос к реплицированным данным в ClickHouse
+</div>
+
+Выполняйте SQL-запросы к сервису ClickHouse напрямую из CLI. При первом вызове автоматически создаются конечная точка Query API и ключ API, ограниченный этим сервисом:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM public_events"
+```
+
+```text
+Provisioning Query API endpoint + key for service 'quickstart-ch'...
+1000000
+```
+
+Новые данные, записываемые в Postgres, реплицируются непрерывно. Вставьте строку и выполняйте опрос, пока количество строк не достигнет 1 000 001 (обычно это занимает меньше минуты):
+
+```bash
+psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
+
+while [ "$(clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM public_events")" != "1000001" ]; do
+  sleep 10
+done
+```
+
+<div id="query-clickhouse-from-postgres">
+  ### Запросы к ClickHouse из Postgres
+</div>
+
+Расширение [`pg_clickhouse`](/ru/products/managed-postgres/extensions/pg_clickhouse/introduction) позволяет Postgres выступать в качестве единого слоя для запросов как к транзакционным, так и к аналитическим данным. Получите HTTPS-имя хоста ClickHouse, затем настройте расширение через `psql`:
+
+```bash
+CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+  | jq -r '.endpoints[] | select(.protocol=="https") | .host')
+
+psql "$PG_URL" <<SQL
+CREATE EXTENSION pg_clickhouse;
+CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
+       OPTIONS(driver 'http', host '$CH_HOST', dbname 'default', port '8443');
+CREATE USER MAPPING FOR CURRENT_USER SERVER ch
+       OPTIONS (user 'default', password '$CH_PASSWORD');
+CREATE SCHEMA organization;
+IMPORT FOREIGN SCHEMA "default" FROM SERVER ch INTO organization;
+SQL
+```
+
+Heredoc намеренно оставлен без кавычек, чтобы оболочка подставила `$CH_HOST` и `$CH_PASSWORD` до того, как SQL попадёт в Postgres. Реплицированные таблицы теперь видны как внешние таблицы в схеме `organization`; запросы к ним выполняются в ClickHouse.
+
+По результатам измерений на `c6gd.large` с этим набором данных аналитические запросы через внешние таблицы выполняются в 6–9 раз быстрее (например, `GROUP BY` с 5 агрегациями: 176 мс через ClickHouse против 1 133 мс локально; JOIN с агрегациями: 298 мс против 2 764 мс).
+
+<div id="cleanup-resources">
+  ## Очистка
+</div>
+
+Сначала удалите ClickPipe, затем сервис Postgres. При удалении сервиса все его данные удаляются без возможности восстановления:
+
+```bash
+clickhousectl cloud clickpipe delete "$CH_ID" "$PIPE_ID"
+clickhousectl cloud postgres delete "$PG_ID"
+```
+
+Нельзя удалить работающий сервис ClickHouse напрямую. Остановите его, дождитесь состояния `stopped`, затем удалите:
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "stopped" ]; do
+  sleep 10
+done
+
+clickhousectl cloud service delete "$CH_ID"
+```
