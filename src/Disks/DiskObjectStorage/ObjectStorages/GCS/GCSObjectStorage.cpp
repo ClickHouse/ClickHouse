@@ -5,15 +5,24 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/ReadBufferFromGCS.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/WriteBufferFromGCS.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <IO/ReadHelpers.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
+#include <google/cloud/storage/list_objects_reader.h>
 #include <google/cloud/storage/object_metadata.h>
 #include <google/cloud/storage/well_known_parameters.h>
 
 namespace gcs = ::google::cloud::storage;
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageGCSThreads;
+    extern const Metric ObjectStorageGCSThreadsActive;
+    extern const Metric ObjectStorageGCSThreadsScheduled;
+}
 
 namespace DB
 {
@@ -44,6 +53,93 @@ namespace
         result.etag = std::to_string(md.generation());
         return result;
     }
+
+    /// Streams a listing batch by batch (like the S3 and Azure backends) instead of materializing all
+    /// matching objects up front, so memory usage and time to the first result scale with the batch
+    /// size rather than with the total number of objects under the prefix. `ListObjectsReader` pages
+    /// through the listing lazily; the reader and its iterator live on the base class's single
+    /// listing thread, which is also where they are first created.
+    class GCSIteratorAsync final : public IObjectStorageIteratorAsync
+    {
+    public:
+        GCSIteratorAsync(
+            std::shared_ptr<gcs::Client> client_,
+            String bucket_,
+            String path_prefix_,
+            String disk_name_,
+            const std::optional<std::string> & start_after_,
+            size_t max_list_size_)
+            : IObjectStorageIteratorAsync(
+                CurrentMetrics::ObjectStorageGCSThreads,
+                CurrentMetrics::ObjectStorageGCSThreadsActive,
+                CurrentMetrics::ObjectStorageGCSThreadsScheduled,
+                ThreadName::GCS_LIST_POOL)
+            , client(std::move(client_))
+            , bucket(std::move(bucket_))
+            , path_prefix(std::move(path_prefix_))
+            , disk_name(std::move(disk_name_))
+            , start_after(start_after_.has_value() ? *start_after_ : "")
+            , batch_size(max_list_size_ ? max_list_size_ : 1000)
+        {
+        }
+
+        ~GCSIteratorAsync() override
+        {
+            /// Stop the listing thread before the reader it iterates is destroyed.
+            deactivate();
+        }
+
+    private:
+        bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
+        {
+            chassert(batch.empty());
+
+            if (!reader)
+            {
+                /// `StartOffset` is inclusive while `start_after` is exclusive (matching the S3
+                /// backend's ListObjectsV2 semantics), so an object named exactly `start_after`
+                /// is skipped below.
+                if (start_after.empty())
+                    reader.emplace(client->ListObjects(bucket, gcs::Prefix(path_prefix), gcs::MaxResults(batch_size)));
+                else
+                    reader.emplace(client->ListObjects(
+                        bucket, gcs::Prefix(path_prefix), gcs::StartOffset(start_after), gcs::MaxResults(batch_size)));
+                reader_position.emplace(reader->begin());
+            }
+
+            batch.reserve(batch_size);
+            for (auto & position = *reader_position; position != reader->end(); ++position)
+            {
+                const auto & item = *position;
+                if (!item)
+                    throwFromGCSStatus(item.status(),
+                        fmt::format("while listing objects in bucket '{}' with prefix '{}' on disk '{}'", bucket, path_prefix, disk_name));
+
+                if (!start_after.empty() && item->name() <= start_after)
+                    continue;
+
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(item->name(), toObjectMetadata(*item)));
+
+                if (batch.size() >= batch_size)
+                {
+                    ++position;
+                    break;
+                }
+            }
+
+            return *reader_position != reader->end();
+        }
+
+        std::shared_ptr<gcs::Client> client;
+        const String bucket;
+        const String path_prefix;
+        const String disk_name;
+        const String start_after;
+        const size_t batch_size;
+
+        std::optional<gcs::ListObjectsReader> reader;
+        std::optional<gcs::ListObjectsReader::iterator> reader_position;
+    };
 }
 
 bool GCSObjectStorage::exists(const StoredObject & object) const
@@ -151,25 +247,13 @@ void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 
 ObjectStorageIteratorPtr GCSObjectStorage::iterate(
     const std::string & path_prefix,
-    size_t /* max_keys */,
+    size_t max_keys,
     bool /* with_tags */,
     const std::optional<std::string> & start_after) const
 {
     /// Callers (e.g. the glob source in StorageObjectStorageSource) expect the iterator to enumerate
-    /// *all* matching objects, using max_keys only as a page-size hint. To avoid silently truncating
-    /// at the first page, enumerate everything eagerly and wrap it in a from-list iterator.
-    /// NOTE: this materializes the full listing in memory; a lazy paginating iterator (like S3's) is a
-    /// future optimization for buckets with a very large number of objects under one prefix.
-    RelativePathsWithMetadata files;
-    listObjects(path_prefix, files, 0);
-
-    if (start_after && !start_after->empty())
-    {
-        /// `start_after` is exclusive, matching the S3 backend's ListObjectsV2 semantics.
-        std::erase_if(files, [&](const RelativePathWithMetadataPtr & file) { return file->relative_path <= *start_after; });
-    }
-
-    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
+    /// *all* matching objects, using max_keys only as a batch-size hint.
+    return std::make_shared<GCSIteratorAsync>(getClient(), bucket, path_prefix, disk_name, start_after, max_keys);
 }
 
 void GCSObjectStorage::removeObjectImpl(
@@ -278,11 +362,14 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
     /// ever writing the real destination; on the same endpoint with different credentials the copy
     /// would be authenticated as the source instead of the destination. In those cases fall back to a
     /// buffer copy, which reads through this client and writes through the destination's own client.
+    /// Both sides are examined through a single client-with-settings snapshot each, and the rewrite
+    /// runs on the client from the source snapshot, so a concurrent `applyNewSettings` cannot pair
+    /// the settings that were validated with a client built from different ones.
     auto * dest_gcs = dynamic_cast<GCSObjectStorage *>(&object_storage_to);
-    if (dest_gcs != nullptr && settings.get()->describesSameClientAs(*dest_gcs->settings.get()))
+    auto source_snapshot = getClientWithSettings();
+    if (dest_gcs != nullptr && source_snapshot->settings.describesSameClientAs(dest_gcs->getClientWithSettings()->settings))
     {
-        auto client_ptr = getClient();
-        auto result = client_ptr->RewriteObjectBlocking(
+        auto result = source_snapshot->client->RewriteObjectBlocking(
             bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path);
         if (result)
             return;
@@ -314,14 +401,17 @@ void GCSObjectStorage::applyNewSettings(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot change GCS bucket of an existing disk from '{}' to '{}'", bucket, new_settings.bucket);
 
+    /// The client and settings are published together as one atomic snapshot (see the field comment).
+    /// When the caller forbids a client change, the current client is carried over into the new
+    /// snapshot, paired with the settings it may no longer match — that is the caller's explicit choice.
+    std::shared_ptr<gcs::Client> new_client;
     if (options.allow_client_change)
-    {
-        auto new_client = getGCSClient(new_settings, context);
-        std::lock_guard lock(client_mutex);
-        client = std::move(new_client);
-    }
+        new_client = getGCSClient(new_settings, context);
+    else
+        new_client = getClient();
 
-    settings.set(std::make_unique<const GCSObjectStorageSettings>(std::move(new_settings)));
+    client_with_settings.set(std::make_unique<const ClientWithSettings>(
+        ClientWithSettings{std::move(new_client), std::move(new_settings)}));
 }
 
 ObjectStorageKeyGeneratorPtr GCSObjectStorage::createKeyGenerator() const

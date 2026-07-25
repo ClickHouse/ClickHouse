@@ -5,7 +5,6 @@
 #if USE_GOOGLE_CLOUD
 
 #include <memory>
-#include <mutex>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
@@ -34,8 +33,8 @@ public:
         , key_prefix(settings_.key_prefix)
         , description(std::move(description_))
         , disk_name(std::move(disk_name_))
-        , client(std::move(client_))
-        , settings(std::make_unique<const GCSObjectStorageSettings>(std::move(settings_)))
+        , client_with_settings(std::make_unique<const ClientWithSettings>(
+              ClientWithSettings{std::move(client_), std::move(settings_)}))
         , key_generator(std::move(key_generator_))
         , log(getLogger("GCSObjectStorage"))
     {
@@ -105,16 +104,28 @@ public:
 
     bool isRemote() const override { return true; }
     bool supportParallelWrite() const override { return true; }
-    bool isReadOnly() const override { return settings.get()->read_only; }
+    bool isReadOnly() const override { return getClientWithSettings()->settings.read_only; }
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
 private:
-    std::shared_ptr<google::cloud::storage::Client> getClient() const
+    /// The client and the settings it was built from are published as one immutable snapshot: a
+    /// consumer that validates something against the settings (e.g. `describesSameClientAs` in
+    /// `copyObjectToAnotherObjectStorage`) and then issues requests must do both through the same
+    /// snapshot. If they were separate fields, a disk config reload (`applyNewSettings`) could
+    /// replace the client between the two reads, so requests would run on a client that no longer
+    /// matches the settings the consumer just checked.
+    struct ClientWithSettings
     {
-        std::lock_guard lock(client_mutex);
-        return client;
-    }
+        std::shared_ptr<google::cloud::storage::Client> client;
+        GCSObjectStorageSettings settings;
+    };
+
+    using ClientWithSettingsPtr = MultiVersion<ClientWithSettings>::Version;
+
+    ClientWithSettingsPtr getClientWithSettings() const { return client_with_settings.get(); }
+
+    std::shared_ptr<google::cloud::storage::Client> getClient() const { return getClientWithSettings()->client; }
 
     /// Deletes one object (tolerating "not found") and records a Delete event in `system.blob_storage_log`.
     void removeObjectImpl(
@@ -127,13 +138,7 @@ private:
     const String description;
     std::string disk_name;
 
-    mutable std::mutex client_mutex;
-    std::shared_ptr<google::cloud::storage::Client> client; /// guarded by client_mutex
-
-    /// A disk config reload (`applyNewSettings`) can replace the settings while other threads are
-    /// reading them (`isReadOnly`, `copyObjectToAnotherObjectStorage`), so they get the same
-    /// atomic-snapshot treatment as `client` (mirrors the S3 backend's `MultiVersion<S3Settings>`).
-    MultiVersion<GCSObjectStorageSettings> settings;
+    MultiVersion<ClientWithSettings> client_with_settings;
     const ObjectStorageKeyGeneratorPtr key_generator;
     LoggerPtr log;
 };

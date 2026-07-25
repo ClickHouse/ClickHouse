@@ -23,6 +23,7 @@ namespace DB
     M(AZURE_BACKUP_WRITER, "BackupWRAzure") \
     M(AZURE_COPY_POOL, "AzureObjCopy") \
     M(AZURE_LIST_POOL, "AzureObjList") \
+    M(GCS_LIST_POOL, "GCSObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
     M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
