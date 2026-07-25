@@ -88,8 +88,13 @@ public:
     virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
+    /// `check_create_temporary_table` is passed as false by database engines that resolve their
+    /// tables through a table function (e.g. the `URL` database): the table is referenced in the
+    /// query by an identifier and governed by the grants on the database, so the
+    /// `CREATE TEMPORARY TABLE` privilege required for a table function call written in a query
+    /// does not apply. The source access check runs regardless.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true) const;
 
     /// Returns actual table structure after enforcing source access checks.
     /// Use this instead of getActualTableStructure() from outside execute().
