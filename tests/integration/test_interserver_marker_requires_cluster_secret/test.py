@@ -8,7 +8,11 @@ that rely on a `fake_interserver_context` and learn information about
 local tables without ever proving knowledge of the cluster secret.
 
 The fix in `receiveHello` rejects the marker at the Hello phase when
-the named cluster does not exist or has no `<secret>` configured.
+the named cluster does not exist or has no `<secret>` configured. The
+rejection closes the connection without serializing the exception back
+(an unauthenticated peer must not receive anything, not even whether
+the named cluster exists), and is recorded in `system.session_log` as
+a `LoginFailure` so the rejected probes stay visible to operators.
 """
 
 import socket
@@ -19,7 +23,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/clusters.xml"],
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/session_log.xml",
+    ],
 )
 
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
@@ -100,12 +107,13 @@ def send_hello_and_classify_response(node, packet):
 
 def test_unknown_cluster_rejected(started_cluster):
     """Sending the interserver marker with a cluster that does not
-    exist must be rejected (the connection is closed or an exception
-    is returned)."""
+    exist must be rejected by closing the connection without returning
+    anything — an unauthenticated peer must not even learn whether the
+    cluster exists."""
     packet = build_interserver_hello(b"nonexistent_cluster_for_test")
     kind, _ = send_hello_and_classify_response(node, packet)
-    assert kind in ("exception", "closed"), (
-        f"Server did not reject interserver marker with unknown cluster, got: {kind}"
+    assert kind == "closed", (
+        f"Server did not silently reject interserver marker with unknown cluster, got: {kind}"
     )
 
 
@@ -115,8 +123,8 @@ def test_cluster_without_secret_rejected(started_cluster):
     primary attack vector fixed by `receiveHello`."""
     packet = build_interserver_hello(b"no_secret_cluster")
     kind, _ = send_hello_and_classify_response(node, packet)
-    assert kind in ("exception", "closed"), (
-        f"Server did not reject interserver marker for secret-less cluster, got: {kind}"
+    assert kind == "closed", (
+        f"Server did not silently reject interserver marker for secret-less cluster, got: {kind}"
     )
     # The server must log `AUTHENTICATION_FAILED` for the rejected
     # marker — confirm the rejection happened in `receiveHello`, not
@@ -124,3 +132,17 @@ def test_cluster_without_secret_rejected(started_cluster):
     assert node.contains_in_log(
         "Interserver authentication failed: cluster 'no_secret_cluster' is not configured with a secret"
     ), "Expected AUTHENTICATION_FAILED log message for cluster without secret"
+    # The rejection must stay visible to operators: it is routed through
+    # `Session::onAuthenticationFailure`, which emits a `LoginFailure`
+    # row into `system.session_log`.
+    node.query("SYSTEM FLUSH LOGS session_log")
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.session_log "
+                "WHERE type = 'LoginFailure' AND interface = 'TCP_Interserver' "
+                "AND failure_reason LIKE '%is not configured with a secret%'"
+            )
+        )
+        > 0
+    ), "Expected a LoginFailure row in system.session_log for the rejected interserver marker"
