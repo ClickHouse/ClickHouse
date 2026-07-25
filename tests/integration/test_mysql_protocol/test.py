@@ -455,8 +455,12 @@ def test_mysql_replacement_query_injection(started_cluster):
         port=server_port,
     )
 
-    # SHOW TABLE STATUS LIKE: a benign pattern reads only system.tables.
+    # SHOW TABLE STATUS LIKE: a benign pattern returns exactly the matching table. The lookup is
+    # scoped to the session's current database (MySQL semantics), so the table must live in
+    # `default`; the previously observed `system.one` no longer leaks across databases.
     cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("DROP TABLE IF EXISTS default.one")
+    cursor.execute("CREATE TABLE default.one (dummy UInt8) ENGINE = Memory")
     cursor.execute("SHOW TABLE STATUS LIKE 'one'")
     rows = cursor.fetchall()
     assert [r["Name"] for r in rows] == ["one"], rows
@@ -590,6 +594,7 @@ def test_mysql_replacement_query_injection(started_cluster):
     # It must instead match nothing (the malformed command is not coerced into a lookup).
     cursor.execute("SHOW TABLE STATUS LIKEx'one'")
     assert [r["Name"] for r in cursor.fetchall()] == [], "SHOW TABLE STATUS LIKE accepted a missing separator"
+    cursor.execute("DROP TABLE default.one")
     client.close()
 
 
