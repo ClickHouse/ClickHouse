@@ -127,7 +127,9 @@ SETTINGS
     queue_max_batch_size = 1000;
 ```
 
-The engine records the selected message IDs while the query runs and writes their tombstones only after the complete query pipeline succeeds.
+The engine records the input message IDs while the query runs and writes their tombstones only after the complete query pipeline succeeds.
+Acknowledgement applies to queue rows read into the consumer query, including rows later removed by `WHERE` or `LIMIT`.
+Use `queue_max_batch_size`, not an outer `LIMIT`, to define the maximum source batch.
 Cancellation or an exception leaves the batch pending.
 `queue_max_batch_size = 0` uses the table engine's `max_batch_size`.
 
@@ -136,7 +138,8 @@ Run the same query with `queue_commit_on_select = 0` when acknowledgement is not
 
 ## Resetting a consumer group {#resetting-a-consumer-group}
 
-Set `queue_reset_consumer_offset = 1` on a noncommitting direct `SELECT` to rebuild a group's pending-message table:
+Set `queue_reset_consumer_offset = 1` on a noncommitting direct `SELECT` to rebuild a group's pending-message table.
+`queue_reset_consumer_offset` and `queue_commit_on_select` cannot be enabled together:
 
 ```sql
 -- Replay all retained messages.
@@ -178,7 +181,7 @@ For a non-`APPEND` refresh, acknowledgement is deferred until the replacement ta
 
 ## Storage and acknowledgement {#storage-and-acknowledgement}
 
-The engine owns an immutable internal `MergeTree` main log and one persistent internal `ReplacingMergeTree(version, is_deleted)` table per consumer group.
+The engine owns an append-only retained `MergeTree` main log and one persistent internal `ReplacingMergeTree(version, is_deleted)` table per consumer group.
 Each message receives an internal UUID when it is inserted.
 An internal materialized view copies new messages from the main log to each existing group table.
 Successful delivery appends a higher-version row with `is_deleted = 1` to that consumer group's table only.

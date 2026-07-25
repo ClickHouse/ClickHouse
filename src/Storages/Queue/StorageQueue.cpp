@@ -940,6 +940,13 @@ void StorageQueue::read(
             "Setting `queue_consumer_group` must be specified when `queue_reset_consumer_offset` is enabled");
     }
 
+    if (reset_consumer_offset && commit_on_select)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings `queue_reset_consumer_offset` and `queue_commit_on_select` cannot be enabled together");
+    }
+
     std::optional<StorageID> consumer_table_id;
     if (!consumer_group.empty())
     {
