@@ -120,6 +120,15 @@ public:
     /// destination (and vice versa) in such formats.
     virtual bool storesTypedNumericValues() const { return false; }
 
+    /// True when the parser skips input fields that are absent from the destination unconditionally,
+    /// without consulting `input_format_skip_unknown_fields`. `Avro` recurses past a path with no
+    /// matching column in `AvroDeserializer::createAction`, building a skip action for it, and the
+    /// columnar formats (`Parquet`, `Arrow`, `ORC`) read only the requested columns and never touch
+    /// the rest of the file. A caller comparing an inferred schema against an expected one uses this
+    /// to know that a field present in the data but unknown to the destination is not a structure
+    /// mismatch for such a format even when `input_format_skip_unknown_fields` = 0.
+    virtual bool alwaysSkipsUnknownFields() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 

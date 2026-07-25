@@ -69,6 +69,10 @@ public:
 
     std::optional<size_t> readNumberOrRows() override;
 
+    /// The parser reads only the requested columns and never touches the rest of the file,
+    /// regardless of `input_format_skip_unknown_fields`.
+    bool alwaysSkipsUnknownFields() const override { return true; }
+
 private:
     void initializeIfNeeded();
 

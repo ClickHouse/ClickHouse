@@ -95,6 +95,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_maps_columns_by_name = false;
     bool format_reads_numeric_into_ipv4 = false;
     bool format_stores_typed_numeric_values = false;
+    bool format_always_skips_unknown_fields = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -125,6 +126,7 @@ String getInsertDataSchemaMismatchDescription(
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
+        format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -599,10 +601,12 @@ String getInsertDataSchemaMismatchDescription(
             {
                 /// A field present in the input but unknown to the destination. When
                 /// `input_format_skip_unknown_fields` is enabled (the default), the parser legally
-                /// skips such fields, so this is not a structure mismatch. When it is disabled, the
-                /// parser rejects the row precisely because of the unknown field (`INCORRECT_DATA`),
-                /// and pointing out the differing structure is accurate.
-                if (format_settings.skip_unknown_fields)
+                /// skips such fields, so this is not a structure mismatch. The same holds regardless
+                /// of the setting for formats whose parser drops unknown fields unconditionally
+                /// (`Avro`, the columnar `Parquet` / `Arrow` / `ORC`). Otherwise the parser rejects
+                /// the row precisely because of the unknown field (`INCORRECT_DATA`), and pointing
+                /// out the differing structure is accurate.
+                if (format_settings.skip_unknown_fields || format_always_skips_unknown_fields)
                     continue;
                 corresponds = false;
                 break;
