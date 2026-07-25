@@ -4,8 +4,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
-#include <Common/StringWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 
@@ -15,7 +13,6 @@
 #    include <base/extended_types.h>
 #endif
 
-#include <algorithm>
 #include <cstring>
 #include <type_traits>
 
@@ -25,7 +22,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_READ_ALL_DATA;
 extern const int LOGICAL_ERROR;
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int NOT_IMPLEMENTED;
@@ -1361,68 +1357,8 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     else
     {
         size = rhs_size;
-
-        /// A corrupted or truncated state may carry an arbitrarily large size prefix (up to
-        /// ~2 GiB). We must not trust it and preallocate `size - 1` bytes in the arena upfront:
-        /// a short buffer would then fail with CANNOT_READ_ALL_DATA only after that huge
-        /// allocation already succeeded (or blown the memory limit).
-        /// See 02477_single_value_data_string_regression.
-        const UInt32 bytes_to_read = size - 1;
-
-        if (buf.available() >= bytes_to_read)
-        {
-            /// The common case: the whole value is already sitting in the read buffer.
-            /// Allocate exactly once, directly in the arena - same as before this fix.
-            allocateLargeDataIfNeeded(bytes_to_read, arena);
-            buf.readStrict(large_data, bytes_to_read);
-        }
-        else
-        {
-            /// The value spans more than what is currently buffered. Never allocate for bytes
-            /// that are not yet proven to exist: a truncated state whose actual data is large,
-            /// but still short of the declared size, must not trigger a speculative allocation
-            /// approaching the declared size - under a memory limit that would flip the error
-            /// from CANNOT_READ_ALL_DATA to MEMORY_LIMIT_EXCEEDED. So accumulate the value in
-            /// chunks, each sized exactly to the bytes already sitting in the read buffer, and
-            /// copy them into the arena in a single allocation only after the whole value has
-            /// been read. The staged bytes use a throwing allocator (StringWithMemoryTracking,
-            /// backed by AllocatorWithMemoryTracking) so that a large actual value is refused with
-            /// MEMORY_LIMIT_EXCEEDED as it is accumulated, exactly like the old single-arena path -
-            /// a plain std::string would only be counted (via the non-throwing new/delete tracking),
-            /// not refused, and could stage past max_memory_usage before failing at EOF.
-            ///
-            /// Known tradeoff: at the final hand-off the staged chunks and the freshly allocated
-            /// arena buffer briefly coexist, so the tracked peak on this path is about twice the
-            /// payload (the staged copy is freed right after). This is inherent to any scheme that
-            /// stages untrusted bytes before committing them to a single arena allocation: trusting
-            /// the declared size upfront is the original bug, and growing the arena allocation in
-            /// place (Arena::allocContinue) strands every superseded copy in the arena until the
-            /// query ends - a permanent overhead larger than this transient one. The path is rare:
-            /// it is taken only when a value spans more than one read-buffer refill (e.g. a state
-            /// larger than the 64 KiB compressed block), while the common case above is unchanged.
-            VectorWithMemoryTracking<StringWithMemoryTracking> chunks;
-            UInt32 bytes_read = 0;
-            while (bytes_read < bytes_to_read)
-            {
-                if (buf.eof())
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes_read, bytes_to_read);
-
-                size_t chunk_size = std::min<size_t>(buf.available(), bytes_to_read - bytes_read);
-                chunks.emplace_back(buf.position(), chunk_size);
-                buf.position() += chunk_size;
-                bytes_read += static_cast<UInt32>(chunk_size);
-            }
-
-            allocateLargeDataIfNeeded(bytes_to_read, arena);
-            char * out = large_data;
-            for (const auto & chunk : chunks)
-            {
-                memcpy(out, chunk.data(), chunk.size());
-                out += chunk.size();
-            }
-        }
-
+        allocateLargeDataIfNeeded(size - 1, arena);
+        buf.readStrict(large_data, size - 1);
         readChar(last_char, buf);
     }
 
