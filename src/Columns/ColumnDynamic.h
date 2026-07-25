@@ -258,6 +258,13 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
+    /// Compare two Dynamic values that are both serialized in shared-variant binary form
+    /// ([binary encoded type][value], NULL encoded as Nothing type with no value) without
+    /// materializing temporary ColumnDynamic columns: byte-equality fast path, then NULL/type-name
+    /// order, then a single concrete-type column for equal type names. Used by the both-shared
+    /// branch of doCompareAt here and by ColumnObject's both-shared-data path comparison.
+    static int compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint);
+
     bool hasEqualValues() const override
     {
         return variant_column_ptr->hasEqualValues();
