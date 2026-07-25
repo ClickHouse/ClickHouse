@@ -1,4 +1,5 @@
 #include <memory>
+#include <strings.h>
 #include <base/defines.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
@@ -144,6 +145,32 @@ bool parseOrderByClauseBody(
 }
 
 
+namespace
+{
+
+/// Whether any node in the subtree has the alias "select" (in any letter case). In the FROM-first
+/// form of a query, such an alias can only appear when the SELECT keyword that starts the explicit
+/// SELECT clause was mistakenly consumed as an alias without the AS keyword (SELECT is the only
+/// clause keyword that is not in ParserAlias::restricted_keywords), so it signals that the tables
+/// must be reparsed with aliases requiring the AS keyword.
+bool hasSelectAsAlias(const ASTPtr & node)
+{
+    if (!node)
+        return false;
+
+    if (0 == strcasecmp(node->tryGetAlias().c_str(), "select"))
+        return true;
+
+    for (const auto & child : node->children)
+        if (hasSelectAsAlias(child))
+            return true;
+
+    return false;
+}
+
+}
+
+
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
@@ -257,12 +284,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         };
 
-        /// When the SELECT clause is written explicitly, table aliases without the AS keyword are allowed,
-        /// same as in the FROM clause of an ordinary SELECT query: FROM orders o SELECT o.customer.
-        /// When SELECT is omitted, they are not: otherwise a following clause keyword that is a valid
-        /// alias (e.g. SELECT itself) would be mistaken for an alias.
+        /// Table aliases without the AS keyword are allowed, same as in the FROM clause of an
+        /// ordinary SELECT query: FROM orders o SELECT o.customer, FROM orders o WHERE o.amount > 0.
+        /// All clause keywords except SELECT itself are restricted aliases, so the only ambiguity is
+        /// the SELECT keyword consumed as an alias: in FROM t SELECT expr the permissive parse makes
+        /// "SELECT" the alias of t. When that happened and no explicit SELECT clause follows, roll
+        /// back and reparse with aliases requiring the AS keyword, so that SELECT starts the clause.
         auto begin = pos;
-        if (!parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ true) || !s_select.checkWithoutMoving(pos, expected))
+        if (!parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ true)
+            || (!s_select.checkWithoutMoving(pos, expected) && hasSelectAsAlias(tables)))
         {
             pos = begin;
             tables = nullptr;

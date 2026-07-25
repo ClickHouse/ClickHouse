@@ -13,6 +13,14 @@ SELECT '-- Table aliases without AS are allowed when SELECT is written explicitl
 FROM orders o SELECT o.customer, o.amount ORDER BY o.customer, o.amount LIMIT 2;
 FROM (SELECT customer FROM orders) s SELECT DISTINCT s.customer ORDER BY s.customer;
 
+SELECT '-- Table aliases without AS are also allowed when SELECT is omitted';
+FROM orders o WHERE o.amount >= 250 ORDER BY o.amount;
+FROM (SELECT customer FROM orders) s WHERE s.customer = 'bob' ORDER BY s.customer;
+FROM orders o |> WHERE amount >= 250 |> ORDER BY amount;
+-- The word SELECT after the tables starts the explicit SELECT clause, it is not an alias
+FROM orders select customer ORDER BY customer LIMIT 1;
+FROM orders select |> LIMIT 1; -- { clientError SYNTAX_ERROR }
+
 SELECT '-- WHERE';
 FROM orders |> WHERE amount >= 100 |> WHERE cancelled = 0 |> ORDER BY amount;
 

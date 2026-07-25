@@ -10,6 +10,14 @@ alice	250
 alice
 bob
 charlie
+-- Table aliases without AS are also allowed when SELECT is omitted
+alice	250	0
+charlie	300	0
+bob
+bob
+alice	250	0
+charlie	300	0
+alice
 -- WHERE
 alice	100	0
 alice	250	0
