@@ -5,6 +5,8 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -275,6 +277,25 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     /// Requests above the supported version clamp to the current one.
     plan.ensureSerialized(current + 100);
     EXPECT_EQ(plan.getSerializedData(current + 100), current_bytes);
+}
+
+TEST(QueryPlanSerialization, EnvelopeIsCopiedWhenTheStreamIsNotFullyBuffered)
+{
+    registerStepsOnce();
+    const std::string bytes = serializePlan(makeChainPlan(4));
+
+    /// Two pieces, so the whole envelope is never available at once and the reader has to copy it
+    /// out instead of pointing into the buffer. That is the path a socket takes for a plan bigger
+    /// than what has arrived so far; a single memory buffer would always take the other one.
+    const size_t split = bytes.size() / 2;
+    ConcatReadBuffer::Buffers pieces;
+    pieces.emplace_back(std::make_unique<ReadBufferFromMemory>(bytes.data(), split));
+    pieces.emplace_back(std::make_unique<ReadBufferFromMemory>(bytes.data() + split, bytes.size() - split));
+    ConcatReadBuffer in(std::move(pieces));
+
+    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
+    auto restored = QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
+    EXPECT_EQ(serializePlan(restored), bytes);
 }
 
 TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheServerSetting)

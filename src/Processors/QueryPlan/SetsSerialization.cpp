@@ -257,7 +257,8 @@ void serializeEnvelopeSets(
             min_reader_plan_version = std::max(min_reader_plan_version, nestedPlanBodyMinReader(body.str()));
         entry.payload_size = body.str().size();
         outline.sets.push_back(entry);
-        payloads.push_back(body.str());
+        /// `body` is finalized and goes out of scope here, so a large set moves rather than copies.
+        payloads.push_back(std::move(body.str()));
     }
 }
 

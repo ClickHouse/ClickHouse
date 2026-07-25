@@ -232,7 +232,8 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
         min_reader_plan_version = std::max(min_reader_plan_version, node_min_reader);
 
         outline.nodes.push_back(std::move(outline_node));
-        payloads.push_back(payload.str());
+        /// `payload` is finalized and goes out of scope here, so its bytes move rather than copy.
+        payloads.push_back(std::move(payload.str()));
 
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
             stack.push(*it);
@@ -280,21 +281,34 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
             "Query plan envelope declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
             envelope_size, max_envelope_bytes);
 
-    String envelope;
-    envelope.resize(envelope_size);
-    try
+    /// Parsing reads the envelope through pointers into these bytes and never touches `in` again,
+    /// so when the whole envelope is already buffered it can be read in place. A nested plan always
+    /// takes this path: it reads from the parent envelope, which is memory this call outlives.
+    String envelope_storage;
+    const char * envelope_data = nullptr;
+    if (envelope_size <= in.available())
     {
-        in.readStrict(envelope.data(), envelope.size());
+        envelope_data = in.position();
+        in.ignore(envelope_size);
     }
-    catch (Exception & e)
+    else
     {
-        /// A stream that ends before the declared envelope size is a malformed plan, not an I/O
-        /// condition of the connection.
-        e.addMessage(fmt::format("while reading a query plan envelope of {} bytes", envelope.size()));
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+        envelope_storage.resize(envelope_size);
+        try
+        {
+            in.readStrict(envelope_storage.data(), envelope_storage.size());
+        }
+        catch (Exception & e)
+        {
+            /// A stream that ends before the declared envelope size is a malformed plan, not an I/O
+            /// condition of the connection.
+            e.addMessage(fmt::format("while reading a query plan envelope of {} bytes", envelope_size));
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+        }
+        envelope_data = envelope_storage.data();
     }
 
-    ReadBufferFromMemory envelope_buffer(envelope.data(), envelope.size());
+    ReadBufferFromMemory envelope_buffer(envelope_data, envelope_size);
     auto outline = readQueryPlanOutline(envelope_buffer, max_type_complexity, envelope_size);
 
     /// One pass over the outline reports every problem at once (unknown steps, unsupported step
@@ -319,7 +333,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
 
             payload_offsets[i] = offset;
             /// Subtraction, not addition: `offset + payload_size` could wrap around on a hostile size.
-            if (outline_node.payload_size > envelope.size() - offset)
+            if (outline_node.payload_size > envelope_size - offset)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Query plan payload of step '{}' extends past the envelope", outline_node.step_name);
             offset += outline_node.payload_size;
@@ -366,7 +380,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
         QueryPlanSerializationSettings settings;
         settings.applyEntries(outline_node.settings);
 
-        ReadBufferFromMemory payload(envelope.data() + payload_offsets[idx], outline_node.payload_size);
+        ReadBufferFromMemory payload(envelope_data + payload_offsets[idx], outline_node.payload_size);
         IQueryPlanStep::Deserialization ctx{
             payload, sets_registry, {}, context, input_headers, output_header, settings,
             max_type_complexity, flags.version, flags.skip_data, outline_node.step_format_version};
@@ -408,7 +422,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
 
     plan.root = nodes_by_index[0];
 
-    ReadBufferFromMemory sets_buffer(envelope.data() + offset, envelope.size() - offset);
+    ReadBufferFromMemory sets_buffer(envelope_data + offset, envelope_size - offset);
     auto res = deserializeEnvelopeSets(
         std::move(plan), sets_registry, outline, sets_buffer, flags, context, max_type_complexity);
 
